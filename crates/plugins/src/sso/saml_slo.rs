@@ -71,6 +71,7 @@ impl SsoPlugin {
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
             .filter(|config| !config.is_null())
             .ok_or_else(|| error(404, "SAML_PROVIDER_NOT_FOUND", "SAML provider not found"))?;
+        let metadata = super::sp_metadata_xml::from_config(&config)?;
         let is_response = response.is_some();
         let kind = if is_response {
             "LogoutResponse"
@@ -242,12 +243,17 @@ impl SsoPlugin {
             .and_then(|service| service.get("Location"))
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
-        let entity = config
-            .get("spMetadata")
-            .and_then(|metadata| metadata.get("entityID"))
-            .and_then(Value::as_str)
-            .filter(|entity| !entity.is_empty())
-            .or_else(|| config.get("issuer").and_then(Value::as_str))
+        let entity = metadata
+            .as_ref()
+            .map(|sp| sp.entity_id.as_str())
+            .or_else(|| {
+                config
+                    .get("spMetadata")
+                    .and_then(|metadata| metadata.get("entityID"))
+                    .and_then(Value::as_str)
+                    .filter(|entity| !entity.is_empty())
+                    .or_else(|| config.get("issuer").and_then(Value::as_str))
+            })
             .unwrap_or(&provider.issuer);
         let id = doc.get_attribute(root, "ID").ok_or_else(invalid)?;
         let response = logout_response(entity, destination, id);

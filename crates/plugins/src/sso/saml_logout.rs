@@ -45,6 +45,7 @@ impl SsoPlugin {
             .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
             .filter(|value| !value.is_null())
             .ok_or_else(|| error(404, "SAML_PROVIDER_NOT_FOUND", "SAML provider not found"))?;
+        let metadata = super::sp_metadata_xml::from_config(&config)?;
         let services = config
             .get("idpMetadata")
             .and_then(|metadata| metadata.get("singleLogoutService"))
@@ -93,17 +94,27 @@ impl SsoPlugin {
             .as_ref()
             .and_then(|data| data.get("sessionIndex"))
             .and_then(Value::as_str);
-        let entity = config
-            .get("spMetadata")
-            .and_then(|metadata| metadata.get("entityID"))
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .or_else(|| config.get("issuer").and_then(Value::as_str))
+        let entity = metadata
+            .as_ref()
+            .map(|sp| sp.entity_id.as_str())
+            .or_else(|| {
+                config
+                    .get("spMetadata")
+                    .and_then(|metadata| metadata.get("entityID"))
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .or_else(|| config.get("issuer").and_then(Value::as_str))
+            })
             .unwrap_or(&provider.issuer);
-        let format = config
-            .get("identifierFormat")
-            .and_then(Value::as_str)
-            .filter(|format| !format.is_empty())
+        let format = metadata
+            .as_ref()
+            .and_then(|sp| sp.name_id_formats.first().map(String::as_str))
+            .or_else(|| {
+                config
+                    .get("identifierFormat")
+                    .and_then(Value::as_str)
+                    .filter(|format| !format.is_empty())
+            })
             .unwrap_or("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress");
         let id = format!("_{}", uuid::Uuid::new_v4());
         let instant = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);

@@ -5,13 +5,14 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
+import { customSPMetadata } from "./sp-metadata-input";
 
 export async function samlLogoutFlow(
   ctx: ScenarioContext,
   complete: boolean,
   signed = false,
   rollover = false,
-  binding: "post" | "redirect" | "post-optional-signature" = "post",
+  binding: "post" | "redirect" | "post-optional-signature" | "custom-sp" = "post",
 ) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
@@ -45,6 +46,9 @@ export async function samlLogoutFlow(
       issuer: "https://sp.example.test/entity",
       domain: "company.test",
       samlConfig: {
+        ...(binding === "custom-sp"
+          ? { spMetadata: customSPMetadata(ctx.baseURL, "logout-provider") }
+          : {}),
         entryPoint: "https://idp.example.test/sso",
         cert: rollover
           ? [
@@ -135,7 +139,14 @@ export async function samlLogoutFlow(
   expect(request["@_ID"]).toMatch(/^_[0-9a-f-]{36}$/);
   expect(Date.parse(request["@_IssueInstant"])).toBeGreaterThanOrEqual(before);
   expect(Date.parse(request["@_IssueInstant"])).toBeLessThanOrEqual(after);
-  expect(request.Issuer).toBe("https://sp.example.test/entity");
+  expect(request.Issuer).toBe(
+    binding === "custom-sp" ? "https://sp.example.test/from-xml" : "https://sp.example.test/entity",
+  );
+  expect(request.NameID["@_Format"]).toBe(
+    binding === "custom-sp"
+      ? "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+      : "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
+  );
   expect(request.NameID["#text"]).toBe(email);
   expect(request.SessionIndex).toBe("session-index");
   const proof = (await (

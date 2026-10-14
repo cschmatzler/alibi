@@ -16,7 +16,9 @@ backend_tests!(
     sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session,
     sso_logout_redirect_ignores_optional_signature_and_retires_real_proof,
     sso_logout_optional_xml_signature_does_not_override_disabled_response_check,
-    sso_idp_logout_optional_xml_signature_does_not_override_disabled_request_check
+    sso_idp_logout_optional_xml_signature_does_not_override_disabled_request_check,
+    sso_logout_custom_sp_metadata_drives_request_issuer_and_nameid_format,
+    sso_idp_logout_custom_sp_metadata_drives_response_issuer
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, LogoutCase::Initiation).await
@@ -46,6 +48,11 @@ async fn sso_logout_optional_xml_signature_does_not_override_disabled_response_c
 ) -> TestResult {
     logout_flow::<B>(db, LogoutCase::OptionalSignature).await
 }
+async fn sso_logout_custom_sp_metadata_drives_request_issuer_and_nameid_format<B: Backend>(
+    db: Db,
+) -> TestResult {
+    logout_flow::<B>(db, LogoutCase::CustomMetadata).await
+}
 #[derive(Clone, Copy)]
 enum LogoutCase {
     Initiation,
@@ -54,6 +61,7 @@ enum LogoutCase {
     Rollover,
     Redirect,
     OptionalSignature,
+    CustomMetadata,
 }
 async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     let complete = !matches!(case, LogoutCase::Initiation);
@@ -78,7 +86,10 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     } else {
         json!(cert)
     };
-    let input = json!({"providerId":"logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":certs,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/logout"}]},"wantAssertionsSigned":true}});
+    let mut input = json!({"providerId":"logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":certs,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/logout"}]},"wantAssertionsSigned":true}});
+    if matches!(case, LogoutCase::CustomMetadata) {
+        input["samlConfig"]["spMetadata"] = custom_sp_metadata("logout-provider");
+    }
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         EndpointOptions {
@@ -191,7 +202,19 @@ async fn logout_flow<B: Backend>(db: Db, case: LogoutCase) -> TestResult {
     );
     assert_eq!(
         doc.element_text(find("Issuer")),
-        Some("https://sp.example.test/entity")
+        Some(if matches!(case, LogoutCase::CustomMetadata) {
+            "https://sp.example.test/from-xml"
+        } else {
+            "https://sp.example.test/entity"
+        })
+    );
+    assert_eq!(
+        doc.get_attribute(find("NameID"), "Format"),
+        Some(if matches!(case, LogoutCase::CustomMetadata) {
+            "urn:oasis:names:tc:SAML:2.0:nameid-format:persistent"
+        } else {
+            "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress"
+        })
     );
     let id = doc.get_attribute(root, "ID").unwrap();
     _ = uuid::Uuid::parse_str(id.strip_prefix('_').unwrap())?;
@@ -388,16 +411,25 @@ async fn sso_idp_logout_optional_xml_signature_does_not_override_disabled_reques
 ) -> TestResult {
     idp_logout_flow::<B>(db, IdpLogoutCase::OptionalSignature).await
 }
+async fn sso_idp_logout_custom_sp_metadata_drives_response_issuer<B: Backend>(
+    db: Db,
+) -> TestResult {
+    idp_logout_flow::<B>(db, IdpLogoutCase::CustomMetadata).await
+}
 #[derive(Clone, Copy)]
 enum IdpLogoutCase {
     Unsigned,
     RequiredSignature,
     Http,
     OptionalSignature,
+    CustomMetadata,
 }
 async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult {
     let signed = matches!(case, IdpLogoutCase::RequiredSignature);
-    let http = matches!(case, IdpLogoutCase::Http | IdpLogoutCase::OptionalSignature);
+    let http = matches!(
+        case,
+        IdpLogoutCase::Http | IdpLogoutCase::OptionalSignature | IdpLogoutCase::CustomMetadata
+    );
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -409,7 +441,10 @@ async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult 
         .await?;
     let owner = signup(&auth, "idp-logout-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
-    let input = json!({"providerId":"idp-logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/logout-post"}]},"wantAssertionsSigned":true}});
+    let mut input = json!({"providerId":"idp-logout-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/logout-post"}]},"wantAssertionsSigned":true}});
+    if matches!(case, IdpLogoutCase::CustomMetadata) {
+        input["samlConfig"]["spMetadata"] = custom_sp_metadata("idp-logout-provider");
+    }
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         EndpointOptions {
@@ -547,6 +582,25 @@ async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult 
         let doc = bergshamra::xml::uppsala::parse(&xml)?;
         let root = doc.document_element().unwrap();
         assert_eq!(doc.get_attribute(root, "InResponseTo"), Some(request_id));
+        let issuer = doc
+            .children(root)
+            .into_iter()
+            .find(|node| {
+                doc.element(*node).is_some_and(|element| {
+                    element
+                        .name
+                        .matches(Some("urn:oasis:names:tc:SAML:2.0:assertion"), "Issuer")
+                })
+            })
+            .unwrap();
+        assert_eq!(
+            doc.text_content_deep(issuer),
+            if matches!(case, IdpLogoutCase::CustomMetadata) {
+                "https://sp.example.test/from-xml"
+            } else {
+                "https://sp.example.test/entity"
+            }
+        );
         assert_eq!(
             doc.get_attribute(root, "Destination"),
             Some("https://idp.example.test/logout-post")
@@ -573,4 +627,8 @@ async fn idp_logout_flow<B: Backend>(db: Db, case: IdpLogoutCase) -> TestResult 
         );
     }
     B::close(connection).await
+}
+
+fn custom_sp_metadata(provider: &str) -> Value {
+    json!({"entityID":"https://sp.example.test/unused", "metadata":format!(r#"<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.test/from-xml"><md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" WantAssertionsSigned="true" AuthnRequestsSigned="false"><md:NameIDFormat>urn:oasis:names:tc:SAML:2.0:nameid-format:persistent</md:NameIDFormat><md:AssertionConsumerService index="0" Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="{ORIGIN}/api/auth/sso/saml2/sp/acs/{provider}"/></md:SPSSODescriptor></md:EntityDescriptor>"#)})
 }
