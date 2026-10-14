@@ -16,6 +16,7 @@ use std::{
 pub(super) struct Peer {
     pub base: String,
     pub email: Arc<Mutex<String>>,
+    pub discovery_case: Arc<Mutex<String>>,
     pub id_token_case: Arc<Mutex<String>>,
     pub exchanges: Arc<Mutex<Vec<serde_json::Value>>>,
 }
@@ -24,6 +25,9 @@ pub(super) async fn start() -> Peer {
     let base = format!("http://{}", listener.local_addr().unwrap());
     let email = Arc::new(Mutex::new(String::from("sso-employee@example.test")));
     let id_token_case = Arc::new(Mutex::new(String::from("none")));
+    let discovery_case = Arc::new(Mutex::new(String::from("valid")));
+    let discovery_mode = discovery_case.clone();
+    let discovery_issuer = base.clone();
     let authorize_case = id_token_case.clone();
     let token_issuer = base.clone();
     let codes = Arc::new(Mutex::new(
@@ -51,6 +55,19 @@ pub(super) async fn start() -> Peer {
  let token=headers.get("authorization").and_then(|value|value.to_str().ok()).and_then(|value|value.strip_prefix("Bearer ")).unwrap_or("");
  let email=tokens.lock().unwrap().get(token).cloned();match email{Some(email)=>Json(serde_json::json!({"sub":"employee-subject","email":email,"email_verified":true,"name":"SSO employee"})).into_response(),None=>StatusCode::UNAUTHORIZED.into_response()}
  }})).route("/jwks",get(||async{Json(serde_json::from_str::<serde_json::Value>(include_str!("../fixtures/one-tap/jwks.json")).unwrap())}));
+    let app = app.route("/.well-known/openid-configuration",get(move || {
+        let issuer = discovery_issuer.clone();
+        let case = discovery_mode.lock().unwrap().clone();
+        async move {
+            let mut document = serde_json::json!({"issuer":issuer,"authorization_endpoint":"/authorize","token_endpoint":"/token","jwks_uri":"/jwks","userinfo_endpoint":"/userinfo","token_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post"]});
+            match case.as_str() {
+                "missing" => {let _ = document.as_object_mut().unwrap().remove("jwks_uri");}
+                "issuer" => document["issuer"] = serde_json::json!("https://wrong-issuer.example.test"),
+                _ => {}
+            }
+            Json(document)
+        }
+    }));
     _ = tokio::spawn(async move {
         axum::serve(listener, app).await.unwrap();
     });
@@ -58,6 +75,7 @@ pub(super) async fn start() -> Peer {
         base,
         email,
         id_token_case,
+        discovery_case,
         exchanges,
     }
 }

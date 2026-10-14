@@ -3,7 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const mode of ["default", "shared", "default-pkce"]) {
+for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
   compatScenario(
     `SSO ${mode} callback redeems a real PKCE code and creates a usable session`,
     async (ctx) => {
@@ -32,7 +32,7 @@ for (const mode of ["default", "shared", "default-pkce"]) {
         },
       });
       expect(owner.status).toBe(200);
-      const created = await control({
+      const registration = {
         headers: { cookie: pairs(owner) },
         body: {
           providerId: "callback-provider",
@@ -42,7 +42,7 @@ for (const mode of ["default", "shared", "default-pkce"]) {
             clientId: "enterprise-client",
             clientSecret: "stored-secret",
             skipDiscovery: true,
-            ...(mode === "default-pkce" ? {} : { pkce: true }),
+            ...(mode === "default-pkce" || mode === "discovery" ? {} : { pkce: true }),
             scopes: ["openid", "email"],
             authorizationEndpoint: `${idp.base}/authorize`,
             tokenEndpoint: `${idp.base}/token`,
@@ -50,8 +50,50 @@ for (const mode of ["default", "shared", "default-pkce"]) {
             jwksEndpoint: `${idp.base}/jwks`,
           },
         },
-      });
+      };
+      if (mode === "discovery") {
+        const config = registration.body.oidcConfig as any;
+        for (const field of [
+          "skipDiscovery",
+          "authorizationEndpoint",
+          "tokenEndpoint",
+          "jwksEndpoint",
+          "userInfoEndpoint",
+        ]) {
+          delete config[field];
+        }
+        await control({ action: "idp", discoveryCase: "missing" });
+        const rejected = await control({
+          ...registration,
+          body: { ...registration.body, providerId: "incomplete-discovery-provider" },
+        });
+        expect(rejected.status).toBe(400);
+        expect(((await rejected.json()) as any).code).toBe("discovery_incomplete");
+        expect(
+          await (
+            await control({ action: "row", providerId: "incomplete-discovery-provider" })
+          ).json(),
+        ).toBe(null);
+        await control({ action: "idp", discoveryCase: "valid" });
+      }
+      const created = await control(registration);
       expect(created.status).toBe(200);
+      if (mode === "discovery") {
+        const row = (await (
+          await control({ action: "row", providerId: "callback-provider" })
+        ).json()) as any;
+        const config = JSON.parse(row.oidcConfig);
+        for (const [field, path] of [
+          ["authorizationEndpoint", "authorize"],
+          ["tokenEndpoint", "token"],
+          ["jwksEndpoint", "jwks"],
+          ["userInfoEndpoint", "userinfo"],
+        ]) {
+          expect(config[field!]).toBe(`${idp.base}/${path}`);
+        }
+        expect(config.pkce).toBe(true);
+        expect(config.tokenEndpointAuthentication).toBe("client_secret_basic");
+      }
       const started = await control({
         action: "sign-in",
         body: {

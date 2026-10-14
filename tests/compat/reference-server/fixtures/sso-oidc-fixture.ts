@@ -2,6 +2,7 @@ import { createHash, randomUUID, sign } from "node:crypto";
 export function ssoOidcFixture() {
   let email = "sso-employee@example.test";
   let idTokenCase = "none";
+  let discoveryCase = "valid";
   const codes = new Map<string, { challenge: string; email: string; tokenCase: string }>();
   const tokens = new Map<string, string>();
   const exchanges: any[] = [];
@@ -10,6 +11,19 @@ export function ssoOidcFixture() {
     hostname: "127.0.0.1",
     async fetch(request) {
       const url = new URL(request.url);
+      if (url.pathname === "/.well-known/openid-configuration") {
+        const document: any = {
+          issuer: url.origin,
+          authorization_endpoint: "/authorize",
+          token_endpoint: "/token",
+          jwks_uri: "/jwks",
+          userinfo_endpoint: "/userinfo",
+          token_endpoint_auth_methods_supported: ["client_secret_basic", "client_secret_post"],
+        };
+        if (discoveryCase === "missing") delete document.jwks_uri;
+        if (discoveryCase === "issuer") document.issuer = "https://wrong-issuer.example.test";
+        return Response.json(document);
+      }
       if (url.pathname === "/authorize") {
         if (
           url.searchParams.get("client_id") !== "enterprise-client" ||
@@ -78,6 +92,9 @@ export function ssoOidcFixture() {
   server.unref();
   return {
     base: `http://127.0.0.1:${server.port}`,
+    setDiscoveryCase(value: string) {
+      discoveryCase = value;
+    },
     setIdTokenCase(value: string) {
       idTokenCase = value;
     },
