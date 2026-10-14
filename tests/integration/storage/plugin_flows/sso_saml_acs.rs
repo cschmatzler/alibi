@@ -17,7 +17,8 @@ backend_tests!(
     sso_saml_encrypted_assertions_reject_wrong_decryption_key,
     sso_saml_encrypted_assertions_reject_wrong_passphrase,
     sso_saml_encrypted_assertions_reject_missing_passphrase,
-    sso_saml_encrypted_assertions_accept_ciphertext_response_signatures
+    sso_saml_encrypted_assertions_accept_ciphertext_response_signatures,
+    sso_saml_encrypted_assertions_accept_outer_only_signatures
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -60,6 +61,11 @@ async fn sso_saml_encrypted_assertions_accept_ciphertext_response_signatures<B: 
 ) -> TestResult {
     acs_flow::<B>(db, AcsCase::EncryptedResponse).await
 }
+async fn sso_saml_encrypted_assertions_accept_outer_only_signatures<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::OuterOnly).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     Manual,
@@ -67,6 +73,7 @@ enum AcsCase {
     Encrypted,
     EncryptedKey,
     EncryptedResponse,
+    OuterOnly,
     MissingKey,
     WrongKey,
     WrongPass,
@@ -80,7 +87,9 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     );
     let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if matches!(case, AcsCase::EncryptedResponse) {
+    let provider_id = if matches!(case, AcsCase::OuterOnly) {
+        "encrypted-outer-only-acs-provider"
+    } else if matches!(case, AcsCase::EncryptedResponse) {
         "encrypted-response-acs-provider"
     } else if key_failure {
         match case {
@@ -106,6 +115,9 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     let owner = signup(&auth, "saml-acs-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
     let mut input = json!({"providerId":provider_id,"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"callbackUrl":format!("{ORIGIN}/complete")}});
+    if matches!(case, AcsCase::OuterOnly) {
+        input["samlConfig"]["wantAssertionsSigned"] = json!(false);
+    }
     if encrypted {
         input["samlConfig"]["idpMetadata"]["isAssertionEncrypted"] = json!(true);
         input["samlConfig"]["spMetadata"] = if matches!(case, AcsCase::EncryptedKey) {
@@ -170,11 +182,14 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         );
         let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?;
         let grant = if encrypted {
-            super::sso_saml_encryption::encrypt_grant(&grant)?
+            super::sso_saml_encryption::encrypt_grant_with_unsigned_assertion(
+                &grant,
+                matches!(case, AcsCase::OuterOnly),
+            )?
         } else {
             grant
         };
-        let grant = if matches!(case, AcsCase::EncryptedResponse) {
+        let grant = if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly) {
             use base64::Engine as _;
             let xml = String::from_utf8(
                 base64::engine::general_purpose::STANDARD

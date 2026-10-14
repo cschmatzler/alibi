@@ -10,6 +10,7 @@ for (const mode of [
   "encrypted",
   "encrypted-key",
   "encrypted-response",
+  "encrypted-outer-only",
   "encrypted-missing-key",
   "encrypted-wrong-key",
   "encrypted-wrong-pass",
@@ -54,8 +55,8 @@ for (const mode of [
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
       const providerId =
-        mode === "encrypted-response"
-          ? "encrypted-response-acs-provider"
+        mode === "encrypted-response" || mode === "encrypted-outer-only"
+          ? `${mode}-acs-provider`
           : keyFailure
             ? `${mode}-acs-provider`
             : mode === "encrypted-key"
@@ -116,7 +117,7 @@ for (const mode of [
                   entityID: "https://idp.example.test/entity",
                   ...(encrypted ? { isAssertionEncrypted: true } : {}),
                 },
-            wantAssertionsSigned: true,
+            wantAssertionsSigned: mode !== "encrypted-outer-only",
             callbackUrl: `${ctx.baseURL}/complete`,
           },
         },
@@ -149,8 +150,8 @@ for (const mode of [
           await control({ action: "saml-grant", authorization, email, wrongKey })
         ).json()) as any;
         if (encrypted) {
-          grant = encryptSamlGrant(grant, cert);
-          if (mode === "encrypted-response") {
+          grant = encryptSamlGrant(grant, cert, mode === "encrypted-outer-only");
+          if (mode === "encrypted-response" || mode === "encrypted-outer-only") {
             const signed = await control({
               action: "sign-saml-logout",
               xml: Buffer.from(grant.SAMLResponse, "base64").toString(),

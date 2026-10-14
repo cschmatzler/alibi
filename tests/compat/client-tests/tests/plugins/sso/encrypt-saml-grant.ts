@@ -6,7 +6,11 @@ import {
   X509Certificate,
 } from "node:crypto";
 /** Standards-based IdP envelope; used against both live servers. */
-export function encryptSamlGrant(grant: Record<string, any>, certificate: string) {
+export function encryptSamlGrant(
+  grant: Record<string, any>,
+  certificate: string,
+  unsignedAssertion = false,
+) {
   const xml = Buffer.from(grant.SAMLResponse, "base64").toString();
   const start = xml.indexOf("<saml:Assertion ");
   const end = xml.indexOf("</saml:Assertion>", start) + "</saml:Assertion>".length;
@@ -19,6 +23,9 @@ export function encryptSamlGrant(grant: Record<string, any>, certificate: string
       "<saml:Assertion ",
       '<saml:Assertion xmlns:saml="urn:oasis:names:tc:SAML:2.0:assertion" ',
     );
+  }
+  if (unsignedAssertion) {
+    assertion = assertion.replace(/<ds:Signature\b[^>]*>[\s\S]*?<\/ds:Signature>/, "");
   }
   const secret = randomBytes(32);
   const iv = randomBytes(12);
