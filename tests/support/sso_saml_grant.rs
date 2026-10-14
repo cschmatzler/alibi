@@ -14,14 +14,42 @@ pub(super) fn grant_with_verified(
     wrong_key: bool,
     verified: Option<&[&str]>,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    grant_with_correlation(authorization, email, wrong_key, verified, true)
+    grant_with_correlation(
+        authorization,
+        email,
+        wrong_key,
+        verified,
+        true,
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    )
 }
 pub(super) fn unsolicited_grant(
     authorization: &str,
     email: &str,
     wrong_key: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    grant_with_correlation(authorization, email, wrong_key, None, false)
+    grant_with_correlation(
+        authorization,
+        email,
+        wrong_key,
+        None,
+        false,
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
+    )
+}
+pub(super) fn unsupported_signature_grant(
+    authorization: &str,
+    email: &str,
+    wrong_key: bool,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    grant_with_correlation(
+        authorization,
+        email,
+        wrong_key,
+        None,
+        true,
+        "http://www.w3.org/2001/04/xmldsig-more#rsa-md5",
+    )
 }
 fn grant_with_correlation(
     authorization: &str,
@@ -29,6 +57,7 @@ fn grant_with_correlation(
     wrong_key: bool,
     verified: Option<&[&str]>,
     correlated: bool,
+    signature_algorithm: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let url = url::Url::parse(authorization)?;
     let query = url
@@ -70,7 +99,7 @@ fn grant_with_correlation(
     let issuer = escaped(issuer);
     let email = escaped(email);
     let signature = format!(
-        r##"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/><ds:Reference URI="#{assertion_id}"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue/></ds:Reference></ds:SignedInfo><ds:SignatureValue/></ds:Signature>"##
+        r##"<ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/><ds:SignatureMethod Algorithm="{signature_algorithm}"/><ds:Reference URI="#{assertion_id}"><ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/><ds:Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"/></ds:Transforms><ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/><ds:DigestValue/></ds:Reference></ds:SignedInfo><ds:SignatureValue/></ds:Signature>"##
     );
     let verification = verified.map_or_else(String::new, |values| {
         let values = values

@@ -52,7 +52,16 @@ pub(crate) fn encrypt_grant_with_unsigned_assertion(
             .ok_or("Signature range missing")?;
         plaintext.replace_range(range, "");
     }
-    let mut secret = vec![0u8; if algorithm.contains("aes128") { 16 } else { 32 }];
+    let mut secret = vec![
+        0u8;
+        if algorithm.contains("tripledes") {
+            24
+        } else if algorithm.contains("aes128") {
+            16
+        } else {
+            32
+        }
+    ];
     OsRng.fill_bytes(&mut secret);
     let cipher = AlgorithmRegistry::cipher(algorithm)?.encrypt(&secret, plaintext.as_bytes())?;
     let recipient = bergshamra::keys::loader::load_x509_cert_pem(include_bytes!(

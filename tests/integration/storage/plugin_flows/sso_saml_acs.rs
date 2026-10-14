@@ -29,7 +29,12 @@ backend_tests!(
     sso_saml_encryption_policy_data_allowed,
     sso_saml_encryption_policy_key_empty,
     sso_saml_encryption_policy_data_empty,
-    sso_saml_encryption_policy_outer_key_denied
+    sso_saml_encryption_policy_outer_key_denied,
+    sso_saml_deprecated_data_cipher_reject,
+    sso_saml_deprecated_data_cipher_allow,
+    sso_saml_deprecated_data_cipher_warn,
+    sso_saml_deprecated_data_cipher_override,
+    sso_saml_legacy_cipher_support_rejects_unsupported_signature_algorithms
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -126,9 +131,43 @@ async fn sso_saml_encryption_policy_outer_key_denied<B: Backend>(db: Db) -> Test
     )
     .await
 }
+async fn sso_saml_deprecated_data_cipher_reject<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-deprecated-data-reject"),
+    )
+    .await
+}
+async fn sso_saml_deprecated_data_cipher_allow<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-deprecated-data-allow"),
+    )
+    .await
+}
+async fn sso_saml_deprecated_data_cipher_warn<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-deprecated-data-warn"),
+    )
+    .await
+}
+async fn sso_saml_deprecated_data_cipher_override<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-deprecated-data-override"),
+    )
+    .await
+}
+async fn sso_saml_legacy_cipher_support_rejects_unsupported_signature_algorithms<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::UnsupportedLegacySignature).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     EncryptionPolicy(&'static str),
+    UnsupportedLegacySignature,
     Manual,
     IdpXml,
     Encrypted,
@@ -150,17 +189,26 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         case,
         AcsCase::MissingKey | AcsCase::WrongKey | AcsCase::WrongPass | AcsCase::MissingPass
     );
-    let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
+    let signature_denied = matches!(case, AcsCase::UnsupportedLegacySignature);
+    let encrypted = !matches!(
+        case,
+        AcsCase::Manual | AcsCase::IdpXml | AcsCase::UnsupportedLegacySignature
+    );
 
     let policy_mode = if let AcsCase::EncryptionPolicy(mode) = case {
         mode
     } else {
         "default"
     };
-    let policy_denied = matches!(case,AcsCase::EncryptionPolicy(mode) if !mode.contains("allowed") && !mode.contains("outer"));
+    let deprecated = policy_mode.contains("deprecated-data-");
+    let deprecated_rejected = policy_mode.ends_with("deprecated-data-reject");
+    let policy_denied = matches!(case,AcsCase::EncryptionPolicy(mode) if !mode.contains("allowed") && !mode.contains("outer") && !deprecated)
+        || deprecated_rejected;
     let policy_key = policy_mode.contains("policy-key");
     let outer_policy = policy_mode.contains("policy-outer");
-    let provider_id = if let AcsCase::EncryptionPolicy(mode) = case {
+    let provider_id = if signature_denied {
+        "unsupported-legacy-signature-provider"
+    } else if let AcsCase::EncryptionPolicy(mode) = case {
         mode
     } else if matches!(case, AcsCase::Tampered) {
         "encrypted-tampered-acs-provider"
@@ -269,12 +317,23 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             authorization.path(),
             if xml_metadata { "/from-xml" } else { "/sso" }
         );
-        let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?;
+        let grant = if signature_denied {
+            idp::unsupported_signature_grant(
+                body(&started)["url"].as_str().unwrap(),
+                email,
+                wrong_key,
+            )?
+        } else {
+            idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?
+        };
         let grant = if encrypted {
             super::sso_saml_encryption::encrypt_grant_with_unsigned_assertion(
                 &grant,
                 matches!(case, AcsCase::OuterOnly),
                 match case {
+                    AcsCase::EncryptionPolicy(mode) if mode.contains("deprecated-data-") => {
+                        "http://www.w3.org/2001/04/xmlenc#tripledes-cbc"
+                    }
                     AcsCase::Aes128Gcm => "http://www.w3.org/2009/xmlenc11#aes128-gcm",
                     AcsCase::Aes128Cbc => "http://www.w3.org/2001/04/xmlenc#aes128-cbc",
                     AcsCase::Aes256Cbc => "http://www.w3.org/2001/04/xmlenc#aes256-cbc",
@@ -388,13 +447,24 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             "saml-used-assertion:{}",
             grant["assertionId"].as_str().unwrap()
         );
-        if wrong_key || key_failure || matches!(case, AcsCase::Tampered) || policy_denied {
+        if wrong_key
+            || key_failure
+            || matches!(case, AcsCase::Tampered)
+            || policy_denied
+            || signature_denied
+        {
             assert_eq!(location.path(), "/failed");
             let query = location
                 .query_pairs()
                 .into_owned()
                 .collect::<std::collections::HashMap<_, _>>();
-            if policy_denied && !wrong_key {
+            if deprecated_rejected && !wrong_key {
+                assert_eq!(query["error"], "saml_deprecated_algorithm");
+                assert_eq!(
+                    query["error_description"],
+                    "SAML response uses deprecated data encryption algorithm: http://www.w3.org/2001/04/xmlenc#tripledes-cbc. Please configure your IdP to use AES-GCM."
+                );
+            } else if policy_denied && !wrong_key {
                 assert_eq!(query["error"], "saml_algorithm_not_allowed");
                 assert_eq!(
                     query["error_description"],
