@@ -21,7 +21,8 @@ backend_tests!(
     sso_validation_receives_protocol_source_before_identity_writes,
     sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests,
     sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email,
-    sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login
+    sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login,
+    sso_configured_state_rejects_reconfigured_authority_before_identity_writes
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -1104,5 +1105,141 @@ async fn sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_l
         body(&rejected.error.to_auth_response()),
         json!({"message":"This providerId is reserved and cannot be used for an SSO provider"})
     );
+    B::close(connection).await
+}
+
+async fn sso_configured_state_rejects_reconfigured_authority_before_identity_writes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let build = |providers| {
+        AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(SsoPlugin::with_config(SsoConfig {
+                default_providers: providers,
+                domain_verification: true,
+                ..Default::default()
+            }))
+            .build()
+    };
+    let original = build(super::sso_configured_providers::providers(&idp.base)).await?;
+    let changed = build(super::sso_configured_providers::changed_providers(
+        &idp.base,
+    ))
+    .await?;
+    for saml in [false, true] {
+        let provider = if saml {
+            "configured-saml"
+        } else {
+            "configured-oidc"
+        };
+        let email = format!("configured-change-{saml}@company.test");
+        let subject = if saml {
+            email.as_str()
+        } else {
+            "changed-configured-subject"
+        };
+        *idp.profile.lock().unwrap() = Some(
+            json!({"sub":subject,"email":email,"email_verified":false,"name":"Configured employee"}),
+        );
+        idp.exchanges.lock().unwrap().clear();
+        for stale in [true, false] {
+            let issuing = if stale { &original } else { &changed };
+            let started = Box::pin(issuing.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+            let (endpoint, state, assertion) = if saml {
+                let grant =
+                    super::saml_idp::grant(body(&started)["url"].as_str().unwrap(), &email, false)?;
+                (
+                    SsoPlugin::acs_endpoint(provider, &grant)?,
+                    grant["RelayState"].as_str().unwrap().to_owned(),
+                    Some(grant["assertionId"].as_str().unwrap().to_owned()),
+                )
+            } else {
+                let response = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?
+                    .get(body(&started)["url"].as_str().unwrap())
+                    .send()
+                    .await?;
+                assert_eq!(response.status(), 302);
+                let url = url::Url::parse(response.headers().get("location").unwrap().to_str()?)?;
+                let query = url
+                    .query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                (
+                    SsoPlugin::callback_sso_endpoint(provider, &json!(query))?,
+                    query["state"].clone(),
+                    None,
+                )
+            };
+            let completed = Box::pin(changed.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(completed.status, 302);
+            let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+            let query = location
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::HashMap<_, _>>();
+            if stale {
+                assert_eq!(location.path(), "/failed");
+                assert_eq!(
+                    query.get("error").map(String::as_str),
+                    Some("invalid_state")
+                );
+                assert_eq!(
+                    query.get("error_description").map(String::as_str),
+                    Some("sso_provider_changed_during_authentication")
+                );
+                assert!(store.get_user_by_email(&email).await?.is_none());
+                assert!(store.get_account(provider, subject).await?.is_none());
+                if !saml {
+                    assert!(idp.exchanges.lock().unwrap().is_empty());
+                }
+                if let Some(id) = assertion {
+                    assert!(
+                        store
+                            .get_latest_verification_by_identifier(&format!(
+                                "saml-used-assertion:{id}"
+                            ))
+                            .await?
+                            .is_none()
+                    );
+                }
+            } else {
+                assert_eq!(location.path(), "/complete");
+                assert!(!query.contains_key("error"));
+                let session = call(
+                    &changed,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&session)["user"]["email"], email);
+                assert!(store.get_account(provider, subject).await?.is_some());
+            }
+            assert!(
+                store
+                    .get_latest_verification_by_identifier(&format!("auth-state:{state}"))
+                    .await?
+                    .is_none()
+            );
+            assert!(store.get_sso_provider(provider).await?.is_none());
+        }
+    }
     B::close(connection).await
 }
