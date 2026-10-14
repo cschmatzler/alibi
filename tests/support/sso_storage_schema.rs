@@ -26,3 +26,10 @@ pub(crate) fn configure_swapped(config: &mut alibi::AuthConfig) {
         .columns
         .insert("oidc_config".into(), "issuer".into());
 }
+
+pub(crate) fn configure_domain_swapped(config: &mut alibi::AuthConfig) {
+    configure(config);
+    let mapping = config.advanced.database.sso_provider.as_mut().unwrap();
+    _ = mapping.columns.insert("issuer".into(), "domain".into());
+    _ = mapping.columns.insert("domain".into(), "issuer".into());
+}

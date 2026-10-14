@@ -21,7 +21,14 @@ where
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "id", " = ", id);
         sql.push(" AND ");
-        sql.compare(Model::TABLE, "domain", " = ", domain);
+        let field = self
+            .config()
+            .advanced
+            .database
+            .sso_provider
+            .as_ref()
+            .map_or("domain", |mapping| mapping.predicate_field("domain"));
+        sql.compare(Model::TABLE, field, " = ", domain);
         self.exec().execute(sql).await.map(|changed| changed > 0)
     }
     async fn update_sso_provider(

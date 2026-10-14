@@ -270,6 +270,34 @@ impl Default for SsoProviderDatabaseConfig {
     }
 }
 impl SsoProviderDatabaseConfig {
+    /// Resolve the reference adapter's additional predicate-name mapping pass.
+    /// Physical names matching canonical fields are treated as logical names again.
+    #[must_use]
+    pub fn predicate_field<'a>(&'a self, field: &'a str) -> &'a str {
+        let physical = self
+            .columns
+            .iter()
+            .find(|(name, _)| sso_provider_column(name) == field)
+            .map_or(field, |(_, physical)| physical.as_str());
+        if [
+            "id",
+            "issuer",
+            "domain",
+            "providerId",
+            "userId",
+            "organizationId",
+            "oidcConfig",
+            "samlConfig",
+            "domainVerified",
+        ]
+        .contains(&physical)
+        {
+            physical
+        } else {
+            field
+        }
+    }
+
     /// Rename the bundled provider relation and its configured columns atomically.
     pub fn migration_statements(&self) -> crate::AuthResult<Vec<String>> {
         const COLUMNS: &[&str] = &[

@@ -2,29 +2,38 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SessionManagementPlugin, SsoConfig, SsoPlugin};
-use alibi::store::{SchemaMigrator, SsoProviderStore};
+use alibi::store::{SchemaMigrator, SsoProviderStore, VerificationStore};
 backend_tests!(
     sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes,
-    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes
+    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes,
+    sso_swapped_domain_columns_match_reference_verification_conflict
 );
 postgres_tests!(
     sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes,
-    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes
+    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes,
+    sso_swapped_domain_columns_match_reference_verification_conflict
 );
 async fn sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes<B: Backend>(
     db: Db,
 ) -> TestResult {
-    mapped_lifecycle::<B>(&db, false).await
+    mapped_lifecycle::<B>(&db, "ordinary").await
 }
 async fn sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes<B: Backend>(
     db: Db,
 ) -> TestResult {
-    mapped_lifecycle::<B>(&db, true).await
+    mapped_lifecycle::<B>(&db, "oidc").await
 }
-async fn mapped_lifecycle<B: Backend>(db: &Db, swapped: bool) -> TestResult {
+async fn sso_swapped_domain_columns_match_reference_verification_conflict<B: Backend>(
+    db: Db,
+) -> TestResult {
+    mapped_lifecycle::<B>(&db, "domain").await
+}
+async fn mapped_lifecycle<B: Backend>(db: &Db, permutation: &str) -> TestResult {
     let dns = super::sso_dns::start().await;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    if swapped {
+    if permutation == "domain" {
+        super::sso_storage_schema::configure_domain_swapped(&mut config);
+    } else if permutation == "oidc" {
         super::sso_storage_schema::configure_swapped(&mut config);
     } else {
         super::sso_storage_schema::configure(&mut config);
@@ -64,18 +73,27 @@ async fn mapped_lifecycle<B: Backend>(db: &Db, swapped: bool) -> TestResult {
     assert_eq!(physical[0]["application_provider"], "mapped-provider");
     assert_eq!(physical[0]["application_owner"], body(&owner)["user"]["id"]);
     assert_eq!(
-        physical[0][if swapped {
+        physical[0][if permutation == "domain" {
+            "domain"
+        } else if permutation == "oidc" {
             "oidcConfig"
         } else {
             "application_issuer"
         }],
         input["issuer"]
     );
-    assert_eq!(physical[0]["application_domain"], "company.test");
+    assert_eq!(
+        physical[0][if permutation == "domain" {
+            "issuer"
+        } else {
+            "application_domain"
+        }],
+        "company.test"
+    );
     assert!(physical[0]["application_org"].is_null());
     assert!(physical[0]["application_saml"].is_null());
     let oidc: Value = serde_json::from_str(
-        physical[0][if swapped {
+        physical[0][if permutation == "oidc" {
             "issuer"
         } else {
             "application_oidc"
@@ -90,20 +108,40 @@ async fn mapped_lifecycle<B: Backend>(db: &Db, swapped: bool) -> TestResult {
         .to_owned();
     *dns.records.lock().unwrap() =
         vec![vec![format!("_better-auth-token-mapped-provider={token}")]];
-    let verified = Box::pin(auth.dispatch_endpoint(
+    let verified = match Box::pin(auth.dispatch_endpoint(
         SsoPlugin::verify_domain_endpoint("mapped-provider")?,
         owned.clone(),
     ))
-    .await?
-    .into_response()?;
-    assert_eq!(verified.status, 204);
+    .await
+    {
+        Ok(response) => response.into_response()?,
+        Err(error) => error.error.to_auth_response(),
+    };
+    assert_eq!(
+        verified.status,
+        if permutation == "domain" { 409 } else { 204 }
+    );
+    if permutation == "domain" {
+        assert_eq!(body(&verified)["code"], "SSO_PROVIDER_CHANGED");
+        assert_eq!(
+            body(&verified)["message"],
+            "SSO provider changed while domain verification was in progress. Reload the provider and try again"
+        );
+    }
+
     assert_eq!(
         store
             .get_sso_provider("mapped-provider")
             .await?
             .unwrap()
             .domain_verified,
-        Some(true)
+        Some(permutation != "domain")
+    );
+    assert!(
+        store
+            .get_latest_verification_by_identifier("_better-auth-token-mapped-provider")
+            .await?
+            .is_some()
     );
     let updated=Box::pin(auth.dispatch_endpoint(SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":"mapped-provider","domain":"new-company.test","oidcConfig":{"clientId":"changed-client"}}))?,owned.clone())).await?.into_response()?;
     assert_eq!(updated.status, 200);

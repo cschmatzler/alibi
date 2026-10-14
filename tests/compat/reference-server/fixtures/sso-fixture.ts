@@ -393,6 +393,24 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(swappedOptions)).runMigrations();
+  const domainSwappedDatabase = new Database(":memory:");
+  const domainSwappedOptions = {
+    ...options,
+    database: domainSwappedDatabase,
+    plugins: [
+      username(),
+      sso({
+        domainVerification: { enabled: true },
+        schema: {
+          ssoProvider: {
+            modelName: "application_sso_provider",
+            fields: { ...storageFields, issuer: "domain", domain: "issuer" },
+          },
+        },
+      }),
+    ],
+  };
+  await (await getMigrations(domainSwappedOptions)).runMigrations();
   const additionalDatabase = new Database(":memory:");
   const additionalOptions = {
     ...options,
@@ -541,6 +559,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const instances = new Map([
     ["storage-schema", betterAuth(storageOptions)],
     ["storage-swap", betterAuth(swappedOptions)],
+    ["storage-domain-swap", betterAuth(domainSwappedOptions)],
     ["additional-fields", betterAuth(additionalOptions)],
     ["field-callbacks", betterAuth(callbackOptions)],
     ...encryptionModes.map(
@@ -676,6 +695,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     const mode = [
       "storage-schema",
       "storage-swap",
+      "storage-domain-swap",
       "additional-fields",
       "field-callbacks",
       ...encryptionModes,
@@ -741,9 +761,19 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "storage-state") {
-      const selectedDatabase = mode === "storage-swap" ? swappedDatabase : storageDatabase;
-      const issuer = mode === "storage-swap" ? "oidcConfig" : "application_issuer";
-      const domain = "application_domain";
+      const selectedDatabase =
+        mode === "storage-domain-swap"
+          ? domainSwappedDatabase
+          : mode === "storage-swap"
+            ? swappedDatabase
+            : storageDatabase;
+      const issuer =
+        mode === "storage-domain-swap"
+          ? "domain"
+          : mode === "storage-swap"
+            ? "oidcConfig"
+            : "application_issuer";
+      const domain = mode === "storage-domain-swap" ? "issuer" : "application_domain";
       const oidc = mode === "storage-swap" ? "issuer" : "application_oidc";
       const tables = selectedDatabase
         .query("SELECT name FROM sqlite_master WHERE type='table'")
@@ -1171,31 +1201,33 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "storage-swap"
-            ? swappedOptions
-            : mode === "field-callbacks"
-              ? callbackOptions
-              : mode === "additional-fields"
-                ? additionalOptions
-                : mode === "storage-schema"
-                  ? storageOptions
-                  : mode === "no-signup"
-                    ? noSignupOptions
-                    : mode === "validation"
-                      ? validationOptions
-                      : mode === "trusted-claims"
-                        ? trustedClaimsOptions
-                        : mode === "signed-request-slo"
-                          ? signedRequestSloOptions
-                          : mode === "signed-slo"
-                            ? signedSloOptions
-                            : mode === "domain"
-                              ? domainOptions
-                              : mode === "shared"
-                                ? sharedOptions
-                                : mode === "slo"
-                                  ? sloOptions
-                                  : options,
+          mode === "storage-domain-swap"
+            ? domainSwappedOptions
+            : mode === "storage-swap"
+              ? swappedOptions
+              : mode === "field-callbacks"
+                ? callbackOptions
+                : mode === "additional-fields"
+                  ? additionalOptions
+                  : mode === "storage-schema"
+                    ? storageOptions
+                    : mode === "no-signup"
+                      ? noSignupOptions
+                      : mode === "validation"
+                        ? validationOptions
+                        : mode === "trusted-claims"
+                          ? trustedClaimsOptions
+                          : mode === "signed-request-slo"
+                            ? signedRequestSloOptions
+                            : mode === "signed-slo"
+                              ? signedSloOptions
+                              : mode === "domain"
+                                ? domainOptions
+                                : mode === "shared"
+                                  ? sharedOptions
+                                  : mode === "slo"
+                                    ? sloOptions
+                                    : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {
