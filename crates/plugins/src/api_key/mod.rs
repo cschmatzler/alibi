@@ -452,7 +452,8 @@ impl ApiKeyPlugin {
             alibi_core::utils::json::JsValue::Bool(value) => *value,
             alibi_core::utils::json::JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
             alibi_core::utils::json::JsValue::String(value) => !value.is_empty(),
-            alibi_core::utils::json::JsValue::Array(_)
+            alibi_core::utils::json::JsValue::Date(_)
+            | alibi_core::utils::json::JsValue::Array(_)
             | alibi_core::utils::json::JsValue::Object(_) => true,
         }) {
             if !config.enable_metadata {

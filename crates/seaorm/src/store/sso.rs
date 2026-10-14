@@ -411,8 +411,17 @@ fn extra_bindings(
     for (name, field) in &fields.0 {
         if let Some(value) = extra.get(name) {
             let value = match SsoFieldType::from_config(field) {
-                SsoFieldType::String | SsoFieldType::Date => {
-                    sea_orm::Value::String(value.as_str().map(str::to_owned))
+                SsoFieldType::String => sea_orm::Value::String(value.as_str().map(str::to_owned)),
+                SsoFieldType::Date => {
+                    let date = value
+                        .as_str()
+                        .map(|value| {
+                            chrono::DateTime::parse_from_rfc3339(value)
+                                .map(|date| date.with_timezone(&chrono::Utc))
+                        })
+                        .transpose()
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+                    sea_orm::Value::ChronoDateTimeUtc(date)
                 }
                 SsoFieldType::Boolean => sea_orm::Value::Bool(value.as_bool()),
                 SsoFieldType::Number => sea_orm::Value::Double(value.as_f64()),

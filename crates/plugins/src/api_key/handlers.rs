@@ -117,6 +117,7 @@ pub(super) fn check_permissions(
                     JsValue::Null
                     | JsValue::Bool(_)
                     | JsValue::Number(_)
+                    | JsValue::Date(_)
                     | JsValue::Object(_)
                     | JsValue::String(_) => {
                         return Err(alibi_core::AuthError::internal(
@@ -302,7 +303,7 @@ fn json_truthy(value: &alibi_core::utils::json::JsValue) -> bool {
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
-        JsValue::Array(_) | JsValue::Object(_) => true,
+        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
     }
 }
 
@@ -469,6 +470,7 @@ fn compare_metadata(left: Option<&str>, right: Option<&str>) -> AuthResult<std::
         JsValue::Bool(value) => Some(f64::from(*value)),
         JsValue::Number(value) => Some(*value),
         JsValue::String(value) => string_to_number(value),
+        JsValue::Date(value) => string_to_number(&value.timestamp_millis().to_string()),
         JsValue::Array(_) | JsValue::Object(_) => None,
     };
     Ok(number(&left)

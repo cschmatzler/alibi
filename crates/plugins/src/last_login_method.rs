@@ -389,7 +389,7 @@ pub fn reject_last_login_method_input<S: AuthSchema>(
         Some(JsValue::Bool(value)) => *value,
         Some(JsValue::Number(value)) => *value != 0.0 && !value.is_nan(),
         Some(JsValue::String(value)) => !value.is_empty(),
-        Some(JsValue::Array(_) | JsValue::Object(_)) => true,
+        Some(JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_)) => true,
     };
     if ctx
         .get_metadata("last-login-method.enabled")

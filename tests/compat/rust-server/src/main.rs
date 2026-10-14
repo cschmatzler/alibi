@@ -1295,6 +1295,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         two_factor_delivery_fixture::router(&config, reset_database.clone()).await?;
     let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
+    let sso_date_router = fixtures::sso_date_fixture::router(&config).await?;
     let scim_router = fixtures::scim_fixture::router(&config, reset_database.clone()).await?;
     let sso_router = fixtures::sso_fixture::router(&config, reset_database.clone()).await?;
     let oauth_provider_router =
@@ -2741,6 +2742,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(oauth_provider_router)
         .merge(sso_router)
         .merge(scim_router)
+        .merge(sso_date_router)
         .merge(passkey_auth_router)
         .merge(passkey_router)
         .merge(registration_router)

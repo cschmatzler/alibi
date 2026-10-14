@@ -21,6 +21,7 @@ pub(in crate::jwt) fn js_raw_primitive_string(value: &alibi_core::utils::json::J
     match value {
         JsValue::Null => "null".to_owned(),
         JsValue::String(value) => value.clone(),
+        JsValue::Date(_) => value.coerce_string().unwrap_or_default(),
         JsValue::Bool(value) => value.to_string(),
         JsValue::Number(value) if value.is_nan() => "NaN".to_owned(),
         JsValue::Number(value) if *value == f64::INFINITY => "Infinity".to_owned(),

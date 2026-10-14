@@ -318,6 +318,21 @@ async fn extra_bindings(
     if let Some(fields) = exec.sso_fields() {
         for (name, field) in &fields.0 {
             if let Some(value) = extra.get(name) {
+                if SsoFieldType::from_config(field) == SsoFieldType::Date {
+                    let date = value
+                        .as_str()
+                        .map(|value| {
+                            chrono::DateTime::parse_from_rfc3339(value)
+                                .map(|date| date.with_timezone(&chrono::Utc))
+                        })
+                        .transpose()
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+                    values.push((
+                        sso_field_column(name, field).to_owned(),
+                        crate::value::SqlValue::Timestamp(date),
+                    ));
+                    continue;
+                }
                 let kind = match SsoFieldType::from_config(field) {
                     SsoFieldType::String => ColumnKind::Text,
                     SsoFieldType::Boolean => ColumnKind::Boolean,

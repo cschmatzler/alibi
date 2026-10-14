@@ -30,6 +30,7 @@ pub(super) fn validate_and_copy(
             "boolean" => value.as_bool().is_some(),
             "number" | "integer" => value.as_f64().is_some_and(f64::is_finite),
             "json" => true,
+            "date" => value.as_date().is_some(),
             "string[]" | "number[]" | "array" => value.as_array().is_some(),
             "object" => value.as_object().is_some(),
             _ => false,

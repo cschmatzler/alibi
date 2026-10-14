@@ -254,5 +254,22 @@ pub async fn project_sso_provider(
         .output(std::mem::take(&mut provider.additional_fields))
         .await?;
     provider.additional_fields.clone_from(output.values());
+    // The reference normalizes database date strings after output transforms.
+    for (name, field) in &fields.0 {
+        if SsoFieldType::from_config(field) == SsoFieldType::Date
+            && let Some(value) = provider.additional_fields.get_mut(name)
+            && let Some(text) = value.as_str()
+        {
+            *value = chrono::DateTime::parse_from_rfc3339(text).map_or(
+                serde_json::Value::Null,
+                |date| {
+                    serde_json::Value::String(
+                        date.with_timezone(&chrono::Utc)
+                            .to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+                    )
+                },
+            );
+        }
+    }
     Ok(provider)
 }

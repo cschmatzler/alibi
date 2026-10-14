@@ -71,7 +71,7 @@ pub(crate) fn revive(value: &mut JsValue) {
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive),
         JsValue::Object(values) => values.values_mut().for_each(revive),
-        JsValue::Null | JsValue::Bool(_) | JsValue::Number(_) => {}
+        JsValue::Null | JsValue::Bool(_) | JsValue::Number(_) | JsValue::Date(_) => {}
     }
 }
 

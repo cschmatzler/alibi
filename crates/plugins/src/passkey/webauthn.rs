@@ -247,7 +247,7 @@ fn validate_token_binding(
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
-        JsValue::Array(_) | JsValue::Object(_) => true,
+        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
     };
     if truthy
         && !binding
