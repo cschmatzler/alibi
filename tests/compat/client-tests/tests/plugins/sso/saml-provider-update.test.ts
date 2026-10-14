@@ -45,6 +45,16 @@ compatScenario("SAML updates merge nested credentials and protect linked identit
         idpMetadata: {
           entityID: "https://idp.example.test/entity",
           privateKey: "original-idp-key",
+          singleSignOnService: [
+            {
+              Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+              Location: "https://idp.example.test/post-sso",
+            },
+            {
+              Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+              Location: "https://idp.example.test/sso",
+            },
+          ],
           singleLogoutService: [
             {
               Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
@@ -132,6 +142,34 @@ compatScenario("SAML updates merge nested credentials and protect linked identit
   expect(stored.spMetadata.encPrivateKey).toBe("original-decryption-key");
   expect(stored.spMetadata.privateKey).toBe("nested-sp-key");
   for (const change of [
+    {
+      idpMetadata: {
+        singleSignOnService: [
+          {
+            Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+            Location: "https://other-idp.example.test/sso",
+          },
+          {
+            Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+            Location: "https://idp.example.test/post-sso",
+          },
+        ],
+      },
+    },
+    {
+      idpMetadata: {
+        singleSignOnService: [
+          {
+            Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+            Location: "https://idp.example.test/sso",
+          },
+          {
+            Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+            Location: "https://other-idp.example.test/post-sso",
+          },
+        ],
+      },
+    },
     { audience: "urn:other:audience" },
     { idpMetadata: { entityID: "https://other-idp.example.test/entity" } },
     { cert: "different-trust-anchor" },
@@ -151,6 +189,23 @@ compatScenario("SAML updates merge nested credentials and protect linked identit
       await (await control({ action: "row", providerId: "saml-update-provider" })).json(),
     ).toEqual(row);
   }
+  const unused = await control({
+    action: "update",
+    headers,
+    body: {
+      providerId: "saml-update-provider",
+      samlConfig: { entryPoint: "https://unused.example.test/changed" },
+    },
+  });
+  expect(unused.status).toBe(200);
+  const restarted = await control({
+    action: "sign-in",
+    body: { providerId: "saml-update-provider", callbackURL: `${ctx.baseURL}/complete` },
+  });
+  expect(restarted.status).toBe(200);
+  const active = new URL(((await restarted.json()) as any).url);
+  expect(active.origin).toBe("https://idp.example.test");
+  expect(active.pathname).toBe("/sso");
   projected.spMetadataUrl =
     new URL(projected.spMetadataUrl).pathname + new URL(projected.spMetadataUrl).search;
   return { projected, preserved: true };

@@ -5,6 +5,7 @@ mod discovery;
 mod domain_confirmation;
 mod domain_verification;
 mod domains;
+mod idp_services;
 mod provider_delete;
 mod provider_list;
 mod provider_read;
