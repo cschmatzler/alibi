@@ -1,19 +1,36 @@
-//! Validate the public OIDC identity mapping schema before provider writes.
+//! Validate protocol-specific public identity mappings before provider writes.
 use super::super::authentication_helpers::{JsonField, JsonFieldKind};
 use super::{AuthError, AuthResult, JsValue};
-pub(super) fn validate(mapping: &JsValue) -> AuthResult<JsValue> {
-    let location = "body.oidcConfig.mapping";
-    let fields = [
+pub(super) fn oidc(mapping: &JsValue) -> AuthResult<JsValue> {
+    validate(mapping, false)
+}
+pub(super) fn saml(mapping: &JsValue) -> AuthResult<JsValue> {
+    validate(mapping, true)
+}
+fn validate(mapping: &JsValue, saml: bool) -> AuthResult<JsValue> {
+    let location = if saml {
+        "body.samlConfig.mapping"
+    } else {
+        "body.oidcConfig.mapping"
+    };
+    let mut fields = vec![
         JsonField::string("email", true),
         JsonField::string("emailVerified", false),
         JsonField::string("name", true),
-        JsonField::string("image", false),
-        JsonField {
-            name: "extraFields",
-            kind: JsonFieldKind::Record,
-            required: false,
-        },
     ];
+    if saml {
+        fields.extend([
+            JsonField::string("firstName", false),
+            JsonField::string("lastName", false),
+        ]);
+    } else {
+        fields.push(JsonField::string("image", false));
+    }
+    fields.push(JsonField {
+        name: "extraFields",
+        kind: JsonFieldKind::Record,
+        required: false,
+    });
     let parsed = super::super::endpoint::validate_fields(Some(mapping), location, &fields);
     let unknown = mapping.as_object().map_or_else(Vec::new, |object| {
         object
