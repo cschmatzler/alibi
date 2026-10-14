@@ -72,6 +72,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;
                     return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=error.error.to_auth_response();if let Some(headers)=error.headers{for(name,value)in headers.iter(){response.headers.append(name,value);}}response.into_response()}};
                 }
+                if query.get("operation").is_some_and(|operation|operation=="binding-lease") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimConnectionBinding SET decommissionStatus='reconciling',decommissionLeaseId='other-worker',decommissionCompletedAt=NULL,decommissionReconciledUserCount=7,decommissionBatchCount=2,decommissionLeaseExpiresAt=? WHERE connectionId=?",["2035-02-03T04:05:06.789Z".into(),input["connectionId"].as_str().unwrap().into()])).await.unwrap();return Json(json!({"leased":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="binding-storage") {return Json(physical_rows(&database,"scimConnectionBinding").await).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="decommissionSCIMConnection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","decommissionSCIMConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
                     return match result{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
@@ -166,6 +170,22 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
 
 async fn physical_rows(database: &DatabaseConnection, table: &str) -> Value {
     let columns = match table {
+        "scimConnectionBinding" => vec![
+            "id",
+            "connectionId",
+            "connectionKey",
+            "provisioningDomainId",
+            "createdAt",
+            "decommissionStatus",
+            "decommissionCursorUserId",
+            "decommissionReconciledUserCount",
+            "decommissionBatchCount",
+            "decommissionRevision",
+            "decommissionedAt",
+            "decommissionCompletedAt",
+            "decommissionLeaseId",
+            "decommissionLeaseExpiresAt",
+        ],
         "scimManagedConnection" => vec![
             "id",
             "creationRequestId",
