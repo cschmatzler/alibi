@@ -12,7 +12,11 @@ backend_tests!(
     sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute,
     sso_saml_acs_uses_xml_idp_authority_and_signing_certificate,
     sso_saml_encrypted_assertions_require_trusted_signatures_and_prevent_replay,
-    sso_saml_encrypted_assertions_import_password_protected_decryption_keys
+    sso_saml_encrypted_assertions_import_password_protected_decryption_keys,
+    sso_saml_encrypted_assertions_reject_missing_decryption_key,
+    sso_saml_encrypted_assertions_reject_wrong_decryption_key,
+    sso_saml_encrypted_assertions_reject_wrong_passphrase,
+    sso_saml_encrypted_assertions_reject_missing_passphrase
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -34,18 +38,49 @@ async fn sso_saml_encrypted_assertions_import_password_protected_decryption_keys
 ) -> TestResult {
     acs_flow::<B>(db, AcsCase::EncryptedKey).await
 }
+async fn sso_saml_encrypted_assertions_reject_missing_decryption_key<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::MissingKey).await
+}
+async fn sso_saml_encrypted_assertions_reject_wrong_decryption_key<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::WrongKey).await
+}
+async fn sso_saml_encrypted_assertions_reject_wrong_passphrase<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::WrongPass).await
+}
+async fn sso_saml_encrypted_assertions_reject_missing_passphrase<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::MissingPass).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     Manual,
     IdpXml,
     Encrypted,
     EncryptedKey,
+    MissingKey,
+    WrongKey,
+    WrongPass,
+    MissingPass,
 }
 async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     let xml_metadata = matches!(case, AcsCase::IdpXml);
-    let encrypted = matches!(case, AcsCase::Encrypted | AcsCase::EncryptedKey);
+    let key_failure = matches!(
+        case,
+        AcsCase::MissingKey | AcsCase::WrongKey | AcsCase::WrongPass | AcsCase::MissingPass
+    );
+    let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if matches!(case, AcsCase::EncryptedKey) {
+    let provider_id = if key_failure {
+        match case {
+            AcsCase::MissingKey => "encrypted-missing-key-acs-provider",
+            AcsCase::WrongKey => "encrypted-wrong-key-acs-provider",
+            AcsCase::WrongPass => "encrypted-wrong-pass-acs-provider",
+            _ => "encrypted-missing-pass-acs-provider",
+        }
+    } else if matches!(case, AcsCase::EncryptedKey) {
         "encrypted-key-acs-provider"
     } else if encrypted {
         "encrypted-acs-provider"
@@ -68,6 +103,20 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/encrypted-key.pem"),"encPrivateKeyPass":"sso-test-passphrase"})
         } else {
             json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/key.pem")})
+        };
+    }
+    if key_failure {
+        input["samlConfig"]["spMetadata"] = match case {
+            AcsCase::MissingKey => json!({"isAssertionEncrypted":true}),
+            AcsCase::WrongKey => {
+                json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/passkey-attestation/ca-key.pem")})
+            }
+            AcsCase::WrongPass => {
+                json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/encrypted-key.pem"),"encPrivateKeyPass":"incorrect-passphrase"})
+            }
+            _ => {
+                json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/encrypted-key.pem")})
+            }
         };
     }
     if xml_metadata {
@@ -170,7 +219,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             "saml-used-assertion:{}",
             grant["assertionId"].as_str().unwrap()
         );
-        if wrong_key {
+        if wrong_key || key_failure {
             assert_eq!(location.path(), "/failed");
             let query = location
                 .query_pairs()
