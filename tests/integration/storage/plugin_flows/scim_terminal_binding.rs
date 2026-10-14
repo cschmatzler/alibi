@@ -17,9 +17,9 @@ async fn scim_retirement_preserves_terminal_and_leased_bindings<B: Backend>(db: 
     let retire = |domain: Option<&str>| {
         ScimPlugin::decommission_connection_endpoint("  external-provisioning  ", domain).unwrap()
     };
-    let result = auth
-        .dispatch_endpoint(retire(Some("  tenant-a  ")), EndpointOptions::default())
-        .await;
+    let result =
+        Box::pin(auth.dispatch_endpoint(retire(Some("  tenant-a  ")), EndpointOptions::default()))
+            .await;
     let response = match result {
         Ok(output) => output.into_response()?,
         Err(error) => error.error.to_auth_response(),
@@ -43,8 +43,7 @@ async fn scim_retirement_preserves_terminal_and_leased_bindings<B: Backend>(db: 
         )
         .build()
         .await?;
-    let again = restart
-        .dispatch_endpoint(retire(None), EndpointOptions::default())
+    let again = Box::pin(restart.dispatch_endpoint(retire(None), EndpointOptions::default()))
         .await?
         .into_response()?;
     assert_eq!(body(&again), state);
@@ -60,9 +59,9 @@ async fn scim_retirement_preserves_terminal_and_leased_bindings<B: Backend>(db: 
     )
     .await?;
     let before = db.table("scimConnectionBinding").await?;
-    let result = restart
-        .dispatch_endpoint(retire(Some("tenant-a")), EndpointOptions::default())
-        .await;
+    let result =
+        Box::pin(restart.dispatch_endpoint(retire(Some("tenant-a")), EndpointOptions::default()))
+            .await;
     let response = match result {
         Ok(output) => output.into_response()?,
         Err(error) => error.error.to_auth_response(),
@@ -76,5 +75,81 @@ async fn scim_retirement_preserves_terminal_and_leased_bindings<B: Backend>(db: 
     assert_eq!(pending["reconciledUsers"], 7);
     assert_eq!(pending["batches"], 2);
     assert_eq!(db.table("scimConnectionBinding").await?, before);
+    db.set_timestamp(
+        "scimConnectionBinding",
+        "decommissionLeaseExpiresAt",
+        ("connectionId", "external-provisioning"),
+        chrono::DateTime::parse_from_rfc3339("2000-01-01T00:00:00.000Z")?
+            .with_timezone(&chrono::Utc),
+    )
+    .await?;
+    let result =
+        Box::pin(restart.dispatch_endpoint(retire(None), EndpointOptions::default())).await;
+    let response = match result {
+        Ok(output) => output.into_response()?,
+        Err(error) => error.error.to_auth_response(),
+    };
+    assert_eq!(response.status, 200);
+    let completed = body(&response);
+    assert_eq!(completed["status"], "complete");
+    assert_eq!(completed["retryAfter"], Value::Null);
+    assert_eq!(completed["reconciledUsers"], 7);
+    assert_eq!(completed["batches"], 2);
+    assert_eq!(completed["decommissionedAt"], state["decommissionedAt"]);
+    assert!(
+        chrono::DateTime::parse_from_rfc3339(completed["completedAt"].as_str().unwrap()).is_ok()
+    );
+    let rows: Value = serde_json::from_str(&db.table("scimConnectionBinding").await?)?;
+    assert_eq!(rows[0]["decommissionRevision"], 2);
+    assert_eq!(rows[0]["decommissionLeaseId"], Value::Null);
+    assert_eq!(rows[0]["decommissionLeaseExpiresAt"], Value::Null);
+    _=db.execute("UPDATE \"scimConnectionBinding\" SET \"decommissionStatus\"='reconciling',\"decommissionLeaseId\"='failed-worker',\"decommissionCompletedAt\"=NULL",&[]).await?;
+    db.set_timestamp(
+        "scimConnectionBinding",
+        "decommissionLeaseExpiresAt",
+        ("connectionId", "external-provisioning"),
+        chrono::DateTime::parse_from_rfc3339("2000-01-01T00:00:00.000Z")?
+            .with_timezone(&chrono::Utc),
+    )
+    .await?;
+    if db.is_postgres() {
+        _=db.execute("CREATE FUNCTION reject_scim_binding_completion() RETURNS trigger LANGUAGE plpgsql AS $function$ BEGIN IF NEW.\"decommissionStatus\"='complete' AND OLD.\"decommissionStatus\"='reconciling' THEN RAISE EXCEPTION 'fixture rejected binding completion'; END IF; RETURN NEW; END $function$",&[]).await?;
+        _=db.execute("CREATE TRIGGER reject_scim_binding_completion BEFORE UPDATE ON \"scimConnectionBinding\" FOR EACH ROW EXECUTE FUNCTION reject_scim_binding_completion()",&[]).await?;
+    } else {
+        _=db.execute("CREATE TRIGGER reject_scim_binding_completion BEFORE UPDATE ON scimConnectionBinding WHEN NEW.decommissionStatus='complete' AND OLD.decommissionStatus='reconciling' BEGIN SELECT RAISE(ABORT,'fixture rejected binding completion'); END",&[]).await?;
+    }
+    let error = Box::pin(restart.dispatch_endpoint(retire(None), EndpointOptions::default()))
+        .await
+        .unwrap_err();
+    assert_eq!(error.error.status_code(), 500);
+    assert!(
+        error
+            .to_string()
+            .contains("fixture rejected binding completion")
+    );
+    let rows: Value = serde_json::from_str(&db.table("scimConnectionBinding").await?)?;
+    assert_eq!(rows[0]["decommissionRevision"], 4);
+    assert_eq!(rows[0]["decommissionStatus"], "reconciling");
+    assert_eq!(rows[0]["decommissionCompletedAt"], Value::Null);
+    assert_eq!(rows[0]["decommissionLeaseId"], Value::Null);
+    assert_eq!(rows[0]["decommissionLeaseExpiresAt"], Value::Null);
+    if db.is_postgres() {
+        _ = db
+            .execute(
+                "DROP TRIGGER reject_scim_binding_completion ON \"scimConnectionBinding\"",
+                &[],
+            )
+            .await?;
+    } else {
+        _ = db
+            .execute("DROP TRIGGER reject_scim_binding_completion", &[])
+            .await?;
+    }
+    let completed = Box::pin(restart.dispatch_endpoint(retire(None), EndpointOptions::default()))
+        .await?
+        .into_response()?;
+    assert_eq!(body(&completed)["status"], "complete");
+    let rows: Value = serde_json::from_str(&db.table("scimConnectionBinding").await?)?;
+    assert_eq!(rows[0]["decommissionRevision"], 6);
     Ok(())
 }

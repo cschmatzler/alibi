@@ -18,6 +18,107 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn recover_empty_scim_decommission(
+        &self,
+        binding: alibi_core::store::ScimConnectionBinding,
+    ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
+        use super::entities::scim_connection_binding as record;
+        let lease = uuid::Uuid::new_v4().simple().to_string();
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let revision = i32::try_from(binding.decommission_revision)
+            .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+        let claimed = record::Entity::update_many()
+            .col_expr(
+                record::Column::DecommissionRevision,
+                Expr::col(record::Column::DecommissionRevision).add(1),
+            )
+            .col_expr(
+                record::Column::DecommissionStatus,
+                Expr::value("reconciling"),
+            )
+            .col_expr(
+                record::Column::DecommissionedAt,
+                Expr::value(binding.decommissioned_at.unwrap_or(now)),
+            )
+            .col_expr(
+                record::Column::DecommissionCompletedAt,
+                Expr::value(None::<chrono::DateTime<chrono::Utc>>),
+            )
+            .col_expr(
+                record::Column::DecommissionLeaseId,
+                Expr::value(lease.clone()),
+            )
+            .col_expr(
+                record::Column::DecommissionLeaseExpiresAt,
+                Expr::value(now + chrono::Duration::minutes(5)),
+            )
+            .filter(record::Column::Id.eq(binding.id.clone()))
+            .filter(record::Column::DecommissionRevision.eq(revision))
+            .filter(record::Column::DecommissionStatus.eq(binding.decommission_status))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        if claimed.rows_affected == 0 {
+            return Ok(None);
+        }
+        let result=async {
+            let tx=self.scoped_connection().begin().await.map_err(map_db_err)?;
+            let result=async {
+                let stored=record::Entity::find_by_id(binding.id.clone()).one(&tx).await.map_err(map_db_err)?.ok_or_else(||alibi_core::AuthError::internal(format!("SCIM connection \"{}\" binding disappeared during decommissioning.",binding.connection_id)))?;
+                if stored.decommission_status=="complete"{return Ok(stored.into());}
+                if stored.decommission_lease_id.as_deref()!=Some(&lease){return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission lease was taken over by another worker.",binding.connection_id)));}
+                let mut users=super::entities::scim_user::Entity::find().filter(super::entities::scim_user::Column::ProvisioningDomainId.eq(stored.provisioning_domain_id.clone()));
+                if let Some(cursor)=&stored.decommission_cursor_user_id{users=users.filter(super::entities::scim_user::Column::UserId.gt(cursor.clone()));}
+                if !users.limit(101).all(&tx).await.map_err(map_db_err)?.is_empty(){return Err(alibi_core::AuthError::config("SCIM projection reconciliation is not supported by this store"));}
+                let renewed=record::Entity::update_many().col_expr(record::Column::DecommissionLeaseExpiresAt,Expr::value(chrono::Utc::now().trunc_subsecs(3)+chrono::Duration::minutes(5))).filter(record::Column::Id.eq(stored.id.clone())).filter(record::Column::DecommissionRevision.eq(stored.decommission_revision)).filter(record::Column::DecommissionStatus.eq("reconciling")).filter(record::Column::DecommissionLeaseId.eq(lease.clone())).exec(&tx).await.map_err(map_db_err)?;
+                if renewed.rows_affected==0{return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission lease changed before reconciliation.",binding.connection_id)));}
+                let completed=chrono::Utc::now().trunc_subsecs(3);
+                let updated=record::Entity::update_many().col_expr(record::Column::DecommissionRevision,Expr::col(record::Column::DecommissionRevision).add(1)).col_expr(record::Column::DecommissionStatus,Expr::value("complete")).col_expr(record::Column::DecommissionCompletedAt,Expr::value(completed)).col_expr(record::Column::DecommissionLeaseId,Expr::value(None::<String>)).col_expr(record::Column::DecommissionLeaseExpiresAt,Expr::value(None::<chrono::DateTime<chrono::Utc>>)).filter(record::Column::Id.eq(stored.id.clone())).filter(record::Column::DecommissionRevision.eq(stored.decommission_revision)).filter(record::Column::DecommissionLeaseId.eq(lease.clone())).exec(&tx).await.map_err(map_db_err)?;
+                if updated.rows_affected==0{return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission checkpoint changed concurrently.",binding.connection_id)));}
+                let mut stored=stored;stored.decommission_revision+=1;stored.decommission_status="complete".into();stored.decommission_completed_at=Some(completed);stored.decommission_lease_id=None;stored.decommission_lease_expires_at=None;Ok(stored.into())
+            }.await;
+            match result{Ok(value)=>{tx.commit().await.map_err(map_db_err)?;Ok(value)},Err(error)=>{tx.rollback().await.map_err(map_db_err)?;Err(error)}}
+        }.await;
+        if result.is_err() {
+            for _ in 0..3 {
+                let Ok(Some(current)) = record::Entity::find_by_id(binding.id.clone())
+                    .one(self.scoped_connection())
+                    .await
+                else {
+                    break;
+                };
+                if current.decommission_status == "complete"
+                    || current.decommission_lease_id.as_deref() != Some(&lease)
+                {
+                    break;
+                }
+                let released = record::Entity::update_many()
+                    .col_expr(
+                        record::Column::DecommissionRevision,
+                        Expr::col(record::Column::DecommissionRevision).add(1),
+                    )
+                    .col_expr(
+                        record::Column::DecommissionLeaseId,
+                        Expr::value(None::<String>),
+                    )
+                    .col_expr(
+                        record::Column::DecommissionLeaseExpiresAt,
+                        Expr::value(None::<chrono::DateTime<chrono::Utc>>),
+                    )
+                    .filter(record::Column::Id.eq(binding.id.clone()))
+                    .filter(record::Column::DecommissionRevision.eq(current.decommission_revision))
+                    .filter(record::Column::DecommissionLeaseId.eq(lease.clone()))
+                    .exec(self.scoped_connection())
+                    .await;
+                match released {
+                    Ok(result) if result.rows_affected == 0 => {}
+                    _ => break,
+                }
+            }
+        }
+        result.map(Some)
+    }
+
     async fn terminal_scim_connection_binding(
         &self,
         id: &str,

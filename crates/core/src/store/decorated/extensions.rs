@@ -824,6 +824,13 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn recover_empty_scim_decommission(
+        &self,
+        binding: crate::store::ScimConnectionBinding,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        self.inner.recover_empty_scim_decommission(binding).await
+    }
+
     async fn decommission_scim_managed_connection(
         &self,
         data: crate::store::DecommissionScimManagedConnection,

@@ -46,6 +46,59 @@ compatScenario(
     expect(pending.reconciledUsers).toBe(7);
     expect(pending.batches).toBe(2);
     expect(await (await control("binding-storage", {})).json()).toEqual(before);
+    expect(
+      await (
+        await control("expire-binding-lease", { connectionId: "external-provisioning" })
+      ).json(),
+    ).toEqual({ expired: true });
+    const recoveredResponse = await control("decommissionSCIMConnection", {
+      body: { connectionId: "external-provisioning" },
+    });
+    expect(recoveredResponse.status).toBe(200);
+    const recovered = (await recoveredResponse.json()) as any;
+    expect(recovered.status).toBe("complete");
+    expect(recovered.retryAfter).toBe(null);
+    expect(recovered.reconciledUsers).toBe(7);
+    expect(recovered.batches).toBe(2);
+    expect(recovered.decommissionedAt).toBe(state.decommissionedAt);
+    expect(Number.isNaN(Date.parse(recovered.completedAt))).toBe(false);
+    const rows = (await (await control("binding-storage", {})).json()) as any;
+    const row = rows.find((row: any) => row.connectionId === "external-provisioning");
+    expect(row.decommissionRevision).toBe(2);
+    expect(row.decommissionLeaseId).toBe(null);
+    expect(row.decommissionLeaseExpiresAt).toBe(null);
+    expect(
+      await (
+        await control("reject-binding-completion", { connectionId: "external-provisioning" })
+      ).json(),
+    ).toEqual({ installed: true });
+    expect(
+      await (
+        await control("binding-completion-failure", {
+          body: { connectionId: "external-provisioning" },
+        })
+      ).json(),
+    ).toEqual({ failed: true, rejectedCompletion: true });
+    const failedRows = (await (await control("binding-storage", {})).json()) as any;
+    const failed = failedRows.find((row: any) => row.connectionId === "external-provisioning");
+    expect(failed.decommissionRevision).toBe(4);
+    expect(failed.decommissionStatus).toBe("reconciling");
+    expect(failed.decommissionCompletedAt).toBe(null);
+    expect(failed.decommissionLeaseId).toBe(null);
+    expect(failed.decommissionLeaseExpiresAt).toBe(null);
+    expect(await (await control("accept-binding-completion", {})).json()).toEqual({
+      removed: true,
+    });
+    const retried = await control("decommissionSCIMConnection", {
+      body: { connectionId: "external-provisioning" },
+    });
+    expect(retried.status).toBe(200);
+    expect(((await retried.json()) as any).status).toBe("complete");
+    const finalRows = (await (await control("binding-storage", {})).json()) as any;
+    expect(
+      finalRows.find((row: any) => row.connectionId === "external-provisioning")
+        .decommissionRevision,
+    ).toBe(6);
     return {
       connectionId: state.connectionId,
       provisioningDomainId: state.provisioningDomainId,
