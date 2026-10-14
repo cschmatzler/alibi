@@ -240,3 +240,61 @@ fn failure(status: u16, code: &str, message: String) -> AuthError {
         message,
     }
 }
+
+pub(super) async fn ensure<S: AuthSchema>(
+    input: &Value,
+    issuer: &str,
+    ctx: &AuthContext<S>,
+) -> AuthResult<Value> {
+    let mut output = input
+        .as_object()
+        .cloned()
+        .ok_or_else(|| AuthError::internal("Invalid OIDC configuration"))?;
+    if ["authorizationEndpoint", "tokenEndpoint", "jwksEndpoint"]
+        .into_iter()
+        .any(|field| {
+            input
+                .get(field)
+                .and_then(Value::as_str)
+                .is_none_or(str::is_empty)
+        })
+    {
+        let hydrated = resolve(input, issuer, ctx).await?;
+        for field in [
+            "authorizationEndpoint",
+            "tokenEndpoint",
+            "jwksEndpoint",
+            "userInfoEndpoint",
+            "tokenEndpointAuthentication",
+        ] {
+            if let Some(value) = hydrated.get(field) {
+                _ = output.insert(field.into(), value.clone());
+            }
+        }
+    }
+    Ok(Value::Object(output))
+}
+pub(super) fn callback_error_message(error: &AuthError) -> &str {
+    let AuthError::Api {
+        code: Some(code),
+        message,
+        ..
+    } = error
+    else {
+        return "unexpected_discovery_error";
+    };
+    let prefix = match code.as_str() {
+        "discovery_timeout" => "OIDC discovery timed out: ",
+        "discovery_unexpected_error" => "OIDC discovery failed: ",
+        "discovery_not_found" => {
+            "OIDC discovery endpoint not found. The issuer may not support OIDC discovery, or the URL is incorrect. "
+        }
+        "discovery_invalid_url" => "Invalid OIDC endpoint URL: ",
+        "discovery_untrusted_origin" => "Untrusted OIDC discovery URL: ",
+        "discovery_invalid_json" => "OIDC discovery returned invalid data: ",
+        "discovery_incomplete" => "OIDC discovery document is missing required fields: ",
+        "issuer_mismatch" => "OIDC issuer mismatch: ",
+        _ => "",
+    };
+    message.strip_prefix(prefix).unwrap_or(message)
+}
