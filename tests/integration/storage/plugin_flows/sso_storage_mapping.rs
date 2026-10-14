@@ -3,14 +3,32 @@ use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SessionManagementPlugin, SsoConfig, SsoPlugin};
 use alibi::store::{SchemaMigrator, SsoProviderStore};
-backend_tests!(sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes);
-postgres_tests!(sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes);
+backend_tests!(
+    sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes,
+    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes
+);
+postgres_tests!(
+    sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes,
+    sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes
+);
 async fn sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes<B: Backend>(
     db: Db,
 ) -> TestResult {
+    mapped_lifecycle::<B>(&db, false).await
+}
+async fn sso_swapped_columns_preserve_provider_lifecycle_and_domain_writes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    mapped_lifecycle::<B>(&db, true).await
+}
+async fn mapped_lifecycle<B: Backend>(db: &Db, swapped: bool) -> TestResult {
     let dns = super::sso_dns::start().await;
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    super::sso_storage_schema::configure(&mut config);
+    if swapped {
+        super::sso_storage_schema::configure_swapped(&mut config);
+    } else {
+        super::sso_storage_schema::configure(&mut config);
+    }
     let connection = B::connect(&db.url, None).await?;
     let store = B::store(Arc::new(config.clone()), &connection);
     store.migrate().await?;
@@ -45,11 +63,26 @@ async fn sso_mapped_storage_preserves_provider_lifecycle_and_domain_writes<B: Ba
     let physical: Value = serde_json::from_str(&db.table("application_sso_provider").await?)?;
     assert_eq!(physical[0]["application_provider"], "mapped-provider");
     assert_eq!(physical[0]["application_owner"], body(&owner)["user"]["id"]);
-    assert_eq!(physical[0]["application_issuer"], input["issuer"]);
+    assert_eq!(
+        physical[0][if swapped {
+            "oidcConfig"
+        } else {
+            "application_issuer"
+        }],
+        input["issuer"]
+    );
     assert_eq!(physical[0]["application_domain"], "company.test");
     assert!(physical[0]["application_org"].is_null());
     assert!(physical[0]["application_saml"].is_null());
-    let oidc: Value = serde_json::from_str(physical[0]["application_oidc"].as_str().unwrap())?;
+    let oidc: Value = serde_json::from_str(
+        physical[0][if swapped {
+            "issuer"
+        } else {
+            "application_oidc"
+        }]
+        .as_str()
+        .unwrap(),
+    )?;
     assert_eq!(oidc["clientSecret"], "durable-secret");
     let token = body(&created)["domainVerificationToken"]
         .as_str()
