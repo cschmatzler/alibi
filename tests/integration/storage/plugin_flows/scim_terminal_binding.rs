@@ -2,9 +2,9 @@
 use super::*;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimPlugin};
-backend_tests!(scim_retirement_persists_an_unused_connection_domain);
-postgres_tests!(scim_retirement_persists_an_unused_connection_domain);
-async fn scim_retirement_persists_an_unused_connection_domain<B: Backend>(db: Db) -> TestResult {
+backend_tests!(scim_retirement_preserves_terminal_and_leased_bindings);
+postgres_tests!(scim_retirement_preserves_terminal_and_leased_bindings);
+async fn scim_retirement_preserves_terminal_and_leased_bindings<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
         .plugin(
@@ -48,6 +48,33 @@ async fn scim_retirement_persists_an_unused_connection_domain<B: Backend>(db: Db
         .await?
         .into_response()?;
     assert_eq!(body(&again), state);
+    assert_eq!(db.table("scimConnectionBinding").await?, before);
+    _=db.execute("UPDATE \"scimConnectionBinding\" SET \"decommissionStatus\"='reconciling', \"decommissionLeaseId\"='other-worker', \"decommissionCompletedAt\"=NULL, \"decommissionReconciledUserCount\"=7, \"decommissionBatchCount\"=2",&[]).await?;
+    let lease_expiry = chrono::DateTime::parse_from_rfc3339("2035-02-03T04:05:06.789Z")?
+        .with_timezone(&chrono::Utc);
+    db.set_timestamp(
+        "scimConnectionBinding",
+        "decommissionLeaseExpiresAt",
+        ("connectionId", "external-provisioning"),
+        lease_expiry,
+    )
+    .await?;
+    let before = db.table("scimConnectionBinding").await?;
+    let result = restart
+        .dispatch_endpoint(retire(Some("tenant-a")), EndpointOptions::default())
+        .await;
+    let response = match result {
+        Ok(output) => output.into_response()?,
+        Err(error) => error.error.to_auth_response(),
+    };
+    assert_eq!(response.status, 200);
+    let pending = body(&response);
+    assert_eq!(pending["status"], "reconciling");
+    assert_eq!(pending["retryAfter"], "2035-02-03T04:05:06.789Z");
+    assert_eq!(pending["completedAt"], Value::Null);
+    assert_eq!(pending["decommissionedAt"], state["decommissionedAt"]);
+    assert_eq!(pending["reconciledUsers"], 7);
+    assert_eq!(pending["batches"], 2);
     assert_eq!(db.table("scimConnectionBinding").await?, before);
     Ok(())
 }

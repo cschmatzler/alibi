@@ -2,7 +2,7 @@ import { expect } from "bun:test";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
-  "SCIM retirement persists an unused connection domain across restart",
+  "SCIM retirement preserves terminal bindings and active reconciliation leases",
   async (ctx) => {
     const actor = ctx.actor();
     const control = (operation: string, input: unknown) =>
@@ -30,6 +30,22 @@ compatScenario(
     });
     expect(again.status).toBe(200);
     expect(await again.json()).toEqual(state);
+    expect(
+      await (await control("binding-lease", { connectionId: "external-provisioning" })).json(),
+    ).toEqual({ leased: true });
+    const before = await (await control("binding-storage", {})).json();
+    const pendingResponse = await control("decommissionSCIMConnection", {
+      body: { connectionId: "external-provisioning", provisioningDomainId: "tenant-a" },
+    });
+    expect(pendingResponse.status).toBe(200);
+    const pending = (await pendingResponse.json()) as any;
+    expect(pending.status).toBe("reconciling");
+    expect(pending.retryAfter).toBe("2035-02-03T04:05:06.789Z");
+    expect(pending.completedAt).toBe(null);
+    expect(pending.decommissionedAt).toBe(state.decommissionedAt);
+    expect(pending.reconciledUsers).toBe(7);
+    expect(pending.batches).toBe(2);
+    expect(await (await control("binding-storage", {})).json()).toEqual(before);
     return {
       connectionId: state.connectionId,
       provisioningDomainId: state.provisioningDomainId,

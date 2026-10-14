@@ -120,6 +120,23 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.listSCIMManagedConnectionEvents({ body: input.body, asResponse: true });
       }
+      if (query.get("operation") === "binding-lease") {
+        const input = (await request.json()) as any;
+        options.database
+          .query(
+            "UPDATE scimConnectionBinding SET decommissionStatus='reconciling',decommissionLeaseId='other-worker',decommissionCompletedAt=NULL,decommissionReconciledUserCount=7,decommissionBatchCount=2,decommissionLeaseExpiresAt=? WHERE connectionId=?",
+          )
+          .run("2035-02-03T04:05:06.789Z", input.connectionId);
+        return new Response(JSON.stringify({ leased: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "binding-storage") {
+        return new Response(
+          JSON.stringify(options.database.query("SELECT * FROM scimConnectionBinding").all()),
+          { headers: { "content-type": "application/json" } },
+        );
+      }
       if (query.get("operation") === "decommissionSCIMConnection") {
         const input = (await request.json()) as any;
         return auth.api.decommissionSCIMConnection({ body: input.body, asResponse: true });

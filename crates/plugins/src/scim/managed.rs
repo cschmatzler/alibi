@@ -250,13 +250,21 @@ impl ScimPlugin {
             .database
             .terminal_scim_connection_binding(id, domain, &key)
             .await?;
-        if binding.decommission_status != "complete" {
+        let leased = binding.decommission_status == "reconciling"
+            && binding
+                .decommission_lease_id
+                .as_ref()
+                .is_some_and(|id| !id.is_empty())
+            && binding
+                .decommission_lease_expires_at
+                .is_some_and(|expiry| expiry > Utc::now().trunc_subsecs(3));
+        if binding.decommission_status != "complete" && !leased {
             return Err(AuthError::config(
                 "SCIM projection reconciliation is not supported by this store",
             ));
         }
         EndpointResponse::json(
-            &serde_json::json!({"connectionId":binding.connection_id,"provisioningDomainId":binding.provisioning_domain_id,"status":binding.decommission_status,"decommissionedAt":binding.decommissioned_at,"completedAt":binding.decommission_completed_at,"retryAfter":Value::Null,"reconciledUsers":binding.decommission_reconciled_user_count,"batches":binding.decommission_batch_count}),
+            &serde_json::json!({"connectionId":binding.connection_id,"provisioningDomainId":binding.provisioning_domain_id,"status":binding.decommission_status,"decommissionedAt":binding.decommissioned_at,"completedAt":binding.decommission_completed_at,"retryAfter":if leased {binding.decommission_lease_expires_at}else{None},"reconciledUsers":binding.decommission_reconciled_user_count,"batches":binding.decommission_batch_count}),
         )
     }
 
