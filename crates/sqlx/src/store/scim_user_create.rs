@@ -73,6 +73,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         exec: Exec<'_>,
         user_id: &str,
         now: chrono::DateTime<chrono::Utc>,
+        required: bool,
     ) -> AuthResult<subject::Model> {
         let mut sql = model::select_model::<subject::Model>(exec);
         sql.push(" WHERE ");
@@ -98,6 +99,13 @@ impl<S: AuthSchema> SqlxStore<S> {
                 .await?
                 .ok_or_else(identity_conflict)?
         } else {
+            if required {
+                return Err(AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "The SCIM User subject is missing".into(),
+                });
+            }
             let mut row = ActiveRow::new();
             row.set(
                 "id",
@@ -130,7 +138,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         )
         .await?;
         let current = self
-            .acquire_scim_subject_with_exec(exec, &data.user_id, data.created_at)
+            .acquire_scim_subject_with_exec(exec, &data.user_id, data.created_at, false)
             .await?;
         let id = self
             .generated_id(exec, "scimUser", "scimUser", "id")
@@ -225,6 +233,7 @@ impl<S: AuthSchema> SqlxStore<S> {
                 connection_id: stored.connection_id,
                 provisioning_domain_id: stored.provisioning_domain_id,
                 user_name: stored.user_name,
+                primary_email: stored.primary_email,
                 display_name: stored.display_name,
                 active: stored.active,
                 external_id: stored.external_id,

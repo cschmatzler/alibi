@@ -12,6 +12,7 @@ mod managed;
 mod projection;
 mod resources;
 mod user_attributes;
+mod user_patch;
 mod user_profile;
 pub use authentication::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
@@ -132,6 +133,12 @@ impl ScimPlugin {
     /// Returns an error if parameters cannot be serialized.
     pub fn delete_group_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
         ServerEndpoint::new("scim", "deleteSCIMGroup").with_params(&json!({"groupId":id}))
+    }
+    /// Apply ordered changes to a connection-owned canonical User.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn patch_user_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "patchSCIMUser").with_params(&json!({"userId":id}))
     }
     /// Replace the mutable attributes of a connection-owned canonical User.
     /// # Errors
@@ -287,7 +294,8 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         // SCIM emits protocol-specific admission errors in its request handler.
-        if (route.path.starts_with("/scim/v2/Users/") && route.method == HttpMethod::Put)
+        if (route.path.starts_with("/scim/v2/Users/")
+            && matches!(route.method, HttpMethod::Put | HttpMethod::Patch))
             || route.path == "/scim/v2/Users"
             || route.path == "/scim/v2/Groups"
             || (route.path.starts_with("/scim/v2/Groups/")
@@ -300,6 +308,11 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::new(
+                HttpMethod::Patch,
+                "/scim/v2/Users/{userId}",
+                "patchSCIMUser",
+            ),
             AuthRoute::put("/scim/v2/Users/{userId}", "replaceSCIMUser"),
             AuthRoute::post("/scim/v2/Users", "createSCIMUser"),
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
@@ -353,6 +366,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
                 "deleteSCIMGroup",
                 Some("/scim/v2/Groups/:groupId"),
                 HttpMethod::Delete,
+            ),
+            crate::endpoint::definition(
+                "patchSCIMUser",
+                "patchSCIMUser",
+                Some("/scim/v2/Users/:userId"),
+                HttpMethod::Patch,
             ),
             crate::endpoint::definition(
                 "replaceSCIMUser",
@@ -540,6 +559,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         if call.operation_id() == "deleteSCIMGroup" {
             return self.delete_group(call, ctx).await;
         }
+        if call.operation_id() == "patchSCIMUser" {
+            return self.patch_user(call, ctx).await;
+        }
         if call.operation_id() == "replaceSCIMUser" {
             return self.replace_user(call, ctx).await;
         }
@@ -621,6 +643,25 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Patch
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::new(
+                    HttpMethod::Patch,
+                    "/scim/v2/Users/{userId}",
+                    "patchSCIMUser",
+                ),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(json!({"userId":id})));
+            let response = if let Some(error) = resources::mutation_request_error(req, &call) {
+                error
+            } else {
+                self.patch_user(&call, ctx).await?
+            };
+            return Ok(Some(resources::to_http_response(&response)?));
+        }
         if req.method() == &HttpMethod::Put
             && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
         {

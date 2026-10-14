@@ -111,11 +111,13 @@ pub struct ScimManagedCreation {
     pub credential: ScimManagedCredential,
 }
 /// Canonical connection-owned User fields required for protocol serialization.
+#[derive(Clone)]
 pub struct ScimUserRecord {
     pub id: String,
     pub connection_id: String,
     pub provisioning_domain_id: String,
     pub user_name: String,
+    pub primary_email: String,
     pub display_name: String,
     pub active: bool,
     pub external_id: Option<String>,
@@ -153,6 +155,7 @@ pub struct ReplaceScimUser {
 }
 pub struct ScimUserMutationContext {
     pub user_id: String,
+    pub source: ScimUserRecord,
     pub manage_profile: bool,
 }
 pub struct CreateScimUser {

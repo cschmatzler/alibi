@@ -68,6 +68,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         db: &C,
         user_id: &str,
         now: chrono::DateTime<chrono::Utc>,
+        required: bool,
     ) -> AuthResult<subject::Model> {
         let current = if let Some(current) = subject::Entity::find()
             .filter(subject::Column::UserId.eq(user_id))
@@ -97,6 +98,13 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 ..current
             }
         } else {
+            if required {
+                return Err(AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "The SCIM User subject is missing".into(),
+                });
+            }
             subject::ActiveModel {
                 id: Set(self
                     .generated_id(db, "scimSubject", "scimSubject", "id")
@@ -131,7 +139,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         )
         .await?;
         let current = self
-            .acquire_scim_subject_with_connection(db, &data.user_id, data.created_at)
+            .acquire_scim_subject_with_connection(db, &data.user_id, data.created_at, false)
             .await?;
         let id = self
             .generated_id(db, "scimUser", "scimUser", "id")
@@ -215,6 +223,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 connection_id: stored.connection_id,
                 provisioning_domain_id: stored.provisioning_domain_id,
                 user_name: stored.user_name,
+                primary_email: stored.primary_email,
                 display_name: stored.display_name,
                 active: stored.active,
                 external_id: stored.external_id,

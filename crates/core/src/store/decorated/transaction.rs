@@ -182,12 +182,22 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn check_scim_user_attributes(
+        &self,
+        id: &str,
+        connection: &str,
+        attributes: &crate::store::ScimUserAttributes,
+    ) -> AuthResult<()> {
+        self.inner
+            .check_scim_user_attributes(id, connection, attributes)
+            .await
+    }
     async fn lock_scim_user(
         &self,
         id: &str,
         connection: &str,
         domain: &str,
-        attributes: &crate::store::ScimUserAttributes,
+        attributes: Option<&crate::store::ScimUserAttributes>,
         now: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<crate::store::ScimUserMutationContext> {
         self.inner
