@@ -325,4 +325,4 @@ pub(crate) struct StatusResponse {
     status: bool,
 }
 
-pub use sso::{SsoConfig, SsoPlugin};
+pub use sso::{SsoConfig, SsoDefaultProvider, SsoPlugin};

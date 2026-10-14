@@ -132,7 +132,7 @@ impl SsoPlugin {
                 ),
             );
         }
-        let Some(provider) = ctx.database.get_sso_provider(provider_id).await? else {
+        let Some(provider) = self.find_provider(provider_id, ctx).await? else {
             return fail("invalid_provider", Some("provider not found"));
         };
         let reference = payload

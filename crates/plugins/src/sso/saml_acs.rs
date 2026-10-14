@@ -85,9 +85,8 @@ impl SsoPlugin {
         } else {
             (None, false, None)
         };
-        let provider = ctx
-            .database
-            .get_sso_provider(provider_id)
+        let provider = self
+            .find_provider(provider_id, ctx)
             .await?
             .ok_or_else(|| api(404, "No SAML provider found"))?;
         let config = provider
