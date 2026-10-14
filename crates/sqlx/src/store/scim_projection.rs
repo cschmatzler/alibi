@@ -160,9 +160,9 @@ impl<S: AuthSchema> SqlxStore<S> {
             sql.bind(self.find_many_limit());
             exec.fetch_all::<group::Model>(sql).await?
         };
-        Ok(user_ids
+        user_ids
             .into_iter()
-            .map(|user_id| {
+            .map(|user_id| -> AuthResult<ScimProjectionPreparedUser> {
                 let mut sources = users
                     .iter()
                     .filter(|user| {
@@ -175,7 +175,7 @@ impl<S: AuthSchema> SqlxStore<S> {
                         active: user.active,
                     })
                     .collect::<Vec<_>>();
-                sources.sort_by(|left, right| left.id.cmp(&right.id));
+                alibi_core::store::scim::sort_scim_sources(&mut sources)?;
                 let removed_grant_ids = grants
                     .iter()
                     .filter(|grant| grant.user_id == user_id)
@@ -218,7 +218,7 @@ impl<S: AuthSchema> SqlxStore<S> {
                         },
                     });
                 }
-                ScimProjectionPreparedUser {
+                Ok(ScimProjectionPreparedUser {
                     state: ScimProjectedUserState {
                         provisioning_domain_id: domain.into(),
                         user_id,
@@ -229,9 +229,9 @@ impl<S: AuthSchema> SqlxStore<S> {
                     removed_grant_ids,
                     existing_grants,
                     role_sources,
-                }
+                })
             })
-            .collect())
+            .collect()
     }
     pub(super) async fn create_scim_projection_grant_with_exec(
         &self,

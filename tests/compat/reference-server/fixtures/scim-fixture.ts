@@ -212,6 +212,9 @@ export async function scimFixture(base: BetterAuthOptions) {
         });
       }
       if (query.get("operation") === "seed-projection") {
+        const input = (await request.json()) as { sourceIds?: string[] };
+        const [aliasA = "scim-alias-a", aliasB = "scim-alias-b", aliasC = "scim-alias-c"] =
+          input.sourceIds ?? [];
         const signed = await auth.api.signUpEmail({
           body: {
             email: "projection-owner@example.com",
@@ -226,9 +229,9 @@ export async function scimFixture(base: BetterAuthOptions) {
           )
           .run(uid);
         for (const [id, cid, domain, active] of [
-          ["scim-alias-a", "conn-a", "tenant-a", 1],
-          ["scim-alias-b", "conn-b", "tenant-a", 0],
-          ["scim-alias-c", "conn-c", "tenant-b", 1],
+          [aliasA, "conn-a", "tenant-a", 1],
+          [aliasB, "conn-b", "tenant-a", 0],
+          [aliasC, "conn-c", "tenant-b", 1],
         ] as const) {
           options.database
             .query(

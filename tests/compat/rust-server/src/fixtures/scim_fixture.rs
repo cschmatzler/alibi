@@ -76,9 +76,13 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 if query.get("operation").is_some_and(|operation|operation=="identity-toggle-failure") {let input:Value=serde_json::from_slice(&bytes).unwrap();let fail=input["fail"].as_bool().unwrap();identity_fails.store(fail,Ordering::SeqCst);return Json(json!({"failing":fail})).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="claim-profile-source") {_=database.execute_unprepared("UPDATE scimSubject SET profileSourceId='scim-alias-a'").await.unwrap();return Json(json!({"claimed":true})).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="seed-projection") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let alias_a=input["sourceIds"][0].as_str().unwrap_or("scim-alias-a");
+                    let alias_b=input["sourceIds"][1].as_str().unwrap_or("scim-alias-b");
+                    let alias_c=input["sourceIds"][2].as_str().unwrap_or("scim-alias-c");
                     let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"projection-owner@example.com","password":"a-native-password-123","name":"Native owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();let signed:Value=serde_json::from_slice(&output.body).unwrap();let uid=signed["user"]["id"].as_str().unwrap();
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();
-                    for(id,cid,domain,active)in[("scim-alias-a","conn-a","tenant-a",true),("scim-alias-b","conn-b","tenant-a",false),("scim-alias-c","conn-c","tenant-b",true)]{
+                    for(id,cid,domain,active)in[(alias_a,"conn-a","tenant-a",true),(alias_b,"conn-b","tenant-a",false),(alias_c,"conn-c","tenant-b",true)]{
                         let sql="INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'projection-owner@example.com',?,'projection-owner@example.com','[]','[]','Owner','Owner','[]',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')";
                         _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),sql,vec![id.into(),cid.into(),domain.into(),uid.into(),id.into(),id.into(),active.into(),id.into()])).await.unwrap();
                     }

@@ -72,8 +72,8 @@ async fn scim_configured_projection_reconciles_sources_and_rolls_back_callback_f
     let uid = owner["user"]["id"].as_str().unwrap();
     _=db.execute("INSERT INTO \"scimSubject\" (\"id\",\"userId\",\"revision\",\"createdAt\",\"updatedAt\") VALUES ('projection-subject',$1,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[uid]).await?;
     for (id, cid, domain, active) in [
-        ("scim-alias-a", "conn-a", "tenant-a", true),
-        ("scim-alias-b", "conn-b", "tenant-a", false),
+        ("scim-alias-ä", "conn-a", "tenant-a", true),
+        ("scim-alias-Z", "conn-b", "tenant-a", false),
         ("scim-alias-c", "conn-c", "tenant-b", true),
     ] {
         let sql = format!(
@@ -82,7 +82,7 @@ async fn scim_configured_projection_reconciles_sources_and_rolls_back_callback_f
         );
         _ = db.execute(&sql, &[id, cid, domain, uid]).await?;
     }
-    _=db.execute("INSERT INTO \"scimProjectionGrant\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"scimUserId\",\"userId\",\"sourceKind\",\"sourceId\",\"role\",\"grantKey\",\"createdAt\",\"updatedAt\") VALUES ($1,'conn-a','tenant-a','scim-alias-a',$2,'group','retired-group','legacy-role',$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&["legacy-grant",uid]).await?;
+    _=db.execute("INSERT INTO \"scimProjectionGrant\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"scimUserId\",\"userId\",\"sourceKind\",\"sourceId\",\"role\",\"grantKey\",\"createdAt\",\"updatedAt\") VALUES ($1,'conn-a','tenant-a','scim-alias-ä',$2,'group','retired-group','legacy-role',$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&["legacy-grant",uid]).await?;
     let result = Box::pin(auth.dispatch_endpoint(
         ScimPlugin::reconcile_projection_endpoint("  tenant-a  ")?,
         EndpointOptions::default(),
@@ -108,7 +108,7 @@ async fn scim_configured_projection_reconciles_sources_and_rolls_back_callback_f
             .iter()
             .map(|source| source.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["scim-alias-a", "scim-alias-b"]
+        vec!["scim-alias-ä", "scim-alias-Z"]
     );
     let users: Value = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(users[0]["name"], "Projected active");
@@ -137,11 +137,11 @@ async fn scim_configured_projection_reconciles_sources_and_rolls_back_callback_f
             .iter()
             .map(|source| source.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["scim-alias-b"]
+        vec!["scim-alias-Z"]
     );
     let users: Value = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(users[0]["name"], "Projected inactive");
-    _=db.execute("INSERT INTO \"scimProjectionGrant\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"scimUserId\",\"userId\",\"sourceKind\",\"sourceId\",\"role\",\"grantKey\",\"createdAt\",\"updatedAt\") VALUES ($1,'conn-a','tenant-a','scim-alias-a',$2,'group','retired-group','legacy-role',$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&["failure-grant",uid]).await?;
+    _=db.execute("INSERT INTO \"scimProjectionGrant\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"scimUserId\",\"userId\",\"sourceKind\",\"sourceId\",\"role\",\"grantKey\",\"createdAt\",\"updatedAt\") VALUES ($1,'conn-a','tenant-a','scim-alias-ä',$2,'group','retired-group','legacy-role',$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&["failure-grant",uid]).await?;
     fail.store(true, Ordering::SeqCst);
     let before = db
         .tables(&["user", "scimSubject", "scimUser", "scimProjectionGrant"])

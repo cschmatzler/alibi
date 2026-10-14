@@ -218,7 +218,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 active: source.active,
             })
             .collect::<Vec<_>>();
-        sources.sort_by(|left, right| left.id.cmp(&right.id));
+        alibi_core::store::scim::sort_scim_sources(&mut sources)?;
         Ok(alibi_core::store::ScimIdentityState {
             user_id: user_id.into(),
             active: sources.iter().any(|source| source.active),

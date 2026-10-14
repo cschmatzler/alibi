@@ -61,8 +61,8 @@ async fn scim_identity_callback_receives_global_state_before_session_retirement<
     _=db.execute("INSERT INTO \"scimSubject\" (\"id\",\"userId\",\"profileSourceId\",\"revision\",\"createdAt\",\"updatedAt\") VALUES ('identity-subject',$1,'scim-alias-a',0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[uid]).await?;
     for (id, cid, domain, active) in [
         ("scim-alias-a", "conn-a", "tenant-a", true),
-        ("scim-alias-b", "conn-b", "tenant-a", false),
-        ("scim-alias-c", "conn-c", "tenant-b", true),
+        ("scim-alias-ä", "conn-b", "tenant-a", false),
+        ("scim-alias-Z", "conn-c", "tenant-b", true),
     ] {
         _=db.execute("INSERT INTO \"scimUser\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"userId\",\"connectionUserKey\",\"userName\",\"userNameKey\",\"primaryEmail\",\"workEmailValueIndex\",\"emailValueIndex\",\"displayName\",\"formattedName\",\"serializedEmails\",\"active\",\"orderKey\",\"createdAt\",\"updatedAt\") VALUES ($1,$2,$3,$4,$1,'identity-owner@example.com',$1,'identity-owner@example.com','[]','[]','Owner','Owner','[]',true,$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[id,cid,domain,uid]).await?;
         if !active {
@@ -96,7 +96,7 @@ async fn scim_identity_callback_receives_global_state_before_session_retirement<
             .iter()
             .map(|source| source.id.as_str())
             .collect::<Vec<_>>(),
-        vec!["scim-alias-b", "scim-alias-c"]
+        vec!["scim-alias-ä", "scim-alias-Z"]
     );
     assert_eq!(db.table("session").await?, sessions);
     fail.store(true, Ordering::SeqCst);
