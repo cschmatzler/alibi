@@ -18,7 +18,10 @@ backend_tests!(
     sso_saml_encrypted_assertions_reject_wrong_passphrase,
     sso_saml_encrypted_assertions_reject_missing_passphrase,
     sso_saml_encrypted_assertions_accept_ciphertext_response_signatures,
-    sso_saml_encrypted_assertions_accept_outer_only_signatures
+    sso_saml_encrypted_assertions_accept_outer_only_signatures,
+    sso_saml_encrypted_assertions_accept_aes128_gcm,
+    sso_saml_encrypted_assertions_accept_aes128_cbc,
+    sso_saml_encrypted_assertions_accept_aes256_cbc
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -66,6 +69,15 @@ async fn sso_saml_encrypted_assertions_accept_outer_only_signatures<B: Backend>(
 ) -> TestResult {
     acs_flow::<B>(db, AcsCase::OuterOnly).await
 }
+async fn sso_saml_encrypted_assertions_accept_aes128_gcm<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::Aes128Gcm).await
+}
+async fn sso_saml_encrypted_assertions_accept_aes128_cbc<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::Aes128Cbc).await
+}
+async fn sso_saml_encrypted_assertions_accept_aes256_cbc<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::Aes256Cbc).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     Manual,
@@ -74,6 +86,9 @@ enum AcsCase {
     EncryptedKey,
     EncryptedResponse,
     OuterOnly,
+    Aes128Gcm,
+    Aes128Cbc,
+    Aes256Cbc,
     MissingKey,
     WrongKey,
     WrongPass,
@@ -87,7 +102,16 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     );
     let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if matches!(case, AcsCase::OuterOnly) {
+    let provider_id = if matches!(
+        case,
+        AcsCase::Aes128Gcm | AcsCase::Aes128Cbc | AcsCase::Aes256Cbc
+    ) {
+        match case {
+            AcsCase::Aes128Gcm => "encrypted-aes-128-gcm-acs-provider",
+            AcsCase::Aes128Cbc => "encrypted-aes-128-cbc-acs-provider",
+            _ => "encrypted-aes-256-cbc-acs-provider",
+        }
+    } else if matches!(case, AcsCase::OuterOnly) {
         "encrypted-outer-only-acs-provider"
     } else if matches!(case, AcsCase::EncryptedResponse) {
         "encrypted-response-acs-provider"
@@ -185,6 +209,12 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             super::sso_saml_encryption::encrypt_grant_with_unsigned_assertion(
                 &grant,
                 matches!(case, AcsCase::OuterOnly),
+                match case {
+                    AcsCase::Aes128Gcm => "http://www.w3.org/2009/xmlenc11#aes128-gcm",
+                    AcsCase::Aes128Cbc => "http://www.w3.org/2001/04/xmlenc#aes128-cbc",
+                    AcsCase::Aes256Cbc => "http://www.w3.org/2001/04/xmlenc#aes256-cbc",
+                    _ => "http://www.w3.org/2009/xmlenc11#aes256-gcm",
+                },
             )?
         } else {
             grant
