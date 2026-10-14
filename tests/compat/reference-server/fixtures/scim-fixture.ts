@@ -17,6 +17,11 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "getSCIMSchemas") {
+        return new Response(JSON.stringify(await auth.api.getSCIMSchemas()), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (query.get("operation") === "getSCIMResourceType") {
         try {
           const value = await auth.api.getSCIMResourceType({

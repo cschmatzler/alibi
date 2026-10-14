@@ -48,6 +48,11 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     .dispatch_endpoint(
                         if query
                             .get("operation")
+                            .is_some_and(|operation| operation == "getSCIMSchemas")
+                        {
+                            ScimPlugin::schemas_endpoint()
+                        } else if query
+                            .get("operation")
                             .is_some_and(|operation| operation == "getSCIMResourceTypes")
                         {
                             ScimPlugin::resource_types_endpoint()
