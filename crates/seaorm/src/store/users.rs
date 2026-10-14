@@ -508,12 +508,8 @@ where
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
-        let email = normalize_user_email(email);
-        user_query::<S::User>(self.scoped_connection().get_database_backend())
-            .filter(<S::User as SeaOrmUserModel>::email_column().eq(email))
-            .one(self.scoped_connection())
+        self.get_user_by_email_with_connection(self.scoped_connection(), email)
             .await
-            .map_err(map_db_err)
     }
 
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>> {
@@ -537,71 +533,9 @@ where
             .map_err(map_db_err)
     }
 
-    async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<S::User> {
-        update.email = update.email.map(|email| normalize_user_email(&email));
-        let user_id = S::User::parse_id(id)?;
-        let hook_context = self.hook_context(None);
-        for hook in self.hooks() {
-            if hook
-                .before_update_user(id, &mut update, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("user update"));
-            }
-        }
-        if let Some(username) = update.username.as_mut() {
-            *username = username.to_lowercase();
-        }
-        let Some(model) = user_query::<S::User>(self.scoped_connection().get_database_backend())
-            .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
-            .one(self.scoped_connection())
+    async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User> {
+        self.update_user_with_connection(self.scoped_connection(), None, id, update)
             .await
-            .map_err(map_db_err)?
-        else {
-            return Err(AuthError::UserNotFound);
-        };
-
-        let mut active = model.into_active_model();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        let provider_name = update.provider_name.take();
-        let provider_image = update.provider_image.take();
-        let verification = update.provider_email_verified.take();
-        S::User::apply_update(&mut active, update, Utc::now());
-        stage_provider_text::<S::User, _>(
-            self.scoped_connection(),
-            &mut active,
-            provider_name,
-            provider_image,
-        )
-        .await?;
-        let backend = self.scoped_connection().get_database_backend();
-        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value =
-                crate::additional_fields::prepare_value(self.scoped_connection(), &column, value)
-                    .await?;
-            S::User::set_additional_field(&mut active, column, value, backend)?;
-        }
-        S::User::prepare_json_metadata(
-            &mut active,
-            self.scoped_connection().get_database_backend(),
-        )?;
-
-        let user = save_provider_user::<S::User, _>(
-            active,
-            self.scoped_connection(),
-            verification,
-            Some(id),
-        )
-        .await?;
-        for hook in self.hooks() {
-            hook.after_update_user(&user, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?;
-        }
-        Ok(user)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -736,4 +670,89 @@ fn numeric_filter_text(values: &[String]) -> Vec<String> {
                 .collect()
         },
     )
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::User: crate::schema::SeaOrmUserModel,
+{
+    pub(super) async fn update_user_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        tx: Option<&ScopedTransaction>,
+        id: &str,
+        mut update: UpdateUser,
+    ) -> AuthResult<S::User> {
+        update.email = update.email.map(|email| normalize_user_email(&email));
+        let user_id = S::User::parse_id(id)?;
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_update_user(id, &mut update, &hook_context)
+                .await
+                .map_err(alibi_core::store::adapter::callback_error)?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("user update"));
+            }
+        }
+        if let Some(username) = update.username.as_mut() {
+            *username = username.to_lowercase();
+        }
+        let Some(model) = user_query::<S::User>(connection.get_database_backend())
+            .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Err(AuthError::UserNotFound);
+        };
+
+        let mut active = model.into_active_model();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
+        let provider_name = update.provider_name.take();
+        let provider_image = update.provider_image.take();
+        let verification = update.provider_email_verified.take();
+        S::User::apply_update(&mut active, update, Utc::now());
+        stage_provider_text::<S::User, _>(connection, &mut active, provider_name, provider_image)
+            .await?;
+        let backend = connection.get_database_backend();
+        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+            let value = crate::additional_fields::prepare_value(connection, &column, value).await?;
+            S::User::set_additional_field(&mut active, column, value, backend)?;
+        }
+        S::User::prepare_json_metadata(&mut active, connection.get_database_backend())?;
+
+        let user =
+            save_provider_user::<S::User, _>(active, connection, verification, Some(id)).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_update_user(&user, &hook_context)
+                    .await
+                    .map_err(alibi_core::store::adapter::callback_error)?;
+            }
+        }
+        Ok(user)
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::User: crate::schema::SeaOrmUserModel,
+{
+    pub(super) async fn get_user_by_email_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        email: &str,
+    ) -> AuthResult<Option<S::User>> {
+        let email = normalize_user_email(email);
+        user_query::<S::User>(connection.get_database_backend())
+            .filter(<S::User as SeaOrmUserModel>::email_column().eq(email))
+            .one(connection)
+            .await
+            .map_err(map_db_err)
+    }
 }

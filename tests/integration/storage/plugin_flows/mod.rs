@@ -472,3 +472,7 @@ mod sso_oidc_mapping;
 mod sso_mutation_guard;
 #[path = "../../../support/sso_mutation_policy.rs"]
 mod sso_mutation_policy;
+
+mod sso_user_resolution;
+#[path = "../../../support/sso_user_resolution_policy.rs"]
+mod sso_user_resolution_policy;

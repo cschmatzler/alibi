@@ -16,12 +16,13 @@ use crate::schema::AuthSchema;
 pub(crate) use contracts::UserCreateTransform;
 use contracts::create_data;
 pub use contracts::{
-    AccountStore, AdapterAfterHook, AdapterEvent, ApiKeyStore, AuthTransaction,
-    BoxedTransactionValue, ConsumeApiKeyResult, DeviceCodeStore, InvitationCreateOptions,
-    InvitationStore, ListOrganizationMembersParams, MemberPageQuery, MemberStore, NumericTextInput,
-    OrganizationStore, PasskeyStore, SessionCreatedHook, SessionStore, TransactionFuture,
-    TransactionStore, TransactionWork, TwoFactorStore, TypedTransactionFuture,
-    UserCreationDefaults, UserStore, VerificationStore, transaction, verification_reservation_key,
+    AccountStore, AdapterAfterHook, AdapterEvent, AfterCommitErrorPolicy, ApiKeyStore,
+    AuthTransaction, BoxedTransactionValue, ConsumeApiKeyResult, DeviceCodeStore,
+    InvitationCreateOptions, InvitationStore, ListOrganizationMembersParams, MemberPageQuery,
+    MemberStore, NumericTextInput, OrganizationStore, PasskeyStore, SessionCreatedHook,
+    SessionStore, TransactionFuture, TransactionStore, TransactionWork, TwoFactorStore,
+    TypedTransactionFuture, UserCreationDefaults, UserStore, VerificationStore, transaction,
+    transaction_with_policy, verification_reservation_key,
 };
 pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 pub(crate) use decorated::{

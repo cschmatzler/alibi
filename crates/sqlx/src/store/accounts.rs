@@ -77,9 +77,13 @@ where
             .await
     }
 
-    async fn find_account_by_id(&self, id: &str) -> AuthResult<Option<S::Account>> {
+    async fn find_account_by_id_with(
+        &self,
+        exec: Exec<'_>,
+        id: &str,
+    ) -> AuthResult<Option<S::Account>> {
         let account_id = <S::Account as SqlxAccountModel>::parse_id(id)?;
-        let mut sql = model::select_model::<S::Account>(self.exec());
+        let mut sql = model::select_model::<S::Account>(exec);
         sql.push(" WHERE ");
         sql.compare_model::<S::Account>(
             <S::Account as SqlxModel>::TABLE,
@@ -88,7 +92,7 @@ where
             account_id,
         );
         sql.push(" LIMIT 1");
-        self.exec().fetch_optional(sql).await
+        exec.fetch_optional(sql).await
     }
 }
 
@@ -120,26 +124,8 @@ where
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<S::Account>> {
-        let table = <S::Account as SqlxModel>::TABLE;
-        let mut sql = model::select_model::<S::Account>(self.exec());
-        sql.push(" WHERE ");
-        sql.compare_model::<S::Account>(table, S::Account::provider_id_column(), " = ", provider);
-        sql.push(" AND ");
-        sql.compare_model::<S::Account>(
-            table,
-            S::Account::account_id_column(),
-            " = ",
-            provider_account_id,
-        );
-        sql.push(" LIMIT ");
-        sql.bind(2_i64);
-        let mut accounts: Vec<S::Account> = self.exec().fetch_all(sql).await?;
-        if accounts.len() > 1 {
-            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
-                provider: provider.to_owned(),
-            }));
-        }
-        Ok(accounts.pop())
+        self.get_account_with_connection(self.exec(), provider, provider_account_id)
+            .await
     }
 
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {
@@ -155,49 +141,14 @@ where
         self.exec().fetch_all(sql).await
     }
 
-    async fn update_account(&self, id: &str, mut update: UpdateAccount) -> AuthResult<S::Account> {
-        _ = <S::Account as SqlxAccountModel>::parse_id(id)?;
-        let hook_context = self.hook_context(None);
-        for hook in self.hooks() {
-            if hook
-                .before_update_account(id, &mut update, &hook_context)
-                .await?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("account update"));
-            }
-        }
-        let Some(model) = self.find_account_by_id(id).await? else {
-            return Err(alibi_core::error::AuthError::not_found("Account not found"));
-        };
-
-        let mut active = model.into_active();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        S::Account::apply_update(&mut active, update, Utc::now());
-        let backend = self.exec().engine();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                self.exec(),
-                <S::Account as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
-
-        let account = model::update::<S::Account>(self.exec(), &active)
-            .await?
-            .ok_or_else(record_not_updated)?;
-        for hook in self.hooks() {
-            hook.after_update_account(&account, &hook_context).await?;
-        }
-        Ok(account)
+    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account> {
+        self.update_account_with_connection(self.exec(), None, id, update)
+            .await
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
         let account_id = <S::Account as SqlxAccountModel>::parse_id(id)?;
-        let Some(account_model) = self.find_account_by_id(id).await? else {
+        let Some(account_model) = self.find_account_by_id_with(self.exec(), id).await? else {
             return Err(alibi_core::error::AuthError::not_found("Account not found"));
         };
         let hook_context = self.hook_context(None);
@@ -221,5 +172,93 @@ where
                 .await?;
         }
         Ok(())
+    }
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::Account: crate::schema::SqlxAccountModel,
+{
+    pub(super) async fn update_account_with_connection(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        id: &str,
+        mut update: UpdateAccount,
+    ) -> AuthResult<S::Account> {
+        _ = <S::Account as SqlxAccountModel>::parse_id(id)?;
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_update_account(id, &mut update, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("account update"));
+            }
+        }
+        let Some(model) = self.find_account_by_id_with(exec, id).await? else {
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
+        };
+
+        let mut active = model.into_active();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
+        S::Account::apply_update(&mut active, update, Utc::now());
+        let backend = exec.engine();
+        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
+            let value = crate::additional_fields::prepare_value(
+                exec,
+                <S::Account as SqlxModel>::column_kind(column),
+                value,
+            )
+            .await?;
+            S::Account::set_additional_field(&mut active, column, value, backend)?;
+        }
+
+        let account = model::update::<S::Account>(exec, &active)
+            .await?
+            .ok_or_else(record_not_updated)?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_update_account(&account, &hook_context).await?;
+            }
+        }
+        Ok(account)
+    }
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::Account: crate::schema::SqlxAccountModel,
+{
+    pub(super) async fn get_account_with_connection(
+        &self,
+        exec: Exec<'_>,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> AuthResult<Option<S::Account>> {
+        let table = <S::Account as SqlxModel>::TABLE;
+        let mut sql = model::select_model::<S::Account>(exec);
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Account>(table, S::Account::provider_id_column(), " = ", provider);
+        sql.push(" AND ");
+        sql.compare_model::<S::Account>(
+            table,
+            S::Account::account_id_column(),
+            " = ",
+            provider_account_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(2_i64);
+        let mut accounts: Vec<S::Account> = exec.fetch_all(sql).await?;
+        if accounts.len() > 1 {
+            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
+                provider: provider.to_owned(),
+            }));
+        }
+        Ok(accounts.pop())
     }
 }

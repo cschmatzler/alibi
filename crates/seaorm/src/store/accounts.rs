@@ -103,19 +103,8 @@ where
         provider: &str,
         provider_account_id: &str,
     ) -> AuthResult<Option<S::Account>> {
-        let mut accounts = <S::Account as SeaOrmAccountModel>::Entity::find()
-            .filter(<S::Account as SeaOrmAccountModel>::provider_id_column().eq(provider))
-            .filter(<S::Account as SeaOrmAccountModel>::account_id_column().eq(provider_account_id))
-            .limit(2)
-            .all(self.scoped_connection())
+        self.get_account_with_connection(self.scoped_connection(), provider, provider_account_id)
             .await
-            .map_err(map_db_err)?;
-        if accounts.len() > 1 {
-            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
-                provider: provider.to_owned(),
-            }));
-        }
-        Ok(accounts.pop())
     }
 
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {
@@ -127,47 +116,9 @@ where
             .map_err(map_db_err)
     }
 
-    async fn update_account(&self, id: &str, mut update: UpdateAccount) -> AuthResult<S::Account> {
-        let account_id = <S::Account as SeaOrmAccountModel>::parse_id(id)?;
-        let hook_context = self.hook_context(None);
-        for hook in self.hooks() {
-            if hook
-                .before_update_account(id, &mut update, &hook_context)
-                .await?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("account update"));
-            }
-        }
-        let Some(model) = <S::Account as SeaOrmAccountModel>::Entity::find()
-            .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
-            .one(self.scoped_connection())
+    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account> {
+        self.update_account_with_connection(self.scoped_connection(), None, id, update)
             .await
-            .map_err(map_db_err)?
-        else {
-            return Err(alibi_core::error::AuthError::not_found("Account not found"));
-        };
-
-        let mut active = model.into_active_model();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        S::Account::apply_update(&mut active, update, Utc::now());
-        let backend = self.scoped_connection().get_database_backend();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value =
-                crate::additional_fields::prepare_value(self.scoped_connection(), &column, value)
-                    .await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
-
-        let account = active
-            .update(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
-        for hook in self.hooks() {
-            hook.after_update_account(&account, &hook_context).await?;
-        }
-        Ok(account)
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
@@ -200,5 +151,84 @@ where
                 .await?;
         }
         Ok(())
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::Account: crate::schema::SeaOrmAccountModel,
+{
+    pub(super) async fn update_account_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        tx: Option<&ScopedTransaction>,
+        id: &str,
+        mut update: UpdateAccount,
+    ) -> AuthResult<S::Account> {
+        let account_id = <S::Account as SeaOrmAccountModel>::parse_id(id)?;
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_update_account(id, &mut update, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("account update"));
+            }
+        }
+        let Some(model) = <S::Account as SeaOrmAccountModel>::Entity::find()
+            .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
+        };
+
+        let mut active = model.into_active_model();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
+        S::Account::apply_update(&mut active, update, Utc::now());
+        let backend = connection.get_database_backend();
+        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
+            let value = crate::additional_fields::prepare_value(connection, &column, value).await?;
+            S::Account::set_additional_field(&mut active, column, value, backend)?;
+        }
+
+        let account = active.update(connection).await.map_err(map_db_err)?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_update_account(&account, &hook_context).await?;
+            }
+        }
+        Ok(account)
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::Account: crate::schema::SeaOrmAccountModel,
+{
+    pub(super) async fn get_account_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> AuthResult<Option<S::Account>> {
+        let mut accounts = <S::Account as SeaOrmAccountModel>::Entity::find()
+            .filter(<S::Account as SeaOrmAccountModel>::provider_id_column().eq(provider))
+            .filter(<S::Account as SeaOrmAccountModel>::account_id_column().eq(provider_account_id))
+            .limit(2)
+            .all(connection)
+            .await
+            .map_err(map_db_err)?;
+        if accounts.len() > 1 {
+            return Err(AuthError::Database(DatabaseError::AmbiguousAccount {
+                provider: provider.to_owned(),
+            }));
+        }
+        Ok(accounts.pop())
     }
 }

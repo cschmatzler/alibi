@@ -1,5 +1,6 @@
 import { sso } from "@better-auth/sso";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { organization, username } from "better-auth/plugins";
 
@@ -263,6 +264,53 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   });
   await (await getMigrations(organizationOptions("org-default"))).runMigrations();
+  let resolutionDecision: any = { action: "continue" };
+  let resolutionDenySessions = false;
+  let resolutionFailAfterUser = false;
+  const resolutionEvents: any[] = [];
+  const resolutionOptions = {
+    ...options,
+    databaseHooks: {
+      session: {
+        create: {
+          before: async () => {
+            if (resolutionDenySessions) {
+              throw new APIError("FORBIDDEN", {
+                code: "SESSION_POLICY_DENIED",
+                message: "Session policy rejected",
+              });
+            }
+          },
+        },
+      },
+      user: {
+        create: {
+          after: async () => {
+            if (resolutionFailAfterUser) {
+              throw new Error("Committed application user hook failed");
+            }
+          },
+        },
+      },
+    },
+    plugins: [
+      username(),
+      sso({
+        resolveUser: async (input, { database }) => {
+          const identifier = `sso-resolver-write:${resolutionEvents.length + 1}`;
+          await database.create({
+            model: "verification",
+            data: { identifier, value: input.providerId, expiresAt: new Date(Date.now() + 300000) },
+          });
+          resolutionEvents.push({ input, identifier });
+          if (resolutionDecision.action === "throw") {
+            throw new Error("Private application resolver detail");
+          }
+          return resolutionDecision;
+        },
+      }),
+    ],
+  };
   let mutationDenied = true;
   const mutationEvents: any[] = [];
   const mutationOptions = {
@@ -296,6 +344,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   const instances = new Map([
+    ["user-resolution", betterAuth(resolutionOptions)],
     ["mutation-guard", betterAuth(mutationOptions)],
     ["org-domain", betterAuth(organizationOptions("org-domain"))],
     ["org-domain-disabled", betterAuth(organizationOptions("org-domain-disabled"))],
@@ -328,6 +377,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode = [
+      "user-resolution",
       "mutation-guard",
       "org-default",
       "org-admin",
@@ -374,6 +424,32 @@ export async function ssoFixture(base: BetterAuthOptions) {
                                         ? "slo"
                                         : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "user-exists") {
+      const context = await auth.$context;
+      const user = await context.adapter.findOne({
+        model: "user",
+        where: [{ field: "email", value: input.email }],
+      });
+      return new Response(JSON.stringify(user !== null), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "resolution-policy") {
+      resolutionDecision = input.decision;
+      resolutionDenySessions = Boolean(input.denySessions);
+      resolutionFailAfterUser = Boolean(input.failAfterUser);
+      if (input.clear) {
+        resolutionEvents.length = 0;
+      }
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "resolution-events") {
+      return new Response(JSON.stringify(resolutionEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "mutation-policy") {
       mutationDenied = Boolean(input.denied);
       if (input.clear) {
