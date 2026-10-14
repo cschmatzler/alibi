@@ -71,6 +71,7 @@ fn prepare_update(
         identity_changed |= changed;
     }
     if let Some(updates) = body.get("oidcConfig") {
+        super::discovery::validate_endpoint_protocols(updates)?;
         let current: Value = existing
             .oidc_config
             .as_deref()
@@ -217,6 +218,15 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
                 },
             ],
         )?;
+        for field in super::discovery::ENDPOINT_FIELDS {
+            if let Some(value) = config.get(field).and_then(JsValue::as_str)
+                && url::Url::parse(value).is_err()
+            {
+                return Err(super::super::endpoint::validation(format!(
+                    "[body.oidcConfig.{field}] Invalid URL"
+                )));
+            }
+        }
         let mut normalized = config
             .as_object()
             .cloned()

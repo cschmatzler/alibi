@@ -84,6 +84,36 @@ compatScenario(
     expect(config.clientId).toBe("enterprise-client");
     expect(config.tokenEndpoint).toBe("https://idp.example.com/token");
     expect(config.tokenEndpointAuthentication).toBe("client_secret_basic");
+    for (const field of [
+      "authorizationEndpoint",
+      "tokenEndpoint",
+      "userInfoEndpoint",
+      "jwksEndpoint",
+      "discoveryEndpoint",
+    ]) {
+      for (const [value, detail] of [
+        ["not-a-url", "must be valid"],
+        ["ftp://idp.example.com/endpoint", "must use the http or https supported protocols"],
+      ]) {
+        const response = await control({
+          action: "update",
+          headers,
+          body: { providerId: "update-provider", oidcConfig: { [field]: value } },
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual(
+          value === "not-a-url"
+            ? { code: "VALIDATION_ERROR", message: `[body.oidcConfig.${field}] Invalid URL` }
+            : {
+                code: "discovery_invalid_url",
+                message: `Invalid OIDC endpoint URL: The url "${field}" ${detail}: ${value}`,
+              },
+        );
+        expect(
+          await (await control({ action: "row", providerId: "update-provider" })).json(),
+        ).toEqual(row);
+      }
+    }
     const rejected = [];
     for (const body of [
       { providerId: "update-provider", issuer: "https://other-idp.example.com" },

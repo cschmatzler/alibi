@@ -60,6 +60,48 @@ async fn sso_provider_update_preserves_omissions_and_rejects_linked_identity_cha
     assert_eq!(config["clientId"], "enterprise-client");
     assert_eq!(config["tokenEndpoint"], "https://idp.example.com/token");
     assert_eq!(config["tokenEndpointAuthentication"], "client_secret_basic");
+    for field in [
+        "authorizationEndpoint",
+        "tokenEndpoint",
+        "userInfoEndpoint",
+        "jwksEndpoint",
+        "discoveryEndpoint",
+    ] {
+        for (value, detail) in [
+            ("not-a-url", "must be valid"),
+            (
+                "ftp://idp.example.com/endpoint",
+                "must use the http or https supported protocols",
+            ),
+        ] {
+            let mut oidc = serde_json::Map::new();
+            _ = oidc.insert(field.into(), json!(value));
+            let response = match Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::update_sso_provider_endpoint(
+                    &json!({"providerId":"update-provider","oidcConfig":oidc}),
+                )?,
+                owned.clone(),
+            ))
+            .await
+            {
+                Ok(output) => output.into_response()?,
+                Err(error) => error.error.to_auth_response(),
+            };
+            assert_eq!(response.status, 400);
+            assert_eq!(
+                body(&response),
+                if value == "not-a-url" {
+                    json!({"code":"VALIDATION_ERROR","message":format!("[body.oidcConfig.{field}] Invalid URL")})
+                } else {
+                    json!({"code":"discovery_invalid_url","message":format!(r#"Invalid OIDC endpoint URL: The url "{field}" {detail}: {value}"#)})
+                }
+            );
+            assert_eq!(
+                store.get_sso_provider("update-provider").await?.unwrap(),
+                row
+            );
+        }
+    }
     for input in [
         json!({"providerId":"update-provider","issuer":"https://other-idp.example.com"}),
         json!({"providerId":"update-provider","oidcConfig":{"clientId":"different-client"}}),
