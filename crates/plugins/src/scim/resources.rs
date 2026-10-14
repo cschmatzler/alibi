@@ -434,12 +434,25 @@ impl ScimPlugin {
             Ok(projection) => projection,
             Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
         };
+        match Self::render_user(ctx, user, &projection) {
+            Ok(resource) => Ok(EndpointResponse::json(&resource)?.with_header(MARKER, "1")),
+            Err(AuthError::Api {
+                status, message, ..
+            }) => Ok(error(status, &message, None)),
+            Err(error) => Err(error),
+        }
+    }
+    fn render_user<S: AuthSchema>(
+        ctx: &AuthContext<S>,
+        user: alibi_core::store::ScimUserRecord,
+        projection: &Projection,
+    ) -> AuthResult<Value> {
         let Some(mut attributes) = super::user_attributes::read(&user) else {
-            return Ok(error(
-                500,
-                "Stored SCIM User attribute state is invalid",
-                None,
-            ));
+            return Err(AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Stored SCIM User attribute state is invalid".into(),
+            });
         };
         let base = format!(
             "{}{}",
@@ -459,7 +472,57 @@ impl ScimPlugin {
             _ = object.insert("active".into(), Value::Bool(user.active));
             _=object.insert("meta".into(),serde_json::json!({"resourceType":"User","created":user.created_at.to_rfc3339_opts(SecondsFormat::Millis,true),"lastModified":user.updated_at.to_rfc3339_opts(SecondsFormat::Millis,true),"location":resource_url(&base,"Users",&user.id)?}));
         }
-        Ok(EndpointResponse::json(&projection.apply(attributes))?.with_header(MARKER, "1"))
+        Ok(projection.apply(attributes))
+    }
+    pub(super) async fn list_users<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        if !ctx
+            .database
+            .scim_user_domain_stable(&connection.id, &connection.domain)
+            .await?
+        {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let query = match super::collection::parse_user(call.query(), &connection.id) {
+            Ok(query) => query,
+            Err(error_value) => return Ok(error(400, &error_value.detail, Some(error_value.kind))),
+        };
+        let projection = match Projection::parse(call.query(), super::user_attributes::USER_SCHEMA)
+        {
+            Ok(projection) => projection,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let page = ctx
+            .database
+            .list_scim_users(
+                &connection.id,
+                &query.filters,
+                query.start_index - 1,
+                query.count,
+            )
+            .await?;
+        let mut resources = Vec::new();
+        for user in page.users {
+            match Self::render_user(ctx, user, &projection) {
+                Ok(resource) => resources.push(resource),
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => return Ok(error(status, &message, None)),
+                Err(error) => return Err(error),
+            }
+        }
+        Ok(EndpointResponse::json(&serde_json::json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],"totalResults":page.total_results,"startIndex":query.start_index,"itemsPerPage":resources.len(),"Resources":resources}))?.with_header(MARKER,"1"))
     }
     pub(super) async fn get_group<S: AuthSchema>(
         &self,

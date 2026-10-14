@@ -108,6 +108,11 @@ impl ScimPlugin {
         self.connections = connections;
         self
     }
+    /// List the connection-owned SCIM Users through the server API.
+    #[must_use]
+    pub const fn users_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("scim", "listSCIMUsers")
+    }
     /// List the connection-owned SCIM Groups through the server API.
     #[must_use]
     pub const fn groups_endpoint() -> ServerEndpoint<Value> {
@@ -241,6 +246,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/scim/v2/Users", "listSCIMUsers"),
             AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
             AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
             AuthRoute::get("/scim/v2/Groups/{groupId}", "getSCIMGroup"),
@@ -259,6 +265,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "listSCIMUsers",
+                "listSCIMUsers",
+                Some("/scim/v2/Users"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "listSCIMGroups",
                 "listSCIMGroups",
@@ -409,6 +421,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "listSCIMUsers" {
+            return self.list_users(call, ctx).await;
+        }
         if call.operation_id() == "listSCIMGroups" {
             return self.list_groups(call, ctx).await;
         }
@@ -478,6 +493,23 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get && req.path() == "/scim/v2/Users" {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::get("/scim/v2/Users", "listSCIMUsers"),
+            );
+            let mut response = self.list_users(&call, ctx).await?.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Get && req.path() == "/scim/v2/Groups" {
             let call = EndpointCall::from_http_request(
                 req,

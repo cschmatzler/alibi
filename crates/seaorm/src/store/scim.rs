@@ -18,6 +18,93 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
+        use super::entities::scim_user as user;
+        Ok(user::Entity::find()
+            .filter(user::Column::ConnectionId.eq(connection))
+            .filter(user::Column::ProvisioningDomainId.ne(domain))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .is_none())
+    }
+    async fn list_scim_users(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<alibi_core::store::ScimUserPage> {
+        use super::entities::scim_user as user;
+        let mut query = user::Entity::find().filter(user::Column::ConnectionId.eq(connection));
+        for (field, value) in filters {
+            let column = match field.as_str() {
+                "id" => user::Column::Id,
+                "userNameKey" => user::Column::UserNameKey,
+                "externalIdKey" => user::Column::ExternalIdKey,
+                "emailValueIndex" => user::Column::EmailValueIndex,
+                "workEmailValueIndex" => user::Column::WorkEmailValueIndex,
+                _ => {
+                    return Err(alibi_core::AuthError::internal(
+                        "Unsupported SCIM user predicate",
+                    ));
+                }
+            };
+            query = if matches!(field.as_str(), "emailValueIndex" | "workEmailValueIndex") {
+                query.filter(column.like(format!("%{value}%")))
+            } else {
+                query.filter(column.eq(value))
+            };
+        }
+        let total_results = i64::try_from(
+            query
+                .clone()
+                .count(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?,
+        )
+        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+        let users = if count == 0 {
+            Vec::new()
+        } else {
+            query
+                .order_by_asc(user::Column::OrderKey)
+                .limit(
+                    u64::try_from(count)
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+                )
+                .offset(
+                    u64::try_from(offset)
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+                )
+                .all(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+        };
+        Ok(alibi_core::store::ScimUserPage {
+            total_results,
+            users: users
+                .into_iter()
+                .map(|row| alibi_core::store::ScimUserRecord {
+                    id: row.id,
+                    connection_id: row.connection_id,
+                    provisioning_domain_id: row.provisioning_domain_id,
+                    user_name: row.user_name,
+                    display_name: row.display_name,
+                    active: row.active,
+                    external_id: row.external_id,
+                    formatted_name: row.formatted_name,
+                    given_name: row.given_name,
+                    family_name: row.family_name,
+                    serialized_emails: row.serialized_emails,
+                    serialized_attributes: row.serialized_attributes,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
+                .collect(),
+        })
+    }
+
     async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
         use super::entities::scim_group as group;
         Ok(group::Entity::find()
