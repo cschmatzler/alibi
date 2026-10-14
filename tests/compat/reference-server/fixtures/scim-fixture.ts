@@ -19,12 +19,31 @@ export async function scimFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(options)).runMigrations();
-  const auth = betterAuth(options);
+  let auth = betterAuth(options);
   return async (request: Request): Promise<Response | undefined> => {
     const path = new URL(request.url).pathname;
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "restart-managed") {
+        auth = betterAuth(options);
+        return new Response(JSON.stringify({ restarted: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "age-connection") {
+        const input = (await request.json()) as any;
+        options.database
+          .query("UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?")
+          .run("2000-01-01T00:00:00.000Z", input.connectionId);
+        return new Response(JSON.stringify({ aged: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "listSCIMManagedConnections") {
+        const input = (await request.json()) as any;
+        return auth.api.listSCIMManagedConnections({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "reject-late-event") {
         options.database.exec(
           "CREATE TRIGGER reject_scim_late_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.sequence=2 BEGIN SELECT RAISE(ABORT,'fixture rejected late event'); END",

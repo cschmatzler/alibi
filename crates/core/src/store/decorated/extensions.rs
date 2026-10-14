@@ -824,6 +824,13 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn list_scim_managed_connections(
+        &self,
+        domain: &str,
+    ) -> AuthResult<Vec<crate::store::ScimManagedConnection>> {
+        self.inner.list_scim_managed_connections(domain).await
+    }
+
     async fn create_scim_managed_connection(
         &self,
         data: crate::store::CreateScimManagedConnection,

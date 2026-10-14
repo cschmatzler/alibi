@@ -27,12 +27,30 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .await?,
     );
     let router = Router::new().nest(path, auth.clone().axum_router().with_state(auth.clone()));
+    let restart_auth = Arc::new(tokio::sync::Mutex::new(auth.clone()));
+    let restart_config = base.clone().base_path(path);
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
-            let auth = auth.clone();
+            let auth = restart_auth.clone();
+            let config=restart_config.clone();
             async move {
+                if query.get("operation").is_some_and(|operation|operation=="restart-managed") {
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(ScimManagedConnectionOptions::new("managed-scim-credential-hmac-secret-32-chars"))).build().await.unwrap();
+                    *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
+                }
+                let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="age-connection") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?",["2000-01-01T00:00:00.000Z".into(),input["connectionId"].as_str().unwrap().into()])).await.unwrap();
+                    return Json(json!({"aged":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="listSCIMManagedConnections") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","listSCIMManagedConnections").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
+                    return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
+                }
                 if query.get("operation").is_some_and(|operation|operation=="reject-late-event") {
                     _=database.execute_unprepared("CREATE TRIGGER reject_scim_late_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.sequence=2 BEGIN SELECT RAISE(ABORT,'fixture rejected late event'); END").await.unwrap();
                     return Json(json!({"installed":true})).into_response();

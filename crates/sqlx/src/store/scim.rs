@@ -17,6 +17,31 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn list_scim_managed_connections(
+        &self,
+        domain: &str,
+    ) -> AuthResult<Vec<alibi_core::store::ScimManagedConnection>> {
+        let mut sql = model::select_model::<connection::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(
+            "scimManagedConnection",
+            "provisioningDomainId",
+            " = ",
+            domain,
+        );
+        sql.push(" ORDER BY ");
+        sql.ident("createdAt");
+        sql.push(" DESC LIMIT ");
+        sql.bind(self.find_many_limit());
+        Ok(self
+            .exec()
+            .fetch_all::<connection::Model>(sql)
+            .await?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     async fn create_scim_managed_connection(
         &self,
         data: CreateScimManagedConnection,
