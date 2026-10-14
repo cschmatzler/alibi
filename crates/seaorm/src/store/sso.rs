@@ -392,7 +392,7 @@ fn extra_bindings(
                     sea_orm::Value::String(value.as_str().map(str::to_owned))
                 }
                 SsoFieldType::Boolean => sea_orm::Value::Bool(value.as_bool()),
-                SsoFieldType::Number => sea_orm::Value::BigInt(value.as_i64()),
+                SsoFieldType::Number => sea_orm::Value::Double(value.as_f64()),
                 SsoFieldType::Json => {
                     if backend == sea_orm::DbBackend::Sqlite {
                         sea_orm::Value::String(Some(alibi_core::utils::json::to_string(value)?))
