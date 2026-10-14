@@ -4,13 +4,14 @@ import { XMLParser } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
+import { idpXMLMetadata } from "./idp-metadata-input";
 import { customSPMetadata } from "./sp-metadata-input";
 export async function idpLogoutFlow(
   ctx: ScenarioContext,
-  signature: "absent" | "required" | "ignored" | "custom-sp",
+  signature: "absent" | "required" | "ignored" | "custom-sp" | "xml-idp",
   http = false,
 ) {
-  const signed = signature === "required";
+  const signed = signature === "required" || signature === "xml-idp";
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
@@ -48,17 +49,23 @@ export async function idpLogoutFlow(
             ...(signature === "custom-sp"
               ? { spMetadata: customSPMetadata(ctx.baseURL, "idp-logout-provider") }
               : {}),
-            entryPoint: "https://idp.example.test/sso",
-            cert,
-            idpMetadata: {
-              entityID: "https://idp.example.test/entity",
-              singleLogoutService: [
-                {
-                  Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
-                  Location: "https://idp.example.test/logout-post",
-                },
-              ],
-            },
+            entryPoint:
+              signature === "xml-idp"
+                ? "https://unused.example.test/sso"
+                : "https://idp.example.test/sso",
+            cert: signature === "xml-idp" ? undefined : cert,
+            idpMetadata:
+              signature === "xml-idp"
+                ? idpXMLMetadata(cert)
+                : {
+                    entityID: "https://idp.example.test/entity",
+                    singleLogoutService: [
+                      {
+                        Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+                        Location: "https://idp.example.test/logout-post",
+                      },
+                    ],
+                  },
             wantAssertionsSigned: true,
           },
         },
