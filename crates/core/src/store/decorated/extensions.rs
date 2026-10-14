@@ -824,6 +824,16 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn list_scim_managed_connection_events(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<Vec<crate::store::ScimManagedConnectionEvent>>> {
+        self.inner
+            .list_scim_managed_connection_events(id, domain)
+            .await
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         data: crate::store::RevokeScimManagedCredential,

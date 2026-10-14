@@ -18,6 +18,53 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn list_scim_managed_connection_events(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<Vec<alibi_core::store::ScimManagedConnectionEvent>>> {
+        let exec = self.exec();
+        let mut sql = model::select_model::<connection::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare("scimManagedConnection", "connectionId", " = ", id);
+        sql.push(" AND ");
+        sql.compare(
+            "scimManagedConnection",
+            "provisioningDomainId",
+            " = ",
+            domain,
+        );
+        model::limit_one(&mut sql);
+        let Some(connection) = exec.fetch_optional::<connection::Model>(sql).await? else {
+            return Ok(None);
+        };
+        let mut sql = model::select_model::<event::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare(
+            "scimManagedConnectionEvent",
+            "connectionRecordId",
+            " = ",
+            connection.id,
+        );
+        sql.push(" ORDER BY ");
+        sql.ident("sequence");
+        sql.push(" DESC LIMIT 100");
+        let mut events = exec.fetch_all::<event::Model>(sql).await?;
+        events.reverse();
+        Ok(Some(
+            events
+                .into_iter()
+                .map(|event| alibi_core::store::ScimManagedConnectionEvent {
+                    sequence: event.sequence,
+                    kind: event.kind,
+                    actor_id: event.actor_id,
+                    credential_id: event.credential_id,
+                    created_at: event.created_at,
+                })
+                .collect(),
+        ))
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         data: alibi_core::store::RevokeScimManagedCredential,

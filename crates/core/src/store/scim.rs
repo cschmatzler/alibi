@@ -68,6 +68,16 @@ pub struct RevokeScimManagedCredential {
     pub credential_id: String,
     pub actor_id: String,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimManagedConnectionEvent {
+    pub sequence: i64,
+    #[serde(rename = "type")]
+    pub kind: String,
+    pub actor_id: String,
+    pub credential_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+}
 pub struct ScimManagedConnectionState {
     pub connection: ScimManagedConnection,
     pub credentials: Vec<ScimManagedCredential>,
@@ -78,6 +88,16 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn list_scim_managed_connection_events(
+        &self,
+        _id: &str,
+        _domain: &str,
+    ) -> AuthResult<Option<Vec<ScimManagedConnectionEvent>>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         _data: RevokeScimManagedCredential,
