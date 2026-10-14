@@ -3,9 +3,12 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const xmlMetadata of [false, true]) {
+import { encryptSamlGrant } from "./encrypt-saml-grant";
+for (const mode of ["manual", "xml", "encrypted", "encrypted-key"]) {
+  const xmlMetadata = mode === "xml";
+  const encrypted = mode.startsWith("encrypted");
   compatScenario(
-    `SAML ${xmlMetadata ? "IdP XML" : "manual IdP"} ACS redeems signed requests, rejects wrong keys and prevents replay`,
+    `SAML ${mode} ACS redeems signed requests, rejects wrong keys and prevents replay`,
     async (ctx) => {
       const actor = ctx.actor();
       const control = (input: Record<string, unknown>) =>
@@ -33,7 +36,14 @@ for (const xmlMetadata of [false, true]) {
       const cert = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
-      const providerId = xmlMetadata ? "xml-acs-provider" : "acs-provider";
+      const providerId =
+        mode === "encrypted-key"
+          ? "encrypted-key-acs-provider"
+          : encrypted
+            ? "encrypted-acs-provider"
+            : xmlMetadata
+              ? "xml-acs-provider"
+              : "acs-provider";
       const certificate = cert
         .split("\n")
         .filter((line) => !line.startsWith("-----"))
@@ -50,9 +60,30 @@ for (const xmlMetadata of [false, true]) {
               ? "https://unused.example.test/entrypoint"
               : "https://idp.example.test/sso",
             ...(xmlMetadata ? {} : { cert }),
+            ...(encrypted
+              ? {
+                  spMetadata: {
+                    isAssertionEncrypted: true,
+                    encPrivateKey: await Bun.file(
+                      new URL(
+                        mode === "encrypted-key"
+                          ? "../../../../fixtures/salesforce-transport/encrypted-key.pem"
+                          : "../../../../fixtures/salesforce-transport/key.pem",
+                        import.meta.url,
+                      ),
+                    ).text(),
+                    ...(mode === "encrypted-key"
+                      ? { encPrivateKeyPass: "sso-test-passphrase" }
+                      : {}),
+                  },
+                }
+              : {}),
             idpMetadata: xmlMetadata
               ? { entityID: "https://unused.example.test/entity", metadata }
-              : { entityID: "https://idp.example.test/entity" },
+              : {
+                  entityID: "https://idp.example.test/entity",
+                  ...(encrypted ? { isAssertionEncrypted: true } : {}),
+                },
             wantAssertionsSigned: true,
             callbackUrl: `${ctx.baseURL}/complete`,
           },
@@ -82,9 +113,12 @@ for (const xmlMetadata of [false, true]) {
         expect(authorizationURL.origin).toBe("https://idp.example.test");
         expect(authorizationURL.pathname).toBe(xmlMetadata ? "/from-xml" : "/sso");
         const authorization = ((await started.json()) as any).url;
-        const grant = (await (
+        let grant = (await (
           await control({ action: "saml-grant", authorization, email, wrongKey })
         ).json()) as any;
+        if (encrypted) {
+          grant = encryptSamlGrant(grant, cert);
+        }
         const input = {
           action: http ? "acs-http" : "acs",
           params: { providerId },

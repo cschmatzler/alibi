@@ -10,20 +10,46 @@ use alibi::{
 backend_tests!(
     sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay,
     sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute,
-    sso_saml_acs_uses_xml_idp_authority_and_signing_certificate
+    sso_saml_acs_uses_xml_idp_authority_and_signing_certificate,
+    sso_saml_encrypted_assertions_require_trusted_signatures_and_prevent_replay,
+    sso_saml_encrypted_assertions_import_password_protected_decryption_keys
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
 ) -> TestResult {
-    acs_flow::<B>(db, false).await
+    acs_flow::<B>(db, AcsCase::Manual).await
 }
 async fn sso_saml_acs_uses_xml_idp_authority_and_signing_certificate<B: Backend>(
     db: Db,
 ) -> TestResult {
-    acs_flow::<B>(db, true).await
+    acs_flow::<B>(db, AcsCase::IdpXml).await
 }
-async fn acs_flow<B: Backend>(db: Db, xml_metadata: bool) -> TestResult {
-    let provider_id = if xml_metadata {
+async fn sso_saml_encrypted_assertions_require_trusted_signatures_and_prevent_replay<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::Encrypted).await
+}
+async fn sso_saml_encrypted_assertions_import_password_protected_decryption_keys<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::EncryptedKey).await
+}
+#[derive(Clone, Copy)]
+enum AcsCase {
+    Manual,
+    IdpXml,
+    Encrypted,
+    EncryptedKey,
+}
+async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
+    let xml_metadata = matches!(case, AcsCase::IdpXml);
+    let encrypted = matches!(case, AcsCase::Encrypted | AcsCase::EncryptedKey);
+
+    let provider_id = if matches!(case, AcsCase::EncryptedKey) {
+        "encrypted-key-acs-provider"
+    } else if encrypted {
+        "encrypted-acs-provider"
+    } else if xml_metadata {
         "xml-acs-provider"
     } else {
         "acs-provider"
@@ -36,6 +62,14 @@ async fn acs_flow<B: Backend>(db: Db, xml_metadata: bool) -> TestResult {
     let owner = signup(&auth, "saml-acs-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
     let mut input = json!({"providerId":provider_id,"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"callbackUrl":format!("{ORIGIN}/complete")}});
+    if encrypted {
+        input["samlConfig"]["idpMetadata"]["isAssertionEncrypted"] = json!(true);
+        input["samlConfig"]["spMetadata"] = if matches!(case, AcsCase::EncryptedKey) {
+            json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/encrypted-key.pem"),"encPrivateKeyPass":"sso-test-passphrase"})
+        } else {
+            json!({"isAssertionEncrypted":true,"encPrivateKey":include_str!("../../../compat/fixtures/salesforce-transport/key.pem")})
+        };
+    }
     if xml_metadata {
         let certificate = cert
             .lines()
@@ -77,6 +111,11 @@ async fn acs_flow<B: Backend>(db: Db, xml_metadata: bool) -> TestResult {
             if xml_metadata { "/from-xml" } else { "/sso" }
         );
         let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?;
+        let grant = if encrypted {
+            super::sso_saml_encryption::encrypt_grant(&grant)?
+        } else {
+            grant
+        };
         let endpoint = ServerEndpoint::<Value>::new("sso", "acsEndpoint")
             .with_params(&json!({"providerId":provider_id}))?
             .with_body(
