@@ -507,3 +507,5 @@ mod sso_date_fields;
 mod sso_date_fields_config;
 
 mod scim_managed_create;
+
+mod scim_managed_list;

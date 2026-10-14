@@ -55,6 +55,15 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn list_scim_managed_connections(
+        &self,
+        _domain: &str,
+    ) -> AuthResult<Vec<ScimManagedConnection>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     /// Insert one connection, its credential, and both ordered events in one transaction.
     /// # Errors
     /// Returns a conflict when the creation request was already consumed.

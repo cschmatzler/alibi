@@ -44,6 +44,19 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = call.body().ok_or_else(|| {
         crate::endpoint::validation("[body] Invalid input: expected object, received undefined")
     })?;
+    if call.operation_id() == "listSCIMManagedConnections" {
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(
+                [(
+                    "provisioningDomainId".into(),
+                    JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+                )]
+                .into_iter()
+                .collect(),
+            )),
+            query: call.query().cloned(),
+        });
+    }
     let mut output = indexmap::IndexMap::new();
     for (name, min) in [
         ("creationRequestId", 16),
@@ -98,6 +111,47 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// List durable connection metadata belonging to one provisioning domain.
+    /// # Errors
+    /// Returns an error if the input cannot be serialized.
+    pub fn list_managed_connections_endpoint(domain: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "listSCIMManagedConnections")
+            .with_body(&serde_json::json!({"provisioningDomainId":domain}))
+    }
+    pub(super) async fn list_managed_connections<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let rows = ctx
+            .database
+            .list_scim_managed_connections(&body_string(body, "provisioningDomainId", 1)?)
+            .await?;
+        let connections = rows
+            .into_iter()
+            .map(|row| {
+                let mut row = serde_json::to_value(row)?;
+                if let Value::Object(values) = &mut row {
+                    _ = values.remove("id");
+                    _ = values.remove("revision");
+                }
+                Ok(row)
+            })
+            .collect::<AuthResult<Vec<_>>>()?;
+        EndpointResponse::json(&serde_json::json!({"connections":connections}))
+    }
+
     /// Create a managed connection and one independently hashed bearer credential.
     /// # Errors
     /// Returns an error if the arguments cannot be represented as logical input.

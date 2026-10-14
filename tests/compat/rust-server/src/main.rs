@@ -334,6 +334,9 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
             "oauthResource",
             "oauthClient",
             "ssoProvider",
+            "scimManagedConnectionEvent",
+            "scimManagedCredential",
+            "scimManagedConnection",
         ] {
             let _ = database
                 .execute_raw(Statement::from_string(

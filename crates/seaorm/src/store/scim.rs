@@ -12,10 +12,30 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, TransactionTrait,
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn list_scim_managed_connections(
+        &self,
+        domain: &str,
+    ) -> AuthResult<Vec<alibi_core::store::ScimManagedConnection>> {
+        Ok(connection::Entity::find()
+            .filter(connection::Column::ProvisioningDomainId.eq(domain))
+            .order_by_desc(connection::Column::CreatedAt)
+            .limit(
+                u64::try_from(self.config.advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(Into::into)
+            .collect())
+    }
+
     async fn create_scim_managed_connection(
         &self,
         data: CreateScimManagedConnection,
