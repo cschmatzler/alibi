@@ -58,6 +58,8 @@ pub(super) fn verify(
     clock_skew: chrono::Duration,
     require_timestamps: bool,
 ) -> Result<SamlIdentity, Failure> {
+    let effective = super::idp_metadata_xml::effective(config).map_err(|_| invalid())?;
+    let config = &effective;
     if xml.contains("<!DOCTYPE") || xml.contains("<!ENTITY") {
         return Err(invalid());
     }
