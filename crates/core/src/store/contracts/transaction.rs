@@ -22,6 +22,17 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn delete_scim_group(
+        &self,
+        _id: &str,
+        _connection: &str,
+        _domain: &str,
+        _roles: bool,
+    ) -> AuthResult<Vec<crate::store::ScimProjectionPreparedUser>> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM Group deletion is unsupported",
+        ))
+    }
     async fn create_scim_group(
         &self,
         _data: crate::store::CreateScimGroup,

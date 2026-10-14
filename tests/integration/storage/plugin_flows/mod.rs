@@ -536,3 +536,5 @@ mod scim_group_list;
 mod scim_user_list;
 
 mod scim_group_create;
+
+mod scim_group_delete;

@@ -337,6 +337,17 @@ where
         _ = exec.execute(sql).await?;
         Ok(())
     }
+    async fn delete_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        roles: bool,
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionPreparedUser>> {
+        self.store
+            .delete_scim_group_with_exec(Exec::tx(self.tx), id, connection, domain, roles)
+            .await
+    }
     async fn create_scim_group(
         &self,
         data: alibi_core::store::CreateScimGroup,

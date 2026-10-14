@@ -268,10 +268,12 @@ impl ScimPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<ResolvedConnection, Box<EndpointResponse>>> {
         // Query shape validation precedes authentication in the TS endpoint.
-        if let Some(detail) = query_shape_error(
-            call.query(),
-            matches!(call.operation_id(), "listSCIMGroups" | "listSCIMUsers"),
-        ) {
+        if call.operation_id() != "deleteSCIMGroup"
+            && let Some(detail) = query_shape_error(
+                call.query(),
+                matches!(call.operation_id(), "listSCIMGroups" | "listSCIMUsers"),
+            )
+        {
             return Ok(Err(Box::new(error(400, &detail, Some("invalidValue")))));
         }
         let authorization = call
@@ -474,6 +476,96 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn delete_group<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("groupId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(group) = ctx.database.get_scim_group(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM Group not found", None));
+        };
+        if group.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let configured = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let with_roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
+        for attempt in 0..3 {
+            let id = id.to_owned();
+            let cid = connection.id.clone();
+            let domain = connection.domain.clone();
+            let key = scoped_key(&["scim-connection", &cid])?;
+            let configured = configured.clone();
+            let result = alibi_core::store::transaction::<S, (), _>(
+                ctx.database.as_ref(),
+                move |database| {
+                    Box::pin(async move {
+                        let states = database
+                            .delete_scim_group(&id, &cid, &domain, with_roles)
+                            .await?;
+                        reconcile_group_states(database, &domain, states, configured).await?;
+                        database.fence_scim_connection(&cid, &key).await
+                    })
+                },
+            )
+            .await;
+            match result {
+                Ok(()) => {
+                    let mut response = EndpointResponse::empty()
+                        .with_status(204)
+                        .with_header("content-type", "application/json")
+                        .with_header(MARKER, "1");
+                    if let Some(http) = response.http_response_mut() {
+                        http.status = 204;
+                    }
+                    return Ok(response);
+                }
+                Err(AuthError::Internal(message))
+                    if matches!(
+                        message.as_str(),
+                        "The SCIM Group changed concurrently; retry the request."
+                            | "The SCIM projection subject changed concurrently; retry the request."
+                    ) =>
+                {
+                    if attempt == 2 {
+                        return Ok(error(
+                            409,
+                            "The SCIM Group changed concurrently; retry the request",
+                            None,
+                        ));
+                    }
+                }
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => return Ok(error(status, &message, None)),
+                Err(AuthError::CallbackFailure(cause)) => {
+                    let detail = match cause.as_ref() {
+                        AuthError::Api { message, .. } => message.as_str(),
+                        _ => "SCIM projection reconciliation failed",
+                    };
+                    return Ok(error(500, detail, None));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(AuthError::internal(
+            "SCIM mutation retry loop completed without a result",
+        ))
+    }
     pub(super) async fn create_group<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -572,39 +664,15 @@ impl ScimPlugin {
         let configured = ctx
             .extensions
             .get::<super::projection::ScimProjectionHandle<S>>();
-        let callback = configured.as_ref().map(|handle| handle.0.clone());
-        let roles = configured.and_then(|handle| handle.1.clone());
+        let with_roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
         let domain = connection.domain;
         let cid = connection.id;
         let key = scoped_key(&["scim-connection", &cid])?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
-                    let (group, states) = database.create_scim_group(data, roles.is_some()).await?;
-                    for mut state in states {
-                        if let Some(roles) = &roles {
-                            super::projection::apply_roles(database, roles.as_ref(), &mut state)
-                                .await?;
-                        }
-                        database
-                            .remove_scim_projection_grants(
-                                &domain,
-                                &state.state.user_id,
-                                &state.removed_grant_ids,
-                            )
-                            .await?;
-                        if let Some(callback) = &callback {
-                            callback
-                                .reconcile_user(&state.state, database)
-                                .await
-                                .map_err(|error| {
-                                    super::projection::application_callback_error(
-                                        error,
-                                        "SCIM projection reconciliation failed",
-                                    )
-                                })?;
-                        }
-                    }
+                    let (group, states) = database.create_scim_group(data, with_roles).await?;
+                    reconcile_group_states(database, &domain, states, configured).await?;
                     database.fence_scim_connection(&cid, &key).await?;
                     Ok(group)
                 })
@@ -1193,4 +1261,33 @@ fn group_creation_body(
     } else {
         Err(errors.join("; "))
     }
+}
+
+async fn reconcile_group_states<S: AuthSchema>(
+    database: &dyn alibi_core::store::AuthTransaction<S>,
+    domain: &str,
+    states: Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    configured: Option<std::sync::Arc<super::projection::ScimProjectionHandle<S>>>,
+) -> AuthResult<()> {
+    for mut state in states {
+        if let Some(roles) = configured.as_ref().and_then(|handle| handle.1.as_ref()) {
+            super::projection::apply_roles(database, roles.as_ref(), &mut state).await?;
+        }
+        database
+            .remove_scim_projection_grants(domain, &state.state.user_id, &state.removed_grant_ids)
+            .await?;
+        if let Some(callback) = &configured {
+            callback
+                .0
+                .reconcile_user(&state.state, database)
+                .await
+                .map_err(|error| {
+                    super::projection::application_callback_error(
+                        error,
+                        "SCIM projection reconciliation failed",
+                    )
+                })?;
+        }
+    }
+    Ok(())
 }

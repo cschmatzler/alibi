@@ -108,6 +108,12 @@ impl ScimPlugin {
         self.connections = connections;
         self
     }
+    /// Delete a connection-owned canonical SCIM Group.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn delete_group_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
+        ServerEndpoint::new("scim", "deleteSCIMGroup").with_params(&json!({"groupId":id}))
+    }
     /// Create a connection-owned canonical SCIM Group.
     #[must_use]
     pub const fn create_group_endpoint() -> ServerEndpoint<Value> {
@@ -260,6 +266,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
+            AuthRoute::delete("/scim/v2/Groups/{groupId}", "deleteSCIMGroup"),
             AuthRoute::get("/scim/v2/Users", "listSCIMUsers"),
             AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
             AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
@@ -279,6 +286,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "deleteSCIMGroup",
+                "deleteSCIMGroup",
+                Some("/scim/v2/Groups/:groupId"),
+                HttpMethod::Delete,
+            ),
             crate::endpoint::definition(
                 "createSCIMGroup",
                 "createSCIMGroup",
@@ -441,6 +454,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "deleteSCIMGroup" {
+            return self.delete_group(call, ctx).await;
+        }
         if call.operation_id() == "createSCIMGroup" {
             return self.create_group(call, ctx).await;
         }
@@ -516,6 +532,28 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Delete
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::delete("/scim/v2/Groups/{groupId}", "deleteSCIMGroup"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(
+                json!({"groupId":id}),
+            ));
+            let mut response = self.delete_group(&call, ctx).await?.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Post && req.path() == "/scim/v2/Groups" {
             let call = EndpointCall::from_http_request(
                 req,
