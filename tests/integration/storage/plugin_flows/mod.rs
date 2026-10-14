@@ -453,3 +453,6 @@ mod sso_configured_providers;
 
 #[path = "../../../support/sso_key_resolver.rs"]
 mod sso_key_resolver;
+
+#[path = "../../../support/sso_provisioning_policy.rs"]
+mod sso_provisioning_policy;

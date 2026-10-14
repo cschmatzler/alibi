@@ -8,6 +8,7 @@ import { ssoOidcFixture } from "./sso-oidc-fixture";
 import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   const idp = ssoOidcFixture();
+  const provisioningEvents: any[] = [];
   const validationEvents: any[] = [];
   let validationDenyReturning = false;
   const options = {
@@ -200,7 +201,29 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   };
+  const provisioningOptions = (every: boolean) => ({
+    ...options,
+    plugins: [
+      username(),
+      sso({
+        provisionUserOnEveryLogin: every,
+        async provisionUser(data) {
+          provisioningEvents.push({
+            userId: data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            userInfo: data.userInfo,
+            providerId: data.provider.providerId,
+            tokenPresent: data.token !== undefined,
+            accessToken: data.token?.accessToken ?? null,
+          });
+        },
+      }),
+    ],
+  });
   const instances = new Map([
+    ["provisioning", betterAuth(provisioningOptions(false))],
+    ["provisioning-every", betterAuth(provisioningOptions(true))],
     ["key-resolver", betterAuth(resolverOptions)],
     ["configured-jwt", betterAuth(await jwtOptions(true))],
     ["configured-jwt-jwk", betterAuth(await jwtOptions(true, "jwk"))],
@@ -222,38 +245,53 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "configured-jwt-jwk"
-        ? "configured-jwt-jwk"
-        : input.mode === "configured-jwt-precedence"
-          ? "configured-jwt-precedence"
-          : input.mode === "key-resolver"
-            ? "key-resolver"
-            : input.mode === "configured-jwt"
-              ? "configured-jwt"
-              : input.mode === "configured-jwt-missing"
-                ? "configured-jwt-missing"
-                : input.mode === "configured-changed"
-                  ? "configured-changed"
-                  : input.mode === "configured"
-                    ? "configured"
-                    : input.mode === "no-signup"
-                      ? "no-signup"
-                      : input.mode === "validation"
-                        ? "validation"
-                        : input.mode === "trusted-claims"
-                          ? "trusted-claims"
-                          : input.mode === "signed-request-slo"
-                            ? "signed-request-slo"
-                            : input.mode === "signed-slo"
-                              ? "signed-slo"
-                              : input.mode === "domain"
-                                ? "domain"
-                                : input.mode === "shared"
-                                  ? "shared"
-                                  : input.mode === "slo"
-                                    ? "slo"
-                                    : "default";
+      input.mode === "provisioning"
+        ? "provisioning"
+        : input.mode === "provisioning-every"
+          ? "provisioning-every"
+          : input.mode === "configured-jwt-jwk"
+            ? "configured-jwt-jwk"
+            : input.mode === "configured-jwt-precedence"
+              ? "configured-jwt-precedence"
+              : input.mode === "key-resolver"
+                ? "key-resolver"
+                : input.mode === "configured-jwt"
+                  ? "configured-jwt"
+                  : input.mode === "configured-jwt-missing"
+                    ? "configured-jwt-missing"
+                    : input.mode === "configured-changed"
+                      ? "configured-changed"
+                      : input.mode === "configured"
+                        ? "configured"
+                        : input.mode === "no-signup"
+                          ? "no-signup"
+                          : input.mode === "validation"
+                            ? "validation"
+                            : input.mode === "trusted-claims"
+                              ? "trusted-claims"
+                              : input.mode === "signed-request-slo"
+                                ? "signed-request-slo"
+                                : input.mode === "signed-slo"
+                                  ? "signed-slo"
+                                  : input.mode === "domain"
+                                    ? "domain"
+                                    : input.mode === "shared"
+                                      ? "shared"
+                                      : input.mode === "slo"
+                                        ? "slo"
+                                        : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "provisioning-reset") {
+      provisioningEvents.length = 0;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "provisioning-events") {
+      return new Response(JSON.stringify(provisioningEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "key-reset") {
       keyEvents.length = 0;
       keyEnabled = true;

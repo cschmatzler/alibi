@@ -10,6 +10,8 @@ mod idp_metadata_xml;
 mod idp_services;
 mod private_key;
 pub use private_key::{SsoKeyResolver, SsoPrivateKey, SsoPrivateKeyContext, SsoPrivateKeyResolver};
+mod provisioning;
+pub use provisioning::{SsoProvisioner, SsoProvisioningData, SsoUserProvisioner};
 mod provider_delete;
 mod provider_list;
 mod provider_read;
@@ -49,6 +51,8 @@ pub struct SsoDefaultProvider {
 pub struct SsoConfig {
     pub default_providers: Vec<SsoDefaultProvider>,
     pub resolve_private_key: Option<SsoKeyResolver>,
+    pub provision_user: Option<SsoProvisioner>,
+    pub provision_user_on_every_login: bool,
     pub providers_limit: usize,
     pub domain_verification: bool,
     /// Override the system DNS servers, for example for an enterprise DNS zone.
@@ -74,6 +78,8 @@ impl Default for SsoConfig {
         Self {
             default_providers: Vec::new(),
             resolve_private_key: None,
+            provision_user: None,
+            provision_user_on_every_login: false,
             providers_limit: 10,
             domain_verification: false,
             domain_verification_dns_servers: Vec::new(),
