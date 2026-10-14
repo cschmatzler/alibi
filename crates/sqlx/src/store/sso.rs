@@ -30,60 +30,13 @@ where
         provider_id: &str,
         prepare: &alibi_core::store::SsoProviderUpdateWork,
     ) -> AuthResult<Option<SsoProvider>> {
-        use crate::schema::SqlxAccountModel;
         let tx = self.begin(true).await?;
         let exec = crate::pool::Exec::tx(&tx);
         let outcome = async {
-            let mut lock = crate::sql::Sql::with(exec.engine(), "UPDATE ");
-            lock.ident(Model::TABLE);
-            lock.push(" SET ");
-            lock.assign("providerId", provider_id);
-            lock.push(" WHERE ");
-            lock.compare(Model::TABLE, "id", " = ", id);
-            lock.push(" AND ");
-            lock.compare(Model::TABLE, "providerId", " = ", provider_id);
-            if exec.execute(lock).await? == 0 {
+            let Some(row) = self.lock_sso_provider_with(exec, id, provider_id).await? else {
                 return Ok(None);
-            }
-            let mut read = model::select_model::<Model>(exec);
-            read.push(" WHERE ");
-            read.compare(Model::TABLE, "id", " = ", id);
-            let row: SsoProvider = exec
-                .fetch_optional::<Model>(read)
-                .await?
-                .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-                .into();
-            let update = prepare(&row)?;
-            if update.identity_changed {
-                let mut accounts = model::select_model::<S::Account>(exec);
-                accounts.push(" WHERE ");
-                accounts.compare_model::<S::Account>(
-                    <S::Account as SqlxModel>::TABLE,
-                    S::Account::provider_id_column(),
-                    " = ",
-                    provider_id,
-                );
-                accounts.push(" LIMIT 1");
-                if exec.fetch_optional::<S::Account>(accounts).await?.is_some() {
-                    return Err(alibi_core::AuthError::Api {
-                        status: 409,
-                        code: None,
-                        message:
-                            "Cannot change SSO provider identity fields while linked accounts exist"
-                                .into(),
-                    });
-                }
-            }
-            let mut active = ActiveRow::new();
-            active.set("id", id);
-            active.set("issuer", update.provider.issuer);
-            active.set("domain", update.provider.domain);
-            active.set("oidcConfig", update.provider.oidc_config);
-            active.set("samlConfig", update.provider.saml_config);
-            active.set("domainVerified", update.provider.domain_verified);
-            model::update::<Model>(exec, &active)
-                .await
-                .map(|row| row.map(Into::into))
+            };
+            self.update_sso_provider_with(exec, prepare(&row)?).await
         }
         .await;
         match outcome {
@@ -102,45 +55,13 @@ where
         id: &str,
         provider_id: &str,
     ) -> AuthResult<bool> {
-        use crate::schema::SqlxAccountModel;
         let tx = self.begin(true).await?;
         let exec = crate::pool::Exec::tx(&tx);
-        let outcome = async {
-            let mut lock = crate::sql::Sql::with(exec.engine(), "UPDATE ");
-            lock.ident(Model::TABLE);
-            lock.push(" SET ");
-            lock.assign("providerId", provider_id);
-            lock.push(" WHERE ");
-            lock.compare(Model::TABLE, "id", " = ", id);
-            lock.push(" AND ");
-            lock.compare(Model::TABLE, "providerId", " = ", provider_id);
-            if exec.execute(lock).await? == 0 {
-                return Ok(false);
-            }
-            let mut accounts = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
-            accounts.ident(<S::Account as SqlxModel>::TABLE);
-            accounts.push(" WHERE ");
-            accounts.compare_model::<S::Account>(
-                <S::Account as SqlxModel>::TABLE,
-                S::Account::provider_id_column(),
-                " = ",
-                provider_id,
-            );
-            _ = exec.execute(accounts).await?;
-            let mut provider = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
-            provider.ident(Model::TABLE);
-            provider.push(" WHERE ");
-            provider.compare(Model::TABLE, "id", " = ", id);
-            provider.push(" AND ");
-            provider.compare(Model::TABLE, "providerId", " = ", provider_id);
-            _ = exec.execute(provider).await?;
-            Ok(true)
-        }
-        .await;
+        let outcome = self.delete_sso_provider_with(exec, id, provider_id).await;
         match outcome {
-            Ok(deleted) => {
+            Ok(value) => {
                 tx.commit().await?;
-                Ok(deleted)
+                Ok(value)
             }
             Err(error) => {
                 tx.rollback().await?;
@@ -191,5 +112,112 @@ where
             .fetch_all::<Model>(sql)
             .await
             .map(|rows| rows.into_iter().map(Into::into).collect())
+    }
+}
+
+impl<S: AuthSchema> SqlxStore<S>
+where
+    S::Account: crate::schema::SqlxAccountModel,
+{
+    pub(super) async fn lock_sso_provider_with(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<Option<SsoProvider>> {
+        let mut lock = crate::sql::Sql::with(exec.engine(), "UPDATE ");
+        lock.ident(Model::TABLE);
+        lock.push(" SET ");
+        lock.assign("providerId", provider_id);
+        lock.push(" WHERE ");
+        lock.compare(Model::TABLE, "id", " = ", id);
+        lock.push(" AND ");
+        lock.compare(Model::TABLE, "providerId", " = ", provider_id);
+        if exec.execute(lock).await? == 0 {
+            return Ok(None);
+        }
+        let mut read = model::select_model::<Model>(exec);
+        read.push(" WHERE ");
+        read.compare(Model::TABLE, "id", " = ", id);
+        let row: SsoProvider = exec
+            .fetch_optional::<Model>(read)
+            .await?
+            .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
+            .into();
+        Ok(Some(row))
+    }
+    pub(super) async fn update_sso_provider_with(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        update: alibi_core::store::SsoProviderUpdate,
+    ) -> AuthResult<Option<SsoProvider>> {
+        use crate::schema::SqlxAccountModel;
+        let id = update.provider.id.clone();
+        let id = id.as_str();
+        let provider_id = update.provider.provider_id.clone();
+        let provider_id = provider_id.as_str();
+        if update.identity_changed {
+            let mut accounts = model::select_model::<S::Account>(exec);
+            accounts.push(" WHERE ");
+            accounts.compare_model::<S::Account>(
+                <S::Account as SqlxModel>::TABLE,
+                S::Account::provider_id_column(),
+                " = ",
+                provider_id,
+            );
+            accounts.push(" LIMIT 1");
+            if exec.fetch_optional::<S::Account>(accounts).await?.is_some() {
+                return Err(alibi_core::AuthError::Api {
+                    status: 409,
+                    code: None,
+                    message:
+                        "Cannot change SSO provider identity fields while linked accounts exist"
+                            .into(),
+                });
+            }
+        }
+        let mut active = ActiveRow::new();
+        active.set("id", id);
+        active.set("issuer", update.provider.issuer);
+        active.set("domain", update.provider.domain);
+        active.set("oidcConfig", update.provider.oidc_config);
+        active.set("samlConfig", update.provider.saml_config);
+        active.set("domainVerified", update.provider.domain_verified);
+        model::update::<Model>(exec, &active)
+            .await
+            .map(|row| row.map(Into::into))
+    }
+    pub(super) async fn delete_sso_provider_with(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        use crate::schema::SqlxAccountModel;
+        if self
+            .lock_sso_provider_with(exec, id, provider_id)
+            .await?
+            .is_none()
+        {
+            return Ok(false);
+        }
+        let mut accounts = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
+        accounts.ident(<S::Account as SqlxModel>::TABLE);
+        accounts.push(" WHERE ");
+        accounts.compare_model::<S::Account>(
+            <S::Account as SqlxModel>::TABLE,
+            S::Account::provider_id_column(),
+            " = ",
+            provider_id,
+        );
+        _ = exec.execute(accounts).await?;
+        let mut provider = crate::sql::Sql::with(exec.engine(), "DELETE FROM ");
+        provider.ident(Model::TABLE);
+        provider.push(" WHERE ");
+        provider.compare(Model::TABLE, "id", " = ", id);
+        provider.push(" AND ");
+        provider.compare(Model::TABLE, "providerId", " = ", provider_id);
+        _ = exec.execute(provider).await?;
+        Ok(true)
     }
 }

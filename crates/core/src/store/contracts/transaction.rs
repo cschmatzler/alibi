@@ -22,6 +22,36 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Lock and read a persisted enterprise provider on this transaction's connection.
+    async fn lock_sso_provider(
+        &self,
+        _id: &str,
+        _provider_id: &str,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        Err(AuthError::NotImplemented(
+            "Transactional SSO provider locking is unsupported".into(),
+        ))
+    }
+    /// Apply a prepared provider update, including linked-account boundary protection.
+    async fn update_sso_provider(
+        &self,
+        _update: crate::store::SsoProviderUpdate,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        Err(AuthError::NotImplemented(
+            "Transactional SSO provider updates are unsupported".into(),
+        ))
+    }
+    /// Retire a provider and its identity namespace in this transaction.
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        _id: &str,
+        _provider_id: &str,
+    ) -> AuthResult<bool> {
+        Err(AuthError::NotImplemented(
+            "Transactional SSO provider deletion is unsupported".into(),
+        ))
+    }
+
     /// Read the provider verification column using the adapter's physical scalar
     /// rules. This is retained output, not authorization input; typed models
     /// continue to supply the canonical boolean accessor.

@@ -126,6 +126,28 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn lock_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        self.inner.lock_sso_provider(id, provider_id).await
+    }
+    async fn update_sso_provider(
+        &self,
+        update: crate::store::SsoProviderUpdate,
+    ) -> AuthResult<Option<crate::store::SsoProvider>> {
+        self.inner.update_sso_provider(update).await
+    }
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .delete_sso_provider_and_accounts(id, provider_id)
+            .await
+    }
     async fn provider_verification_output(
         &self,
         id: &str,

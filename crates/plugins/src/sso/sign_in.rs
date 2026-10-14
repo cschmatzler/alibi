@@ -220,10 +220,24 @@ pub(super) fn provider_reference(
     provider: &SsoProvider,
     verified_field: bool,
 ) -> AuthResult<Value> {
+    provider_reference_inner(provider, verified_field, true)
+}
+pub(super) fn mutation_provider_reference(
+    provider: &SsoProvider,
+    verified_field: bool,
+) -> AuthResult<Value> {
+    provider_reference_inner(provider, verified_field, false)
+}
+fn provider_reference_inner(
+    provider: &SsoProvider,
+    verified_field: bool,
+    include_empty_organization: bool,
+) -> AuthResult<Value> {
     let mut configuration = serde_json::Map::new();
     _ = configuration.insert("domain".into(), json!(provider.domain));
     _ = configuration.insert("issuer".into(), json!(provider.issuer));
-    if !provider.id.is_empty() {
+    if !provider.id.is_empty() && (include_empty_organization || provider.organization_id.is_some())
+    {
         _ = configuration.insert("organizationId".into(), json!(provider.organization_id));
     }
     if verified_field {

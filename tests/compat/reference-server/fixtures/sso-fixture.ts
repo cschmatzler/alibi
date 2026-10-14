@@ -263,7 +263,40 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   });
   await (await getMigrations(organizationOptions("org-default"))).runMigrations();
+  let mutationDenied = true;
+  const mutationEvents: any[] = [];
+  const mutationOptions = {
+    ...options,
+    plugins: [
+      username(),
+      sso({
+        guardProviderMutation: async (mutation, { database }) => {
+          const row = await database.findOne<any>({
+            model: "ssoProvider",
+            where: [
+              { field: "id", value: mutation.provider.id },
+              { field: "providerId", value: mutation.provider.providerId },
+            ],
+          });
+          if (!row) {
+            throw new Error("Locked provider missing");
+          }
+          const index = mutationEvents.length + 1;
+          const identifier = `sso-guard-write:${mutation.action}:${index}`;
+          await database.create({
+            model: "verification",
+            data: { identifier, value: row.domain, expiresAt: new Date(Date.now() + 300000) },
+          });
+          mutationEvents.push({ mutation, domain: row.domain, identifier });
+          if (mutationDenied) {
+            throw new Error("Application policy rejected with private detail");
+          }
+        },
+      }),
+    ],
+  };
   const instances = new Map([
+    ["mutation-guard", betterAuth(mutationOptions)],
     ["org-domain", betterAuth(organizationOptions("org-domain"))],
     ["org-domain-disabled", betterAuth(organizationOptions("org-domain-disabled"))],
     ["org-dynamic", betterAuth(organizationOptions("org-dynamic"))],
@@ -295,6 +328,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode = [
+      "mutation-guard",
       "org-default",
       "org-admin",
       "org-disabled",
@@ -340,6 +374,20 @@ export async function ssoFixture(base: BetterAuthOptions) {
                                         ? "slo"
                                         : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "mutation-policy") {
+      mutationDenied = Boolean(input.denied);
+      if (input.clear) {
+        mutationEvents.length = 0;
+      }
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "mutation-events") {
+      return new Response(JSON.stringify(mutationEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (["org-create", "org-invite", "org-role"].includes(input.action)) {
       const operation =
         input.action === "org-create"
