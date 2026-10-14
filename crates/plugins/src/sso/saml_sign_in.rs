@@ -29,7 +29,11 @@ impl SsoPlugin {
                 "additionalParams is not supported for SAML providers; the SAML AuthnRequest is signed and cannot carry caller-supplied query parameters.",
             ));
         }
-        let signed = config.get("authnRequestsSigned") == Some(&json!(true));
+        let metadata = super::sp_metadata_xml::from_config(config)?;
+        let signed = metadata.as_ref().map_or_else(
+            || config.get("authnRequestsSigned") == Some(&json!(true)),
+            |metadata| metadata.authn_requests_signed,
+        );
         let private = config
             .get("spMetadata")
             .and_then(|metadata| metadata.get("privateKey"))
@@ -75,15 +79,10 @@ impl SsoPlugin {
             alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "relay_state");
         let cookie = issue_state(&payload, &state, &cookie_name, ctx).await?;
         if config
-            .get("spMetadata")
+            .get("idpMetadata")
             .and_then(|metadata| metadata.get("metadata"))
             .and_then(Value::as_str)
             .is_some_and(|xml| !xml.is_empty())
-            || config
-                .get("idpMetadata")
-                .and_then(|metadata| metadata.get("metadata"))
-                .and_then(Value::as_str)
-                .is_some_and(|xml| !xml.is_empty())
         {
             return Err(AuthError::not_implemented(
                 "SAML XML metadata authorization is not implemented",
@@ -108,24 +107,40 @@ impl SsoPlugin {
         .ok_or_else(|| AuthError::internal("ERR_NO_REDIRECT_SSO_ENDPOINT"))?;
         let id = format!("_{}", uuid::Uuid::new_v4());
         let instant = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
-        let entity = config
-            .get("spMetadata")
-            .and_then(|metadata| metadata.get("entityID"))
-            .and_then(Value::as_str)
-            .filter(|id| !id.is_empty())
-            .or_else(|| config.get("issuer").and_then(Value::as_str))
+        let entity = metadata
+            .as_ref()
+            .map(|metadata| metadata.entity_id.as_str())
+            .or_else(|| {
+                config
+                    .get("spMetadata")
+                    .and_then(|metadata| metadata.get("entityID"))
+                    .and_then(Value::as_str)
+                    .filter(|id| !id.is_empty())
+                    .or_else(|| config.get("issuer").and_then(Value::as_str))
+            })
             .unwrap_or(&provider.issuer);
-        let name_id = config
-            .get("identifierFormat")
-            .and_then(Value::as_str)
-            .filter(|format| !format.is_empty())
+        let name_id = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.name_id_formats.first().map(String::as_str))
+            .or_else(|| {
+                config
+                    .get("identifierFormat")
+                    .and_then(Value::as_str)
+                    .filter(|format| !format.is_empty())
+            })
             .unwrap_or("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress");
-        let acs = format!(
-            "{}{}/sso/saml2/sp/acs/{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/'),
-            provider.provider_id
-        );
+        let acs = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.post_services.last())
+            .cloned()
+            .unwrap_or_else(|| {
+                format!(
+                    "{}{}/sso/saml2/sp/acs/{}",
+                    ctx.config.base_url.trim_end_matches('/'),
+                    ctx.config.base_path.trim_end_matches('/'),
+                    provider.provider_id
+                )
+            });
         let mut writer = Writer::new(Vec::new());
         let mut request = BytesStart::new("samlp:AuthnRequest");
         _ = request.extend_attributes([

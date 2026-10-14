@@ -18,6 +18,7 @@ mod saml_sign_in;
 mod saml_slo;
 mod sign_in;
 mod sp_metadata;
+mod sp_metadata_xml;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
@@ -46,6 +47,7 @@ pub struct SsoConfig {
     pub saml_clock_skew: chrono::Duration,
     pub saml_require_timestamps: bool,
     pub saml_max_response_size: usize,
+    pub saml_max_metadata_size: usize,
     pub saml_enable_single_logout: bool,
     pub saml_want_logout_request_signed: bool,
     pub saml_want_logout_response_signed: bool,
@@ -67,6 +69,7 @@ impl Default for SsoConfig {
             saml_clock_skew: chrono::Duration::minutes(5),
             saml_require_timestamps: false,
             saml_max_response_size: 262_144,
+            saml_max_metadata_size: 102_400,
             saml_enable_single_logout: false,
             saml_want_logout_request_signed: false,
             saml_want_logout_response_signed: false,
@@ -211,7 +214,9 @@ impl SsoPlugin {
         }).transpose()?;
         let saml = body
             .get("samlConfig")
-            .map(|config| registration_saml::prepare(config, issuer))
+            .map(|config| {
+                registration_saml::prepare(config, issuer, self.config.saml_max_metadata_size)
+            })
             .transpose()?;
         let provider = ctx
             .database

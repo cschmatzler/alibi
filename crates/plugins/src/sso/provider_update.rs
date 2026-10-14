@@ -29,7 +29,9 @@ impl SsoPlugin {
             .authorize_provider_id(provider_id, user.id().as_ref(), ctx)
             .await?;
         let body = input.to_json_value()?;
-        let prepare = move |existing: &SsoProvider| prepare_update(existing, &body);
+        let max_metadata_size = self.config.saml_max_metadata_size;
+        let prepare =
+            move |existing: &SsoProvider| prepare_update(existing, &body, max_metadata_size);
         let updated = ctx
             .database
             .update_sso_provider(&authorized.id, provider_id, &prepare)
@@ -38,7 +40,11 @@ impl SsoPlugin {
         EndpointResponse::json(&super::provider_read::sanitize(&updated, ctx)?)
     }
 }
-fn prepare_update(existing: &SsoProvider, body: &Value) -> AuthResult<SsoProviderUpdate> {
+fn prepare_update(
+    existing: &SsoProvider,
+    body: &Value,
+    max_metadata_size: usize,
+) -> AuthResult<SsoProviderUpdate> {
     let mut provider = existing.clone();
     let mut identity_changed = false;
     if let Some(issuer) = body.get("issuer").and_then(Value::as_str) {
@@ -56,7 +62,8 @@ fn prepare_update(existing: &SsoProvider, body: &Value) -> AuthResult<SsoProvide
             .get("issuer")
             .and_then(Value::as_str)
             .filter(|issuer| !issuer.is_empty());
-        let (config, changed) = super::provider_update_saml::prepare(existing, updates, issuer)?;
+        let (config, changed) =
+            super::provider_update_saml::prepare(existing, updates, issuer, max_metadata_size)?;
         provider.saml_config = Some(config);
         identity_changed |= changed;
     }
