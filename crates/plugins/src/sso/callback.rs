@@ -177,12 +177,12 @@ impl SsoPlugin {
         };
         let redirect_uri = self.oidc_redirect_uri(&base, provider_id);
         let mut form = vec![
-            ("grant_type", "authorization_code"),
-            ("code", code.unwrap_or_default()),
-            ("redirect_uri", redirect_uri.as_str()),
+            ("grant_type".to_owned(), "authorization_code".to_owned()),
+            ("code".to_owned(), code.unwrap_or_default().to_owned()),
+            ("redirect_uri".to_owned(), redirect_uri),
         ];
         if config.get("pkce") == Some(&json!(true)) {
-            form.push(("code_verifier", &payload.code_verifier));
+            form.push(("code_verifier".into(), payload.code_verifier.clone()));
         }
         let client_id = config
             .get("clientId")
@@ -192,16 +192,50 @@ impl SsoPlugin {
             .get("clientSecret")
             .and_then(Value::as_str)
             .unwrap_or_default();
+        let client_assertion = if config
+            .get("tokenEndpointAuthentication")
+            .and_then(Value::as_str)
+            == Some("private_key_jwt")
+        {
+            let key = self
+                .config
+                .default_providers
+                .iter()
+                .find(|provider| provider.provider_id == provider_id)
+                .and_then(|provider| provider.private_key.as_ref());
+            let Some(key) = key.filter(|key| key.has_material()) else {
+                return fail("invalid_provider", Some("no_private_key_available"));
+            };
+            Some(key.assertion(&config).map_err(AuthError::internal)?)
+        } else {
+            None
+        };
         let exchange = async {
             let (client, token_url) = outbound_client(token_endpoint, ctx).await?;
             let mut grant = client.post(token_url);
-            if config
+            if let Some(assertion) = client_assertion.as_ref() {
+                let signed_assertion = assertion
+                    .0
+                    .get_client_assertion(crate::oauth::OAuthClientAssertionContext {
+                        client_id: client_id.into(),
+                        token_endpoint: token_endpoint.into(),
+                        grant_type: crate::oauth::OAuthTokenGrant::AuthorizationCode,
+                    })
+                    .await
+                    .map_err(AuthError::internal)?;
+                form.push(("client_id".into(), client_id.into()));
+                form.push(("client_assertion".into(), signed_assertion));
+                form.push((
+                    "client_assertion_type".into(),
+                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer".into(),
+                ));
+            } else if config
                 .get("tokenEndpointAuthentication")
                 .and_then(Value::as_str)
                 == Some("client_secret_post")
             {
-                form.push(("client_id", client_id));
-                form.push(("client_secret", secret));
+                form.push(("client_id".into(), client_id.into()));
+                form.push(("client_secret".into(), secret.into()));
             } else {
                 grant = grant.basic_auth(client_id, Some(secret));
             }

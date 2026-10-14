@@ -7,6 +7,7 @@ pub use types::{
     AccountInfoResponse as OAuthAccountProfile,
 };
 mod client_assertion;
+pub(crate) use client_assertion::ALGORITHMS as PRIVATE_KEY_JWT_SIGNING_ALGORITHMS;
 pub use client_assertion::OAuthPrivateKeyJwtOptions;
 
 pub(crate) mod logout;

@@ -22,7 +22,8 @@ backend_tests!(
     sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests,
     sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email,
     sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login,
-    sso_configured_state_rejects_reconfigured_authority_before_identity_writes
+    sso_configured_state_rejects_reconfigured_authority_before_identity_writes,
+    sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -1240,6 +1241,119 @@ async fn sso_configured_state_rejects_reconfigured_authority_before_identity_wri
             );
             assert!(store.get_sso_provider(provider).await?.is_none());
         }
+    }
+    B::close(connection).await
+}
+
+async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    use base64::Engine as _;
+    let idp = peer::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let build = |key| {
+        AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(SsoPlugin::with_config(SsoConfig {
+                default_providers: super::sso_configured_providers::jwt_provider(&idp.base, key),
+                ..Default::default()
+            }))
+            .build()
+    };
+    let valid = build(true).await?;
+    let missing = build(false).await?;
+    let mut jtis = Vec::new();
+    for (index, key) in [(0, true), (1, true), (2, false)] {
+        let auth = if key { &valid } else { &missing };
+        let email = format!("private-key-jwt-{index}@company.test");
+        let subject = format!("private-jwt-subject-{index}");
+        *idp.profile.lock().unwrap() = Some(
+            json!({"sub":subject,"email":email,"email_verified":false,"name":"Private JWT employee"}),
+        );
+        idp.exchanges.lock().unwrap().clear();
+        let started = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"configured-jwt","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+        let grant = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?
+            .get(body(&started)["url"].as_str().unwrap())
+            .send()
+            .await?;
+        assert_eq!(grant.status(), 302);
+        let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+        let query = url
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        let completed = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::callback_sso_endpoint("configured-jwt", &json!(query))?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+        if !key {
+            assert_eq!(location.path(), "/failed");
+            assert_eq!(
+                location
+                    .query_pairs()
+                    .collect::<std::collections::HashMap<_, _>>()
+                    .get("error_description")
+                    .map(|value| value.as_ref()),
+                Some("no_private_key_available")
+            );
+            assert!(idp.exchanges.lock().unwrap().is_empty());
+            assert!(store.get_user_by_email(&email).await?.is_none());
+            assert!(
+                store
+                    .get_account("configured-jwt", &subject)
+                    .await?
+                    .is_none()
+            );
+        } else {
+            assert_eq!(location.path(), "/complete");
+            let session = call(
+                auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], email);
+            let exchanges = idp.exchanges.lock().unwrap().clone();
+            assert_eq!(exchanges.len(), 1);
+            assert!(exchanges[0]["authorization"].is_null());
+            assert!(exchanges[0]["form"].get("client_secret").is_none());
+            assert_eq!(exchanges[0]["form"]["client_id"], "enterprise-client");
+            assert_eq!(
+                exchanges[0]["form"]["client_assertion_type"],
+                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+            );
+            let assertion = exchanges[0]["form"]["client_assertion"].as_str().unwrap();
+            let claims: Value = serde_json::from_slice(
+                &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(assertion.split('.').nth(1).unwrap())?,
+            )?;
+            let jti = claims["jti"].as_str().unwrap().to_owned();
+            assert!(!jtis.contains(&jti));
+            jtis.push(jti);
+            assert!(
+                store
+                    .get_account("configured-jwt", &subject)
+                    .await?
+                    .is_some()
+            );
+        }
+        assert!(store.get_sso_provider("configured-jwt").await?.is_none());
     }
     B::close(connection).await
 }

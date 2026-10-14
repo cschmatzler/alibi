@@ -129,7 +129,44 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
+  const jwtOptions = async (key: boolean) => ({
+    ...options,
+    plugins: [
+      username(),
+      sso({
+        defaultSSO: [
+          {
+            providerId: "configured-jwt",
+            domain: "jwt.company.test",
+            oidcConfig: {
+              issuer: idp.base,
+              clientId: "enterprise-client",
+              pkce: true,
+              authorizationEndpoint: `${idp.base}/authorize`,
+              tokenEndpoint: `${idp.base}/token-jwt`,
+              jwksEndpoint: `${idp.base}/jwks`,
+              userInfoEndpoint: `${idp.base}/userinfo`,
+              tokenEndpointAuthentication: "private_key_jwt" as const,
+              privateKeyId: "sso-key",
+              privateKeyAlgorithm: "RS256",
+            },
+            ...(key
+              ? {
+                  privateKey: {
+                    privateKeyPem: await Bun.file(
+                      new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
+                    ).text(),
+                  },
+                }
+              : {}),
+          },
+        ],
+      }),
+    ],
+  });
   const instances = new Map([
+    ["configured-jwt", betterAuth(await jwtOptions(true))],
+    ["configured-jwt-missing", betterAuth(await jwtOptions(false))],
     ["configured-changed", betterAuth(configuredOptions(true))],
     ["configured", betterAuth(configuredOptions())],
     ["default", betterAuth(options)],
@@ -146,27 +183,31 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "configured-changed"
-        ? "configured-changed"
-        : input.mode === "configured"
-          ? "configured"
-          : input.mode === "no-signup"
-            ? "no-signup"
-            : input.mode === "validation"
-              ? "validation"
-              : input.mode === "trusted-claims"
-                ? "trusted-claims"
-                : input.mode === "signed-request-slo"
-                  ? "signed-request-slo"
-                  : input.mode === "signed-slo"
-                    ? "signed-slo"
-                    : input.mode === "domain"
-                      ? "domain"
-                      : input.mode === "shared"
-                        ? "shared"
-                        : input.mode === "slo"
-                          ? "slo"
-                          : "default";
+      input.mode === "configured-jwt"
+        ? "configured-jwt"
+        : input.mode === "configured-jwt-missing"
+          ? "configured-jwt-missing"
+          : input.mode === "configured-changed"
+            ? "configured-changed"
+            : input.mode === "configured"
+              ? "configured"
+              : input.mode === "no-signup"
+                ? "no-signup"
+                : input.mode === "validation"
+                  ? "validation"
+                  : input.mode === "trusted-claims"
+                    ? "trusted-claims"
+                    : input.mode === "signed-request-slo"
+                      ? "signed-request-slo"
+                      : input.mode === "signed-slo"
+                        ? "signed-slo"
+                        : input.mode === "domain"
+                          ? "domain"
+                          : input.mode === "shared"
+                            ? "shared"
+                            : input.mode === "slo"
+                              ? "slo"
+                              : "default";
     const auth = instances.get(mode)!;
     if (input.action === "validation-reset") {
       validationEvents.length = 0;
