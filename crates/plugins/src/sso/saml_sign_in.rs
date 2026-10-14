@@ -179,9 +179,26 @@ impl SsoPlugin {
                     .map(str::trim)
                     .collect::<Vec<_>>()
                     .join("\n");
-                let key = rsa::RsaPrivateKey::from_pkcs8_pem(&key)
-                    .or_else(|_| rsa::RsaPrivateKey::from_pkcs1_pem(&key))
-                    .map_err(|error| AuthError::internal(error.to_string()))?;
+                let key = if key
+                    .trim_start()
+                    .starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----")
+                {
+                    let passphrase = config
+                        .get("spMetadata")
+                        .and_then(|metadata| metadata.get("privateKeyPass"))
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            AuthError::internal(
+                                "Encrypted SAML private key requires privateKeyPass",
+                            )
+                        })?;
+                    rsa::RsaPrivateKey::from_pkcs8_encrypted_pem(&key, passphrase)
+                        .map_err(|error| AuthError::internal(error.to_string()))?
+                } else {
+                    rsa::RsaPrivateKey::from_pkcs8_pem(&key)
+                        .or_else(|_| rsa::RsaPrivateKey::from_pkcs1_pem(&key))
+                        .map_err(|error| AuthError::internal(error.to_string()))?
+                };
                 let signature = base64::engine::general_purpose::STANDARD.encode(
                     rsa::pkcs1v15::SigningKey::<rsa::sha2::Sha256>::new(key)
                         .sign(message.as_bytes())

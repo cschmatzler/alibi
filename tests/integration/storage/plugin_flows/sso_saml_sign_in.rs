@@ -17,14 +17,30 @@ async fn sso_saml_sign_in_issues_bound_redirect_request_and_rsa_signature<B: Bac
     let owner = signup(&auth, "saml-sign-in-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
     let private = include_str!("../../../compat/fixtures/salesforce-transport/key.pem");
-    for (signed, ambiguous) in [(false, false), (true, false), (false, true), (true, true)] {
-        let provider_id = match (signed, ambiguous) {
-            (false, false) => "unsigned-saml-provider",
-            (true, false) => "signed-saml-provider",
-            (false, true) => "ambiguous-unsigned-provider",
-            (true, true) => "ambiguous-signed-provider",
+    for (signed, ambiguous, key_mode) in [
+        (false, false, "pem"),
+        (true, false, "pem"),
+        (false, true, "pem"),
+        (true, true, "pem"),
+        (true, false, "encrypted"),
+        (true, false, "wrong-pass"),
+    ] {
+        let provider_id = if key_mode == "encrypted" {
+            "encrypted-saml-provider"
+        } else if key_mode == "wrong-pass" {
+            "encrypted-wrong-pass-provider"
+        } else {
+            match (signed, ambiguous) {
+                (false, false) => "unsigned-saml-provider",
+                (true, false) => "signed-saml-provider",
+                (false, true) => "ambiguous-unsigned-provider",
+                (true, true) => "ambiguous-signed-provider",
+            }
         };
         let mut config = json!({"entryPoint":"https://idp.example.test/sso","cert":cert,"privateKey":private,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"authnRequestsSigned":signed,"wantAssertionsSigned":true});
+        if key_mode != "pem" {
+            config["spMetadata"] = json!({"privateKey":include_str!("../../../compat/fixtures/salesforce-transport/encrypted-key.pem"),"privateKeyPass":if key_mode=="wrong-pass"{"wrong-passphrase"}else{"sso-test-passphrase"}});
+        }
         if ambiguous {
             config["idpMetadata"]["singleSignOnService"] = json!([{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://unused.example.test/first"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"}]);
         }
@@ -37,7 +53,7 @@ async fn sso_saml_sign_in_issues_bound_redirect_request_and_rsa_signature<B: Bac
             EndpointOptions::default(),
         ))
         .await;
-        if ambiguous {
+        if ambiguous || key_mode == "wrong-pass" {
             assert_eq!(result.unwrap_err().error.status_code(), 500);
             continue;
         }
@@ -150,8 +166,13 @@ async fn sso_saml_sign_in_issues_bound_redirect_request_and_rsa_signature<B: Bac
         assert_eq!(reference["source"]["type"], "persisted");
         assert_eq!(reference["source"]["recordId"], body(&registered)["id"]);
         use sha2::Digest as _;
+        let sp_metadata = if key_mode == "pem" {
+            ""
+        } else {
+            ",\"spMetadata\":{}"
+        };
         let canonical = format!(
-            r#"{{"domain":"company.test","issuer":"https://sp.example.test/entity","organizationId":null,"samlConfig":{{"authnRequestsSigned":{},"cert":{},"entryPoint":"https://idp.example.test/sso","idpMetadata":{{"entityID":"https://idp.example.test/entity"}},"issuer":"https://sp.example.test/entity","wantAssertionsSigned":true}}}}"#,
+            r#"{{"domain":"company.test","issuer":"https://sp.example.test/entity","organizationId":null,"samlConfig":{{"authnRequestsSigned":{},"cert":{},"entryPoint":"https://idp.example.test/sso","idpMetadata":{{"entityID":"https://idp.example.test/entity"}},"issuer":"https://sp.example.test/entity"{sp_metadata},"wantAssertionsSigned":true}}}}"#,
             signed,
             serde_json::to_string(cert)?
         );
