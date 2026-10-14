@@ -7,11 +7,11 @@ compatScenario(
   "SSO private_key_jwt authenticates real token requests and rejects missing keys",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: Record<string, unknown>, key = true) =>
+    const control = (input: Record<string, unknown>, mode = "configured-jwt") =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ ...input, mode: key ? "configured-jwt" : "configured-jwt-missing" }),
+        body: JSON.stringify({ ...input, mode }),
         redirect: "manual",
       });
     const cookies = (response: Response) =>
@@ -22,11 +22,16 @@ compatScenario(
         .join("; ");
     const jtis = new Set<string>();
     const observed = [];
-    for (const [index, key] of [
-      [0, true],
-      [1, true],
-      [2, false],
+    for (const [index, mode] of [
+      [0, "configured-jwt"],
+      [1, "configured-jwt"],
+      [2, "configured-jwt-missing"],
+      [3, "configured-jwt-jwk"],
+      [4, "configured-jwt-precedence"],
     ] as const) {
+      const key = mode !== "configured-jwt-missing";
+      await control({ action: "key-reset" }, mode);
+      await control({ action: "key-enabled", enabled: false }, mode);
       const email = ctx.uniqueEmail(`private-jwt-${index}`);
       const accountId = `private-jwt-subject-${index}`;
       await control(
@@ -35,7 +40,7 @@ compatScenario(
           email,
           profile: { sub: accountId, email, email_verified: false, name: "Private JWT employee" },
         },
-        key,
+        mode,
       );
       const started = await control(
         {
@@ -46,7 +51,7 @@ compatScenario(
             errorCallbackURL: `${ctx.baseURL}/failed`,
           },
         },
-        key,
+        mode,
       );
       expect(started.status).toBe(200);
       const grant = await fetch(((await started.json()) as any).url, { redirect: "manual" });
@@ -59,25 +64,25 @@ compatScenario(
           query,
           headers: { cookie: cookies(started) },
         },
-        key,
+        mode,
       );
       expect(completed.status).toBe(302);
       const location = new URL(completed.headers.get("location")!);
-      const exchanges = (await (await control({ action: "idp-exchanges" }, key)).json()) as any[];
+      const exchanges = (await (await control({ action: "idp-exchanges" }, mode)).json()) as any[];
       if (!key) {
         expect(location.pathname).toBe("/failed");
         expect(location.searchParams.get("error_description")).toBe("no_private_key_available");
         expect(exchanges).toEqual([]);
-        expect(await (await control({ action: "user-row", email }, key)).json()).toBe(null);
+        expect(await (await control({ action: "user-row", email }, mode)).json()).toBe(null);
         expect(
           await (
-            await control({ action: "account-row", providerId: "configured-jwt", accountId }, key)
+            await control({ action: "account-row", providerId: "configured-jwt", accountId }, mode)
           ).json(),
         ).toBe(null);
       } else {
         expect(location.pathname).toBe("/complete");
         const session = (await (
-          await control({ action: "session", headers: { cookie: cookies(completed) } }, key)
+          await control({ action: "session", headers: { cookie: cookies(completed) } }, mode)
         ).json()) as any;
         expect(session.user.email).toBe(email);
         expect(exchanges).toHaveLength(1);
@@ -94,15 +99,16 @@ compatScenario(
         jtis.add(claims.jti);
         expect(
           await (
-            await control({ action: "account-row", providerId: "configured-jwt", accountId }, key)
+            await control({ action: "account-row", providerId: "configured-jwt", accountId }, mode)
           ).json(),
         ).not.toBe(null);
       }
       expect(
-        await (await control({ action: "row", providerId: "configured-jwt" }, key)).json(),
+        await (await control({ action: "row", providerId: "configured-jwt" }, mode)).json(),
       ).toBe(null);
+      expect(await (await control({ action: "key-events" }, mode)).json()).toEqual([]);
       observed.push({
-        key,
+        mode,
         path: location.pathname,
         error: location.searchParams.get("error_description"),
       });

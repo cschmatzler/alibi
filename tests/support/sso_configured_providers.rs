@@ -48,3 +48,19 @@ pub(crate) fn jwt_provider(base: &str, key: bool) -> Vec<SsoDefaultProvider> {
         }),
     }]
 }
+
+/// Exercise JWK precedence over an unusable PEM using the real IdP signing key.
+pub(crate) fn jwt_jwk_provider(base: &str) -> Vec<SsoDefaultProvider> {
+    let mut providers = jwt_provider(base, true);
+    providers.first_mut().unwrap().private_key = Some(SsoPrivateKey {
+        private_key_jwk: Some(
+            serde_json::from_str(include_str!(
+                "../compat/fixtures/salesforce-transport/private.jwk.json"
+            ))
+            .unwrap(),
+        ),
+        private_key_pem: Some("unusable PEM must not be imported".into()),
+        ..Default::default()
+    });
+    providers
+}
