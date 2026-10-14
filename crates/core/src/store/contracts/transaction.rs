@@ -22,6 +22,55 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn get_scim_connection_binding(
+        &self,
+        _id: &str,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM bindings are unsupported",
+        ))
+    }
+    async fn scim_projection_candidates(
+        &self,
+        _domain: &str,
+        _cursor: Option<&str>,
+    ) -> AuthResult<Vec<crate::store::ScimProjectionCandidate>> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM candidates are unsupported",
+        ))
+    }
+    async fn renew_scim_decommission_lease(
+        &self,
+        _binding: &crate::store::ScimConnectionBinding,
+        _lease: &str,
+    ) -> AuthResult<bool> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM leases are unsupported",
+        ))
+    }
+    async fn advance_scim_decommission(
+        &self,
+        _binding: &crate::store::ScimConnectionBinding,
+        _lease: &str,
+        _cursor: Option<&str>,
+        _count: usize,
+        _more: bool,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM checkpoints are unsupported",
+        ))
+    }
+    async fn reconcile_scim_identity(&self, _user_id: &str) -> AuthResult<bool> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM identity is unsupported",
+        ))
+    }
+    async fn delete_user_sessions(&self, _user_id: &str) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional session retirement is unsupported",
+        ))
+    }
+
     async fn prepare_scim_projection(
         &self,
         _domain: &str,

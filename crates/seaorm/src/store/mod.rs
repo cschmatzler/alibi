@@ -308,6 +308,61 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn get_scim_connection_binding(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
+        self.store
+            .get_scim_connection_binding_with_connection(self.tx, id)
+            .await
+    }
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionCandidate>> {
+        self.store
+            .scim_projection_candidates_with_connection(self.tx, domain, cursor)
+            .await
+    }
+    async fn renew_scim_decommission_lease(
+        &self,
+        binding: &alibi_core::store::ScimConnectionBinding,
+        lease: &str,
+    ) -> AuthResult<bool> {
+        self.store
+            .renew_scim_decommission_lease_with_connection(self.tx, binding, lease)
+            .await
+    }
+    async fn advance_scim_decommission(
+        &self,
+        binding: &alibi_core::store::ScimConnectionBinding,
+        lease: &str,
+        cursor: Option<&str>,
+        count: usize,
+        more: bool,
+    ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
+        self.store
+            .advance_scim_decommission_with_connection(self.tx, binding, lease, cursor, count, more)
+            .await
+    }
+    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+        self.store
+            .reconcile_scim_identity_with_connection(self.tx, user_id)
+            .await
+    }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        use sea_orm::{ColumnTrait, QueryFilter};
+        _ = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
+            .filter(
+                S::Session::user_id_column()
+                    .eq(<S::Session as SeaOrmSessionModel>::parse_user_id(user_id)?),
+            )
+            .exec(self.tx)
+            .await
+            .map_err(map_db_err)?;
+        Ok(())
+    }
     async fn prepare_scim_projection(
         &self,
         domain: &str,
@@ -706,4 +761,5 @@ pub(crate) fn bind_page(
 mod sso;
 
 mod scim;
+mod scim_decommission;
 mod scim_projection;

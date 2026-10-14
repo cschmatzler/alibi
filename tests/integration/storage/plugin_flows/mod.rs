@@ -517,6 +517,7 @@ mod scim_managed_decommission;
 mod scim_managed_events;
 mod scim_managed_revoke;
 mod scim_managed_rotate;
+mod scim_populated_decommission;
 mod scim_projection_admission;
 mod scim_role_projection;
 mod scim_terminal_binding;

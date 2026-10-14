@@ -46,7 +46,7 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
             .collect())
     }
 
-    async fn recover_empty_scim_decommission(
+    async fn acquire_scim_decommission_lease(
         &self,
         mut binding: alibi_core::store::ScimConnectionBinding,
     ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
@@ -103,76 +103,61 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
             return Ok(None);
         }
         binding.decommission_revision += 1;
-        let result=self.in_transaction(true,async |tx| {
-            let exec=Exec::tx(tx);let mut sql=model::select_model::<super::entities::scim_connection_binding::Model>(exec);sql.push(" WHERE ");sql.compare("scimConnectionBinding","id"," = ",binding.id.clone());model::limit_one(&mut sql);
-            let stored=exec.fetch_optional::<super::entities::scim_connection_binding::Model>(sql).await?.ok_or_else(||alibi_core::AuthError::internal(format!("SCIM connection \"{}\" binding disappeared during decommissioning.",binding.connection_id)))?;
-            if stored.decommission_status=="complete"{return Ok(stored.into());}
-            if stored.decommission_lease_id.as_deref()!=Some(&lease){return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission lease was taken over by another worker.",binding.connection_id)));}
-            let mut sql=model::select_model::<super::entities::scim_user::Model>(exec);sql.push(" WHERE ");sql.compare("scimUser","provisioningDomainId"," = ",stored.provisioning_domain_id.clone());
-            if let Some(cursor)=&stored.decommission_cursor_user_id{sql.push(" AND ");sql.compare("scimUser","userId"," > ",cursor.clone());}
-            sql.push(" LIMIT 101");
-            if !exec.fetch_all::<super::entities::scim_user::Model>(sql).await?.is_empty(){return Err(alibi_core::AuthError::config("SCIM projection reconciliation is not supported by this store"));}
-            let mut sql=Sql::with(exec.engine(),"UPDATE ");sql.ident("scimConnectionBinding");sql.push(" SET ");sql.ident("decommissionLeaseExpiresAt");sql.push(" = ");sql.bind(chrono::Utc::now().trunc_subsecs(3)+chrono::Duration::minutes(5));sql.push(" WHERE ");sql.compare("scimConnectionBinding","id"," = ",stored.id.clone());sql.push(" AND ");sql.compare("scimConnectionBinding","decommissionRevision"," = ",stored.decommission_revision);sql.push(" AND ");sql.compare("scimConnectionBinding","decommissionStatus"," = ","reconciling");sql.push(" AND ");sql.compare("scimConnectionBinding","decommissionLeaseId"," = ",lease.clone());
-            if exec.execute(sql).await?==0{return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission lease changed before reconciliation.",binding.connection_id)));}
-            let mut sql=Sql::with(exec.engine(),"UPDATE ");sql.ident("scimConnectionBinding");sql.push(" SET ");sql.ident("decommissionRevision");sql.push(" = ");sql.ident("decommissionRevision");sql.push(" + 1, ");sql.ident("decommissionStatus");sql.push(" = ");sql.bind("complete");sql.push(", ");sql.ident("decommissionCompletedAt");sql.push(" = ");let completed=chrono::Utc::now().trunc_subsecs(3);sql.bind(completed);sql.push(", ");sql.ident("decommissionLeaseId");sql.push(" = NULL, ");sql.ident("decommissionLeaseExpiresAt");sql.push(" = NULL WHERE ");sql.compare("scimConnectionBinding","id"," = ",stored.id.clone());sql.push(" AND ");sql.compare("scimConnectionBinding","decommissionRevision"," = ",stored.decommission_revision);sql.push(" AND ");sql.compare("scimConnectionBinding","decommissionLeaseId"," = ",lease.clone());
-            if exec.execute(sql).await?==0{return Err(alibi_core::AuthError::internal(format!("SCIM connection \"{}\" decommission checkpoint changed concurrently.",binding.connection_id)));}
-            let mut stored=stored;stored.decommission_revision+=1;stored.decommission_status="complete".into();stored.decommission_completed_at=Some(completed);stored.decommission_lease_id=None;stored.decommission_lease_expires_at=None;Ok(stored.into())
-        }).await;
-        if result.is_err() {
-            for _ in 0..3 {
-                let mut query = model::select_model::<
-                    super::entities::scim_connection_binding::Model,
-                >(self.exec());
-                query.push(" WHERE ");
-                query.compare("scimConnectionBinding", "id", " = ", binding.id.clone());
-                model::limit_one(&mut query);
-                let Ok(Some(current)) = self
-                    .exec()
-                    .fetch_optional::<super::entities::scim_connection_binding::Model>(query)
-                    .await
-                else {
-                    break;
-                };
-                if current.decommission_status == "complete"
-                    || current.decommission_lease_id.as_deref() != Some(&lease)
-                {
-                    break;
-                }
-                let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
-                sql.ident("scimConnectionBinding");
-                sql.push(" SET ");
-                sql.ident("decommissionRevision");
-                sql.push(" = ");
-                sql.ident("decommissionRevision");
-                sql.push(" + 1, ");
-                sql.ident("decommissionLeaseId");
-                sql.push(" = NULL, ");
-                sql.ident("decommissionLeaseExpiresAt");
-                sql.push(" = NULL WHERE ");
-                sql.compare("scimConnectionBinding", "id", " = ", binding.id.clone());
-                sql.push(" AND ");
-                sql.compare(
-                    "scimConnectionBinding",
-                    "decommissionRevision",
-                    " = ",
-                    current.decommission_revision,
-                );
-                sql.push(" AND ");
-                sql.compare(
-                    "scimConnectionBinding",
-                    "decommissionLeaseId",
-                    " = ",
-                    lease.clone(),
-                );
-                match self.exec().execute(sql).await {
-                    Ok(0) => {}
-                    _ => break,
-                }
+        self.get_scim_connection_binding_with_exec(self.exec(), &binding.id)
+            .await
+    }
+    async fn release_scim_decommission_lease(&self, id: &str, lease: &str) -> AuthResult<()> {
+        for _ in 0..3 {
+            let mut query =
+                model::select_model::<super::entities::scim_connection_binding::Model>(self.exec());
+            query.push(" WHERE ");
+            query.compare("scimConnectionBinding", "id", " = ", id.to_string());
+            model::limit_one(&mut query);
+            let Ok(Some(current)) = self
+                .exec()
+                .fetch_optional::<super::entities::scim_connection_binding::Model>(query)
+                .await
+            else {
+                break;
+            };
+            if current.decommission_status == "complete"
+                || current.decommission_lease_id.as_deref() != Some(lease)
+            {
+                break;
+            }
+            let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+            sql.ident("scimConnectionBinding");
+            sql.push(" SET ");
+            sql.ident("decommissionRevision");
+            sql.push(" = ");
+            sql.ident("decommissionRevision");
+            sql.push(" + 1, ");
+            sql.ident("decommissionLeaseId");
+            sql.push(" = NULL, ");
+            sql.ident("decommissionLeaseExpiresAt");
+            sql.push(" = NULL WHERE ");
+            sql.compare("scimConnectionBinding", "id", " = ", id.to_string());
+            sql.push(" AND ");
+            sql.compare(
+                "scimConnectionBinding",
+                "decommissionRevision",
+                " = ",
+                current.decommission_revision,
+            );
+            sql.push(" AND ");
+            sql.compare(
+                "scimConnectionBinding",
+                "decommissionLeaseId",
+                " = ",
+                lease.to_string(),
+            );
+            match self.exec().execute(sql).await {
+                Ok(0) => {}
+                _ => break,
             }
         }
-        result.map(Some)
+        Ok(())
     }
-
     async fn terminal_scim_connection_binding(
         &self,
         id: &str,

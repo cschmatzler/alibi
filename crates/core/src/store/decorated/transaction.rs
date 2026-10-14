@@ -126,6 +126,59 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn get_scim_connection_binding(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        self.inner.get_scim_connection_binding(id).await
+    }
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<crate::store::ScimProjectionCandidate>> {
+        self.inner.scim_projection_candidates(domain, cursor).await
+    }
+    async fn renew_scim_decommission_lease(
+        &self,
+        binding: &crate::store::ScimConnectionBinding,
+        lease: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .renew_scim_decommission_lease(binding, lease)
+            .await
+    }
+    async fn advance_scim_decommission(
+        &self,
+        binding: &crate::store::ScimConnectionBinding,
+        lease: &str,
+        cursor: Option<&str>,
+        count: usize,
+        more: bool,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        self.inner
+            .advance_scim_decommission(binding, lease, cursor, count, more)
+            .await
+    }
+    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+        self.inner.reconcile_scim_identity(user_id).await
+    }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        if self.config.session.stateless {
+            self.record_store
+                .ephemeral()?
+                .retain(|_, session| session.user_id().as_ref() != user_id);
+            return Ok(());
+        }
+        let tokens = self.record_store.cached_user_tokens(user_id).await?;
+        if self.record_store.session_uses_database() {
+            self.inner.delete_user_sessions(user_id).await?;
+        }
+        self.record_store
+            .remove_cached_user_sessions(user_id, tokens)
+            .await
+    }
+
     async fn prepare_scim_projection(
         &self,
         domain: &str,

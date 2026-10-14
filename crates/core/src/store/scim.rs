@@ -112,6 +112,20 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn acquire_scim_decommission_lease(
+        &self,
+        _binding: ScimConnectionBinding,
+    ) -> AuthResult<Option<ScimConnectionBinding>> {
+        Err(AuthError::config(
+            "SCIM binding persistence is not supported by this store",
+        ))
+    }
+    async fn release_scim_decommission_lease(&self, _id: &str, _lease: &str) -> AuthResult<()> {
+        Err(AuthError::config(
+            "SCIM binding persistence is not supported by this store",
+        ))
+    }
+
     async fn scim_projection_candidates(
         &self,
         _domain: &str,
@@ -119,15 +133,6 @@ pub trait ScimManagedStore: Send + Sync {
     ) -> AuthResult<Vec<ScimProjectionCandidate>> {
         Err(AuthError::config(
             "SCIM projection persistence is not supported by this store",
-        ))
-    }
-
-    async fn recover_empty_scim_decommission(
-        &self,
-        _binding: ScimConnectionBinding,
-    ) -> AuthResult<Option<ScimConnectionBinding>> {
-        Err(AuthError::config(
-            "SCIM binding persistence is not supported by this store",
         ))
     }
 

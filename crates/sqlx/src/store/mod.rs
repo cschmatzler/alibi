@@ -272,6 +272,68 @@ where
     S::Session: SqlxSessionModel,
     S::Verification: SqlxVerificationModel,
 {
+    async fn get_scim_connection_binding(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
+        self.store
+            .get_scim_connection_binding_with_exec(Exec::tx(self.tx), id)
+            .await
+    }
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionCandidate>> {
+        self.store
+            .scim_projection_candidates_with_exec(Exec::tx(self.tx), domain, cursor)
+            .await
+    }
+    async fn renew_scim_decommission_lease(
+        &self,
+        binding: &alibi_core::store::ScimConnectionBinding,
+        lease: &str,
+    ) -> AuthResult<bool> {
+        self.store
+            .renew_scim_decommission_lease_with_exec(Exec::tx(self.tx), binding, lease)
+            .await
+    }
+    async fn advance_scim_decommission(
+        &self,
+        binding: &alibi_core::store::ScimConnectionBinding,
+        lease: &str,
+        cursor: Option<&str>,
+        count: usize,
+        more: bool,
+    ) -> AuthResult<Option<alibi_core::store::ScimConnectionBinding>> {
+        self.store
+            .advance_scim_decommission_with_exec(
+                Exec::tx(self.tx),
+                binding,
+                lease,
+                cursor,
+                count,
+                more,
+            )
+            .await
+    }
+    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+        self.store
+            .reconcile_scim_identity_with_exec(Exec::tx(self.tx), user_id)
+            .await
+    }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        use crate::model::SqlxModel;
+        let exec = Exec::tx(self.tx);
+        let table = <S::Session as SqlxModel>::TABLE;
+        let id = <S::Session as SqlxSessionModel>::parse_user_id(user_id)?;
+        let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+        sql.ident(table);
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", id);
+        _ = exec.execute(sql).await?;
+        Ok(())
+    }
     async fn prepare_scim_projection(
         &self,
         domain: &str,
@@ -652,4 +714,5 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
 mod sso;
 
 mod scim;
+mod scim_decommission;
 mod scim_projection;
