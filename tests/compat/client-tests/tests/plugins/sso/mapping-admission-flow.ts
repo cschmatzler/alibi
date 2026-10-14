@@ -72,7 +72,11 @@ export async function mappingAdmissionFlow(ctx: ScenarioContext, saml = false) {
     await control({ action: "row", providerId: input.providerId })
   ).json()) as any;
   expect(JSON.parse(row[protocol]).mapping).toEqual(config.mapping);
-  const cases: [Record<string, unknown>, string][] = [
+  const cases: [unknown, string][] = [
+    [null, "[body.oidcConfig.mapping] Invalid input: expected object, received null"],
+    [[], "[body.oidcConfig.mapping] Invalid input: expected object, received array"],
+    ["mapping", "[body.oidcConfig.mapping] Invalid input: expected object, received string"],
+    [12, "[body.oidcConfig.mapping] Invalid input: expected object, received number"],
     [
       { email: "mail" },
       "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",

@@ -212,6 +212,7 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
         ));
     }
     if let Some(config) = output.get("oidcConfig") {
+        let original_mapping = config.get("mapping");
         let config = super::super::endpoint::validate_fields(
             Some(config),
             "body.oidcConfig",
@@ -245,20 +246,12 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
                     required: false,
                 },
                 JsonField {
-                    name: "mapping",
-                    kind: JsonFieldKind::Record,
-                    required: false,
-                },
-                JsonField {
                     name: "overrideUserInfo",
                     kind: JsonFieldKind::Boolean,
                     required: false,
                 },
             ],
         )?;
-        if let Some(mapping) = config.get("mapping") {
-            _ = super::mapping_schema::oidc(mapping)?;
-        }
         for field in super::discovery::ENDPOINT_FIELDS {
             if let Some(value) = config.get(field).and_then(JsValue::as_str)
                 && url::Url::parse(value).is_err()
@@ -272,6 +265,9 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
             .as_object()
             .cloned()
             .ok_or_else(|| super::super::endpoint::validation("Invalid OIDC config"))?;
+        if let Some(mapping) = original_mapping {
+            _ = normalized.insert("mapping".into(), super::mapping_schema::oidc(mapping)?);
+        }
         if let Some(scopes) = output
             .get("oidcConfig")
             .and_then(|config| config.get("scopes"))
