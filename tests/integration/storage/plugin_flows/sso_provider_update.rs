@@ -129,7 +129,7 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
         ..Default::default()
     };
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
-    let registered = Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":"saml-update-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"privateKey":"original-sp-key","idpMetadata":{"entityID":"https://idp.example.test/entity","privateKey":"original-idp-key","singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/logout"}]},"spMetadata":{"entityID":"https://sp.example.test/entity","encPrivateKey":"original-decryption-key"},"idpInitiatedCallbackUrl":format!("{ORIGIN}/idp-complete"),"wantAssertionsSigned":true}}))?,owned.clone())).await?.into_response()?;
+    let registered = Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":"saml-update-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"privateKey":"original-sp-key","idpMetadata":{"entityID":"https://idp.example.test/entity","privateKey":"original-idp-key","singleSignOnService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/post-sso"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"}],"singleLogoutService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/logout"}]},"spMetadata":{"entityID":"https://sp.example.test/entity","encPrivateKey":"original-decryption-key"},"idpInitiatedCallbackUrl":format!("{ORIGIN}/idp-complete"),"wantAssertionsSigned":true}}))?,owned.clone())).await?.into_response()?;
     assert_eq!(registered.status, 200);
     let update = json!({"providerId":"saml-update-provider","domain":"updated.test","samlConfig":{"idpMetadata":{"privateKeyPass":"new-passphrase"},"spMetadata":{"privateKey":"nested-sp-key"},"authnRequestsSigned":false}});
     let response = Box::pin(auth.dispatch_endpoint(
@@ -189,6 +189,8 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
     );
     assert_eq!(config["spMetadata"]["privateKey"], "nested-sp-key");
     for change in [
+        json!({"idpMetadata":{"singleSignOnService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://other-idp.example.test/sso"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://idp.example.test/post-sso"}]}}),
+        json!({"idpMetadata":{"singleSignOnService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://other-idp.example.test/post-sso"}]}}),
         json!({"audience":"urn:other:audience"}),
         json!({"idpMetadata":{"entityID":"https://other-idp.example.test/entity"}}),
         json!({"cert":"different-trust-anchor"}),
@@ -212,5 +214,14 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
             row
         );
     }
+    let unused = Box::pin(auth.dispatch_endpoint(SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":"saml-update-provider","samlConfig":{"entryPoint":"https://unused.example.test/changed"}}))?,owned)).await?.into_response()?;
+    assert_eq!(unused.status, 200);
+    let started = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"saml-update-provider","callbackURL":format!("{ORIGIN}/complete")}))?,EndpointOptions::default())).await?.into_response()?;
+    let url = url::Url::parse(body(&started)["url"].as_str().unwrap())?;
+    assert_eq!(
+        url.origin().ascii_serialization(),
+        "https://idp.example.test"
+    );
+    assert_eq!(url.path(), "/sso");
     B::close(connection).await
 }
