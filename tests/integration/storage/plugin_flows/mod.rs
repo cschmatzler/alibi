@@ -466,3 +466,5 @@ mod sso_oidc_peer;
 mod sso_saml_encryption;
 
 mod sso_endpoint_admission;
+
+mod sso_oidc_mapping;
