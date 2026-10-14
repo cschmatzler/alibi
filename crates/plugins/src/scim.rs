@@ -10,6 +10,7 @@ mod authentication;
 mod managed;
 mod projection;
 mod resources;
+mod user_attributes;
 pub use authentication::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 pub use projection::{
@@ -105,6 +106,12 @@ impl ScimPlugin {
     pub fn connections(mut self, connections: Vec<ScimConnectionOptions>) -> Self {
         self.connections = connections;
         self
+    }
+    /// Read a connection-owned SCIM User through the server API.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn user_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "getSCIMUser").with_params(&json!({"userId":id}))
     }
     /// Read a connection-owned SCIM Group through the server API.
     /// # Errors
@@ -228,6 +235,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
             AuthRoute::get("/scim/v2/Groups/{groupId}", "getSCIMGroup"),
             AuthRoute::get("/scim/v2/Schemas", "getSCIMSchemas"),
             AuthRoute::get("/scim/v2/Schemas/{schemaId}", "getSCIMSchema"),
@@ -244,6 +252,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getSCIMUser",
+                "getSCIMUser",
+                Some("/scim/v2/Users/:userId"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getSCIMGroup",
                 "getSCIMGroup",
@@ -382,6 +396,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMUser" {
+            return self.get_user(call, ctx).await;
+        }
         if call.operation_id() == "getSCIMGroup" {
             return self.get_group(call, ctx).await;
         }
@@ -445,6 +462,26 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(json!({"userId":id})));
+            let mut response = self.get_user(&call, ctx).await?.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
         {

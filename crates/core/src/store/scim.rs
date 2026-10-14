@@ -110,6 +110,23 @@ pub struct ScimManagedCreation {
     pub connection: ScimManagedConnection,
     pub credential: ScimManagedCredential,
 }
+/// Canonical connection-owned User fields required for protocol serialization.
+pub struct ScimUserRecord {
+    pub id: String,
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub user_name: String,
+    pub display_name: String,
+    pub active: bool,
+    pub external_id: Option<String>,
+    pub formatted_name: String,
+    pub given_name: Option<String>,
+    pub family_name: Option<String>,
+    pub serialized_emails: String,
+    pub serialized_attributes: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
 /// Canonical connection-owned group metadata.
 pub struct ScimGroupRecord {
     pub id: String,
@@ -130,6 +147,16 @@ pub struct ScimGroupMemberships {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn get_scim_user(
+        &self,
+        _id: &str,
+        _connection: &str,
+    ) -> AuthResult<Option<ScimUserRecord>> {
+        Err(AuthError::config(
+            "SCIM resource persistence is not supported by this store",
+        ))
+    }
+
     async fn find_scim_managed_credential(
         &self,
         _credential_id: &str,

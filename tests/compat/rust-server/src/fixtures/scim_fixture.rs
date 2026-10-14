@@ -65,10 +65,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let identity_fails = Arc::new(AtomicBool::new(false));
     let verifier_inputs = Arc::new(Mutex::new(Vec::<Value>::new()));
     let verifier_claims = Arc::new(Mutex::new(None::<JsValue>));
+    let user_read_attributes = Arc::new(Mutex::new(String::new()));
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
+            let user_read_attributes=user_read_attributes.clone();
             let verifier_inputs=verifier_inputs.clone();let verifier_claims=verifier_claims.clone();
             let auth = restart_auth.clone();
             let config=restart_config.clone();
@@ -96,6 +98,24 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="user-read-attributes") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let serialized=if input["restore"]==true{user_read_attributes.lock().unwrap().clone()}else{input["serializedAttributes"].as_str().unwrap().to_owned()};
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimUser SET serializedAttributes=? WHERE id='rich'",[serialized.into()])).await.unwrap();return Json(json!({"changed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="getSCIMUser") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let endpoint=ScimPlugin::user_endpoint(input["params"]["userId"].as_str().unwrap()).unwrap().with_query(&input["query"]).unwrap();
+                    let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
+                    return match auth.dispatch_endpoint(endpoint,EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+                }
+                if query.get("operation").is_some_and(|operation|operation=="seed-user-read") {
+                    let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"user-read-owner@example.com","password":"a-native-password-123","name":"User owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();let owner:Value=serde_json::from_slice(&output.body).unwrap();let uid=owner["user"]["id"].as_str().unwrap();
+                    let attributes=json!({"schemas":["urn:ietf:params:scim:schemas:extension:enterprise:2.0:User","urn:ietf:params:scim:schemas:core:2.0:User"],"name":{"formatted":" Alice Example ","givenName":" Alice ","ignored":"drop"},"emails":[{"value":"Alice@example.com","primary":true,"type":"WORK","ignored":"drop"}],"title":" Principal ","phoneNumbers":[{"value":" +1 555 ","type":"WORK","primary":true}],"addresses":[{"streetAddress":" 1 Road ","type":"WORK","primary":true}],"roles":[{"value":" admin ","display":" Admin ","type":"CUSTOM","primary":true}],"enterprise":{"employeeNumber":[" 42 "],"organization":" Example ","manager":{"value":" manager ","displayName":"drop"}},"userName":"spoof","active":true});
+                    for(id,cid,domain)in[("rich","conn-a","tenant-a"),("legacy","conn-a","tenant-a"),("corrupt","conn-a","tenant-a"),("foreign","conn-b","tenant-a"),("drift","conn-a","tenant-b")]{
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,givenName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'alice',?,'Alice@example.com','[]','[]','Alice from row',' Legacy Name ',' Legacy ',?,false,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),cid.into(),domain.into(),uid.into(),id.into(),id.into(),json!([{"value":"legacy@example.com","primary":true}]).to_string().into(),id.into()])).await.unwrap();
+                    }
+                    *user_read_attributes.lock().unwrap()=attributes.to_string();
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimUser SET serializedAttributes=?,externalId='external-alice' WHERE id='rich'",[attributes.to_string().into()])).await.unwrap();_=database.execute_unprepared("UPDATE scimUser SET serializedAttributes='not-json' WHERE id='corrupt'").await.unwrap();return Json(json!({"seeded":true})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="seed-verifier-groups") {
                     let _owner=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"verifier-owner@example.com","password":"a-native-password-123","name":"Verifier owner"})).unwrap(),EndpointOptions::default()).await.unwrap();
                     for(id,domain)in[("declared","tenant-declared"),("dynamic","tenant-dynamic")]{_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Verified Group',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),id.into(),domain.into(),id.into(),id.into()])).await.unwrap();}return Json(json!({"seeded":true})).into_response();

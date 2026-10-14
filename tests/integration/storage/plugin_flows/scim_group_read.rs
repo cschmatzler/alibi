@@ -5,7 +5,7 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::scim::{ScimConnectionOptions, ScimCredential, ScimPlugin};
 backend_tests!(scim_group_read_authenticates_and_projects_owned_members);
 postgres_tests!(scim_group_read_authenticates_and_projects_owned_members);
-fn connections() -> Vec<ScimConnectionOptions> {
+pub(super) fn connections() -> Vec<ScimConnectionOptions> {
     let mut limited = ScimCredential::new("limited", "users-reader");
     limited.scopes = Some(vec!["scim.users.read".into()]);
     let mut expired = ScimCredential::new("expired", "expired-reader");
