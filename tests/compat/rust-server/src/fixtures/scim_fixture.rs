@@ -72,9 +72,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;
                     return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=error.error.to_auth_response();if let Some(headers)=error.headers{for(name,value)in headers.iter(){response.headers.append(name,value);}}response.into_response()}};
                 }
-                if query.get("operation").is_some_and(|operation|operation=="getSCIMManagedConnection") {
+                if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"getSCIMManagedConnection"|"listSCIMManagedConnectionEvents")) {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();
-                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","getSCIMManagedConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim",if query.get("operation").is_some_and(|operation|operation=="listSCIMManagedConnectionEvents"){"listSCIMManagedConnectionEvents"}else{"getSCIMManagedConnection"}).with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
                     return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="listSCIMManagedConnections") {

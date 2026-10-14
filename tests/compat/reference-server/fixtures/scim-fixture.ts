@@ -116,6 +116,10 @@ export async function scimFixture(base: BetterAuthOptions) {
         input.body.expiresAt = new Date(input.body.expiresAt);
         return auth.api.rotateSCIMManagedCredential({ body: input.body, asResponse: true });
       }
+      if (query.get("operation") === "listSCIMManagedConnectionEvents") {
+        const input = (await request.json()) as any;
+        return auth.api.listSCIMManagedConnectionEvents({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "getSCIMManagedConnection") {
         const input = (await request.json()) as any;
         return auth.api.getSCIMManagedConnection({ body: input.body, asResponse: true });

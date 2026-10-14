@@ -185,6 +185,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "listSCIMManagedConnectionEvents",
+                "listSCIMManagedConnectionEvents",
+                None,
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "revokeSCIMManagedCredential",
                 "revokeSCIMManagedCredential",
                 None,
@@ -253,7 +259,8 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         if matches!(
             call.operation_id(),
-            "revokeSCIMManagedCredential"
+            "listSCIMManagedConnectionEvents"
+                | "revokeSCIMManagedCredential"
                 | "createSCIMManagedConnection"
                 | "listSCIMManagedConnections"
                 | "getSCIMManagedConnection"
@@ -287,6 +294,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "listSCIMManagedConnectionEvents" {
+            return self.list_managed_connection_events(call, ctx).await;
+        }
         if call.operation_id() == "revokeSCIMManagedCredential" {
             return self.revoke_managed_credential(call, ctx).await;
         }

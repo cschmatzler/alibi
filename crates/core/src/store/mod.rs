@@ -39,8 +39,8 @@ pub use oauth_clients::{
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 pub use scim::{
     CreateScimManagedConnection, RevokeScimManagedCredential, RotateScimManagedCredential,
-    ScimManagedConnection, ScimManagedConnectionState, ScimManagedCreation, ScimManagedCredential,
-    ScimManagedStore,
+    ScimManagedConnection, ScimManagedConnectionEvent, ScimManagedConnectionState,
+    ScimManagedCreation, ScimManagedCredential, ScimManagedStore,
 };
 #[cfg(feature = "redis-cache")]
 pub use secondary_storage::RedisAdapter;

@@ -46,7 +46,9 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     })?;
     if matches!(
         call.operation_id(),
-        "getSCIMManagedConnection" | "revokeSCIMManagedCredential"
+        "getSCIMManagedConnection"
+            | "revokeSCIMManagedCredential"
+            | "listSCIMManagedConnectionEvents"
     ) {
         let id = body.get("connectionId");
         let Some(id) = id.and_then(JsValue::as_str) else {
@@ -194,6 +196,48 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// List the newest 100 connection events in ascending sequence order.
+    /// # Errors
+    /// Returns an error if the arguments cannot be serialized.
+    pub fn list_managed_connection_events_endpoint(
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "listSCIMManagedConnectionEvents")
+            .with_body(&serde_json::json!({"connectionId":id,"provisioningDomainId":domain}))
+    }
+    pub(super) async fn list_managed_connection_events<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let id = body
+            .get("connectionId")
+            .and_then(JsValue::as_str)
+            .ok_or_else(|| AuthError::internal("Validated ID missing"))?;
+        let events = ctx
+            .database
+            .list_scim_managed_connection_events(id, &body_string(body, "provisioningDomainId", 1)?)
+            .await?
+            .ok_or_else(|| AuthError::Api {
+                status: 404,
+                code: None,
+                message: "Managed SCIM connection not found".into(),
+            })?;
+        EndpointResponse::json(&serde_json::json!({"events":events}))
+    }
+
     /// Revoke one domain-owned credential through the trusted server API.
     /// # Errors
     /// Returns an error if the arguments cannot be serialized.

@@ -18,6 +18,42 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn list_scim_managed_connection_events(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<Vec<alibi_core::store::ScimManagedConnectionEvent>>> {
+        let Some(connection) = connection::Entity::find()
+            .filter(connection::Column::ConnectionId.eq(id))
+            .filter(connection::Column::ProvisioningDomainId.eq(domain))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        let mut events = event::Entity::find()
+            .filter(event::Column::ConnectionRecordId.eq(connection.id))
+            .order_by_desc(event::Column::Sequence)
+            .limit(100)
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        events.reverse();
+        Ok(Some(
+            events
+                .into_iter()
+                .map(|event| alibi_core::store::ScimManagedConnectionEvent {
+                    sequence: i64::from(event.sequence),
+                    kind: event.kind,
+                    actor_id: event.actor_id,
+                    credential_id: event.credential_id,
+                    created_at: event.created_at,
+                })
+                .collect(),
+        ))
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         data: alibi_core::store::RevokeScimManagedCredential,
