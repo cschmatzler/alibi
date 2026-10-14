@@ -317,7 +317,10 @@ where
             )
             .await
     }
-    async fn reconcile_scim_identity(&self, user_id: &str) -> AuthResult<bool> {
+    async fn reconcile_scim_identity(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<alibi_core::store::ScimIdentityState> {
         self.store
             .reconcile_scim_identity_with_exec(Exec::tx(self.tx), user_id)
             .await

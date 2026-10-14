@@ -138,7 +138,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         &self,
         db: &C,
         user_id: &str,
-    ) -> AuthResult<bool> {
+    ) -> AuthResult<alibi_core::store::ScimIdentityState> {
         let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
             .unwrap_or(u64::MAX);
         let users = user::Entity::find()
@@ -169,11 +169,15 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             .iter()
             .filter(|user| !retired.contains(&user.connection_id))
             .collect::<Vec<_>>();
-        if let Some(subject) = subject::Entity::find()
+        let subject = subject::Entity::find()
             .filter(subject::Column::UserId.eq(user_id))
             .one(db)
             .await
-            .map_err(map_db_err)?
+            .map_err(map_db_err)?;
+        let retained_profile = subject
+            .as_ref()
+            .and_then(|subject| subject.profile_source_id.clone());
+        let profile_source_id = if let Some(subject) = subject
             && let Some(profile) = &subject.profile_source_id
             && !participating.iter().any(|source| source.id == *profile)
         {
@@ -201,7 +205,25 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     "The SCIM User identity changed concurrently; retry the request.",
                 ));
             }
-        }
-        Ok(participating.iter().any(|source| source.active))
+            None
+        } else {
+            retained_profile
+        };
+        let mut sources = participating
+            .into_iter()
+            .map(|source| alibi_core::store::ScimIdentitySource {
+                id: source.id.clone(),
+                connection_id: source.connection_id.clone(),
+                provisioning_domain_id: source.provisioning_domain_id.clone(),
+                active: source.active,
+            })
+            .collect::<Vec<_>>();
+        sources.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(alibi_core::store::ScimIdentityState {
+            user_id: user_id.into(),
+            active: sources.iter().any(|source| source.active),
+            profile_source_id: profile_source_id.filter(|id| !id.is_empty()),
+            sources,
+        })
     }
 }

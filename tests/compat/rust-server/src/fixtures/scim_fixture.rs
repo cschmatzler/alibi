@@ -1,6 +1,7 @@
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::ScimPlugin;
+use alibi::plugins::scim::{ScimIdentity, ScimIdentityState};
 use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimProjectedUserState, ScimProjection};
 use alibi::plugins::scim::{ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection};
 use alibi::seaorm::sea_orm::DatabaseConnection;
@@ -35,17 +36,22 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let projection_fails = Arc::new(AtomicBool::new(false));
     let role_observations = Arc::new(Mutex::new(json!({"mapped":[],"checked":[]})));
     let role_stage = Arc::new(AtomicU8::new(0));
+    let identity_states = Arc::new(Mutex::new(Vec::<ScimIdentityState>::new()));
+    let identity_fails = Arc::new(AtomicBool::new(false));
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
             let auth = restart_auth.clone();
             let config=restart_config.clone();
-            let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();let role_observations=role_observations.clone();let role_stage=role_stage.clone();
+            let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();let role_observations=role_observations.clone();let role_stage=role_stage.clone();let identity_states=identity_states.clone();let identity_fails=identity_fails.clone();
             async move {
                 if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection")) {
                     let mut plugin=ScimPlugin::new().managed_connections(managed_options()).projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="configure-identity") {
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(ScimPlugin::new().managed_connections(managed_options()).identity::<crate::TestSchema>(Arc::new(FixtureIdentity{states:identity_states.clone(),fails:identity_fails.clone()}))).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
                 }
                 if query.get("operation").is_some_and(|operation|operation=="restart-managed") {
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(managed_options())).build().await.unwrap();
@@ -66,6 +72,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     for(id,domain)in[("conn-a","tenant-a"),("conn-c","tenant-b")]{let _result=auth.dispatch_endpoint(ScimPlugin::decommission_connection_endpoint(id,Some(domain)).unwrap(),EndpointOptions::default()).await.unwrap();_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimConnectionBinding SET decommissionStatus='active',decommissionedAt=NULL,decommissionCompletedAt=NULL WHERE connectionId=?",[id.into()])).await.unwrap();}return Json(json!({"prepared":true})).into_response();
                 }
                 if query.get("operation").is_some_and(|operation|operation=="projection-toggle-failure") {let input:Value=serde_json::from_slice(&bytes).unwrap();let fail=input["fail"].as_bool().unwrap();projection_fails.store(fail,Ordering::SeqCst);return Json(json!({"failing":fail})).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="identity-states") {let states=identity_states.lock().unwrap().clone();return Json(states).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="identity-toggle-failure") {let input:Value=serde_json::from_slice(&bytes).unwrap();let fail=input["fail"].as_bool().unwrap();identity_fails.store(fail,Ordering::SeqCst);return Json(json!({"failing":fail})).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="claim-profile-source") {_=database.execute_unprepared("UPDATE scimSubject SET profileSourceId='scim-alias-a'").await.unwrap();return Json(json!({"claimed":true})).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="seed-projection") {
                     let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"projection-owner@example.com","password":"a-native-password-123","name":"Native owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();let signed:Value=serde_json::from_slice(&output.body).unwrap();let uid=signed["user"]["id"].as_str().unwrap();
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();
@@ -452,5 +461,42 @@ impl ScimRoleProjection<crate::TestSchema> for FixtureRoles {
             ));
         }
         Ok(input.role == "admin")
+    }
+}
+
+struct FixtureIdentity {
+    states: Arc<Mutex<Vec<ScimIdentityState>>>,
+    fails: Arc<AtomicBool>,
+}
+#[async_trait::async_trait]
+impl ScimIdentity<crate::TestSchema> for FixtureIdentity {
+    async fn reconcile_user(
+        &self,
+        input: &ScimIdentityState,
+        database: &dyn AuthTransaction<crate::TestSchema>,
+    ) -> AuthResult<()> {
+        _ = database
+            .update_user(
+                &input.user_id,
+                alibi::UpdateUser {
+                    name: Some(
+                        if self.fails.load(Ordering::SeqCst) {
+                            "Should roll back identity"
+                        } else if input.active {
+                            "Identity active"
+                        } else {
+                            "Identity inactive"
+                        }
+                        .into(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        self.states.lock().unwrap().push(input.clone());
+        if self.fails.load(Ordering::SeqCst) {
+            return Err(alibi::AuthError::internal("application rejected identity"));
+        }
+        Ok(())
     }
 }

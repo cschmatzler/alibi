@@ -156,7 +156,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         &self,
         exec: Exec<'_>,
         user_id: &str,
-    ) -> AuthResult<bool> {
+    ) -> AuthResult<alibi_core::store::ScimIdentityState> {
         let mut sql = model::select_model::<user::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimUser", "userId", " = ", user_id);
@@ -192,7 +192,11 @@ impl<S: AuthSchema> SqlxStore<S> {
         sql.push(" WHERE ");
         sql.compare("scimSubject", "userId", " = ", user_id);
         model::limit_one(&mut sql);
-        if let Some(subject) = exec.fetch_optional::<subject::Model>(sql).await?
+        let subject = exec.fetch_optional::<subject::Model>(sql).await?;
+        let retained_profile = subject
+            .as_ref()
+            .and_then(|subject| subject.profile_source_id.clone());
+        let profile_source_id = if let Some(subject) = subject
             && let Some(profile) = &subject.profile_source_id
             && !participating.iter().any(|source| source.id == *profile)
         {
@@ -219,7 +223,25 @@ impl<S: AuthSchema> SqlxStore<S> {
                     "The SCIM User identity changed concurrently; retry the request.",
                 ));
             }
-        }
-        Ok(participating.iter().any(|source| source.active))
+            None
+        } else {
+            retained_profile
+        };
+        let mut sources = participating
+            .into_iter()
+            .map(|source| alibi_core::store::ScimIdentitySource {
+                id: source.id.clone(),
+                connection_id: source.connection_id.clone(),
+                provisioning_domain_id: source.provisioning_domain_id.clone(),
+                active: source.active,
+            })
+            .collect::<Vec<_>>();
+        sources.sort_by(|left, right| left.id.cmp(&right.id));
+        Ok(alibi_core::store::ScimIdentityState {
+            user_id: user_id.into(),
+            active: sources.iter().any(|source| source.active),
+            profile_source_id: profile_source_id.filter(|id| !id.is_empty()),
+            sources,
+        })
     }
 }

@@ -513,6 +513,7 @@ mod scim_managed_list;
 mod scim_managed_get;
 
 mod scim_configured_projection;
+mod scim_identity_reconciliation;
 mod scim_managed_decommission;
 mod scim_managed_events;
 mod scim_managed_revoke;

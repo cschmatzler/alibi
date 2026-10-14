@@ -2,8 +2,8 @@ use super::ScimPlugin;
 use alibi_core::endpoint::{EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse};
 use alibi_core::store::AuthTransaction;
 pub use alibi_core::store::{
-    ScimAuthorizationSource, ScimIdentitySource, ScimProjectedUserState, ScimRoleExistenceInput,
-    ScimRoleMappingInput,
+    ScimAuthorizationSource, ScimIdentitySource, ScimIdentityState, ScimProjectedUserState,
+    ScimRoleExistenceInput, ScimRoleMappingInput,
 };
 use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -33,6 +33,15 @@ pub trait ScimRoleProjection<S: AuthSchema>: Send + Sync {
         database: &dyn AuthTransaction<S>,
     ) -> AuthResult<bool>;
 }
+#[async_trait]
+pub trait ScimIdentity<S: AuthSchema>: Send + Sync {
+    async fn reconcile_user(
+        &self,
+        input: &ScimIdentityState,
+        database: &dyn AuthTransaction<S>,
+    ) -> AuthResult<()>;
+}
+pub(super) struct ScimIdentityHandle<S: AuthSchema>(pub Arc<dyn ScimIdentity<S>>);
 pub(super) struct ScimProjectionHandle<S: AuthSchema>(
     pub Arc<dyn ScimProjection<S>>,
     pub Option<Arc<dyn ScimRoleProjection<S>>>,
@@ -41,7 +50,8 @@ pub(super) struct ScimProjectionHandle<S: AuthSchema>(
 /// A SCIM plugin carrying application-owned transactional projection callbacks.
 pub struct ConfiguredScimPlugin<S: AuthSchema> {
     base: ScimPlugin,
-    projection: Arc<dyn ScimProjection<S>>,
+    projection: Option<Arc<dyn ScimProjection<S>>>,
+    identity: Option<Arc<dyn ScimIdentity<S>>>,
     roles: Option<Arc<dyn ScimRoleProjection<S>>>,
 }
 impl ScimPlugin {
@@ -52,12 +62,33 @@ impl ScimPlugin {
     ) -> ConfiguredScimPlugin<S> {
         ConfiguredScimPlugin {
             base: self,
-            projection,
+            projection: Some(projection),
+            identity: None,
+            roles: None,
+        }
+    }
+}
+impl ScimPlugin {
+    #[must_use]
+    pub fn identity<S: AuthSchema>(
+        self,
+        identity: Arc<dyn ScimIdentity<S>>,
+    ) -> ConfiguredScimPlugin<S> {
+        ConfiguredScimPlugin {
+            base: self,
+            projection: None,
+            identity: Some(identity),
             roles: None,
         }
     }
 }
 impl<S: AuthSchema> ConfiguredScimPlugin<S> {
+    #[must_use]
+    pub fn identity(mut self, identity: Arc<dyn ScimIdentity<S>>) -> Self {
+        self.identity = Some(identity);
+        self
+    }
+
     #[must_use]
     pub fn roles(mut self, roles: Arc<dyn ScimRoleProjection<S>>) -> Self {
         self.roles = Some(roles);
@@ -85,10 +116,13 @@ impl<S: AuthSchema> AuthPlugin<S> for ConfiguredScimPlugin<S> {
     }
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         self.base.on_init(ctx).await?;
-        ctx.extensions.insert(ScimProjectionHandle(
-            self.projection.clone(),
-            self.roles.clone(),
-        ));
+        if let Some(projection) = &self.projection {
+            ctx.extensions
+                .insert(ScimProjectionHandle(projection.clone(), self.roles.clone()));
+        }
+        if let Some(identity) = &self.identity {
+            ctx.extensions.insert(ScimIdentityHandle(identity.clone()));
+        }
         Ok(())
     }
     async fn on_endpoint(
@@ -182,7 +216,9 @@ impl ScimPlugin {
                         AuthError::Api { message, .. }
                             if matches!(
                                 message.as_str(),
-                                "SCIM role mapping failed" | "SCIM role validation failed"
+                                "SCIM role mapping failed"
+                                    | "SCIM role validation failed"
+                                    | "SCIM identity reconciliation failed"
                             ) =>
                         {
                             message.as_str()
@@ -220,7 +256,7 @@ async fn apply_roles<S: AuthSchema>(
         let mapped = roles
             .map(input, database)
             .await
-            .map_err(|error| role_error(error, "SCIM role mapping failed"))?
+            .map_err(|error| application_callback_error(error, "SCIM role mapping failed"))?
             .unwrap_or_default();
         let mut unique = std::collections::HashSet::new();
         for candidate in mapped {
@@ -246,7 +282,9 @@ async fn apply_roles<S: AuthSchema>(
                         database,
                     )
                     .await
-                    .map_err(|error| role_error(error, "SCIM role validation failed"))?;
+                    .map_err(|error| {
+                        application_callback_error(error, "SCIM role validation failed")
+                    })?;
                 _ = existence.insert(existence_key, exists);
                 exists
             };
@@ -316,11 +354,11 @@ async fn apply_roles<S: AuthSchema>(
     prepared.state.grants = ordered.into_iter().map(|(_, (_, state))| state).collect();
     Ok(())
 }
-fn role_error(error: alibi_core::AuthError, detail: &str) -> alibi_core::AuthError {
+fn application_callback_error(error: alibi_core::AuthError, detail: &str) -> alibi_core::AuthError {
     if alibi_core::endpoint::is_endpoint_api_error(&error) {
         error
     } else {
-        tracing::error!(error=%error,detail,"SCIM role callback failed");
+        tracing::error!(error=%error,detail,"SCIM application callback failed");
         alibi_core::AuthError::CallbackFailure(Box::new(alibi_core::AuthError::Api {
             status: 500,
             code: None,
@@ -377,9 +415,10 @@ impl ScimPlugin {
             .clone()
             .ok_or_else(|| AuthError::internal("Acquired SCIM lease missing"))?;
         let projection = ctx.extensions.get::<ScimProjectionHandle<S>>();
+        let identity = ctx.extensions.get::<ScimIdentityHandle<S>>();
         let result=async {
             loop {
-                let binding_id=binding.id.clone();let connection_id=binding.connection_id.clone();let lease=lease.clone();let projection=projection.clone();
+                let binding_id=binding.id.clone();let connection_id=binding.connection_id.clone();let lease=lease.clone();let projection=projection.clone();let identity=identity.clone();
                 let checkpoint=transaction::<S,alibi_core::store::ScimConnectionBinding,_>(ctx.database.as_ref(),move|database|Box::pin(async move{
                     let stored=database.get_scim_connection_binding(&binding_id).await?.ok_or_else(||AuthError::internal(format!("SCIM connection \"{connection_id}\" binding disappeared during decommissioning.")))?;
                     if stored.decommission_status=="complete"{return Ok(stored);}
@@ -395,7 +434,11 @@ impl ScimPlugin {
                         database.remove_scim_projection_grants(&stored.provisioning_domain_id,&prepared.state.user_id,&prepared.removed_grant_ids).await?;
                         if let Some(projection)=&projection{projection.0.reconcile_user(&prepared.state,database).await.map_err(|error|if alibi_core::endpoint::is_endpoint_api_error(&error){error}else{AuthError::CallbackFailure(Box::new(error))})?;}
                     }
-                    for user_id in &user_ids{if !database.reconcile_scim_identity(user_id).await?{database.delete_user_sessions(user_id).await?;}}
+                    for user_id in &user_ids{
+                        let state=database.reconcile_scim_identity(user_id).await?;
+                        if let Some(identity)=&identity{identity.0.reconcile_user(&state,database).await.map_err(|error|application_callback_error(error,"SCIM identity reconciliation failed"))?;}
+                        if !state.active{database.delete_user_sessions(user_id).await?;}
+                    }
                     database.advance_scim_decommission(&stored,&lease,cursor.as_deref(),user_ids.len(),more).await?.ok_or_else(||AuthError::internal(format!("SCIM connection \"{connection_id}\" decommission checkpoint changed concurrently.")))
                 })).await?;
                 if checkpoint.decommission_status=="complete"{return Ok(checkpoint);}
@@ -415,7 +458,9 @@ impl ScimPlugin {
             AuthError::Api { message, .. }
                 if matches!(
                     message.as_str(),
-                    "SCIM role mapping failed" | "SCIM role validation failed"
+                    "SCIM role mapping failed"
+                        | "SCIM role validation failed"
+                        | "SCIM identity reconciliation failed"
                 ) =>
             {
                 message.as_str()

@@ -317,3 +317,13 @@ pub struct CreateScimProjectionGrant {
     pub grant_key: String,
     pub created_at: DateTime<Utc>,
 }
+
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimIdentityState {
+    pub user_id: String,
+    pub active: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_source_id: Option<String>,
+    pub sources: Vec<ScimIdentitySource>,
+}
