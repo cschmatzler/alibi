@@ -6,7 +6,8 @@ use alibi::store::SsoProviderStore;
 backend_tests!(
     sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids,
     sso_registration_persists_manual_saml_and_requires_certificate_source,
-    sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
+    sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields,
+    sso_idp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
 );
 postgres_tests!(
     sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids,
@@ -162,19 +163,31 @@ async fn sso_registration_persists_manual_saml_and_requires_certificate_source<B
 async fn sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields<B: Backend>(
     db: Db,
 ) -> TestResult {
+    metadata_schema_flow::<B>(db, false).await
+}
+async fn sso_idp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields<B: Backend>(
+    db: Db,
+) -> TestResult {
+    metadata_schema_flow::<B>(db, true).await
+}
+async fn metadata_schema_flow<B: Backend>(db: Db, idp: bool) -> TestResult {
+    let prefix = if idp { "idp" } else { "sp" };
+    let target = if idp { "idpMetadata" } else { "spMetadata" };
+    let provider_id = format!("{prefix}-schema-provider");
+    let clean_id = format!("clean-{prefix}-provider");
     use alibi::plugins::SsoPlugin;
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::new())
         .build()
         .await?;
-    let owner = signup(&auth, "sp-schema-owner@example.test").await;
+    let owner = signup(&auth, &format!("{prefix}-schema-owner@example.test")).await;
     let options = EndpointOptions {
         headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
         ..Default::default()
     };
     let saml = json!({"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true});
-    let base = json!({"providerId":"sp-schema-provider","issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":saml});
+    let base = json!({"providerId":provider_id.as_str(),"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":saml});
     let created = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&base)?,
         options.clone(),
@@ -182,34 +195,51 @@ async fn sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
     .await?
     .into_response()?;
     assert_eq!(created.status, 200);
-    let original = store.get_sso_provider("sp-schema-provider").await?.unwrap();
-    let invalid = [
-        ("metadata", json!(41), "string", "number"),
-        ("entityID", json!(false), "string", "boolean"),
-        ("binding", Value::Null, "string", "null"),
-        ("privateKey", json!(true), "string", "boolean"),
-        ("privateKeyPass", json!(2), "string", "number"),
-        ("isAssertionEncrypted", json!("true"), "boolean", "string"),
-        ("encPrivateKey", json!([]), "string", "array"),
-        ("encPrivateKeyPass", json!({}), "string", "object"),
-    ];
+    let original = store.get_sso_provider(provider_id.as_str()).await?.unwrap();
+    let invalid = if idp {
+        vec![
+            ("privateKey", json!(true), "string", "boolean"),
+            ("privateKeyPass", json!(2), "string", "number"),
+            ("isAssertionEncrypted", json!("true"), "boolean", "string"),
+            ("encPrivateKey", json!([]), "string", "array"),
+            ("encPrivateKeyPass", json!({}), "string", "object"),
+            ("entityID", json!(false), "string", "boolean"),
+            ("metadata", json!(41), "string", "number"),
+            ("singleSignOnService", json!({}), "array", "object"),
+            ("singleLogoutService", json!(false), "array", "boolean"),
+        ]
+    } else {
+        vec![
+            ("metadata", json!(41), "string", "number"),
+            ("entityID", json!(false), "string", "boolean"),
+            ("binding", Value::Null, "string", "null"),
+            ("privateKey", json!(true), "string", "boolean"),
+            ("privateKeyPass", json!(2), "string", "number"),
+            ("isAssertionEncrypted", json!("true"), "boolean", "string"),
+            ("encPrivateKey", json!([]), "string", "array"),
+            ("encPrivateKeyPass", json!({}), "string", "object"),
+        ]
+    };
     for update in [false, true] {
         for (index, (field, value, expected, received)) in invalid.iter().enumerate() {
-            let mut metadata = serde_json::Map::new();
+            let mut metadata = base["samlConfig"][target]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
             _ = metadata.insert((*field).into(), value.clone());
             let provider = if update {
-                "sp-schema-provider".into()
+                provider_id.as_str().into()
             } else {
-                format!("invalid-sp-{index}")
+                format!("invalid-{prefix}-{index}")
             };
             let endpoint = if update {
                 SsoPlugin::update_sso_provider_endpoint(
-                    &json!({"providerId":provider,"samlConfig":{"spMetadata":metadata}}),
+                    &json!({"providerId":provider,"samlConfig":{(target):metadata}}),
                 )?
             } else {
                 let mut input = base.clone();
                 input["providerId"] = json!(provider);
-                input["samlConfig"]["spMetadata"] = json!(metadata);
+                input["samlConfig"][target] = json!(metadata);
                 SsoPlugin::register_sso_provider_endpoint(&input)?
             };
             let response = match Box::pin(auth.dispatch_endpoint(endpoint, options.clone())).await {
@@ -220,9 +250,16 @@ async fn sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
                 response.status, 400,
                 "invalid {field} during update={update}"
             );
+            let message = if idp && !update {
+                "[body.samlConfig.idpMetadata] idpMetadata.entityID is required when IdP metadata XML is not provided".into()
+            } else {
+                format!(
+                    "[body.samlConfig.{target}.{field}] Invalid input: expected {expected}, received {received}"
+                )
+            };
             assert_eq!(
                 body(&response),
-                json!({"code":"VALIDATION_ERROR","message":format!("[body.samlConfig.spMetadata.{field}] Invalid input: expected {expected}, received {received}")})
+                json!({"code":"VALIDATION_ERROR","message":message})
             );
             if update {
                 assert_eq!(store.get_sso_provider(&provider).await?.unwrap(), original);
@@ -231,10 +268,41 @@ async fn sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
             }
         }
     }
-    let metadata = json!({"privateKeyPass":"accepted-pass","isAssertionEncrypted":false,"ignored":"must-not-persist"});
+    if idp {
+        for update in [false, true] {
+            for (index,(service,value,issue)) in [
+                ("singleSignOnService",json!([{"Binding":42,"Location":"https://idp.example.test/sso"}]),"singleSignOnService.0.Binding] Invalid input: expected string, received number"),
+                ("singleLogoutService",json!([{"Binding":"urn:logout","Location":"not-a-url"}]),"singleLogoutService.0.Location] Invalid URL"),
+                ("singleSignOnService",json!([null]),"singleSignOnService.0] Invalid input: expected object, received null"),
+                ("singleLogoutService",json!([{"Binding":"urn:logout"}]),"singleLogoutService.0.Location] Invalid input: expected string, received undefined"),
+            ].into_iter().enumerate() {
+                let provider=if update {provider_id.clone()}else{format!("invalid-service-{index}")};
+                let mut metadata=base["samlConfig"][target].clone(); metadata[service]=value;
+                let endpoint=if update {
+                    SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":provider,"samlConfig":{(target):metadata}}))?
+                }else {
+                    let mut input=base.clone();input["providerId"]=json!(provider);input["samlConfig"][target]=metadata;
+                    SsoPlugin::register_sso_provider_endpoint(&input)?
+                };
+                let response=match Box::pin(auth.dispatch_endpoint(endpoint,options.clone())).await {Ok(output)=>output.into_response()?,Err(error)=>error.error.to_auth_response()};
+                assert_eq!(response.status,400);
+                let message=if update || issue.ends_with("Invalid URL") {format!("[body.samlConfig.idpMetadata.{issue}")}else{"[body.samlConfig.idpMetadata] idpMetadata.entityID is required when IdP metadata XML is not provided".into()};
+                assert_eq!(body(&response),json!({"code":"VALIDATION_ERROR","message":message}));
+                if update {assert_eq!(store.get_sso_provider(&provider).await?.unwrap(),original);}else{assert!(store.get_sso_provider(&provider).await?.is_none());}
+            }
+        }
+    }
+    let mut metadata = json!({"privateKeyPass":"accepted-pass","isAssertionEncrypted":false,"ignored":"must-not-persist"});
+    let expected = if idp {
+        metadata["entityID"] = json!("https://idp.example.test/entity");
+        metadata["singleSignOnService"] = json!([{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso","ignored":"must-not-persist"}]);
+        json!({"entityID":"https://idp.example.test/entity","privateKeyPass":"accepted-pass","isAssertionEncrypted":false,"singleSignOnService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"}]})
+    } else {
+        json!({"privateKeyPass":"accepted-pass","isAssertionEncrypted":false})
+    };
     let mut input = base.clone();
-    input["providerId"] = json!("clean-sp-provider");
-    input["samlConfig"]["spMetadata"] = metadata.clone();
+    input["providerId"] = json!(clean_id.as_str());
+    input["samlConfig"][target] = metadata.clone();
     let admitted = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::register_sso_provider_endpoint(&input)?,
         options.clone(),
@@ -242,26 +310,20 @@ async fn sso_sp_metadata_schema_rejects_invalid_fields_and_strips_unknown_fields
     .await?
     .into_response()?;
     assert_eq!(admitted.status, 200);
-    let row = store.get_sso_provider("clean-sp-provider").await?.unwrap();
+    let row = store.get_sso_provider(clean_id.as_str()).await?.unwrap();
     let config: Value = serde_json::from_str(row.saml_config.as_deref().unwrap())?;
-    assert_eq!(
-        config["spMetadata"],
-        json!({"privateKeyPass":"accepted-pass","isAssertionEncrypted":false})
-    );
+    assert_eq!(config[target], expected);
     let updated = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::update_sso_provider_endpoint(
-            &json!({"providerId":"sp-schema-provider","samlConfig":{"spMetadata":metadata}}),
+            &json!({"providerId":provider_id.as_str(),"samlConfig":{(target):metadata}}),
         )?,
         options,
     ))
     .await?
     .into_response()?;
     assert_eq!(updated.status, 200);
-    let row = store.get_sso_provider("sp-schema-provider").await?.unwrap();
+    let row = store.get_sso_provider(provider_id.as_str()).await?.unwrap();
     let config: Value = serde_json::from_str(row.saml_config.as_deref().unwrap())?;
-    assert_eq!(
-        config["spMetadata"],
-        json!({"privateKeyPass":"accepted-pass","isAssertionEncrypted":false})
-    );
+    assert_eq!(config[target], expected);
     B::close(connection).await
 }
