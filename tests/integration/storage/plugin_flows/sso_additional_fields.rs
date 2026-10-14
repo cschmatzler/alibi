@@ -324,6 +324,29 @@ async fn sso_provider_field_callbacks_run_at_storage_and_read_boundaries<B: Back
     assert_eq!(body(&unrelated)["stamp"], "generated");
     let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
     assert_eq!(physical[0]["application_label"], "input:input:Changed");
+    let omitted = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(
+            &json!({"providerId":"callback-fields","label":"omit"}),
+        )?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(omitted.status, 200);
+    assert_eq!(body(&omitted), body(&unrelated));
+    let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
+    assert_eq!(physical[0]["application_label"], "input:input:Changed");
+    let empty = match Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":"callback-fields"}))?,
+        owned.clone(),
+    ))
+    .await
+    {
+        Ok(response) => response.into_response()?,
+        Err(error) => error.error.to_auth_response(),
+    };
+    assert_eq!(empty.status, 400);
+    assert_eq!(body(&empty)["message"], "No fields provided for update");
     let auth = build().await?;
     let read = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::get_sso_provider_endpoint("callback-fields")?,

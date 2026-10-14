@@ -326,7 +326,7 @@ impl SsoPlugin {
                 oidc_config: oidc,
                 saml_config: saml,
                 domain_verified: self.config.domain_verification.then_some(false),
-                additional_fields: extras,
+                additional_fields: extras.values,
             })
             .await?;
         let mut output = serde_json::to_value(&provider)?;

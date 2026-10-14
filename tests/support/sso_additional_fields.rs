@@ -36,6 +36,7 @@ pub(crate) fn configure_callbacks(config: &mut alibi::AuthConfig) {
     label.transform = Some(std::sync::Arc::new(|value| {
         Ok(value
             .and_then(JsValue::as_str)
+            .filter(|value| *value != "omit")
             .map(|value| JsValue::String(format!("input:{value}"))))
     }));
     label.output_transform = Some(std::sync::Arc::new(|value| {
