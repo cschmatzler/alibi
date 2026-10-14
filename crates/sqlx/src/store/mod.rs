@@ -337,6 +337,17 @@ where
         _ = exec.execute(sql).await?;
         Ok(())
     }
+    async fn delete_scim_user(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        roles: bool,
+    ) -> AuthResult<(String, Vec<alibi_core::store::ScimProjectionPreparedUser>)> {
+        self.store
+            .delete_scim_user_with_exec(Exec::tx(self.tx), id, connection, domain, roles)
+            .await
+    }
     async fn patch_scim_group(
         &self,
         id: &str,
@@ -776,3 +787,4 @@ mod scim;
 mod scim_decommission;
 mod scim_groups;
 mod scim_projection;
+mod scim_users;

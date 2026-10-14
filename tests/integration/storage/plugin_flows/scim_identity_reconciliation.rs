@@ -6,9 +6,9 @@ use alibi::store::AuthTransaction;
 use std::sync::atomic::{AtomicBool, Ordering};
 backend_tests!(scim_identity_callback_receives_global_state_before_session_retirement);
 postgres_tests!(scim_identity_callback_receives_global_state_before_session_retirement);
-struct Identity {
-    states: Arc<Mutex<Vec<ScimIdentityState>>>,
-    fail: Arc<AtomicBool>,
+pub(super) struct Identity {
+    pub(super) states: Arc<Mutex<Vec<ScimIdentityState>>>,
+    pub(super) fail: Arc<AtomicBool>,
 }
 #[async_trait::async_trait]
 impl<S: AuthSchema> ScimIdentity<S> for Identity {

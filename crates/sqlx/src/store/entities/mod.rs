@@ -45,3 +45,5 @@ pub mod scim_projection_grant;
 pub mod scim_group;
 
 pub mod scim_group_member;
+
+pub mod scim_identity_tombstone;

@@ -108,6 +108,12 @@ impl ScimPlugin {
         self.connections = connections;
         self
     }
+    /// Delete a canonical User and reconcile its durable identity and access state.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn delete_user_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
+        ServerEndpoint::new("scim", "deleteSCIMUser").with_params(&json!({"userId":id}))
+    }
     /// Apply SCIM PATCH operations to a connection-owned canonical Group.
     /// # Errors
     /// Returns an error if parameters cannot be serialized.
@@ -281,6 +287,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
+            AuthRoute::delete("/scim/v2/Users/{userId}", "deleteSCIMUser"),
             AuthRoute::put("/scim/v2/Groups/{groupId}", "replaceSCIMGroup"),
             AuthRoute::new(
                 HttpMethod::Patch,
@@ -307,6 +314,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "deleteSCIMUser",
+                "deleteSCIMUser",
+                Some("/scim/v2/Users/:userId"),
+                HttpMethod::Delete,
+            ),
             crate::endpoint::definition(
                 "patchSCIMGroup",
                 "patchSCIMGroup",
@@ -487,6 +500,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "deleteSCIMUser" {
+            return self.delete_user(call, ctx).await;
+        }
         if call.operation_id() == "patchSCIMGroup" {
             return self.patch_group(call, ctx).await;
         }
@@ -571,6 +587,17 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Delete
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::delete("/scim/v2/Users/{userId}", "deleteSCIMUser"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(json!({"userId":id})));
+            let response = self.delete_user(&call, ctx).await?;
+            return Ok(Some(resources::to_http_response(&response)?));
+        }
         if matches!(req.method(), HttpMethod::Put | HttpMethod::Patch)
             && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
         {
