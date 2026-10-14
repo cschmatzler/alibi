@@ -328,3 +328,100 @@ fn role_error(error: alibi_core::AuthError, detail: &str) -> alibi_core::AuthErr
         }))
     }
 }
+impl ScimPlugin {
+    pub(super) async fn decommission_binding<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        mut binding: alibi_core::store::ScimConnectionBinding,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        use alibi_core::{AuthError, store::transaction};
+        use chrono::SubsecRound;
+        let active_lease = |binding: &alibi_core::store::ScimConnectionBinding| {
+            binding.decommission_status == "reconciling"
+                && binding
+                    .decommission_lease_id
+                    .as_ref()
+                    .is_some_and(|lease| !lease.is_empty())
+                && binding
+                    .decommission_lease_expires_at
+                    .is_some_and(|expiry| expiry > chrono::Utc::now().trunc_subsecs(3))
+        };
+        if binding.decommission_status == "complete" || active_lease(&binding) {
+            return Ok(binding);
+        }
+        let mut acquired = None;
+        for _ in 0..10 {
+            if let Some(leased) = ctx
+                .database
+                .acquire_scim_decommission_lease(binding.clone())
+                .await?
+            {
+                acquired = Some(leased);
+                break;
+            }
+            binding = ctx
+                .database
+                .terminal_scim_connection_binding(
+                    &binding.connection_id,
+                    Some(&binding.provisioning_domain_id),
+                    &binding.connection_key,
+                )
+                .await?;
+            if binding.decommission_status == "complete" || active_lease(&binding) {
+                return Ok(binding);
+            }
+        }
+        let binding=acquired.ok_or_else(||AuthError::internal(format!("SCIM connection \"{}\" changed repeatedly while decommissioning; retry the operation.",binding.connection_id)))?;
+        let lease = binding
+            .decommission_lease_id
+            .clone()
+            .ok_or_else(|| AuthError::internal("Acquired SCIM lease missing"))?;
+        let projection = ctx.extensions.get::<ScimProjectionHandle<S>>();
+        let result=async {
+            loop {
+                let binding_id=binding.id.clone();let connection_id=binding.connection_id.clone();let lease=lease.clone();let projection=projection.clone();
+                let checkpoint=transaction::<S,alibi_core::store::ScimConnectionBinding,_>(ctx.database.as_ref(),move|database|Box::pin(async move{
+                    let stored=database.get_scim_connection_binding(&binding_id).await?.ok_or_else(||AuthError::internal(format!("SCIM connection \"{connection_id}\" binding disappeared during decommissioning.")))?;
+                    if stored.decommission_status=="complete"{return Ok(stored);}
+                    if stored.decommission_lease_id.as_deref()!=Some(&lease){return Err(AuthError::internal(format!("SCIM connection \"{connection_id}\" decommission lease was taken over by another worker.")));}
+                    let candidates=database.scim_projection_candidates(&stored.provisioning_domain_id,stored.decommission_cursor_user_id.as_deref()).await?;
+                    let more=candidates.len()>50;let mut cursor=None;let mut by_user=indexmap::IndexMap::new();for candidate in candidates.into_iter().take(50){cursor=Some(candidate.user_id.clone());_=by_user.insert(candidate.user_id,candidate.id);}
+                    let user_ids=by_user.keys().cloned().collect::<Vec<_>>();let ids=by_user.into_values().collect::<Vec<_>>();
+                    let roles=projection.as_ref().and_then(|projection|projection.1.clone());
+                    let states=database.prepare_scim_projection(&stored.provisioning_domain_id,&ids,roles.is_some()).await?;
+                    if !database.renew_scim_decommission_lease(&stored,&lease).await?{return Err(AuthError::internal(format!("SCIM connection \"{connection_id}\" decommission lease changed before reconciliation.")));}
+                    for mut prepared in states {
+                        if let Some(roles)=&roles{apply_roles(database,roles.as_ref(),&mut prepared).await?;}
+                        database.remove_scim_projection_grants(&stored.provisioning_domain_id,&prepared.state.user_id,&prepared.removed_grant_ids).await?;
+                        if let Some(projection)=&projection{projection.0.reconcile_user(&prepared.state,database).await.map_err(|error|if alibi_core::endpoint::is_endpoint_api_error(&error){error}else{AuthError::CallbackFailure(Box::new(error))})?;}
+                    }
+                    for user_id in &user_ids{if !database.reconcile_scim_identity(user_id).await?{database.delete_user_sessions(user_id).await?;}}
+                    database.advance_scim_decommission(&stored,&lease,cursor.as_deref(),user_ids.len(),more).await?.ok_or_else(||AuthError::internal(format!("SCIM connection \"{connection_id}\" decommission checkpoint changed concurrently.")))
+                })).await?;
+                if checkpoint.decommission_status=="complete"{return Ok(checkpoint);}
+            }
+        }.await;
+        if result.is_err() {
+            let _ignored = ctx
+                .database
+                .release_scim_decommission_lease(&binding.id, &lease)
+                .await;
+        }
+        result
+    }
+    pub(super) fn scim_callback_response(cause: &alibi_core::AuthError) -> EndpointResponse {
+        use alibi_core::{AuthError, utils::json::JsValue};
+        let detail = match cause {
+            AuthError::Api { message, .. }
+                if matches!(
+                    message.as_str(),
+                    "SCIM role mapping failed" | "SCIM role validation failed"
+                ) =>
+            {
+                message.as_str()
+            }
+            _ => "SCIM projection reconciliation failed",
+        };
+        EndpointResponse::error(AuthError::Api{status:500,code:None,message:detail.into()}).with_error_body(JsValue::from(serde_json::json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"500","detail":detail})))
+    }
+}

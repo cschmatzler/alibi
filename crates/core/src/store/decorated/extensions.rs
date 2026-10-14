@@ -824,19 +824,22 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn acquire_scim_decommission_lease(
+        &self,
+        binding: crate::store::ScimConnectionBinding,
+    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
+        self.inner.acquire_scim_decommission_lease(binding).await
+    }
+    async fn release_scim_decommission_lease(&self, id: &str, lease: &str) -> AuthResult<()> {
+        self.inner.release_scim_decommission_lease(id, lease).await
+    }
+
     async fn scim_projection_candidates(
         &self,
         domain: &str,
         cursor: Option<&str>,
     ) -> AuthResult<Vec<crate::store::ScimProjectionCandidate>> {
         self.inner.scim_projection_candidates(domain, cursor).await
-    }
-
-    async fn recover_empty_scim_decommission(
-        &self,
-        binding: crate::store::ScimConnectionBinding,
-    ) -> AuthResult<Option<crate::store::ScimConnectionBinding>> {
-        self.inner.recover_empty_scim_decommission(binding).await
     }
 
     async fn decommission_scim_managed_connection(

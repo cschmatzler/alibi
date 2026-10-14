@@ -131,6 +131,31 @@ export async function scimFixture(base: BetterAuthOptions) {
           headers: { "content-type": "application/json" },
         });
       }
+      if (query.get("operation") === "prepare-active-bindings") {
+        for (const [connectionId, provisioningDomainId] of [
+          ["conn-a", "tenant-a"],
+          ["conn-c", "tenant-b"],
+        ]) {
+          await auth.api.decommissionSCIMConnection({
+            body: { connectionId, provisioningDomainId },
+          });
+          options.database
+            .query(
+              "UPDATE scimConnectionBinding SET decommissionStatus='active',decommissionedAt=NULL,decommissionCompletedAt=NULL WHERE connectionId=?",
+            )
+            .run(connectionId);
+        }
+        return new Response(JSON.stringify({ prepared: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "projection-toggle-failure") {
+        const input = (await request.json()) as any;
+        projectionFails = input.fail;
+        return new Response(JSON.stringify({ failing: projectionFails }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
       if (query.get("operation") === "seed-projection") {
         const signed = await auth.api.signUpEmail({
           body: {
@@ -187,6 +212,11 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "projection-storage") {
         return new Response(
           JSON.stringify({
+            sessions: options.database
+              .query(
+                "SELECT id,userId FROM session WHERE userId IN (SELECT id FROM user WHERE email='projection-owner@example.com')",
+              )
+              .all(),
             users: options.database
               .query("SELECT id,name FROM user WHERE email='projection-owner@example.com'")
               .all(),
