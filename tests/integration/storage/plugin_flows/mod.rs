@@ -534,3 +534,5 @@ mod scim_user_read;
 mod scim_group_list;
 
 mod scim_user_list;
+
+mod scim_group_create;

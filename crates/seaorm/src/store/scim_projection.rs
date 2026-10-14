@@ -16,13 +16,13 @@ use sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter, QuerySelect, sea_query::Expr,
 };
 impl<S: AuthSchema> SeaOrmStore<S> {
-    pub(super) async fn prepare_scim_projection_with_connection<C: ConnectionTrait>(
+    pub(super) async fn scim_projection_user_ids_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
         domain: &str,
         ids: &[String],
-        roles: bool,
-    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        lock: bool,
+    ) -> AuthResult<Vec<String>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -46,45 +46,75 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sorted = user_ids.clone();
-        sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
-        let subjects = subject::Entity::find()
-            .filter(subject::Column::UserId.is_in(sorted.iter().cloned()))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?;
-        if subjects.len() != sorted.len() {
-            return Err(AuthError::internal(
-                "A SCIM User selected for projection has no subject aggregate.",
-            ));
-        }
-        let updated_at = chrono::Utc::now().trunc_subsecs(3);
-        for user_id in sorted {
-            let subject = subjects
-                .iter()
-                .find(|subject| subject.user_id == user_id)
-                .ok_or_else(|| {
-                    AuthError::internal(
-                        "A SCIM User selected for projection has no subject aggregate.",
-                    )
-                })?;
-            let updated = subject::Entity::update_many()
-                .col_expr(
-                    subject::Column::Revision,
-                    Expr::col(subject::Column::Revision).add(1),
-                )
-                .col_expr(subject::Column::UpdatedAt, Expr::value(updated_at))
-                .filter(subject::Column::Id.eq(subject.id.clone()))
-                .filter(subject::Column::Revision.eq(subject.revision))
-                .exec(db)
+        if lock {
+            let mut sorted = user_ids.clone();
+            sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
+            let subjects = subject::Entity::find()
+                .filter(subject::Column::UserId.is_in(sorted.iter().cloned()))
+                .limit(limit)
+                .all(db)
                 .await
                 .map_err(map_db_err)?;
-            if updated.rows_affected == 0 {
+            if subjects.len() != sorted.len() {
                 return Err(AuthError::internal(
-                    "The SCIM projection subject changed concurrently; retry the request.",
+                    "A SCIM User selected for projection has no subject aggregate.",
                 ));
             }
+            let updated_at = chrono::Utc::now().trunc_subsecs(3);
+            for user_id in sorted {
+                let subject = subjects
+                    .iter()
+                    .find(|subject| subject.user_id == user_id)
+                    .ok_or_else(|| {
+                        AuthError::internal(
+                            "A SCIM User selected for projection has no subject aggregate.",
+                        )
+                    })?;
+                let updated = subject::Entity::update_many()
+                    .col_expr(
+                        subject::Column::Revision,
+                        Expr::col(subject::Column::Revision).add(1),
+                    )
+                    .col_expr(subject::Column::UpdatedAt, Expr::value(updated_at))
+                    .filter(subject::Column::Id.eq(subject.id.clone()))
+                    .filter(subject::Column::Revision.eq(subject.revision))
+                    .exec(db)
+                    .await
+                    .map_err(map_db_err)?;
+                if updated.rows_affected == 0 {
+                    return Err(AuthError::internal(
+                        "The SCIM projection subject changed concurrently; retry the request.",
+                    ));
+                }
+            }
+        }
+        Ok(user_ids)
+    }
+    pub(super) async fn prepare_scim_projection_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        domain: &str,
+        ids: &[String],
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        self.prepare_scim_projection_after_lock_with_connection(db, domain, ids, roles, false)
+            .await
+    }
+    pub(super) async fn prepare_scim_projection_after_lock_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        domain: &str,
+        ids: &[String],
+        roles: bool,
+        locked: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
+            .unwrap_or(u64::MAX);
+        let user_ids = self
+            .scim_projection_user_ids_with_connection(db, domain, ids, !locked)
+            .await?;
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
         }
         let users = user::Entity::find()
             .filter(user::Column::UserId.is_in(user_ids.iter().cloned()))

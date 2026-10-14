@@ -13,13 +13,13 @@ use alibi_core::{
 };
 use chrono::SubsecRound;
 impl<S: AuthSchema> SqlxStore<S> {
-    pub(super) async fn prepare_scim_projection_with_exec(
+    pub(super) async fn scim_projection_user_ids_with_exec(
         &self,
         exec: Exec<'_>,
         domain: &str,
         ids: &[String],
-        roles: bool,
-    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        lock: bool,
+    ) -> AuthResult<Vec<String>> {
         if ids.is_empty() {
             return Ok(Vec::new());
         }
@@ -44,50 +44,78 @@ impl<S: AuthSchema> SqlxStore<S> {
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sorted = user_ids.clone();
-        sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
-        let mut sql = model::select_model::<subject::Model>(exec);
-        sql.push(" WHERE ");
-        sql.column("scimSubject", "userId");
-        sql.push(" IN ");
-        sql.bind_list(sorted.iter().cloned());
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        let subjects = exec.fetch_all::<subject::Model>(sql).await?;
-        if subjects.len() != sorted.len() {
-            return Err(AuthError::internal(
-                "A SCIM User selected for projection has no subject aggregate.",
-            ));
-        }
-        let updated_at = chrono::Utc::now().trunc_subsecs(3);
-        for user_id in sorted {
-            let subject = subjects
-                .iter()
-                .find(|subject| subject.user_id == user_id)
-                .ok_or_else(|| {
-                    AuthError::internal(
-                        "A SCIM User selected for projection has no subject aggregate.",
-                    )
-                })?;
-            let mut sql = Sql::with(exec.engine(), "UPDATE ");
-            sql.ident("scimSubject");
-            sql.push(" SET ");
-            sql.ident("revision");
-            sql.push(" = ");
-            sql.ident("revision");
-            sql.push(" + 1, ");
-            sql.ident("updatedAt");
-            sql.push(" = ");
-            sql.bind(updated_at);
+        if lock {
+            let mut sorted = user_ids.clone();
+            sorted.sort_by(|left, right| left.encode_utf16().cmp(right.encode_utf16()));
+            let mut sql = model::select_model::<subject::Model>(exec);
             sql.push(" WHERE ");
-            sql.compare("scimSubject", "id", " = ", subject.id.clone());
-            sql.push(" AND ");
-            sql.compare("scimSubject", "revision", " = ", subject.revision);
-            if exec.execute(sql).await? == 0 {
+            sql.column("scimSubject", "userId");
+            sql.push(" IN ");
+            sql.bind_list(sorted.iter().cloned());
+            sql.push(" LIMIT ");
+            sql.bind(self.find_many_limit());
+            let subjects = exec.fetch_all::<subject::Model>(sql).await?;
+            if subjects.len() != sorted.len() {
                 return Err(AuthError::internal(
-                    "The SCIM projection subject changed concurrently; retry the request.",
+                    "A SCIM User selected for projection has no subject aggregate.",
                 ));
             }
+            let updated_at = chrono::Utc::now().trunc_subsecs(3);
+            for user_id in sorted {
+                let subject = subjects
+                    .iter()
+                    .find(|subject| subject.user_id == user_id)
+                    .ok_or_else(|| {
+                        AuthError::internal(
+                            "A SCIM User selected for projection has no subject aggregate.",
+                        )
+                    })?;
+                let mut sql = Sql::with(exec.engine(), "UPDATE ");
+                sql.ident("scimSubject");
+                sql.push(" SET ");
+                sql.ident("revision");
+                sql.push(" = ");
+                sql.ident("revision");
+                sql.push(" + 1, ");
+                sql.ident("updatedAt");
+                sql.push(" = ");
+                sql.bind(updated_at);
+                sql.push(" WHERE ");
+                sql.compare("scimSubject", "id", " = ", subject.id.clone());
+                sql.push(" AND ");
+                sql.compare("scimSubject", "revision", " = ", subject.revision);
+                if exec.execute(sql).await? == 0 {
+                    return Err(AuthError::internal(
+                        "The SCIM projection subject changed concurrently; retry the request.",
+                    ));
+                }
+            }
+        }
+        Ok(user_ids)
+    }
+    pub(super) async fn prepare_scim_projection_with_exec(
+        &self,
+        exec: Exec<'_>,
+        domain: &str,
+        ids: &[String],
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        self.prepare_scim_projection_after_lock_with_exec(exec, domain, ids, roles, false)
+            .await
+    }
+    pub(super) async fn prepare_scim_projection_after_lock_with_exec(
+        &self,
+        exec: Exec<'_>,
+        domain: &str,
+        ids: &[String],
+        roles: bool,
+        locked: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        let user_ids = self
+            .scim_projection_user_ids_with_exec(exec, domain, ids, !locked)
+            .await?;
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
         }
         let mut sql = model::select_model::<user::Model>(exec);
         sql.push(" WHERE ");

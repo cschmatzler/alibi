@@ -182,6 +182,19 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn create_scim_group(
+        &self,
+        data: crate::store::CreateScimGroup,
+        roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimGroupRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        self.inner.create_scim_group(data, roles).await
+    }
+    async fn fence_scim_connection(&self, id: &str, key: &str) -> AuthResult<()> {
+        self.inner.fence_scim_connection(id, key).await
+    }
     async fn prepare_scim_projection(
         &self,
         domain: &str,

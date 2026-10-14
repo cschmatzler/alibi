@@ -126,6 +126,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ConfiguredScimPlugin<S> {
     fn name(&self) -> &'static str {
         "scim"
     }
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        <ScimPlugin as AuthPlugin<S>>::allowed_media_types(&self.base, route)
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         <ScimPlugin as AuthPlugin<S>>::routes(&self.base)
     }
@@ -272,7 +275,7 @@ impl ScimPlugin {
     }
 }
 
-async fn apply_roles<S: AuthSchema>(
+pub(super) async fn apply_roles<S: AuthSchema>(
     database: &dyn AuthTransaction<S>,
     roles: &dyn ScimRoleProjection<S>,
     prepared: &mut alibi_core::store::ScimProjectionPreparedUser,
@@ -393,7 +396,10 @@ async fn apply_roles<S: AuthSchema>(
     prepared.state.grants = ordered.into_iter().map(|(_, (_, state))| state).collect();
     Ok(())
 }
-fn application_callback_error(error: alibi_core::AuthError, detail: &str) -> alibi_core::AuthError {
+pub(super) fn application_callback_error(
+    error: alibi_core::AuthError,
+    detail: &str,
+) -> alibi_core::AuthError {
     if alibi_core::endpoint::is_endpoint_api_error(&error) {
         error
     } else {
