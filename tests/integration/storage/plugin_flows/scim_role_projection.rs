@@ -110,6 +110,8 @@ async fn scim_role_projection_normalizes_roles_and_persists_grants<B: Backend>(
     _=db.execute("INSERT INTO \"scimUser\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"userId\",\"connectionUserKey\",\"userName\",\"userNameKey\",\"primaryEmail\",\"workEmailValueIndex\",\"emailValueIndex\",\"displayName\",\"formattedName\",\"serializedEmails\",\"active\",\"orderKey\",\"createdAt\",\"updatedAt\") VALUES ('scim-alias-a','conn-a','tenant-a',$1,'scim-alias-a','role-projection-owner@example.com','scim-alias-a','role-projection-owner@example.com','[]','[]','Owner','Owner','[]',true,'scim-alias-a','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[uid]).await?;
     for (id, cid, domain, display, external) in [
         ("group-a", "conn-a", "tenant-a", "Admins", "administrators"),
+        ("group-e", "conn-a", "tenant-a", "Editors", "editors"),
+        ("group-g", "conn-a", "tenant-a", "Guests", "guests"),
         (
             "group-b",
             "conn-a",
@@ -144,10 +146,10 @@ async fn scim_role_projection_normalizes_roles_and_persists_grants<B: Backend>(
     assert_eq!(response.status, 200);
     let observed = states.lock().unwrap().clone();
     assert_eq!(observed.len(), 1);
-    assert_eq!(observed[0].grants,json!([{"source":{"type":"group","id":"group-b","externalId":"administrators-b","displayName":"Admin backups"},"role":"admin"},{"source":{"type":"group","id":"group-a","externalId":"administrators","displayName":"Admins"},"role":"admin"}]).as_array().unwrap().clone());
+    assert_eq!(observed[0].grants,json!([{"source":{"type":"group","id":"group-b","externalId":"administrators-b","displayName":"Admin backups"},"role":"admin"},{"source":{"type":"group","id":"group-a","externalId":"administrators","displayName":"Admins"},"role":"admin"},{"source":{"type":"group","id":"group-e","externalId":"editors","displayName":"Editors"},"role":"admin"},{"source":{"type":"group","id":"group-g","externalId":"guests","displayName":"Guests"},"role":"admin"}]).as_array().unwrap().clone());
     assert_eq!(*checks.lock().unwrap(), vec!["admin", "missing"]);
     let grants: Value = serde_json::from_str(&db.table("scimProjectionGrant").await?)?;
-    assert_eq!(grants.as_array().unwrap().len(), 2);
+    assert_eq!(grants.as_array().unwrap().len(), 4);
     let first = grants
         .as_array()
         .unwrap()
