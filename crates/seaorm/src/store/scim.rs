@@ -11,12 +11,123 @@ use alibi_core::{
     store::{CreateScimManagedConnection, ScimManagedCreation, ScimManagedStore},
 };
 use async_trait::async_trait;
+use chrono::SubsecRound;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QueryOrder,
     QuerySelect, Set, TransactionTrait, sea_query::Expr,
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn revoke_scim_managed_credential(
+        &self,
+        data: alibi_core::store::RevokeScimManagedCredential,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let result = async {
+            let mut select = connection::Entity::find()
+                .filter(connection::Column::ConnectionId.eq(data.connection_id))
+                .filter(connection::Column::ProvisioningDomainId.eq(data.provisioning_domain_id));
+            if tx.get_database_backend() == sea_orm::DbBackend::Postgres {
+                select = select.lock_exclusive();
+            }
+            let mut connection = select.one(&tx).await.map_err(map_db_err)?.ok_or_else(|| {
+                alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                }
+            })?;
+            let credential = credential::Entity::find()
+                .filter(credential::Column::CredentialId.eq(data.credential_id.clone()))
+                .filter(credential::Column::ConnectionRecordId.eq(connection.id.clone()))
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                })?;
+            if credential.status == "revoked" {
+                return Ok(Some(connection.into()));
+            }
+            if connection.status != "active" || credential.status != "active" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM credential is not active",
+                ));
+            }
+            let claimed = connection::Entity::update_many()
+                .col_expr(
+                    connection::Column::Revision,
+                    Expr::col(connection::Column::Revision).add(1),
+                )
+                .filter(connection::Column::Id.eq(connection.id.clone()))
+                .filter(connection::Column::Status.eq("active"))
+                .filter(connection::Column::Revision.eq(connection.revision))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if claimed.rows_affected == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            let revoked_at = chrono::Utc::now().trunc_subsecs(3);
+            let updated = credential::Entity::update_many()
+                .col_expr(credential::Column::Status, Expr::value("revoked"))
+                .col_expr(
+                    credential::Column::ActiveSlotKey,
+                    Expr::value(format!("{}:inactive", credential.credential_id)),
+                )
+                .col_expr(credential::Column::RevokedAt, Expr::value(revoked_at))
+                .col_expr(
+                    credential::Column::RevokedBy,
+                    Expr::value(data.actor_id.clone()),
+                )
+                .filter(credential::Column::Id.eq(credential.id))
+                .filter(credential::Column::Status.eq("active"))
+                .filter(credential::Column::ActiveSlotKey.eq(credential.active_slot_key))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if updated.rows_affected == 0 {
+                return Ok(None);
+            }
+            _ = event::ActiveModel {
+                id: Set(self
+                    .generated_id(
+                        &tx,
+                        "scimManagedConnectionEvent",
+                        "scimManagedConnectionEvent",
+                        "id",
+                    )
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                connection_record_id: Set(connection.id.clone()),
+                event_key: Set(format!("{}:{}", connection.id, connection.revision)),
+                sequence: Set(connection.revision),
+                kind: Set("credential.revoked".into()),
+                actor_id: Set(data.actor_id),
+                credential_id: Set(Some(data.credential_id)),
+                created_at: Set(revoked_at),
+            }
+            .insert(&tx)
+            .await
+            .map_err(map_db_err)?;
+            Ok(Some(connection.into()))
+        }
+        .await;
+        match result {
+            Ok(result) => {
+                tx.commit().await.map_err(map_db_err)?;
+                Ok(result)
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
+    }
+
     async fn rotate_scim_managed_credential(
         &self,
         data: alibi_core::store::RotateScimManagedCredential,

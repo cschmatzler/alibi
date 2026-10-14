@@ -55,6 +55,18 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let mut body=JsValue::from(input["body"].clone());if let JsValue::Object(values)=&mut body{let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}
                     let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;let failed=result.is_err();let rejected=result.err().is_some_and(|error|error.to_string().contains("fixture rejected rotation event"));return Json(json!({"failed":failed,"rejectedEvent":rejected})).into_response();
                 }
+                if query.get("operation").is_some_and(|operation|operation=="reject-revocation-event") {
+                    _=database.execute_unprepared("CREATE TRIGGER reject_scim_revocation_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.type='credential.revoked' BEGIN SELECT RAISE(ABORT,'fixture rejected revocation event'); END").await.unwrap();return Json(json!({"installed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="revocation-failure") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","revokeSCIMManagedCredential").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
+                    let failed=result.is_err();let rejected=result.err().is_some_and(|error|error.to_string().contains("fixture rejected revocation event"));return Json(json!({"failed":failed,"rejectedEvent":rejected})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="revokeSCIMManagedCredential") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","revokeSCIMManagedCredential").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
+                    return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
+                }
                 if query.get("operation").is_some_and(|operation|operation=="rotateSCIMManagedCredential") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let mut body=JsValue::from(input["body"].clone());if let JsValue::Object(values)=&mut body {let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}
                     let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;

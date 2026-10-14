@@ -82,6 +82,35 @@ export async function scimFixture(base: BetterAuthOptions) {
           );
         }
       }
+      if (query.get("operation") === "reject-revocation-event") {
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_revocation_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.type='credential.revoked' BEGIN SELECT RAISE(ABORT,'fixture rejected revocation event'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "revocation-failure") {
+        const input = (await request.json()) as any;
+        try {
+          await auth.api.revokeSCIMManagedCredential({ body: input.body });
+          return new Response(JSON.stringify({ failed: false }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              failed: true,
+              rejectedEvent: String(error).includes("fixture rejected revocation event"),
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+      }
+      if (query.get("operation") === "revokeSCIMManagedCredential") {
+        const input = (await request.json()) as any;
+        return auth.api.revokeSCIMManagedCredential({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "rotateSCIMManagedCredential") {
         const input = (await request.json()) as any;
         input.body.expiresAt = new Date(input.body.expiresAt);
