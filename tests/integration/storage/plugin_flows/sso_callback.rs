@@ -25,7 +25,8 @@ backend_tests!(
     sso_configured_state_rejects_reconfigured_authority_before_identity_writes,
     sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_missing_key,
     sso_private_key_resolver_admits_persisted_clients_and_resolves_each_token_request,
-    sso_user_provisioning_observes_first_and_every_login_after_success
+    sso_user_provisioning_observes_first_and_every_login_after_success,
+    sso_organization_membership_respects_policy_invitation_and_existing_role
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -1647,6 +1648,176 @@ async fn sso_user_provisioning_observes_first_and_every_login_after_success<B: B
                                 .is_some_and(|token| !token.is_empty())
                         );
                     }
+                }
+                assert!(
+                    store
+                        .get_account(&provider, if saml { &email } else { "employee-subject" })
+                        .await?
+                        .is_some()
+                );
+            }
+        }
+    }
+    B::close(connection).await
+}
+
+async fn sso_organization_membership_respects_policy_invitation_and_existing_role<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::store::{InvitationStore, MemberStore};
+    let idp = peer::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    for mode in ["default", "admin", "disabled", "invitation"] {
+        let auth = AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(alibi::plugins::OrganizationPlugin::new())
+            .plugin(SsoPlugin::with_config(SsoConfig {
+                organization_provisioning: alibi::plugins::SsoOrganizationProvisioning {
+                    disabled: mode == "disabled",
+                    default_role: if mode == "admin" { "admin" } else { "member" }.into(),
+                },
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let owner = signup(&auth, &format!("org-sso-owner-{mode}@example.test")).await;
+        let owner_cookie = cookies(&owner);
+        let org = call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"SSO company","slug":format!("sso-{mode}")})),
+                &owner_cookie,
+            ),
+            200,
+        )
+        .await;
+        let org_id = body(&org)["id"].as_str().unwrap().to_owned();
+        for saml in [false, true] {
+            let provider = format!("org-{mode}-{saml}");
+            let email = format!("org-{mode}-{saml}@example.test");
+            *idp.email.lock().unwrap() = email.clone();
+            if mode == "invitation" {
+                let invited = call(
+                    &auth,
+                    request(
+                        "/organization/invite-member",
+                        Some(json!({"organizationId":org_id,"email":email,"role":"admin"})),
+                        &owner_cookie,
+                    ),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&invited)["status"], "pending");
+            }
+            let mut input = if saml {
+                json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"example.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem"),"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true}})
+            } else {
+                json!({"providerId":provider,"issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base)}})
+            };
+            input["organizationId"] = json!(org_id);
+            let registered = Box::pin(
+                auth.dispatch_endpoint(
+                    SsoPlugin::register_sso_provider_endpoint(&input)?,
+                    EndpointOptions {
+                        headers: Some(
+                            [("cookie".into(), owner_cookie.clone())]
+                                .into_iter()
+                                .collect(),
+                        ),
+                        ..Default::default()
+                    },
+                ),
+            )
+            .await?
+            .into_response()?;
+            assert_eq!(registered.status, 200);
+            let mut first_member = None;
+            for index in 0..2 {
+                let started = Box::pin(auth.dispatch_endpoint(
+                    SsoPlugin::sign_in_sso_endpoint(
+                        &json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete")}),
+                    )?,
+                    EndpointOptions::default(),
+                ))
+                .await?
+                .into_response()?;
+                let endpoint = if saml {
+                    SsoPlugin::acs_endpoint(
+                        &provider,
+                        &super::saml_idp::grant(
+                            body(&started)["url"].as_str().unwrap(),
+                            &email,
+                            false,
+                        )?,
+                    )?
+                } else {
+                    let grant = reqwest::Client::builder()
+                        .redirect(reqwest::redirect::Policy::none())
+                        .build()?
+                        .get(body(&started)["url"].as_str().unwrap())
+                        .send()
+                        .await?;
+                    let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+                    SsoPlugin::callback_sso_endpoint(
+                        &provider,
+                        &json!(
+                            url.query_pairs()
+                                .into_owned()
+                                .collect::<std::collections::HashMap<_, _>>()
+                        ),
+                    )?
+                };
+                let completed = Box::pin(auth.dispatch_endpoint(
+                    endpoint,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                        ..Default::default()
+                    },
+                ))
+                .await?
+                .into_response()?;
+                assert_eq!(
+                    url::Url::parse(completed.headers.get("location").unwrap())?.path(),
+                    "/complete"
+                );
+                let session = call(
+                    &auth,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await;
+                let user_id = body(&session)["user"]["id"].as_str().unwrap().to_owned();
+                let member = store.get_member(&org_id, &user_id).await?;
+                if matches!(mode, "disabled" | "invitation") {
+                    assert!(member.is_none());
+                } else {
+                    let member = member.unwrap();
+                    if index == 0 {
+                        assert_eq!(
+                            member.role,
+                            if mode == "admin" { "admin" } else { "member" }
+                        );
+                        first_member = Some(member.id.clone());
+                        _ = store.update_member_role(&member.id, "owner").await?;
+                    } else {
+                        assert_eq!(Some(member.id), first_member);
+                        assert_eq!(member.role, "owner");
+                    }
+                }
+                if mode == "invitation" {
+                    assert!(
+                        store
+                            .get_pending_invitation(&org_id, &email)
+                            .await?
+                            .is_some()
+                    );
                 }
                 assert!(
                     store

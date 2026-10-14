@@ -460,6 +460,8 @@ impl SsoPlugin {
         };
         self.provision(&issued, &user, Some(&tokens), &provider)
             .await?;
+        self.provision_organization(&issued.user, &provider, ctx)
+            .await?;
         let destination = if issued.is_register {
             payload
                 .new_user_url
