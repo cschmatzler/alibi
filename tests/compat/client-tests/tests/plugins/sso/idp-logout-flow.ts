@@ -4,7 +4,7 @@ import { XMLParser } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
-export async function idpLogoutFlow(ctx: ScenarioContext, signed: boolean) {
+export async function idpLogoutFlow(ctx: ScenarioContext, signed: boolean, http = false) {
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
@@ -118,10 +118,10 @@ export async function idpLogoutFlow(ctx: ScenarioContext, signed: boolean) {
       encodedRequest = await sign(false);
     }
     const response = await control({
-      action: "slo",
+      action: http ? "slo-http" : "slo",
       params: { providerId: "idp-logout-provider" },
       body: { SAMLRequest: encodedRequest, RelayState: "opaque-relay" },
-      headers: {},
+      headers: http ? { origin: "https://idp.example.test" } : {},
     });
     expect(response.status, await response.clone().text()).toBe(200);
     expect(response.headers.get("content-type")).toBe("text/html");

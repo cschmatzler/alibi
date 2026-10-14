@@ -12,7 +12,8 @@ backend_tests!(
     sso_idp_logout_matches_session_index_before_retiring_session,
     sso_logout_required_signature_preserves_proof_until_trusted_completion,
     sso_saml_rollover_accepts_later_trusted_certificate_for_login_and_logout,
-    sso_idp_logout_requires_trusted_signature_before_session_retirement
+    sso_idp_logout_requires_trusted_signature_before_session_retirement,
+    sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session
 );
 async fn sso_logout_uses_acs_session_index_and_retires_session<B: Backend>(db: Db) -> TestResult {
     logout_flow::<B>(db, false, false, false).await
@@ -283,14 +284,21 @@ async fn logout_flow<B: Backend>(
 async fn sso_idp_logout_matches_session_index_before_retiring_session<B: Backend>(
     db: Db,
 ) -> TestResult {
-    idp_logout_flow::<B>(db, false).await
+    idp_logout_flow::<B>(db, false, false).await
 }
 async fn sso_idp_logout_requires_trusted_signature_before_session_retirement<B: Backend>(
     db: Db,
 ) -> TestResult {
-    idp_logout_flow::<B>(db, true).await
+    idp_logout_flow::<B>(db, true, false).await
 }
-async fn idp_logout_flow<B: Backend>(db: Db, signed: bool) -> TestResult {
+async fn sso_idp_logout_http_form_accepts_external_origin_and_retires_matching_session<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    idp_logout_flow::<B>(db, false, true).await
+}
+async fn idp_logout_flow<B: Backend>(db: Db, signed: bool, http: bool) -> TestResult {
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(SsoPlugin::with_config(SsoConfig {
@@ -386,18 +394,38 @@ async fn idp_logout_flow<B: Backend>(db: Db, signed: bool) -> TestResult {
             }
             encoded = idp::signed_logout(&xml, false)?;
         }
-        let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
-            .with_params(&json!({"providerId":"idp-logout-provider"}))?
-            .with_body(&json!({"SAMLRequest":encoded,"RelayState":"opaque-relay"}))?;
-        let output = Box::pin(auth.dispatch_endpoint(
-            endpoint,
-            EndpointOptions {
-                method: Some(HttpMethod::Post),
-                ..Default::default()
-            },
-        ))
-        .await?
-        .into_response()?;
+        let output = if http {
+            let mut incoming =
+                AuthRequest::new(HttpMethod::Post, "/sso/saml2/sp/slo/idp-logout-provider");
+            incoming.headers.extend([
+                ("origin".into(), "https://idp.example.test".into()),
+                (
+                    "content-type".into(),
+                    "application/x-www-form-urlencoded".into(),
+                ),
+            ]);
+            incoming.body = Some(
+                url::form_urlencoded::Serializer::new(String::new())
+                    .append_pair("SAMLRequest", &encoded)
+                    .append_pair("RelayState", "opaque-relay")
+                    .finish()
+                    .into_bytes(),
+            );
+            Box::pin(auth.handle_request(incoming)).await?
+        } else {
+            let endpoint = ServerEndpoint::<Value>::new("sso", "sloEndpoint")
+                .with_params(&json!({"providerId":"idp-logout-provider"}))?
+                .with_body(&json!({"SAMLRequest":encoded,"RelayState":"opaque-relay"}))?;
+            Box::pin(auth.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    method: Some(HttpMethod::Post),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?
+        };
         assert_eq!(output.status, 200);
         assert_eq!(
             output.headers.get("content-type").map(String::as_str),

@@ -102,10 +102,10 @@ export async function ssoFixture(base: BetterAuthOptions) {
         }),
       );
     }
-    if (input.action === "acs-http") {
+    if (input.action === "acs-http" || input.action === "slo-http") {
       return auth.handler(
         new Request(
-          `${options.baseURL}${options.basePath ?? "/api/auth"}/sso/saml2/sp/acs/${input.params.providerId}`,
+          `${options.baseURL}${options.basePath ?? "/api/auth"}/sso/saml2/sp/${input.action === "slo-http" ? "slo" : "acs"}/${input.params.providerId}`,
           {
             method: "POST",
             headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
