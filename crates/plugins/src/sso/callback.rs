@@ -206,32 +206,59 @@ impl SsoPlugin {
                 .json::<Value>()
                 .await
                 .map_err(|e| AuthError::internal(e.to_string()))?;
-            // ID-token verification is required before accepting an ID-token identity.
-            if raw.get("id_token").and_then(Value::as_str).is_some() {
-                return Err(AuthError::not_implemented(
-                    "SSO ID token verification is not implemented",
-                ));
-            }
+            let verified = if let Some(token) = raw
+                .get("id_token")
+                .and_then(Value::as_str)
+                .filter(|token| !token.is_empty())
+            {
+                let endpoint = config
+                    .get("jwksEndpoint")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| api(400, "jwks_endpoint_not_found"))?;
+                Some(
+                    super::callback_id_token::verify(
+                        token,
+                        endpoint,
+                        client_id,
+                        &provider.issuer,
+                        ctx,
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            };
             let access = raw
                 .get("access_token")
                 .and_then(Value::as_str)
                 .ok_or_else(|| AuthError::internal("missing_access_token"))?;
-            let endpoint = config
+            let profile = if let Some(endpoint) = config
                 .get("userInfoEndpoint")
                 .and_then(Value::as_str)
-                .ok_or_else(|| AuthError::internal("missing_user_info"))?;
-            let (client, info_url) = outbound_client(endpoint, ctx).await?;
-            let profile = client
-                .get(info_url)
-                .bearer_auth(access)
-                .send()
-                .await
-                .map_err(|e| AuthError::internal(e.to_string()))?
-                .error_for_status()
-                .map_err(|e| AuthError::internal(e.to_string()))?
-                .json::<Value>()
-                .await
-                .map_err(|e| AuthError::internal(e.to_string()))?;
+                .filter(|endpoint| !endpoint.is_empty())
+            {
+                let (client, info_url) = outbound_client(endpoint, ctx).await?;
+                let profile = client
+                    .get(info_url)
+                    .bearer_auth(access)
+                    .send()
+                    .await
+                    .map_err(|error| AuthError::internal(error.to_string()))?
+                    .error_for_status()
+                    .map_err(|error| AuthError::internal(error.to_string()))?
+                    .json::<Value>()
+                    .await
+                    .map_err(|error| AuthError::internal(error.to_string()))?;
+                if verified
+                    .as_ref()
+                    .is_some_and(|claims| profile.get("sub") != claims.get("sub"))
+                {
+                    return Err(api(400, "id_token_userinfo_subject_mismatch"));
+                }
+                profile
+            } else {
+                verified.ok_or_else(|| api(400, "user_info_endpoint_not_found"))?
+            };
             let field = |name: &str, default: &str| {
                 config
                     .get("mapping")
@@ -259,6 +286,10 @@ impl SsoPlugin {
                 additional_fields: serde_json::Map::new(),
             };
             let tokens = OAuthTokenSet {
+                id_token: raw
+                    .get("id_token")
+                    .and_then(Value::as_str)
+                    .map(str::to_owned),
                 access_token: Some(access.into()),
                 refresh_token: raw
                     .get("refresh_token")
@@ -392,7 +423,7 @@ fn redirect_error(
         crate::authentication_helpers::redirect(url.as_str()),
     ))
 }
-async fn outbound_client<S: AuthSchema>(
+pub(super) async fn outbound_client<S: AuthSchema>(
     endpoint: &str,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(reqwest::Client, url::Url)> {

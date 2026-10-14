@@ -200,6 +200,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     }
     if (input.action === "idp") {
       if (input.email) idp.setEmail(input.email);
+      idp.setIdTokenCase(input.idTokenCase ?? "none");
       return new Response(JSON.stringify({ base: idp.base }), {
         headers: { "content-type": "application/json" },
       });
@@ -254,7 +255,11 @@ export async function ssoFixture(base: BetterAuthOptions) {
         { headers: { "content-type": "application/json" } },
       );
     }
-    if (input.action === "account-row" || input.action === "saml-account-row") {
+    if (
+      input.action === "account-row" ||
+      input.action === "saml-account-row" ||
+      input.action === "id-token-account-row"
+    ) {
       const context = await auth.$context;
       const row = await context.adapter.findOne({
         model: "account",
@@ -271,6 +276,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 userId: row.userId,
                 providerId: row.providerId,
                 accountId: row.accountId,
+                ...(input.action === "id-token-account-row" ? { idToken: row.idToken } : {}),
                 ...(input.action === "saml-account-row"
                   ? { accessToken: row.accessToken, refreshToken: row.refreshToken }
                   : {}),

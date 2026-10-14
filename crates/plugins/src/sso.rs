@@ -1,5 +1,6 @@
 //! Enterprise single-sign-on provider registration.
 mod callback;
+mod callback_id_token;
 mod domain_confirmation;
 mod domain_verification;
 mod provider_delete;
