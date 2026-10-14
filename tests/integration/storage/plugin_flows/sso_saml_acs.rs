@@ -22,7 +22,14 @@ backend_tests!(
     sso_saml_encrypted_assertions_accept_aes128_gcm,
     sso_saml_encrypted_assertions_accept_aes128_cbc,
     sso_saml_encrypted_assertions_accept_aes256_cbc,
-    sso_saml_encrypted_assertions_reject_damaged_ciphertext
+    sso_saml_encrypted_assertions_reject_damaged_ciphertext,
+    sso_saml_encryption_policy_key_denied,
+    sso_saml_encryption_policy_data_denied,
+    sso_saml_encryption_policy_key_allowed,
+    sso_saml_encryption_policy_data_allowed,
+    sso_saml_encryption_policy_key_empty,
+    sso_saml_encryption_policy_data_empty,
+    sso_saml_encryption_policy_outer_key_denied
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -82,8 +89,46 @@ async fn sso_saml_encrypted_assertions_accept_aes256_cbc<B: Backend>(db: Db) -> 
 async fn sso_saml_encrypted_assertions_reject_damaged_ciphertext<B: Backend>(db: Db) -> TestResult {
     acs_flow::<B>(db, AcsCase::Tampered).await
 }
+async fn sso_saml_encryption_policy_key_denied<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::EncryptionPolicy("encrypted-policy-key-denied")).await
+}
+async fn sso_saml_encryption_policy_data_denied<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-policy-data-denied"),
+    )
+    .await
+}
+async fn sso_saml_encryption_policy_key_allowed<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-policy-key-allowed"),
+    )
+    .await
+}
+async fn sso_saml_encryption_policy_data_allowed<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-policy-data-allowed"),
+    )
+    .await
+}
+async fn sso_saml_encryption_policy_key_empty<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::EncryptionPolicy("encrypted-policy-key-empty")).await
+}
+async fn sso_saml_encryption_policy_data_empty<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::EncryptionPolicy("encrypted-policy-data-empty")).await
+}
+async fn sso_saml_encryption_policy_outer_key_denied<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(
+        db,
+        AcsCase::EncryptionPolicy("encrypted-policy-outer-key-denied"),
+    )
+    .await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
+    EncryptionPolicy(&'static str),
     Manual,
     IdpXml,
     Encrypted,
@@ -107,7 +152,17 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     );
     let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if matches!(case, AcsCase::Tampered) {
+    let policy_mode = if let AcsCase::EncryptionPolicy(mode) = case {
+        mode
+    } else {
+        "default"
+    };
+    let policy_denied = matches!(case,AcsCase::EncryptionPolicy(mode) if !mode.contains("allowed") && !mode.contains("outer"));
+    let policy_key = policy_mode.contains("policy-key");
+    let outer_policy = policy_mode.contains("policy-outer");
+    let provider_id = if let AcsCase::EncryptionPolicy(mode) = case {
+        mode
+    } else if matches!(case, AcsCase::Tampered) {
         "encrypted-tampered-acs-provider"
     } else if matches!(
         case,
@@ -140,7 +195,10 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     };
     let (connection, store) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(SsoPlugin::new())
+        .plugin(SsoPlugin::with_config(alibi::plugins::SsoConfig {
+            saml_encryption_policy: super::sso_encryption_policy::policy(policy_mode),
+            ..Default::default()
+        }))
         .build()
         .await?;
     let owner = signup(&auth, "saml-acs-owner@example.test").await;
@@ -263,18 +321,19 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         } else {
             grant
         };
-        let grant = if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly) {
-            use base64::Engine as _;
-            let xml = String::from_utf8(
-                base64::engine::general_purpose::STANDARD
-                    .decode(grant["SAMLResponse"].as_str().unwrap())?,
-            )?;
-            let mut grant = grant;
-            grant["SAMLResponse"] = json!(idp::signed_logout(&xml, wrong_key)?);
-            grant
-        } else {
-            grant
-        };
+        let grant =
+            if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly) || outer_policy {
+                use base64::Engine as _;
+                let xml = String::from_utf8(
+                    base64::engine::general_purpose::STANDARD
+                        .decode(grant["SAMLResponse"].as_str().unwrap())?,
+                )?;
+                let mut grant = grant;
+                grant["SAMLResponse"] = json!(idp::signed_logout(&xml, wrong_key)?);
+                grant
+            } else {
+                grant
+            };
         let endpoint = ServerEndpoint::<Value>::new("sso", "acsEndpoint")
             .with_params(&json!({"providerId":provider_id}))?
             .with_body(
@@ -329,14 +388,26 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             "saml-used-assertion:{}",
             grant["assertionId"].as_str().unwrap()
         );
-        if wrong_key || key_failure || matches!(case, AcsCase::Tampered) {
+        if wrong_key || key_failure || matches!(case, AcsCase::Tampered) || policy_denied {
             assert_eq!(location.path(), "/failed");
             let query = location
                 .query_pairs()
                 .into_owned()
                 .collect::<std::collections::HashMap<_, _>>();
-            assert_eq!(query["error"], "saml_error");
-            assert_eq!(query["error_description"], "Invalid SAML response");
+            if policy_denied && !wrong_key {
+                assert_eq!(query["error"], "saml_algorithm_not_allowed");
+                assert_eq!(
+                    query["error_description"],
+                    if policy_key {
+                        "SAML key encryption algorithm not in allow-list: http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"
+                    } else {
+                        "SAML data encryption algorithm not in allow-list: http://www.w3.org/2009/xmlenc11#aes256-gcm"
+                    }
+                );
+            } else {
+                assert_eq!(query["error"], "saml_error");
+                assert_eq!(query["error_description"], "Invalid SAML response");
+            }
             assert!(
                 store
                     .get_latest_verification_by_identifier(&request_identifier)

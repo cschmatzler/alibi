@@ -488,3 +488,6 @@ mod sso_saml_algorithms;
 mod sso_saml_signing_policy;
 #[path = "../../../support/sso_signing_policy.rs"]
 mod sso_signing_policy;
+
+#[path = "../../../support/sso_encryption_policy.rs"]
+mod sso_encryption_policy;
