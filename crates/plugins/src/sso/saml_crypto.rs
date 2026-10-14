@@ -64,12 +64,14 @@ pub(super) fn verify(
         return Err(invalid());
     }
     let decrypted;
+    let mut ciphertext_response_signed = false;
     let xml = if config
         .get("idpMetadata")
         .and_then(|metadata| metadata.get("isAssertionEncrypted"))
         == Some(&Value::Bool(true))
     {
-        let authenticated = authenticate_encrypted_response(xml, config)?;
+        let (authenticated, response_signed) = authenticate_encrypted_response(xml, config)?;
+        ciphertext_response_signed = response_signed;
         decrypted =
             super::saml_decryption::decrypt(&authenticated, config).map_err(|_| invalid())?;
         decrypted.as_str()
@@ -118,10 +120,21 @@ pub(super) fn verify(
             .collect()
     };
     validate_signature_references(&doc, root)?;
+    let signatures = doc
+        .descendants(root)
+        .into_iter()
+        .filter(|id| {
+            doc.element(*id)
+                .is_some_and(|element| element.name.matches(Some(DSIG), "Signature"))
+        })
+        .count();
     let mut verified = HashSet::new();
     let mut assertion_signed = false;
-    let mut response_signed = false;
+    let mut response_signed = ciphertext_response_signed;
     for certificate in certificates {
+        if signatures == 0 {
+            break;
+        }
         let key = bergshamra::keys::loader::load_x509_cert_pem(certificate.as_bytes())
             .map_err(|_| invalid())?;
         let mut keys = bergshamra::KeysManager::new();
@@ -161,14 +174,6 @@ pub(super) fn verify(
         || config.get("wantAssertionsSigned") == Some(&json!(true)),
         |sp| sp.want_assertions_signed,
     );
-    let signatures = doc
-        .descendants(root)
-        .into_iter()
-        .filter(|id| {
-            doc.element(*id)
-                .is_some_and(|element| element.name.matches(Some(DSIG), "Signature"))
-        })
-        .count();
     if verified.len() != signatures
         || (!assertion_signed && !response_signed)
         || want_assertions_signed && !assertion_signed
@@ -395,12 +400,12 @@ pub(super) fn verify(
 }
 
 /// Authenticate outer signatures against ciphertext before decryption changes their digest.
-fn authenticate_encrypted_response(xml: &str, config: &Value) -> Result<String, Failure> {
+fn authenticate_encrypted_response(xml: &str, config: &Value) -> Result<(String, bool), Failure> {
     let doc = bergshamra::xml::uppsala::parse(xml).map_err(|_| invalid())?;
     let root = doc.document_element().ok_or_else(invalid)?;
     let signatures = children(&doc, root, DSIG, "Signature");
     if signatures.is_empty() {
-        return Ok(xml.to_owned());
+        return Ok((xml.to_owned(), false));
     }
     if signatures.len() != 1 {
         return Err(invalid());
@@ -446,7 +451,7 @@ fn authenticate_encrypted_response(xml: &str, config: &Value) -> Result<String, 
         .ok_or_else(invalid)?;
     let mut unsigned_outer = xml.to_owned();
     unsigned_outer.replace_range(range, "");
-    Ok(unsigned_outer)
+    Ok((unsigned_outer, true))
 }
 
 pub(super) fn validate_signature_references(

@@ -1,7 +1,8 @@
 //! Independent IdP envelope construction over a genuinely signed assertion.
 use base64::Engine as _;
-pub(crate) fn encrypt_grant(
+pub(crate) fn encrypt_grant_with_unsigned_assertion(
     grant: &serde_json::Value,
+    unsigned_assertion: bool,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     use bergshamra::crypto::AlgorithmRegistry;
     use rsa::rand_core::{OsRng, RngCore};
@@ -30,6 +31,25 @@ pub(crate) fn encrypt_grant(
             "<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ",
             1,
         );
+    }
+    if unsigned_assertion {
+        let standalone = bergshamra::xml::uppsala::parse(&plaintext)?;
+        let assertion = standalone.document_element().ok_or("Assertion missing")?;
+        let signature = standalone
+            .children(assertion)
+            .into_iter()
+            .find(|node| {
+                standalone.element(*node).is_some_and(|element| {
+                    element
+                        .name
+                        .matches(Some("http://www.w3.org/2000/09/xmldsig#"), "Signature")
+                })
+            })
+            .ok_or("Inner signature missing")?;
+        let range = standalone
+            .node_range(signature)
+            .ok_or("Signature range missing")?;
+        plaintext.replace_range(range, "");
     }
     let mut secret = [0u8; 32];
     OsRng.fill_bytes(&mut secret);
