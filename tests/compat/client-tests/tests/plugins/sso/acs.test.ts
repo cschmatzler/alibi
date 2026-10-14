@@ -9,6 +9,7 @@ for (const mode of [
   "xml",
   "encrypted",
   "encrypted-key",
+  "encrypted-response",
   "encrypted-missing-key",
   "encrypted-wrong-key",
   "encrypted-wrong-pass",
@@ -52,15 +53,18 @@ for (const mode of [
       const cert = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
-      const providerId = keyFailure
-        ? `${mode}-acs-provider`
-        : mode === "encrypted-key"
-          ? "encrypted-key-acs-provider"
-          : encrypted
-            ? "encrypted-acs-provider"
-            : xmlMetadata
-              ? "xml-acs-provider"
-              : "acs-provider";
+      const providerId =
+        mode === "encrypted-response"
+          ? "encrypted-response-acs-provider"
+          : keyFailure
+            ? `${mode}-acs-provider`
+            : mode === "encrypted-key"
+              ? "encrypted-key-acs-provider"
+              : encrypted
+                ? "encrypted-acs-provider"
+                : xmlMetadata
+                  ? "xml-acs-provider"
+                  : "acs-provider";
       const certificate = cert
         .split("\n")
         .filter((line) => !line.startsWith("-----"))
@@ -146,6 +150,15 @@ for (const mode of [
         ).json()) as any;
         if (encrypted) {
           grant = encryptSamlGrant(grant, cert);
+          if (mode === "encrypted-response") {
+            const signed = await control({
+              action: "sign-saml-logout",
+              xml: Buffer.from(grant.SAMLResponse, "base64").toString(),
+              wrongKey,
+            });
+            expect(signed.status).toBe(200);
+            grant.SAMLResponse = ((await signed.json()) as any).SAMLResponse;
+          }
         }
         const input = {
           action: http ? "acs-http" : "acs",

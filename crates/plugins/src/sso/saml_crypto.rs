@@ -69,7 +69,9 @@ pub(super) fn verify(
         .and_then(|metadata| metadata.get("isAssertionEncrypted"))
         == Some(&Value::Bool(true))
     {
-        decrypted = super::saml_decryption::decrypt(xml, config).map_err(|_| invalid())?;
+        let authenticated = authenticate_encrypted_response(xml, config)?;
+        decrypted =
+            super::saml_decryption::decrypt(&authenticated, config).map_err(|_| invalid())?;
         decrypted.as_str()
     } else {
         xml
@@ -390,6 +392,61 @@ pub(super) fn verify(
             .and_then(|statement| attribute(&doc, statement, "SessionIndex"))
             .map(str::to_owned),
     })
+}
+
+/// Authenticate outer signatures against ciphertext before decryption changes their digest.
+fn authenticate_encrypted_response(xml: &str, config: &Value) -> Result<String, Failure> {
+    let doc = bergshamra::xml::uppsala::parse(xml).map_err(|_| invalid())?;
+    let root = doc.document_element().ok_or_else(invalid)?;
+    let signatures = children(&doc, root, DSIG, "Signature");
+    if signatures.is_empty() {
+        return Ok(xml.to_owned());
+    }
+    if signatures.len() != 1 {
+        return Err(invalid());
+    }
+    validate_signature_references(&doc, root)?;
+    let certificate = config
+        .get("idpMetadata")
+        .and_then(|metadata| metadata.get("cert"))
+        .or_else(|| config.get("cert"))
+        .ok_or_else(invalid)?;
+    let certificates: Vec<_> = certificate.as_str().map_or_else(
+        || {
+            certificate
+                .as_array()
+                .map(|values| values.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default()
+        },
+        |value| vec![value],
+    );
+    let mut authenticated = false;
+    for certificate in certificates {
+        let key = bergshamra::keys::loader::load_x509_cert_pem(certificate.as_bytes())
+            .map_err(|_| invalid())?;
+        let mut keys = bergshamra::KeysManager::new();
+        keys.add_key(key);
+        let context = bergshamra::DsigContext::new(keys);
+        let results =
+            bergshamra::dsig::verify::verify_all_document_with_source(&context, &doc, Some(xml))
+                .map_err(|_| invalid())?;
+        authenticated |= results.iter().any(|result| {
+            result.all_reference_digests_verified() && matches!(result,
+                bergshamra::VerifyResult::Valid {signature_node, references, ..}
+                if signatures.contains(signature_node) && references.iter().any(|reference| reference.resolved_node == Some(root) && reference.digest_verified))
+        });
+    }
+    if !authenticated {
+        return Err(invalid());
+    }
+    // Only remove the authenticated ciphertext signature; inner assertion signatures
+    // still pass through the normal plaintext signature and identity validation.
+    let range = doc
+        .node_range(*signatures.first().ok_or_else(invalid)?)
+        .ok_or_else(invalid)?;
+    let mut unsigned_outer = xml.to_owned();
+    unsigned_outer.replace_range(range, "");
+    Ok(unsigned_outer)
 }
 
 pub(super) fn validate_signature_references(

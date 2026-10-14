@@ -16,7 +16,8 @@ backend_tests!(
     sso_saml_encrypted_assertions_reject_missing_decryption_key,
     sso_saml_encrypted_assertions_reject_wrong_decryption_key,
     sso_saml_encrypted_assertions_reject_wrong_passphrase,
-    sso_saml_encrypted_assertions_reject_missing_passphrase
+    sso_saml_encrypted_assertions_reject_missing_passphrase,
+    sso_saml_encrypted_assertions_accept_ciphertext_response_signatures
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -54,12 +55,18 @@ async fn sso_saml_encrypted_assertions_reject_wrong_passphrase<B: Backend>(db: D
 async fn sso_saml_encrypted_assertions_reject_missing_passphrase<B: Backend>(db: Db) -> TestResult {
     acs_flow::<B>(db, AcsCase::MissingPass).await
 }
+async fn sso_saml_encrypted_assertions_accept_ciphertext_response_signatures<B: Backend>(
+    db: Db,
+) -> TestResult {
+    acs_flow::<B>(db, AcsCase::EncryptedResponse).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     Manual,
     IdpXml,
     Encrypted,
     EncryptedKey,
+    EncryptedResponse,
     MissingKey,
     WrongKey,
     WrongPass,
@@ -73,7 +80,9 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     );
     let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if key_failure {
+    let provider_id = if matches!(case, AcsCase::EncryptedResponse) {
+        "encrypted-response-acs-provider"
+    } else if key_failure {
         match case {
             AcsCase::MissingKey => "encrypted-missing-key-acs-provider",
             AcsCase::WrongKey => "encrypted-wrong-key-acs-provider",
@@ -162,6 +171,18 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         let grant = idp::grant(body(&started)["url"].as_str().unwrap(), email, wrong_key)?;
         let grant = if encrypted {
             super::sso_saml_encryption::encrypt_grant(&grant)?
+        } else {
+            grant
+        };
+        let grant = if matches!(case, AcsCase::EncryptedResponse) {
+            use base64::Engine as _;
+            let xml = String::from_utf8(
+                base64::engine::general_purpose::STANDARD
+                    .decode(grant["SAMLResponse"].as_str().unwrap())?,
+            )?;
+            let mut grant = grant;
+            grant["SAMLResponse"] = json!(idp::signed_logout(&xml, wrong_key)?);
+            grant
         } else {
             grant
         };
