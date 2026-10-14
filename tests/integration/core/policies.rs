@@ -6,7 +6,7 @@
 )]
 use alibi::AuthConfig;
 use alibi::field_policy::{FieldConfig, FieldInputError, FieldValues, SessionFields};
-use alibi::hooks::{RequestHookContext, with_request_hook_context};
+use alibi::hooks::with_request_hook_context;
 use alibi::types::{ListUsersParams, UserFilterValue};
 use alibi::user_query::{apply_list_users, apply_list_users_presorted};
 use alibi::user_validation::{
@@ -189,7 +189,7 @@ impl UserInfoValidator for Policy {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         (self.0)(data)
     }

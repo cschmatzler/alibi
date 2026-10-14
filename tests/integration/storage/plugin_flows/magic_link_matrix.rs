@@ -1,7 +1,6 @@
 //! Magic-link issuance policy, callback validation and redemption outcomes.
 use super::auth_probe::{Probe, fast_builder};
 use super::*;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator,
     MagicLinkTokenHasher, MagicLinkTokenStorage, SendMagicLink,
@@ -68,7 +67,7 @@ impl UserInfoValidator for Deny {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(data
             .user

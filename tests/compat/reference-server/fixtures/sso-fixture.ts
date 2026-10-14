@@ -8,6 +8,8 @@ import { ssoOidcFixture } from "./sso-oidc-fixture";
 import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   const idp = ssoOidcFixture();
+  const validationEvents: any[] = [];
+  let validationDenyReturning = false;
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
@@ -50,8 +52,33 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ...options,
     plugins: [username(), sso({ trustEmailVerified: true })],
   };
+  const validationOptions = {
+    ...options,
+    user: {
+      async validateUserInfo(data: any, context: any) {
+        if (data.source.method !== "oauth" && !data.source.method.startsWith("sso-")) return;
+        validationEvents.push(
+          JSON.parse(
+            JSON.stringify({ source: data.source, name: data.user.name, email: data.user.email }),
+          ),
+        );
+        if (
+          !["sso-oidc", "sso-saml"].includes(data.source.method) ||
+          !data.source.sso ||
+          data.source.oauth
+        ) {
+          return { error: "wrong_sso_source", errorDescription: "SSO provenance required" };
+        }
+        if (data.source.action === "sign-in" && validationDenyReturning) {
+          return { error: "sso_validation_denied", errorDescription: "SSO identity rejected" };
+        }
+        if (data.source.action === "create-user") data.user.name = "Policy SSO user";
+      },
+    },
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
+    ["validation", betterAuth(validationOptions)],
     ["trusted-claims", betterAuth(trustedClaimsOptions)],
     ["domain", betterAuth(domainOptions)],
     ["shared", betterAuth(sharedOptions)],
@@ -63,20 +90,40 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "trusted-claims"
-        ? "trusted-claims"
-        : input.mode === "signed-request-slo"
-          ? "signed-request-slo"
-          : input.mode === "signed-slo"
-            ? "signed-slo"
-            : input.mode === "domain"
-              ? "domain"
-              : input.mode === "shared"
-                ? "shared"
-                : input.mode === "slo"
-                  ? "slo"
-                  : "default";
+      input.mode === "validation"
+        ? "validation"
+        : input.mode === "trusted-claims"
+          ? "trusted-claims"
+          : input.mode === "signed-request-slo"
+            ? "signed-request-slo"
+            : input.mode === "signed-slo"
+              ? "signed-slo"
+              : input.mode === "domain"
+                ? "domain"
+                : input.mode === "shared"
+                  ? "shared"
+                  : input.mode === "slo"
+                    ? "slo"
+                    : "default";
     const auth = instances.get(mode)!;
+    if (input.action === "validation-reset") {
+      validationEvents.length = 0;
+      validationDenyReturning = false;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "validation-deny") {
+      validationDenyReturning = input.enabled;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "validation-events") {
+      return new Response(JSON.stringify(validationEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
       return new Response(JSON.stringify({ configured: true }), {
@@ -333,19 +380,21 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "trusted-claims"
-            ? trustedClaimsOptions
-            : mode === "signed-request-slo"
-              ? signedRequestSloOptions
-              : mode === "signed-slo"
-                ? signedSloOptions
-                : mode === "domain"
-                  ? domainOptions
-                  : mode === "shared"
-                    ? sharedOptions
-                    : mode === "slo"
-                      ? sloOptions
-                      : options,
+          mode === "validation"
+            ? validationOptions
+            : mode === "trusted-claims"
+              ? trustedClaimsOptions
+              : mode === "signed-request-slo"
+                ? signedRequestSloOptions
+                : mode === "signed-slo"
+                  ? signedSloOptions
+                  : mode === "domain"
+                    ? domainOptions
+                    : mode === "shared"
+                      ? sharedOptions
+                      : mode === "slo"
+                        ? sloOptions
+                        : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {

@@ -2,7 +2,6 @@
 use super::auth_probe::{Probe, fast_password};
 use super::*;
 use alibi::AuthResult;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpType};
 use alibi::plugins::{AdminPlugin, AnonymousPlugin, TwoFactorPlugin};
 use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
@@ -19,7 +18,7 @@ impl UserInfoValidator for Admit {
     async fn validate(
         &self,
         _: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(None)
     }

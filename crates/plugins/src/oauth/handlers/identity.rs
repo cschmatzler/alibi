@@ -155,17 +155,38 @@ pub(in crate::oauth::handlers) fn provider_candidate(
     candidate
 }
 
+fn identity_source(
+    provider: &str,
+    profile: &serde_json::Value,
+    action: UserValidationAction,
+    policy: &OAuthProcessPolicy,
+) -> UserValidationSource {
+    if let Some(method) = policy.user_validation_method {
+        UserValidationSource {
+            method: method.into(),
+            action,
+            oauth: None,
+            sso: Some(alibi_core::user_validation::UserValidationProvider {
+                provider_id: provider.into(),
+                profile: profile.is_object().then(|| profile.clone()),
+            }),
+        }
+    } else {
+        UserValidationSource::oauth(provider, profile, action)
+    }
+}
 pub(in crate::oauth::handlers) async fn validate_provider_identity(
     provider: &str,
     profile: &serde_json::Value,
     user: &OAuthUserInfo,
     user_id: &str,
     action: UserValidationAction,
+    policy: &OAuthProcessPolicy,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
     let mut data = UserValidationData {
         user: provider_candidate(user, user_id),
-        source: UserValidationSource::oauth(provider, profile, action),
+        source: identity_source(provider, profile, action, policy),
     };
     // Sign-in completion supplies an empty name before the shared policy.
     // Explicit linking validates the original mapped optional name instead.
@@ -265,6 +286,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             user_info,
             &existing_user.id(),
             UserValidationAction::SignIn,
+            policy,
             ctx,
         )
         .await?;
@@ -423,6 +445,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             user_info,
             &linked_user.id(),
             UserValidationAction::LinkAccount,
+            policy,
             ctx,
         )
         .await?;
@@ -562,8 +585,12 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                 .then(|| tokens.scopes.join(",")),
             password: None,
         };
-        let source =
-            UserValidationSource::oauth(provider_name, profile, UserValidationAction::CreateUser);
+        let source = identity_source(
+            provider_name,
+            profile,
+            UserValidationAction::CreateUser,
+            policy,
+        );
         // OAuth registration commits its identity and provider binding together.
         // Notifications and session creation follow the committed transaction.
         let (persisted_user, persisted_account) =

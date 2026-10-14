@@ -140,6 +140,7 @@ pub(crate) struct OAuthProcessPolicy {
     pub(crate) require_email_verification: bool,
     pub(crate) callback_url: Option<String>,
     pub(crate) use_updated_user: bool,
+    pub(crate) user_validation_method: Option<&'static str>,
 }
 
 impl OAuthProcessPolicy {
@@ -157,6 +158,7 @@ impl OAuthProcessPolicy {
                 },
             callback_url,
             use_updated_user: true,
+            user_validation_method: None,
         }
     }
 }

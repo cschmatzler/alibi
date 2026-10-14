@@ -513,7 +513,7 @@ impl alibi::user_validation::UserInfoValidator for Admit {
     async fn validate(
         &self,
         _: &mut alibi::user_validation::UserValidationData,
-        _: &alibi::hooks::RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<alibi::user_validation::UserValidationRejection>> {
         Ok(None)
     }

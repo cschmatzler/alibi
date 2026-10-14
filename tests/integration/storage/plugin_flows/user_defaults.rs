@@ -5,7 +5,6 @@
     reason = "tests assert independently specified wire fields and fixtures"
 )]
 use super::*;
-use alibi::hooks::RequestHookContext;
 use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use alibi::{AuthContext, AuthInitContext, AuthPlugin, AuthResult, AuthRoute};
 use async_trait::async_trait;
@@ -46,7 +45,7 @@ impl UserInfoValidator for AdmitAll {
     async fn validate(
         &self,
         _: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(None)
     }

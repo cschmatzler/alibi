@@ -275,6 +275,7 @@ impl SsoPlugin {
             ..Default::default()
         };
         let policy = OAuthProcessPolicy {
+            user_validation_method: Some("sso-saml"),
             callback_url: Some(target.clone()),
             use_updated_user: true,
             ..Default::default()
@@ -296,7 +297,16 @@ impl SsoPlugin {
             Ok(issued) => issued,
             Err(error) => {
                 let (code, description) = error.redirect_parts();
-                return error_redirect(&target, &code, description, clear.as_deref(), ctx);
+                let target = if matches!(
+                    error,
+                    crate::oauth::handlers::OAuthSignInError::IdentityDenied { .. }
+                        | crate::oauth::handlers::OAuthSignInError::Banned(_)
+                ) {
+                    &error_target
+                } else {
+                    &target
+                };
+                return error_redirect(target, &code, description, clear.as_deref(), ctx);
             }
         };
         if self.config.saml_enable_single_logout {

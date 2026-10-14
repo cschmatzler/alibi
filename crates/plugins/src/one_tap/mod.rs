@@ -228,6 +228,7 @@ impl OneTapPlugin {
             }),
         };
         let policy = OAuthProcessPolicy {
+            user_validation_method: None,
             override_user_info: false,
             require_email_verification: provider
                 .is_some_and(|provider| provider.require_email_verification),

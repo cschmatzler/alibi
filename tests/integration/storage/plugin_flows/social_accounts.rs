@@ -5,7 +5,6 @@ use super::*;
 use crate::snapshot::Trace;
 use alibi::AuthResult;
 use alibi::field_policy::FieldConfig;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp};
 use alibi::plugins::oauth::{
     OAuthCallbackUserPayload, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -34,7 +33,7 @@ impl UserInfoValidator for Deny {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(data
             .user

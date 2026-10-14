@@ -121,8 +121,9 @@ impl UserInfoValidator for Application {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        request: &RequestHookContext,
+        context: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
+        let request = context.request.as_ref().expect("This fixture exercises actual HTTP requests");
         let mode = self.mode();
         let body = request
             .extensions
