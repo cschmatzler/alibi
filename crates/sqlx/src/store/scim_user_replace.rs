@@ -15,26 +15,41 @@ impl<S: AuthSchema> SqlxStore<S> {
         id: &str,
         connection: &str,
         domain: &str,
-        attributes: &alibi_core::store::ScimUserAttributes,
+        attributes: Option<&alibi_core::store::ScimUserAttributes>,
         now: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<ScimUserMutationContext> {
-        let source = self
+        let mut source = self
             .scim_user_owned_with_exec(exec, id, connection, domain)
             .await?;
         let subject = self
-            .acquire_scim_subject_with_exec(exec, &source.user_id, now)
+            .acquire_scim_subject_with_exec(exec, &source.user_id, now, attributes.is_none())
             .await?;
-        self.assert_scim_user_keys_with_exec(
-            exec,
-            connection,
-            &attributes.user_name_key,
-            attributes.external_id_key.as_deref(),
-            None,
-            Some(id),
-        )
-        .await?;
+        if let Some(attributes) = attributes {
+            self.assert_scim_user_keys_with_exec(
+                exec,
+                connection,
+                &attributes.user_name_key,
+                attributes.external_id_key.as_deref(),
+                None,
+                Some(id),
+            )
+            .await?;
+        } else {
+            let after = self
+                .scim_user_owned_with_exec(exec, id, connection, domain)
+                .await?;
+            if after.user_id != source.user_id {
+                return Err(alibi_core::AuthError::Api {
+                    status: 409,
+                    code: None,
+                    message: "The SCIM User identity changed concurrently".into(),
+                });
+            }
+            source = after;
+        }
         Ok(ScimUserMutationContext {
-            user_id: source.user_id,
+            user_id: source.user_id.clone(),
+            source: source.into(),
             manage_profile: subject.profile_source_id.as_deref() == Some(id),
         })
     }
@@ -104,6 +119,7 @@ impl<S: AuthSchema> SqlxStore<S> {
                 connection_id: stored.connection_id,
                 provisioning_domain_id: stored.provisioning_domain_id,
                 user_name: stored.user_name,
+                primary_email: stored.primary_email,
                 display_name: stored.display_name,
                 active: stored.active,
                 external_id: stored.external_id,
@@ -117,5 +133,27 @@ impl<S: AuthSchema> SqlxStore<S> {
             },
             states,
         ))
+    }
+}
+
+impl From<user::Model> for ScimUserRecord {
+    fn from(row: user::Model) -> Self {
+        Self {
+            id: row.id,
+            connection_id: row.connection_id,
+            provisioning_domain_id: row.provisioning_domain_id,
+            user_name: row.user_name,
+            primary_email: row.primary_email,
+            display_name: row.display_name,
+            active: row.active,
+            external_id: row.external_id,
+            formatted_name: row.formatted_name,
+            given_name: row.given_name,
+            family_name: row.family_name,
+            serialized_emails: row.serialized_emails,
+            serialized_attributes: row.serialized_attributes,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }
     }
 }

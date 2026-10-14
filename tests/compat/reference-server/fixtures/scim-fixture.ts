@@ -366,6 +366,17 @@ export async function scimFixture(base: BetterAuthOptions) {
             .all(),
         });
       }
+      if (query.get("operation") === "patchSCIMUser") {
+        const input = (await request.json()) as any;
+        return auth.api.patchSCIMUser({
+          params: input.params,
+          body: input.body,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
       if (query.get("operation") === "replaceSCIMUser") {
         const input = (await request.json()) as any;
         return auth.api.replaceSCIMUser({

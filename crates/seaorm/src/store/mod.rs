@@ -366,12 +366,29 @@ where
             .map_err(map_db_err)?;
         Ok(())
     }
+    async fn check_scim_user_attributes(
+        &self,
+        id: &str,
+        connection: &str,
+        attributes: &alibi_core::store::ScimUserAttributes,
+    ) -> AuthResult<()> {
+        self.store
+            .assert_scim_user_keys_with_connection(
+                self.tx,
+                connection,
+                &attributes.user_name_key,
+                attributes.external_id_key.as_deref(),
+                None,
+                Some(id),
+            )
+            .await
+    }
     async fn lock_scim_user(
         &self,
         id: &str,
         connection: &str,
         domain: &str,
-        attributes: &alibi_core::store::ScimUserAttributes,
+        attributes: Option<&alibi_core::store::ScimUserAttributes>,
         now: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<alibi_core::store::ScimUserMutationContext> {
         self.store

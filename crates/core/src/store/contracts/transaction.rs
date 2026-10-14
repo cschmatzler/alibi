@@ -22,12 +22,23 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn check_scim_user_attributes(
+        &self,
+        _id: &str,
+        _connection: &str,
+        _attributes: &crate::store::ScimUserAttributes,
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM User uniqueness checks are unsupported",
+        ))
+    }
+
     async fn lock_scim_user(
         &self,
         _id: &str,
         _connection: &str,
         _domain: &str,
-        _attributes: &crate::store::ScimUserAttributes,
+        _attributes: Option<&crate::store::ScimUserAttributes>,
         _now: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<crate::store::ScimUserMutationContext> {
         Err(AuthError::not_implemented(
