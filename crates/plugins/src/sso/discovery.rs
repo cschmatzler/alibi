@@ -1,5 +1,24 @@
 //! OIDC discovery hydration for registered enterprise providers.
 use super::{AuthContext, AuthError, AuthResult, AuthSchema, Value, json};
+pub(super) const ENDPOINT_FIELDS: &[&str] = &[
+    "authorizationEndpoint",
+    "tokenEndpoint",
+    "userInfoEndpoint",
+    "jwksEndpoint",
+    "discoveryEndpoint",
+];
+pub(super) fn validate_endpoint_protocols(input: &Value) -> AuthResult<()> {
+    for field in ENDPOINT_FIELDS {
+        if let Some(value) = input
+            .get(*field)
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        {
+            _ = absolute(field, value)?;
+        }
+    }
+    Ok(())
+}
 const REQUIRED: &[&str] = &[
     "issuer",
     "authorization_endpoint",
