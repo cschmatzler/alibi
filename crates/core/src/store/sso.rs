@@ -149,9 +149,14 @@ pub fn validate_sso_fields(config: &crate::config::AdvancedDatabaseConfig) -> Au
     ];
     let mapped = config.sso_provider.as_ref();
     for (name, field) in &config.sso_provider_fields.0 {
-        if BUILT_IN.contains(&name.as_str()) || RESPONSE.contains(&name.as_str()) {
+        if BUILT_IN.contains(&name.as_str()) {
             return Err(AuthError::config(format!(
-                "ssoProvider additional field \"{name}\" conflicts with a built-in or returned provider field"
+                "ssoProvider additional field \"{name}\" conflicts with a built-in field"
+            )));
+        }
+        if RESPONSE.contains(&name.as_str()) {
+            return Err(AuthError::config(format!(
+                "ssoProvider additional field \"{name}\" conflicts with a returned provider field"
             )));
         }
         let physical = sso_field_column(name, field);
@@ -170,7 +175,7 @@ pub fn validate_sso_fields(config: &crate::config::AdvancedDatabaseConfig) -> Au
             })
         {
             return Err(AuthError::config(format!(
-                "ssoProvider additional field \"{name}\" maps to a built-in field"
+                "ssoProvider additional field \"{name}\" maps to built-in field \"{physical}\""
             )));
         }
     }
