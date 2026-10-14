@@ -6,14 +6,16 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const [signed, ambiguous] of [
-  [false, false],
-  [true, false],
-  [false, true],
-  [true, true],
+for (const [signed, ambiguous, keyMode] of [
+  [false, false, "pem"],
+  [true, false, "pem"],
+  [false, true, "pem"],
+  [true, true, "pem"],
+  [true, false, "encrypted"],
+  [true, false, "wrong-pass"],
 ] as const) {
   compatScenario(
-    `SAML ${signed ? "signed" : "unsigned"} ${ambiguous ? "rejects ambiguous IdP bindings" : "redirect request has durable bound relay and request proofs"}`,
+    `SAML ${keyMode} ${signed ? "signed" : "unsigned"} ${keyMode === "wrong-pass" ? "rejects an incorrect SP key passphrase" : ambiguous ? "rejects ambiguous IdP bindings" : "redirect request has durable bound relay and request proofs"}`,
     async (ctx) => {
       const actor = ctx.actor();
       const control = (input: Record<string, unknown>) =>
@@ -42,14 +44,33 @@ for (const [signed, ambiguous] of [
       const privateKey = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/key.pem", import.meta.url),
       ).text();
-      const providerId = ambiguous
-        ? signed
-          ? "ambiguous-signed-provider"
-          : "ambiguous-unsigned-provider"
-        : signed
-          ? "signed-saml-provider"
-          : "unsigned-saml-provider";
+      const providerId =
+        keyMode === "encrypted"
+          ? "encrypted-saml-provider"
+          : keyMode === "wrong-pass"
+            ? "encrypted-wrong-pass-provider"
+            : ambiguous
+              ? signed
+                ? "ambiguous-signed-provider"
+                : "ambiguous-unsigned-provider"
+              : signed
+                ? "signed-saml-provider"
+                : "unsigned-saml-provider";
       const config = {
+        ...(keyMode === "pem"
+          ? {}
+          : {
+              spMetadata: {
+                privateKey: await Bun.file(
+                  new URL(
+                    "../../../../fixtures/salesforce-transport/encrypted-key.pem",
+                    import.meta.url,
+                  ),
+                ).text(),
+                privateKeyPass:
+                  keyMode === "wrong-pass" ? "wrong-passphrase" : "sso-test-passphrase",
+              },
+            }),
         entryPoint: "https://idp.example.test/sso",
         cert,
         privateKey,
@@ -93,7 +114,7 @@ for (const [signed, ambiguous] of [
       const before = Date.now();
       const response = await control({ action: "sign-in", body: input });
       const after = Date.now();
-      if (ambiguous) {
+      if (ambiguous || keyMode === "wrong-pass") {
         expect(response.status).toBe(500);
         expect(await response.text()).toBe("");
         expect(response.headers.has("location")).toBe(false);
@@ -159,8 +180,11 @@ for (const [signed, ambiguous] of [
                 .sort()
                 .map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`)
                 .join(",")}}`;
-      const publicConfig: Partial<typeof config> = { ...config };
+      const publicConfig: Record<string, unknown> = { ...config };
       delete publicConfig.privateKey;
+      if (keyMode !== "pem") {
+        publicConfig.spMetadata = {};
+      }
       const expected = {
         domain: "company.test",
         issuer: "https://sp.example.test/entity",
