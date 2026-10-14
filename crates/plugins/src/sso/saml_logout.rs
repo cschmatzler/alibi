@@ -34,9 +34,8 @@ impl SsoPlugin {
                 "Single Logout is not enabled",
             ));
         }
-        let provider = ctx
-            .database
-            .get_sso_provider(provider_id)
+        let provider = self
+            .find_provider(provider_id, ctx)
             .await?
             .ok_or_else(|| error(404, "SAML_PROVIDER_NOT_FOUND", "SAML provider not found"))?;
         let config = provider

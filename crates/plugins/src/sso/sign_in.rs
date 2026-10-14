@@ -25,7 +25,12 @@ impl SsoPlugin {
         let domain = string("domain").or_else(|| email.and_then(|email| email.split('@').nth(1)));
         let provider_id = string("providerId");
         let org_slug = string("organizationSlug");
-        if email.is_none() && domain.is_none() && provider_id.is_none() && org_slug.is_none() {
+        if self.config.default_providers.is_empty()
+            && email.is_none()
+            && domain.is_none()
+            && provider_id.is_none()
+            && org_slug.is_none()
+        {
             return Err(api(
                 400,
                 "email, organizationSlug, domain or providerId is required",
@@ -42,7 +47,9 @@ impl SsoPlugin {
         if provider_id.is_none() && org_id.is_none() && domain.is_none() {
             return Err(api(400, "providerId, orgId or domain is required"));
         }
-        let provider = if let Some(id) = provider_id {
+        let provider = if let Some(configured) = self.configured_provider(provider_id, domain)? {
+            Some(configured)
+        } else if let Some(id) = provider_id {
             ctx.database.get_sso_provider(id).await?
         } else {
             let providers = ctx.database.list_sso_providers().await?;
@@ -216,7 +223,9 @@ pub(super) fn provider_reference(
     let mut configuration = serde_json::Map::new();
     _ = configuration.insert("domain".into(), json!(provider.domain));
     _ = configuration.insert("issuer".into(), json!(provider.issuer));
-    _ = configuration.insert("organizationId".into(), json!(provider.organization_id));
+    if !provider.id.is_empty() {
+        _ = configuration.insert("organizationId".into(), json!(provider.organization_id));
+    }
     if verified_field {
         _ = configuration.insert("domainVerified".into(), json!(provider.domain_verified));
     }
@@ -258,8 +267,13 @@ pub(super) fn provider_reference(
     let fingerprint = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
         sha2::Sha256::digest(canonical(&Value::Object(configuration))?.into_bytes()),
     );
+    let source = if provider.id.is_empty() {
+        json!({"type":"configured"})
+    } else {
+        json!({"type":"persisted","recordId":provider.id})
+    };
     Ok(
-        json!({"providerId":provider.provider_id,"source":{"type":"persisted","recordId":provider.id},"authenticationConfigurationFingerprint":fingerprint}),
+        json!({"providerId":provider.provider_id,"source":source,"authenticationConfigurationFingerprint":fingerprint}),
     )
 }
 pub(super) fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {

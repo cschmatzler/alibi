@@ -20,7 +20,8 @@ backend_tests!(
     sso_trusted_oidc_email_verification_accepts_only_exact_true_claims,
     sso_validation_receives_protocol_source_before_identity_writes,
     sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests,
-    sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email
+    sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_email,
+    sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -969,5 +970,139 @@ async fn sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_e
             }
         }
     }
+    B::close(connection).await
+}
+
+async fn sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_login<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            default_providers: super::sso_configured_providers::providers(&idp.base),
+            domain_verification: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    for saml in [false, true] {
+        let provider = if saml {
+            "configured-saml"
+        } else {
+            "configured-oidc"
+        };
+        assert!(store.get_sso_provider(provider).await?.is_none());
+        let email = format!(
+            "configured-employee@engineering.{}.company.test",
+            if saml { "saml" } else { "oidc" }
+        );
+        *idp.profile.lock().unwrap() = Some(
+            json!({"sub":"configured-subject","email":email,"email_verified":false,"name":"Configured employee"}),
+        );
+        for by_domain in [false, true] {
+            let mut input = json!({"callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")});
+            if by_domain {
+                input["email"] = json!(email);
+            } else {
+                input["providerId"] = json!(provider);
+            }
+            let started = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::sign_in_sso_endpoint(&input)?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(started.status, 200);
+            let authorization = url::Url::parse(body(&started)["url"].as_str().unwrap())?;
+            let (endpoint, state) = if saml {
+                let grant = super::saml_idp::grant(authorization.as_str(), &email, false)?;
+                (
+                    SsoPlugin::acs_endpoint(provider, &grant)?,
+                    grant["RelayState"].as_str().unwrap().to_owned(),
+                )
+            } else {
+                let response = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?
+                    .get(authorization.as_str())
+                    .send()
+                    .await?;
+                assert_eq!(response.status(), 302);
+                let url = url::Url::parse(response.headers().get("location").unwrap().to_str()?)?;
+                let query = url
+                    .query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                (
+                    SsoPlugin::callback_sso_endpoint(provider, &json!(query))?,
+                    query["state"].clone(),
+                )
+            };
+            let proof = store
+                .get_latest_verification_by_identifier(&format!("auth-state:{state}"))
+                .await?
+                .unwrap();
+            let payload: Value = serde_json::from_str(proof.value())?;
+            assert_eq!(
+                payload["serverContext"]["ssoProviderReference"]["source"],
+                json!({"type":"configured"})
+            );
+            let completed = Box::pin(auth.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(completed.status, 302);
+            assert_eq!(
+                completed.headers.get("location").map(String::as_str),
+                Some(format!("{ORIGIN}/complete").as_str())
+            );
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], email);
+            assert!(
+                store
+                    .get_account(provider, if saml { &email } else { "configured-subject" })
+                    .await?
+                    .is_some()
+            );
+            assert!(store.get_sso_provider(provider).await?.is_none());
+        }
+        if saml {
+            let metadata = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::sp_metadata_endpoint(provider)?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(metadata.status, 200);
+            assert!(
+                std::str::from_utf8(&metadata.body)?.contains("https://sp.example.test/entity")
+            );
+        }
+    }
+    let owner = signup(&auth, "configured-owner@example.test").await;
+    let rejected = Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":"configured-oidc","issuer":idp.base,"domain":"oidc.company.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true}}))?,EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await.unwrap_err();
+    assert_eq!(rejected.error.status_code(), 422);
+    assert_eq!(
+        body(&rejected.error.to_auth_response()),
+        json!({"message":"This providerId is reserved and cannot be used for an SSO provider"})
+    );
     B::close(connection).await
 }

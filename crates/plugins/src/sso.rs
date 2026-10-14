@@ -1,6 +1,7 @@
 //! Enterprise single-sign-on provider registration.
 mod callback;
 mod callback_id_token;
+mod configured;
 mod discovery;
 mod domain_confirmation;
 mod domain_verification;
@@ -33,8 +34,17 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
+/// An application-configured SSO provider, equivalent to a `defaultSSO` entry.
+#[derive(Clone, Debug, Default)]
+pub struct SsoDefaultProvider {
+    pub provider_id: String,
+    pub domain: String,
+    pub oidc_config: Option<Value>,
+    pub saml_config: Option<Value>,
+}
 #[derive(Clone, Debug)]
 pub struct SsoConfig {
+    pub default_providers: Vec<SsoDefaultProvider>,
     pub providers_limit: usize,
     pub domain_verification: bool,
     /// Override the system DNS servers, for example for an enterprise DNS zone.
@@ -58,6 +68,7 @@ pub struct SsoConfig {
 impl Default for SsoConfig {
     fn default() -> Self {
         Self {
+            default_providers: Vec::new(),
             providers_limit: 10,
             domain_verification: false,
             domain_verification_dns_servers: Vec::new(),
@@ -169,6 +180,11 @@ impl SsoPlugin {
             "siwe",
         ]
         .contains(&provider_id)
+            || self
+                .config
+                .default_providers
+                .iter()
+                .any(|provider| provider.provider_id == provider_id)
             || ctx
                 .config
                 .account

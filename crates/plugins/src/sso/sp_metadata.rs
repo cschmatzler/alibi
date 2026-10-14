@@ -20,9 +20,8 @@ impl SsoPlugin {
             .get("providerId")
             .and_then(JsValue::as_str)
             .ok_or_else(|| crate::endpoint::validation("Missing providerId"))?;
-        let provider = ctx
-            .database
-            .get_sso_provider(id)
+        let provider = self
+            .find_provider(id, ctx)
             .await?
             .ok_or_else(|| api(404, "No provider found for the given providerId"))?;
         let config = provider

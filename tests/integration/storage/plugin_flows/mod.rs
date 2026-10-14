@@ -447,3 +447,6 @@ mod saml_idp;
 
 #[path = "../../../support/sso_dns.rs"]
 mod sso_dns;
+
+#[path = "../../../support/sso_configured_providers.rs"]
+mod sso_configured_providers;
