@@ -389,7 +389,7 @@ impl SsoPlugin {
             },
             &policy,
             &tokens,
-            false,
+            self.config.disable_implicit_sign_up && payload.request_sign_up != Some(true),
             meta,
             &scoped,
         )
@@ -397,7 +397,12 @@ impl SsoPlugin {
         {
             Ok(issued) => issued,
             Err(error) => {
-                let (code, description) = error.redirect_parts();
+                let (code, description) =
+                    if let crate::oauth::handlers::OAuthSignInError::Generic(message) = &error {
+                        (message.clone(), None)
+                    } else {
+                        error.redirect_parts()
+                    };
                 return fail(&code, description);
             }
         };
