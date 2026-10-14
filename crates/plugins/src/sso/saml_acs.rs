@@ -308,7 +308,7 @@ impl SsoPlugin {
             }
         };
         self.provision(&issued, &user, None, &provider).await?;
-        self.provision_organization(&issued.user, &provider, ctx)
+        self.provision_organization(&issued.user, &provider, ctx, &identity.attributes, None)
             .await?;
         if self.config.saml_enable_single_logout {
             let key = format!("saml-session:{provider_id}:{}", user.id);

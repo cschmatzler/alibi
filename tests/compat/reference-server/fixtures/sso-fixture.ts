@@ -9,6 +9,7 @@ import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   const idp = ssoOidcFixture();
   const provisioningEvents: any[] = [];
+  const roleEvents: any[] = [];
   const validationEvents: any[] = [];
   let validationDenyReturning = false;
   const options = {
@@ -228,6 +229,21 @@ export async function ssoFixture(base: BetterAuthOptions) {
       organization(),
       sso({
         organizationProvisioning: {
+          ...(["org-dynamic", "org-disabled", "org-invitation"].includes(mode)
+            ? {
+                async getRole(data: any) {
+                  roleEvents.push({
+                    userId: data.user.id,
+                    email: data.user.email,
+                    providerId: data.provider.providerId,
+                    organizationId: data.provider.organizationId,
+                    profile: data.userInfo,
+                    tokenPresent: data.token !== undefined,
+                  });
+                  return "admin" as const;
+                },
+              }
+            : {}),
           disabled: mode === "org-disabled",
           defaultRole: mode === "org-admin" ? ("admin" as const) : ("member" as const),
         },
@@ -236,6 +252,8 @@ export async function ssoFixture(base: BetterAuthOptions) {
   });
   await (await getMigrations(organizationOptions("org-default"))).runMigrations();
   const instances = new Map([
+    ["org-dynamic", betterAuth(organizationOptions("org-dynamic"))],
+    ["org-invitation", betterAuth(organizationOptions("org-invitation"))],
     ["org-default", betterAuth(organizationOptions("org-default"))],
     ["org-admin", betterAuth(organizationOptions("org-admin"))],
     ["org-disabled", betterAuth(organizationOptions("org-disabled"))],
@@ -262,7 +280,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
 
   const handle = async (request: Request) => {
     const input = await request.json();
-    const mode = ["org-default", "org-admin", "org-disabled"].includes(input.mode)
+    const mode = [
+      "org-default",
+      "org-admin",
+      "org-disabled",
+      "org-dynamic",
+      "org-invitation",
+    ].includes(input.mode)
       ? input.mode
       : input.mode === "provisioning"
         ? "provisioning"
@@ -311,6 +335,17 @@ export async function ssoFixture(base: BetterAuthOptions) {
         body: input.body,
         headers: new Headers(input.headers ?? {}),
         asResponse: true,
+      });
+    }
+    if (input.action === "role-reset") {
+      roleEvents.length = 0;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "role-events") {
+      return new Response(JSON.stringify(roleEvents), {
+        headers: { "content-type": "application/json" },
       });
     }
     if (input.action === "member-row") {

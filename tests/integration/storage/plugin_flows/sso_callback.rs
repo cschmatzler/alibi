@@ -1670,7 +1670,8 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
     let config = AuthConfig::new(SECRET)
         .base_url(ORIGIN)
         .trusted_origin(&idp.base);
-    for mode in ["default", "admin", "disabled", "invitation"] {
+    let roles = super::sso_provisioning_policy::Policy::default();
+    for mode in ["dynamic", "default", "admin", "disabled", "invitation"] {
         let auth = AuthBuilder::<B::Schema>::new(config.clone())
             .store(B::store(Arc::new(config.clone()), &connection))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
@@ -1679,6 +1680,8 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
             .plugin(alibi::plugins::OrganizationPlugin::new())
             .plugin(SsoPlugin::with_config(SsoConfig {
                 organization_provisioning: alibi::plugins::SsoOrganizationProvisioning {
+                    get_role: matches!(mode, "dynamic" | "disabled" | "invitation")
+                        .then(|| alibi::plugins::SsoRoleResolver(Arc::new(roles.clone()))),
                     disabled: mode == "disabled",
                     default_role: if mode == "admin" { "admin" } else { "member" }.into(),
                 },
@@ -1700,6 +1703,7 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
         .await;
         let org_id = body(&org)["id"].as_str().unwrap().to_owned();
         for saml in [false, true] {
+            roles.roles.lock().unwrap().clear();
             let provider = format!("org-{mode}-{saml}");
             let email = format!("org-{mode}-{saml}@example.test");
             *idp.email.lock().unwrap() = email.clone();
@@ -1802,7 +1806,11 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
                     if index == 0 {
                         assert_eq!(
                             member.role,
-                            if mode == "admin" { "admin" } else { "member" }
+                            if matches!(mode, "admin" | "dynamic") {
+                                "admin"
+                            } else {
+                                "member"
+                            }
                         );
                         first_member = Some(member.id.clone());
                         _ = store.update_member_role(&member.id, "owner").await?;
@@ -1810,6 +1818,20 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
                         assert_eq!(Some(member.id), first_member);
                         assert_eq!(member.role, "owner");
                     }
+                }
+                let events = roles.roles.lock().unwrap().clone();
+                assert_eq!(events.len(), usize::from(mode == "dynamic"));
+                for event in events {
+                    assert_eq!(event["userId"], user_id);
+                    assert_eq!(event["email"], email);
+                    assert_eq!(event["providerId"], provider);
+                    assert_eq!(event["organizationId"], org_id);
+                    assert_eq!(event["profile"]["email"], email);
+                    assert_eq!(
+                        event["profile"][if saml { "displayName" } else { "name" }],
+                        "SSO employee"
+                    );
+                    assert_eq!(event["tokenPresent"], !saml);
                 }
                 if mode == "invitation" {
                     assert!(

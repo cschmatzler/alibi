@@ -326,7 +326,8 @@ pub(crate) struct StatusResponse {
 }
 
 pub use sso::{
-    SsoConfig, SsoDefaultProvider, SsoKeyResolver, SsoOrganizationProvisioning, SsoPlugin,
-    SsoPrivateKey, SsoPrivateKeyContext, SsoPrivateKeyResolver, SsoProvisioner,
-    SsoProvisioningData, SsoUserProvisioner,
+    SsoConfig, SsoDefaultProvider, SsoKeyResolver, SsoOrganizationProvisioning,
+    SsoOrganizationRoleResolver, SsoPlugin, SsoPrivateKey, SsoPrivateKeyContext,
+    SsoPrivateKeyResolver, SsoProvisioner, SsoProvisioningData, SsoRoleResolver,
+    SsoUserProvisioner,
 };

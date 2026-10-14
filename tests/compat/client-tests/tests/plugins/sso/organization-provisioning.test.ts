@@ -17,15 +17,14 @@ compatScenario(
       new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
     ).text();
     const observed = [];
-    for (const mode of ["default", "admin", "disabled", "invitation"]) {
+    for (const mode of ["dynamic", "default", "admin", "disabled", "invitation"]) {
       const control = (input: Record<string, unknown>) =>
         actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             ...input,
-            mode:
-              mode === "disabled" ? "org-disabled" : mode === "admin" ? "org-admin" : "org-default",
+            mode: `org-${mode}`,
           }),
           redirect: "manual",
         });
@@ -47,6 +46,7 @@ compatScenario(
       expect(organizationResponse.status).toBe(200);
       const organizationId = ((await organizationResponse.json()) as any).id;
       for (const saml of [false, true]) {
+        await control({ action: "role-reset" });
         const providerId = `org-${mode}-${saml}`;
         const email = ctx.uniqueEmail(providerId);
         const idp = (await (await control({ action: "idp", email })).json()) as any;
@@ -132,7 +132,7 @@ compatScenario(
           if (mode === "disabled" || mode === "invitation") {
             expect(member).toBe(null);
           } else if (index === 0) {
-            expect(member.role).toBe(mode === "admin" ? "admin" : "member");
+            expect(member.role).toBe(["admin", "dynamic"].includes(mode) ? "admin" : "member");
             memberId = member.id;
             expect(
               (
@@ -146,6 +146,17 @@ compatScenario(
           } else {
             expect(member.id).toBe(memberId);
             expect(member.role).toBe("owner");
+          }
+          const roles = (await (await control({ action: "role-events" })).json()) as any[];
+          expect(roles).toHaveLength(mode === "dynamic" ? 1 : 0);
+          for (const event of roles) {
+            expect(event.userId).toBe(userId);
+            expect(event.email).toBe(email);
+            expect(event.providerId).toBe(providerId);
+            expect(event.organizationId).toBe(organizationId);
+            expect(event.profile.email).toBe(email);
+            expect(event.profile[saml ? "displayName" : "name"]).toBe("SSO employee");
+            expect(event.tokenPresent).toBe(!saml);
           }
           expect(
             await (
