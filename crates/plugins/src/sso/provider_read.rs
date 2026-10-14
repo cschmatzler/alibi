@@ -168,6 +168,15 @@ pub(super) fn sanitize<S: AuthSchema>(
             .ok_or_else(|| AuthError::internal("SSO provider serialization failed"))?;
         _ = object.insert("oidcConfig".into(), Value::Object(safe));
     }
+    if let Some(object) = output.as_object_mut() {
+        for (name, field) in &ctx.config.advanced.database.sso_provider_fields.0 {
+            if field.returned
+                && let Some(value) = provider.additional_fields.get(name)
+            {
+                _ = object.insert(name.clone(), value.clone());
+            }
+        }
+    }
     Ok(output)
 }
 fn component(value: &str) -> String {

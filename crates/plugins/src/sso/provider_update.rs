@@ -15,9 +15,15 @@ impl SsoPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = super::super::helpers::ordinary_session(request, ctx).await?;
-        if !["issuer", "domain", "samlConfig", "oidcConfig"]
-            .iter()
-            .any(|field| input.get(field).is_some_and(JsValue::is_truthy))
+        let extras = super::additional_fields::parse(
+            &ctx.config.advanced.database.sso_provider_fields,
+            input,
+            false,
+        )?;
+        if extras.is_empty()
+            && !["issuer", "domain", "samlConfig", "oidcConfig"]
+                .iter()
+                .any(|field| input.get(field).is_some_and(JsValue::is_truthy))
         {
             return Err(api(400, "No fields provided for update"));
         }
@@ -38,13 +44,15 @@ impl SsoPlugin {
         let private_key_configured = self.private_key_source_configured(provider_id);
         let signing_policy = self.config.saml_signing_policy.clone();
         let prepare = move |existing: &SsoProvider| {
-            prepare_update(
+            let mut update = prepare_update(
                 existing,
                 &body,
                 max_metadata_size,
                 private_key_configured,
                 &signing_policy,
-            )
+            )?;
+            update.provider.additional_fields.extend(extras.clone());
+            Ok(update)
         };
         let guard = self
             .config

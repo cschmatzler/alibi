@@ -60,6 +60,32 @@ where
     C: ConnectionTrait,
     for<'a> &'a C: IntoDatabaseExecutor<'a>,
 {
+    pub(super) async fn has_column(&self, table: &str, column: &str) -> Result<bool, DbErr> {
+        if self.get_database_backend() == DbBackend::Postgres {
+            let mut values = vec![table.to_owned().into(), column.to_owned().into()];
+            let sql = if let Some(schema) = &self.schema {
+                values.push(schema.clone().into());
+                "SELECT COUNT(*) AS count FROM information_schema.columns WHERE table_name=$1 AND column_name=$2 AND table_schema=$3"
+            } else {
+                "SELECT COUNT(*) AS count FROM information_schema.columns WHERE table_name=$1 AND column_name=$2 AND table_schema=CURRENT_SCHEMA()"
+            };
+            let row = self
+                .inner
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    sql,
+                    values,
+                ))
+                .await?;
+            return row
+                .map(|row| row.try_get::<i64>("", "count").map(|count| count > 0))
+                .transpose()
+                .map(|result| result.unwrap_or(false));
+        }
+        sea_orm_migration::SchemaManager::new(&self.inner)
+            .has_column(table, column)
+            .await
+    }
     pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
         if self.get_database_backend() == DbBackend::Postgres {
             let (sql, values) = if let Some(schema) = &self.schema {

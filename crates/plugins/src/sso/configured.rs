@@ -56,6 +56,7 @@ impl SsoPlugin {
                 .map(serde_json::to_string)
                 .transpose()?,
             domain_verified: self.config.domain_verification.then_some(true),
+            additional_fields: serde_json::Map::new(),
         })
     }
     pub(super) async fn find_provider<S: AuthSchema>(

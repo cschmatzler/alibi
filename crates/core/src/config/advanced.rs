@@ -159,6 +159,9 @@ pub struct AdvancedDatabaseConfig {
     /// Optional physical table and column mapping for durable SSO providers.
     pub sso_provider: Option<SsoProviderDatabaseConfig>,
 
+    /// Declared provider fields, including input/output policy and physical names.
+    pub sso_provider_fields: crate::field_policy::SessionFields,
+
     /// Use persistent serial identifiers when no explicit generation strategy is set.
     /// Numeric invitation IDs require email verification by default.
     pub use_number_id: bool,
@@ -190,6 +193,7 @@ impl Default for AdvancedDatabaseConfig {
             schema_name: None,
             two_factor: None,
             sso_provider: None,
+            sso_provider_fields: crate::field_policy::SessionFields::default(),
             use_number_id: false,
             generate_id: None,
         }

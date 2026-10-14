@@ -42,6 +42,7 @@ impl From<Model> for alibi_core::store::SsoProvider {
             oidc_config: row.oidc_config,
             saml_config: row.saml_config,
             domain_verified: row.domain_verified,
+            additional_fields: serde_json::Map::new(),
         }
     }
 }

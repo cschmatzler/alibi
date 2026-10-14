@@ -10,7 +10,8 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use sea_orm::{
-    ColumnTrait, EntityTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select, Set,
+    ColumnTrait, EntityTrait, ExprTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select,
+    Set,
 };
 #[async_trait]
 impl<S: AuthSchema> SsoProviderStore for SeaOrmStore<S>
@@ -76,58 +77,96 @@ where
         }
     }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
-        provider_select()
-            .limit(
-                u64::try_from(self.config().advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
-            .all(self.scoped_connection())
-            .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
-            .map_err(map_db_err)
+        provider_select(
+            &self.config.advanced.database.sso_provider_fields,
+            self.scoped_connection().get_database_backend(),
+        )
+        .limit(
+            u64::try_from(self.config().advanced.database.default_find_many_limit)
+                .unwrap_or(u64::MAX),
+        )
+        .into_model::<ProviderRow>()
+        .all(self.scoped_connection())
+        .await
+        .map_err(map_db_err)?
+        .into_iter()
+        .map(ProviderRow::into_provider)
+        .collect()
     }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
-        let active = sso_provider::ActiveModel {
-            id: Set(row.id),
-            issuer: Set(row.issuer),
-            domain: Set(row.domain),
-            provider_id: Set(row.provider_id),
-            user_id: Set(row.user_id),
-            organization_id: Set(row.organization_id),
-            oidc_config: Set(row.oidc_config),
-            saml_config: Set(row.saml_config),
-            domain_verified: Set(row.domain_verified),
-        };
+        let extra = row.additional_fields;
         let backend = self.scoped_connection().get_database_backend();
-        let mut query = Entity::insert(active);
-        _ = QueryTrait::query(&mut query).returning(provider_returning());
+        let mut columns = Column::iter()
+            .map(|column| sea_orm::sea_query::Alias::new(sea_orm::IdenStatic::as_str(&column)))
+            .collect::<Vec<_>>();
+        let mut values: Vec<sea_orm::Value> = vec![
+            row.id.into(),
+            row.issuer.into(),
+            row.domain.into(),
+            row.provider_id.into(),
+            row.user_id.into(),
+            row.organization_id.into(),
+            row.oidc_config.into(),
+            row.saml_config.into(),
+            row.domain_verified.into(),
+        ];
+        let bindings = extra_bindings(
+            &self.config.advanced.database.sso_provider_fields,
+            &extra,
+            backend,
+        )?;
+        for (column, value) in bindings {
+            columns.push(sea_orm::sea_query::Alias::new(column));
+            values.push(value);
+        }
+        let mut query = sea_orm::sea_query::Query::insert();
+        _ = query
+            .into_table(Entity)
+            .columns(columns)
+            .values_panic(values.into_iter().map(sea_orm::sea_query::Expr::value))
+            .returning(provider_returning(
+                &self.config.advanced.database.sso_provider_fields,
+                backend,
+            ));
         Entity::find()
-            .from_raw_sql(query.build(backend))
+            .from_raw_sql(backend.build(&query))
+            .into_model::<ProviderRow>()
             .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
-            .map(Into::into)
-            .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))
+            .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))?
+            .into_provider()
     }
     async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>> {
-        provider_select()
-            .filter(Column::ProviderId.eq(provider_id))
-            .one(self.scoped_connection())
-            .await
-            .map(|row| row.map(Into::into))
-            .map_err(map_db_err)
+        provider_select(
+            &self.config.advanced.database.sso_provider_fields,
+            self.scoped_connection().get_database_backend(),
+        )
+        .filter(Column::ProviderId.eq(provider_id))
+        .into_model::<ProviderRow>()
+        .one(self.scoped_connection())
+        .await
+        .map_err(map_db_err)?
+        .map(ProviderRow::into_provider)
+        .transpose()
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
-        provider_select()
-            .filter(Column::UserId.eq(user_id))
-            .limit(
-                u64::try_from(self.config().advanced.database.default_find_many_limit)
-                    .unwrap_or(u64::MAX),
-            )
-            .all(self.scoped_connection())
-            .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
-            .map_err(map_db_err)
+        provider_select(
+            &self.config.advanced.database.sso_provider_fields,
+            self.scoped_connection().get_database_backend(),
+        )
+        .filter(Column::UserId.eq(user_id))
+        .limit(
+            u64::try_from(self.config().advanced.database.default_find_many_limit)
+                .unwrap_or(u64::MAX),
+        )
+        .into_model::<ProviderRow>()
+        .all(self.scoped_connection())
+        .await
+        .map_err(map_db_err)?
+        .into_iter()
+        .map(ProviderRow::into_provider)
+        .collect()
     }
 }
 
@@ -154,13 +193,17 @@ where
         if locked.rows_affected == 0 {
             return Ok(None);
         }
-        let row: SsoProvider = provider_select()
-            .filter(Column::Id.eq(id))
-            .one(connection)
-            .await
-            .map_err(map_db_err)?
-            .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-            .into();
+        let row: SsoProvider = provider_select(
+            &self.config.advanced.database.sso_provider_fields,
+            self.scoped_connection().get_database_backend(),
+        )
+        .filter(Column::Id.eq(id))
+        .into_model::<ProviderRow>()
+        .one(connection)
+        .await
+        .map_err(map_db_err)?
+        .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
+        .into_provider()?;
         Ok(Some(row))
     }
     pub(super) async fn update_sso_provider_with<C: sea_orm::ConnectionTrait>(
@@ -188,6 +231,7 @@ where
                     .into(),
             });
         }
+        let extra = update.provider.additional_fields;
         let active = sso_provider::ActiveModel {
             id: Set(id.into()),
             issuer: Set(update.provider.issuer),
@@ -198,13 +242,27 @@ where
             ..Default::default()
         };
         let mut query = Entity::update_many().set(active).filter(Column::Id.eq(id));
-        _ = QueryTrait::query(&mut query).returning(provider_returning());
+        let backend = connection.get_database_backend();
+        let bindings = extra_bindings(
+            &self.config.advanced.database.sso_provider_fields,
+            &extra,
+            backend,
+        )?;
+        let statement = QueryTrait::query(&mut query);
+        for (column, value) in bindings {
+            _ = statement.value(sea_orm::sea_query::Alias::new(column), value);
+        }
+        _ = statement.returning(provider_returning(
+            &self.config.advanced.database.sso_provider_fields,
+            backend,
+        ));
         Entity::find()
             .from_raw_sql(query.build(connection.get_database_backend()))
+            .into_model::<ProviderRow>()
             .one(connection)
             .await
             .map_err(map_db_err)
-            .map(|row| row.map(Into::into))
+            .and_then(|row| row.map(ProviderRow::into_provider).transpose())
     }
     pub(super) async fn delete_sso_provider_with<C: sea_orm::ConnectionTrait>(
         &self,
@@ -235,21 +293,116 @@ where
     }
 }
 
-fn provider_select() -> Select<Entity> {
+#[derive(sea_orm::FromQueryResult)]
+struct ProviderRow {
+    #[sea_orm(nested)]
+    model: sso_provider::Model,
+    __alibi_sso_fields: String,
+}
+impl ProviderRow {
+    fn into_provider(self) -> AuthResult<SsoProvider> {
+        let mut provider: SsoProvider = self.model.into();
+        provider.additional_fields = serde_json::from_str(&self.__alibi_sso_fields)?;
+        Ok(provider)
+    }
+}
+fn extra_projection(
+    fields: &alibi_core::field_policy::SessionFields,
+    backend: sea_orm::DbBackend,
+    qualified: bool,
+) -> sea_orm::sea_query::SimpleExpr {
+    use alibi_core::store::{SsoFieldType, sso_field_column};
+    let postgres = backend == sea_orm::DbBackend::Postgres;
+    let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
+    let mut args = Vec::new();
+    for (name, field) in &fields.0 {
+        args.push(format!("'{}'", name.replace('\'', "''")));
+        let column = quote(sso_field_column(name, field));
+        let column = if qualified {
+            format!("\"ssoProvider\".{column}")
+        } else {
+            column
+        };
+        let value = if !postgres && SsoFieldType::from_config(field) == SsoFieldType::Boolean {
+            format!(
+                "json(CASE WHEN {column} IS NULL THEN 'null' WHEN {column} THEN 'true' ELSE 'false' END)"
+            )
+        } else if !postgres && SsoFieldType::from_config(field) == SsoFieldType::Json {
+            format!("json({column})")
+        } else {
+            column
+        };
+        args.push(value);
+    }
+    sea_orm::sea_query::Expr::cust(format!(
+        "CAST({}({}) AS TEXT)",
+        if postgres {
+            "jsonb_build_object"
+        } else {
+            "json_object"
+        },
+        args.join(", ")
+    ))
+}
+fn provider_select(
+    fields: &alibi_core::field_policy::SessionFields,
+    backend: sea_orm::DbBackend,
+) -> Select<Entity> {
     use sea_orm::sea_query::Expr;
     let mut select = Entity::find().select_only();
     for column in Column::iter() {
         select = select.column_as(Expr::col((Entity, column)), column);
     }
-    select
+    select.expr_as(
+        extra_projection(fields, backend, true),
+        "__alibi_sso_fields",
+    )
 }
-fn provider_returning() -> sea_orm::sea_query::ReturningClause {
+fn provider_returning(
+    fields: &alibi_core::field_policy::SessionFields,
+    backend: sea_orm::DbBackend,
+) -> sea_orm::sea_query::ReturningClause {
     use sea_orm::{
         IdenStatic,
         sea_query::{Expr, Query},
     };
-    Query::returning().exprs(Column::iter().map(|column| {
-        let name = column.as_str();
-        Expr::cust(format!("\"{name}\" AS \"{name}\""))
-    }))
+    let mut expressions = Column::iter()
+        .map(|column| {
+            let name = column.as_str();
+            Expr::cust(format!("\"{name}\" AS \"{name}\""))
+        })
+        .collect::<Vec<_>>();
+    expressions.push(extra_projection(fields, backend, false).binary(
+        sea_orm::sea_query::BinOper::As,
+        Expr::cust("\"__alibi_sso_fields\""),
+    ));
+    Query::returning().exprs(expressions)
+}
+fn extra_bindings(
+    fields: &alibi_core::field_policy::SessionFields,
+    extra: &serde_json::Map<String, serde_json::Value>,
+    backend: sea_orm::DbBackend,
+) -> AuthResult<Vec<(String, sea_orm::Value)>> {
+    use alibi_core::store::{SsoFieldType, sso_field_column};
+    let mut bindings = Vec::new();
+    for (name, field) in &fields.0 {
+        if let Some(value) = extra.get(name) {
+            let value = match SsoFieldType::from_config(field) {
+                SsoFieldType::String | SsoFieldType::Date => {
+                    sea_orm::Value::String(value.as_str().map(str::to_owned))
+                }
+                SsoFieldType::Boolean => sea_orm::Value::Bool(value.as_bool()),
+                SsoFieldType::Number => sea_orm::Value::BigInt(value.as_i64()),
+                SsoFieldType::Json => {
+                    if backend == sea_orm::DbBackend::Sqlite {
+                        sea_orm::Value::String(Some(alibi_core::utils::json::to_string(value)?))
+                    } else {
+                        sea_orm::Value::Json(Some(Box::new(value.clone())))
+                    }
+                }
+            };
+            bindings.push((sso_field_column(name, field).to_owned(), value));
+        }
+    }
+    Ok(bindings)
 }

@@ -495,3 +495,7 @@ mod sso_encryption_policy;
 mod sso_storage_mapping;
 #[path = "../../../support/sso_storage_schema.rs"]
 mod sso_storage_schema;
+
+mod sso_additional_fields;
+#[path = "../../../support/sso_additional_fields.rs"]
+mod sso_additional_fields_config;

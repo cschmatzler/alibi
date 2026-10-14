@@ -224,6 +224,35 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
             .await?;
         }
 
+        let storage = &self.config.advanced.database;
+        alibi_core::store::validate_sso_fields(storage)?;
+        if !storage.sso_provider_fields.0.is_empty() {
+            let table = storage
+                .sso_provider
+                .as_ref()
+                .map_or("ssoProvider", |mapping| mapping.table_name.as_str());
+            self.in_transaction(false, async move |tx| {
+                let exec = Exec::tx(tx);
+                for (name, field) in &storage.sso_provider_fields.0 {
+                    let column = alibi_core::store::sso_field_column(name, field);
+                    if !migrator::has_column(exec, table, column).await? {
+                        let definition = alibi_core::store::sso_field_definition(
+                            name,
+                            field,
+                            exec.engine() == crate::pool::Engine::Postgres,
+                        )?;
+                        let mut ddl = Sql::with(exec.engine(), "ALTER TABLE ");
+                        ddl.ident(table);
+                        ddl.push(" ADD COLUMN ");
+                        ddl.push(&definition);
+                        _ = exec.execute(ddl).await?;
+                    }
+                }
+                Ok(())
+            })
+            .await?;
+        }
+
         Ok(())
     }
 }

@@ -258,6 +258,37 @@ impl<S: AuthSchema> SchemaMigrator for SeaOrmStore<S> {
             transaction.commit().await.map_err(map_db_err)?;
         }
 
+        let storage = &self.config.advanced.database;
+        alibi_core::store::validate_sso_fields(storage)?;
+        if !storage.sso_provider_fields.0.is_empty() {
+            use sea_orm::ConnectionTrait;
+            let table = storage
+                .sso_provider
+                .as_ref()
+                .map_or("ssoProvider", |mapping| mapping.table_name.as_str());
+            let transaction = self.db.begin().await.map_err(map_db_err)?;
+            for (name, field) in &storage.sso_provider_fields.0 {
+                let column = alibi_core::store::sso_field_column(name, field);
+                if !transaction
+                    .has_column(table, column)
+                    .await
+                    .map_err(map_db_err)?
+                {
+                    let definition = alibi_core::store::sso_field_definition(
+                        name,
+                        field,
+                        transaction.get_database_backend() == sea_orm::DbBackend::Postgres,
+                    )?;
+                    let table = format!("\"{}\"", table.replace('"', "\"\""));
+                    _ = transaction
+                        .execute_unprepared(&format!("ALTER TABLE {table} ADD COLUMN {definition}"))
+                        .await
+                        .map_err(map_db_err)?;
+                }
+            }
+            transaction.commit().await.map_err(map_db_err)?;
+        }
+
         Ok(())
     }
 }
