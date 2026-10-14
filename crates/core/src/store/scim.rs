@@ -110,8 +110,55 @@ pub struct ScimManagedCreation {
     pub connection: ScimManagedConnection,
     pub credential: ScimManagedCredential,
 }
+/// Canonical connection-owned group metadata.
+pub struct ScimGroupRecord {
+    pub id: String,
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub display_name: String,
+    pub external_id: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+pub struct ScimGroupMemberRecord {
+    pub id: String,
+    pub display_name: String,
+}
+pub struct ScimGroupMemberships {
+    pub persisted_count: usize,
+    pub members: Vec<ScimGroupMemberRecord>,
+}
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn active_scim_connection_binding(
+        &self,
+        _id: &str,
+        _domain: &str,
+        _key: &str,
+    ) -> AuthResult<ScimConnectionBinding> {
+        Err(AuthError::config(
+            "SCIM binding persistence is not supported by this store",
+        ))
+    }
+    async fn get_scim_group(
+        &self,
+        _id: &str,
+        _connection: &str,
+    ) -> AuthResult<Option<ScimGroupRecord>> {
+        Err(AuthError::config(
+            "SCIM resource persistence is not supported by this store",
+        ))
+    }
+    async fn scim_group_members(
+        &self,
+        _id: &str,
+        _connection: &str,
+    ) -> AuthResult<ScimGroupMemberships> {
+        Err(AuthError::config(
+            "SCIM resource persistence is not supported by this store",
+        ))
+    }
+
     async fn acquire_scim_decommission_lease(
         &self,
         _binding: ScimConnectionBinding,

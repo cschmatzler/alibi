@@ -1,6 +1,7 @@
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::ScimPlugin;
+use alibi::plugins::scim::{ScimConnectionOptions, ScimCredential};
 use alibi::plugins::scim::{ScimIdentity, ScimIdentityState};
 use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimProjectedUserState, ScimProjection};
 use alibi::plugins::scim::{ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection};
@@ -25,7 +26,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         AuthBuilder::<crate::TestSchema>::new(config.clone())
             .store(crate::backend::store(config, database.clone()))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
-            .plugin(ScimPlugin::new().managed_connections(managed_options()))
+            .plugin(alibi::plugins::EmailPasswordPlugin::new())
+            .plugin(
+                ScimPlugin::new()
+                    .managed_connections(managed_options())
+                    .connections(resource_connections()),
+            )
             .build()
             .await?,
     );
@@ -58,6 +64,37 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="oversize-group-read") {
+                    _=database.execute_unprepared("WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),'2026-01-02T03:04:05.000Z' FROM seq").await.unwrap();return Json(json!({"oversized":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="drift-read-binding") { _=database.execute_unprepared("UPDATE scimConnectionBinding SET provisioningDomainId='drifted-domain' WHERE connectionId='conn-a'").await.unwrap();return Json(json!({"changed":true})).into_response(); }
+                if query.get("operation").is_some_and(|operation|operation=="retire-read-binding") { _=database.execute_unprepared("UPDATE scimConnectionBinding SET provisioningDomainId='tenant-a',decommissionStatus='complete' WHERE connectionId='conn-a'").await.unwrap();return Json(json!({"retired":true})).into_response(); }
+                if query.get("operation").is_some_and(|operation|operation=="getSCIMGroup") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let endpoint=ScimPlugin::group_endpoint(input["params"]["groupId"].as_str().unwrap()).unwrap().with_query(&input["query"]).unwrap();
+                    let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
+                    let result=auth.dispatch_endpoint(endpoint,EndpointOptions{headers,..Default::default()}).await;
+                    return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{
+                        let mut response=alibi::endpoint::EndpointResponse::error(error.error);
+                        if let Some(body)=error.body {response=response.with_error_body(*body);}
+                        if let Some(headers)=error.headers {response.merge_headers(headers);}
+                        response.to_response().unwrap().into_response()
+                    }};
+                }
+                if query.get("operation").is_some_and(|operation|operation=="seed-group-read") {
+                    let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"group-read-owner@example.com","password":"a-native-password-123","name":"Group owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();
+                    let owner:Value=serde_json::from_slice(&output.body).unwrap();let uid=owner["user"]["id"].as_str().unwrap();
+                    for(id,cid,domain,display)in[("member-a","conn-a","tenant-a","Inactive member"),("member-b","conn-b","tenant-a","Foreign member"),("member-c","conn-a","tenant-b","Other domain member")]{
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,'group-read-owner@example.com','[]','[]',?,?,'[]',false,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",vec![id.into(),cid.into(),domain.into(),uid.into(),id.into(),id.into(),id.into(),display.into(),display.into(),id.into()])).await.unwrap();
+                    }
+                    for(id,cid,domain)in[("staff","conn-a","tenant-a"),("other","conn-b","tenant-a"),("drift","conn-a","tenant-b")]{
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Staff',?,'external-staff',?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),cid.into(),domain.into(),id.into(),id.into()])).await.unwrap();
+                    }
+                    for(id,time)in[("member-a","2026-01-02T03:04:05.001Z"),("member-b","2026-01-02T03:04:05.002Z"),("member-c","2026-01-02T03:04:05.003Z")]{
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a','staff',?,?,?)",[id.into(),id.into(),id.into(),time.into()])).await.unwrap();
+                    }
+                    return Json(json!({"seeded":true})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="seed-role-groups") {
                     for(id,cid,domain,display,external)in[("group-a","conn-a","tenant-a","Admins","administrators"),("group-b","conn-a","tenant-a","Admin backups","administrators-b"),("group-e","conn-a","tenant-a","Editors","editors"),("group-g","conn-a","tenant-a","Guests","guests"),("group-c","conn-a","tenant-b","Foreign domain","foreign-domain"),("group-d","conn-other","tenant-a","Foreign connection","foreign-connection")]{
                         _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",vec![id.into(),cid.into(),domain.into(),display.into(),id.into(),external.into(),id.into(),id.into()])).await.unwrap();
@@ -503,4 +540,31 @@ impl ScimIdentity<crate::TestSchema> for FixtureIdentity {
         }
         Ok(())
     }
+}
+
+fn resource_connections() -> Vec<ScimConnectionOptions> {
+    let mut limited = ScimCredential::new("limited", "users-reader");
+    limited.scopes = Some(vec!["scim.users.read".into()]);
+    let mut expired = ScimCredential::new("expired", "expired-reader");
+    expired.expires_at = Some(
+        chrono::DateTime::parse_from_rfc3339("2000-01-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc),
+    );
+    vec![
+        ScimConnectionOptions {
+            id: "conn-a".into(),
+            provisioning_domain_id: Some("tenant-a".into()),
+            credentials: vec![
+                ScimCredential::new("reader", "group-reader"),
+                limited,
+                expired,
+            ],
+        },
+        ScimConnectionOptions {
+            id: "conn-b".into(),
+            provisioning_domain_id: Some("tenant-a".into()),
+            credentials: vec![ScimCredential::new("reader", "other-reader")],
+        },
+    ]
 }

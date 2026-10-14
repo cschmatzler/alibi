@@ -824,6 +824,31 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn active_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: &str,
+        key: &str,
+    ) -> AuthResult<crate::store::ScimConnectionBinding> {
+        self.inner
+            .active_scim_connection_binding(id, domain, key)
+            .await
+    }
+    async fn get_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<crate::store::ScimGroupRecord>> {
+        self.inner.get_scim_group(id, connection).await
+    }
+    async fn scim_group_members(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<crate::store::ScimGroupMemberships> {
+        self.inner.scim_group_members(id, connection).await
+    }
+
     async fn acquire_scim_decommission_lease(
         &self,
         binding: crate::store::ScimConnectionBinding,

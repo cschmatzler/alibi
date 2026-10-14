@@ -18,6 +18,87 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn get_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimGroupRecord>> {
+        use super::entities::scim_group as group;
+        let row = group::Entity::find()
+            .filter(group::Column::Id.eq(id))
+            .filter(group::Column::ConnectionId.eq(connection))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(row.map(|row| alibi_core::store::ScimGroupRecord {
+            id: row.id,
+            connection_id: row.connection_id,
+            provisioning_domain_id: row.provisioning_domain_id,
+            display_name: row.display_name,
+            external_id: row.external_id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }))
+    }
+    async fn scim_group_members(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<alibi_core::store::ScimGroupMemberships> {
+        use super::entities::{scim_group_member as membership, scim_user as user};
+        let memberships = membership::Entity::find()
+            .filter(membership::Column::GroupId.eq(id))
+            .filter(membership::Column::ConnectionId.eq(connection))
+            .order_by_asc(membership::Column::CreatedAt)
+            .limit(1001)
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        let persisted_count = memberships.len();
+        if persisted_count > 1000 {
+            return Ok(alibi_core::store::ScimGroupMemberships {
+                persisted_count,
+                members: Vec::new(),
+            });
+        }
+        let mut ids = Vec::new();
+        for membership in &memberships {
+            if !ids.contains(&membership.scim_user_id) {
+                ids.push(membership.scim_user_id.clone());
+            }
+        }
+        let mut users = std::collections::HashMap::new();
+        for chunk in ids.chunks(500) {
+            let rows = user::Entity::find()
+                .filter(user::Column::ConnectionId.eq(connection))
+                .filter(user::Column::Id.is_in(chunk.iter().cloned()))
+                .limit(
+                    u64::try_from(chunk.len())
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+                )
+                .all(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?;
+            for row in rows {
+                _ = users.insert(row.id, row.display_name);
+            }
+        }
+        let members = memberships
+            .into_iter()
+            .filter_map(|membership| {
+                users.get(&membership.scim_user_id).map(|display| {
+                    alibi_core::store::ScimGroupMemberRecord {
+                        id: membership.scim_user_id.clone(),
+                        display_name: display.clone(),
+                    }
+                })
+            })
+            .collect();
+        Ok(alibi_core::store::ScimGroupMemberships {
+            persisted_count,
+            members,
+        })
+    }
     async fn scim_projection_candidates(
         &self,
         domain: &str,
@@ -134,63 +215,15 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         domain: Option<&str>,
         key: &str,
     ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
-        use super::entities::scim_connection_binding as binding;
-        let find = async || {
-            binding::Entity::find()
-                .filter(binding::Column::ConnectionKey.eq(key))
-                .one(self.scoped_connection())
-                .await
-                .map_err(map_db_err)
-        };
-        if let Some(row) = find().await? {
-            let binding = row.into();
-            alibi_core::store::scim::validate_scim_binding_domain(&binding, domain)?;
-            return Ok(binding);
-        }
-        let domain = domain.ok_or_else(|| {
-            alibi_core::AuthError::internal(format!(
-                "SCIM connection \"{id}\" has no persisted binding."
-            ))
-        })?;
-        let now = chrono::Utc::now().trunc_subsecs(3);
-        let row = binding::ActiveModel {
-            id: Set(self
-                .generated_id(
-                    self.scoped_connection(),
-                    "scimConnectionBinding",
-                    "scimConnectionBinding",
-                    "id",
-                )
-                .await?
-                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
-            connection_id: Set(id.into()),
-            connection_key: Set(key.into()),
-            provisioning_domain_id: Set(domain.into()),
-            created_at: Set(now),
-            decommission_status: Set("complete".into()),
-            decommissioned_at: Set(Some(now)),
-            decommission_completed_at: Set(Some(now)),
-            decommission_reconciled_user_count: Set(0),
-            decommission_batch_count: Set(0),
-            decommission_revision: Set(0),
-            ..Default::default()
-        };
-        match row
-            .insert(self.scoped_connection())
-            .await
-            .map_err(map_db_err)
-        {
-            Ok(row) => Ok(row.into()),
-            Err(error) => {
-                if let Some(row) = find().await? {
-                    let binding = row.into();
-                    alibi_core::store::scim::validate_scim_binding_domain(&binding, Some(domain))?;
-                    Ok(binding)
-                } else {
-                    Err(error)
-                }
-            }
-        }
+        self.ensure_scim_binding(id, domain, key, true).await
+    }
+    async fn active_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: &str,
+        key: &str,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        self.ensure_scim_binding(id, Some(domain), key, false).await
     }
 
     async fn list_scim_managed_connection_events(
@@ -759,6 +792,81 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
                     return Err(alibi_core::store::scim::scim_creation_conflict());
                 }
                 Err(error)
+            }
+        }
+    }
+}
+
+impl<S: AuthSchema> SeaOrmStore<S> {
+    async fn ensure_scim_binding(
+        &self,
+        id: &str,
+        domain: Option<&str>,
+        key: &str,
+        terminal: bool,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        use super::entities::scim_connection_binding as binding;
+        let find = async || {
+            binding::Entity::find()
+                .filter(binding::Column::ConnectionKey.eq(key))
+                .one(self.scoped_connection())
+                .await
+                .map_err(map_db_err)
+        };
+        if let Some(row) = find().await? {
+            let binding = row.into();
+            if terminal {
+                alibi_core::store::scim::validate_scim_binding_domain(&binding, domain)?;
+            }
+            return Ok(binding);
+        }
+        let domain = domain.ok_or_else(|| {
+            alibi_core::AuthError::internal(format!(
+                "SCIM connection \"{id}\" has no persisted binding."
+            ))
+        })?;
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let row = binding::ActiveModel {
+            id: Set(self
+                .generated_id(
+                    self.scoped_connection(),
+                    "scimConnectionBinding",
+                    "scimConnectionBinding",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            connection_id: Set(id.into()),
+            connection_key: Set(key.into()),
+            provisioning_domain_id: Set(domain.into()),
+            created_at: Set(now),
+            decommission_status: Set(if terminal { "complete" } else { "active" }.into()),
+            decommissioned_at: Set(terminal.then_some(now)),
+            decommission_completed_at: Set(terminal.then_some(now)),
+            decommission_reconciled_user_count: Set(0),
+            decommission_batch_count: Set(0),
+            decommission_revision: Set(0),
+            ..Default::default()
+        };
+        match row
+            .insert(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+        {
+            Ok(row) => Ok(row.into()),
+            Err(error) => {
+                if let Some(row) = find().await? {
+                    let binding = row.into();
+                    if terminal {
+                        alibi_core::store::scim::validate_scim_binding_domain(
+                            &binding,
+                            Some(domain),
+                        )?;
+                    }
+                    Ok(binding)
+                } else {
+                    Err(error)
+                }
             }
         }
     }

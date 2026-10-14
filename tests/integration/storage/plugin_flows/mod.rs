@@ -522,3 +522,5 @@ mod scim_populated_decommission;
 mod scim_projection_admission;
 mod scim_role_projection;
 mod scim_terminal_binding;
+
+mod scim_group_read;

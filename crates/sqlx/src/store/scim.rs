@@ -18,6 +18,92 @@ use async_trait::async_trait;
 use chrono::SubsecRound;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn get_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<alibi_core::store::ScimGroupRecord>> {
+        use super::entities::scim_group as group;
+        let mut sql = model::select_model::<group::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimGroup", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimGroup", "connectionId", " = ", connection);
+        model::limit_one(&mut sql);
+        let row = self.exec().fetch_optional::<group::Model>(sql).await?;
+        Ok(row.map(|row| alibi_core::store::ScimGroupRecord {
+            id: row.id,
+            connection_id: row.connection_id,
+            provisioning_domain_id: row.provisioning_domain_id,
+            display_name: row.display_name,
+            external_id: row.external_id,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+        }))
+    }
+    async fn scim_group_members(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<alibi_core::store::ScimGroupMemberships> {
+        use super::entities::{scim_group_member as membership, scim_user as user};
+        let mut sql = model::select_model::<membership::Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare("scimGroupMember", "groupId", " = ", id);
+        sql.push(" AND ");
+        sql.compare("scimGroupMember", "connectionId", " = ", connection);
+        sql.push(" ORDER BY ");
+        sql.column("scimGroupMember", "createdAt");
+        sql.push(" ASC LIMIT 1001");
+        let memberships = self.exec().fetch_all::<membership::Model>(sql).await?;
+        let persisted_count = memberships.len();
+        if persisted_count > 1000 {
+            return Ok(alibi_core::store::ScimGroupMemberships {
+                persisted_count,
+                members: Vec::new(),
+            });
+        }
+        let mut ids = Vec::new();
+        for membership in &memberships {
+            if !ids.contains(&membership.scim_user_id) {
+                ids.push(membership.scim_user_id.clone());
+            }
+        }
+        let mut users = std::collections::HashMap::new();
+        for chunk in ids.chunks(500) {
+            let mut sql = model::select_model::<user::Model>(self.exec());
+            sql.push(" WHERE ");
+            sql.compare("scimUser", "connectionId", " = ", connection);
+            sql.push(" AND ");
+            sql.column("scimUser", "id");
+            sql.push(" IN ");
+            sql.bind_list(chunk.iter().cloned());
+            sql.push(" LIMIT ");
+            sql.bind(
+                i64::try_from(chunk.len())
+                    .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+            );
+            let rows = self.exec().fetch_all::<user::Model>(sql).await?;
+            for row in rows {
+                _ = users.insert(row.id, row.display_name);
+            }
+        }
+        let members = memberships
+            .into_iter()
+            .filter_map(|membership| {
+                users.get(&membership.scim_user_id).map(|display| {
+                    alibi_core::store::ScimGroupMemberRecord {
+                        id: membership.scim_user_id.clone(),
+                        display_name: display.clone(),
+                    }
+                })
+            })
+            .collect();
+        Ok(alibi_core::store::ScimGroupMemberships {
+            persisted_count,
+            members,
+        })
+    }
     async fn scim_projection_candidates(
         &self,
         domain: &str,
@@ -164,59 +250,15 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
         domain: Option<&str>,
         key: &str,
     ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
-        use super::entities::scim_connection_binding as binding;
-        let find = async || {
-            let mut sql = model::select_model::<binding::Model>(self.exec());
-            sql.push(" WHERE ");
-            sql.compare("scimConnectionBinding", "connectionKey", " = ", key);
-            model::limit_one(&mut sql);
-            self.exec().fetch_optional::<binding::Model>(sql).await
-        };
-        if let Some(row) = find().await? {
-            let binding = row.into();
-            alibi_core::store::scim::validate_scim_binding_domain(&binding, domain)?;
-            return Ok(binding);
-        }
-        let domain = domain.ok_or_else(|| {
-            alibi_core::AuthError::internal(format!(
-                "SCIM connection \"{id}\" has no persisted binding."
-            ))
-        })?;
-        let now = chrono::Utc::now().trunc_subsecs(3);
-        let mut row = ActiveRow::new();
-        row.set(
-            "id",
-            self.generated_id(
-                self.exec(),
-                "scimConnectionBinding",
-                "scimConnectionBinding",
-                "id",
-            )
-            .await?
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
-        );
-        row.set("connectionId", id);
-        row.set("connectionKey", key);
-        row.set("provisioningDomainId", domain);
-        row.set("createdAt", now);
-        row.set("decommissionStatus", "complete");
-        row.set("decommissionedAt", now);
-        row.set("decommissionCompletedAt", now);
-        row.set("decommissionReconciledUserCount", 0_i64);
-        row.set("decommissionBatchCount", 0_i64);
-        row.set("decommissionRevision", 0_i64);
-        match model::insert::<binding::Model>(self.exec(), &row).await {
-            Ok(row) => Ok(row.into()),
-            Err(error) => {
-                if let Some(row) = find().await? {
-                    let binding = row.into();
-                    alibi_core::store::scim::validate_scim_binding_domain(&binding, Some(domain))?;
-                    Ok(binding)
-                } else {
-                    Err(error)
-                }
-            }
-        }
+        self.ensure_scim_binding(id, domain, key, true).await
+    }
+    async fn active_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: &str,
+        key: &str,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        self.ensure_scim_binding(id, Some(domain), key, false).await
     }
 
     async fn list_scim_managed_connection_events(
@@ -909,5 +951,81 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
             }
         }
         result
+    }
+}
+
+impl<S: AuthSchema> SqlxStore<S> {
+    async fn ensure_scim_binding(
+        &self,
+        id: &str,
+        domain: Option<&str>,
+        key: &str,
+        terminal: bool,
+    ) -> AuthResult<alibi_core::store::ScimConnectionBinding> {
+        use super::entities::scim_connection_binding as binding;
+        let find = async || {
+            let mut sql = model::select_model::<binding::Model>(self.exec());
+            sql.push(" WHERE ");
+            sql.compare("scimConnectionBinding", "connectionKey", " = ", key);
+            model::limit_one(&mut sql);
+            self.exec().fetch_optional::<binding::Model>(sql).await
+        };
+        if let Some(row) = find().await? {
+            let binding = row.into();
+            if terminal {
+                alibi_core::store::scim::validate_scim_binding_domain(&binding, domain)?;
+            }
+            return Ok(binding);
+        }
+        let domain = domain.ok_or_else(|| {
+            alibi_core::AuthError::internal(format!(
+                "SCIM connection \"{id}\" has no persisted binding."
+            ))
+        })?;
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let mut row = ActiveRow::new();
+        row.set(
+            "id",
+            self.generated_id(
+                self.exec(),
+                "scimConnectionBinding",
+                "scimConnectionBinding",
+                "id",
+            )
+            .await?
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+        );
+        row.set("connectionId", id);
+        row.set("connectionKey", key);
+        row.set("provisioningDomainId", domain);
+        row.set("createdAt", now);
+        row.set(
+            "decommissionStatus",
+            if terminal { "complete" } else { "active" },
+        );
+        if terminal {
+            row.set("decommissionedAt", now);
+            row.set("decommissionCompletedAt", now);
+        }
+        row.set("decommissionReconciledUserCount", 0_i64);
+        row.set("decommissionBatchCount", 0_i64);
+        row.set("decommissionRevision", 0_i64);
+        match model::insert::<binding::Model>(self.exec(), &row).await {
+            Ok(row) => Ok(row.into()),
+            Err(error) => {
+                if let Some(row) = find().await? {
+                    let binding = row.into();
+                    if terminal {
+                        alibi_core::store::scim::validate_scim_binding_domain(
+                            &binding,
+                            Some(domain),
+                        )?;
+                    }
+                    Ok(binding)
+                } else {
+                    Err(error)
+                }
+            }
+        }
     }
 }
