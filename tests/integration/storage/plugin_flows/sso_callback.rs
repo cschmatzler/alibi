@@ -13,34 +13,51 @@ backend_tests!(
     sso_shared_callback_selects_provider_from_protected_state,
     sso_callback_verifies_id_token_authority_claims_and_userinfo_subject,
     sso_callback_defaults_omitted_pkce_to_bound_code_exchange,
-    sso_discovery_hydrates_registered_endpoints_and_completes_real_login
+    sso_discovery_hydrates_registered_endpoints_and_completes_real_login,
+    sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, false, false, false).await
+    callback_flow::<B>(db, CallbackCase::PerProvider).await
 }
 async fn sso_shared_callback_selects_provider_from_protected_state<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, true, false, false).await
+    callback_flow::<B>(db, CallbackCase::Shared).await
 }
 async fn sso_callback_defaults_omitted_pkce_to_bound_code_exchange<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, false, true, false).await
+    callback_flow::<B>(db, CallbackCase::DefaultPkce).await
 }
 async fn sso_discovery_hydrates_registered_endpoints_and_completes_real_login<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, false, true, true).await
+    callback_flow::<B>(db, CallbackCase::Discovery).await
 }
-async fn callback_flow<B: Backend>(
+async fn sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting<
+    B: Backend,
+>(
     db: Db,
-    shared: bool,
-    default_pkce: bool,
-    discovery: bool,
 ) -> TestResult {
+    callback_flow::<B>(db, CallbackCase::RuntimeDiscovery).await
+}
+enum CallbackCase {
+    PerProvider,
+    Shared,
+    DefaultPkce,
+    Discovery,
+    RuntimeDiscovery,
+}
+async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
+    let shared = matches!(case, CallbackCase::Shared);
+    let default_pkce = matches!(
+        case,
+        CallbackCase::DefaultPkce | CallbackCase::Discovery | CallbackCase::RuntimeDiscovery
+    );
+    let discovery = matches!(case, CallbackCase::Discovery);
+    let runtime = matches!(case, CallbackCase::RuntimeDiscovery);
     let idp = peer::start().await;
     *idp.email.lock().unwrap() = "sso-employee@example.test".into();
     let (connection, store) = db.migrated::<B>(SECRET).await?;
@@ -65,6 +82,17 @@ async fn callback_flow<B: Backend>(
             .as_object_mut()
             .unwrap()
             .remove("pkce");
+    }
+    if runtime {
+        let config = registration["oidcConfig"].as_object_mut().unwrap();
+        for field in [
+            "authorizationEndpoint",
+            "tokenEndpoint",
+            "jwksEndpoint",
+            "userInfoEndpoint",
+        ] {
+            _ = config.remove(field);
+        }
     }
     if discovery {
         let config = registration["oidcConfig"].as_object_mut().unwrap();
@@ -128,6 +156,63 @@ async fn callback_flow<B: Backend>(
         }
         assert_eq!(config["pkce"], true);
         assert_eq!(config["tokenEndpointAuthentication"], "client_secret_basic");
+    }
+    if runtime {
+        *idp.discovery_case.lock().unwrap() = "missing".into();
+        let denied = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"callback-provider","callbackURL":format!("{ORIGIN}/complete")}))?,EndpointOptions::default())).await.unwrap_err();
+        assert_eq!(denied.error.status_code(), 400);
+        assert_eq!(
+            body(&denied.error.to_auth_response())["code"],
+            "discovery_incomplete"
+        );
+        *idp.discovery_case.lock().unwrap() = "valid".into();
+        let extra = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"callback-provider","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+        let grant = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()?
+            .get(body(&extra)["url"].as_str().unwrap())
+            .send()
+            .await?;
+        let redirect = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+        let query = redirect
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<String, String>>();
+        *idp.discovery_case.lock().unwrap() = "missing".into();
+        let failed = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::callback_sso_endpoint("callback-provider", &json!(query))?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&extra))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        let location = url::Url::parse(failed.headers.get("location").unwrap())?;
+        assert_eq!(location.path(), "/failed");
+        let error = location
+            .query_pairs()
+            .into_owned()
+            .collect::<std::collections::HashMap<_, _>>();
+        assert_eq!(error["error"], "discovery_failed");
+        assert_eq!(
+            error["error_description"],
+            "Discovery document is missing required fields: jwks_uri"
+        );
+        assert!(
+            store
+                .get_latest_verification_by_identifier(&format!("auth-state:{}", query["state"]))
+                .await?
+                .is_none()
+        );
+        assert!(
+            store
+                .get_account("callback-provider", "employee-subject")
+                .await?
+                .is_none()
+        );
+        assert!(idp.exchanges.lock().unwrap().is_empty());
+        *idp.discovery_case.lock().unwrap() = "valid".into();
     }
     let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"callback-provider","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
     let authorization = body(&started)["url"].as_str().unwrap().to_owned();
@@ -225,6 +310,18 @@ async fn callback_flow<B: Backend>(
             .contains("error=state_mismatch")
     );
     assert_eq!(idp.exchanges.lock().unwrap().len(), 1);
+    if runtime {
+        let row = store.get_sso_provider("callback-provider").await?.unwrap();
+        let stored: Value = serde_json::from_str(row.oidc_config.as_deref().unwrap())?;
+        for field in [
+            "authorizationEndpoint",
+            "tokenEndpoint",
+            "jwksEndpoint",
+            "userInfoEndpoint",
+        ] {
+            assert!(stored.get(field).is_none());
+        }
+    }
     B::close(connection).await
 }
 

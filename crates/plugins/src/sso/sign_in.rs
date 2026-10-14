@@ -98,9 +98,13 @@ impl SsoPlugin {
                 )
                 .await;
         }
-        let config = oidc
-            .as_ref()
-            .ok_or_else(|| api(400, "Invalid SSO provider"))?;
+        let config = super::discovery::ensure(
+            oidc.as_ref()
+                .ok_or_else(|| api(400, "Invalid SSO provider"))?,
+            &provider.issuer,
+            ctx,
+        )
+        .await?;
         let endpoint = config
             .get("authorizationEndpoint")
             .and_then(Value::as_str)

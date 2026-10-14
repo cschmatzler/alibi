@@ -3,7 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
+for (const mode of ["default", "shared", "default-pkce", "discovery", "runtime-discovery"]) {
   compatScenario(
     `SSO ${mode} callback redeems a real PKCE code and creates a usable session`,
     async (ctx) => {
@@ -42,7 +42,9 @@ for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
             clientId: "enterprise-client",
             clientSecret: "stored-secret",
             skipDiscovery: true,
-            ...(mode === "default-pkce" || mode === "discovery" ? {} : { pkce: true }),
+            ...(mode === "default-pkce" || mode === "discovery" || mode === "runtime-discovery"
+              ? {}
+              : { pkce: true }),
             scopes: ["openid", "email"],
             authorizationEndpoint: `${idp.base}/authorize`,
             tokenEndpoint: `${idp.base}/token`,
@@ -51,6 +53,17 @@ for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
           },
         },
       };
+      if (mode === "runtime-discovery") {
+        const config = registration.body.oidcConfig as any;
+        for (const field of [
+          "authorizationEndpoint",
+          "tokenEndpoint",
+          "jwksEndpoint",
+          "userInfoEndpoint",
+        ]) {
+          delete config[field];
+        }
+      }
       if (mode === "discovery") {
         const config = registration.body.oidcConfig as any;
         for (const field of [
@@ -93,6 +106,58 @@ for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
         }
         expect(config.pkce).toBe(true);
         expect(config.tokenEndpointAuthentication).toBe("client_secret_basic");
+      }
+      if (mode === "runtime-discovery") {
+        await control({ action: "idp", discoveryCase: "missing" });
+        const denied = await control({
+          action: "sign-in",
+          body: { providerId: "callback-provider", callbackURL: `${ctx.baseURL}/complete` },
+        });
+        expect(denied.status).toBe(400);
+        expect(((await denied.json()) as any).code).toBe("discovery_incomplete");
+        await control({ action: "idp", discoveryCase: "valid" });
+        const extra = await control({
+          action: "sign-in",
+          body: {
+            providerId: "callback-provider",
+            callbackURL: `${ctx.baseURL}/complete`,
+            errorCallbackURL: `${ctx.baseURL}/failed`,
+          },
+        });
+        expect(extra.status).toBe(200);
+        const grant = await fetch(((await extra.json()) as any).url, { redirect: "manual" });
+        expect(grant.status).toBe(302);
+        const query = Object.fromEntries(new URL(grant.headers.get("location")!).searchParams);
+        await control({ action: "idp", discoveryCase: "missing" });
+        const failed = await control({
+          action: "callback",
+          params: { providerId: "callback-provider" },
+          query,
+          headers: { cookie: pairs(extra) },
+        });
+        expect(failed.status).toBe(302);
+        const location = new URL(failed.headers.get("location")!);
+        expect(location.pathname).toBe("/failed");
+        expect(location.searchParams.get("error")).toBe("discovery_failed");
+        expect(location.searchParams.get("error_description")).toBe(
+          "Discovery document is missing required fields: jwks_uri",
+        );
+        expect(
+          await (
+            await control({ action: "proof", identifier: `auth-state:${query.state}` })
+          ).json(),
+        ).toBe(null);
+        expect(
+          await (
+            await control({
+              action: "account-row",
+              providerId: "callback-provider",
+              accountId: "employee-subject",
+            })
+          ).json(),
+        ).toBe(null);
+        expect(await (await control({ action: "idp-exchanges" })).json()).toHaveLength(0);
+        await control({ action: "idp", discoveryCase: "valid" });
       }
       const started = await control({
         action: "sign-in",
@@ -163,6 +228,20 @@ for (const mode of ["default", "shared", "default-pkce", "discovery"]) {
       expect(replay.status).toBe(302);
       expect(replay.headers.get("location")).toContain("error=state_mismatch");
       expect(await (await control({ action: "idp-exchanges" })).json()).toHaveLength(1);
+      if (mode === "runtime-discovery") {
+        const row = (await (
+          await control({ action: "row", providerId: "callback-provider" })
+        ).json()) as any;
+        const stored = JSON.parse(row.oidcConfig);
+        for (const field of [
+          "authorizationEndpoint",
+          "tokenEndpoint",
+          "jwksEndpoint",
+          "userInfoEndpoint",
+        ]) {
+          expect(stored[field]).toBeUndefined();
+        }
+      }
       return { authenticated, account, completed: completed.status, replay: replay.status };
     },
   );

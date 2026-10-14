@@ -163,6 +163,15 @@ impl SsoPlugin {
         else {
             return fail("invalid_provider", Some("provider not found"));
         };
+        let config = match super::discovery::ensure(&config, &provider.issuer, ctx).await {
+            Ok(config) => config,
+            Err(error) => {
+                return fail(
+                    "discovery_failed",
+                    Some(super::discovery::callback_error_message(&error)),
+                );
+            }
+        };
         let Some(token_endpoint) = config.get("tokenEndpoint").and_then(Value::as_str) else {
             return fail("invalid_provider", Some("token_endpoint_not_found"));
         };
