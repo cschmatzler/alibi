@@ -126,6 +126,24 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn prepare_scim_projection(
+        &self,
+        domain: &str,
+        ids: &[String],
+    ) -> AuthResult<Vec<crate::store::ScimProjectionPreparedUser>> {
+        self.inner.prepare_scim_projection(domain, ids).await
+    }
+    async fn remove_scim_projection_grants(
+        &self,
+        domain: &str,
+        user_id: &str,
+        ids: &[String],
+    ) -> AuthResult<()> {
+        self.inner
+            .remove_scim_projection_grants(domain, user_id, ids)
+            .await
+    }
+
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_email(email).await
     }

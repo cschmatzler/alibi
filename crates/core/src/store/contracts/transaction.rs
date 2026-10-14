@@ -22,6 +22,26 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn prepare_scim_projection(
+        &self,
+        _domain: &str,
+        _ids: &[String],
+    ) -> AuthResult<Vec<crate::store::ScimProjectionPreparedUser>> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM projection is unsupported",
+        ))
+    }
+    async fn remove_scim_projection_grants(
+        &self,
+        _domain: &str,
+        _user_id: &str,
+        _ids: &[String],
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM grants are unsupported",
+        ))
+    }
+
     async fn get_user_by_email(&self, _email: &str) -> AuthResult<Option<S::User>> {
         Err(AuthError::NotImplemented(
             "Transactional user lookup is unsupported".into(),

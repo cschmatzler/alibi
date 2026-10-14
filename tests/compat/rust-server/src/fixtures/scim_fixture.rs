@@ -1,9 +1,10 @@
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::ScimPlugin;
-use alibi::plugins::scim::ScimManagedConnectionOptions;
+use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimProjectedUserState, ScimProjection};
 use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi::store::AuthTransaction;
 use alibi::utils::json::JsValue;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::response::IntoResponse;
@@ -11,6 +12,10 @@ use axum::{Json, Router, extract::Query, routing::post};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let path = "/__test/profiles/scim/api/auth";
     let config = base.clone().base_path(path);
@@ -25,18 +30,39 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let router = Router::new().nest(path, auth.clone().axum_router().with_state(auth.clone()));
     let restart_auth = Arc::new(tokio::sync::Mutex::new(auth.clone()));
     let restart_config = base.clone().base_path(path);
+    let projection_states = Arc::new(Mutex::new(Vec::<ScimProjectedUserState>::new()));
+    let projection_fails = Arc::new(AtomicBool::new(false));
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
             let auth = restart_auth.clone();
             let config=restart_config.clone();
+            let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();
             async move {
+                if query.get("operation").is_some_and(|operation|operation=="configure-projection") {
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(ScimPlugin::new().managed_connections(managed_options()).projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}))).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="restart-managed") {
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(managed_options())).build().await.unwrap();
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="seed-projection") {
+                    let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"projection-owner@example.com","password":"a-native-password-123","name":"Native owner"})).unwrap(),EndpointOptions::default()).await.unwrap().into_response().unwrap();let signed:Value=serde_json::from_slice(&output.body).unwrap();let uid=signed["user"]["id"].as_str().unwrap();
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();
+                    for(id,cid,domain,active)in[("scim-alias-a","conn-a","tenant-a",true),("scim-alias-b","conn-b","tenant-a",false),("scim-alias-c","conn-c","tenant-b",true)]{
+                        let sql="INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'projection-owner@example.com',?,'projection-owner@example.com','[]','[]','Owner','Owner','[]',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')";
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),sql,vec![id.into(),cid.into(),domain.into(),uid.into(),id.into(),id.into(),active.into(),id.into()])).await.unwrap();
+                    }
+                    _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('legacy-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','legacy-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();
+                    return Json(json!({"userId":uid})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="projection-fails") {let owners=query_json_rows(&database,"SELECT json_object('id',id) AS row FROM user WHERE email='projection-owner@example.com'").await;let uid=owners[0]["id"].as_str().unwrap();_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('failure-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','failure-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[uid.into()])).await.unwrap();projection_fails.store(true,Ordering::SeqCst);return Json(json!({"failing":true})).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="projection-states") {let states=projection_states.lock().unwrap().clone();return Json(states).into_response();}
+                if query.get("operation").is_some_and(|operation|operation=="projection-storage") {
+                    return Json(json!({"users":query_json_rows(&database,"SELECT json_object('id',id,'name',name) AS row FROM user WHERE email='projection-owner@example.com'").await,"subjects":query_json_rows(&database,"SELECT json_object('id',id,'userId',userId,'revision',revision,'profileSourceId',profileSourceId,'createdAt',strftime('%Y-%m-%dT%H:%M:%fZ',createdAt),'updatedAt',strftime('%Y-%m-%dT%H:%M:%fZ',updatedAt)) AS row FROM scimSubject").await,"scimUsers":query_json_rows(&database,"SELECT json_object('id',id,'connectionId',connectionId,'provisioningDomainId',provisioningDomainId,'userId',userId,'active',active) AS row FROM scimUser").await,"grants":physical_rows(&database,"scimProjectionGrant").await})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="age-connection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?",["2000-01-01T00:00:00.000Z".into(),input["connectionId"].as_str().unwrap().into()])).await.unwrap();
@@ -97,7 +123,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","decommissionSCIMManagedConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="reconcileSCIMProjection") {
-                    let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","reconcileSCIMProjection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;return match result{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let message=match error.error{alibi::AuthError::Config(message)=>message,error=>error.error_payload().2};Json(json!({"failed":true,"message":message})).into_response()}};
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","reconcileSCIMProjection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;return match result{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{if let alibi::AuthError::Config(message)=&error.error{Json(json!({"failed":true,"message":message})).into_response()}else{let response=if let Some(body)=error.body{alibi::AuthResponse::json(error.error.status_code(),body.as_ref()).unwrap()}else{error.error.to_auth_response()};response.into_response()}}};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="decommissionSCIMConnection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","decommissionSCIMConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
@@ -193,6 +219,20 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
 
 async fn physical_rows(database: &DatabaseConnection, table: &str) -> Value {
     let columns = match table {
+        "scimProjectionGrant" => vec![
+            "id",
+            "connectionId",
+            "provisioningDomainId",
+            "scimUserId",
+            "userId",
+            "sourceKind",
+            "sourceId",
+            "sourceValue",
+            "role",
+            "grantKey",
+            "createdAt",
+            "updatedAt",
+        ],
         "scimConnectionBinding" => vec![
             "id",
             "connectionId",
@@ -290,4 +330,57 @@ fn managed_options() -> ScimManagedConnectionOptions {
         ScimManagedConnectionOptions::new("managed-scim-credential-hmac-secret-32-chars");
     options.max_active_credentials = 2;
     options
+}
+
+struct FixtureProjection {
+    states: Arc<Mutex<Vec<ScimProjectedUserState>>>,
+    fails: Arc<AtomicBool>,
+}
+#[async_trait::async_trait]
+impl ScimProjection<crate::TestSchema> for FixtureProjection {
+    async fn reconcile_user(
+        &self,
+        input: &ScimProjectedUserState,
+        database: &dyn AuthTransaction<crate::TestSchema>,
+    ) -> AuthResult<()> {
+        _ = database
+            .update_user(
+                &input.user_id,
+                alibi::UpdateUser {
+                    name: Some(
+                        if self.fails.load(Ordering::SeqCst) {
+                            "Should roll back"
+                        } else if input.active {
+                            "Projected active"
+                        } else {
+                            "Projected inactive"
+                        }
+                        .into(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        self.states.lock().unwrap().push(input.clone());
+        if self.fails.load(Ordering::SeqCst) {
+            return Err(alibi::AuthError::internal(
+                "application rejected projection",
+            ));
+        }
+        Ok(())
+    }
+}
+async fn query_json_rows(database: &DatabaseConnection, sql: &str) -> Value {
+    let rows = database
+        .query_all_raw(Statement::from_string(
+            database.get_database_backend(),
+            sql.to_string(),
+        ))
+        .await
+        .unwrap();
+    Value::Array(
+        rows.iter()
+            .map(|row| serde_json::from_str(&row.try_get::<String>("", "row").unwrap()).unwrap())
+            .collect(),
+    )
 }

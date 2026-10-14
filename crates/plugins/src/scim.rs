@@ -7,7 +7,11 @@ use alibi_core::{
 use async_trait::async_trait;
 use serde_json::{Value, json};
 mod managed;
+mod projection;
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
+pub use projection::{
+    ConfiguredScimPlugin, ScimIdentitySource, ScimProjectedUserState, ScimProjection,
+};
 
 /// Policy for the framework-managed provisioning credential catalog.
 #[derive(Clone)]
@@ -316,9 +320,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         if call.operation_id() == "reconcileSCIMProjection" {
-            return Err(AuthError::config(
-                "SCIM projection reconciliation requires projection.reconcileUser to be configured.",
-            ));
+            return self.reconcile_projection(call, ctx).await;
         }
         if call.operation_id() == "decommissionSCIMManagedConnection" {
             return self.decommission_managed_connection(call, ctx).await;

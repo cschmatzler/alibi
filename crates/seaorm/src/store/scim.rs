@@ -18,6 +18,31 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionCandidate>> {
+        use super::entities::scim_user;
+        let mut select =
+            scim_user::Entity::find().filter(scim_user::Column::ProvisioningDomainId.eq(domain));
+        if let Some(cursor) = cursor {
+            select = select.filter(scim_user::Column::UserId.gt(cursor));
+        }
+        Ok(select
+            .order_by_asc(scim_user::Column::UserId)
+            .limit(51)
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(|row| alibi_core::store::ScimProjectionCandidate {
+                id: row.id,
+                user_id: row.user_id,
+            })
+            .collect())
+    }
+
     async fn recover_empty_scim_decommission(
         &self,
         binding: alibi_core::store::ScimConnectionBinding,

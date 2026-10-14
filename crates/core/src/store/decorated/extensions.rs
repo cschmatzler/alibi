@@ -824,6 +824,14 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<crate::store::ScimProjectionCandidate>> {
+        self.inner.scim_projection_candidates(domain, cursor).await
+    }
+
     async fn recover_empty_scim_decommission(
         &self,
         binding: crate::store::ScimConnectionBinding,

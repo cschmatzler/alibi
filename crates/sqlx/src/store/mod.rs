@@ -272,6 +272,25 @@ where
     S::Session: SqlxSessionModel,
     S::Verification: SqlxVerificationModel,
 {
+    async fn prepare_scim_projection(
+        &self,
+        domain: &str,
+        ids: &[String],
+    ) -> AuthResult<Vec<alibi_core::store::ScimProjectionPreparedUser>> {
+        self.store
+            .prepare_scim_projection_with_exec(Exec::tx(self.tx), domain, ids)
+            .await
+    }
+    async fn remove_scim_projection_grants(
+        &self,
+        domain: &str,
+        user_id: &str,
+        ids: &[String],
+    ) -> AuthResult<()> {
+        self.store
+            .remove_scim_projection_grants_with_exec(Exec::tx(self.tx), domain, user_id, ids)
+            .await
+    }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         self.store
             .get_user_by_email_with_connection(Exec::tx(self.tx), email)
@@ -624,3 +643,4 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
 mod sso;
 
 mod scim;
+mod scim_projection;

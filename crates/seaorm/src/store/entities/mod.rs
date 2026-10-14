@@ -37,3 +37,7 @@ pub mod scim_managed_connection_event;
 pub mod scim_connection_binding;
 
 pub mod scim_user;
+
+pub mod scim_subject;
+
+pub mod scim_projection_grant;
