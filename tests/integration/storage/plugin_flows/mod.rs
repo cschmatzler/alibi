@@ -456,3 +456,8 @@ mod sso_key_resolver;
 
 #[path = "../../../support/sso_provisioning_policy.rs"]
 mod sso_provisioning_policy;
+
+mod sso_domain_membership;
+
+#[path = "../../../support/sso_oidc_peer.rs"]
+mod sso_oidc_peer;

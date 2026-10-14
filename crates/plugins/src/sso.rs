@@ -4,6 +4,7 @@ mod callback_id_token;
 mod configured;
 mod discovery;
 mod domain_confirmation;
+mod domain_membership;
 mod domain_verification;
 mod domains;
 mod idp_metadata_xml;
@@ -447,6 +448,9 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
             ));
         }
         routes
+    }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = vec![

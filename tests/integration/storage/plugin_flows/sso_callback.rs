@@ -1,4 +1,5 @@
 //! An actual PKCE code exchange produces a usable session and rejects replay.
+use super::sso_oidc_peer as peer;
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SsoConfig, SsoPlugin};
@@ -6,8 +7,6 @@ use alibi::{
     AuthAccount, AuthVerification,
     store::{AccountStore, SsoProviderStore, UserStore, VerificationStore},
 };
-#[path = "../../../support/sso_oidc_peer.rs"]
-mod peer;
 #[path = "../../../support/sso_validation_policy.rs"]
 mod validation_policy;
 backend_tests!(

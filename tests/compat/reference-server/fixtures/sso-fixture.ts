@@ -224,10 +224,22 @@ export async function ssoFixture(base: BetterAuthOptions) {
   });
   const organizationOptions = (mode: string) => ({
     ...options,
+    ...(mode.startsWith("org-domain")
+      ? {
+          socialProviders: {
+            gitlab: {
+              clientId: "enterprise-client",
+              clientSecret: "stored-secret",
+              issuer: idp.base,
+            },
+          },
+        }
+      : {}),
     plugins: [
       username(),
       organization(),
       sso({
+        domainVerification: { enabled: mode.startsWith("org-domain") },
         organizationProvisioning: {
           ...(["org-dynamic", "org-disabled", "org-invitation"].includes(mode)
             ? {
@@ -244,7 +256,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 },
               }
             : {}),
-          disabled: mode === "org-disabled",
+          disabled: mode === "org-disabled" || mode === "org-domain-disabled",
           defaultRole: mode === "org-admin" ? ("admin" as const) : ("member" as const),
         },
       }),
@@ -252,6 +264,8 @@ export async function ssoFixture(base: BetterAuthOptions) {
   });
   await (await getMigrations(organizationOptions("org-default"))).runMigrations();
   const instances = new Map([
+    ["org-domain", betterAuth(organizationOptions("org-domain"))],
+    ["org-domain-disabled", betterAuth(organizationOptions("org-domain-disabled"))],
     ["org-dynamic", betterAuth(organizationOptions("org-dynamic"))],
     ["org-invitation", betterAuth(organizationOptions("org-invitation"))],
     ["org-default", betterAuth(organizationOptions("org-default"))],
@@ -286,6 +300,8 @@ export async function ssoFixture(base: BetterAuthOptions) {
       "org-disabled",
       "org-dynamic",
       "org-invitation",
+      "org-domain",
+      "org-domain-disabled",
     ].includes(input.mode)
       ? input.mode
       : input.mode === "provisioning"
@@ -567,6 +583,17 @@ export async function ssoFixture(base: BetterAuthOptions) {
     if (input.action === "idp-exchanges") {
       return new Response(JSON.stringify(idp.exchanges()), {
         headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "social-start") {
+      return auth.api.signInSocial({ body: input.body, asResponse: true });
+    }
+    if (input.action === "social-callback") {
+      return auth.api.callbackOAuth({
+        params: { id: "gitlab" },
+        query: input.query,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
       });
     }
     if (input.action === "shared-callback") {

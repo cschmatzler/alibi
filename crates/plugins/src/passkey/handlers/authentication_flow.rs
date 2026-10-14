@@ -332,7 +332,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     crate::helpers::record_completed_session_user_view::<S>(
         &user,
         &session,
-        ctx.trusted_user_view(&user),
+        &ctx.trusted_user_view(&user),
     );
 
     Ok(PasskeyHandlerOutcome::Success((

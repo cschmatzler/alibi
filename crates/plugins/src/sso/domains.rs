@@ -108,3 +108,25 @@ fn hostname(entry: &str) -> Option<String> {
     }
     Some(host)
 }
+
+/// Canonical social identities must contain exactly one usable email domain.
+pub(super) fn email_domain(email: &str) -> Option<String> {
+    let email = email.trim().to_lowercase();
+    let mut parts = email.split('@');
+    if parts.next()?.is_empty() {
+        return None;
+    }
+    let domain = parts.next()?;
+    if parts.next().is_some() || domain.contains(['/', '\\', ':']) {
+        return None;
+    }
+    let mut domains = domain
+        .split(',')
+        .map(str::trim)
+        .filter(|entry| !entry.is_empty());
+    let domain = domains.next()?;
+    if domains.next().is_some() {
+        return None;
+    }
+    hostname(domain)
+}

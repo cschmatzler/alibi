@@ -68,6 +68,11 @@ pub(super) async fn start() -> Peer {
                         })
                 } else {
                     authorization == Some("Basic ZW50ZXJwcmlzZS1jbGllbnQ6c3RvcmVkLXNlY3JldA==")
+                        || (uri.path() == "/oauth/token"
+                            && form.get("client_id").map(String::as_str)
+                                == Some("enterprise-client")
+                            && form.get("client_secret").map(String::as_str)
+                                == Some("stored-secret"))
                 };
                 if !authenticated {
                     return failure();
@@ -103,65 +108,64 @@ pub(super) async fn start() -> Peer {
             }
         },
     );
+    let authorize_handler = get(move |Query(query): Query<HashMap<String, String>>| {
+        let codes = authorize_codes.clone();
+        let email = authorize_email.clone();
+        let case = authorize_case.clone();
+        let profile = authorize_profile.clone();
+        async move {
+            if query.get("client_id").map(String::as_str) != Some("enterprise-client")
+                || query.get("code_challenge_method").map(String::as_str) != Some("S256")
+            {
+                return StatusCode::BAD_REQUEST.into_response();
+            }
+            let Some(challenge) = query.get("code_challenge") else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            let Some(callback) = query.get("redirect_uri") else {
+                return StatusCode::BAD_REQUEST.into_response();
+            };
+            let code = uuid::Uuid::new_v4().to_string();
+            _ = codes.lock().unwrap().insert(
+                code.clone(),
+                (
+                    challenge.clone(),
+                    email.lock().unwrap().clone(),
+                    case.lock().unwrap().clone(),
+                    profile.lock().unwrap().clone(),
+                ),
+            );
+            let mut location = url::Url::parse(callback).unwrap();
+            _ = location
+                .query_pairs_mut()
+                .append_pair("code", &code)
+                .append_pair("state", query.get("state").map_or("", String::as_str));
+            (StatusCode::FOUND, [("location", location.to_string())]).into_response()
+        }
+    });
+    let userinfo_handler = get(move |headers: HeaderMap| {
+        let tokens = tokens.clone();
+        async move {
+            let token = headers
+                .get("authorization")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+                .unwrap_or("");
+            let email = tokens.lock().unwrap().get(token).cloned();
+            match email {
+                Some(profile) => Json(profile).into_response(),
+                None => StatusCode::UNAUTHORIZED.into_response(),
+            }
+        }
+    });
     let app = Router::new()
-        .route(
-            "/authorize",
-            get(move |Query(query): Query<HashMap<String, String>>| {
-                let codes = authorize_codes.clone();
-                let email = authorize_email.clone();
-                let case = authorize_case.clone();
-                let profile = authorize_profile.clone();
-                async move {
-                    if query.get("client_id").map(String::as_str) != Some("enterprise-client")
-                        || query.get("code_challenge_method").map(String::as_str) != Some("S256")
-                    {
-                        return StatusCode::BAD_REQUEST.into_response();
-                    }
-                    let Some(challenge) = query.get("code_challenge") else {
-                        return StatusCode::BAD_REQUEST.into_response();
-                    };
-                    let Some(callback) = query.get("redirect_uri") else {
-                        return StatusCode::BAD_REQUEST.into_response();
-                    };
-                    let code = uuid::Uuid::new_v4().to_string();
-                    _ = codes.lock().unwrap().insert(
-                        code.clone(),
-                        (
-                            challenge.clone(),
-                            email.lock().unwrap().clone(),
-                            case.lock().unwrap().clone(),
-                            profile.lock().unwrap().clone(),
-                        ),
-                    );
-                    let mut location = url::Url::parse(callback).unwrap();
-                    _ = location
-                        .query_pairs_mut()
-                        .append_pair("code", &code)
-                        .append_pair("state", query.get("state").map_or("", String::as_str));
-                    (StatusCode::FOUND, [("location", location.to_string())]).into_response()
-                }
-            }),
-        )
+        .route("/authorize", authorize_handler.clone())
+        .route("/oauth/authorize", authorize_handler)
         .route("/token", token_handler.clone())
+        .route("/oauth/token", token_handler.clone())
         .route("/token-jwt", token_handler)
-        .route(
-            "/userinfo",
-            get(move |headers: HeaderMap| {
-                let tokens = tokens.clone();
-                async move {
-                    let token = headers
-                        .get("authorization")
-                        .and_then(|value| value.to_str().ok())
-                        .and_then(|value| value.strip_prefix("Bearer "))
-                        .unwrap_or("");
-                    let email = tokens.lock().unwrap().get(token).cloned();
-                    match email {
-                        Some(profile) => Json(profile).into_response(),
-                        None => StatusCode::UNAUTHORIZED.into_response(),
-                    }
-                }
-            }),
-        )
+        .route("/userinfo", userinfo_handler.clone())
+        .route("/api/v4/user", userinfo_handler)
         .route(
             "/jwks",
             get(|| async {

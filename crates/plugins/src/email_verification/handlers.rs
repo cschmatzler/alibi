@@ -464,7 +464,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 )
                 .await?;
                 record_completed_session_record::<A>(&issued.user, &issued.session);
-                record_completed_session_user_view::<A>(&user, &issued.session, original_view);
+                record_completed_session_user_view::<A>(&user, &issued.session, &original_view);
                 Some(issued.session.token().to_owned())
             }
         }
