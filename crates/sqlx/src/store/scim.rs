@@ -126,6 +126,186 @@ impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
         ))
     }
 
+    async fn decommission_scim_managed_connection(
+        &self,
+        data: alibi_core::store::DecommissionScimManagedConnection,
+        complete: bool,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::tx(tx);
+            let mut sql = model::select_model::<connection::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimManagedConnection",
+                "connectionId",
+                " = ",
+                data.connection_id,
+            );
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "provisioningDomainId",
+                " = ",
+                data.provisioning_domain_id,
+            );
+            model::limit_one(&mut sql);
+            if exec.engine() == crate::pool::Engine::Postgres {
+                sql.push(" FOR UPDATE");
+            }
+            let mut connection = exec
+                .fetch_optional::<connection::Model>(sql)
+                .await?
+                .ok_or_else(|| alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                })?;
+            if connection.status == "decommissioned"
+                || (!complete && connection.status == "decommissioning")
+            {
+                return Ok(Some(connection.into()));
+            }
+            if complete && connection.status != "decommissioning" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection did not begin decommissioning",
+                ));
+            }
+            let now = chrono::Utc::now().trunc_subsecs(3);
+            let expected = if complete {
+                "decommissioning"
+            } else {
+                "active"
+            };
+            let target = if complete {
+                "decommissioned"
+            } else {
+                "decommissioning"
+            };
+            let mut sql = Sql::with(exec.engine(), "UPDATE ");
+            sql.ident("scimManagedConnection");
+            sql.push(" SET ");
+            sql.ident("revision");
+            sql.push(" = ");
+            sql.ident("revision");
+            sql.push(" + 1, ");
+            sql.ident("status");
+            sql.push(" = ");
+            sql.bind(target);
+            sql.push(", ");
+            sql.ident(if complete {
+                "decommissionedAt"
+            } else {
+                "decommissionStartedAt"
+            });
+            sql.push(" = ");
+            sql.bind(now);
+            sql.push(", ");
+            sql.ident(if complete {
+                "decommissionedBy"
+            } else {
+                "decommissionStartedBy"
+            });
+            sql.push(" = ");
+            sql.bind(data.actor_id.clone());
+            sql.push(" WHERE ");
+            sql.compare("scimManagedConnection", "id", " = ", connection.id.clone());
+            sql.push(" AND ");
+            sql.compare("scimManagedConnection", "status", " = ", expected);
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "revision",
+                " = ",
+                connection.revision,
+            );
+            if exec.execute(sql).await? == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            connection.status = target.into();
+            if complete {
+                connection.decommissioned_at = Some(now);
+                connection.decommissioned_by = Some(data.actor_id.clone());
+            } else {
+                connection.decommission_started_at = Some(now);
+                connection.decommission_started_by = Some(data.actor_id.clone());
+            }
+            if !complete {
+                let mut sql = model::select_model::<credential::Model>(exec);
+                sql.push(" WHERE ");
+                sql.compare(
+                    "scimManagedCredential",
+                    "connectionRecordId",
+                    " = ",
+                    connection.id.clone(),
+                );
+                sql.push(" AND ");
+                sql.compare("scimManagedCredential", "status", " = ", "active");
+                sql.push(" LIMIT 100");
+                for credential in exec.fetch_all::<credential::Model>(sql).await? {
+                    let mut sql = Sql::with(exec.engine(), "UPDATE ");
+                    sql.ident("scimManagedCredential");
+                    sql.push(" SET ");
+                    sql.ident("status");
+                    sql.push(" = ");
+                    sql.bind("decommissioned");
+                    sql.push(", ");
+                    sql.ident("activeSlotKey");
+                    sql.push(" = ");
+                    sql.bind(format!("{}:inactive", credential.credential_id));
+                    sql.push(", ");
+                    sql.ident("decommissionedAt");
+                    sql.push(" = ");
+                    sql.bind(now);
+                    sql.push(" WHERE ");
+                    sql.compare("scimManagedCredential", "id", " = ", credential.id);
+                    sql.push(" AND ");
+                    sql.compare("scimManagedCredential", "status", " = ", "active");
+                    sql.push(" AND ");
+                    sql.compare(
+                        "scimManagedCredential",
+                        "activeSlotKey",
+                        " = ",
+                        credential.active_slot_key,
+                    );
+                    _ = exec.execute(sql).await?;
+                }
+            }
+            let mut row = ActiveRow::new();
+            row.set(
+                "id",
+                self.generated_id(
+                    exec,
+                    "scimManagedConnectionEvent",
+                    "scimManagedConnectionEvent",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            row.set("connectionRecordId", connection.id.clone());
+            row.set(
+                "eventKey",
+                format!("{}:{}", connection.id, connection.revision),
+            );
+            row.set("sequence", connection.revision);
+            row.set(
+                "type",
+                if complete {
+                    "connection.decommissioned"
+                } else {
+                    "connection.decommissioning"
+                },
+            );
+            row.set("actorId", data.actor_id);
+            row.set("credentialId", None::<String>);
+            row.set("createdAt", now);
+            _ = model::insert::<event::Model>(exec, &row).await?;
+            Ok(Some(connection.into()))
+        })
+        .await
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         data: alibi_core::store::RevokeScimManagedCredential,

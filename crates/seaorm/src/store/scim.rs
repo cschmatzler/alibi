@@ -119,6 +119,152 @@ impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
         ))
     }
 
+    async fn decommission_scim_managed_connection(
+        &self,
+        data: alibi_core::store::DecommissionScimManagedConnection,
+        complete: bool,
+    ) -> AuthResult<Option<alibi_core::store::ScimManagedConnection>> {
+        let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let result = async {
+            let mut select = connection::Entity::find()
+                .filter(connection::Column::ConnectionId.eq(data.connection_id))
+                .filter(connection::Column::ProvisioningDomainId.eq(data.provisioning_domain_id));
+            if tx.get_database_backend() == sea_orm::DbBackend::Postgres {
+                select = select.lock_exclusive();
+            }
+            let mut connection = select.one(&tx).await.map_err(map_db_err)?.ok_or_else(|| {
+                alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                }
+            })?;
+            if connection.status == "decommissioned"
+                || (!complete && connection.status == "decommissioning")
+            {
+                return Ok(Some(connection.into()));
+            }
+            if complete && connection.status != "decommissioning" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection did not begin decommissioning",
+                ));
+            }
+            let now = chrono::Utc::now().trunc_subsecs(3);
+            let expected = if complete {
+                "decommissioning"
+            } else {
+                "active"
+            };
+            let target = if complete {
+                "decommissioned"
+            } else {
+                "decommissioning"
+            };
+            let updated = connection::Entity::update_many()
+                .col_expr(
+                    connection::Column::Revision,
+                    Expr::col(connection::Column::Revision).add(1),
+                )
+                .col_expr(connection::Column::Status, Expr::value(target))
+                .col_expr(
+                    if complete {
+                        connection::Column::DecommissionedAt
+                    } else {
+                        connection::Column::DecommissionStartedAt
+                    },
+                    Expr::value(now),
+                )
+                .col_expr(
+                    if complete {
+                        connection::Column::DecommissionedBy
+                    } else {
+                        connection::Column::DecommissionStartedBy
+                    },
+                    Expr::value(data.actor_id.clone()),
+                )
+                .filter(connection::Column::Id.eq(connection.id.clone()))
+                .filter(connection::Column::Status.eq(expected))
+                .filter(connection::Column::Revision.eq(connection.revision))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if updated.rows_affected == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            connection.status = target.into();
+            if complete {
+                connection.decommissioned_at = Some(now);
+                connection.decommissioned_by = Some(data.actor_id.clone());
+            } else {
+                connection.decommission_started_at = Some(now);
+                connection.decommission_started_by = Some(data.actor_id.clone());
+            }
+            if !complete {
+                let active = credential::Entity::find()
+                    .filter(credential::Column::ConnectionRecordId.eq(connection.id.clone()))
+                    .filter(credential::Column::Status.eq("active"))
+                    .limit(100)
+                    .all(&tx)
+                    .await
+                    .map_err(map_db_err)?;
+                for credential in active {
+                    _ = credential::Entity::update_many()
+                        .col_expr(credential::Column::Status, Expr::value("decommissioned"))
+                        .col_expr(
+                            credential::Column::ActiveSlotKey,
+                            Expr::value(format!("{}:inactive", credential.credential_id)),
+                        )
+                        .col_expr(credential::Column::DecommissionedAt, Expr::value(now))
+                        .filter(credential::Column::Id.eq(credential.id))
+                        .filter(credential::Column::Status.eq("active"))
+                        .filter(credential::Column::ActiveSlotKey.eq(credential.active_slot_key))
+                        .exec(&tx)
+                        .await
+                        .map_err(map_db_err)?;
+                }
+            }
+            _ = event::ActiveModel {
+                id: Set(self
+                    .generated_id(
+                        &tx,
+                        "scimManagedConnectionEvent",
+                        "scimManagedConnectionEvent",
+                        "id",
+                    )
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                connection_record_id: Set(connection.id.clone()),
+                event_key: Set(format!("{}:{}", connection.id, connection.revision)),
+                sequence: Set(connection.revision),
+                kind: Set((if complete {
+                    "connection.decommissioned"
+                } else {
+                    "connection.decommissioning"
+                })
+                .into()),
+                actor_id: Set(data.actor_id),
+                credential_id: Set(None::<String>),
+                created_at: Set(now),
+            }
+            .insert(&tx)
+            .await
+            .map_err(map_db_err)?;
+            Ok(Some(connection.into()))
+        }
+        .await;
+        match result {
+            Ok(result) => {
+                tx.commit().await.map_err(map_db_err)?;
+                Ok(result)
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
+    }
+
     async fn revoke_scim_managed_credential(
         &self,
         data: alibi_core::store::RevokeScimManagedCredential,
