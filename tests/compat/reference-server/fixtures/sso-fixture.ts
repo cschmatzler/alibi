@@ -8,6 +8,8 @@ import { ssoDnsFixture } from "./sso-dns-fixture";
 import { ssoOidcFixture } from "./sso-oidc-fixture";
 import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
+  let providerLimit = 0;
+  const limitEvents: any[] = [];
   const idp = ssoOidcFixture();
   const provisioningEvents: any[] = [];
   const roleEvents: any[] = [];
@@ -344,6 +346,26 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   const instances = new Map([
+    [
+      "provider-limits",
+      betterAuth({
+        ...options,
+        plugins: [
+          username(),
+          sso({
+            providersLimit: async (user) => {
+              limitEvents.push({
+                userId: user.id,
+                email: user.email,
+                name: user.name,
+                emailVerified: user.emailVerified,
+              });
+              return providerLimit;
+            },
+          }),
+        ],
+      }),
+    ],
     ["user-resolution", betterAuth(resolutionOptions)],
     ["mutation-guard", betterAuth(mutationOptions)],
     ["org-domain", betterAuth(organizationOptions("org-domain"))],
@@ -376,7 +398,20 @@ export async function ssoFixture(base: BetterAuthOptions) {
 
   const handle = async (request: Request) => {
     const input = await request.json();
+    if (input.action === "limit-policy") {
+      providerLimit = input.limit;
+      limitEvents.length = 0;
+      return new Response(JSON.stringify({ configured: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "limit-events") {
+      return new Response(JSON.stringify(limitEvents), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     const mode = [
+      "provider-limits",
       "user-resolution",
       "mutation-guard",
       "org-default",

@@ -30,6 +30,8 @@ pub use organization_provisioning::{
 };
 mod private_key;
 pub use private_key::{SsoKeyResolver, SsoPrivateKey, SsoPrivateKeyContext, SsoPrivateKeyResolver};
+mod provider_limit;
+pub use provider_limit::{SsoProviderLimit, SsoProviderLimitResolver};
 mod provisioning;
 pub use provisioning::{SsoProvisioner, SsoProvisioningData, SsoUserProvisioner};
 mod provider_delete;
@@ -78,6 +80,8 @@ pub struct SsoConfig {
     pub provision_user_on_every_login: bool,
     pub organization_provisioning: SsoOrganizationProvisioning,
     pub providers_limit: usize,
+    /// Resolve the registration limit for the authenticated user on each call.
+    pub resolve_providers_limit: Option<SsoProviderLimit>,
     pub domain_verification: bool,
     /// Override the system DNS servers, for example for an enterprise DNS zone.
     pub domain_verification_dns_servers: Vec<std::net::SocketAddr>,
@@ -108,6 +112,7 @@ impl Default for SsoConfig {
             provision_user_on_every_login: false,
             organization_provisioning: SsoOrganizationProvisioning::default(),
             providers_limit: 10,
+            resolve_providers_limit: None,
             domain_verification: false,
             domain_verification_dns_servers: Vec::new(),
             domain_verification_token_prefix: "better-auth-token".into(),
@@ -170,16 +175,26 @@ impl SsoPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = super::helpers::ordinary_session(request, ctx).await?;
-        if self.config.providers_limit == 0 {
+        let dynamic_limit = match &self.config.resolve_providers_limit {
+            Some(resolver) => Some(
+                resolver
+                    .0
+                    .limit(alibi_core::wire::UserView::from(&user))
+                    .await?,
+            ),
+            None => None,
+        };
+        if dynamic_limit.map_or(self.config.providers_limit == 0, |limit| limit == 0.0) {
             return Err(api(403, "SSO provider registration is disabled"));
         }
-        if ctx
+        let count = ctx
             .database
             .list_sso_providers_by_user(user.id().as_ref())
             .await?
-            .len()
-            >= self.config.providers_limit
-        {
+            .len();
+        if dynamic_limit.map_or(count >= self.config.providers_limit, |limit| {
+            provider_limit::reached(count, limit)
+        }) {
             return Err(api(
                 403,
                 "You have reached the maximum number of SSO providers",
