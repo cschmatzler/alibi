@@ -46,8 +46,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
       sso({ saml: { enableSingleLogout: true, wantLogoutRequestSigned: true } }),
     ],
   };
+  const trustedClaimsOptions = {
+    ...options,
+    plugins: [username(), sso({ trustEmailVerified: true })],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
+    ["trusted-claims", betterAuth(trustedClaimsOptions)],
     ["domain", betterAuth(domainOptions)],
     ["shared", betterAuth(sharedOptions)],
     ["slo", betterAuth(sloOptions)],
@@ -58,17 +63,19 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "signed-request-slo"
-        ? "signed-request-slo"
-        : input.mode === "signed-slo"
-          ? "signed-slo"
-          : input.mode === "domain"
-            ? "domain"
-            : input.mode === "shared"
-              ? "shared"
-              : input.mode === "slo"
-                ? "slo"
-                : "default";
+      input.mode === "trusted-claims"
+        ? "trusted-claims"
+        : input.mode === "signed-request-slo"
+          ? "signed-request-slo"
+          : input.mode === "signed-slo"
+            ? "signed-slo"
+            : input.mode === "domain"
+              ? "domain"
+              : input.mode === "shared"
+                ? "shared"
+                : input.mode === "slo"
+                  ? "slo"
+                  : "default";
     const auth = instances.get(mode)!;
     if (input.action === "dns-records") {
       dns.setRecords(input.records);
@@ -89,7 +96,14 @@ export async function ssoFixture(base: BetterAuthOptions) {
     }
     if (input.action === "saml-grant") {
       return new Response(
-        JSON.stringify(await samlGrant(input.authorization, input.email, Boolean(input.wrongKey))),
+        JSON.stringify(
+          await samlGrant(
+            input.authorization,
+            input.email,
+            Boolean(input.wrongKey),
+            input.verified,
+          ),
+        ),
         { headers: { "content-type": "application/json" } },
       );
     }
@@ -202,6 +216,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       if (input.email) idp.setEmail(input.email);
       idp.setIdTokenCase(input.idTokenCase ?? "none");
       idp.setDiscoveryCase(input.discoveryCase ?? "valid");
+      idp.setProfile(input.profile ?? null);
       return new Response(JSON.stringify({ base: idp.base }), {
         headers: { "content-type": "application/json" },
       });
@@ -318,17 +333,19 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "signed-request-slo"
-            ? signedRequestSloOptions
-            : mode === "signed-slo"
-              ? signedSloOptions
-              : mode === "domain"
-                ? domainOptions
-                : mode === "shared"
-                  ? sharedOptions
-                  : mode === "slo"
-                    ? sloOptions
-                    : options,
+          mode === "trusted-claims"
+            ? trustedClaimsOptions
+            : mode === "signed-request-slo"
+              ? signedRequestSloOptions
+              : mode === "signed-slo"
+                ? signedSloOptions
+                : mode === "domain"
+                  ? domainOptions
+                  : mode === "shared"
+                    ? sharedOptions
+                    : mode === "slo"
+                      ? sloOptions
+                      : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {

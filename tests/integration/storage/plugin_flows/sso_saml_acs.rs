@@ -7,7 +7,10 @@ use alibi::{
     AuthAccount, AuthVerification,
     store::{AccountStore, VerificationStore},
 };
-backend_tests!(sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay);
+backend_tests!(
+    sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay,
+    sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute
+);
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -179,5 +182,83 @@ async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B:
         .insert("origin".into(), "https://idp.example.test".into());
     _ = call(&auth, rejected, 403).await;
     authenticated(&auth, &cookies(&owner), "saml-acs-owner@example.test").await;
+    B::close(connection).await
+}
+
+async fn sso_trusted_saml_verification_requires_mapping_and_exact_first_true_attribute<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(SsoPlugin::with_config(alibi::plugins::SsoConfig {
+            trust_email_verified: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "trusted-saml-owner@example.test").await;
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    for mapped in [true, false] {
+        let provider = if mapped {
+            "trusted-saml-provider"
+        } else {
+            "unmapped-saml-provider"
+        };
+        let mut mapping = json!({"email":"email","name":"displayName"});
+        if mapped {
+            mapping["emailVerified"] = json!("verified-mailbox");
+        }
+        let registered = Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"example.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true,"mapping":mapping}}))?,EndpointOptions { headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default() })).await?.into_response()?;
+        assert_eq!(registered.status, 200);
+        let claims = if mapped {
+            vec![
+                (vec!["true"], true),
+                (vec!["false"], false),
+                (vec!["TRUE"], false),
+                (vec!["1"], false),
+                (vec!["true", "false"], true),
+                (vec!["false", "true"], false),
+            ]
+        } else {
+            vec![(vec!["true"], false)]
+        };
+        for (index, (values, expected)) in claims.into_iter().enumerate() {
+            let email = format!("trusted-saml-{mapped}-{index}@example.test");
+            let started = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::sign_in_sso_endpoint(
+                    &json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete")}),
+                )?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            let grant = idp::grant_with_verified(
+                body(&started)["url"].as_str().unwrap(),
+                &email,
+                false,
+                Some(&values),
+            )?;
+            let completed = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::acs_endpoint(provider, &grant)?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(
+                completed.headers.get("location").map(String::as_str),
+                Some(format!("{ORIGIN}/complete").as_str())
+            );
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], email);
+            assert_eq!(body(&session)["user"]["emailVerified"], expected);
+        }
+    }
     B::close(connection).await
 }

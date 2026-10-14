@@ -14,7 +14,8 @@ backend_tests!(
     sso_callback_verifies_id_token_authority_claims_and_userinfo_subject,
     sso_callback_defaults_omitted_pkce_to_bound_code_exchange,
     sso_discovery_hydrates_registered_endpoints_and_completes_real_login,
-    sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting
+    sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting,
+    sso_trusted_oidc_email_verification_accepts_only_exact_true_claims
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -439,6 +440,100 @@ async fn sso_callback_verifies_id_token_authority_claims_and_userinfo_subject<B:
                 .await?
                 .ok_or("ID token did not create account")?;
             assert!(account.id_token().is_some());
+        }
+    }
+    B::close(connection).await
+}
+
+async fn sso_trusted_oidc_email_verification_accepts_only_exact_true_claims<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::with_config(SsoConfig {
+            trust_email_verified: true,
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let owner = signup(&auth, "trusted-claims-owner@example.test").await;
+    let cases = [
+        (json!(true), true),
+        (json!("true"), true),
+        (json!(false), false),
+        (json!("false"), false),
+        (json!("TRUE"), false),
+        (json!(1), false),
+        (json!([true]), false),
+        (json!({}), false),
+    ];
+    for jwt in [false, true] {
+        let provider = if jwt {
+            "trusted-id-token-provider"
+        } else {
+            "trusted-userinfo-provider"
+        };
+        let mut config = json!({"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base)});
+        if !jwt {
+            config["userInfoEndpoint"] = json!(format!("{}/userinfo", idp.base));
+        }
+        let created = Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":provider,"issuer":idp.base,"domain":"example.test","oidcConfig":config}))?,EndpointOptions { headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default() })).await?.into_response()?;
+        assert_eq!(created.status, 200);
+        *idp.id_token_case.lock().unwrap() = if jwt { "valid" } else { "none" }.into();
+        for (index, (claim, expected)) in cases.iter().enumerate() {
+            let email = format!("trusted-{jwt}-{index}@example.test");
+            *idp.profile.lock().unwrap() = Some(
+                json!({"sub":format!("trusted-{jwt}-{index}"),"email":email,"name":"SSO employee","email_verified":claim}),
+            );
+            let started = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::sign_in_sso_endpoint(
+                    &json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete")}),
+                )?,
+                EndpointOptions::default(),
+            ))
+            .await?
+            .into_response()?;
+            let grant = reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()?
+                .get(body(&started)["url"].as_str().unwrap())
+                .send()
+                .await?;
+            assert_eq!(grant.status(), 302);
+            let callback = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+            let query = callback
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::HashMap<_, _>>();
+            let completed = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::callback_sso_endpoint(provider, &json!(query))?,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(
+                completed.headers.get("location").map(String::as_str),
+                Some(format!("{ORIGIN}/complete").as_str())
+            );
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], email);
+            assert_eq!(body(&session)["user"]["emailVerified"], *expected);
         }
     }
     B::close(connection).await
