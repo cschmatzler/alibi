@@ -1357,3 +1357,5 @@ pub async fn test_database() -> Arc<dyn AuthStore<BundledSchema>> {
 impl crate::store::OAuthClientStore for MemoryStore {}
 
 impl crate::store::SsoProviderStore for MemoryStore {}
+
+impl crate::store::ScimManagedStore for MemoryStore {}

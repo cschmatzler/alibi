@@ -27,3 +27,9 @@ pub mod oauth_refresh_token;
 pub mod oauth_resource;
 
 pub mod sso_provider;
+
+pub mod scim_managed_connection;
+
+pub mod scim_managed_credential;
+
+pub mod scim_managed_connection_event;

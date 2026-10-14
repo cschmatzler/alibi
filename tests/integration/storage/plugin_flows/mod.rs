@@ -505,3 +505,5 @@ mod scim_discovery;
 mod sso_date_fields;
 #[path = "../../../support/sso_date_fields.rs"]
 mod sso_date_fields_config;
+
+mod scim_managed_create;

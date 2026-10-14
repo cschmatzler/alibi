@@ -8,7 +8,15 @@ export async function scimFixture(base: BetterAuthOptions) {
     ...base,
     database: new Database(":memory:"),
     basePath: "/__test/profiles/scim/api/auth",
-    plugins: [scim({ connections: [], authentication: { verifyBearerToken: async () => null } })],
+    plugins: [
+      scim({
+        connections: [],
+        authentication: { verifyBearerToken: async () => null },
+        managedConnections: {
+          credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
+        },
+      }),
+    ],
   };
   await (await getMigrations(options)).runMigrations();
   const auth = betterAuth(options);
@@ -17,6 +25,50 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "reject-late-event") {
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_late_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.sequence=2 BEGIN SELECT RAISE(ABORT,'fixture rejected late event'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "managed-failure") {
+        const input = (await request.json()) as any;
+        input.body.expiresAt = new Date(input.body.expiresAt);
+        try {
+          await auth.api.createSCIMManagedConnection({ body: input.body });
+          return new Response(JSON.stringify({ failed: false }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              failed: true,
+              rejectedLateEvent: String(error).includes("fixture rejected late event"),
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+      }
+      if (query.get("operation") === "managed-storage") {
+        const result = {
+          connections: options.database.query("SELECT * FROM scimManagedConnection").all(),
+          credentials: options.database.query("SELECT * FROM scimManagedCredential").all(),
+          events: options.database
+            .query("SELECT * FROM scimManagedConnectionEvent ORDER BY sequence")
+            .all(),
+        };
+        return new Response(JSON.stringify(result), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "createSCIMManagedConnection") {
+        const input = (await request.json()) as any;
+        if (input.sdkDate) input.body.expiresAt = new Date(input.body.expiresAt);
+        return auth.api.createSCIMManagedConnection({ body: input.body, asResponse: true });
+      }
+
       if (query.get("operation") === "getSCIMSchemas") {
         return new Response(JSON.stringify(await auth.api.getSCIMSchemas()), {
           headers: { "content-type": "application/json" },

@@ -443,3 +443,5 @@ delegate_store!(SsoProviderStore, {
  async fn get_sso_provider(&self, provider_id:&str)->AuthResult<Option<SsoProvider>>;
  async fn list_sso_providers_by_user(&self, user_id:&str)->AuthResult<Vec<SsoProvider>>;
 });
+
+delegate_store!(ScimManagedStore, { async fn create_scim_managed_connection(&self,data:CreateScimManagedConnection)->AuthResult<ScimManagedCreation>; });

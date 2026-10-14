@@ -521,3 +521,5 @@ impl alibi::store::OAuthClientStore for ApplicationStore {
 }
 
 impl alibi::store::SsoProviderStore for ApplicationStore {}
+
+impl alibi::store::ScimManagedStore for ApplicationStore {}

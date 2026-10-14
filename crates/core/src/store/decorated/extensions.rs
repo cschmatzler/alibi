@@ -821,3 +821,13 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
         self.inner.list_sso_providers_by_user(user_id).await
     }
 }
+
+#[async_trait]
+impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn create_scim_managed_connection(
+        &self,
+        data: crate::store::CreateScimManagedConnection,
+    ) -> AuthResult<crate::store::ScimManagedCreation> {
+        self.inner.create_scim_managed_connection(data).await
+    }
+}

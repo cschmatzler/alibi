@@ -11,6 +11,7 @@ impl MigratorTrait for AuthMigrator {
             Box::new(AuthSchemaMigration),
             Box::new(OAuthClientsMigration),
             Box::new(SsoMigration),
+            Box::new(ScimManagedMigration),
         ]
     }
     fn migration_table_name() -> DynIden {
@@ -26,6 +27,12 @@ struct AuthSchemaMigration;
 impl MigrationName for AuthSchemaMigration {
     fn name(&self) -> &'static str {
         "m20261013_000001_typescript_auth_schema"
+    }
+}
+struct ScimManagedMigration;
+impl MigrationName for ScimManagedMigration {
+    fn name(&self) -> &'static str {
+        "m20261014_000004_typescript_scim_managed_schema"
     }
 }
 struct SsoMigration;
@@ -198,3 +205,9 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
+
+migration!(
+    ScimManagedMigration,
+    alibi_schema_registry::SQLITE_SCIM_MANAGED_SCHEMA,
+    alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA
+);
