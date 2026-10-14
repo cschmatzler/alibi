@@ -74,6 +74,98 @@ async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<
             assert!(store.get_sso_provider(&provider_id).await?.is_none());
         }
     }
+    for field in [
+        "authorizationEndpoint",
+        "tokenEndpoint",
+        "userInfoEndpoint",
+        "jwksEndpoint",
+        "discoveryEndpoint",
+    ] {
+        for (index, value) in super::sso_endpoint_admission::PRIVATE_ENDPOINTS
+            .iter()
+            .enumerate()
+        {
+            let provider_id = format!("private-{field}-{index}");
+            let mut invalid = input.clone();
+            invalid["providerId"] = json!(provider_id);
+            invalid["oidcConfig"][field] = json!(value);
+            let response = match Box::pin(auth.dispatch_endpoint(
+                alibi::plugins::SsoPlugin::register_sso_provider_endpoint(&invalid)?,
+                options.clone(),
+            ))
+            .await
+            {
+                Ok(output) => output.into_response()?,
+                Err(error) => error.error.to_auth_response(),
+            };
+            assert_eq!(response.status, 400);
+            assert_eq!(
+                body(&response),
+                super::sso_endpoint_admission::private_error(field, value)
+            );
+            assert!(store.get_sso_provider(&provider_id).await?.is_none());
+        }
+    }
+    let mut trusted = input.clone();
+    trusted["providerId"] = json!("trusted-private-endpoints");
+    let fields = [
+        "authorizationEndpoint",
+        "tokenEndpoint",
+        "userInfoEndpoint",
+        "jwksEndpoint",
+        "discoveryEndpoint",
+    ];
+    for field in fields {
+        trusted["oidcConfig"][field] = json!(format!("{ORIGIN}/{field}"));
+    }
+    let admitted = Box::pin(auth.dispatch_endpoint(
+        alibi::plugins::SsoPlugin::register_sso_provider_endpoint(&trusted)?,
+        options.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(admitted.status, 200);
+    let mut changed = serde_json::Map::new();
+    for field in fields {
+        _ = changed.insert(field.into(), json!(format!("{ORIGIN}/changed/{field}")));
+    }
+    let updated = Box::pin(auth.dispatch_endpoint(
+        alibi::plugins::SsoPlugin::update_sso_provider_endpoint(
+            &json!({"providerId":"trusted-private-endpoints","oidcConfig":changed}),
+        )?,
+        options.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(updated.status, 200);
+    let trusted_row = store
+        .get_sso_provider("trusted-private-endpoints")
+        .await?
+        .unwrap();
+    let config: Value = serde_json::from_str(trusted_row.oidc_config.as_deref().unwrap())?;
+    for field in fields {
+        assert_eq!(config[field], changed[field]);
+    }
+    let mut public = input.clone();
+    public["providerId"] = json!("public-ip-endpoints");
+    for field in fields {
+        public["oidcConfig"][field] = json!(format!("https://[64:ff9b:2::1]/{field}"));
+    }
+    let admitted = Box::pin(auth.dispatch_endpoint(
+        alibi::plugins::SsoPlugin::register_sso_provider_endpoint(&public)?,
+        options.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(admitted.status, 200);
+    let public_row = store
+        .get_sso_provider("public-ip-endpoints")
+        .await?
+        .unwrap();
+    let config: Value = serde_json::from_str(public_row.oidc_config.as_deref().unwrap())?;
+    for field in fields {
+        assert_eq!(config[field], public["oidcConfig"][field]);
+    }
     let created = Box::pin(auth.dispatch_endpoint(endpoint.clone(), options.clone()))
         .await?
         .into_response()?;
@@ -138,7 +230,7 @@ async fn sso_registration_persists_owner_and_rejects_duplicate_and_reserved_ids<
             .list_sso_providers_by_user(body(&owner)["user"]["id"].as_str().unwrap())
             .await?
             .len(),
-        1
+        3
     );
     B::close(connection).await
 }

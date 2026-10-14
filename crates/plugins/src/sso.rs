@@ -6,6 +6,7 @@ mod discovery;
 mod domain_confirmation;
 mod domain_verification;
 mod domains;
+mod endpoint_host;
 mod hooks;
 mod idp_metadata_validation;
 mod idp_metadata_xml;
@@ -223,7 +224,9 @@ impl SsoPlugin {
             return Err(api(422, "SSO provider with this providerId already exists"));
         }
         let oidc_input = if let Some(config) = body.get("oidcConfig") {
-            discovery::validate_endpoint_protocols(config)?;
+            discovery::validate_endpoints(config, &|url| {
+                ctx.config.is_redirect_target_trusted(url)
+            })?;
             Some(
                 if config.get("skipDiscovery").and_then(Value::as_bool) == Some(true) {
                     config.clone()

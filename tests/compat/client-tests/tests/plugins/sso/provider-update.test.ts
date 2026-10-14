@@ -3,6 +3,7 @@ import { expect } from "bun:test";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
+import { privateEndpointURLs, privateEndpointError } from "./private-endpoint-input";
 compatScenario(
   "Partial SSO updates preserve omitted credentials and block linked identity changes",
   async (ctx) => {
@@ -109,6 +110,26 @@ compatScenario(
                 message: `Invalid OIDC endpoint URL: The url "${field}" ${detail}: ${value}`,
               },
         );
+        expect(
+          await (await control({ action: "row", providerId: "update-provider" })).json(),
+        ).toEqual(row);
+      }
+    }
+    for (const field of [
+      "authorizationEndpoint",
+      "tokenEndpoint",
+      "userInfoEndpoint",
+      "jwksEndpoint",
+      "discoveryEndpoint",
+    ]) {
+      for (const value of privateEndpointURLs) {
+        const response = await control({
+          action: "update",
+          headers,
+          body: { providerId: "update-provider", oidcConfig: { [field]: value } },
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual(privateEndpointError(field, value));
         expect(
           await (await control({ action: "row", providerId: "update-provider" })).json(),
         ).toEqual(row);
