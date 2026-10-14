@@ -52,6 +52,7 @@ impl SsoPlugin {
                 &signing_policy,
             )?;
             update.provider.additional_fields.extend(extras.clone());
+            update.additional_field_changes.clone_from(&extras);
             Ok(update)
         };
         let guard = self
@@ -196,6 +197,7 @@ fn prepare_update(
     Ok(SsoProviderUpdate {
         provider,
         identity_changed,
+        additional_field_changes: serde_json::Map::new(),
     })
 }
 pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {

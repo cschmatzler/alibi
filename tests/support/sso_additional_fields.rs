@@ -26,3 +26,32 @@ pub(crate) fn configure(config: &mut alibi::AuthConfig) {
         FieldConfig::new(serde_json::json!({"type":"json"})),
     );
 }
+
+pub(crate) fn configure_callbacks(config: &mut alibi::AuthConfig) {
+    use alibi::field_policy::{FieldConfig, FieldDefault};
+    use alibi::utils::json::JsValue;
+    configure(config);
+    let fields = &mut config.advanced.database.sso_provider_fields.0;
+    let label = fields.get_mut("label").unwrap();
+    label.transform = Some(std::sync::Arc::new(|value| {
+        Ok(value
+            .and_then(JsValue::as_str)
+            .map(|value| JsValue::String(format!("input:{value}"))))
+    }));
+    label.output_transform = Some(std::sync::Arc::new(|value| {
+        Box::pin(async move {
+            Ok(value.and_then(|value| {
+                value
+                    .as_str()
+                    .map(|value| JsValue::String(format!("output:{value}")))
+            }))
+        })
+    }));
+    fields.get_mut("tier").unwrap().on_update = Some(std::sync::Arc::new(|| JsValue::Number(7.0)));
+    let mut stamp = FieldConfig::new(serde_json::json!({"type":"string"}));
+    stamp.input = false;
+    stamp.default = Some(FieldDefault::Callback(std::sync::Arc::new(|| {
+        JsValue::String("generated".into())
+    })));
+    _ = fields.insert("stamp".into(), stamp);
+}

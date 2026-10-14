@@ -77,7 +77,7 @@ where
         }
     }
     async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>> {
-        provider_select(
+        let rows = provider_select(
             &self.config.advanced.database.sso_provider_fields,
             self.scoped_connection().get_database_backend(),
         )
@@ -88,13 +88,16 @@ where
         .into_model::<ProviderRow>()
         .all(self.scoped_connection())
         .await
-        .map_err(map_db_err)?
-        .into_iter()
-        .map(ProviderRow::into_provider)
-        .collect()
+        .map_err(map_db_err)?;
+        project_rows(rows, &self.config.advanced.database.sso_provider_fields).await
     }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
-        let extra = row.additional_fields;
+        let extra = alibi_core::store::prepare_sso_fields(
+            &self.config.advanced.database.sso_provider_fields,
+            &row.additional_fields,
+            true,
+        )
+        .await?;
         let backend = self.scoped_connection().get_database_backend();
         let mut columns = Column::iter()
             .map(|column| sea_orm::sea_query::Alias::new(sea_orm::IdenStatic::as_str(&column)))
@@ -135,10 +138,11 @@ where
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))?
-            .into_provider()
+            .project(&self.config.advanced.database.sso_provider_fields)
+            .await
     }
     async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>> {
-        provider_select(
+        let row = provider_select(
             &self.config.advanced.database.sso_provider_fields,
             self.scoped_connection().get_database_backend(),
         )
@@ -146,12 +150,11 @@ where
         .into_model::<ProviderRow>()
         .one(self.scoped_connection())
         .await
-        .map_err(map_db_err)?
-        .map(ProviderRow::into_provider)
-        .transpose()
+        .map_err(map_db_err)?;
+        project_row(row, &self.config.advanced.database.sso_provider_fields).await
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
-        provider_select(
+        let rows = provider_select(
             &self.config.advanced.database.sso_provider_fields,
             self.scoped_connection().get_database_backend(),
         )
@@ -163,10 +166,8 @@ where
         .into_model::<ProviderRow>()
         .all(self.scoped_connection())
         .await
-        .map_err(map_db_err)?
-        .into_iter()
-        .map(ProviderRow::into_provider)
-        .collect()
+        .map_err(map_db_err)?;
+        project_rows(rows, &self.config.advanced.database.sso_provider_fields).await
     }
 }
 
@@ -203,7 +204,8 @@ where
         .await
         .map_err(map_db_err)?
         .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-        .into_provider()?;
+        .project(&self.config.advanced.database.sso_provider_fields)
+        .await?;
         Ok(Some(row))
     }
     pub(super) async fn update_sso_provider_with<C: sea_orm::ConnectionTrait>(
@@ -231,7 +233,12 @@ where
                     .into(),
             });
         }
-        let extra = update.provider.additional_fields;
+        let extra = alibi_core::store::prepare_sso_fields(
+            &self.config.advanced.database.sso_provider_fields,
+            &update.additional_field_changes,
+            false,
+        )
+        .await?;
         let active = sso_provider::ActiveModel {
             id: Set(id.into()),
             issuer: Set(update.provider.issuer),
@@ -256,13 +263,13 @@ where
             &self.config.advanced.database.sso_provider_fields,
             backend,
         ));
-        Entity::find()
+        let row = Entity::find()
             .from_raw_sql(query.build(connection.get_database_backend()))
             .into_model::<ProviderRow>()
             .one(connection)
             .await
-            .map_err(map_db_err)
-            .and_then(|row| row.map(ProviderRow::into_provider).transpose())
+            .map_err(map_db_err)?;
+        project_row(row, &self.config.advanced.database.sso_provider_fields).await
     }
     pub(super) async fn delete_sso_provider_with<C: sea_orm::ConnectionTrait>(
         &self,
@@ -300,6 +307,12 @@ struct ProviderRow {
     __alibi_sso_fields: String,
 }
 impl ProviderRow {
+    async fn project(
+        self,
+        fields: &alibi_core::field_policy::SessionFields,
+    ) -> AuthResult<SsoProvider> {
+        alibi_core::store::project_sso_provider(fields, self.into_provider()?).await
+    }
     fn into_provider(self) -> AuthResult<SsoProvider> {
         let mut provider: SsoProvider = self.model.into();
         provider.additional_fields = serde_json::from_str(&self.__alibi_sso_fields)?;
@@ -405,4 +418,24 @@ fn extra_bindings(
         }
     }
     Ok(bindings)
+}
+
+async fn project_row(
+    row: Option<ProviderRow>,
+    fields: &alibi_core::field_policy::SessionFields,
+) -> AuthResult<Option<SsoProvider>> {
+    match row {
+        Some(row) => Ok(Some(row.project(fields).await?)),
+        None => Ok(None),
+    }
+}
+async fn project_rows(
+    rows: Vec<ProviderRow>,
+    fields: &alibi_core::field_policy::SessionFields,
+) -> AuthResult<Vec<SsoProvider>> {
+    let mut providers = Vec::with_capacity(rows.len());
+    for row in rows {
+        providers.push(row.project(fields).await?);
+    }
+    Ok(providers)
 }
