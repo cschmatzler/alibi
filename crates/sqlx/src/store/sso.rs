@@ -73,13 +73,11 @@ where
         let mut sql = provider_select(self.exec());
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
-        self.exec()
-            .fetch_all::<ProviderRow>(sql)
-            .await
-            .and_then(|rows| rows.into_iter().map(ProviderRow::into_provider).collect())
+        let rows = self.exec().fetch_all::<ProviderRow>(sql).await?;
+        project_rows(rows, self.exec()).await
     }
     async fn create_sso_provider(&self, row: SsoProvider) -> AuthResult<SsoProvider> {
-        let extra = row.additional_fields;
+        let extra = prepare_fields(self.exec(), &row.additional_fields, true).await?;
         let mut active = ActiveRow::new();
         active.set("id", row.id);
         active.set("issuer", row.issuer);
@@ -96,10 +94,8 @@ where
         let mut sql = provider_select(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "providerId", " = ", provider_id);
-        self.exec()
-            .fetch_optional::<ProviderRow>(sql)
-            .await
-            .and_then(|row| row.map(ProviderRow::into_provider).transpose())
+        let row = self.exec().fetch_optional::<ProviderRow>(sql).await?;
+        project_row(row, self.exec()).await
     }
     async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>> {
         let mut sql = provider_select(self.exec());
@@ -107,10 +103,8 @@ where
         sql.compare(Model::TABLE, "userId", " = ", user_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
-        self.exec()
-            .fetch_all::<ProviderRow>(sql)
-            .await
-            .and_then(|rows| rows.into_iter().map(ProviderRow::into_provider).collect())
+        let rows = self.exec().fetch_all::<ProviderRow>(sql).await?;
+        project_rows(rows, self.exec()).await
     }
 }
 
@@ -142,7 +136,8 @@ where
             .fetch_optional::<ProviderRow>(read)
             .await?
             .ok_or_else(|| alibi_core::AuthError::not_found("Provider not found"))?
-            .into_provider()?;
+            .project(exec)
+            .await?;
         Ok(Some(row))
     }
     pub(super) async fn update_sso_provider_with(
@@ -175,7 +170,7 @@ where
                 });
             }
         }
-        let extra = update.provider.additional_fields;
+        let extra = prepare_fields(exec, &update.additional_field_changes, false).await?;
         let mut active = ActiveRow::new();
         active.set("id", id);
         active.set("issuer", update.provider.issuer);
@@ -227,6 +222,13 @@ struct ProviderRow {
     __alibi_sso_fields: String,
 }
 impl ProviderRow {
+    async fn project(self, exec: crate::pool::Exec<'_>) -> AuthResult<SsoProvider> {
+        let provider = self.into_provider()?;
+        match exec.sso_fields() {
+            Some(fields) => alibi_core::store::project_sso_provider(fields, provider).await,
+            None => Ok(provider),
+        }
+    }
     fn into_provider(self) -> AuthResult<SsoProvider> {
         let mut provider: SsoProvider = self.model.into();
         provider.additional_fields = serde_json::from_str(&self.__alibi_sso_fields)?;
@@ -363,7 +365,8 @@ async fn insert_provider(
     exec.fetch_optional::<ProviderRow>(sql)
         .await?
         .ok_or_else(|| alibi_core::AuthError::internal("Provider was not inserted"))?
-        .into_provider()
+        .project(exec)
+        .await
 }
 async fn update_provider(
     exec: crate::pool::Exec<'_>,
@@ -401,8 +404,36 @@ async fn update_provider(
     sql.compare(Model::TABLE, "id", " = ", id);
     sql.push(" RETURNING ");
     provider_columns(&mut sql, false, exec.sso_fields());
-    exec.fetch_optional::<ProviderRow>(sql)
-        .await?
-        .map(ProviderRow::into_provider)
-        .transpose()
+    let row = exec.fetch_optional::<ProviderRow>(sql).await?;
+    project_row(row, exec).await
+}
+
+async fn project_row(
+    row: Option<ProviderRow>,
+    exec: crate::pool::Exec<'_>,
+) -> AuthResult<Option<SsoProvider>> {
+    match row {
+        Some(row) => Ok(Some(row.project(exec).await?)),
+        None => Ok(None),
+    }
+}
+async fn project_rows(
+    rows: Vec<ProviderRow>,
+    exec: crate::pool::Exec<'_>,
+) -> AuthResult<Vec<SsoProvider>> {
+    let mut providers = Vec::with_capacity(rows.len());
+    for row in rows {
+        providers.push(row.project(exec).await?);
+    }
+    Ok(providers)
+}
+async fn prepare_fields(
+    exec: crate::pool::Exec<'_>,
+    fields: &serde_json::Map<String, serde_json::Value>,
+    create: bool,
+) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+    match exec.sso_fields() {
+        Some(policy) => alibi_core::store::prepare_sso_fields(policy, fields, create).await,
+        None => Ok(fields.clone()),
+    }
 }

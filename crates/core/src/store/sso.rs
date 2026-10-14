@@ -21,6 +21,8 @@ pub struct SsoProvider {
 pub struct SsoProviderUpdate {
     pub provider: SsoProvider,
     pub identity_changed: bool,
+    /// Only submitted fields are bound again during partial updates.
+    pub additional_field_changes: serde_json::Map<String, serde_json::Value>,
 }
 pub type SsoProviderUpdateWork =
     dyn Fn(&SsoProvider) -> AuthResult<SsoProviderUpdate> + Send + Sync;
@@ -217,4 +219,40 @@ pub fn sso_field_definition(
         definition.push_str(" NOT NULL");
     }
     Ok(definition)
+}
+
+/// Apply application adapter input callbacks and defaults immediately before binding.
+pub async fn prepare_sso_fields(
+    fields: &crate::field_policy::SessionFields,
+    input: &serde_json::Map<String, serde_json::Value>,
+    create: bool,
+) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+    let policy = crate::field_policy::SessionAdapterFields(std::sync::Arc::new(fields.0.clone()));
+    let mut values: crate::field_policy::FieldValues = input
+        .iter()
+        .map(|(key, value)| {
+            (
+                key.clone(),
+                crate::utils::json::JsValue::from(value.clone()),
+            )
+        })
+        .collect();
+    policy.attach(&mut values, create);
+    values.apply_adapter_transforms_async().await?;
+    values
+        .into_iter()
+        .map(|(key, value)| Ok((key, value.to_json_value()?)))
+        .collect()
+}
+/// Resolve application output callbacks on the actual stored provider projection.
+pub async fn project_sso_provider(
+    fields: &crate::field_policy::SessionFields,
+    mut provider: SsoProvider,
+) -> AuthResult<SsoProvider> {
+    let policy = crate::field_policy::SessionAdapterFields(std::sync::Arc::new(fields.0.clone()));
+    let output = policy
+        .output(std::mem::take(&mut provider.additional_fields))
+        .await?;
+    provider.additional_fields.clone_from(output.values());
+    Ok(provider)
 }

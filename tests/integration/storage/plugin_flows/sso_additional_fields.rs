@@ -6,9 +6,13 @@ use alibi::store::{SchemaMigrator, SsoProviderStore};
 backend_tests!(
     sso_additional_fields_validate_persist_and_filter_provider_operations,
     sso_fractional_provider_fields_survive_registration_and_update,
-    sso_provider_field_collisions_fail_application_initialization
+    sso_provider_field_collisions_fail_application_initialization,
+    sso_provider_field_callbacks_run_at_storage_and_read_boundaries
 );
-postgres_tests!(sso_additional_fields_validate_persist_and_filter_provider_operations);
+postgres_tests!(
+    sso_additional_fields_validate_persist_and_filter_provider_operations,
+    sso_provider_field_callbacks_run_at_storage_and_read_boundaries
+);
 async fn sso_additional_fields_validate_persist_and_filter_provider_operations<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -255,5 +259,90 @@ async fn sso_provider_field_collisions_fail_application_initialization<B: Backen
             );
         }
     }
+    Ok(())
+}
+
+async fn sso_provider_field_callbacks_run_at_storage_and_read_boundaries<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    super::sso_additional_fields_config::configure_callbacks(&mut config);
+    let connection = B::connect(&db.url, None).await?;
+    let store = B::store(Arc::new(config.clone()), &connection);
+    store.migrate().await?;
+    let build = || {
+        AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(SsoPlugin::new())
+            .build()
+    };
+    let auth = build().await?;
+    let owner = signup(&auth, "callback-fields-owner@example.test").await;
+    let owned = EndpointOptions {
+        headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+        ..Default::default()
+    };
+    let input = json!({"providerId":"callback-fields","issuer":"https://idp.example.com","domain":"company.test","label":"Start","oidcConfig":{"clientId":"client","clientSecret":"secret","skipDiscovery":true,"pkce":true,"authorizationEndpoint":"https://idp.example.com/authorize","tokenEndpoint":"https://idp.example.com/token","jwksEndpoint":"https://idp.example.com/jwks"}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&input)?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(created.status, 200);
+    assert_eq!(body(&created)["label"], "output:input:input:Start");
+    assert_eq!(body(&created)["stamp"], "generated");
+    assert_eq!(body(&created)["tier"], 2);
+    let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
+    assert_eq!(physical[0]["application_label"], "input:input:Start");
+    assert_eq!(physical[0]["stamp"], "generated");
+    let updated = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(
+            &json!({"providerId":"callback-fields","label":"Changed"}),
+        )?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&updated)["label"], "output:input:input:Changed");
+    assert_eq!(body(&updated)["tier"], 7);
+    let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
+    assert_eq!(physical[0]["application_label"], "input:input:Changed");
+    assert_eq!(physical[0]["tier"], 7);
+    let unrelated = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(
+            &json!({"providerId":"callback-fields","domain":"changed.company.test"}),
+        )?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&unrelated)["label"], "output:input:input:Changed");
+    assert_eq!(body(&unrelated)["stamp"], "generated");
+    let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
+    assert_eq!(physical[0]["application_label"], "input:input:Changed");
+    let auth = build().await?;
+    let read = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::get_sso_provider_endpoint("callback-fields")?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&read), body(&unrelated));
+    let listed = Box::pin(auth.dispatch_endpoint(SsoPlugin::list_sso_providers_endpoint(), owned))
+        .await?
+        .into_response()?;
+    assert_eq!(body(&listed)["providers"], json!([body(&unrelated)]));
+    assert_eq!(
+        store
+            .get_sso_provider("callback-fields")
+            .await?
+            .unwrap()
+            .additional_fields["label"],
+        "output:input:input:Changed"
+    );
     Ok(())
 }
