@@ -10,12 +10,13 @@ use std::sync::Arc;
 #[path="../../../../support/sso_validation_policy.rs"]mod validation_policy;
 async fn instance(config:&AuthConfig,database:&DatabaseConnection,mode:&str,dns:std::net::SocketAddr,policy:&validation_policy::Policy)->AuthResult<Alibi<TestSchema>> {
  let mut configured=config.clone();if mode=="validation" {configured.user_validation=Some(Arc::new(policy.clone()));}let config=configured;
- AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{trust_email_verified:mode=="trusted-claims",saml_enable_single_logout:matches!(mode,"slo"|"signed-slo"|"signed-request-slo"),saml_want_logout_response_signed:mode=="signed-slo",saml_want_logout_request_signed:mode=="signed-request-slo",redirect_uri:(mode=="shared").then(||"/sso/callback".into()),domain_verification:mode=="domain",domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
+ AuthBuilder::<TestSchema>::new(config.clone()).store(crate::backend::store::<TestSchema>(config.clone(),database.clone())).plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new()).plugin(SsoPlugin::with_config(SsoConfig{disable_implicit_sign_up:mode=="no-signup",trust_email_verified:mode=="trusted-claims",saml_enable_single_logout:matches!(mode,"slo"|"signed-slo"|"signed-request-slo"),saml_want_logout_response_signed:mode=="signed-slo",saml_want_logout_request_signed:mode=="signed-request-slo",redirect_uri:(mode=="shared").then(||"/sso/callback".into()),domain_verification:mode=="domain",domain_verification_dns_servers:vec![dns],..Default::default()})).build().await
 }
 pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->AuthResult<Router> {
  let idp=oidc_peer::start().await;let config=config.clone().trusted_origin(&idp.base);let dns=super::sso_dns_fixture::start().await;
  let policy=validation_policy::Policy::default();
  let auths=Arc::new(std::collections::HashMap::from([
+ ("no-signup",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"no-signup",dns.address,&policy).await?)))),
  ("validation",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"validation",dns.address,&policy).await?)))),
  ("trusted-claims",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"trusted-claims",dns.address,&policy).await?)))),
  ("default",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"default",dns.address,&policy).await?)))),
@@ -25,7 +26,7 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
  ("slo",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"slo",dns.address,&policy).await?)))),
  ("domain",Arc::new(tokio::sync::Mutex::new(Arc::new(instance(&config,&database,"domain",dns.address,&policy).await?))))]));
  Ok(Router::new().route("/__test/server-api/sso",post(move|Json(input):Json<serde_json::Value>|{
- let mode=if input["mode"]=="validation" {"validation"}else if input["mode"]=="trusted-claims" {"trusted-claims"}else if input["mode"]=="signed-request-slo" {"signed-request-slo"}else if input["mode"]=="signed-slo" {"signed-slo"}else if input["mode"]=="domain" {"domain"}else if input["mode"]=="shared" {"shared"}else if input["mode"]=="slo" {"slo"}else{"default"};let auth=auths.get(mode).unwrap().clone();let dns=dns.clone();let idp=idp.clone();let config=config.clone();let database=database.clone();let policy=policy.clone();async move {
+ let mode=if input["mode"]=="no-signup" {"no-signup"}else if input["mode"]=="validation" {"validation"}else if input["mode"]=="trusted-claims" {"trusted-claims"}else if input["mode"]=="signed-request-slo" {"signed-request-slo"}else if input["mode"]=="signed-slo" {"signed-slo"}else if input["mode"]=="domain" {"domain"}else if input["mode"]=="shared" {"shared"}else if input["mode"]=="slo" {"slo"}else{"default"};let auth=auths.get(mode).unwrap().clone();let dns=dns.clone();let idp=idp.clone();let config=config.clone();let database=database.clone();let policy=policy.clone();async move {
  if input["action"]=="restart"{*auth.lock().await=Arc::new(instance(&config,&database,mode,dns.address,&policy).await.unwrap());return Json(serde_json::json!({"restarted":true})).into_response();}
  let auth=auth.lock().await.clone();
  if input["action"]=="validation-reset" {policy.events.lock().unwrap().clear();policy.deny_returning.store(false,std::sync::atomic::Ordering::SeqCst);return Json(serde_json::json!({"configured":true})).into_response();}
@@ -41,6 +42,11 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
  if input["action"]=="dns-records"{*dns.records.lock().unwrap()=serde_json::from_value(input["records"].clone()).unwrap();return Json(serde_json::json!({"configured":true})).into_response();}
  if input["action"]=="dns-queries"{return Json(dns.queries.lock().unwrap().clone()).into_response();}
 
+ if input["action"]=="user-row" {
+ use alibi::AuthUser as _;
+ let row=auth.store().get_user_by_email(input["email"].as_str().unwrap()).await.unwrap();
+ return Json(row.map(|row|serde_json::json!({"id":row.id(),"email":row.email()}))).into_response();
+ }
  if input["action"]=="row" {
  let row=auth.store().get_sso_provider(input["providerId"].as_str().unwrap()).await.unwrap();
  let mut row=serde_json::to_value(row).unwrap();if mode!="domain" {if let Some(object)=row.as_object_mut(){_=object.remove("domainVerified");}}

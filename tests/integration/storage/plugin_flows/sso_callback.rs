@@ -4,7 +4,7 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{SsoConfig, SsoPlugin};
 use alibi::{
     AuthAccount, AuthVerification,
-    store::{AccountStore, SsoProviderStore, VerificationStore},
+    store::{AccountStore, SsoProviderStore, UserStore, VerificationStore},
 };
 #[path = "../../../support/sso_oidc_peer.rs"]
 mod peer;
@@ -18,7 +18,8 @@ backend_tests!(
     sso_discovery_hydrates_registered_endpoints_and_completes_real_login,
     sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting,
     sso_trusted_oidc_email_verification_accepts_only_exact_true_claims,
-    sso_validation_receives_protocol_source_before_identity_writes
+    sso_validation_receives_protocol_source_before_identity_writes,
+    sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -675,6 +676,135 @@ async fn sso_validation_receives_protocol_source_before_identity_writes<B: Backe
                 .await?
                 .is_some()
         );
+    }
+    B::close(connection).await
+}
+
+async fn sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    let build = |disabled| {
+        AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config.clone()), &connection))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+            .plugin(super::auth_probe::fast_password())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(SsoPlugin::with_config(SsoConfig {
+                disable_implicit_sign_up: disabled,
+                ..Default::default()
+            }))
+            .build()
+    };
+    let allowed = build(false).await?;
+    let blocked = build(true).await?;
+    let owner = signup(&allowed, "sso-signup-policy-owner@example.test").await;
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    for saml in [false, true] {
+        let provider = if saml {
+            "signup-saml-provider"
+        } else {
+            "signup-oidc-provider"
+        };
+        let input = if saml {
+            json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"example.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true}})
+        } else {
+            json!({"providerId":provider,"issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base)}})
+        };
+        let registered = Box::pin(allowed.dispatch_endpoint(
+            SsoPlugin::register_sso_provider_endpoint(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(registered.status, 200);
+        for index in 0..4 {
+            let auth = if index == 0 { &allowed } else { &blocked };
+            let request_signup = index == 3;
+            let email = format!(
+                "signup-{saml}-{}@example.test",
+                if index <= 1 { 0 } else { index }
+            );
+            let subject = if saml {
+                email.clone()
+            } else {
+                format!("signup-{saml}-{}", if index <= 1 { 0 } else { index })
+            };
+            *idp.profile.lock().unwrap() = Some(
+                json!({"sub":subject,"email":email,"email_verified":true,"name":"SSO employee"}),
+            );
+            let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed"),"requestSignUp":request_signup}))?,EndpointOptions::default())).await?.into_response()?;
+            let endpoint = if saml {
+                SsoPlugin::acs_endpoint(
+                    provider,
+                    &super::saml_idp::grant(
+                        body(&started)["url"].as_str().unwrap(),
+                        &email,
+                        false,
+                    )?,
+                )?
+            } else {
+                let grant = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?
+                    .get(body(&started)["url"].as_str().unwrap())
+                    .send()
+                    .await?;
+                assert_eq!(grant.status(), 302);
+                let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+                let mut query = url
+                    .query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                _ = query.insert("requestSignUp".into(), "true".into());
+                SsoPlugin::callback_sso_endpoint(provider, &json!(query))?
+            };
+            let completed = Box::pin(auth.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+            let query = location
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::HashMap<_, _>>();
+            let denied = index == 2 || (saml && index == 3);
+            if denied {
+                assert_eq!(
+                    query.get("error").map(String::as_str),
+                    Some(if saml {
+                        "signup_disabled"
+                    } else {
+                        "signup disabled"
+                    })
+                );
+                assert_eq!(location.path(), if saml { "/complete" } else { "/failed" });
+                assert!(store.get_account(provider, &subject).await?.is_none());
+                assert!(store.get_user_by_email(&email).await?.is_none());
+            } else {
+                assert!(!query.contains_key("error"));
+                let session = call(
+                    auth,
+                    request("/get-session", None, &cookies(&completed)),
+                    200,
+                )
+                .await;
+                assert_eq!(body(&session)["user"]["email"], email);
+                assert!(store.get_account(provider, &subject).await?.is_some());
+            }
+        }
     }
     B::close(connection).await
 }

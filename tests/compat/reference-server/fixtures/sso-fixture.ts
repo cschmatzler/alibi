@@ -82,8 +82,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
       },
     },
   };
+  const noSignupOptions = {
+    ...options,
+    plugins: [username(), sso({ disableImplicitSignUp: true })],
+  };
   const instances = new Map([
     ["default", betterAuth(options)],
+    ["no-signup", betterAuth(noSignupOptions)],
     ["validation", betterAuth(validationOptions)],
     ["trusted-claims", betterAuth(trustedClaimsOptions)],
     ["domain", betterAuth(domainOptions)],
@@ -96,21 +101,23 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "validation"
-        ? "validation"
-        : input.mode === "trusted-claims"
-          ? "trusted-claims"
-          : input.mode === "signed-request-slo"
-            ? "signed-request-slo"
-            : input.mode === "signed-slo"
-              ? "signed-slo"
-              : input.mode === "domain"
-                ? "domain"
-                : input.mode === "shared"
-                  ? "shared"
-                  : input.mode === "slo"
-                    ? "slo"
-                    : "default";
+      input.mode === "no-signup"
+        ? "no-signup"
+        : input.mode === "validation"
+          ? "validation"
+          : input.mode === "trusted-claims"
+            ? "trusted-claims"
+            : input.mode === "signed-request-slo"
+              ? "signed-request-slo"
+              : input.mode === "signed-slo"
+                ? "signed-slo"
+                : input.mode === "domain"
+                  ? "domain"
+                  : input.mode === "shared"
+                    ? "shared"
+                    : input.mode === "slo"
+                      ? "slo"
+                      : "default";
     const auth = instances.get(mode)!;
     if (input.action === "validation-reset") {
       validationEvents.length = 0;
@@ -386,24 +393,36 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "validation"
-            ? validationOptions
-            : mode === "trusted-claims"
-              ? trustedClaimsOptions
-              : mode === "signed-request-slo"
-                ? signedRequestSloOptions
-                : mode === "signed-slo"
-                  ? signedSloOptions
-                  : mode === "domain"
-                    ? domainOptions
-                    : mode === "shared"
-                      ? sharedOptions
-                      : mode === "slo"
-                        ? sloOptions
-                        : options,
+          mode === "no-signup"
+            ? noSignupOptions
+            : mode === "validation"
+              ? validationOptions
+              : mode === "trusted-claims"
+                ? trustedClaimsOptions
+                : mode === "signed-request-slo"
+                  ? signedRequestSloOptions
+                  : mode === "signed-slo"
+                    ? signedSloOptions
+                    : mode === "domain"
+                      ? domainOptions
+                      : mode === "shared"
+                        ? sharedOptions
+                        : mode === "slo"
+                          ? sloOptions
+                          : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "user-row") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne({
+        model: "user",
+        where: [{ field: "email", value: input.email }],
+      });
+      return new Response(JSON.stringify(row ? { id: row.id, email: row.email } : null), {
         headers: { "content-type": "application/json" },
       });
     }

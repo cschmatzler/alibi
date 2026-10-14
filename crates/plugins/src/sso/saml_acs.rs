@@ -288,7 +288,7 @@ impl SsoPlugin {
             },
             &policy,
             &tokens,
-            false,
+            self.config.disable_implicit_sign_up,
             meta,
             &scoped,
         )
