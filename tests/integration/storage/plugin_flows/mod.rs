@@ -491,3 +491,7 @@ mod sso_signing_policy;
 
 #[path = "../../../support/sso_encryption_policy.rs"]
 mod sso_encryption_policy;
+
+mod sso_storage_mapping;
+#[path = "../../../support/sso_storage_schema.rs"]
+mod sso_storage_schema;

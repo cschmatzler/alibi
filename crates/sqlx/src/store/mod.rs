@@ -210,6 +210,20 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
             })
             .await?;
         }
+        if let Some(mapping) = &self.config.advanced.database.sso_provider {
+            let commands = mapping.migration_statements()?;
+            self.in_transaction(false, async move |tx| {
+                let exec = Exec::tx(tx);
+                if migrator::has_table(exec, "ssoProvider").await? {
+                    for command in commands {
+                        _ = exec.execute(Sql::with(exec.engine(), &command)).await?;
+                    }
+                }
+                Ok(())
+            })
+            .await?;
+        }
+
         Ok(())
     }
 }

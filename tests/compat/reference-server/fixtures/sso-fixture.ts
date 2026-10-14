@@ -1,3 +1,5 @@
+import { Database } from "bun:sqlite";
+
 import { sso } from "@better-auth/sso";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -345,6 +347,33 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   };
+  const storageDatabase = new Database(":memory:");
+  const storageOptions = {
+    ...options,
+    database: storageDatabase,
+    plugins: [
+      username(),
+      sso({
+        domainVerification: { enabled: true },
+        schema: {
+          ssoProvider: {
+            modelName: "application_sso_provider",
+            fields: {
+              issuer: "application_issuer",
+              domain: "application_domain",
+              providerId: "application_provider",
+              userId: "application_owner",
+              organizationId: "application_org",
+              oidcConfig: "application_oidc",
+              samlConfig: "application_saml",
+              domainVerified: "application_verified",
+            },
+          },
+        },
+      }),
+    ],
+  };
+  await (await getMigrations(storageOptions)).runMigrations();
   const globalModes = [
     "idp-global-relative-true",
     "idp-global-relative-false",
@@ -416,6 +445,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 ? { allowedDataEncryptionAlgorithms: [] }
                 : { allowedKeyEncryptionAlgorithms: [] };
   const instances = new Map([
+    ["storage-schema", betterAuth(storageOptions)],
     ...encryptionModes.map(
       (mode) =>
         [
@@ -527,6 +557,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     const mode = [
+      "storage-schema",
       ...encryptionModes,
       ...algorithmModes,
       ...globalModes,
@@ -586,6 +617,27 @@ export async function ssoFixture(base: BetterAuthOptions) {
         where: [{ field: "email", value: input.email }],
       });
       return new Response(JSON.stringify(user !== null), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "storage-state") {
+      const tables = storageDatabase
+        .query("SELECT name FROM sqlite_master WHERE type='table'")
+        .all() as any[];
+      const customTableExists = tables.some((table) => table.name === "application_sso_provider");
+      const defaultTableExists = tables.some((table) => table.name === "ssoProvider");
+      const rows = customTableExists
+        ? storageDatabase
+            .query(
+              "SELECT id,application_issuer AS issuer,application_domain AS domain,application_provider AS providerId,application_owner AS userId,application_org AS organizationId,application_oidc AS oidcConfig,application_saml AS samlConfig,application_verified AS domainVerified FROM application_sso_provider ORDER BY application_provider",
+            )
+            .all()
+            .map((row: any) => ({
+              ...row,
+              domainVerified: row.domainVerified == null ? null : Boolean(row.domainVerified),
+            }))
+        : [];
+      return new Response(JSON.stringify({ customTableExists, defaultTableExists, rows }), {
         headers: { "content-type": "application/json" },
       });
     }
@@ -995,23 +1047,25 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "no-signup"
-            ? noSignupOptions
-            : mode === "validation"
-              ? validationOptions
-              : mode === "trusted-claims"
-                ? trustedClaimsOptions
-                : mode === "signed-request-slo"
-                  ? signedRequestSloOptions
-                  : mode === "signed-slo"
-                    ? signedSloOptions
-                    : mode === "domain"
-                      ? domainOptions
-                      : mode === "shared"
-                        ? sharedOptions
-                        : mode === "slo"
-                          ? sloOptions
-                          : options,
+          mode === "storage-schema"
+            ? storageOptions
+            : mode === "no-signup"
+              ? noSignupOptions
+              : mode === "validation"
+                ? validationOptions
+                : mode === "trusted-claims"
+                  ? trustedClaimsOptions
+                  : mode === "signed-request-slo"
+                    ? signedRequestSloOptions
+                    : mode === "signed-slo"
+                      ? signedSloOptions
+                      : mode === "domain"
+                        ? domainOptions
+                        : mode === "shared"
+                          ? sharedOptions
+                          : mode === "slo"
+                            ? sloOptions
+                            : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {
