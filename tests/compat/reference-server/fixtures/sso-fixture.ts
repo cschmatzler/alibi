@@ -611,6 +611,9 @@ export async function ssoFixture(base: BetterAuthOptions) {
         asResponse: true,
       });
     }
+    if (input.action === "sign-out-api") {
+      return auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });
+    }
     if (input.action === "session") {
       return auth.api.getSession({ headers: new Headers(input.headers ?? {}), asResponse: true });
     }

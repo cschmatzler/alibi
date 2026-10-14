@@ -1,9 +1,22 @@
-//! Verified-domain organization assignment after actual core social callback completion.
+//! SSO lifecycle hooks around ordinary sign-out and social callback completion.
 use super::{
     AuthContext, AuthResult, AuthSchema, AuthUser, EndpointCall, EndpointResponse, SsoPlugin,
 };
 #[async_trait::async_trait]
 impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for SsoPlugin {
+    fn matches_before(&self, call: &EndpointCall, _: &AuthContext<S>) -> AuthResult<bool> {
+        Ok(call.path() == Some("/sign-out"))
+    }
+    async fn before(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        if self.config.saml_enable_single_logout {
+            self.clear_saml_signout_tracking(call, ctx).await?;
+        }
+        Ok(None)
+    }
     fn matches_after(
         &self,
         call: &EndpointCall,

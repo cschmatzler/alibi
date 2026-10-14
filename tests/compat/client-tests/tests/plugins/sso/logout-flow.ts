@@ -13,14 +13,28 @@ export async function samlLogoutFlow(
   complete: boolean,
   signed = false,
   rollover = false,
-  binding: "post" | "redirect" | "post-optional-signature" | "custom-sp" | "xml-idp" = "post",
+  binding:
+    | "post"
+    | "redirect"
+    | "post-optional-signature"
+    | "custom-sp"
+    | "xml-idp"
+    | "local-api"
+    | "local-http"
+    | "local-disabled" = "post",
 ) {
+  const providerId =
+    binding === "local-http"
+      ? "logout-http-provider"
+      : binding === "local-disabled"
+        ? "logout-disabled-provider"
+        : "logout-provider";
   const actor = ctx.actor();
   const control = (input: Record<string, unknown>) =>
     actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ...input, mode: signed ? "signed-slo" : "slo" }),
+      body: JSON.stringify({ mode: signed ? "signed-slo" : "slo", ...input }),
       redirect: "manual",
     });
   const pairs = (response: Response) =>
@@ -43,12 +57,12 @@ export async function samlLogoutFlow(
   ).text();
   const created = await control({
     body: {
-      providerId: "logout-provider",
+      providerId,
       issuer: "https://sp.example.test/entity",
       domain: "company.test",
       samlConfig: {
         ...(binding === "custom-sp"
-          ? { spMetadata: customSPMetadata(ctx.baseURL, "logout-provider") }
+          ? { spMetadata: customSPMetadata(ctx.baseURL, providerId) }
           : {}),
         entryPoint:
           binding === "xml-idp"
@@ -85,7 +99,7 @@ export async function samlLogoutFlow(
   expect(created.status).toBe(200);
   const started = await control({
     action: "sign-in",
-    body: { providerId: "logout-provider", callbackURL: `${ctx.baseURL}/complete` },
+    body: { providerId, callbackURL: `${ctx.baseURL}/complete` },
   });
   expect(started.status).toBe(200);
   const email = ctx.uniqueEmail("saml-logout-user");
@@ -98,7 +112,7 @@ export async function samlLogoutFlow(
   ).json()) as any;
   const completed = await control({
     action: "acs",
-    params: { providerId: "logout-provider" },
+    params: { providerId },
     body: grant,
     headers: {},
   });
@@ -110,7 +124,7 @@ export async function samlLogoutFlow(
   ).json()) as any;
   expect(authenticated.user.email).toBe(email);
   const session = authenticated.session;
-  const key = `saml-session:logout-provider:${email}`;
+  const key = `saml-session:${providerId}:${email}`;
   const lookup = `saml-session-by-id:${session.id}`;
   const row = (await (await control({ action: "proof", identifier: key })).json()) as any;
   expect(row).not.toBe(null);
@@ -122,10 +136,35 @@ export async function samlLogoutFlow(
   expect(
     ((await (await control({ action: "proof", identifier: lookup })).json()) as any).value,
   ).toBe(key);
+  if (["local-api", "local-http", "local-disabled"].includes(binding)) {
+    const signedOut = await control({
+      action: binding === "local-http" ? "sign-out-http" : "sign-out-api",
+      ...(binding === "local-disabled" ? { mode: "default" } : {}),
+      headers: { cookie, ...(binding === "local-http" ? { origin: ctx.baseURL } : {}) },
+      body: {},
+    });
+    expect(signedOut.status).toBe(200);
+    expect(await signedOut.json()).toEqual({ success: true });
+    const tracking = await (await control({ action: "proof", identifier: key })).json();
+    const reverse = (await (await control({ action: "proof", identifier: lookup })).json()) as any;
+    if (binding === "local-disabled") {
+      expect(tracking).toEqual(row);
+      expect(reverse.value).toBe(key);
+    } else {
+      expect(tracking).toBe(null);
+      expect(reverse).toBe(null);
+    }
+    expect(await (await control({ action: "session", headers: { cookie } })).json()).toBe(null);
+    const retained = (await (
+      await control({ action: "session", headers: { cookie: pairs(owner) } })
+    ).json()) as any;
+    expect(retained.user.email).toBe(((await owner.clone().json()) as any).user.email);
+    return { binding, retired: true };
+  }
   const before = Date.now();
   const output = await control({
     action: "initiate-slo",
-    params: { providerId: "logout-provider" },
+    params: { providerId },
     body: { callbackURL: `${ctx.baseURL}/logged-out` },
     headers: { cookie },
   });
@@ -186,7 +225,7 @@ export async function samlLogoutFlow(
       for (const rejectedResponse of [response, await sign(true)]) {
         const rejected = await control({
           action: "slo",
-          params: { providerId: "logout-provider" },
+          params: { providerId },
           body: { SAMLResponse: rejectedResponse },
           headers: {},
         });
@@ -201,7 +240,7 @@ export async function samlLogoutFlow(
       const rejectedRedirect = await control({
         action: "slo-http",
         method: "GET",
-        params: { providerId: "logout-provider" },
+        params: { providerId },
         query: {
           SAMLResponse: deflateRawSync(Buffer.from(response, "base64")).toString("base64"),
           SigAlg: "http://www.w3.org/2001/04/xmldsig-more#rsa-sha256",
@@ -228,7 +267,7 @@ export async function samlLogoutFlow(
         ? {
             action: "slo-http",
             method: "GET",
-            params: { providerId: "logout-provider" },
+            params: { providerId },
             query: {
               SAMLResponse: deflateRawSync(responseXml).toString("base64"),
               RelayState: "https://attacker.example/steal",
@@ -239,7 +278,7 @@ export async function samlLogoutFlow(
           }
         : {
             action: "slo",
-            params: { providerId: "logout-provider" },
+            params: { providerId },
             body: { SAMLResponse: response, RelayState: "https://attacker.example/steal" },
             headers: {},
           };
