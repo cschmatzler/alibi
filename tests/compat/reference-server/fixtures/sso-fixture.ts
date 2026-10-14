@@ -573,6 +573,26 @@ export async function ssoFixture(base: BetterAuthOptions) {
 
   const handle = async (request: Request) => {
     const input = await request.json();
+    if (input.action === "field-collision") {
+      let error: string | null = null;
+      try {
+        sso({
+          schema: {
+            ssoProvider: {
+              fields: input.mapped ? { domain: "application_domain" } : undefined,
+              additionalFields: {
+                [input.name]: { type: "string", required: false, fieldName: input.physical },
+              },
+            },
+          },
+        });
+      } catch (caught) {
+        error = (caught as Error).message;
+      }
+      return new Response(JSON.stringify({ accepted: error === null, error }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "limit-policy") {
       providerLimit = input.limit;
       limitEvents.length = 0;

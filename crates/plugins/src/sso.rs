@@ -482,6 +482,9 @@ impl<S: AuthSchema> AuthPlugin<S> for SsoPlugin {
     fn name(&self) -> &'static str {
         "sso"
     }
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        alibi_core::store::validate_sso_fields(&ctx.config.advanced.database)
+    }
     fn origin_check_skip_paths(&self) -> Vec<&'static str> {
         vec!["/sso/saml2/sp/acs", "/sso/saml2/sp/slo"]
     }

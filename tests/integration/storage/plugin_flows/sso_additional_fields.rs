@@ -5,7 +5,8 @@ use alibi::plugins::{SessionManagementPlugin, SsoPlugin};
 use alibi::store::{SchemaMigrator, SsoProviderStore};
 backend_tests!(
     sso_additional_fields_validate_persist_and_filter_provider_operations,
-    sso_fractional_provider_fields_survive_registration_and_update
+    sso_fractional_provider_fields_survive_registration_and_update,
+    sso_provider_field_collisions_fail_application_initialization
 );
 postgres_tests!(sso_additional_fields_validate_persist_and_filter_provider_operations);
 async fn sso_additional_fields_validate_persist_and_filter_provider_operations<B: Backend>(
@@ -156,6 +157,103 @@ async fn sso_fractional_provider_fields_survive_registration_and_update<B: Backe
         .await?
         .into_response()?;
         assert_eq!(body(&read)["tier"], value);
+    }
+    Ok(())
+}
+
+async fn sso_provider_field_collisions_fail_application_initialization<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for name in [
+        "id",
+        "issuer",
+        "domain",
+        "providerId",
+        "userId",
+        "organizationId",
+        "oidcConfig",
+        "samlConfig",
+        "domainVerified",
+        "type",
+        "redirectURI",
+        "spMetadataUrl",
+        "domainVerificationToken",
+        "custom",
+    ] {
+        let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+        let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"string"}));
+        if name == "custom" {
+            field.field_name = Some("domain".into());
+        }
+        _ = config
+            .advanced
+            .database
+            .sso_provider_fields
+            .0
+            .insert(name.into(), field);
+        let result = AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .plugin(SsoPlugin::new())
+            .build()
+            .await;
+        let message = match result {
+            Err(alibi::AuthError::Config(message)) => message,
+            Err(error) => return Err(error.into()),
+            Ok(_) => panic!("SSO accepted colliding field {name}"),
+        };
+        let expected = if name == "custom" {
+            "ssoProvider additional field \"custom\" maps to built-in field \"domain\"".to_owned()
+        } else if [
+            "type",
+            "redirectURI",
+            "spMetadataUrl",
+            "domainVerificationToken",
+        ]
+        .contains(&name)
+        {
+            format!(
+                "ssoProvider additional field \"{name}\" conflicts with a returned provider field"
+            )
+        } else {
+            format!("ssoProvider additional field \"{name}\" conflicts with a built-in field")
+        };
+        assert_eq!(message, expected);
+    }
+    for (physical, valid) in [("application_domain", false), ("domain", true)] {
+        let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+        config.advanced.database.sso_provider = Some(alibi::config::SsoProviderDatabaseConfig {
+            columns: [("domain".into(), "application_domain".into())]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        });
+        let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"string"}));
+        field.field_name = Some(physical.into());
+        _ = config
+            .advanced
+            .database
+            .sso_provider_fields
+            .0
+            .insert("custom".into(), field);
+        let result = AuthBuilder::<B::Schema>::new(config.clone())
+            .store(B::store(Arc::new(config), &connection))
+            .plugin(SsoPlugin::new())
+            .build()
+            .await;
+        if valid {
+            assert!(result.is_ok());
+        } else {
+            let message = match result {
+                Err(alibi::AuthError::Config(message)) => message,
+                Err(error) => return Err(error.into()),
+                Ok(_) => panic!("SSO accepted mapped collision"),
+            };
+            assert_eq!(
+                message,
+                "ssoProvider additional field \"custom\" maps to built-in field \"application_domain\""
+            );
+        }
     }
     Ok(())
 }
