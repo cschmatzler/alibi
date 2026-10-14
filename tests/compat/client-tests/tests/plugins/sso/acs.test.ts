@@ -11,6 +11,9 @@ for (const mode of [
   "encrypted-key",
   "encrypted-response",
   "encrypted-outer-only",
+  "encrypted-aes-128-gcm",
+  "encrypted-aes-128-cbc",
+  "encrypted-aes-256-cbc",
   "encrypted-missing-key",
   "encrypted-wrong-key",
   "encrypted-wrong-pass",
@@ -55,7 +58,9 @@ for (const mode of [
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
       const providerId =
-        mode === "encrypted-response" || mode === "encrypted-outer-only"
+        mode === "encrypted-response" ||
+        mode === "encrypted-outer-only" ||
+        mode.startsWith("encrypted-aes-")
           ? `${mode}-acs-provider`
           : keyFailure
             ? `${mode}-acs-provider`
@@ -150,7 +155,12 @@ for (const mode of [
           await control({ action: "saml-grant", authorization, email, wrongKey })
         ).json()) as any;
         if (encrypted) {
-          grant = encryptSamlGrant(grant, cert, mode === "encrypted-outer-only");
+          grant = encryptSamlGrant(
+            grant,
+            cert,
+            mode === "encrypted-outer-only",
+            mode.startsWith("encrypted-aes-") ? mode.slice("encrypted-".length) : "aes-256-gcm",
+          );
           if (mode === "encrypted-response" || mode === "encrypted-outer-only") {
             const signed = await control({
               action: "sign-saml-logout",

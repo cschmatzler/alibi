@@ -3,6 +3,7 @@ use base64::Engine as _;
 pub(crate) fn encrypt_grant_with_unsigned_assertion(
     grant: &serde_json::Value,
     unsigned_assertion: bool,
+    algorithm: &str,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     use bergshamra::crypto::AlgorithmRegistry;
     use rsa::rand_core::{OsRng, RngCore};
@@ -51,10 +52,9 @@ pub(crate) fn encrypt_grant_with_unsigned_assertion(
             .ok_or("Signature range missing")?;
         plaintext.replace_range(range, "");
     }
-    let mut secret = [0u8; 32];
+    let mut secret = vec![0u8; if algorithm.contains("aes128") { 16 } else { 32 }];
     OsRng.fill_bytes(&mut secret);
-    let cipher = AlgorithmRegistry::cipher("http://www.w3.org/2009/xmlenc11#aes256-gcm")?
-        .encrypt(&secret, plaintext.as_bytes())?;
+    let cipher = AlgorithmRegistry::cipher(algorithm)?.encrypt(&secret, plaintext.as_bytes())?;
     let recipient = bergshamra::keys::loader::load_x509_cert_pem(include_bytes!(
         "../compat/fixtures/salesforce-transport/leaf.pem"
     ))?;
@@ -67,7 +67,7 @@ pub(crate) fn encrypt_grant_with_unsigned_assertion(
                 &secret,
             )?;
     let envelope = format!(
-        r#"<saml:EncryptedAssertion><xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#" Type="http://www.w3.org/2001/04/xmlenc#Element"><xenc:EncryptionMethod Algorithm="http://www.w3.org/2009/xmlenc11#aes256-gcm"/><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><xenc:EncryptedKey><xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"/><xenc:CipherData><xenc:CipherValue>{}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData><xenc:CipherValue>{}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml:EncryptedAssertion>"#,
+        r#"<saml:EncryptedAssertion><xenc:EncryptedData xmlns:xenc="http://www.w3.org/2001/04/xmlenc#" Type="http://www.w3.org/2001/04/xmlenc#Element"><xenc:EncryptionMethod Algorithm="{algorithm}"/><ds:KeyInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#"><xenc:EncryptedKey><xenc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"/><xenc:CipherData><xenc:CipherValue>{}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData><xenc:CipherValue>{}</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml:EncryptedAssertion>"#,
         base64::engine::general_purpose::STANDARD.encode(wrapped),
         base64::engine::general_purpose::STANDARD.encode(cipher)
     );
