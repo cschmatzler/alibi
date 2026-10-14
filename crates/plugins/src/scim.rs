@@ -108,6 +108,12 @@ impl ScimPlugin {
         self.connections = connections;
         self
     }
+    /// Replace all mutable attributes of a connection-owned canonical Group.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn replace_group_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "replaceSCIMGroup").with_params(&json!({"groupId":id}))
+    }
     /// Delete a connection-owned canonical SCIM Group.
     /// # Errors
     /// Returns an error if parameters cannot be serialized.
@@ -257,7 +263,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         // SCIM emits protocol-specific admission errors in its request handler.
-        if route.path == "/scim/v2/Groups" {
+        if route.path == "/scim/v2/Groups"
+            || (route.path.starts_with("/scim/v2/Groups/") && route.method == HttpMethod::Put)
+        {
             Vec::new()
         } else {
             vec!["application/json"]
@@ -266,6 +274,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
+            AuthRoute::put("/scim/v2/Groups/{groupId}", "replaceSCIMGroup"),
             AuthRoute::delete("/scim/v2/Groups/{groupId}", "deleteSCIMGroup"),
             AuthRoute::get("/scim/v2/Users", "listSCIMUsers"),
             AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
@@ -286,6 +295,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "replaceSCIMGroup",
+                "replaceSCIMGroup",
+                Some("/scim/v2/Groups/:groupId"),
+                HttpMethod::Put,
+            ),
             crate::endpoint::definition(
                 "deleteSCIMGroup",
                 "deleteSCIMGroup",
@@ -454,6 +469,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "replaceSCIMGroup" {
+            return self.replace_group(call, ctx).await;
+        }
         if call.operation_id() == "deleteSCIMGroup" {
             return self.delete_group(call, ctx).await;
         }
@@ -532,6 +550,22 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Put
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::put("/scim/v2/Groups/{groupId}", "replaceSCIMGroup"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(
+                json!({"groupId":id}),
+            ));
+            let response = match resources::mutation_request_error(req, &call) {
+                Some(response) => response,
+                None => self.replace_group(&call, ctx).await?,
+            };
+            return Ok(Some(resources::to_http_response(&response)?));
+        }
         if req.method() == &HttpMethod::Delete
             && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
         {

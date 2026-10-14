@@ -141,6 +141,27 @@ export async function scimFixture(base: BetterAuthOptions) {
             .get(),
         );
       }
+      if (query.get("operation") === "replaceSCIMGroup") {
+        const input = (await request.json()) as any;
+        return auth.api.replaceSCIMGroup({
+          params: input.params,
+          body: input.body,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "group-replace-members") {
+        const input = (await request.json()) as any;
+        return fixtureJson(
+          options.database
+            .query(
+              "SELECT id,scimUserId FROM scimGroupMember WHERE connectionId='conn-a' AND groupId=? ORDER BY createdAt ASC",
+            )
+            .all(input.id),
+        );
+      }
       if (query.get("operation") === "deleteSCIMGroup") {
         const input = (await request.json()) as any;
         const parameters = {

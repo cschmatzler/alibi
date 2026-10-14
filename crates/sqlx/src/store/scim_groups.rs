@@ -13,14 +13,187 @@ use alibi_core::{
     store::{CreateScimGroup, ScimGroupRecord, ScimProjectionPreparedUser},
 };
 impl<S: AuthSchema> SqlxStore<S> {
-    pub(super) async fn delete_scim_group_with_exec(
+    pub(super) async fn replace_scim_group_with_exec(
+        &self,
+        exec: Exec<'_>,
+        id: &str,
+        data: alibi_core::store::ReplaceScimGroup,
+        roles: bool,
+    ) -> AuthResult<(ScimGroupRecord, Vec<ScimProjectionPreparedUser>)> {
+        use chrono::SubsecRound;
+        let current = self
+            .lock_scim_group_with_exec(exec, id, &data.connection_id, &data.provisioning_domain_id)
+            .await?;
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        self.assert_scim_group_keys_with_exec(
+            exec,
+            &data.connection_id,
+            &data.display_name_key,
+            data.external_id_key.as_deref(),
+            Some(id),
+        )
+        .await?;
+        let mut sql = model::select_model::<member::Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare(
+            "scimGroupMember",
+            "connectionId",
+            " = ",
+            data.connection_id.clone(),
+        );
+        sql.push(" AND ");
+        sql.compare("scimGroupMember", "groupId", " = ", id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        let existing = exec.fetch_all::<member::Model>(sql).await?;
+        let mut affected = data.member_ids.clone();
+        for membership in &existing {
+            if !affected.contains(&membership.scim_user_id) {
+                affected.push(membership.scim_user_id.clone());
+            }
+        }
+        _ = self
+            .scim_projection_user_ids_with_exec(exec, &data.provisioning_domain_id, &affected, true)
+            .await?;
+        if !data.member_ids.is_empty() {
+            let mut sql = model::select_model::<user::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimUser",
+                "connectionId",
+                " = ",
+                data.connection_id.clone(),
+            );
+            sql.push(" AND ");
+            sql.column("scimUser", "id");
+            sql.push(" IN ");
+            sql.bind_list(data.member_ids.iter().cloned());
+            sql.push(" LIMIT ");
+            sql.bind(self.find_many_limit());
+            if exec.fetch_all::<user::Model>(sql).await?.len() != data.member_ids.len() {
+                return Err(AuthError::Api {
+                    status: 400,
+                    code: None,
+                    message: "One or more Group members are invalid".into(),
+                });
+            }
+        }
+        let removed = existing
+            .iter()
+            .filter(|member| !data.member_ids.contains(&member.scim_user_id))
+            .map(|member| member.scim_user_id.clone())
+            .collect::<Vec<_>>();
+        if !removed.is_empty() {
+            let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+            sql.ident("scimGroupMember");
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimGroupMember",
+                "connectionId",
+                " = ",
+                data.connection_id.clone(),
+            );
+            sql.push(" AND ");
+            sql.compare("scimGroupMember", "groupId", " = ", id);
+            sql.push(" AND ");
+            sql.column("scimGroupMember", "scimUserId");
+            sql.push(" IN ");
+            sql.bind_list(removed);
+            _ = exec.execute(sql).await?;
+        }
+        for member_id in &data.member_ids {
+            if existing
+                .iter()
+                .any(|member| member.scim_user_id == *member_id)
+            {
+                continue;
+            }
+            let mut row = ActiveRow::new();
+            row.set(
+                "id",
+                self.generated_id(exec, "scimGroupMember", "scimGroupMember", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            row.set("connectionId", data.connection_id.clone());
+            row.set("groupId", id.to_owned());
+            row.set("scimUserId", member_id.clone());
+            row.set(
+                "membershipKey",
+                alibi_core::store::scim_group_membership_key(&data.connection_id, id, member_id)?,
+            );
+            row.set("createdAt", now);
+            _ = model::insert::<member::Model>(exec, &row).await?;
+        }
+        let mut sql = Sql::with(exec.engine(), "UPDATE ");
+        sql.ident("scimGroup");
+        sql.push(" SET ");
+        sql.ident("displayName");
+        sql.push(" = ");
+        sql.bind(data.display_name.clone());
+        sql.push(", ");
+        sql.ident("displayNameKey");
+        sql.push(" = ");
+        sql.bind(data.display_name_key);
+        sql.push(", ");
+        sql.ident("externalId");
+        sql.push(" = ");
+        sql.bind(data.external_id.clone());
+        sql.push(", ");
+        sql.ident("externalIdKey");
+        sql.push(" = ");
+        sql.bind(data.external_id_key);
+        sql.push(", ");
+        sql.ident("updatedAt");
+        sql.push(" = ");
+        sql.bind(now);
+        sql.push(" WHERE ");
+        sql.compare("scimGroup", "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare(
+            "scimGroup",
+            "connectionId",
+            " = ",
+            data.connection_id.clone(),
+        );
+        model::returning::<group::Model>(&mut sql);
+        let updated = exec
+            .fetch_optional::<group::Model>(sql)
+            .await?
+            .ok_or_else(|| AuthError::Api {
+                status: 404,
+                code: None,
+                message: "SCIM Group not found".into(),
+            })?;
+        let states = self
+            .prepare_scim_projection_after_lock_with_exec(
+                exec,
+                &data.provisioning_domain_id,
+                &affected,
+                roles,
+                true,
+            )
+            .await?;
+        Ok((
+            ScimGroupRecord {
+                id: updated.id,
+                connection_id: updated.connection_id,
+                provisioning_domain_id: updated.provisioning_domain_id,
+                display_name: updated.display_name,
+                external_id: updated.external_id,
+                created_at: current.created_at,
+                updated_at: updated.updated_at,
+            },
+            states,
+        ))
+    }
+    async fn lock_scim_group_with_exec(
         &self,
         exec: Exec<'_>,
         id: &str,
         connection: &str,
         domain: &str,
-        roles: bool,
-    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+    ) -> AuthResult<group::Model> {
         let mut sql = model::select_model::<group::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimGroup", "id", " = ", id);
@@ -60,6 +233,53 @@ impl<S: AuthSchema> SqlxStore<S> {
                 "The SCIM Group changed concurrently; retry the request.",
             ));
         }
+        Ok(current)
+    }
+    async fn assert_scim_group_keys_with_exec(
+        &self,
+        exec: Exec<'_>,
+        connection: &str,
+        name_key: &str,
+        external_key: Option<&str>,
+        exclude: Option<&str>,
+    ) -> AuthResult<()> {
+        for (field, key, label) in [
+            ("displayNameKey", Some(name_key), "displayName"),
+            ("externalIdKey", external_key, "externalId"),
+        ] {
+            if let Some(key) = key {
+                let mut sql = model::select_model::<group::Model>(exec);
+                sql.push(" WHERE ");
+                sql.compare("scimGroup", "connectionId", " = ", connection.to_owned());
+                sql.push(" AND ");
+                sql.compare("scimGroup", field, " = ", key);
+                model::limit_one(&mut sql);
+                if exec
+                    .fetch_optional::<group::Model>(sql)
+                    .await?
+                    .is_some_and(|row| Some(row.id.as_str()) != exclude)
+                {
+                    return Err(AuthError::Api {
+                        status: 409,
+                        code: None,
+                        message: format!("SCIM Group {label} already exists"),
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+    pub(super) async fn delete_scim_group_with_exec(
+        &self,
+        exec: Exec<'_>,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        _ = self
+            .lock_scim_group_with_exec(exec, id, connection, domain)
+            .await?;
         let mut sql = model::select_model::<member::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimGroupMember", "connectionId", " = ", connection);
@@ -99,39 +319,14 @@ impl<S: AuthSchema> SqlxStore<S> {
         data: CreateScimGroup,
         roles: bool,
     ) -> AuthResult<(ScimGroupRecord, Vec<ScimProjectionPreparedUser>)> {
-        for (field, key, label) in [
-            (
-                "displayNameKey",
-                Some(data.display_name_key.as_str()),
-                "displayName",
-            ),
-            (
-                "externalIdKey",
-                data.external_id_key.as_deref(),
-                "externalId",
-            ),
-        ] {
-            if let Some(key) = key {
-                let mut sql = model::select_model::<group::Model>(exec);
-                sql.push(" WHERE ");
-                sql.compare(
-                    "scimGroup",
-                    "connectionId",
-                    " = ",
-                    data.connection_id.clone(),
-                );
-                sql.push(" AND ");
-                sql.compare("scimGroup", field, " = ", key);
-                model::limit_one(&mut sql);
-                if exec.fetch_optional::<group::Model>(sql).await?.is_some() {
-                    return Err(AuthError::Api {
-                        status: 409,
-                        code: None,
-                        message: format!("SCIM Group {label} already exists"),
-                    });
-                }
-            }
-        }
+        self.assert_scim_group_keys_with_exec(
+            exec,
+            &data.connection_id,
+            &data.display_name_key,
+            data.external_id_key.as_deref(),
+            None,
+        )
+        .await?;
         let id = self
             .generated_id(exec, "scimGroup", "scimGroup", "id")
             .await?

@@ -139,6 +139,17 @@ pub struct CreateScimGroup {
     pub member_ids: Vec<String>,
     pub created_at: DateTime<Utc>,
 }
+/// Complete replacement of the mutable fields of a canonical Group.
+#[derive(Clone)]
+pub struct ReplaceScimGroup {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub display_name: String,
+    pub display_name_key: String,
+    pub external_id: Option<String>,
+    pub external_id_key: Option<String>,
+    pub member_ids: Vec<String>,
+}
 /// Canonical connection-owned group metadata.
 pub struct ScimGroupRecord {
     pub id: String,

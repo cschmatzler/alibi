@@ -476,6 +476,164 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn replace_group<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (name, external, members) = match group_creation_body(call.body()) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let projection = match Projection::parse(call.query(), GROUP_SCHEMA) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("groupId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(group) = ctx.database.get_scim_group(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM Group not found", None));
+        };
+        if group.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        if members
+            .iter()
+            .any(|value| alibi_core::utils::javascript::trim(value).is_empty())
+        {
+            return Ok(error(
+                400,
+                "Group members must reference a SCIM User",
+                Some("invalidValue"),
+            ));
+        }
+        let name_key = scoped_key(&[
+            "scim-group-display-name",
+            &connection.id,
+            &name.to_lowercase(),
+        ])?;
+        let external_key = external
+            .as_ref()
+            .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
+            .transpose()?;
+        for (field, key, label) in [
+            ("displayNameKey", Some(name_key.clone()), "displayName"),
+            ("externalIdKey", external_key.clone(), "externalId"),
+        ] {
+            if let Some(key) = key
+                && ctx
+                    .database
+                    .list_scim_groups(&connection.id, &[(field.into(), key)], 0, 1)
+                    .await?
+                    .groups
+                    .first()
+                    .is_some_and(|group| group.id != id)
+            {
+                return Ok(error(
+                    409,
+                    &format!("SCIM Group {label} already exists"),
+                    Some("uniqueness"),
+                ));
+            }
+        }
+        let data = alibi_core::store::ReplaceScimGroup {
+            connection_id: connection.id.clone(),
+            provisioning_domain_id: connection.domain.clone(),
+            display_name: name,
+            display_name_key: name_key,
+            external_id: external,
+            external_id_key: external_key,
+            member_ids: members,
+        };
+        let configured = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
+        for attempt in 0..3 {
+            let id = id.to_owned();
+            let domain = connection.domain.clone();
+            let cid = connection.id.clone();
+            let key = scoped_key(&["scim-connection", &cid])?;
+            let configured = configured.clone();
+            let data = data.clone();
+            let result =
+                alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
+                    Box::pin(async move {
+                        let (group, states) = database.replace_scim_group(&id, data, roles).await?;
+                        reconcile_group_states(database, &domain, states, configured).await?;
+                        database.fence_scim_connection(&cid, &key).await?;
+                        Ok(group)
+                    })
+                })
+                .await;
+            match result {
+                Ok(group) => {
+                    let base = format!(
+                        "{}{}",
+                        ctx.config.base_url.trim_end_matches('/'),
+                        ctx.config.base_path.trim_end_matches('/')
+                    );
+                    let location = resource_url(&base, "Groups", &group.id)?;
+                    let value = Self::render_group(ctx, group, &projection).await?;
+                    return Ok(EndpointResponse::json(&value)?
+                        .with_header("location", location)
+                        .with_header(MARKER, "1"));
+                }
+                Err(AuthError::Internal(message))
+                    if matches!(
+                        message.as_str(),
+                        "The SCIM Group changed concurrently; retry the request."
+                            | "The SCIM projection subject changed concurrently; retry the request."
+                    ) =>
+                {
+                    if attempt == 2 {
+                        return Ok(error(
+                            409,
+                            "The SCIM Group changed concurrently; retry the request",
+                            None,
+                        ));
+                    }
+                }
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => {
+                    return Ok(error(
+                        status,
+                        &message,
+                        if status == 409 && message.ends_with("already exists") {
+                            Some("uniqueness")
+                        } else if status == 400 {
+                            Some("invalidValue")
+                        } else {
+                            None
+                        },
+                    ));
+                }
+                Err(AuthError::CallbackFailure(cause)) => {
+                    let detail = match cause.as_ref() {
+                        AuthError::Api { message, .. } => message.as_str(),
+                        _ => "SCIM projection reconciliation failed",
+                    };
+                    return Ok(error(500, detail, None));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(AuthError::internal(
+            "SCIM mutation retry loop completed without a result",
+        ))
+    }
     pub(super) async fn delete_group<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -1290,4 +1448,46 @@ async fn reconcile_group_states<S: AuthSchema>(
         }
     }
     Ok(())
+}
+
+pub(super) fn mutation_request_error(
+    req: &alibi_core::AuthRequest,
+    call: &EndpointCall,
+) -> Option<EndpointResponse> {
+    let media = req
+        .headers
+        .get("content-type")
+        .and_then(|value| value.split(';').next())
+        .map(str::trim);
+    if !media.is_some_and(|value| {
+        value.eq_ignore_ascii_case("application/json")
+            || value.eq_ignore_ascii_case("application/scim+json")
+    }) {
+        Some(error(
+            415,
+            "SCIM requests must use application/scim+json or application/json",
+            None,
+        ))
+    } else if call.body().is_none() {
+        Some(error(
+            400,
+            "SCIM request body must contain valid JSON",
+            Some("invalidSyntax"),
+        ))
+    } else {
+        None
+    }
+}
+pub(super) fn to_http_response(
+    response: &EndpointResponse,
+) -> AuthResult<alibi_core::AuthResponse> {
+    let mut response = response.to_response()?;
+    let mut headers = alibi_core::Headers::new();
+    for (name, value) in response.headers {
+        if !name.eq_ignore_ascii_case(MARKER) {
+            headers.append(name, value);
+        }
+    }
+    response.headers = headers;
+    Ok(response.with_header("content-type", "application/scim+json"))
 }

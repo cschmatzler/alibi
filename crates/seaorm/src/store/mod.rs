@@ -366,6 +366,19 @@ where
             .map_err(map_db_err)?;
         Ok(())
     }
+    async fn replace_scim_group(
+        &self,
+        id: &str,
+        data: alibi_core::store::ReplaceScimGroup,
+        roles: bool,
+    ) -> AuthResult<(
+        alibi_core::store::ScimGroupRecord,
+        Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    )> {
+        self.store
+            .replace_scim_group_with_connection(self.tx, id, data, roles)
+            .await
+    }
     async fn delete_scim_group(
         &self,
         id: &str,

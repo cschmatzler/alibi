@@ -182,6 +182,17 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn replace_scim_group(
+        &self,
+        id: &str,
+        data: crate::store::ReplaceScimGroup,
+        roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimGroupRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        self.inner.replace_scim_group(id, data, roles).await
+    }
     async fn delete_scim_group(
         &self,
         id: &str,
