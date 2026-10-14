@@ -5173,6 +5173,10 @@ export function compareValues(
 
       if (
         urlKeys.has(key) ||
+        (key === "$ref" &&
+          /\.members\.\d+\.\$ref$/.test(path) &&
+          /^https?:\/\//.test(a) &&
+          /^https?:\/\//.test(b)) ||
         (urlQueryContext === "query" &&
           key === "iss" &&
           /^https?:\/\//.test(a) &&

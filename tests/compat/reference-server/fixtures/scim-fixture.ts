@@ -10,7 +10,26 @@ export async function scimFixture(base: BetterAuthOptions) {
     basePath: "/__test/profiles/scim/api/auth",
     plugins: [
       scim({
-        connections: [],
+        connections: [
+          {
+            id: "conn-a",
+            provisioningDomainId: "tenant-a",
+            credentials: [
+              { id: "reader", token: "group-reader" },
+              { id: "limited", token: "users-reader", scopes: ["scim.users.read"] },
+              {
+                id: "expired",
+                token: "expired-reader",
+                expiresAt: new Date("2000-01-01T00:00:00Z"),
+              },
+            ],
+          },
+          {
+            id: "conn-b",
+            provisioningDomainId: "tenant-a",
+            credentials: [{ id: "reader", token: "other-reader" }],
+          },
+        ],
         authentication: { verifyBearerToken: async () => null },
         managedConnections: {
           credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
@@ -88,6 +107,85 @@ export async function scimFixture(base: BetterAuthOptions) {
         ];
         auth = betterAuth(options);
         return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "oversize-group-read") {
+        options.database.exec(
+          "WITH RECURSIVE seq(n) AS (VALUES(1) UNION ALL SELECT n+1 FROM seq WHERE n<1001) INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) SELECT 'cap-'||CAST(n AS TEXT),'conn-a','staff','member-a','cap-'||CAST(n AS TEXT),'2026-01-02T03:04:05.000Z' FROM seq",
+        );
+        return new Response(JSON.stringify({ oversized: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "drift-read-binding") {
+        options.database.exec(
+          "UPDATE scimConnectionBinding SET provisioningDomainId='drifted-domain' WHERE connectionId='conn-a'",
+        );
+        return new Response(JSON.stringify({ changed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "retire-read-binding") {
+        options.database.exec(
+          "UPDATE scimConnectionBinding SET provisioningDomainId='tenant-a',decommissionStatus='complete' WHERE connectionId='conn-a'",
+        );
+        return new Response(JSON.stringify({ retired: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "getSCIMGroup") {
+        const input = (await request.json()) as any;
+        return auth.api.getSCIMGroup({
+          params: input.params,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "seed-group-read") {
+        const owner = await auth.api.signUpEmail({
+          body: {
+            email: "group-read-owner@example.com",
+            password: "a-native-password-123",
+            name: "Group owner",
+          },
+        });
+        for (const [id, cid, domain, display] of [
+          ["member-a", "conn-a", "tenant-a", "Inactive member"],
+          ["member-b", "conn-b", "tenant-a", "Foreign member"],
+          ["member-c", "conn-a", "tenant-b", "Other domain member"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,'group-read-owner@example.com','[]','[]',?,?,'[]',0,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, cid, domain, owner.user.id, id, id, id, display, display, id);
+        }
+        for (const [id, cid, domain] of [
+          ["staff", "conn-a", "tenant-a"],
+          ["other", "conn-b", "tenant-a"],
+          ["drift", "conn-a", "tenant-b"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Staff',?,'external-staff',?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, cid, domain, id, id);
+        }
+        for (const [id, time] of [
+          ["member-a", "2026-01-02T03:04:05.001Z"],
+          ["member-b", "2026-01-02T03:04:05.002Z"],
+          ["member-c", "2026-01-02T03:04:05.003Z"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a','staff',?,?,?)",
+            )
+            .run(id, id, id, time);
+        }
+        return new Response(JSON.stringify({ seeded: true }), {
           headers: { "content-type": "application/json" },
         });
       }

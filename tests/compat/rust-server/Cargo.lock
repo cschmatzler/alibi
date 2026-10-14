@@ -218,6 +218,7 @@ dependencies = [
  "sha2 0.11.0",
  "sha3 0.12.0",
  "signature 3.0.0",
+ "subtle",
  "tokio",
  "totp-rs",
  "tracing",

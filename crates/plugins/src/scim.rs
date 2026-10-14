@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 mod managed;
 mod projection;
+mod resources;
 pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 pub use projection::{
     ConfiguredScimPlugin, ScimAuthorizationSource, ScimIdentity, ScimIdentitySource,
@@ -15,6 +16,41 @@ pub use projection::{
     ScimRoleMappingInput, ScimRoleProjection,
 };
 
+/// A static inbound provisioning credential.
+#[derive(Clone)]
+pub struct ScimCredential {
+    pub id: String,
+    pub token: String,
+    pub scopes: Option<Vec<String>>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+impl std::fmt::Debug for ScimCredential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ScimCredential")
+            .field("id", &self.id)
+            .field("scopes", &self.scopes)
+            .field("expires_at", &self.expires_at)
+            .finish_non_exhaustive()
+    }
+}
+impl ScimCredential {
+    #[must_use]
+    pub fn new(id: impl Into<String>, token: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            token: token.into(),
+            scopes: None,
+            expires_at: None,
+        }
+    }
+}
+/// A connection owns an isolated set of canonical SCIM resources.
+#[derive(Clone, Debug)]
+pub struct ScimConnectionOptions {
+    pub id: String,
+    pub provisioning_domain_id: Option<String>,
+    pub credentials: Vec<ScimCredential>,
+}
 /// Policy for the framework-managed provisioning credential catalog.
 #[derive(Clone)]
 pub struct ScimManagedConnectionOptions {
@@ -46,18 +82,31 @@ impl ScimManagedConnectionOptions {
 #[derive(Clone, Debug, Default)]
 pub struct ScimPlugin {
     managed_connections: Option<ScimManagedConnectionOptions>,
+    connections: Vec<ScimConnectionOptions>,
 }
 impl ScimPlugin {
     #[must_use]
     pub const fn new() -> Self {
         Self {
             managed_connections: None,
+            connections: Vec::new(),
         }
     }
     #[must_use]
     pub fn managed_connections(mut self, options: ScimManagedConnectionOptions) -> Self {
         self.managed_connections = Some(options);
         self
+    }
+    #[must_use]
+    pub fn connections(mut self, connections: Vec<ScimConnectionOptions>) -> Self {
+        self.connections = connections;
+        self
+    }
+    /// Read a connection-owned SCIM Group through the server API.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn group_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "getSCIMGroup").with_params(&json!({"groupId":id}))
     }
     /// Discover the installed SCIM protocol capabilities without credentials.
     #[must_use]
@@ -175,6 +224,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/scim/v2/Groups/{groupId}", "getSCIMGroup"),
             AuthRoute::get("/scim/v2/Schemas", "getSCIMSchemas"),
             AuthRoute::get("/scim/v2/Schemas/{schemaId}", "getSCIMSchema"),
             AuthRoute::get("/scim/v2/ResourceTypes", "getSCIMResourceTypes"),
@@ -190,6 +240,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getSCIMGroup",
+                "getSCIMGroup",
+                Some("/scim/v2/Groups/:groupId"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "reconcileSCIMProjection",
                 "reconcileSCIMProjection",
@@ -302,6 +358,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         }
     }
     async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        self.validate_connections()?;
         if let Some(options) = &self.managed_connections {
             if options.credential_hash_secret.encode_utf16().count() < 32 {
                 return Err(AuthError::config(
@@ -321,6 +378,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMGroup" {
+            return self.get_group(call, ctx).await;
+        }
         if call.operation_id() == "reconcileSCIMProjection" {
             return self.reconcile_projection(call, ctx).await;
         }
@@ -381,6 +441,28 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Groups/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::get("/scim/v2/Groups/{groupId}", "getSCIMGroup"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(
+                json!({"groupId":id}),
+            ));
+            let mut response = self.get_group(&call, ctx).await?.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/Schemas/")
         {
