@@ -4,9 +4,10 @@ import { XMLParser } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import type { ScenarioContext } from "../../../support/scenario";
+import { customSPMetadata } from "./sp-metadata-input";
 export async function idpLogoutFlow(
   ctx: ScenarioContext,
-  signature: "absent" | "required" | "ignored",
+  signature: "absent" | "required" | "ignored" | "custom-sp",
   http = false,
 ) {
   const signed = signature === "required";
@@ -44,6 +45,9 @@ export async function idpLogoutFlow(
           issuer: "https://sp.example.test/entity",
           domain: "company.test",
           samlConfig: {
+            ...(signature === "custom-sp"
+              ? { spMetadata: customSPMetadata(ctx.baseURL, "idp-logout-provider") }
+              : {}),
             entryPoint: "https://idp.example.test/sso",
             cert,
             idpMetadata: {
@@ -145,6 +149,11 @@ export async function idpLogoutFlow(
       removeNSPrefix: true,
     }).parse(Buffer.from(encoded, "base64").toString()).LogoutResponse;
     expect(parsed["@_InResponseTo"]).toBe(requestId);
+    expect(parsed.Issuer).toBe(
+      signature === "custom-sp"
+        ? "https://sp.example.test/from-xml"
+        : "https://sp.example.test/entity",
+    );
     expect(parsed["@_Destination"]).toBe("https://idp.example.test/logout-post");
     const current = await (await control({ action: "session", headers: { cookie } })).json();
     expect(current === null).toBe(matching);
