@@ -128,7 +128,10 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             query: call.query().cloned(),
         });
     }
-    if call.operation_id() == "listSCIMManagedConnections" {
+    if matches!(
+        call.operation_id(),
+        "listSCIMManagedConnections" | "reconcileSCIMProjection"
+    ) {
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
                 [(
@@ -220,6 +223,14 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Request complete-state reconciliation of one provisioning domain.
+    /// # Errors
+    /// Returns an error if arguments cannot be serialized.
+    pub fn reconcile_projection_endpoint(domain: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "reconcileSCIMProjection")
+            .with_body(&serde_json::json!({"provisioningDomainId":domain}))
+    }
+
     /// Retire a managed connection and its active credentials through the trusted API.
     /// # Errors
     /// Returns an error if arguments cannot be serialized.
