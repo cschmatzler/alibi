@@ -461,3 +461,6 @@ mod sso_domain_membership;
 
 #[path = "../../../support/sso_oidc_peer.rs"]
 mod sso_oidc_peer;
+
+#[path = "../../../support/sso_saml_encryption.rs"]
+mod sso_saml_encryption;

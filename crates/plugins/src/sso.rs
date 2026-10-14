@@ -27,6 +27,7 @@ mod provider_update_saml;
 mod registration_saml;
 mod saml_acs;
 mod saml_crypto;
+mod saml_decryption;
 mod saml_logout;
 mod saml_sign_in;
 mod saml_slo;

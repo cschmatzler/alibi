@@ -63,6 +63,17 @@ pub(super) fn verify(
     if xml.contains("<!DOCTYPE") || xml.contains("<!ENTITY") {
         return Err(invalid());
     }
+    let decrypted;
+    let xml = if config
+        .get("idpMetadata")
+        .and_then(|metadata| metadata.get("isAssertionEncrypted"))
+        == Some(&Value::Bool(true))
+    {
+        decrypted = super::saml_decryption::decrypt(xml, config).map_err(|_| invalid())?;
+        decrypted.as_str()
+    } else {
+        xml
+    };
     let doc = bergshamra::xml::uppsala::parse(xml).map_err(|_| invalid())?;
     let root = doc.document_element().ok_or_else(invalid)?;
     if !doc
