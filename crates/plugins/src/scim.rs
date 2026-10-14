@@ -24,6 +24,32 @@ impl ScimPlugin {
     pub const fn resource_types_endpoint() -> ServerEndpoint<Value> {
         ServerEndpoint::new("scim", "getSCIMResourceTypes")
     }
+    /// List the SCIM User, Enterprise User and Group schema contracts.
+    #[must_use]
+    pub const fn schemas_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("scim", "getSCIMSchemas")
+    }
+    fn schemas<S: AuthSchema>(ctx: &AuthContext<S>) -> AuthResult<Value> {
+        // Runtime protocol descriptors match @better-auth/scim 1.7.7; keep them
+        // independent of test fixtures and resolve locations for this application.
+        let mut schemas: Vec<Value> = serde_json::from_str(include_str!("scim/schemas.json"))?;
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path.trim_end_matches('/')
+        );
+        for schema in &mut schemas {
+            if let Some(meta) = schema.get_mut("meta").and_then(Value::as_object_mut)
+                && let Some(path) = meta.get("location").and_then(Value::as_str)
+            {
+                let location = format!("{base}{path}");
+                _ = meta.insert("location".into(), Value::String(location));
+            }
+        }
+        Ok(
+            json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:ListResponse"],"totalResults":schemas.len(),"startIndex":1,"itemsPerPage":schemas.len(),"Resources":schemas}),
+        )
+    }
     /// Read one case-sensitive SCIM resource type through the server API.
     /// # Errors
     /// Returns an error if the path parameters cannot be serialized.
@@ -82,6 +108,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/scim/v2/Schemas", "getSCIMSchemas"),
             AuthRoute::get("/scim/v2/ResourceTypes", "getSCIMResourceTypes"),
             AuthRoute::get(
                 "/scim/v2/ResourceTypes/{resourceTypeId}",
@@ -95,6 +122,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "getSCIMSchemas",
+                "getSCIMSchemas",
+                Some("/scim/v2/Schemas"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getSCIMResourceType",
                 "getSCIMResourceType",
@@ -120,6 +153,10 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "getSCIMSchemas" {
+            return Ok(EndpointResponse::json(&Self::schemas(ctx)?)?
+                .with_header("content-type", "application/scim+json"));
+        }
         if call.operation_id() == "getSCIMResourceType" {
             return Self::resource_type(
                 ctx,
@@ -148,12 +185,14 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         if req.method() != &HttpMethod::Get
             || !matches!(
                 req.path(),
-                "/scim/v2/ServiceProviderConfig" | "/scim/v2/ResourceTypes"
+                "/scim/v2/ServiceProviderConfig" | "/scim/v2/ResourceTypes" | "/scim/v2/Schemas"
             )
         {
             return Ok(None);
         }
-        let value = if req.path() == "/scim/v2/ResourceTypes" {
+        let value = if req.path() == "/scim/v2/Schemas" {
+            Self::schemas(ctx)?
+        } else if req.path() == "/scim/v2/ResourceTypes" {
             Self::resource_types(ctx)
         } else {
             Self::service_provider_config(ctx)

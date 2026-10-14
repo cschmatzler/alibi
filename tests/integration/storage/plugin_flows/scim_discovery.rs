@@ -4,7 +4,8 @@ use alibi::endpoint::EndpointOptions;
 backend_tests!(
     scim_service_provider_config_exposes_reference_capabilities,
     scim_resource_types_are_public_and_include_enterprise_user,
-    scim_resource_type_lookup_matches_reference_errors
+    scim_resource_type_lookup_matches_reference_errors,
+    scim_schema_listing_exposes_complete_standard_attribute_contracts
 );
 async fn scim_service_provider_config_exposes_reference_capabilities<B: Backend>(
     db: Db,
@@ -138,5 +139,116 @@ async fn scim_resource_type_lookup_matches_reference_errors<B: Backend>(db: Db) 
             );
         }
     }
+    Ok(())
+}
+
+async fn scim_schema_listing_exposes_complete_standard_attribute_contracts<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(alibi::plugins::ScimPlugin::new())
+        .build()
+        .await?;
+    let response = call(&auth, request("/scim/v2/Schemas", None, ""), 200).await;
+    assert_eq!(
+        response.headers.get("content-type").map(String::as_str),
+        Some("application/scim+json")
+    );
+    let document = body(&response);
+    assert_eq!(
+        document["schemas"],
+        json!(["urn:ietf:params:scim:api:messages:2.0:ListResponse"])
+    );
+    assert_eq!(document["totalResults"], 3);
+    assert_eq!(document["itemsPerPage"], 3);
+    assert_eq!(document["startIndex"], 1);
+    let resources = document["Resources"].as_array().unwrap();
+    assert_eq!(resources.len(), 3);
+    for (schema, id, names) in [
+        (
+            &resources[0],
+            "urn:ietf:params:scim:schemas:core:2.0:User",
+            vec![
+                "userName",
+                "displayName",
+                "active",
+                "name",
+                "emails",
+                "title",
+                "userType",
+                "preferredLanguage",
+                "locale",
+                "timezone",
+                "phoneNumbers",
+                "addresses",
+                "roles",
+                "entitlements",
+            ],
+        ),
+        (
+            &resources[1],
+            "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+            vec![
+                "employeeNumber",
+                "costCenter",
+                "organization",
+                "division",
+                "department",
+                "manager",
+            ],
+        ),
+        (
+            &resources[2],
+            "urn:ietf:params:scim:schemas:core:2.0:Group",
+            vec!["displayName", "members"],
+        ),
+    ] {
+        assert_eq!(schema["id"], id);
+        assert_eq!(
+            schema["schemas"],
+            json!(["urn:ietf:params:scim:schemas:core:2.0:Schema"])
+        );
+        assert_eq!(
+            schema["meta"],
+            json!({"resourceType":"Schema","location":format!("{ORIGIN}/api/auth/scim/v2/Schemas/{id}")})
+        );
+        assert_eq!(
+            schema["attributes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|attribute| attribute["name"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            names
+        );
+    }
+    assert_eq!(resources[0]["attributes"][0]["required"], true);
+    assert_eq!(resources[0]["attributes"][0]["uniqueness"], "server");
+    let manager = &resources[1]["attributes"][5];
+    assert_eq!(manager["type"], "complex");
+    assert_eq!(
+        manager["subAttributes"][1]["referenceTypes"],
+        json!(["User"])
+    );
+    assert_eq!(manager["subAttributes"][2]["mutability"], "readOnly");
+    let members = &resources[2]["attributes"][1];
+    assert_eq!(members["multiValued"], true);
+    assert_eq!(members["subAttributes"][0]["required"], true);
+    assert_eq!(members["subAttributes"][0]["mutability"], "immutable");
+    assert_eq!(
+        members["subAttributes"][3]["canonicalValues"],
+        json!(["User"])
+    );
+    let output = auth
+        .dispatch_endpoint(
+            alibi::plugins::ScimPlugin::schemas_endpoint(),
+            EndpointOptions::default(),
+        )
+        .await?;
+    assert_eq!(
+        output.value(),
+        &alibi::utils::json::parse_value(&document.to_string())?
+    );
     Ok(())
 }
