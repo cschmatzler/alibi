@@ -511,3 +511,5 @@ mod scim_managed_create;
 mod scim_managed_list;
 
 mod scim_managed_get;
+
+mod scim_managed_rotate;

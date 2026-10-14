@@ -90,12 +90,37 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             query: call.query().cloned(),
         });
     }
+    let rotating = call.operation_id() == "rotateSCIMManagedCredential";
     let mut output = indexmap::IndexMap::new();
+    if rotating {
+        let id = body.get("connectionId");
+        let Some(id) = id.and_then(JsValue::as_str) else {
+            return Err(crate::endpoint::validation(format!(
+                "[body.connectionId] Invalid input: expected string, received {}",
+                crate::authentication_helpers::json_type(id)
+            )));
+        };
+        if !id.starts_with("ba_scim_connection_") {
+            return Err(crate::endpoint::validation(
+                r#"[body.connectionId] Invalid string: must start with "ba_scim_connection_""#,
+            ));
+        }
+        if id.encode_utf16().count() > 255 {
+            return Err(crate::endpoint::validation(
+                "[body.connectionId] Too big: expected string to have <=255 characters",
+            ));
+        }
+        _ = output.insert("connectionId".into(), JsValue::String(id.into()));
+    }
+
     for (name, min) in [
         ("creationRequestId", 16),
         ("provisioningDomainId", 1),
         ("actorId", 1),
     ] {
+        if rotating && name == "creationRequestId" {
+            continue;
+        }
         _ = output.insert(name.into(), JsValue::String(body_string(body, name, min)?));
     }
     let scopes = body.get("scopes");
@@ -144,6 +169,110 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Trusted rotation arguments with an actual Date expiry.
+    /// # Errors
+    /// Returns an error if the arguments cannot be serialized.
+    pub fn rotate_managed_credential_endpoint(
+        input: &ScimManagedCredentialRotationInput,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        let mut body = JsValue::from(serde_json::to_value(input)?);
+        if let JsValue::Object(values) = &mut body {
+            _ = values.insert("expiresAt".into(), JsValue::Date(input.expires_at));
+        }
+        Ok(ServerEndpoint::new("scim", "rotateSCIMManagedCredential").with_body_value(body))
+    }
+    pub(super) async fn rotate_managed_credential<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        call.queue_response_header("cache-control", "no-store");
+        call.queue_response_header("pragma", "no-cache");
+        let options = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let expires = *body
+            .get("expiresAt")
+            .and_then(JsValue::as_date)
+            .ok_or_else(|| AuthError::internal("Validated expiry missing"))?;
+        if expires <= Utc::now().trunc_subsecs(3) {
+            return Err(AuthError::Api {
+                status: 400,
+                code: None,
+                message: "Managed SCIM credential expiry must be in the future".into(),
+            });
+        }
+        let scopes = body
+            .get("scopes")
+            .and_then(JsValue::as_array)
+            .ok_or_else(|| AuthError::internal("Validated scopes missing"))?
+            .iter()
+            .filter_map(JsValue::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        if scopes
+            .iter()
+            .collect::<std::collections::HashSet<_>>()
+            .len()
+            != scopes.len()
+        {
+            return Err(AuthError::Api {
+                status: 400,
+                code: None,
+                message: "Managed SCIM credential scopes must be unique".into(),
+            });
+        }
+        let credential_id = format!("ba_scim_credential_{}", random_string(32));
+        let token = format!("{credential_id}.{}", random_string(48));
+        let mut mac = Hmac::<Sha256>::new_from_slice(options.credential_hash_secret.as_bytes())
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        mac.update(token.as_bytes());
+        let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+        let data = alibi_core::store::RotateScimManagedCredential {
+            connection_id: body
+                .get("connectionId")
+                .and_then(JsValue::as_str)
+                .ok_or_else(|| AuthError::internal("Validated ID missing"))?
+                .into(),
+            provisioning_domain_id: body_string(body, "provisioningDomainId", 1)?,
+            actor_id: body_string(body, "actorId", 1)?,
+            credential_id,
+            token_digest: digest,
+            serialized_scopes: serde_json::to_string(&scopes)?,
+            expires_at: expires,
+            created_at: Utc::now().trunc_subsecs(3),
+            max_active_credentials: options.max_active_credentials,
+        };
+        for _ in 0..5 {
+            if let Some(created) = ctx
+                .database
+                .rotate_scim_managed_credential(data.clone())
+                .await?
+            {
+                let mut connection = serde_json::to_value(created.connection)?;
+                if let Value::Object(values) = &mut connection {
+                    _ = values.remove("id");
+                    _ = values.remove("revision");
+                }
+                let credential = created.credential;
+                return EndpointResponse::json(
+                    &serde_json::json!({"connection":connection,"credential":{"credentialId":credential.credential_id,"status":credential.status,"scopes":scopes,"expiresAt":credential.expires_at,"createdAt":credential.created_at,"createdBy":credential.created_by,"lastUsedAt":credential.last_used_at,"revokedAt":credential.revoked_at,"revokedBy":credential.revoked_by},"token":token}),
+                );
+            }
+        }
+        Err(alibi_core::store::scim::scim_managed_conflict(
+            "Managed SCIM connection changed repeatedly during credential rotation",
+        ))
+    }
+
     /// Read domain-owned connection metadata and its current credential policy.
     /// # Errors
     /// Returns an error if the arguments cannot be serialized.
@@ -365,4 +494,14 @@ fn invalid_scope_policy() -> AuthError {
         code: None,
         message: "Managed SCIM credential scope policy is invalid".into(),
     }
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimManagedCredentialRotationInput {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub actor_id: String,
+    pub scopes: Vec<String>,
+    pub expires_at: DateTime<Utc>,
 }

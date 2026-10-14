@@ -17,6 +17,153 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SqlxStore<S> {
+    async fn rotate_scim_managed_credential(
+        &self,
+        data: alibi_core::store::RotateScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedCreation>> {
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::tx(tx);
+            let mut sql = model::select_model::<connection::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimManagedConnection",
+                "connectionId",
+                " = ",
+                data.connection_id,
+            );
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "provisioningDomainId",
+                " = ",
+                data.provisioning_domain_id,
+            );
+            model::limit_one(&mut sql);
+            if exec.engine() == crate::pool::Engine::Postgres {
+                sql.push(" FOR UPDATE");
+            }
+            let mut connection = exec
+                .fetch_optional::<connection::Model>(sql)
+                .await?
+                .ok_or_else(|| alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                })?;
+            if connection.status != "active" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection is not active",
+                ));
+            }
+            let mut sql = Sql::with(exec.engine(), "UPDATE ");
+            sql.ident("scimManagedConnection");
+            sql.push(" SET ");
+            sql.ident("revision");
+            sql.push(" = ");
+            sql.ident("revision");
+            sql.push(" + 1 WHERE ");
+            sql.compare("scimManagedConnection", "id", " = ", connection.id.clone());
+            sql.push(" AND ");
+            sql.compare("scimManagedConnection", "status", " = ", "active");
+            sql.push(" AND ");
+            sql.compare(
+                "scimManagedConnection",
+                "revision",
+                " = ",
+                connection.revision,
+            );
+            if exec.execute(sql).await? == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            let mut sql = model::select_model::<credential::Model>(exec);
+            sql.push(" WHERE ");
+            sql.compare(
+                "scimManagedCredential",
+                "connectionRecordId",
+                " = ",
+                connection.id.clone(),
+            );
+            sql.push(" AND ");
+            sql.compare("scimManagedCredential", "status", " = ", "active");
+            sql.push(" LIMIT 101");
+            let active = exec.fetch_all::<credential::Model>(sql).await?;
+            let mut slots = std::collections::HashSet::new();
+            for credential in active {
+                if credential.expires_at <= data.created_at {
+                    let mut row = ActiveRow::new();
+                    row.set("id", credential.id);
+                    row.set("status", "expired");
+                    row.set(
+                        "activeSlotKey",
+                        format!("{}:inactive", credential.credential_id),
+                    );
+                    _ = model::update::<credential::Model>(exec, &row).await?;
+                } else {
+                    _ = slots.insert(credential.active_slot_key);
+                }
+            }
+            if slots.len() >= data.max_active_credentials {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection has the maximum number of active credentials",
+                ));
+            }
+            let slot = (0..data.max_active_credentials)
+                .find(|slot| !slots.contains(&format!("{}:active:{slot}", connection.id)))
+                .ok_or_else(|| {
+                    alibi_core::store::scim::scim_managed_conflict(
+                        "Managed SCIM connection has the maximum number of active credentials",
+                    )
+                })?;
+            let mut row = ActiveRow::new();
+            row.set(
+                "id",
+                self.generated_id(exec, "scimManagedCredential", "scimManagedCredential", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            row.set("connectionRecordId", connection.id.clone());
+            row.set("credentialId", data.credential_id.clone());
+            row.set("tokenDigest", data.token_digest);
+            row.set("hashVersion", "v1");
+            row.set("activeSlotKey", format!("{}:active:{slot}", connection.id));
+            row.set("status", "active");
+            row.set("serializedScopes", data.serialized_scopes);
+            row.set("expiresAt", data.expires_at);
+            row.set("createdAt", data.created_at);
+            row.set("createdBy", data.actor_id.clone());
+            let credential = model::insert::<credential::Model>(exec, &row).await?;
+            let mut row = ActiveRow::new();
+            row.set(
+                "id",
+                self.generated_id(
+                    exec,
+                    "scimManagedConnectionEvent",
+                    "scimManagedConnectionEvent",
+                    "id",
+                )
+                .await?
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            row.set("connectionRecordId", connection.id.clone());
+            row.set(
+                "eventKey",
+                format!("{}:{}", connection.id, connection.revision),
+            );
+            row.set("sequence", connection.revision);
+            row.set("type", "credential.rotated");
+            row.set("actorId", data.actor_id);
+            row.set("credentialId", Some(data.credential_id));
+            row.set("createdAt", data.created_at);
+            _ = model::insert::<event::Model>(exec, &row).await?;
+            Ok(Some(ScimManagedCreation {
+                connection: connection.into(),
+                credential: credential.into(),
+            }))
+        })
+        .await
+    }
+
     async fn get_scim_managed_connection(
         &self,
         id: &str,

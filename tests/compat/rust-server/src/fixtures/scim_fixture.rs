@@ -18,11 +18,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         AuthBuilder::<crate::TestSchema>::new(config.clone())
             .store(crate::backend::store(config, database.clone()))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
-            .plugin(
-                ScimPlugin::new().managed_connections(ScimManagedConnectionOptions::new(
-                    "managed-scim-credential-hmac-secret-32-chars",
-                )),
-            )
+            .plugin(ScimPlugin::new().managed_connections(managed_options()))
             .build()
             .await?,
     );
@@ -37,7 +33,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             let config=restart_config.clone();
             async move {
                 if query.get("operation").is_some_and(|operation|operation=="restart-managed") {
-                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(ScimManagedConnectionOptions::new("managed-scim-credential-hmac-secret-32-chars"))).build().await.unwrap();
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(ScimPlugin::new().managed_connections(managed_options())).build().await.unwrap();
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
@@ -51,6 +47,18 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     let (sql,value)=if let Some(policy)=input.get("policy"){("UPDATE scimManagedCredential SET serializedScopes=? WHERE credentialId=?",policy.as_str().unwrap())}else{("UPDATE scimManagedCredential SET expiresAt=? WHERE credentialId=?","2000-01-01T00:00:00.000Z")};
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),sql,[value.into(),input["credentialId"].as_str().unwrap().into()])).await.unwrap();
                     return Json(json!({"changed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="reject-rotation-event") {
+                    _=database.execute_unprepared("CREATE TRIGGER reject_scim_rotation_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.type='credential.rotated' BEGIN SELECT RAISE(ABORT,'fixture rejected rotation event'); END").await.unwrap();return Json(json!({"installed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="rotation-failure") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let mut body=JsValue::from(input["body"].clone());if let JsValue::Object(values)=&mut body{let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;let failed=result.is_err();let rejected=result.err().is_some_and(|error|error.to_string().contains("fixture rejected rotation event"));return Json(json!({"failed":failed,"rejectedEvent":rejected})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="rotateSCIMManagedCredential") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let mut body=JsValue::from(input["body"].clone());if let JsValue::Object(values)=&mut body {let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}
+                    let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","rotateSCIMManagedCredential").with_body_value(body),EndpointOptions::default()).await;
+                    return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=error.error.to_auth_response();if let Some(headers)=error.headers{for(name,value)in headers.iter(){response.headers.append(name,value);}}response.into_response()}};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="getSCIMManagedConnection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();
@@ -216,4 +224,11 @@ async fn physical_rows(database: &DatabaseConnection, table: &str) -> Value {
             .map(|row| serde_json::from_str(&row.try_get::<String>("", "row").unwrap()).unwrap())
             .collect(),
     )
+}
+
+fn managed_options() -> ScimManagedConnectionOptions {
+    let mut options =
+        ScimManagedConnectionOptions::new("managed-scim-credential-hmac-secret-32-chars");
+    options.max_active_credentials = 2;
+    options
 }

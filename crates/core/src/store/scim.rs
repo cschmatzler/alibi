@@ -49,6 +49,18 @@ pub struct CreateScimManagedConnection {
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
 }
+#[derive(Clone)]
+pub struct RotateScimManagedCredential {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub actor_id: String,
+    pub credential_id: String,
+    pub token_digest: String,
+    pub serialized_scopes: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
+    pub max_active_credentials: usize,
+}
 pub struct ScimManagedConnectionState {
     pub connection: ScimManagedConnection,
     pub credentials: Vec<ScimManagedCredential>,
@@ -59,6 +71,15 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn rotate_scim_managed_credential(
+        &self,
+        _data: RotateScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedCreation>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn get_scim_managed_connection(
         &self,
         _id: &str,
@@ -95,5 +116,13 @@ pub fn scim_creation_conflict() -> AuthError {
         status: 409,
         code: Some("SCIM_MANAGED_CREATION_REQUEST_ID_CONFLICT".into()),
         message: "Managed SCIM connection creation request ID already exists".into(),
+    }
+}
+
+pub fn scim_managed_conflict(message: &str) -> AuthError {
+    AuthError::Api {
+        status: 409,
+        code: None,
+        message: message.into(),
     }
 }

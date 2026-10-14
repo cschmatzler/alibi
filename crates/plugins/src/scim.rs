@@ -7,7 +7,7 @@ use alibi_core::{
 use async_trait::async_trait;
 use serde_json::{Value, json};
 mod managed;
-pub use managed::ScimManagedConnectionInput;
+pub use managed::{ScimManagedConnectionInput, ScimManagedCredentialRotationInput};
 
 /// Policy for the framework-managed provisioning credential catalog.
 #[derive(Clone)]
@@ -185,6 +185,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "rotateSCIMManagedCredential",
+                "rotateSCIMManagedCredential",
+                None,
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "getSCIMManagedConnection",
                 "getSCIMManagedConnection",
                 None,
@@ -244,6 +250,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
             "createSCIMManagedConnection"
                 | "listSCIMManagedConnections"
                 | "getSCIMManagedConnection"
+                | "rotateSCIMManagedCredential"
         ) {
             managed::validate(call)
         } else {
@@ -273,6 +280,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "rotateSCIMManagedCredential" {
+            return self.rotate_managed_credential(call, ctx).await;
+        }
         if call.operation_id() == "getSCIMManagedConnection" {
             return self.get_managed_connection(call, ctx).await;
         }

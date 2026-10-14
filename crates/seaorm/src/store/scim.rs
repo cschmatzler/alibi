@@ -12,11 +12,139 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
-    QuerySelect, Set, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, ExprTrait, PaginatorTrait, QueryFilter, QueryOrder,
+    QuerySelect, Set, TransactionTrait, sea_query::Expr,
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn rotate_scim_managed_credential(
+        &self,
+        data: alibi_core::store::RotateScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedCreation>> {
+        let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let result = async {
+            let mut select = connection::Entity::find()
+                .filter(connection::Column::ConnectionId.eq(data.connection_id))
+                .filter(connection::Column::ProvisioningDomainId.eq(data.provisioning_domain_id));
+            if tx.get_database_backend() == sea_orm::DbBackend::Postgres {
+                select = select.lock_exclusive();
+            }
+            let mut connection = select.one(&tx).await.map_err(map_db_err)?.ok_or_else(|| {
+                alibi_core::AuthError::Api {
+                    status: 404,
+                    code: None,
+                    message: "Managed SCIM connection not found".into(),
+                }
+            })?;
+            if connection.status != "active" {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection is not active",
+                ));
+            }
+            let claimed = connection::Entity::update_many()
+                .col_expr(
+                    connection::Column::Revision,
+                    Expr::col(connection::Column::Revision).add(1),
+                )
+                .filter(connection::Column::Id.eq(connection.id.clone()))
+                .filter(connection::Column::Status.eq("active"))
+                .filter(connection::Column::Revision.eq(connection.revision))
+                .exec(&tx)
+                .await
+                .map_err(map_db_err)?;
+            if claimed.rows_affected == 0 {
+                return Ok(None);
+            }
+            connection.revision += 1;
+            let active = credential::Entity::find()
+                .filter(credential::Column::ConnectionRecordId.eq(connection.id.clone()))
+                .filter(credential::Column::Status.eq("active"))
+                .limit(101)
+                .all(&tx)
+                .await
+                .map_err(map_db_err)?;
+            let mut slots = std::collections::HashSet::new();
+            for credential in active {
+                if credential.expires_at <= data.created_at {
+                    let mut row: credential::ActiveModel = credential.clone().into();
+                    row.status = Set("expired".into());
+                    row.active_slot_key = Set(format!("{}:inactive", credential.credential_id));
+                    _ = row.update(&tx).await.map_err(map_db_err)?;
+                } else {
+                    _ = slots.insert(credential.active_slot_key);
+                }
+            }
+            if slots.len() >= data.max_active_credentials {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection has the maximum number of active credentials",
+                ));
+            }
+            let slot = (0..data.max_active_credentials)
+                .find(|slot| !slots.contains(&format!("{}:active:{slot}", connection.id)))
+                .ok_or_else(|| {
+                    alibi_core::store::scim::scim_managed_conflict(
+                        "Managed SCIM connection has the maximum number of active credentials",
+                    )
+                })?;
+            let credential = credential::ActiveModel {
+                id: Set(self
+                    .generated_id(&tx, "scimManagedCredential", "scimManagedCredential", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                connection_record_id: Set(connection.id.clone()),
+                credential_id: Set(data.credential_id.clone()),
+                token_digest: Set(data.token_digest),
+                hash_version: Set("v1".into()),
+                active_slot_key: Set(format!("{}:active:{slot}", connection.id)),
+                status: Set("active".into()),
+                serialized_scopes: Set(data.serialized_scopes),
+                expires_at: Set(data.expires_at),
+                created_at: Set(data.created_at),
+                created_by: Set(data.actor_id.clone()),
+                ..Default::default()
+            }
+            .insert(&tx)
+            .await
+            .map_err(map_db_err)?;
+            _ = event::ActiveModel {
+                id: Set(self
+                    .generated_id(
+                        &tx,
+                        "scimManagedConnectionEvent",
+                        "scimManagedConnectionEvent",
+                        "id",
+                    )
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                connection_record_id: Set(connection.id.clone()),
+                event_key: Set(format!("{}:{}", connection.id, connection.revision)),
+                sequence: Set(connection.revision),
+                kind: Set("credential.rotated".into()),
+                actor_id: Set(data.actor_id),
+                credential_id: Set(Some(data.credential_id)),
+                created_at: Set(data.created_at),
+            }
+            .insert(&tx)
+            .await
+            .map_err(map_db_err)?;
+            Ok(Some(ScimManagedCreation {
+                connection: connection.into(),
+                credential: credential.into(),
+            }))
+        }
+        .await;
+        match result {
+            Ok(result) => {
+                tx.commit().await.map_err(map_db_err)?;
+                Ok(result)
+            }
+            Err(error) => {
+                tx.rollback().await.map_err(map_db_err)?;
+                Err(error)
+            }
+        }
+    }
+
     async fn get_scim_managed_connection(
         &self,
         id: &str,

@@ -14,6 +14,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         authentication: { verifyBearerToken: async () => null },
         managedConnections: {
           credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
+          maxActiveCredentials: 2,
         },
       }),
     ],
@@ -54,6 +55,37 @@ export async function scimFixture(base: BetterAuthOptions) {
         return new Response(JSON.stringify({ changed: true }), {
           headers: { "content-type": "application/json" },
         });
+      }
+      if (query.get("operation") === "reject-rotation-event") {
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_rotation_event BEFORE INSERT ON scimManagedConnectionEvent WHEN NEW.actorId='rollback-operator' AND NEW.type='credential.rotated' BEGIN SELECT RAISE(ABORT,'fixture rejected rotation event'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "rotation-failure") {
+        const input = (await request.json()) as any;
+        input.body.expiresAt = new Date(input.body.expiresAt);
+        try {
+          await auth.api.rotateSCIMManagedCredential({ body: input.body });
+          return new Response(JSON.stringify({ failed: false }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              failed: true,
+              rejectedEvent: String(error).includes("fixture rejected rotation event"),
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+      }
+      if (query.get("operation") === "rotateSCIMManagedCredential") {
+        const input = (await request.json()) as any;
+        input.body.expiresAt = new Date(input.body.expiresAt);
+        return auth.api.rotateSCIMManagedCredential({ body: input.body, asResponse: true });
       }
       if (query.get("operation") === "getSCIMManagedConnection") {
         const input = (await request.json()) as any;
