@@ -1,7 +1,7 @@
 import { sso } from "@better-auth/sso";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
-import { username } from "better-auth/plugins";
+import { organization, username } from "better-auth/plugins";
 
 import { ssoDnsFixture } from "./sso-dns-fixture";
 import { ssoOidcFixture } from "./sso-oidc-fixture";
@@ -221,7 +221,25 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
+  const organizationOptions = (mode: string) => ({
+    ...options,
+    plugins: [
+      username(),
+      organization(),
+      sso({
+        organizationProvisioning: {
+          disabled: mode === "org-disabled",
+          defaultRole: mode === "org-admin" ? ("admin" as const) : ("member" as const),
+        },
+      }),
+    ],
+  });
+  await (await getMigrations(organizationOptions("org-default"))).runMigrations();
   const instances = new Map([
+    ["org-default", betterAuth(organizationOptions("org-default"))],
+    ["org-admin", betterAuth(organizationOptions("org-admin"))],
+    ["org-disabled", betterAuth(organizationOptions("org-disabled"))],
+
     ["provisioning", betterAuth(provisioningOptions(false))],
     ["provisioning-every", betterAuth(provisioningOptions(true))],
     ["key-resolver", betterAuth(resolverOptions)],
@@ -244,8 +262,9 @@ export async function ssoFixture(base: BetterAuthOptions) {
 
   const handle = async (request: Request) => {
     const input = await request.json();
-    const mode =
-      input.mode === "provisioning"
+    const mode = ["org-default", "org-admin", "org-disabled"].includes(input.mode)
+      ? input.mode
+      : input.mode === "provisioning"
         ? "provisioning"
         : input.mode === "provisioning-every"
           ? "provisioning-every"
@@ -281,6 +300,37 @@ export async function ssoFixture(base: BetterAuthOptions) {
                                         ? "slo"
                                         : "default";
     const auth = instances.get(mode)!;
+    if (["org-create", "org-invite", "org-role"].includes(input.action)) {
+      const operation =
+        input.action === "org-create"
+          ? "createOrganization"
+          : input.action === "org-invite"
+            ? "createInvitation"
+            : "updateMemberRole";
+      return (auth.api as any)[operation]({
+        body: input.body,
+        headers: new Headers(input.headers ?? {}),
+        asResponse: true,
+      });
+    }
+    if (input.action === "member-row") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<any>({
+        model: "member",
+        where: [
+          { field: "organizationId", value: input.organizationId },
+          { field: "userId", value: input.userId },
+        ],
+      });
+      return new Response(
+        JSON.stringify(
+          row
+            ? { id: row.id, userId: row.userId, organizationId: row.organizationId, role: row.role }
+            : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
+    }
     if (input.action === "provisioning-reset") {
       provisioningEvents.length = 0;
       return new Response(JSON.stringify({ configured: true }), {
