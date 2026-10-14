@@ -1,12 +1,15 @@
+use alibi::AuthUser;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::plugins::ScimPlugin;
+use alibi::plugins::scim::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
 use alibi::plugins::scim::{ScimConnectionOptions, ScimCredential};
 use alibi::plugins::scim::{ScimIdentity, ScimIdentityState};
 use alibi::plugins::scim::{ScimManagedConnectionOptions, ScimProjectedUserState, ScimProjection};
 use alibi::plugins::scim::{ScimRoleExistenceInput, ScimRoleMappingInput, ScimRoleProjection};
 use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi::store::AuthStore;
 use alibi::store::AuthTransaction;
 use alibi::utils::json::JsValue;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
@@ -19,6 +22,7 @@ use std::sync::{
     Mutex,
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
+use tower::ServiceExt;
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let path = "/__test/profiles/scim/api/auth";
     let config = base.clone().base_path(path);
@@ -35,8 +39,23 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .build()
             .await?,
     );
-    let router = Router::new().nest(path, auth.clone().axum_router().with_state(auth.clone()));
     let restart_auth = Arc::new(tokio::sync::Mutex::new(auth.clone()));
+    let http_auth = restart_auth.clone();
+    let router = Router::new().nest(
+        path,
+        Router::new().fallback(move |request: axum::extract::Request| {
+            let auth = http_auth.clone();
+            async move {
+                let auth = auth.lock().await.clone();
+                auth.clone()
+                    .axum_router()
+                    .with_state(auth)
+                    .oneshot(request)
+                    .await
+                    .unwrap()
+            }
+        }),
+    );
     let restart_config = base.clone().base_path(path);
     let projection_states = Arc::new(Mutex::new(Vec::<ScimProjectedUserState>::new()));
     let projection_fails = Arc::new(AtomicBool::new(false));
@@ -44,14 +63,27 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let role_stage = Arc::new(AtomicU8::new(0));
     let identity_states = Arc::new(Mutex::new(Vec::<ScimIdentityState>::new()));
     let identity_fails = Arc::new(AtomicBool::new(false));
+    let verifier_inputs = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let verifier_claims = Arc::new(Mutex::new(None::<JsValue>));
     Ok(router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
+            let verifier_inputs=verifier_inputs.clone();let verifier_claims=verifier_claims.clone();
             let auth = restart_auth.clone();
             let config=restart_config.clone();
             let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();let role_observations=role_observations.clone();let role_stage=role_stage.clone();let identity_states=identity_states.clone();let identity_fails=identity_fails.clone();
             async move {
+                if query.get("operation").is_some_and(|operation|operation=="configure-verifier") {
+                    let plugin=ScimPlugin::new().connections(vec![ScimConnectionOptions{id:"declared".into(),provisioning_domain_id:Some("tenant-declared".into()),credentials:vec![ScimCredential::new("static","static-token")]}]).authentication::<crate::TestSchema>(Arc::new(FixtureVerifier{inputs:verifier_inputs.clone(),claims:verifier_claims.clone()}));
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="verifier-claims") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let mut claims=JsValue::from(input["claims"].clone());
+                    if input["sdkDate"]==true {if let JsValue::Object(values)=&mut claims{let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}}
+                    *verifier_claims.lock().unwrap()=Some(claims);return Json(json!({"changed":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="verifier-inputs") {let inputs=verifier_inputs.lock().unwrap().clone();return Json(inputs).into_response();}
                 if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection")) {
                     let mut plugin=ScimPlugin::new().managed_connections(managed_options()).projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
@@ -64,6 +96,11 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="seed-verifier-groups") {
+                    let _owner=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&json!({"email":"verifier-owner@example.com","password":"a-native-password-123","name":"Verifier owner"})).unwrap(),EndpointOptions::default()).await.unwrap();
+                    for(id,domain)in[("declared","tenant-declared"),("dynamic","tenant-dynamic")]{_=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Verified Group',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),id.into(),domain.into(),id.into(),id.into()])).await.unwrap();}return Json(json!({"seeded":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="verifier-user") {let rows=query_json_rows(&database,"SELECT json_object('name',name) AS row FROM user WHERE email='verifier-owner@example.com'").await;return Json(rows[0].clone()).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="reject-managed-usage") {
                     _=database.execute_unprepared("CREATE TRIGGER reject_scim_usage BEFORE UPDATE ON scimManagedCredential WHEN NEW.lastUsedAt IS NOT NULL BEGIN SELECT RAISE(ABORT,'fixture rejected usage'); END").await.unwrap();return Json(json!({"installed":true})).into_response();
                 }
@@ -588,4 +625,40 @@ fn resource_connections() -> Vec<ScimConnectionOptions> {
             credentials: vec![ScimCredential::new("reader", "other-reader")],
         },
     ]
+}
+
+struct FixtureVerifier {
+    inputs: Arc<Mutex<Vec<Value>>>,
+    claims: Arc<Mutex<Option<JsValue>>>,
+}
+#[async_trait::async_trait]
+impl<S: alibi::AuthSchema> ScimBearerTokenVerifier<S> for FixtureVerifier {
+    async fn verify_bearer_token(
+        &self,
+        input: &ScimBearerTokenVerificationInput,
+        database: &dyn AuthStore<S>,
+    ) -> AuthResult<Option<JsValue>> {
+        self.inputs.lock().unwrap().push(json!({"token":input.token,"method":format!("{:?}",input.method).to_uppercase(),"path":input.path,"headers":input.headers}));
+        let owner = database
+            .get_user_by_email("verifier-owner@example.com")
+            .await?
+            .unwrap();
+        _ = database
+            .update_user(
+                owner.id().as_ref(),
+                alibi::UpdateUser {
+                    name: Some("Verified remote".into()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        if let Some(claims) = self.claims.lock().unwrap().clone() {
+            return Ok(Some(claims));
+        }
+        Ok(Some(JsValue::from(if input.token == "oauth-dynamic" {
+            json!({"connection":{"id":"dynamic","provisioningDomainId":"tenant-dynamic"},"credentialId":"remote","scopes":["scim.groups.read"]})
+        } else {
+            json!({"connectionId":"declared","credentialId":"remote","scopes":["scim.groups.read"]})
+        })))
+    }
 }
