@@ -58,14 +58,7 @@ impl SsoPlugin {
                     .or_else(|| {
                         providers.into_iter().find(|provider| {
                             domain.is_some_and(|domain| {
-                                let search = domain.trim().to_lowercase();
-                                !search.is_empty()
-                                    && provider.domain.split(',').any(|value| {
-                                        let expected = value.trim().to_lowercase();
-                                        !expected.is_empty()
-                                            && (search == expected
-                                                || search.ends_with(&format!(".{expected}")))
-                                    })
+                                super::domains::matches(domain, &provider.domain)
                             })
                         })
                     })

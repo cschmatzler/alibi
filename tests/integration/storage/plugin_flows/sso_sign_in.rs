@@ -15,7 +15,16 @@ async fn sso_sign_in_uses_registered_provider_and_binds_pkce_state<B: Backend>(
         .build()
         .await?;
     let owner = signup(&auth, "sso-signin-owner@example.test").await;
-    let created=Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":"signin-provider","issuer":"https://idp.example.com","domain":"company.com,subsidiary.com","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true,"scopes":["openid","email"],"authorizationEndpoint":"https://idp.example.com/authorize","tokenEndpoint":"https://idp.example.com/token","jwksEndpoint":"https://idp.example.com/jwks"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    let registration = json!({"providerId":"signin-provider","issuer":"https://idp.example.com","domain":"company.com,subsidiary.com","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true,"scopes":["openid","email"],"authorizationEndpoint":"https://idp.example.com/authorize","tokenEndpoint":"https://idp.example.com/token","jwksEndpoint":"https://idp.example.com/jwks"}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&registration)?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     assert_eq!(created.status, 200);
     let input = json!({"providerId":"signin-provider","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed"),"loginHint":"employee@company.com","scopes":["openid","profile"]});
     let response = Box::pin(auth.dispatch_endpoint(
@@ -141,6 +150,70 @@ async fn sso_sign_in_uses_registered_provider_and_binds_pkce_state<B: Backend>(
         .await
         .unwrap_err();
         assert_eq!(denied.error.status_code(), 404);
+    }
+    for (index, domain_list, search, admitted) in [
+        (
+            0,
+            "https://NORMALIZED.example:443/path,, subsidiary.example/path",
+            "team.normalized.example",
+            true,
+        ),
+        (
+            1,
+            "normalize-port.example:99999",
+            "normalize-port.example",
+            true,
+        ),
+        (2, "trailing-dot.example.", "trailing-dot.example", true),
+        (
+            3,
+            "invalid-list.example,not a domain",
+            "team.invalid-list.example",
+            false,
+        ),
+        (
+            4,
+            "leading-hyphen.example,-bad.example",
+            "team.leading-hyphen.example",
+            false,
+        ),
+    ] {
+        let mut provider_input = registration.clone();
+        let id = format!("normalized-provider-{index}");
+        provider_input["providerId"] = json!(id);
+        provider_input["domain"] = json!(domain_list);
+        let registered = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::register_sso_provider_endpoint(&provider_input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(registered.status, 200);
+        let result = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::sign_in_sso_endpoint(
+                &json!({"domain":search,"callbackURL":input["callbackURL"]}),
+            )?,
+            EndpointOptions::default(),
+        ))
+        .await;
+        if admitted {
+            let selected = result?.into_response()?;
+            assert_eq!(selected.status, 200);
+            let selected_url = url::Url::parse(body(&selected)["url"].as_str().unwrap())?;
+            assert_eq!(
+                selected_url
+                    .query_pairs()
+                    .find(|(key, _)| key == "redirect_uri")
+                    .unwrap()
+                    .1,
+                format!("{ORIGIN}/api/auth/sso/callback/{id}")
+            );
+        } else {
+            assert_eq!(result.unwrap_err().error.status_code(), 404);
+        }
     }
     let missing = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::sign_in_sso_endpoint(
