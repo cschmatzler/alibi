@@ -120,6 +120,10 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.listSCIMManagedConnectionEvents({ body: input.body, asResponse: true });
       }
+      if (query.get("operation") === "decommissionSCIMConnection") {
+        const input = (await request.json()) as any;
+        return auth.api.decommissionSCIMConnection({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "getSCIMManagedConnection") {
         const input = (await request.json()) as any;
         return auth.api.getSCIMManagedConnection({ body: input.body, asResponse: true });

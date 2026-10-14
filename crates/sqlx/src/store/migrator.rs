@@ -37,6 +37,12 @@ const SCIM_MANAGED: Migration = Migration {
     postgres: alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA,
 };
 
+const SCIM_BINDING: Migration = Migration {
+    name: "m20261014_000005_typescript_scim_binding_schema",
+    sqlite: alibi_schema_registry::SQLITE_SCIM_BINDING_SCHEMA,
+    postgres: alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA,
+};
+
 /// Apply the bundled auth schema.
 ///
 /// # Errors
@@ -46,7 +52,7 @@ pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
     apply(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO, SCIM_MANAGED],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO, SCIM_MANAGED, SCIM_BINDING],
     )
     .await
 }
@@ -68,7 +74,7 @@ pub(crate) async fn run_migrations_scoped(
     apply_scoped(
         pool,
         "better_auth_migrations",
-        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO, SCIM_MANAGED],
+        &[AUTH_SCHEMA, OAUTH_CLIENTS, SSO, SCIM_MANAGED, SCIM_BINDING],
         Some(config),
     )
     .await

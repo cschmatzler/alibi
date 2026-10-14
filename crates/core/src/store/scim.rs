@@ -78,6 +78,24 @@ pub struct ScimManagedConnectionEvent {
     pub credential_id: Option<String>,
     pub created_at: DateTime<Utc>,
 }
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ScimConnectionBinding {
+    pub id: String,
+    pub connection_id: String,
+    pub connection_key: String,
+    pub provisioning_domain_id: String,
+    pub created_at: DateTime<Utc>,
+    pub decommission_status: String,
+    pub decommission_cursor_user_id: Option<String>,
+    pub decommission_reconciled_user_count: i64,
+    pub decommission_batch_count: i64,
+    pub decommission_revision: i64,
+    pub decommissioned_at: Option<DateTime<Utc>>,
+    pub decommission_completed_at: Option<DateTime<Utc>>,
+    pub decommission_lease_id: Option<String>,
+    pub decommission_lease_expires_at: Option<DateTime<Utc>>,
+}
 pub struct ScimManagedConnectionState {
     pub connection: ScimManagedConnection,
     pub credentials: Vec<ScimManagedCredential>,
@@ -88,6 +106,17 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn terminal_scim_connection_binding(
+        &self,
+        _id: &str,
+        _domain: Option<&str>,
+        _key: &str,
+    ) -> AuthResult<ScimConnectionBinding> {
+        Err(AuthError::config(
+            "SCIM binding persistence is not supported by this store",
+        ))
+    }
+
     async fn list_scim_managed_connection_events(
         &self,
         _id: &str,
@@ -161,4 +190,19 @@ pub fn scim_managed_conflict(message: &str) -> AuthError {
         code: None,
         message: message.into(),
     }
+}
+
+pub fn validate_scim_binding_domain(
+    binding: &ScimConnectionBinding,
+    domain: Option<&str>,
+) -> AuthResult<()> {
+    if let Some(domain) = domain
+        && domain != binding.provisioning_domain_id
+    {
+        return Err(AuthError::internal(format!(
+            "SCIM connection \"{}\" is already bound to provisioning domain \"{}\".",
+            binding.connection_id, binding.provisioning_domain_id
+        )));
+    }
+    Ok(())
 }

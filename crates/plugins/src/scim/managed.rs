@@ -44,6 +44,23 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = call.body().ok_or_else(|| {
         crate::endpoint::validation("[body] Invalid input: expected object, received undefined")
     })?;
+    if call.operation_id() == "decommissionSCIMConnection" {
+        let mut output = indexmap::IndexMap::new();
+        _ = output.insert(
+            "connectionId".into(),
+            JsValue::String(body_string(body, "connectionId", 1)?),
+        );
+        if body.get("provisioningDomainId").is_some() {
+            _ = output.insert(
+                "provisioningDomainId".into(),
+                JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+            );
+        }
+        return Ok(EndpointInput {
+            body: Some(JsValue::Object(output)),
+            query: call.query().cloned(),
+        });
+    }
     if matches!(
         call.operation_id(),
         "getSCIMManagedConnection"
@@ -196,6 +213,53 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Permanently bind and retire a connection before its first provisioning request.
+    /// # Errors
+    /// Returns an error if arguments cannot be serialized.
+    pub fn decommission_connection_endpoint(
+        id: &str,
+        domain: Option<&str>,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        let mut body = serde_json::json!({"connectionId":id});
+        if let Some(domain) = domain
+            && let Value::Object(values) = &mut body
+        {
+            _ = values.insert("provisioningDomainId".into(), Value::String(domain.into()));
+        }
+        ServerEndpoint::new("scim", "decommissionSCIMConnection").with_body(&body)
+    }
+    pub(super) async fn decommission_connection<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        use sha2::Digest;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let id = body
+            .get("connectionId")
+            .and_then(JsValue::as_str)
+            .ok_or_else(|| AuthError::internal("Validated ID missing"))?;
+        let domain = body.get("provisioningDomainId").and_then(JsValue::as_str);
+        let key = URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
+            "scim-connection",
+            id,
+        ])?));
+        let binding = ctx
+            .database
+            .terminal_scim_connection_binding(id, domain, &key)
+            .await?;
+        if binding.decommission_status != "complete" {
+            return Err(AuthError::config(
+                "SCIM projection reconciliation is not supported by this store",
+            ));
+        }
+        EndpointResponse::json(
+            &serde_json::json!({"connectionId":binding.connection_id,"provisioningDomainId":binding.provisioning_domain_id,"status":binding.decommission_status,"decommissionedAt":binding.decommissioned_at,"completedAt":binding.decommission_completed_at,"retryAfter":Value::Null,"reconciledUsers":binding.decommission_reconciled_user_count,"batches":binding.decommission_batch_count}),
+        )
+    }
+
     /// List the newest 100 connection events in ascending sequence order.
     /// # Errors
     /// Returns an error if the arguments cannot be serialized.

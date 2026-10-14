@@ -824,6 +824,17 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn terminal_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: Option<&str>,
+        key: &str,
+    ) -> AuthResult<crate::store::ScimConnectionBinding> {
+        self.inner
+            .terminal_scim_connection_binding(id, domain, key)
+            .await
+    }
+
     async fn list_scim_managed_connection_events(
         &self,
         id: &str,
