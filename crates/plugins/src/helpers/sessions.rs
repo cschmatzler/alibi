@@ -369,6 +369,48 @@ pub(crate) async fn issue_selected_user_session_record<S: alibi_core::AuthSchema
     issue_user_session_inner(ctx, &id, ip_address, user_agent, None, true, Some(user)).await
 }
 
+pub(crate) async fn issue_selected_user_session_in_transaction<S: alibi_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    database: &dyn alibi_core::AuthTransaction<S>,
+    mut user: alibi_core::AdapterRecord<S::User>,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
+    if admin_plugin_enabled(ctx) && user.banned() {
+        if user.ban_expires().is_some_and(|expiry| expiry < Utc::now()) {
+            user = database
+                .update_user_record(
+                    &user.id(),
+                    UpdateUser {
+                        banned: Some(false),
+                        ban_reason: None,
+                        ban_expires: None,
+                        ..Default::default()
+                    },
+                )
+                .await?;
+        } else {
+            return Err(SessionIssueError::Banned {
+                message: resolve_admin_banned_user_message(ctx, &user).await?,
+            });
+        }
+    }
+    let session = ctx
+        .session_manager()
+        .create_session_record_in_transaction(&user, ip_address, user_agent, database)
+        .await?;
+    Ok(IssuedSessionRecord { user, session })
+}
+pub(crate) async fn publish_committed_session<S: alibi_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    issued: &IssuedSessionRecord<S>,
+) -> AuthResult<()> {
+    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &issued.user, &issued.session)
+        .await?;
+    record_completed_session_record::<S>(&issued.user, &issued.session);
+    Ok(())
+}
+
 pub(in crate::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,

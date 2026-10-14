@@ -5,6 +5,7 @@ mod identity;
 mod linking;
 mod redirects;
 mod token_exchange;
+pub(crate) mod transactional_identity;
 
 use super::providers::{
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthProvider, OAuthTokenSet, OAuthUserInfo,

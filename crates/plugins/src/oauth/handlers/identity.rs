@@ -155,7 +155,7 @@ pub(in crate::oauth::handlers) fn provider_candidate(
     candidate
 }
 
-fn identity_source(
+pub(in crate::oauth::handlers) fn identity_source(
     provider: &str,
     profile: &serde_json::Value,
     action: UserValidationAction,

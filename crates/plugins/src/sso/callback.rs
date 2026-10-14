@@ -294,6 +294,10 @@ impl SsoPlugin {
                 .get("access_token")
                 .and_then(Value::as_str)
                 .ok_or_else(|| AuthError::internal("missing_access_token"))?;
+            if self.config.resolve_user.is_some() && verified.is_none() {
+                return Err(api(400, "id_token_required_for_user_resolution"));
+            }
+            let verified_claims = verified.clone();
             let profile = if let Some(endpoint) = config
                 .get("userInfoEndpoint")
                 .and_then(Value::as_str)
@@ -395,10 +399,10 @@ impl SsoPlugin {
                 raw: Some(raw.clone()),
                 ..Default::default()
             };
-            Ok((user, tokens, profile))
+            Ok((user, tokens, profile, verified_claims))
         }
         .await;
-        let (user, tokens, profile) = match exchange {
+        let (user, tokens, profile, verified_claims) = match exchange {
             Ok(value) => value,
             Err(error) => return fail("invalid_provider", Some(&error.to_string())),
         };
@@ -433,20 +437,78 @@ impl SsoPlugin {
             use_updated_user: true,
             ..Default::default()
         };
-        let issued = match process_oauth_sign_in(
-            OAuthIdentity {
-                provider_name: provider_id,
-                user: &user,
-                profile: &profile,
-            },
-            &policy,
-            &tokens,
-            self.config.disable_implicit_sign_up && payload.request_sign_up != Some(true),
-            meta,
-            &scoped,
-        )
-        .await
-        {
+        let outcome = if self.config.resolve_user.is_some() {
+            let claims =
+                verified_claims.ok_or_else(|| api(400, "id_token_required_for_user_resolution"))?;
+            let mut provider_user = user.public_profile(false);
+            _ = provider_user.entry("name").or_insert_with(|| json!(""));
+            let input = super::SsoUserResolutionInput {
+                protocol: super::SsoProtocol::Oidc,
+                provider_id: provider.provider_id.clone(),
+                account_key: super::SsoAccountKey {
+                    issuer: claims
+                        .get("iss")
+                        .and_then(Value::as_str)
+                        .unwrap_or(&provider.issuer)
+                        .into(),
+                    account_id: user.id.clone(),
+                },
+                provider_user: Value::Object(provider_user),
+                provider_claims: Some(profile.clone()),
+                verified_id_token_claims: Some(claims),
+                provider_attributes: None,
+                provider_reference: super::sign_in::provider_reference(
+                    &provider,
+                    self.config.domain_verification,
+                )?,
+            };
+            let request = super::user_resolution::Authentication {
+                identity: crate::oauth::handlers::transactional_identity::Identity {
+                    provider: provider_id,
+                    user: &user,
+                    profile: &profile,
+                    policy: &policy,
+                    tokens: &tokens,
+                    disable_signup: self.config.disable_implicit_sign_up
+                        && payload.request_sign_up != Some(true),
+                    meta,
+                    ctx: &scoped,
+                },
+                input,
+                provider: &provider,
+            };
+            match self.resolved_authentication(request).await {
+                Ok(issued) => Ok(issued),
+                Err(error) => {
+                    let code = match &error {
+                        AuthError::Api {
+                            code: Some(code), ..
+                        } => code.as_str(),
+                        _ => "SSO_USER_RESOLUTION_FAILED",
+                    };
+                    let message = match &error {
+                        AuthError::Api { message, .. } => message.as_str(),
+                        _ => "Unable to resolve the SSO user",
+                    };
+                    return fail(code, (!message.is_empty()).then_some(message));
+                }
+            }
+        } else {
+            process_oauth_sign_in(
+                OAuthIdentity {
+                    provider_name: provider_id,
+                    user: &user,
+                    profile: &profile,
+                },
+                &policy,
+                &tokens,
+                self.config.disable_implicit_sign_up && payload.request_sign_up != Some(true),
+                meta,
+                &scoped,
+            )
+            .await
+        };
+        let issued = match outcome {
             Ok(issued) => issued,
             Err(error) => {
                 let (code, description) =

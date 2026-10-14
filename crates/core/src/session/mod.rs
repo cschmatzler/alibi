@@ -102,6 +102,22 @@ impl<S: AuthSchema> SessionManager<S> {
             .await
     }
 
+    /// Create the session through an existing authentication transaction.
+    ///
+    /// # Errors
+    /// Propagates transaction creation and callback errors.
+    pub async fn create_session_record_in_transaction(
+        &self,
+        user: &impl AuthUser,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+        database: &dyn crate::AuthTransaction<S>,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        database
+            .create_session_record(self.new_session(user, ip_address, user_agent))
+            .await
+    }
+
     fn new_session(
         &self,
         user: &impl AuthUser,

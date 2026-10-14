@@ -14,9 +14,11 @@ pub use sessions::{
     issue_user_session_with_overrides, issue_user_session_with_overrides_record, response_session,
 };
 pub(crate) use sessions::{
-    completed_response_session, create_user_session_record, issue_selected_user_session_record,
-    ordinary_session, record_completed_session, record_completed_session_record,
-    record_completed_session_user_view, response_has_session_cookie,
+    completed_response_session, create_user_session_record,
+    issue_selected_user_session_in_transaction, issue_selected_user_session_record,
+    ordinary_session, publish_committed_session, record_completed_session,
+    record_completed_session_record, record_completed_session_user_view,
+    response_has_session_cookie,
 };
 
 /// Join the configured auth origin and mount path for links sent to users.
