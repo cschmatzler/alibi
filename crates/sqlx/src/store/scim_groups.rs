@@ -363,7 +363,7 @@ impl<S: AuthSchema> SqlxStore<S> {
             }
         }
     }
-    async fn lock_scim_group_with_exec(
+    pub(super) async fn lock_scim_group_with_exec(
         &self,
         exec: Exec<'_>,
         id: &str,

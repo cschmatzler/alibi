@@ -268,7 +268,7 @@ impl ScimPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<ResolvedConnection, Box<EndpointResponse>>> {
         // Query shape validation precedes authentication in the TS endpoint.
-        if call.operation_id() != "deleteSCIMGroup"
+        if !matches!(call.operation_id(), "deleteSCIMGroup" | "deleteSCIMUser")
             && let Some(detail) = query_shape_error(
                 call.query(),
                 matches!(call.operation_id(), "listSCIMGroups" | "listSCIMUsers"),
@@ -476,6 +476,117 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn delete_user<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("userId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(source) = ctx.database.get_scim_user(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM User not found", None));
+        };
+        if source.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let projection = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let roles = projection.as_ref().is_some_and(|handle| handle.1.is_some());
+        let identity = ctx
+            .extensions
+            .get::<super::projection::ScimIdentityHandle<S>>();
+        for attempt in 0..3 {
+            let id = id.to_owned();
+            let cid = connection.id.clone();
+            let domain = connection.domain.clone();
+            let key = scoped_key(&["scim-connection", &cid])?;
+            let projection = projection.clone();
+            let identity = identity.clone();
+            let result = alibi_core::store::transaction::<S, (), _>(
+                ctx.database.as_ref(),
+                move |database| {
+                    Box::pin(async move {
+                        let (user_id, states) =
+                            database.delete_scim_user(&id, &cid, &domain, roles).await?;
+                        reconcile_projected_users(database, &domain, states, projection).await?;
+                        let state = database.reconcile_scim_identity(&user_id).await?;
+                        if let Some(identity) = identity {
+                            identity
+                                .0
+                                .reconcile_user(&state, database)
+                                .await
+                                .map_err(|error| {
+                                    super::projection::application_callback_error(
+                                        error,
+                                        "SCIM identity reconciliation failed",
+                                    )
+                                })?;
+                        }
+                        if !state.active {
+                            database.delete_user_sessions(&user_id).await?;
+                        }
+                        database.fence_scim_connection(&cid, &key).await
+                    })
+                },
+            )
+            .await;
+            match result {
+                Ok(()) => {
+                    let mut response = EndpointResponse::empty()
+                        .with_status(204)
+                        .with_header("content-type", "application/json")
+                        .with_header(MARKER, "1");
+                    if let Some(http) = response.http_response_mut() {
+                        http.status = 204;
+                    }
+                    return Ok(response);
+                }
+                Err(AuthError::Internal(message))
+                    if matches!(
+                        message.as_str(),
+                        "The SCIM identity changed concurrently; retry the request"
+                            | "The SCIM User identity changed concurrently; retry the request."
+                            | "The SCIM Group changed concurrently; retry the request."
+                            | "The SCIM projection subject changed concurrently; retry the request."
+                    ) =>
+                {
+                    if attempt == 2 {
+                        return Ok(error(
+                            409,
+                            "The SCIM Group changed concurrently; retry the request",
+                            None,
+                        ));
+                    }
+                }
+                Err(AuthError::Api {
+                    status, message, ..
+                }) => return Ok(error(status, &message, None)),
+                Err(AuthError::CallbackFailure(cause)) => {
+                    let detail = match cause.as_ref() {
+                        AuthError::Api { message, .. } => message.as_str(),
+                        _ => "SCIM identity reconciliation failed",
+                    };
+                    return Ok(error(500, detail, None));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(AuthError::internal(
+            "SCIM mutation retry loop completed without a result",
+        ))
+    }
     pub(super) async fn patch_group<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -534,7 +645,7 @@ impl ScimPlugin {
                         let (group, states) = database
                             .patch_scim_group(&id, &cid, &domain, patch, roles)
                             .await?;
-                        reconcile_group_states(database, &domain, states, configured).await?;
+                        reconcile_projected_users(database, &domain, states, configured).await?;
                         database.fence_scim_connection(&cid, &key).await?;
                         Ok(group)
                     })
@@ -696,7 +807,7 @@ impl ScimPlugin {
                 alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                     Box::pin(async move {
                         let (group, states) = database.replace_scim_group(&id, data, roles).await?;
-                        reconcile_group_states(database, &domain, states, configured).await?;
+                        reconcile_projected_users(database, &domain, states, configured).await?;
                         database.fence_scim_connection(&cid, &key).await?;
                         Ok(group)
                     })
@@ -800,7 +911,7 @@ impl ScimPlugin {
                         let states = database
                             .delete_scim_group(&id, &cid, &domain, with_roles)
                             .await?;
-                        reconcile_group_states(database, &domain, states, configured).await?;
+                        reconcile_projected_users(database, &domain, states, configured).await?;
                         database.fence_scim_connection(&cid, &key).await
                     })
                 },
@@ -955,7 +1066,7 @@ impl ScimPlugin {
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
                     let (group, states) = database.create_scim_group(data, with_roles).await?;
-                    reconcile_group_states(database, &domain, states, configured).await?;
+                    reconcile_projected_users(database, &domain, states, configured).await?;
                     database.fence_scim_connection(&cid, &key).await?;
                     Ok(group)
                 })
@@ -1546,7 +1657,7 @@ fn group_creation_body(
     }
 }
 
-async fn reconcile_group_states<S: AuthSchema>(
+async fn reconcile_projected_users<S: AuthSchema>(
     database: &dyn alibi_core::store::AuthTransaction<S>,
     domain: &str,
     states: Vec<alibi_core::store::ScimProjectionPreparedUser>,

@@ -64,25 +64,57 @@ export async function scimFixture(base: BetterAuthOptions) {
           "configure-projection",
           "configure-role-projection",
           "configure-group-create-projection",
+          "configure-user-delete",
         ].includes(query.get("operation") ?? "")
       ) {
         options.plugins = [
           scim({
-            connections:
-              query.get("operation") === "configure-group-create-projection"
-                ? [
-                    {
-                      id: "conn-a",
-                      provisioningDomainId: "tenant-a",
-                      credentials: [{ id: "reader", token: "group-reader" }],
-                    },
-                  ]
-                : [],
+            connections: ["configure-group-create-projection", "configure-user-delete"].includes(
+              query.get("operation") ?? "",
+            )
+              ? [
+                  {
+                    id: "conn-a",
+                    provisioningDomainId: "tenant-a",
+                    credentials: [{ id: "reader", token: "group-reader" }],
+                  },
+                  ...(query.get("operation") === "configure-user-delete"
+                    ? [
+                        {
+                          id: "conn-b",
+                          provisioningDomainId: "tenant-a",
+                          credentials: [{ id: "reader", token: "other-reader" }],
+                        },
+                      ]
+                    : []),
+                ]
+              : [],
             authentication: { verifyBearerToken: async () => null },
             managedConnections: {
               credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
               maxActiveCredentials: 2,
             },
+            ...(query.get("operation") === "configure-user-delete"
+              ? {
+                  identity: {
+                    reconcileUser: async (input: any, context: any) => {
+                      await context.database.update({
+                        model: "user",
+                        where: [{ field: "id", value: input.userId }],
+                        update: {
+                          name: identityFails
+                            ? "Should roll back identity"
+                            : input.active
+                              ? "Identity active"
+                              : "Identity inactive",
+                        },
+                      });
+                      identityStates.push(input);
+                      if (identityFails) throw new Error("application rejected identity");
+                    },
+                  },
+                }
+              : {}),
             projection: {
               ...(query.get("operation") === "configure-role-projection"
                 ? {
@@ -140,6 +172,72 @@ export async function scimFixture(base: BetterAuthOptions) {
             .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
             .get(),
         );
+      }
+      if (query.get("operation") === "deleteSCIMUser") {
+        const input = (await request.json()) as any;
+        const parameters = {
+          params: input.params,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true as const,
+        };
+        return auth.api.deleteSCIMUser(parameters);
+      }
+      if (query.get("operation") === "prepare-user-delete") {
+        const key = createHash("sha256")
+          .update(JSON.stringify(["scim-user-external-id", "conn-a", "external-a"]))
+          .digest("base64url");
+        options.database
+          .query(
+            "UPDATE scimUser SET externalId='external-a',externalIdKey=?,active=true WHERE id='member-a'",
+          )
+          .run(key);
+        options.database.exec(
+          "UPDATE scimUser SET active=true WHERE id='member-b'; UPDATE scimSubject SET profileSourceId='member-a'",
+        );
+        return fixtureJson({ prepared: true });
+      }
+      if (query.get("operation") === "reuse-user-delete-tombstone") {
+        const key = createHash("sha256")
+          .update(JSON.stringify(["scim-user-external-id", "conn-a", "external-a"]))
+          .digest("base64url");
+        options.database
+          .query(
+            "UPDATE scimUser SET provisioningDomainId='tenant-a',externalId='external-a',externalIdKey=? WHERE id='member-c'",
+          )
+          .run(key);
+        options.database.exec(
+          "UPDATE scimIdentityTombstone SET connectionId='legacy-connection',provisioningDomainId='legacy-domain',externalId='legacy-external'",
+        );
+        return fixtureJson({ changed: true });
+      }
+      if (query.get("operation") === "user-delete-state") {
+        return fixtureJson({
+          users: options.database
+            .query("SELECT id,connectionId,provisioningDomainId FROM scimUser ORDER BY id")
+            .all(),
+          groups: options.database.query("SELECT id,revision FROM scimGroup ORDER BY id").all(),
+          members: options.database
+            .query("SELECT groupId,scimUserId FROM scimGroupMember ORDER BY groupId,scimUserId")
+            .all(),
+          subjects: options.database
+            .query("SELECT revision,profileSourceId FROM scimSubject")
+            .all(),
+          tombstones: options.database
+            .query(
+              "SELECT connectionId,provisioningDomainId,externalId,userId,profile FROM scimIdentityTombstone ORDER BY externalIdKey",
+            )
+            .all(),
+          sessions: options.database
+            .query(
+              "SELECT COUNT(*) AS n FROM session WHERE userId IN (SELECT id FROM user WHERE email='group-create-owner@example.com')",
+            )
+            .get(),
+          owner: options.database
+            .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
+            .get(),
+        });
       }
       if (query.get("operation") === "patchSCIMGroup") {
         const input = (await request.json()) as any;

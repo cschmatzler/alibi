@@ -542,3 +542,5 @@ mod scim_group_delete;
 mod scim_group_replace;
 
 mod scim_group_patch;
+
+mod scim_user_delete;

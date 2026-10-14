@@ -108,14 +108,27 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         roles: bool,
         locked: bool,
     ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
-        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
-            .unwrap_or(u64::MAX);
         let user_ids = self
             .scim_projection_user_ids_with_connection(db, domain, ids, !locked)
             .await?;
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
+        self.prepare_scim_projection_for_users_with_connection(db, domain, user_ids, roles)
+            .await
+    }
+    pub(super) async fn prepare_scim_projection_for_users_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        domain: &str,
+        user_ids: Vec<String>,
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
+            .unwrap_or(u64::MAX);
         let users = user::Entity::find()
             .filter(user::Column::UserId.is_in(user_ids.iter().cloned()))
             .filter(user::Column::ProvisioningDomainId.eq(domain))

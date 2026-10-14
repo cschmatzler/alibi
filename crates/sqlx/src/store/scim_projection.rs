@@ -117,6 +117,19 @@ impl<S: AuthSchema> SqlxStore<S> {
         if user_ids.is_empty() {
             return Ok(Vec::new());
         }
+        self.prepare_scim_projection_for_users_with_exec(exec, domain, user_ids, roles)
+            .await
+    }
+    pub(super) async fn prepare_scim_projection_for_users_with_exec(
+        &self,
+        exec: Exec<'_>,
+        domain: &str,
+        user_ids: Vec<String>,
+        roles: bool,
+    ) -> AuthResult<Vec<ScimProjectionPreparedUser>> {
+        if user_ids.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut sql = model::select_model::<user::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimUser", "provisioningDomainId", " = ", domain);
@@ -131,20 +144,23 @@ impl<S: AuthSchema> SqlxStore<S> {
             .iter()
             .map(|user| user.connection_id.clone())
             .collect::<std::collections::HashSet<_>>();
-        let mut sql = model::select_model::<binding::Model>(exec);
-        sql.push(" WHERE ");
-        sql.column("scimConnectionBinding", "connectionId");
-        sql.push(" IN ");
-        sql.bind_list(connections);
-        sql.push(" LIMIT ");
-        sql.bind(self.find_many_limit());
-        let retired = exec
-            .fetch_all::<binding::Model>(sql)
-            .await?
-            .into_iter()
-            .filter(|binding| binding.decommission_status != "active")
-            .map(|binding| binding.connection_id)
-            .collect::<std::collections::HashSet<_>>();
+        let retired = if connections.is_empty() {
+            std::collections::HashSet::new()
+        } else {
+            let mut sql = model::select_model::<binding::Model>(exec);
+            sql.push(" WHERE ");
+            sql.column("scimConnectionBinding", "connectionId");
+            sql.push(" IN ");
+            sql.bind_list(connections);
+            sql.push(" LIMIT ");
+            sql.bind(self.find_many_limit());
+            exec.fetch_all::<binding::Model>(sql)
+                .await?
+                .into_iter()
+                .filter(|binding| binding.decommission_status != "active")
+                .map(|binding| binding.connection_id)
+                .collect::<std::collections::HashSet<_>>()
+        };
         let mut sql = model::select_model::<grant::Model>(exec);
         sql.push(" WHERE ");
         sql.compare("scimProjectionGrant", "provisioningDomainId", " = ", domain);

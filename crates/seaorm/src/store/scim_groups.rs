@@ -311,7 +311,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             }
         }
     }
-    async fn lock_scim_group_with_connection<C: ConnectionTrait>(
+    pub(super) async fn lock_scim_group_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
         id: &str,
