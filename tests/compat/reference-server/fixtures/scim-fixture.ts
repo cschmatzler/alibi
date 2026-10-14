@@ -125,19 +125,22 @@ export async function scimFixture(base: BetterAuthOptions) {
                   identity: {
                     resolveUser: async (input: any, context: any) => {
                       const external = input.resource.externalId;
-                      if (external === "resolve-fails")
+                      if (external === "resolve-fails") {
                         throw new Error("application rejected resolution");
-                      if (external === "link-missing")
+                      }
+                      if (external === "link-missing") {
                         return {
                           action: "link" as const,
                           userId: "missing-user",
                           profile: "preserve" as const,
                         };
+                      }
                       if (
                         !["Alias", "Alias2"].includes(input.resource.userName) ||
                         input.resource.primaryEmail !== "alias@example.com"
-                      )
+                      ) {
                         throw new Error("incorrect resolver resource");
+                      }
                       const user = await context.database.findOne({
                         model: "user",
                         where: [{ field: "email", value: "new-work@example.com" }],
