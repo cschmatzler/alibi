@@ -3,7 +3,10 @@ use super::*;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::{SessionManagementPlugin, SsoPlugin};
 use alibi::store::{SchemaMigrator, SsoProviderStore};
-backend_tests!(sso_additional_fields_validate_persist_and_filter_provider_operations);
+backend_tests!(
+    sso_additional_fields_validate_persist_and_filter_provider_operations,
+    sso_fractional_provider_fields_survive_registration_and_update
+);
 postgres_tests!(sso_additional_fields_validate_persist_and_filter_provider_operations);
 async fn sso_additional_fields_validate_persist_and_filter_provider_operations<B: Backend>(
     db: Db,
@@ -98,5 +101,61 @@ async fn sso_additional_fields_validate_persist_and_filter_provider_operations<B
     assert_eq!(stored.additional_fields["privateNote"], "new private");
     assert!(stored.additional_fields["settings"].is_null());
     assert!(stored.oidc_config.unwrap().contains("secret"));
+    Ok(())
+}
+
+async fn sso_fractional_provider_fields_survive_registration_and_update<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    super::sso_additional_fields_config::configure(&mut config);
+    let connection = B::connect(&db.url, None).await?;
+    let store = B::store(Arc::new(config.clone()), &connection);
+    store.migrate().await?;
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "fraction-owner@example.test").await;
+    let owned = EndpointOptions {
+        headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+        ..Default::default()
+    };
+    let input = json!({"providerId":"fraction-provider","issuer":"https://idp.example.com","domain":"company.test","label":"Fraction","tier":4.5,"oidcConfig":{"clientId":"client","clientSecret":"secret","skipDiscovery":true,"authorizationEndpoint":"https://idp.example.com/authorize","tokenEndpoint":"https://idp.example.com/token","jwksEndpoint":"https://idp.example.com/jwks"}});
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&input)?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(created.status, 200);
+    assert_eq!(body(&created)["tier"], 4.5);
+    let physical: Value = serde_json::from_str(&db.table("ssoProvider").await?)?;
+    assert_eq!(physical[0]["tier"], 4.5);
+    for value in [-1.25, 0.0, 9.75] {
+        let updated = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::update_sso_provider_endpoint(
+                &json!({"providerId":"fraction-provider","tier":value}),
+            )?,
+            owned.clone(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(updated.status, 200);
+        assert_eq!(body(&updated)["tier"], value);
+        let row = store.get_sso_provider("fraction-provider").await?.unwrap();
+        assert_eq!(row.additional_fields["tier"], value);
+        let read = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::get_sso_provider_endpoint("fraction-provider")?,
+            owned.clone(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(body(&read)["tier"], value);
+    }
     Ok(())
 }
