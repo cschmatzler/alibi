@@ -20,6 +20,8 @@ pub enum JsValue {
     Bool(bool),
     Number(f64),
     String(String),
+    /// A trusted SDK Date value; JSON transport still produces a string.
+    Date(chrono::DateTime<chrono::Utc>),
     Array(Vec<Self>),
     Object(IndexMap<String, Self>),
 }
@@ -33,6 +35,9 @@ impl JsValue {
             Self::Null => Ok("null".to_owned()),
             Self::Bool(value) => Ok(value.to_string()),
             Self::String(value) => Ok(value.clone()),
+            Self::Date(value) => Ok(value
+                .format("%a %b %d %Y %H:%M:%S GMT%z (Coordinated Universal Time)")
+                .to_string()),
             Self::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
             Self::Array(values) => values
                 .iter()
@@ -61,6 +66,14 @@ impl JsValue {
     pub fn as_str(&self) -> Option<&str> {
         if let Self::String(s) = self {
             Some(s)
+        } else {
+            None
+        }
+    }
+    #[must_use]
+    pub const fn as_date(&self) -> Option<&chrono::DateTime<chrono::Utc>> {
+        if let Self::Date(value) = self {
+            Some(value)
         } else {
             None
         }
@@ -101,7 +114,7 @@ impl JsValue {
             Self::Bool(value) => *value,
             Self::Number(value) => *value != 0.0 && !value.is_nan(),
             Self::String(value) => !value.is_empty(),
-            Self::Array(_) | Self::Object(_) => true,
+            Self::Date(_) | Self::Array(_) | Self::Object(_) => true,
         }
     }
     #[must_use]
@@ -156,6 +169,8 @@ impl Serialize for JsValue {
             Self::Bool(b) => serializer.serialize_bool(*b),
             Self::Number(n) => serializer.serialize_f64(*n),
             Self::String(s) => serializer.serialize_str(s),
+            Self::Date(value) => serializer
+                .serialize_str(&value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
             Self::Array(a) => a.serialize(serializer),
             Self::Object(m) => m.serialize(serializer),
         }
@@ -254,6 +269,9 @@ impl<'de> Deserializer<'de> for JsValue {
             Self::Bool(b) => visitor.visit_bool(b),
             Self::Number(n) => visitor.visit_f64(n),
             Self::String(s) => visitor.visit_string(s),
+            Self::Date(value) => {
+                visitor.visit_string(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            }
             Self::Array(a) => {
                 visitor.visit_seq(serde::de::value::SeqDeserializer::new(a.into_iter()))
             }
@@ -287,9 +305,11 @@ impl<'de> Deserializer<'de> for JsValue {
             Self::Object(map) => visitor.visit_enum(serde::de::value::MapAccessDeserializer::new(
                 serde::de::value::MapDeserializer::new(map.into_iter()),
             )),
-            value @ (Self::Null | Self::Bool(_) | Self::Number(_) | Self::Array(_)) => {
-                value.deserialize_any(visitor)
-            }
+            value @ (Self::Null
+            | Self::Bool(_)
+            | Self::Number(_)
+            | Self::Date(_)
+            | Self::Array(_)) => value.deserialize_any(visitor),
         }
     }
     integer_number!(
@@ -683,6 +703,9 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             .map(Value::Number)
             .ok_or_else(|| invalid("invalid finite JSON number")),
         JsValue::String(s) => Ok(Value::String(s.clone())),
+        JsValue::Date(value) => Ok(Value::String(
+            value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        )),
         JsValue::Array(a) => a
             .iter()
             .map(finite_value)
@@ -713,6 +736,10 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
             }
         }
         JsValue::String(s) => serde_json::to_writer(bytes, s)?,
+        JsValue::Date(value) => serde_json::to_writer(
+            bytes,
+            &value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+        )?,
         JsValue::Array(a) => {
             bytes.push(b'[');
             for (index, item) in a.iter().enumerate() {

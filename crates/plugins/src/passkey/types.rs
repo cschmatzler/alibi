@@ -130,6 +130,7 @@ fn received_type(value: &alibi_core::utils::json::JsValue) -> &'static str {
         JsValue::Null => "null",
         JsValue::Array(_) => "array",
         JsValue::Object(_) => "object",
+        JsValue::Date(_) => "Date",
         JsValue::Bool(_) => "boolean",
         JsValue::Number(_) => "number",
         JsValue::String(_) => "string",

@@ -118,3 +118,5 @@ pub(crate) mod sso_fixture;
 pub(crate) mod sso_dns_fixture;
 
 pub(crate) mod scim_fixture;
+
+pub(crate) mod sso_date_fixture;

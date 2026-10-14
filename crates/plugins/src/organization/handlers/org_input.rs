@@ -26,6 +26,7 @@ fn kind(value: Option<&JsValue>) -> &'static str {
         Some(JsValue::String(_)) => "string",
         Some(JsValue::Array(_)) => "array",
         Some(JsValue::Object(_)) => "object",
+        Some(JsValue::Date(_)) => "Date",
     }
 }
 

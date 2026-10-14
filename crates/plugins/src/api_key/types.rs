@@ -412,6 +412,7 @@ where
     fn js_string(value: &JsValue) -> String {
         match value {
             JsValue::String(value) => value.clone(),
+            JsValue::Date(_) => value.coerce_string().unwrap_or_default(),
             JsValue::Array(values) => values
                 .iter()
                 .map(|value_2| {

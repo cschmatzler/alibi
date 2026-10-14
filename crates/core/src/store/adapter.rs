@@ -199,6 +199,9 @@ impl RawFieldValue {
             }
             JsValue::Number(value) => Self::Number(*value),
             JsValue::String(value) => Self::Text(value.clone()),
+            JsValue::Date(value) => {
+                Self::Text(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+            }
             JsValue::Array(_) | JsValue::Object(_) => Self::Json(value.to_json_value()?),
         })
     }

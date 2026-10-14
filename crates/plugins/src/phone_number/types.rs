@@ -135,7 +135,7 @@ pub(crate) fn reject_verified_input(
         Some(Value::Bool(value)) => *value,
         Some(Value::Number(value)) => *value != 0.0 && !value.is_nan(),
         Some(Value::String(value)) => !value.is_empty(),
-        Some(Value::Array(_) | Value::Object(_)) => true,
+        Some(Value::Date(_) | Value::Array(_) | Value::Object(_)) => true,
     };
     if truthy {
         return Err(phone_error(
@@ -181,7 +181,7 @@ pub(crate) async fn parse_signup_phone(
             };
             Ok(Some(ctx.database.coerce_user_text_number(input_2).await?))
         }
-        Some(Value::Array(_) | Value::Object(_)) => Err(phone_error(
+        Some(Value::Date(_) | Value::Array(_) | Value::Object(_)) => Err(phone_error(
             422,
             codes::FAILED_TO_CREATE_USER,
             "Failed to create user",

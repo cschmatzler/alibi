@@ -574,6 +574,9 @@ fn array_string(values: &[JsValue]) -> String {
             JsValue::Bool(value) => value.to_string(),
             JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_owned(),
             JsValue::String(value) => value.clone(),
+            JsValue::Date(value) => value
+                .format("%a %b %d %Y %H:%M:%S GMT%z (Coordinated Universal Time)")
+                .to_string(),
             JsValue::Array(values) => array_string(values),
             JsValue::Object(_) => "[object Object]".into(),
         })

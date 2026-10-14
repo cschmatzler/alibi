@@ -32,6 +32,7 @@ const fn kind(value: Option<&JsValue>) -> &'static str {
         Some(JsValue::String(_)) => "string",
         Some(JsValue::Array(_)) => "array",
         Some(JsValue::Object(_)) => "object",
+        Some(JsValue::Date(_)) => "Date",
     }
 }
 
@@ -140,6 +141,7 @@ fn coerce_string(value: &JsValue) -> Option<String> {
         JsValue::Bool(value) => value.to_string(),
         JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_owned(),
         JsValue::String(value) => value.clone(),
+        JsValue::Date(_) => return value.coerce_string().ok(),
         // JSON cannot supply callable methods. An own toString shadows the
         // inherited conversion and makes z.coerce.string fail its type check.
         JsValue::Object(value) => {
