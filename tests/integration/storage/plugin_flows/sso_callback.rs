@@ -1257,23 +1257,46 @@ async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_mis
     let config = AuthConfig::new(SECRET)
         .base_url(ORIGIN)
         .trusted_origin(&idp.base);
-    let build = |key| {
+    let keys = super::sso_key_resolver::Policy::default();
+    let build = |mode: &str| {
         AuthBuilder::<B::Schema>::new(config.clone())
             .store(B::store(Arc::new(config.clone()), &connection))
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(SsoPlugin::with_config(SsoConfig {
-                default_providers: super::sso_configured_providers::jwt_provider(&idp.base, key),
+                default_providers: if mode == "jwk" {
+                    super::sso_configured_providers::jwt_jwk_provider(&idp.base)
+                } else {
+                    super::sso_configured_providers::jwt_provider(&idp.base, mode != "missing")
+                },
+                resolve_private_key: (mode == "precedence")
+                    .then(|| alibi::plugins::SsoKeyResolver(Arc::new(keys.clone()))),
                 ..Default::default()
             }))
             .build()
     };
-    let valid = build(true).await?;
-    let missing = build(false).await?;
+    let valid = build("pem").await?;
+    let jwk = build("jwk").await?;
+    let precedence = build("precedence").await?;
+    let missing = build("missing").await?;
+    keys.enabled
+        .store(false, std::sync::atomic::Ordering::SeqCst);
     let mut jtis = Vec::new();
-    for (index, key) in [(0, true), (1, true), (2, false)] {
-        let auth = if key { &valid } else { &missing };
+    for (index, mode) in [
+        (0, "pem"),
+        (1, "pem"),
+        (2, "missing"),
+        (3, "jwk"),
+        (4, "precedence"),
+    ] {
+        let key = mode != "missing";
+        let auth = match mode {
+            "jwk" => &jwk,
+            "precedence" => &precedence,
+            "missing" => &missing,
+            _ => &valid,
+        };
         let email = format!("private-key-jwt-{index}@company.test");
         let subject = format!("private-jwt-subject-{index}");
         *idp.profile.lock().unwrap() = Some(
@@ -1355,6 +1378,7 @@ async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_mis
             );
         }
         assert!(store.get_sso_provider("configured-jwt").await?.is_none());
+        assert!(keys.events.lock().unwrap().is_empty());
     }
     B::close(connection).await
 }

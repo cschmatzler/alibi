@@ -129,11 +129,21 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
-  const jwtOptions = async (key: boolean) => ({
+  const keyEvents: any[] = [];
+  let keyEnabled = true;
+  const jwtOptions = async (key: boolean, mode = "pem") => ({
     ...options,
     plugins: [
       username(),
       sso({
+        ...(mode === "precedence"
+          ? {
+              async resolvePrivateKey(context: any) {
+                keyEvents.push({ ...context });
+                return {};
+              },
+            }
+          : {}),
         defaultSSO: [
           {
             providerId: "configured-jwt",
@@ -152,11 +162,22 @@ export async function ssoFixture(base: BetterAuthOptions) {
             },
             ...(key
               ? {
-                  privateKey: {
-                    privateKeyPem: await Bun.file(
-                      new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
-                    ).text(),
-                  },
+                  privateKey:
+                    mode === "jwk"
+                      ? {
+                          privateKeyJwk: await Bun.file(
+                            new URL(
+                              "../../fixtures/salesforce-transport/private.jwk.json",
+                              import.meta.url,
+                            ),
+                          ).json(),
+                          privateKeyPem: "unusable PEM must not be imported",
+                        }
+                      : {
+                          privateKeyPem: await Bun.file(
+                            new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
+                          ).text(),
+                        },
                 }
               : {}),
           },
@@ -164,8 +185,6 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
-  const keyEvents: any[] = [];
-  let keyEnabled = true;
   const privateKeyPem = await Bun.file(
     new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
   ).text();
@@ -184,6 +203,8 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const instances = new Map([
     ["key-resolver", betterAuth(resolverOptions)],
     ["configured-jwt", betterAuth(await jwtOptions(true))],
+    ["configured-jwt-jwk", betterAuth(await jwtOptions(true, "jwk"))],
+    ["configured-jwt-precedence", betterAuth(await jwtOptions(true, "precedence"))],
     ["configured-jwt-missing", betterAuth(await jwtOptions(false))],
     ["configured-changed", betterAuth(configuredOptions(true))],
     ["configured", betterAuth(configuredOptions())],
@@ -201,33 +222,37 @@ export async function ssoFixture(base: BetterAuthOptions) {
   const handle = async (request: Request) => {
     const input = await request.json();
     const mode =
-      input.mode === "key-resolver"
-        ? "key-resolver"
-        : input.mode === "configured-jwt"
-          ? "configured-jwt"
-          : input.mode === "configured-jwt-missing"
-            ? "configured-jwt-missing"
-            : input.mode === "configured-changed"
-              ? "configured-changed"
-              : input.mode === "configured"
-                ? "configured"
-                : input.mode === "no-signup"
-                  ? "no-signup"
-                  : input.mode === "validation"
-                    ? "validation"
-                    : input.mode === "trusted-claims"
-                      ? "trusted-claims"
-                      : input.mode === "signed-request-slo"
-                        ? "signed-request-slo"
-                        : input.mode === "signed-slo"
-                          ? "signed-slo"
-                          : input.mode === "domain"
-                            ? "domain"
-                            : input.mode === "shared"
-                              ? "shared"
-                              : input.mode === "slo"
-                                ? "slo"
-                                : "default";
+      input.mode === "configured-jwt-jwk"
+        ? "configured-jwt-jwk"
+        : input.mode === "configured-jwt-precedence"
+          ? "configured-jwt-precedence"
+          : input.mode === "key-resolver"
+            ? "key-resolver"
+            : input.mode === "configured-jwt"
+              ? "configured-jwt"
+              : input.mode === "configured-jwt-missing"
+                ? "configured-jwt-missing"
+                : input.mode === "configured-changed"
+                  ? "configured-changed"
+                  : input.mode === "configured"
+                    ? "configured"
+                    : input.mode === "no-signup"
+                      ? "no-signup"
+                      : input.mode === "validation"
+                        ? "validation"
+                        : input.mode === "trusted-claims"
+                          ? "trusted-claims"
+                          : input.mode === "signed-request-slo"
+                            ? "signed-request-slo"
+                            : input.mode === "signed-slo"
+                              ? "signed-slo"
+                              : input.mode === "domain"
+                                ? "domain"
+                                : input.mode === "shared"
+                                  ? "shared"
+                                  : input.mode === "slo"
+                                    ? "slo"
+                                    : "default";
     const auth = instances.get(mode)!;
     if (input.action === "key-reset") {
       keyEvents.length = 0;
