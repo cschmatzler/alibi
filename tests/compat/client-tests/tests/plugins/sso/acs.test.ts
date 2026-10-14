@@ -14,6 +14,7 @@ for (const mode of [
   "encrypted-aes-128-gcm",
   "encrypted-aes-128-cbc",
   "encrypted-aes-256-cbc",
+  "encrypted-tampered",
   "encrypted-missing-key",
   "encrypted-wrong-key",
   "encrypted-wrong-pass",
@@ -26,6 +27,7 @@ for (const mode of [
     "encrypted-wrong-key",
     "encrypted-wrong-pass",
     "encrypted-missing-pass",
+    "encrypted-tampered",
   ].includes(mode);
   const passwordKey = mode === "encrypted-key" || mode.endsWith("-pass");
   compatScenario(
@@ -161,6 +163,19 @@ for (const mode of [
             mode === "encrypted-outer-only",
             mode.startsWith("encrypted-aes-") ? mode.slice("encrypted-".length) : "aes-256-gcm",
           );
+          if (mode === "encrypted-tampered") {
+            const xml = Buffer.from(grant.SAMLResponse, "base64").toString();
+            const values = [...xml.matchAll(/<xenc:CipherValue>([^<]+)<\/xenc:CipherValue>/g)];
+            const content = values.at(-1)!;
+            const bytes = Buffer.from(content[1]!, "base64");
+            bytes[bytes.length - 1] = bytes[bytes.length - 1]! ^ 1;
+            grant.SAMLResponse = Buffer.from(
+              xml.replace(
+                content[0],
+                `<xenc:CipherValue>${bytes.toString("base64")}</xenc:CipherValue>`,
+              ),
+            ).toString("base64");
+          }
           if (mode === "encrypted-response" || mode === "encrypted-outer-only") {
             const signed = await control({
               action: "sign-saml-logout",
