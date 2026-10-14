@@ -366,6 +366,23 @@ where
             .map_err(map_db_err)?;
         Ok(())
     }
+    async fn create_scim_group(
+        &self,
+        data: alibi_core::store::CreateScimGroup,
+        roles: bool,
+    ) -> AuthResult<(
+        alibi_core::store::ScimGroupRecord,
+        Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    )> {
+        self.store
+            .create_scim_group_with_connection(self.tx, data, roles)
+            .await
+    }
+    async fn fence_scim_connection(&self, id: &str, key: &str) -> AuthResult<()> {
+        self.store
+            .fence_scim_connection_with_connection(self.tx, id, key)
+            .await
+    }
     async fn prepare_scim_projection(
         &self,
         domain: &str,
@@ -765,4 +782,5 @@ mod sso;
 
 mod scim;
 mod scim_decommission;
+mod scim_groups;
 mod scim_projection;

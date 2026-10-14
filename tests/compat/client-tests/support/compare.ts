@@ -143,6 +143,32 @@ export function compareValues(
   };
   const normalizedLeft = normalizeClientValue(left);
   const normalizedRight = normalizeClientValue(right);
+  const scimMetadataDates = new Set<string>();
+  const collectScimDates = (value: unknown, path = "") => {
+    if (Array.isArray(value)) {
+      value.forEach((child, index) => collectScimDates(child, `${path ? `${path}.` : ""}${index}`));
+      return;
+    }
+    if (!record(value)) return;
+    if (
+      Array.isArray(value.schemas) &&
+      value.schemas.some(
+        (schema) =>
+          schema === "urn:ietf:params:scim:schemas:core:2.0:Group" ||
+          schema === "urn:ietf:params:scim:schemas:core:2.0:User",
+      )
+    ) {
+      for (const field of ["created", "lastModified"]) {
+        scimMetadataDates.add(`${path ? `${path}.` : ""}meta.${field}`);
+      }
+    }
+    for (const [key, child] of Object.entries(value)) {
+      collectScimDates(child, `${path ? `${path}.` : ""}${key}`);
+    }
+  };
+  collectScimDates(normalizedLeft);
+  collectScimDates(normalizedRight);
+
   const authorizationSessions = (root: unknown) => {
     const sessions = new Map<string, { userId: string; createdAt: number }>();
     const observed =
@@ -4225,7 +4251,12 @@ export function compareValues(
         url.port === own.port &&
         [own.hostname, "127.0.0.1"].includes(url.hostname);
       const resetToken = url.pathname.match(/^(.*\/reset-password\/)([^/]+)$/);
-      const pathname = resetToken ? resetToken[1] : url.pathname;
+      const scimResource = isOwn
+        ? url.pathname.match(
+            /^(\/(?:api\/auth|__test\/profiles\/scim\/api\/auth)\/scim\/v2\/(?:Groups|Users)\/)([^/]+)$/,
+          )
+        : undefined;
+      const pathname = resetToken ? resetToken[1] : scimResource ? scimResource[1] : url.pathname;
       return {
         origin:
           oauthBase &&
@@ -4239,6 +4270,7 @@ export function compareValues(
         password: url.password,
         pathname,
         ...(resetToken ? { token: decodeURIComponent(resetToken[2] ?? "") } : {}),
+        ...(scimResource ? { id: decodeURIComponent(scimResource[2] ?? "") } : {}),
         hash: url.hash,
         query: Object.fromEntries(
           [...new Set(url.searchParams.keys())]
@@ -5136,7 +5168,12 @@ export function compareValues(
         return;
       }
 
-      if (key.endsWith("At") || key === "lastRequest" || key === "banExpires") {
+      if (
+        key.endsWith("At") ||
+        key === "lastRequest" ||
+        key === "banExpires" ||
+        scimMetadataDates.has(path)
+      ) {
         if (owners.some((owner) => invalidPhysicalDates.has(dateKey(owner, key, a, b)))) {
           fail(path, "physical row timestamp shape or provenance differs");
           return;
@@ -5173,6 +5210,9 @@ export function compareValues(
 
       if (
         urlKeys.has(key) ||
+        (key === "content-location" &&
+          /\/scim\/v2\/(?:Groups|Users)\//.test(a) &&
+          /\/scim\/v2\/(?:Groups|Users)\//.test(b)) ||
         (key === "$ref" &&
           /\.members\.\d+\.\$ref$/.test(path) &&
           /^https?:\/\//.test(a) &&

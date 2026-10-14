@@ -10,7 +10,7 @@ use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
 const MARKER: &str = "x-better-auth-scim-response";
-fn error(status: u16, detail: &str, scim_type: Option<&str>) -> EndpointResponse {
+pub(super) fn error(status: u16, detail: &str, scim_type: Option<&str>) -> EndpointResponse {
     let mut body = serde_json::json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":status.to_string(),"detail":detail});
     if let Some(scim_type) = scim_type {
         _ = body
@@ -474,6 +474,181 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn create_group<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        let (name, external, members) = match group_creation_body(call.body()) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(connection) => connection,
+            Err(response) => return Ok(*response),
+        };
+        let projection = match Projection::parse(call.query(), GROUP_SCHEMA) {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        if !ctx
+            .database
+            .scim_group_domain_stable(&connection.id, &connection.domain)
+            .await?
+        {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        if members
+            .iter()
+            .any(|value| alibi_core::utils::javascript::trim(value).is_empty())
+        {
+            return Ok(error(
+                400,
+                "Group members must reference a SCIM User",
+                Some("invalidValue"),
+            ));
+        }
+        for (field, key, label) in [
+            (
+                "displayNameKey",
+                Some(scoped_key(&[
+                    "scim-group-display-name",
+                    &connection.id,
+                    &name.to_lowercase(),
+                ])?),
+                "displayName",
+            ),
+            (
+                "externalIdKey",
+                external
+                    .as_ref()
+                    .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
+                    .transpose()?,
+                "externalId",
+            ),
+        ] {
+            if let Some(key) = key
+                && ctx
+                    .database
+                    .list_scim_groups(&connection.id, &[(field.into(), key)], 0, 1)
+                    .await?
+                    .total_results
+                    > 0
+            {
+                return Ok(error(
+                    409,
+                    &format!("SCIM Group {label} already exists"),
+                    Some("uniqueness"),
+                ));
+            }
+        }
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let data = alibi_core::store::CreateScimGroup {
+            display_name_key: scoped_key(&[
+                "scim-group-display-name",
+                &connection.id,
+                &name.to_lowercase(),
+            ])?,
+            external_id_key: external
+                .as_ref()
+                .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
+                .transpose()?,
+            connection_id: connection.id.clone(),
+            provisioning_domain_id: connection.domain.clone(),
+            display_name: name,
+            external_id: external,
+            order_key: format!(
+                "{:015}:{}",
+                now.timestamp_millis(),
+                alibi_core::utils::id::generate_id(16)
+            ),
+            member_ids: members,
+            created_at: now,
+        };
+        let configured = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let callback = configured.as_ref().map(|handle| handle.0.clone());
+        let roles = configured.and_then(|handle| handle.1.clone());
+        let domain = connection.domain;
+        let cid = connection.id;
+        let key = scoped_key(&["scim-connection", &cid])?;
+        let result =
+            alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
+                Box::pin(async move {
+                    let (group, states) = database.create_scim_group(data, roles.is_some()).await?;
+                    for mut state in states {
+                        if let Some(roles) = &roles {
+                            super::projection::apply_roles(database, roles.as_ref(), &mut state)
+                                .await?;
+                        }
+                        database
+                            .remove_scim_projection_grants(
+                                &domain,
+                                &state.state.user_id,
+                                &state.removed_grant_ids,
+                            )
+                            .await?;
+                        if let Some(callback) = &callback {
+                            callback
+                                .reconcile_user(&state.state, database)
+                                .await
+                                .map_err(|error| {
+                                    super::projection::application_callback_error(
+                                        error,
+                                        "SCIM projection reconciliation failed",
+                                    )
+                                })?;
+                        }
+                    }
+                    database.fence_scim_connection(&cid, &key).await?;
+                    Ok(group)
+                })
+            })
+            .await;
+        let group = match result {
+            Ok(group) => group,
+            Err(AuthError::Api {
+                status, message, ..
+            }) => {
+                return Ok(error(
+                    status,
+                    &message,
+                    if status == 409 {
+                        Some("uniqueness")
+                    } else if status == 400 {
+                        Some("invalidValue")
+                    } else {
+                        None
+                    },
+                ));
+            }
+            Err(AuthError::CallbackFailure(cause)) => {
+                let detail = match cause.as_ref() {
+                    AuthError::Api { message, .. } => message.as_str(),
+                    _ => "SCIM projection reconciliation failed",
+                };
+                return Ok(error(500, detail, None));
+            }
+            Err(error) => return Err(error),
+        };
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path.trim_end_matches('/')
+        );
+        let location = resource_url(&base, "Groups", &group.id)?;
+        let resource = Self::render_group(ctx, group, &projection).await?;
+        Ok(EndpointResponse::json(&resource)?
+            .with_status(201)
+            .with_header("location", &location)
+            .with_header("content-location", &location)
+            .with_header(MARKER, "1"))
+    }
     pub(super) async fn list_users<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -904,5 +1079,118 @@ fn select_value(value: &Value, paths: &[Vec<String>], include: bool) -> Option<V
             (!include || !selected.is_empty()).then_some(Value::Object(selected))
         }
         _ => (!include).then(|| value.clone()),
+    }
+}
+
+fn scoped_key(parts: &[&str]) -> AuthResult<String> {
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(parts)?)))
+}
+fn group_creation_body(
+    body: Option<&JsValue>,
+) -> Result<(String, Option<String>, Vec<String>), String> {
+    use alibi_core::utils::javascript::trim;
+    let Some(JsValue::Object(body)) = body else {
+        return Err(format!(
+            "[body] Invalid input: expected object, received {}",
+            crate::authentication_helpers::json_type(body)
+        ));
+    };
+    let mut errors = Vec::new();
+    match body.get("schemas") {
+        Some(JsValue::Array(schemas)) => {
+            for (index, value) in schemas.iter().enumerate() {
+                if value.as_str() != Some(GROUP_SCHEMA) {
+                    errors.push(format!(
+                        "[body.schemas.{index}] Invalid input: expected \"{GROUP_SCHEMA}\""
+                    ));
+                }
+            }
+            if schemas.len() != 1 {
+                errors.push(
+                    "[body.schemas] schemas must contain only the core SCIM Group schema".into(),
+                );
+            }
+        }
+        value => errors.push(format!(
+            "[body.schemas] Invalid input: expected array, received {}",
+            crate::authentication_helpers::json_type(value)
+        )),
+    }
+    let name = if let Some(value) = body.get("displayName").and_then(JsValue::as_str) {
+        let name = trim(value);
+        if name.is_empty() {
+            errors.push(
+                "[body.displayName] Too small: expected string to have >=1 characters".into(),
+            );
+        }
+        name.to_owned()
+    } else {
+        errors.push(format!(
+            "[body.displayName] Invalid input: expected string, received {}",
+            crate::authentication_helpers::json_type(body.get("displayName"))
+        ));
+        String::new()
+    };
+    let external = match body.get("externalId") {
+        None => None,
+        Some(JsValue::String(value)) => {
+            if value.is_empty() {
+                errors.push(
+                    "[body.externalId] Too small: expected string to have >=1 characters".into(),
+                );
+            }
+            Some(value.clone())
+        }
+        value => {
+            errors.push(format!(
+                "[body.externalId] Invalid input: expected string, received {}",
+                crate::authentication_helpers::json_type(value)
+            ));
+            None
+        }
+    };
+    let mut members = Vec::new();
+    match body.get("members") {
+        None => {}
+        Some(JsValue::Array(values)) => {
+            for (index, member) in values.iter().enumerate() {
+                let Some(JsValue::Object(member)) = Some(member) else {
+                    errors.push(format!(
+                        "[body.members.{index}] Invalid input: expected object, received {}",
+                        crate::authentication_helpers::json_type(Some(member))
+                    ));
+                    continue;
+                };
+                match member.get("value").and_then(JsValue::as_str) {
+                    Some(value) if !value.is_empty() => {
+                        if !members.iter().any(|id|id==value) {
+                            members.push(value.into());
+                        }
+                    }
+                    Some(_) => errors.push(format!("[body.members.{index}.value] Too small: expected string to have >=1 characters")),
+                    None => errors.push(format!("[body.members.{index}.value] Invalid input: expected string, received {}",crate::authentication_helpers::json_type(member.get("value")))),
+                }
+
+                if let Some(value) = member.get("type")
+                    && !value
+                        .as_str()
+                        .is_some_and(|value| value.eq_ignore_ascii_case("user"))
+                {
+                    errors.push(format!("[body.members.{index}.type] Invalid input"));
+                }
+            }
+            if values.len() > 1000 {
+                errors.push("[body.members] Too big: expected array to have <=1000 items".into());
+            }
+        }
+        value => errors.push(format!(
+            "[body.members] Invalid input: expected array, received {}",
+            crate::authentication_helpers::json_type(value)
+        )),
+    }
+    if errors.is_empty() {
+        Ok((name, external, members))
+    } else {
+        Err(errors.join("; "))
     }
 }

@@ -127,6 +127,18 @@ pub struct ScimUserRecord {
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
+/// Prepared durable Group creation inside a provisioning transaction.
+pub struct CreateScimGroup {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub display_name: String,
+    pub display_name_key: String,
+    pub external_id: Option<String>,
+    pub external_id_key: Option<String>,
+    pub order_key: String,
+    pub member_ids: Vec<String>,
+    pub created_at: DateTime<Utc>,
+}
 /// Canonical connection-owned group metadata.
 pub struct ScimGroupRecord {
     pub id: String,
@@ -483,4 +495,18 @@ pub struct ScimIdentityState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_source_id: Option<String>,
     pub sources: Vec<ScimIdentitySource>,
+}
+
+/// Stable tuple key for one connection-owned Group membership.
+/// # Errors
+/// Returns an error if the key tuple cannot be serialized.
+pub fn scim_group_membership_key(connection: &str, group: &str, user: &str) -> AuthResult<String> {
+    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+    use sha2::{Digest, Sha256};
+    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
+        "scim-group-member",
+        connection,
+        group,
+        user,
+    ])?)))
 }

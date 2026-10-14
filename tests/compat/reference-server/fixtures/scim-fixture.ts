@@ -4,6 +4,9 @@ import { createHash } from "node:crypto";
 import { scim } from "@better-auth/scim";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+function fixtureJson(value: unknown) {
+  return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
+}
 export async function scimFixture(base: BetterAuthOptions) {
   const options = {
     ...base,
@@ -57,11 +60,24 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
       if (
-        ["configure-projection", "configure-role-projection"].includes(query.get("operation") ?? "")
+        [
+          "configure-projection",
+          "configure-role-projection",
+          "configure-group-create-projection",
+        ].includes(query.get("operation") ?? "")
       ) {
         options.plugins = [
           scim({
-            connections: [],
+            connections:
+              query.get("operation") === "configure-group-create-projection"
+                ? [
+                    {
+                      id: "conn-a",
+                      provisioningDomainId: "tenant-a",
+                      credentials: [{ id: "reader", token: "group-reader" }],
+                    },
+                  ]
+                : [],
             authentication: { verifyBearerToken: async () => null },
             managedConnections: {
               credentialHashSecret: "managed-scim-credential-hmac-secret-32-chars",
@@ -113,6 +129,69 @@ export async function scimFixture(base: BetterAuthOptions) {
         return new Response(JSON.stringify({ configured: true }), {
           headers: { "content-type": "application/json" },
         });
+      }
+      if (query.get("operation") === "group-create-projection-fails") {
+        projectionFails = true;
+        return fixtureJson({ failing: true });
+      }
+      if (query.get("operation") === "group-create-owner") {
+        return fixtureJson(
+          options.database
+            .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
+            .get(),
+        );
+      }
+      if (query.get("operation") === "createSCIMGroup") {
+        const input = (await request.json()) as any;
+        return auth.api.createSCIMGroup({
+          body: input.body,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "seed-group-create") {
+        const owner = await auth.api.signUpEmail({
+          body: {
+            email: "group-create-owner@example.com",
+            password: "a-native-password-123",
+            name: "Group owner",
+          },
+        });
+        options.database
+          .query(
+            "INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('group-create-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+          )
+          .run(owner.user.id);
+        for (const [id, cid, domain, display] of [
+          ["member-a", "conn-a", "tenant-a", "Inactive member"],
+          ["member-b", "conn-b", "tenant-a", "Foreign member"],
+          ["member-c", "conn-a", "tenant-b", "Other domain member"],
+        ]) {
+          options.database
+            .query(
+              "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,'group-create-owner@example.com','[]','[]',?,?,'[]',false,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, cid, domain, owner.user.id, id, id, id, display, display, id);
+        }
+        return fixtureJson({ seeded: true });
+      }
+      if (query.get("operation") === "group-create-state") {
+        return fixtureJson({
+          groups: options.database.query("SELECT COUNT(*) AS n FROM scimGroup").get(),
+          members: options.database.query("SELECT COUNT(*) AS n FROM scimGroupMember").get(),
+          subject: options.database
+            .query("SELECT revision FROM scimSubject WHERE id='group-create-subject'")
+            .get(),
+        });
+      }
+      if (query.get("operation") === "drift-created-group") {
+        const input = (await request.json()) as any;
+        options.database
+          .query("UPDATE scimGroup SET provisioningDomainId='drifted' WHERE id=?")
+          .run(input.id);
+        return fixtureJson({ changed: true });
       }
       if (query.get("operation") === "listSCIMUsers") {
         const input = (await request.json()) as any;

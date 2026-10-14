@@ -108,6 +108,11 @@ impl ScimPlugin {
         self.connections = connections;
         self
     }
+    /// Create a connection-owned canonical SCIM Group.
+    #[must_use]
+    pub const fn create_group_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("scim", "createSCIMGroup")
+    }
     /// List the connection-owned SCIM Users through the server API.
     #[must_use]
     pub const fn users_endpoint() -> ServerEndpoint<Value> {
@@ -244,8 +249,17 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn name(&self) -> &'static str {
         "scim"
     }
+    fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
+        // SCIM emits protocol-specific admission errors in its request handler.
+        if route.path == "/scim/v2/Groups" {
+            Vec::new()
+        } else {
+            vec!["application/json"]
+        }
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
             AuthRoute::get("/scim/v2/Users", "listSCIMUsers"),
             AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
             AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
@@ -265,6 +279,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "createSCIMGroup",
+                "createSCIMGroup",
+                Some("/scim/v2/Groups"),
+                HttpMethod::Post,
+            ),
             crate::endpoint::definition(
                 "listSCIMUsers",
                 "listSCIMUsers",
@@ -421,6 +441,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "createSCIMGroup" {
+            return self.create_group(call, ctx).await;
+        }
         if call.operation_id() == "listSCIMUsers" {
             return self.list_users(call, ctx).await;
         }
@@ -493,6 +516,46 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Post && req.path() == "/scim/v2/Groups" {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
+            );
+            let media = req
+                .headers
+                .get("content-type")
+                .and_then(|value| value.split(';').next())
+                .map(str::trim);
+            let response = if !media.is_some_and(|media| {
+                media.eq_ignore_ascii_case("application/json")
+                    || media.eq_ignore_ascii_case("application/scim+json")
+            }) {
+                resources::error(
+                    415,
+                    "SCIM requests must use application/scim+json or application/json",
+                    None,
+                )
+            } else if call.body().is_none() {
+                resources::error(
+                    400,
+                    "SCIM request body must contain valid JSON",
+                    Some("invalidSyntax"),
+                )
+            } else {
+                self.create_group(&call, ctx).await?
+            };
+            let mut response = response.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Get && req.path() == "/scim/v2/Users" {
             let call = EndpointCall::from_http_request(
                 req,

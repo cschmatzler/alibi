@@ -1410,3 +1410,42 @@ test("OIDC nonce aliases retain URL state and JWT equality and presence", () => 
     expect(compareValues(left, changed, context).length).toBeGreaterThan(0);
   }
 });
+
+test("SCIM generated locations retain their resource identity and bounded metadata clocks", () => {
+  const started = Date.parse("2026-10-14T10:00:00.000Z");
+  const make = (base: string, id: string, offset: number) => ({
+    traces: [
+      {
+        responseBody: {
+          schemas: ["urn:ietf:params:scim:schemas:core:2.0:Group"],
+          id,
+          meta: {
+            created: new Date(started + offset).toISOString(),
+            lastModified: new Date(started + offset).toISOString(),
+            location: `${base}/api/auth/scim/v2/Groups/${id}`,
+          },
+        },
+        responseHeaders: {
+          location: `${base}/api/auth/scim/v2/Groups/${id}`,
+          "content-location": `${base}/api/auth/scim/v2/Groups/${id}`,
+        },
+      },
+    ],
+  });
+  const left = make(context.leftBaseURL, "left-group", 5);
+  const right = make(context.rightBaseURL, "right-group", 10);
+  const clock = { ...context, leftStartedAt: started, rightStartedAt: started };
+  expect(compareValues(left, right, clock)).toEqual([]);
+  const wrongLink = structuredClone(right);
+  wrongLink.traces[0]!.responseHeaders["content-location"] =
+    `${context.rightBaseURL}/api/auth/scim/v2/Groups/other-group`;
+  expect(compareValues(left, wrongLink, clock).length).toBeGreaterThan(0);
+  const wrongType = structuredClone(right);
+  wrongType.traces[0]!.responseHeaders.location = `${context.rightBaseURL}/api/auth/scim/v2/Users/right-group`;
+  expect(compareValues(left, wrongType, clock).length).toBeGreaterThan(0);
+  const wrongTime = make(context.rightBaseURL, "right-group", 60000);
+  expect(compareValues(left, wrongTime, clock).length).toBeGreaterThan(0);
+  const invalid = structuredClone(right);
+  invalid.traces[0]!.responseBody.meta.created = "yesterday";
+  expect(compareValues(left, invalid, clock).length).toBeGreaterThan(0);
+});
