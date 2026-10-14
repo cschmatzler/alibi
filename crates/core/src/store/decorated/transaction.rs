@@ -182,6 +182,21 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn patch_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        patch: crate::store::ScimGroupPatch,
+        roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimGroupRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        self.inner
+            .patch_scim_group(id, connection, domain, patch, roles)
+            .await
+    }
     async fn replace_scim_group(
         &self,
         id: &str,

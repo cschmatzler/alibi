@@ -12,8 +12,8 @@ use alibi_core::{
     store::{CreateScimGroup, ScimGroupRecord, ScimProjectionPreparedUser},
 };
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, QueryFilter,
-    QuerySelect, Set, sea_query::Expr,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, ExprTrait, IntoActiveModel,
+    PaginatorTrait, QueryFilter, QuerySelect, Set, sea_query::Expr,
 };
 impl<S: AuthSchema> SeaOrmStore<S> {
     pub(super) async fn replace_scim_group_with_connection<C: ConnectionTrait>(
@@ -23,8 +23,6 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         data: alibi_core::store::ReplaceScimGroup,
         roles: bool,
     ) -> AuthResult<(ScimGroupRecord, Vec<ScimProjectionPreparedUser>)> {
-        use chrono::SubsecRound;
-        use sea_orm::IntoActiveModel;
         let current = self
             .lock_scim_group_with_connection(
                 db,
@@ -33,7 +31,6 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 &data.provisioning_domain_id,
             )
             .await?;
-        let now = chrono::Utc::now().trunc_subsecs(3);
         self.assert_scim_group_keys_with_connection(
             db,
             &data.connection_id,
@@ -42,39 +39,30 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             Some(id),
         )
         .await?;
+        let existing = self
+            .group_memberships_with_connection(db, &current, None)
+            .await?;
+        self.apply_full_group_with_connection(db, current, data, existing, roles, false)
+            .await
+    }
+    async fn validate_group_members_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        connection: &str,
+        ids: &[String],
+    ) -> AuthResult<()> {
         let limit = u64::try_from(self.config.advanced.database.default_find_many_limit)
             .unwrap_or(u64::MAX);
-        let existing = member::Entity::find()
-            .filter(member::Column::ConnectionId.eq(&data.connection_id))
-            .filter(member::Column::GroupId.eq(id))
-            .limit(limit)
-            .all(db)
-            .await
-            .map_err(map_db_err)?;
-        let mut affected = data.member_ids.clone();
-        for membership in &existing {
-            if !affected.contains(&membership.scim_user_id) {
-                affected.push(membership.scim_user_id.clone());
-            }
-        }
-        _ = self
-            .scim_projection_user_ids_with_connection(
-                db,
-                &data.provisioning_domain_id,
-                &affected,
-                true,
-            )
-            .await?;
-        if !data.member_ids.is_empty()
+        if !ids.is_empty()
             && user::Entity::find()
-                .filter(user::Column::ConnectionId.eq(&data.connection_id))
-                .filter(user::Column::Id.is_in(data.member_ids.iter().cloned()))
+                .filter(user::Column::ConnectionId.eq(connection))
+                .filter(user::Column::Id.is_in(ids.iter().cloned()))
                 .limit(limit)
                 .all(db)
                 .await
                 .map_err(map_db_err)?
                 .len()
-                != data.member_ids.len()
+                != ids.len()
         {
             return Err(AuthError::Api {
                 status: 400,
@@ -82,21 +70,36 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 message: "One or more Group members are invalid".into(),
             });
         }
+        Ok(())
+    }
+    async fn member_delta_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        group: &group::Model,
+        desired: &[String],
+        existing: &[member::Model],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<(Vec<String>, Vec<String>)> {
+        let added = desired
+            .iter()
+            .filter(|id| !existing.iter().any(|member| member.scim_user_id == **id))
+            .cloned()
+            .collect::<Vec<_>>();
         let removed = existing
             .iter()
-            .filter(|member| !data.member_ids.contains(&member.scim_user_id))
+            .filter(|member| !desired.contains(&member.scim_user_id))
             .map(|member| member.scim_user_id.clone())
             .collect::<Vec<_>>();
         if !removed.is_empty() {
             _ = member::Entity::delete_many()
-                .filter(member::Column::ConnectionId.eq(&data.connection_id))
-                .filter(member::Column::GroupId.eq(id))
-                .filter(member::Column::ScimUserId.is_in(removed))
+                .filter(member::Column::ConnectionId.eq(&group.connection_id))
+                .filter(member::Column::GroupId.eq(&group.id))
+                .filter(member::Column::ScimUserId.is_in(removed.iter().cloned()))
                 .exec(db)
                 .await
                 .map_err(map_db_err)?;
         }
-        for member_id in &data.member_ids {
+        for member_id in desired {
             if existing
                 .iter()
                 .any(|member| member.scim_user_id == *member_id)
@@ -108,12 +111,12 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     .generated_id(db, "scimGroupMember", "scimGroupMember", "id")
                     .await?
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
-                connection_id: Set(data.connection_id.clone()),
-                group_id: Set(id.to_owned()),
+                connection_id: Set(group.connection_id.clone()),
+                group_id: Set(group.id.clone()),
                 scim_user_id: Set(member_id.clone()),
                 membership_key: Set(alibi_core::store::scim_group_membership_key(
-                    &data.connection_id,
-                    id,
+                    &group.connection_id,
+                    &group.id,
                     member_id,
                 )?),
                 created_at: Set(now),
@@ -121,6 +124,65 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             .insert(db)
             .await
             .map_err(map_db_err)?;
+        }
+        Ok((added, removed))
+    }
+    async fn apply_full_group_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        current: group::Model,
+        data: alibi_core::store::ReplaceScimGroup,
+        existing: Vec<member::Model>,
+        roles: bool,
+        patch: bool,
+    ) -> AuthResult<(ScimGroupRecord, Vec<ScimProjectionPreparedUser>)> {
+        use chrono::SubsecRound;
+        let id = current.id.clone();
+        let id = id.as_str();
+        let now = chrono::Utc::now().trunc_subsecs(3);
+        let metadata_changed =
+            data.display_name != current.display_name || data.external_id != current.external_id;
+        let mut locks = data.member_ids.clone();
+        for member in &existing {
+            if !locks.contains(&member.scim_user_id) {
+                locks.push(member.scim_user_id.clone());
+            }
+        }
+        _ = self
+            .scim_projection_user_ids_with_connection(
+                db,
+                &data.provisioning_domain_id,
+                &locks,
+                true,
+            )
+            .await?;
+        if patch {
+            self.assert_scim_group_keys_with_connection(
+                db,
+                &data.connection_id,
+                &data.display_name_key,
+                data.external_id_key.as_deref(),
+                Some(id),
+            )
+            .await?;
+        }
+        self.validate_group_members_with_connection(db, &data.connection_id, &data.member_ids)
+            .await?;
+        let (added, removed) = self
+            .member_delta_with_connection(db, &current, &data.member_ids, &existing, now)
+            .await?;
+        if patch && !metadata_changed && added.is_empty() && removed.is_empty() {
+            return Ok((group_record(&current), Vec::new()));
+        }
+        let mut affected = if !patch || metadata_changed {
+            data.member_ids.clone()
+        } else {
+            Vec::new()
+        };
+        for id in added.into_iter().chain(removed) {
+            if !affected.contains(&id) {
+                affected.push(id);
+            }
         }
         let mut updated = current.into_active_model();
         updated.display_name = Set(data.display_name);
@@ -138,18 +200,116 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 true,
             )
             .await?;
-        Ok((
-            ScimGroupRecord {
-                id: updated.id,
-                connection_id: updated.connection_id,
-                provisioning_domain_id: updated.provisioning_domain_id,
-                display_name: updated.display_name,
-                external_id: updated.external_id,
-                created_at: updated.created_at,
-                updated_at: updated.updated_at,
-            },
-            states,
-        ))
+        Ok((group_record(&updated), states))
+    }
+    async fn group_memberships_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        group: &group::Model,
+        targets: Option<&[String]>,
+    ) -> AuthResult<Vec<member::Model>> {
+        let mut query = member::Entity::find()
+            .filter(member::Column::ConnectionId.eq(&group.connection_id))
+            .filter(member::Column::GroupId.eq(&group.id));
+        if let Some(targets) = targets {
+            query = query.filter(member::Column::ScimUserId.is_in(targets.iter().cloned()));
+        }
+        query
+            .limit(
+                u64::try_from(self.config.advanced.database.default_find_many_limit)
+                    .unwrap_or(u64::MAX),
+            )
+            .all(db)
+            .await
+            .map_err(map_db_err)
+    }
+    pub(super) async fn patch_scim_group_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        patch: alibi_core::store::ScimGroupPatch,
+        roles: bool,
+    ) -> AuthResult<(ScimGroupRecord, Vec<ScimProjectionPreparedUser>)> {
+        use alibi_core::store::{
+            ScimGroupPatch, apply_scim_group_patch, check_scim_group_cardinality,
+        };
+        use chrono::SubsecRound;
+        let current = self
+            .lock_scim_group_with_connection(db, id, connection, domain)
+            .await?;
+        match patch {
+            ScimGroupPatch::Full(operations) => {
+                let existing = self
+                    .group_memberships_with_connection(db, &current, None)
+                    .await?;
+                let ids = existing
+                    .iter()
+                    .map(|member| member.scim_user_id.clone())
+                    .collect::<Vec<_>>();
+                let data = apply_scim_group_patch(&group_record(&current), &ids, &operations)?;
+                self.apply_full_group_with_connection(db, current, data, existing, roles, true)
+                    .await
+            }
+            ScimGroupPatch::Incremental { desired, validate } => {
+                let now = chrono::Utc::now().trunc_subsecs(3);
+                let targets = desired.iter().map(|(id, _)| id.clone()).collect::<Vec<_>>();
+                _ = self
+                    .scim_projection_user_ids_with_connection(db, domain, &targets, true)
+                    .await?;
+                self.validate_group_members_with_connection(db, connection, &validate)
+                    .await?;
+                if targets.is_empty() {
+                    return Ok((group_record(&current), Vec::new()));
+                }
+                let existing = self
+                    .group_memberships_with_connection(db, &current, Some(&targets))
+                    .await?;
+                let wanted = desired
+                    .into_iter()
+                    .filter_map(|(id, wanted)| wanted.then_some(id))
+                    .collect::<Vec<_>>();
+                let added = wanted
+                    .iter()
+                    .filter(|id| !existing.iter().any(|member| member.scim_user_id == **id))
+                    .count();
+                let removed = existing
+                    .iter()
+                    .filter(|member| !wanted.contains(&member.scim_user_id))
+                    .count();
+                let count = member::Entity::find()
+                    .filter(member::Column::ConnectionId.eq(connection))
+                    .filter(member::Column::GroupId.eq(id))
+                    .count(db)
+                    .await
+                    .map_err(map_db_err)?;
+                let count = usize::try_from(count)
+                    .map_err(|error| AuthError::internal(error.to_string()))?;
+                check_scim_group_cardinality(count.saturating_add(added).saturating_sub(removed))?;
+                let (added, removed) = self
+                    .member_delta_with_connection(db, &current, &wanted, &existing, now)
+                    .await?;
+                if added.is_empty() && removed.is_empty() {
+                    return Ok((group_record(&current), Vec::new()));
+                }
+                let mut updated = current.into_active_model();
+                updated.updated_at = Set(now);
+                let updated = updated.update(db).await.map_err(map_db_err)?;
+                let mut affected = added;
+                for id in removed {
+                    if !affected.contains(&id) {
+                        affected.push(id);
+                    }
+                }
+                let states = self
+                    .prepare_scim_projection_after_lock_with_connection(
+                        db, domain, &affected, roles, true,
+                    )
+                    .await?;
+                Ok((group_record(&updated), states))
+            }
+        }
     }
     async fn lock_scim_group_with_connection<C: ConnectionTrait>(
         &self,
@@ -397,5 +557,17 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             });
         }
         Ok(())
+    }
+}
+
+fn group_record(group: &group::Model) -> ScimGroupRecord {
+    ScimGroupRecord {
+        id: group.id.clone(),
+        connection_id: group.connection_id.clone(),
+        provisioning_domain_id: group.provisioning_domain_id.clone(),
+        display_name: group.display_name.clone(),
+        external_id: group.external_id.clone(),
+        created_at: group.created_at,
+        updated_at: group.updated_at,
     }
 }

@@ -141,6 +141,16 @@ export async function scimFixture(base: BetterAuthOptions) {
             .get(),
         );
       }
+      if (query.get("operation") === "patchSCIMGroup") {
+        const input = (await request.json()) as any;
+        return auth.api.patchSCIMGroup({
+          params: input.params,
+          body: input.body,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
       if (query.get("operation") === "replaceSCIMGroup") {
         const input = (await request.json()) as any;
         return auth.api.replaceSCIMGroup({
