@@ -7,6 +7,7 @@ use alibi_core::{
 use async_trait::async_trait;
 use serde_json::{Value, json};
 mod authentication;
+mod collection;
 mod managed;
 mod projection;
 mod resources;
@@ -106,6 +107,11 @@ impl ScimPlugin {
     pub fn connections(mut self, connections: Vec<ScimConnectionOptions>) -> Self {
         self.connections = connections;
         self
+    }
+    /// List the connection-owned SCIM Groups through the server API.
+    #[must_use]
+    pub const fn groups_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("scim", "listSCIMGroups")
     }
     /// Read a connection-owned SCIM User through the server API.
     /// # Errors
@@ -235,6 +241,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
             AuthRoute::get("/scim/v2/Users/{userId}", "getSCIMUser"),
             AuthRoute::get("/scim/v2/Groups/{groupId}", "getSCIMGroup"),
             AuthRoute::get("/scim/v2/Schemas", "getSCIMSchemas"),
@@ -252,6 +259,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
+            crate::endpoint::definition(
+                "listSCIMGroups",
+                "listSCIMGroups",
+                Some("/scim/v2/Groups"),
+                HttpMethod::Get,
+            ),
             crate::endpoint::definition(
                 "getSCIMUser",
                 "getSCIMUser",
@@ -396,6 +409,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "listSCIMGroups" {
+            return self.list_groups(call, ctx).await;
+        }
         if call.operation_id() == "getSCIMUser" {
             return self.get_user(call, ctx).await;
         }
@@ -462,6 +478,23 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get && req.path() == "/scim/v2/Groups" {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::get("/scim/v2/Groups", "listSCIMGroups"),
+            );
+            let mut response = self.list_groups(&call, ctx).await?.to_response()?;
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in response.headers {
+                if !name.eq_ignore_ascii_case("x-better-auth-scim-response") {
+                    headers.append(name, value);
+                }
+            }
+            response.headers = headers;
+            return Ok(Some(
+                response.with_header("content-type", "application/scim+json"),
+            ));
+        }
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
         {

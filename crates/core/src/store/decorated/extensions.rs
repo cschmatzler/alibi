@@ -824,6 +824,23 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
+        self.inner
+            .scim_group_domain_stable(connection, domain)
+            .await
+    }
+    async fn list_scim_groups(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<crate::store::ScimGroupPage> {
+        self.inner
+            .list_scim_groups(connection, filters, offset, count)
+            .await
+    }
+
     async fn get_scim_user(
         &self,
         id: &str,

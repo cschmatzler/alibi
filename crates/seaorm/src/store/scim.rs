@@ -18,6 +18,80 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> ScimManagedStore for SeaOrmStore<S> {
+    async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool> {
+        use super::entities::scim_group as group;
+        Ok(group::Entity::find()
+            .filter(group::Column::ConnectionId.eq(connection))
+            .filter(group::Column::ProvisioningDomainId.ne(domain))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .is_none())
+    }
+    async fn list_scim_groups(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<alibi_core::store::ScimGroupPage> {
+        use super::entities::scim_group as group;
+        let mut query = group::Entity::find().filter(group::Column::ConnectionId.eq(connection));
+        for (field, value) in filters {
+            let field = match field.as_str() {
+                "id" => group::Column::Id,
+                "displayNameKey" => group::Column::DisplayNameKey,
+                "externalIdKey" => group::Column::ExternalIdKey,
+                _ => {
+                    return Err(alibi_core::AuthError::internal(
+                        "Unsupported SCIM group predicate",
+                    ));
+                }
+            };
+            query = query.filter(field.eq(value));
+        }
+        let total_results = i64::try_from(
+            query
+                .clone()
+                .count(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?,
+        )
+        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
+        let groups = if count == 0 {
+            Vec::new()
+        } else {
+            query
+                .order_by_asc(group::Column::OrderKey)
+                .limit(
+                    u64::try_from(count)
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+                )
+                .offset(
+                    u64::try_from(offset)
+                        .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?,
+                )
+                .all(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+        };
+        Ok(alibi_core::store::ScimGroupPage {
+            total_results,
+            groups: groups
+                .into_iter()
+                .map(|row| alibi_core::store::ScimGroupRecord {
+                    id: row.id,
+                    connection_id: row.connection_id,
+                    provisioning_domain_id: row.provisioning_domain_id,
+                    display_name: row.display_name,
+                    external_id: row.external_id,
+                    created_at: row.created_at,
+                    updated_at: row.updated_at,
+                })
+                .collect(),
+        })
+    }
+
     async fn get_scim_user(
         &self,
         id: &str,

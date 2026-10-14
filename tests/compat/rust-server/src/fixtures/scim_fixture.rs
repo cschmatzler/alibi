@@ -98,6 +98,26 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     *auth.lock().await=Arc::new(fresh);return Json(json!({"restarted":true})).into_response();
                 }
                 let auth=auth.lock().await.clone();
+                if query.get("operation").is_some_and(|operation|operation=="listSCIMGroups") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
+                    return match auth.dispatch_endpoint(ScimPlugin::groups_endpoint().with_query(&input["query"]).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+                }
+                if query.get("operation").is_some_and(|operation|operation=="seed-group-list") {
+                    use base64::Engine;
+                    use sha2::Digest;
+                    for(id,cid,name,external,order)in[("group-c","conn-a","Third","EXTERNAL-C","3"),("group-a","conn-a","Staff and Crew","EXTERNAL-A","1"),("group-b","conn-a","Second","EXTERNAL-B","2"),("foreign","conn-b","Foreign","EXTERNAL-F","0")]{
+                        let key=|parts:&[&str]|base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(serde_json::to_vec(parts).unwrap()));
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,'tenant-a',0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),cid.into(),name.into(),key(&["scim-group-display-name",cid,&name.to_lowercase()]).into(),external.into(),key(&["scim-group-external-id",cid,external]).into(),order.into()])).await.unwrap();
+                    }
+                    return Json(json!({"seeded":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="grow-group-list") {
+                    use base64::Engine;use sha2::Digest;
+                    for index in 0..101 {let id=format!("extra-{index:03}");let name=format!("Extra {index}");let order=format!("z{index:03}");let key=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(serde_json::to_vec(&["scim-group-display-name","conn-a",&name.to_lowercase()]).unwrap()));
+                        _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,'conn-a','tenant-a',0,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",[id.into(),name.into(),key.into(),order.into()])).await.unwrap();
+                    }return Json(json!({"grown":true})).into_response();
+                }
+                if query.get("operation").is_some_and(|operation|operation=="drift-group-list") {_=database.execute_unprepared("UPDATE scimGroup SET provisioningDomainId='drifted' WHERE id='group-c'").await.unwrap();return Json(json!({"changed":true})).into_response();}
                 if query.get("operation").is_some_and(|operation|operation=="user-read-attributes") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let serialized=if input["restore"]==true{user_read_attributes.lock().unwrap().clone()}else{input["serializedAttributes"].as_str().unwrap().to_owned()};
                     _=database.execute_raw(Statement::from_sql_and_values(database.get_database_backend(),"UPDATE scimUser SET serializedAttributes=? WHERE id='rich'",[serialized.into()])).await.unwrap();return Json(json!({"changed":true})).into_response();

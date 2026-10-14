@@ -1,4 +1,5 @@
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
 
 import { scim } from "@better-auth/scim";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -110,6 +111,68 @@ export async function scimFixture(base: BetterAuthOptions) {
         ];
         auth = betterAuth(options);
         return new Response(JSON.stringify({ configured: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "listSCIMGroups") {
+        const input = (await request.json()) as any;
+        return auth.api.listSCIMGroups({
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
+      if (query.get("operation") === "seed-group-list") {
+        for (const [id, cid, name, external, order] of [
+          ["group-c", "conn-a", "Third", "EXTERNAL-C", "3"],
+          ["group-a", "conn-a", "Staff and Crew", "EXTERNAL-A", "1"],
+          ["group-b", "conn-a", "Second", "EXTERNAL-B", "2"],
+          ["foreign", "conn-b", "Foreign", "EXTERNAL-F", "0"],
+        ]) {
+          const key = (parts: string[]) =>
+            createHash("sha256").update(JSON.stringify(parts)).digest("base64url");
+          options.database
+            .query(
+              "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,'tenant-a',0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(
+              id,
+              cid,
+              name,
+              key(["scim-group-display-name", cid, name.toLowerCase()]),
+              external,
+              key(["scim-group-external-id", cid, external]),
+              order,
+            );
+        }
+        return new Response(JSON.stringify({ seeded: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "grow-group-list") {
+        for (let index = 0; index < 101; index++) {
+          const id = `extra-${String(index).padStart(3, "0")}`;
+          const name = `Extra ${index}`;
+          const order = `z${String(index).padStart(3, "0")}`;
+          const key = createHash("sha256")
+            .update(JSON.stringify(["scim-group-display-name", "conn-a", name.toLowerCase()]))
+            .digest("base64url");
+          options.database
+            .query(
+              "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,'conn-a','tenant-a',0,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
+            )
+            .run(id, name, key, order);
+        }
+        return new Response(JSON.stringify({ grown: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "drift-group-list") {
+        options.database.exec(
+          "UPDATE scimGroup SET provisioningDomainId='drifted' WHERE id='group-c'",
+        );
+        return new Response(JSON.stringify({ changed: true }), {
           headers: { "content-type": "application/json" },
         });
       }
