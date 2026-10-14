@@ -97,6 +97,51 @@ async fn sso_sign_in_uses_registered_provider_and_binds_pkce_state<B: Backend>(
     let mut mac = Hmac::<sha2::Sha256>::new_from_slice(SECRET.as_bytes())?;
     mac.update(state.as_bytes());
     mac.verify_slice(&signature)?;
+    for selector in [
+        json!({"domain":" engineering.COMPANY.com "}),
+        json!({"email":"employee@engineering.subsidiary.com"}),
+        json!({"domain":"COMPANY.COM"}),
+    ] {
+        let selected = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::sign_in_sso_endpoint(&{
+                let mut value = selector;
+                value["callbackURL"] = input["callbackURL"].clone();
+                value
+            })?,
+            EndpointOptions::default(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(selected.status, 200);
+        let selected_url = url::Url::parse(body(&selected)["url"].as_str().unwrap())?;
+        assert_eq!(
+            selected_url.origin().ascii_serialization(),
+            "https://idp.example.com"
+        );
+        assert_eq!(
+            selected_url
+                .query_pairs()
+                .find(|(key, _)| key == "redirect_uri")
+                .unwrap()
+                .1,
+            format!("{ORIGIN}/api/auth/sso/callback/signin-provider")
+        );
+    }
+    for domain in [
+        "notcompany.com",
+        "company.com.attacker.test",
+        "unrelated.test",
+    ] {
+        let denied = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::sign_in_sso_endpoint(
+                &json!({"domain":domain,"callbackURL":input["callbackURL"]}),
+            )?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 404);
+    }
     let missing = Box::pin(auth.dispatch_endpoint(
         SsoPlugin::sign_in_sso_endpoint(
             &json!({"providerId":"missing-provider","callbackURL":format!("{ORIGIN}/complete")}),
