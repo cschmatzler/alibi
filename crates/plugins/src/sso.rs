@@ -9,7 +9,9 @@ mod domains;
 mod idp_metadata_xml;
 mod idp_services;
 mod organization_provisioning;
-pub use organization_provisioning::SsoOrganizationProvisioning;
+pub use organization_provisioning::{
+    SsoOrganizationProvisioning, SsoOrganizationRoleResolver, SsoRoleResolver,
+};
 mod private_key;
 pub use private_key::{SsoKeyResolver, SsoPrivateKey, SsoPrivateKeyContext, SsoPrivateKeyResolver};
 mod provisioning;

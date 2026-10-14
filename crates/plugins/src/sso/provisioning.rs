@@ -3,10 +3,12 @@ use alibi_core::{AuthResult, store::SsoProvider, wire::UserView};
 use serde_json::Value;
 use std::sync::Arc;
 
-/// Successful SSO identity, mapped provider profile, and optional OIDC tokens.
+/// Successful SSO identity, protocol profile, and optional OIDC tokens.
 #[derive(Clone, Debug)]
 pub struct SsoProvisioningData {
     pub user: UserView,
+    /// User provisioning receives mapped user info. Organization role policies receive
+    /// mapped OIDC user info or raw SAML assertion attributes, matching Better Auth.
     pub user_info: Value,
     pub token: Option<crate::oauth::OAuthTokenSet>,
     pub provider: SsoProvider,
