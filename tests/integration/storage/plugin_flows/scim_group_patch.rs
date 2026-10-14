@@ -132,6 +132,11 @@ async fn scim_group_patch_handles_noops_nulls_and_transactional_member_changes<B
             "invalidPath",
         ),
         (
+            json!([{"op":"remove","path":"memberſ[value eq \"member-a\"]"}]),
+            "Unsupported Group PATCH path",
+            "invalidPath",
+        ),
+        (
             json!([{"path":"externalId","value":null}]),
             "externalId must be a non-empty string",
             "invalidValue",

@@ -100,6 +100,11 @@ compatScenario(
       [[{ value: 12 }], "A pathless Group PATCH value must be an object", "invalidValue"],
       [[{ path: "unknown", value: "value" }], "Unsupported Group PATCH path", "invalidPath"],
       [
+        [{ op: "remove", path: 'memberſ[value eq "member-a"]' }],
+        "Unsupported Group PATCH path",
+        "invalidPath",
+      ],
+      [
         [{ path: "externalId", value: null }],
         "externalId must be a non-empty string",
         "invalidValue",

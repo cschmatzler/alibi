@@ -42,7 +42,7 @@ fn normalized_path(path: &str) -> &str {
 fn member_path(path: &str) -> Option<String> {
     let space = r"[\u{0009}-\u{000D}\u{0020}\u{00A0}\u{1680}\u{2000}-\u{200A}\u{2028}\u{2029}\u{202F}\u{205F}\u{3000}\u{FEFF}]";
     let pattern = format!(
-        r#"(?i)^members{space}*\[{space}*value{space}+eq{space}+("(?:\\.|[^"\\])*"){space}*\]$"#
+        r#"^(?i-u:members){space}*\[{space}*(?i-u:value){space}+(?i-u:eq){space}+("(?:\\.|[^"\\])*"){space}*\]$"#
     );
     let regex = regex::Regex::new(&pattern).ok()?;
     let capture = regex.captures(normalized_path(path))?.get(1)?;
