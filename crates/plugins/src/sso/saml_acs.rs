@@ -154,13 +154,9 @@ impl SsoPlugin {
             Ok(identity) => identity,
             Err(error) => return fail(error.code, Some(error.message)),
         };
-        let request_reference = if self.config.saml_enable_in_response_to_validation {
-            let Some(response_to) = identity.in_response_to.as_deref() else {
-                return fail(
-                    "unsolicited_response",
-                    Some("IdP-initiated SSO not allowed"),
-                );
-            };
+        let request_reference = if self.config.saml_enable_in_response_to_validation
+            && let Some(response_to) = identity.in_response_to.as_deref()
+        {
             let proof = ctx
                 .verifications()
                 .consume(&format!("saml-authn-request:{response_to}"))
@@ -185,6 +181,13 @@ impl SsoPlugin {
                 );
             };
             Some(reference)
+        } else if self.config.saml_enable_in_response_to_validation
+            && !self.config.saml_allow_idp_initiated
+        {
+            return fail(
+                "unsolicited_response",
+                Some("IdP-initiated SSO not allowed"),
+            );
         } else {
             None
         };

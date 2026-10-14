@@ -347,6 +347,10 @@ export async function ssoFixture(base: BetterAuthOptions) {
   };
   const instances = new Map([
     [
+      "idp-initiated",
+      betterAuth({ ...options, plugins: [username(), sso({ saml: { allowIdpInitiated: true } })] }),
+    ],
+    [
       "provider-limits",
       betterAuth({
         ...options,
@@ -411,6 +415,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     const mode = [
+      "idp-initiated",
       "provider-limits",
       "user-resolution",
       "mutation-guard",
@@ -613,6 +618,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
             input.email,
             Boolean(input.wrongKey),
             input.verified,
+            Boolean(input.unsolicited),
           ),
         ),
         { headers: { "content-type": "application/json" } },
