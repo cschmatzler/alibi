@@ -214,6 +214,19 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.decommissionSCIMManagedConnection({ body: input.body, asResponse: true });
       }
+      if (query.get("operation") === "reconcileSCIMProjection") {
+        const input = (await request.json()) as any;
+        try {
+          return await auth.api.reconcileSCIMProjection({ body: input.body, asResponse: true });
+        } catch (error: any) {
+          return new Response(
+            JSON.stringify({ failed: true, message: error.body?.message ?? error.message }),
+            {
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+      }
       if (query.get("operation") === "decommissionSCIMConnection") {
         const input = (await request.json()) as any;
         return auth.api.decommissionSCIMConnection({ body: input.body, asResponse: true });

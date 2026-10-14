@@ -96,6 +96,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 if query.get("operation").is_some_and(|operation|operation=="decommissionSCIMManagedConnection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","decommissionSCIMManagedConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;return match result {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};
                 }
+                if query.get("operation").is_some_and(|operation|operation=="reconcileSCIMProjection") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","reconcileSCIMProjection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;return match result{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let message=match error.error{alibi::AuthError::Config(message)=>message,error=>error.error_payload().2};Json(json!({"failed":true,"message":message})).into_response()}};
+                }
                 if query.get("operation").is_some_and(|operation|operation=="decommissionSCIMConnection") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let result=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("scim","decommissionSCIMConnection").with_body(&input["body"]).unwrap(),EndpointOptions::default()).await;
                     return match result{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()};

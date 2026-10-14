@@ -185,6 +185,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![
             crate::endpoint::definition(
+                "reconcileSCIMProjection",
+                "reconcileSCIMProjection",
+                None,
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
                 "decommissionSCIMManagedConnection",
                 "decommissionSCIMManagedConnection",
                 None,
@@ -271,7 +277,8 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         if matches!(
             call.operation_id(),
-            "decommissionSCIMManagedConnection"
+            "reconcileSCIMProjection"
+                | "decommissionSCIMManagedConnection"
                 | "decommissionSCIMConnection"
                 | "listSCIMManagedConnectionEvents"
                 | "revokeSCIMManagedCredential"
@@ -308,6 +315,11 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
+        if call.operation_id() == "reconcileSCIMProjection" {
+            return Err(AuthError::config(
+                "SCIM projection reconciliation requires projection.reconcileUser to be configured.",
+            ));
+        }
         if call.operation_id() == "decommissionSCIMManagedConnection" {
             return self.decommission_managed_connection(call, ctx).await;
         }
