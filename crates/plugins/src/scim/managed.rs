@@ -63,7 +63,8 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     }
     if matches!(
         call.operation_id(),
-        "getSCIMManagedConnection"
+        "decommissionSCIMManagedConnection"
+            | "getSCIMManagedConnection"
             | "revokeSCIMManagedCredential"
             | "listSCIMManagedConnectionEvents"
     ) {
@@ -104,6 +105,12 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 ));
             }
             _ = extra.insert("credentialId".into(), JsValue::String(credential.into()));
+            _ = extra.insert(
+                "actorId".into(),
+                JsValue::String(body_string(body, "actorId", 1)?),
+            );
+        }
+        if call.operation_id() == "decommissionSCIMManagedConnection" {
             _ = extra.insert(
                 "actorId".into(),
                 JsValue::String(body_string(body, "actorId", 1)?),
@@ -213,6 +220,103 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    /// Retire a managed connection and its active credentials through the trusted API.
+    /// # Errors
+    /// Returns an error if arguments cannot be serialized.
+    pub fn decommission_managed_connection_endpoint(
+        id: &str,
+        domain: &str,
+        actor: &str,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "decommissionSCIMManagedConnection").with_body(
+            &serde_json::json!({"connectionId":id,"provisioningDomainId":domain,"actorId":actor}),
+        )
+    }
+    pub(super) async fn decommission_managed_connection<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        _ = self
+            .managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })?;
+        let body = call
+            .body()
+            .ok_or_else(|| AuthError::internal("Validated body missing"))?;
+        let data = alibi_core::store::DecommissionScimManagedConnection {
+            connection_id: body
+                .get("connectionId")
+                .and_then(JsValue::as_str)
+                .unwrap_or_default()
+                .into(),
+            provisioning_domain_id: body_string(body, "provisioningDomainId", 1)?,
+            actor_id: body_string(body, "actorId", 1)?,
+        };
+        let mut started = None;
+        for _ in 0..5 {
+            if let Some(connection) = ctx
+                .database
+                .decommission_scim_managed_connection(data.clone(), false)
+                .await?
+            {
+                started = Some(connection);
+                break;
+            }
+        }
+        let started = started.ok_or_else(|| {
+            alibi_core::store::scim::scim_managed_conflict(
+                "Managed SCIM connection changed repeatedly while decommissioning began",
+            )
+        })?;
+        let core = if started.status == "decommissioned" {
+            JsValue::from(serde_json::json!({"status":"complete","retryAfter":null}))
+        } else {
+            let response = self.decommission_connection(call, ctx).await?;
+            response
+                .result()
+                .as_ref()
+                .map_err(|error| AuthError::internal(error.to_string()))?
+                .clone()
+        };
+        if started.status != "decommissioned"
+            && core.get("status").and_then(JsValue::as_str) == Some("complete")
+        {
+            let mut completed = false;
+            for _ in 0..5 {
+                if ctx
+                    .database
+                    .decommission_scim_managed_connection(data.clone(), true)
+                    .await?
+                    .is_some()
+                {
+                    completed = true;
+                    break;
+                }
+            }
+            if !completed {
+                return Err(alibi_core::store::scim::scim_managed_conflict(
+                    "Managed SCIM connection changed repeatedly while decommissioning completed",
+                ));
+            }
+        }
+        let mut response = self.get_managed_connection(call, ctx).await?;
+        let mut value = response
+            .result()
+            .as_ref()
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .clone();
+        if let JsValue::Object(values) = &mut value {
+            _ = values.insert("decommission".into(), core);
+        }
+        response.replace(value);
+        Ok(response)
+    }
+
     /// Permanently bind and retire a connection before its first provisioning request.
     /// # Errors
     /// Returns an error if arguments cannot be serialized.

@@ -137,6 +137,35 @@ export async function scimFixture(base: BetterAuthOptions) {
           { headers: { "content-type": "application/json" } },
         );
       }
+      if (query.get("operation") === "reject-decommission-events") {
+        options.database.exec(
+          "CREATE TRIGGER reject_scim_decommission_event BEFORE INSERT ON scimManagedConnectionEvent WHEN (NEW.actorId='reject-begin' AND NEW.type='connection.decommissioning') OR (NEW.actorId='reject-complete' AND NEW.type='connection.decommissioned') BEGIN SELECT RAISE(ABORT,'fixture rejected decommission event'); END",
+        );
+        return new Response(JSON.stringify({ installed: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (query.get("operation") === "decommission-failure") {
+        const input = (await request.json()) as any;
+        try {
+          await auth.api.decommissionSCIMManagedConnection({ body: input.body });
+          return new Response(JSON.stringify({ failed: false }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (error) {
+          return new Response(
+            JSON.stringify({
+              failed: true,
+              rejectedEvent: String(error).includes("fixture rejected decommission event"),
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        }
+      }
+      if (query.get("operation") === "decommissionSCIMManagedConnection") {
+        const input = (await request.json()) as any;
+        return auth.api.decommissionSCIMManagedConnection({ body: input.body, asResponse: true });
+      }
       if (query.get("operation") === "decommissionSCIMConnection") {
         const input = (await request.json()) as any;
         return auth.api.decommissionSCIMConnection({ body: input.body, asResponse: true });

@@ -96,6 +96,12 @@ pub struct ScimConnectionBinding {
     pub decommission_lease_id: Option<String>,
     pub decommission_lease_expires_at: Option<DateTime<Utc>>,
 }
+#[derive(Clone)]
+pub struct DecommissionScimManagedConnection {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub actor_id: String,
+}
 pub struct ScimManagedConnectionState {
     pub connection: ScimManagedConnection,
     pub credentials: Vec<ScimManagedCredential>,
@@ -106,6 +112,16 @@ pub struct ScimManagedCreation {
 }
 #[async_trait]
 pub trait ScimManagedStore: Send + Sync {
+    async fn decommission_scim_managed_connection(
+        &self,
+        _data: DecommissionScimManagedConnection,
+        _complete: bool,
+    ) -> AuthResult<Option<ScimManagedConnection>> {
+        Err(AuthError::config(
+            "Managed SCIM persistence is not supported by this store",
+        ))
+    }
+
     async fn terminal_scim_connection_binding(
         &self,
         _id: &str,
