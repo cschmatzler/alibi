@@ -88,23 +88,13 @@ impl SsoPlugin {
                 "SAML XML metadata authorization is not implemented",
             ));
         }
-        let endpoint = if let Some(services) = config
-            .get("idpMetadata")
-            .and_then(|metadata| metadata.get("singleSignOnService"))
-            .and_then(Value::as_array)
-        {
-            services
-                .iter()
-                .find(|service| {
-                    service.get("Binding").and_then(Value::as_str)
-                        == Some("urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect")
-                })
-                .and_then(|service| service.get("Location"))
-                .and_then(Value::as_str)
-        } else {
-            config.get("entryPoint").and_then(Value::as_str)
-        }
-        .ok_or_else(|| AuthError::internal("ERR_NO_REDIRECT_SSO_ENDPOINT"))?;
+        let service = super::idp_services::identity(
+            config,
+            "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+        );
+        let endpoint = service
+            .as_str()
+            .ok_or_else(|| AuthError::internal("ERR_NO_REDIRECT_SSO_ENDPOINT"))?;
         let id = format!("_{}", uuid::Uuid::new_v4());
         let instant = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
         let entity = metadata

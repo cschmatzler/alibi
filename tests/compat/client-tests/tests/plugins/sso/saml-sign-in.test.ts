@@ -6,9 +6,14 @@ import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const signed of [false, true]) {
+for (const [signed, ambiguous] of [
+  [false, false],
+  [true, false],
+  [false, true],
+  [true, true],
+] as const) {
   compatScenario(
-    `SAML ${signed ? "signed" : "unsigned"} redirect request has durable bound relay and request proofs`,
+    `SAML ${signed ? "signed" : "unsigned"} ${ambiguous ? "rejects ambiguous IdP bindings" : "redirect request has durable bound relay and request proofs"}`,
     async (ctx) => {
       const actor = ctx.actor();
       const control = (input: Record<string, unknown>) =>
@@ -37,12 +42,34 @@ for (const signed of [false, true]) {
       const privateKey = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/key.pem", import.meta.url),
       ).text();
-      const providerId = signed ? "signed-saml-provider" : "unsigned-saml-provider";
+      const providerId = ambiguous
+        ? signed
+          ? "ambiguous-signed-provider"
+          : "ambiguous-unsigned-provider"
+        : signed
+          ? "signed-saml-provider"
+          : "unsigned-saml-provider";
       const config = {
         entryPoint: "https://idp.example.test/sso",
         cert,
         privateKey,
-        idpMetadata: { entityID: "https://idp.example.test/entity" },
+        idpMetadata: {
+          entityID: "https://idp.example.test/entity",
+          ...(ambiguous
+            ? {
+                singleSignOnService: [
+                  {
+                    Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+                    Location: "https://unused.example.test/first",
+                  },
+                  {
+                    Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+                    Location: "https://idp.example.test/sso",
+                  },
+                ],
+              }
+            : {}),
+        },
         authnRequestsSigned: signed,
         wantAssertionsSigned: true,
       };
@@ -66,6 +93,12 @@ for (const signed of [false, true]) {
       const before = Date.now();
       const response = await control({ action: "sign-in", body: input });
       const after = Date.now();
+      if (ambiguous) {
+        expect(response.status).toBe(500);
+        expect(await response.text()).toBe("");
+        expect(response.headers.has("location")).toBe(false);
+        return { ambiguous, signed, status: response.status };
+      }
       expect(response.status, await response.clone().text()).toBe(200);
       const result = (await response.json()) as any;
       expect(result.redirect).toBe(true);

@@ -17,23 +17,31 @@ async fn sso_saml_sign_in_issues_bound_redirect_request_and_rsa_signature<B: Bac
     let owner = signup(&auth, "saml-sign-in-owner@example.test").await;
     let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
     let private = include_str!("../../../compat/fixtures/salesforce-transport/key.pem");
-    for signed in [false, true] {
-        let provider_id = if signed {
-            "signed-saml-provider"
-        } else {
-            "unsigned-saml-provider"
+    for (signed, ambiguous) in [(false, false), (true, false), (false, true), (true, true)] {
+        let provider_id = match (signed, ambiguous) {
+            (false, false) => "unsigned-saml-provider",
+            (true, false) => "signed-saml-provider",
+            (false, true) => "ambiguous-unsigned-provider",
+            (true, true) => "ambiguous-signed-provider",
         };
-        let config = json!({"entryPoint":"https://idp.example.test/sso","cert":cert,"privateKey":private,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"authnRequestsSigned":signed,"wantAssertionsSigned":true});
+        let mut config = json!({"entryPoint":"https://idp.example.test/sso","cert":cert,"privateKey":private,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"authnRequestsSigned":signed,"wantAssertionsSigned":true});
+        if ambiguous {
+            config["idpMetadata"]["singleSignOnService"] = json!([{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://unused.example.test/first"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"}]);
+        }
         let registered=Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":provider_id,"issuer":"https://sp.example.test/entity","domain":"company.test","samlConfig":config}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
         assert_eq!(registered.status, 200);
         let input = json!({"providerId":provider_id,"providerType":"saml","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")});
         let before = chrono::Utc::now();
-        let response = Box::pin(auth.dispatch_endpoint(
+        let result = Box::pin(auth.dispatch_endpoint(
             SsoPlugin::sign_in_sso_endpoint(&input)?,
             EndpointOptions::default(),
         ))
-        .await?
-        .into_response()?;
+        .await;
+        if ambiguous {
+            assert_eq!(result.unwrap_err().error.status_code(), 500);
+            continue;
+        }
+        let response = result?.into_response()?;
         let after = chrono::Utc::now();
         assert_eq!(response.status, 200);
         assert_eq!(body(&response)["redirect"], true);
