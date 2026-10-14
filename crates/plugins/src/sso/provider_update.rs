@@ -223,7 +223,7 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
             ],
         )?;
         if let Some(mapping) = config.get("mapping") {
-            _ = super::oidc_mapping_schema::validate(mapping)?;
+            _ = super::mapping_schema::oidc(mapping)?;
         }
         for field in super::discovery::ENDPOINT_FIELDS {
             if let Some(value) = config.get(field).and_then(JsValue::as_str)

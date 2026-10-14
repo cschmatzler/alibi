@@ -11,7 +11,7 @@ mod hooks;
 mod idp_metadata_validation;
 mod idp_metadata_xml;
 mod idp_services;
-mod oidc_mapping_schema;
+mod mapping_schema;
 mod organization_provisioning;
 mod saml_signout;
 pub use organization_provisioning::{
@@ -400,7 +400,7 @@ fn validate(input: Option<&JsValue>) -> AuthResult<JsValue> {
             ],
         )?;
         if let Some(mapping) = config.get("mapping") {
-            _ = oidc_mapping_schema::validate(mapping)?;
+            _ = mapping_schema::oidc(mapping)?;
         }
         for field in discovery::ENDPOINT_FIELDS {
             if let Some(value) = config.get(field).and_then(JsValue::as_str)

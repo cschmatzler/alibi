@@ -46,6 +46,9 @@ fn validate_config(input: &JsValue, partial: bool) -> AuthResult<JsValue> {
         },
     ]);
     let parsed = crate::endpoint::validate_fields(Some(input), "body.samlConfig", &fields)?;
+    if let Some(mapping) = parsed.get("mapping") {
+        _ = super::mapping_schema::saml(mapping)?;
+    }
     let mut value = parsed.to_json_value()?;
     if value
         .get("entryPoint")
