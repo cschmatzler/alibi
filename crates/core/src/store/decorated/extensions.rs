@@ -824,6 +824,13 @@ impl<S: AuthSchema> crate::store::SsoProviderStore for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> crate::store::ScimManagedStore for PluginStore<S> {
+    async fn rotate_scim_managed_credential(
+        &self,
+        data: crate::store::RotateScimManagedCredential,
+    ) -> AuthResult<Option<crate::store::ScimManagedCreation>> {
+        self.inner.rotate_scim_managed_credential(data).await
+    }
+
     async fn get_scim_managed_connection(
         &self,
         id: &str,
