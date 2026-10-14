@@ -28,24 +28,22 @@ compatScenario(
       .filter((raw) => Boolean(Cookie.parse(raw)?.value))
       .map((raw) => raw.split(";")[0])
       .join("; ");
-    const created = await control({
-      headers: { cookie },
-      body: {
-        providerId: "signin-provider",
-        issuer: "https://idp.example.com",
-        domain: "company.com,subsidiary.com",
-        oidcConfig: {
-          clientId: "enterprise-client",
-          clientSecret: "stored-secret",
-          skipDiscovery: true,
-          pkce: true,
-          scopes: ["openid", "email"],
-          authorizationEndpoint: "https://idp.example.com/authorize",
-          tokenEndpoint: "https://idp.example.com/token",
-          jwksEndpoint: "https://idp.example.com/jwks",
-        },
+    const registration = {
+      providerId: "signin-provider",
+      issuer: "https://idp.example.com",
+      domain: "company.com,subsidiary.com",
+      oidcConfig: {
+        clientId: "enterprise-client",
+        clientSecret: "stored-secret",
+        skipDiscovery: true,
+        pkce: true,
+        scopes: ["openid", "email"],
+        authorizationEndpoint: "https://idp.example.com/authorize",
+        tokenEndpoint: "https://idp.example.com/token",
+        jwksEndpoint: "https://idp.example.com/jwks",
       },
-    });
+    };
+    const created = await control({ headers: { cookie }, body: registration });
     expect(created.status).toBe(200);
     const provider = (await created.json()) as any;
     const input = {
@@ -156,6 +154,43 @@ compatScenario(
         body: { domain, callbackURL: input.callbackURL },
       });
       expect(denied.status).toBe(404);
+    }
+    for (const [index, domainList, search, admitted] of [
+      [
+        0,
+        "https://NORMALIZED.example:443/path,, subsidiary.example/path",
+        "team.normalized.example",
+        true,
+      ],
+      [1, "normalize-port.example:99999", "normalize-port.example", true],
+      [2, "trailing-dot.example.", "trailing-dot.example", true],
+      [3, "invalid-list.example,not a domain", "team.invalid-list.example", false],
+      [4, "leading-hyphen.example,-bad.example", "team.leading-hyphen.example", false],
+    ] as const) {
+      const id = `normalized-provider-${index}`;
+      const registered = await control({
+        headers: { cookie },
+        body: {
+          ...registration,
+          providerId: id,
+          domain: domainList,
+        },
+      });
+      expect(registered.status).toBe(200);
+      const selected = await control({
+        action: "sign-in",
+        body: {
+          domain: search,
+          callbackURL: input.callbackURL,
+        },
+      });
+      expect(selected.status).toBe(admitted ? 200 : 404);
+      if (admitted) {
+        const selectedURL = new URL(((await selected.json()) as any).url);
+        expect(selectedURL.searchParams.get("redirect_uri")).toBe(
+          `${ctx.baseURL}/api/auth/sso/callback/${id}`,
+        );
+      }
     }
     const missing = await control({
       action: "sign-in",
