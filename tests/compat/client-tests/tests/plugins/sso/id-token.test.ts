@@ -82,7 +82,8 @@ compatScenario(
         },
       });
       expect(started.status).toBe(200);
-      const granted = await actor.fetch(((await started.json()) as any).url, {
+      // The independent IdP mints its own random authorization code.
+      const granted = await fetch(((await started.json()) as any).url, {
         redirect: "manual",
       });
       expect(granted.status).toBe(302);
