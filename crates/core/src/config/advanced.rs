@@ -297,18 +297,29 @@ impl SsoProviderDatabaseConfig {
         if self.table_name != "ssoProvider" {
             sql.push(format!("ALTER TABLE \"ssoProvider\" RENAME TO {table}"));
         }
-        for name in COLUMNS {
+        let nonce = uuid::Uuid::new_v4();
+        let mut destinations = Vec::new();
+        for (index, name) in COLUMNS.iter().enumerate() {
             if let Some(column) = self
                 .columns
                 .get(*name)
                 .filter(|column| column.as_str() != sso_provider_column(name))
             {
+                let temporary = format!("__alibi_sso_{nonce}_{index}");
                 sql.push(format!(
                     "ALTER TABLE {table} RENAME COLUMN {} TO {}",
                     quote(sso_provider_column(name)),
-                    quote(column)
+                    quote(&temporary)
                 ));
+                destinations.push((temporary, column));
             }
+        }
+        for (temporary, column) in destinations {
+            sql.push(format!(
+                "ALTER TABLE {table} RENAME COLUMN {} TO {}",
+                quote(&temporary),
+                quote(column)
+            ));
         }
         Ok(sql)
     }

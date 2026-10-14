@@ -348,6 +348,16 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   const storageDatabase = new Database(":memory:");
+  const storageFields = {
+    issuer: "application_issuer",
+    domain: "application_domain",
+    providerId: "application_provider",
+    userId: "application_owner",
+    organizationId: "application_org",
+    oidcConfig: "application_oidc",
+    samlConfig: "application_saml",
+    domainVerified: "application_verified",
+  };
   const storageOptions = {
     ...options,
     database: storageDatabase,
@@ -358,22 +368,31 @@ export async function ssoFixture(base: BetterAuthOptions) {
         schema: {
           ssoProvider: {
             modelName: "application_sso_provider",
-            fields: {
-              issuer: "application_issuer",
-              domain: "application_domain",
-              providerId: "application_provider",
-              userId: "application_owner",
-              organizationId: "application_org",
-              oidcConfig: "application_oidc",
-              samlConfig: "application_saml",
-              domainVerified: "application_verified",
-            },
+            fields: storageFields,
           },
         },
       }),
     ],
   };
   await (await getMigrations(storageOptions)).runMigrations();
+  const swappedDatabase = new Database(":memory:");
+  const swappedOptions = {
+    ...options,
+    database: swappedDatabase,
+    plugins: [
+      username(),
+      sso({
+        domainVerification: { enabled: true },
+        schema: {
+          ssoProvider: {
+            modelName: "application_sso_provider",
+            fields: { ...storageFields, issuer: "oidcConfig", oidcConfig: "issuer" },
+          },
+        },
+      }),
+    ],
+  };
+  await (await getMigrations(swappedOptions)).runMigrations();
   const additionalDatabase = new Database(":memory:");
   const additionalOptions = {
     ...options,
@@ -521,6 +540,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 : { allowedKeyEncryptionAlgorithms: [] };
   const instances = new Map([
     ["storage-schema", betterAuth(storageOptions)],
+    ["storage-swap", betterAuth(swappedOptions)],
     ["additional-fields", betterAuth(additionalOptions)],
     ["field-callbacks", betterAuth(callbackOptions)],
     ...encryptionModes.map(
@@ -655,6 +675,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     }
     const mode = [
       "storage-schema",
+      "storage-swap",
       "additional-fields",
       "field-callbacks",
       ...encryptionModes,
@@ -720,15 +741,19 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "storage-state") {
-      const tables = storageDatabase
+      const selectedDatabase = mode === "storage-swap" ? swappedDatabase : storageDatabase;
+      const issuer = mode === "storage-swap" ? "oidcConfig" : "application_issuer";
+      const domain = "application_domain";
+      const oidc = mode === "storage-swap" ? "issuer" : "application_oidc";
+      const tables = selectedDatabase
         .query("SELECT name FROM sqlite_master WHERE type='table'")
         .all() as any[];
       const customTableExists = tables.some((table) => table.name === "application_sso_provider");
       const defaultTableExists = tables.some((table) => table.name === "ssoProvider");
       const rows = customTableExists
-        ? storageDatabase
+        ? selectedDatabase
             .query(
-              "SELECT id,application_issuer AS issuer,application_domain AS domain,application_provider AS providerId,application_owner AS userId,application_org AS organizationId,application_oidc AS oidcConfig,application_saml AS samlConfig,application_verified AS domainVerified FROM application_sso_provider ORDER BY application_provider",
+              `SELECT id,${issuer} AS issuer,${domain} AS domain,application_provider AS providerId,application_owner AS userId,application_org AS organizationId,${oidc} AS oidcConfig,application_saml AS samlConfig,application_verified AS domainVerified FROM application_sso_provider ORDER BY application_provider`,
             )
             .all()
             .map((row: any) => ({
@@ -1146,29 +1171,31 @@ export async function ssoFixture(base: BetterAuthOptions) {
       instances.set(
         mode,
         betterAuth(
-          mode === "field-callbacks"
-            ? callbackOptions
-            : mode === "additional-fields"
-              ? additionalOptions
-              : mode === "storage-schema"
-                ? storageOptions
-                : mode === "no-signup"
-                  ? noSignupOptions
-                  : mode === "validation"
-                    ? validationOptions
-                    : mode === "trusted-claims"
-                      ? trustedClaimsOptions
-                      : mode === "signed-request-slo"
-                        ? signedRequestSloOptions
-                        : mode === "signed-slo"
-                          ? signedSloOptions
-                          : mode === "domain"
-                            ? domainOptions
-                            : mode === "shared"
-                              ? sharedOptions
-                              : mode === "slo"
-                                ? sloOptions
-                                : options,
+          mode === "storage-swap"
+            ? swappedOptions
+            : mode === "field-callbacks"
+              ? callbackOptions
+              : mode === "additional-fields"
+                ? additionalOptions
+                : mode === "storage-schema"
+                  ? storageOptions
+                  : mode === "no-signup"
+                    ? noSignupOptions
+                    : mode === "validation"
+                      ? validationOptions
+                      : mode === "trusted-claims"
+                        ? trustedClaimsOptions
+                        : mode === "signed-request-slo"
+                          ? signedRequestSloOptions
+                          : mode === "signed-slo"
+                            ? signedSloOptions
+                            : mode === "domain"
+                              ? domainOptions
+                              : mode === "shared"
+                                ? sharedOptions
+                                : mode === "slo"
+                                  ? sloOptions
+                                  : options,
         ),
       );
       return new Response(JSON.stringify({ restarted: true }), {

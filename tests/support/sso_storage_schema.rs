@@ -17,3 +17,12 @@ pub(crate) fn configure(config: &mut alibi::AuthConfig) {
         .collect(),
     });
 }
+
+pub(crate) fn configure_swapped(config: &mut alibi::AuthConfig) {
+    configure(config);
+    let mapping = config.advanced.database.sso_provider.as_mut().unwrap();
+    _ = mapping.columns.insert("issuer".into(), "oidcConfig".into());
+    _ = mapping
+        .columns
+        .insert("oidc_config".into(), "issuer".into());
+}
