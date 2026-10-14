@@ -22,6 +22,32 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    async fn lock_scim_user(
+        &self,
+        _id: &str,
+        _connection: &str,
+        _domain: &str,
+        _attributes: &crate::store::ScimUserAttributes,
+        _now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<crate::store::ScimUserMutationContext> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM User mutation is unsupported",
+        ))
+    }
+    async fn replace_scim_user(
+        &self,
+        _id: &str,
+        _data: crate::store::ReplaceScimUser,
+        _roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimUserRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        Err(AuthError::not_implemented(
+            "Transactional SCIM User replacement is unsupported",
+        ))
+    }
+
     async fn create_scim_user(
         &self,
         _data: crate::store::CreateScimUser,

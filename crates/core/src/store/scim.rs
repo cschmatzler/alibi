@@ -128,11 +128,8 @@ pub struct ScimUserRecord {
     pub updated_at: DateTime<Utc>,
 }
 /// Normalized canonical User creation, committed with its identity subject.
-pub struct CreateScimUser {
-    pub connection_id: String,
-    pub provisioning_domain_id: String,
-    pub user_id: String,
-    pub connection_user_key: String,
+#[derive(Clone)]
+pub struct ScimUserAttributes {
     pub user_name: String,
     pub user_name_key: String,
     pub primary_email: String,
@@ -147,6 +144,23 @@ pub struct CreateScimUser {
     pub external_id: Option<String>,
     pub external_id_key: Option<String>,
     pub active: bool,
+}
+pub struct ReplaceScimUser {
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub attributes: ScimUserAttributes,
+    pub updated_at: DateTime<Utc>,
+}
+pub struct ScimUserMutationContext {
+    pub user_id: String,
+    pub manage_profile: bool,
+}
+pub struct CreateScimUser {
+    pub attributes: ScimUserAttributes,
+    pub connection_id: String,
+    pub provisioning_domain_id: String,
+    pub user_id: String,
+    pub connection_user_key: String,
     pub order_key: String,
     pub created_at: DateTime<Utc>,
     pub manage_profile: bool,

@@ -27,7 +27,7 @@ fn group_conflict() -> AuthError {
     AuthError::internal("The SCIM Group changed concurrently; retry the request.")
 }
 impl<S: AuthSchema> SeaOrmStore<S> {
-    async fn scim_user_owned_with_connection<C: ConnectionTrait>(
+    pub(super) async fn scim_user_owned_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
         id: &str,

@@ -182,6 +182,29 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn lock_scim_user(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        attributes: &crate::store::ScimUserAttributes,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<crate::store::ScimUserMutationContext> {
+        self.inner
+            .lock_scim_user(id, connection, domain, attributes, now)
+            .await
+    }
+    async fn replace_scim_user(
+        &self,
+        id: &str,
+        data: crate::store::ReplaceScimUser,
+        roles: bool,
+    ) -> AuthResult<(
+        crate::store::ScimUserRecord,
+        Vec<crate::store::ScimProjectionPreparedUser>,
+    )> {
+        self.inner.replace_scim_user(id, data, roles).await
+    }
     async fn create_scim_user(
         &self,
         data: crate::store::CreateScimUser,

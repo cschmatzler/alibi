@@ -335,6 +335,48 @@ export async function scimFixture(base: BetterAuthOptions) {
           tombstones: count("scimIdentityTombstone"),
         });
       }
+      if (query.get("operation") === "drift-user-replace") {
+        const input = (await request.json()) as any;
+        options.database
+          .query("UPDATE scimUser SET provisioningDomainId='drifted' WHERE id=?")
+          .run(input.id);
+        return fixtureJson({ changed: true });
+      }
+      if (query.get("operation") === "prepare-user-replace") {
+        const input = (await request.json()) as any;
+        const source = options.database
+          .query("SELECT userId FROM scimUser WHERE id=?")
+          .get(input.id) as any;
+        options.database.query("UPDATE user SET emailVerified=true WHERE id=?").run(source.userId);
+        await (await auth.$context).internalAdapter.createSession(source.userId);
+        return fixtureJson({ prepared: true });
+      }
+      if (query.get("operation") === "detach-user-profile") {
+        const input = (await request.json()) as any;
+        options.database
+          .query("UPDATE scimSubject SET profileSourceId=NULL WHERE profileSourceId=?")
+          .run(input.id);
+        return fixtureJson({ detached: true });
+      }
+      if (query.get("operation") === "user-replace-state") {
+        return fixtureJson({
+          sessions: (options.database.query("SELECT COUNT(*) AS n FROM session").get() as any).n,
+          subjects: options.database
+            .query("SELECT revision,profileSourceId FROM scimSubject ORDER BY id")
+            .all(),
+        });
+      }
+      if (query.get("operation") === "replaceSCIMUser") {
+        const input = (await request.json()) as any;
+        return auth.api.replaceSCIMUser({
+          params: input.params,
+          body: input.body,
+          query: input.query,
+          headers:
+            input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
+          asResponse: true,
+        });
+      }
       if (query.get("operation") === "createSCIMUser") {
         const input = (await request.json()) as any;
         return auth.api.createSCIMUser({

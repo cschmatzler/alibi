@@ -477,6 +477,191 @@ impl ScimPlugin {
         }
         Ok(projection.apply(attributes))
     }
+    pub(super) async fn replace_user<S: AuthSchema>(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        use alibi_core::AuthUser;
+        let Some(profile) = call
+            .body()
+            .and_then(|value| value.to_json_value().ok())
+            .and_then(|value| super::user_profile::parse(&value))
+        else {
+            return Ok(error(
+                400,
+                "Invalid SCIM User attributes",
+                Some("invalidValue"),
+            ));
+        };
+        let connection = match self.authenticate_connection(call, ctx).await? {
+            Ok(value) => value,
+            Err(response) => return Ok(*response),
+        };
+        let projection = match Projection::parse(call.query(), super::user_attributes::USER_SCHEMA)
+        {
+            Ok(value) => value,
+            Err(detail) => return Ok(error(400, &detail, Some("invalidValue"))),
+        };
+        let id = call
+            .params()
+            .and_then(|params| params.get("userId"))
+            .and_then(JsValue::as_str)
+            .unwrap_or("");
+        let Some(source) = ctx.database.get_scim_user(id, &connection.id).await? else {
+            return Ok(error(404, "SCIM User not found", None));
+        };
+        if source.provisioning_domain_id != connection.domain {
+            return Ok(error(
+                409,
+                "The connection provisioningDomainId changed after resources were created",
+                None,
+            ));
+        }
+        let attributes = profile.prepare(&connection.id)?;
+        for (field, key, label) in [
+            (
+                "userNameKey",
+                Some(attributes.user_name_key.clone()),
+                "userName",
+            ),
+            (
+                "externalIdKey",
+                attributes.external_id_key.clone(),
+                "externalId",
+            ),
+        ] {
+            if let Some(key) = key {
+                let existing = ctx
+                    .database
+                    .list_scim_users(&connection.id, &[(field.into(), key)], 0, 1)
+                    .await?;
+                if existing.users.iter().any(|source| source.id != id) {
+                    return Ok(error(
+                        409,
+                        &format!("SCIM User {label} already exists"),
+                        Some("uniqueness"),
+                    ));
+                }
+            }
+        }
+        let configured = ctx
+            .extensions
+            .get::<super::projection::ScimProjectionHandle<S>>();
+        let roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
+        let identity = ctx
+            .extensions
+            .get::<super::projection::ScimIdentityHandle<S>>();
+        let cid = connection.id;
+        let domain = connection.domain;
+        let id = id.to_owned();
+        let key = scoped_key(&["scim-connection", &cid])?;
+        let result =
+            alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
+                Box::pin(async move {
+                    let now = chrono::Utc::now().trunc_subsecs(3);
+                    let locked = database
+                        .lock_scim_user(&id, &cid, &domain, &attributes, now)
+                        .await?;
+                    if locked.manage_profile {
+                        let user =
+                            database
+                                .get_user_by_id(&locked.user_id)
+                                .await?
+                                .ok_or_else(|| AuthError::Api {
+                                    status: 409,
+                                    code: None,
+                                    message: "The linked Better Auth User no longer exists".into(),
+                                })?;
+                        if let Some(existing) =
+                            database.get_user_by_email(&profile.primary_email).await?
+                            && existing.id() != user.id()
+                        {
+                            return Err(user_uniqueness(
+                                "A Better Auth User already uses this email",
+                            ));
+                        }
+                        let changed_email = user.email() != Some(profile.primary_email.as_str());
+                        _ = database
+                            .update_user(
+                                &locked.user_id,
+                                alibi_core::UpdateUser {
+                                    email: Some(profile.primary_email),
+                                    name: Some(profile.display_name),
+                                    email_verified: changed_email.then_some(false),
+                                    ..Default::default()
+                                },
+                            )
+                            .await?;
+                    }
+                    let (source, states) = database
+                        .replace_scim_user(
+                            &id,
+                            alibi_core::store::ReplaceScimUser {
+                                connection_id: cid.clone(),
+                                provisioning_domain_id: domain.clone(),
+                                attributes,
+                                updated_at: now,
+                            },
+                            roles,
+                        )
+                        .await?;
+                    reconcile_projected_users(database, &domain, states, configured).await?;
+                    let state = database.reconcile_scim_identity(&locked.user_id).await?;
+                    if let Some(identity) = identity {
+                        identity
+                            .0
+                            .reconcile_user(&state, database)
+                            .await
+                            .map_err(|error| {
+                                super::projection::application_callback_error(
+                                    error,
+                                    "SCIM identity reconciliation failed",
+                                )
+                            })?;
+                    }
+                    if !state.active {
+                        database.delete_user_sessions(&locked.user_id).await?;
+                    }
+                    database.fence_scim_connection(&cid, &key).await?;
+                    Ok(source)
+                })
+            })
+            .await;
+        let source = match result {
+            Ok(source) => source,
+            Err(AuthError::Api {
+                status,
+                code,
+                message,
+            }) => return Ok(error(status, &message, code.as_deref())),
+            Err(AuthError::CallbackFailure(cause)) => {
+                return Ok(error(
+                    500,
+                    match cause.as_ref() {
+                        AuthError::Api { message, .. } => message,
+                        _ => "SCIM identity reconciliation failed",
+                    },
+                    None,
+                ));
+            }
+            Err(error) => return Err(error),
+        };
+        let location = resource_url(
+            &format!(
+                "{}{}",
+                ctx.config.base_url.trim_end_matches('/'),
+                ctx.config.base_path.trim_end_matches('/')
+            ),
+            "Users",
+            &source.id,
+        )?;
+        Ok(
+            EndpointResponse::json(&Self::render_user(ctx, source, &projection)?)?
+                .with_header("location", location)
+                .with_header(MARKER, "1"),
+        )
+    }
     pub(super) async fn create_user<S: AuthSchema>(
         &self,
         call: &EndpointCall,
@@ -515,16 +700,9 @@ impl ScimPlugin {
                 None,
             ));
         }
-        let name_key = scoped_key(&[
-            "scim-user-name",
-            &connection.id,
-            &profile.user_name.to_lowercase(),
-        ])?;
-        let external_key = profile
-            .external_id
-            .as_ref()
-            .map(|value| scoped_key(&["scim-user-external-id", &connection.id, value]))
-            .transpose()?;
+        let attributes = profile.prepare(&connection.id)?;
+        let name_key = attributes.user_name_key.clone();
+        let external_key = attributes.external_id_key.clone();
         for (field, value, label) in [
             ("userNameKey", Some(name_key.clone()), "userName"),
             ("externalIdKey", external_key.clone(), "externalId"),
@@ -661,67 +839,12 @@ impl ScimPlugin {
                     };
                     let user_id = user.id().to_string();
                     let now = chrono::Utc::now().trunc_subsecs(3);
-                    let email_index = |kind: Option<&str>| -> AuthResult<String> {
-                        let mut keys = profile
-                            .attributes
-                            .get("emails")
-                            .unwrap_or(&Value::Null)
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .filter(|email| {
-                                kind.is_none_or(|kind| {
-                                    email.get("type").and_then(Value::as_str) == Some(kind)
-                                })
-                            })
-                            .map(|email| {
-                                scoped_key(&[
-                                    "scim-email-value",
-                                    email.get("value").and_then(Value::as_str).unwrap_or(""),
-                                ])
-                            })
-                            .collect::<AuthResult<Vec<_>>>()?;
-                        keys.sort();
-                        keys.dedup();
-                        Ok(format!("|{}|", keys.join("|")))
-                    };
                     let data = alibi_core::store::CreateScimUser {
                         connection_id: cid.clone(),
                         provisioning_domain_id: domain.clone(),
                         connection_user_key: scoped_key(&["scim-user", &cid, &user_id])?,
                         user_id: user_id.clone(),
-                        user_name: profile.user_name,
-                        user_name_key: name_key,
-                        primary_email: profile.primary_email.clone(),
-                        work_email_value_index: email_index(Some("work"))?,
-                        email_value_index: email_index(None)?,
-                        display_name: profile.display_name.clone(),
-                        formatted_name: profile
-                            .attributes
-                            .get("name")
-                            .and_then(|name| name.get("formatted"))
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .into(),
-                        given_name: profile
-                            .attributes
-                            .get("name")
-                            .and_then(|name| name.get("givenName"))
-                            .and_then(Value::as_str)
-                            .map(str::to_owned),
-                        family_name: profile
-                            .attributes
-                            .get("name")
-                            .and_then(|name| name.get("familyName"))
-                            .and_then(Value::as_str)
-                            .map(str::to_owned),
-                        serialized_emails: serde_json::to_string(
-                            &profile.attributes.get("emails").unwrap_or(&Value::Null),
-                        )?,
-                        serialized_attributes: Some(serde_json::to_string(&profile.attributes)?),
-                        external_id: profile.external_id,
-                        external_id_key: external_key,
-                        active: profile.active,
+                        attributes,
                         order_key: format!(
                             "{:015}:{}",
                             now.timestamp_millis(),
@@ -1880,7 +2003,7 @@ fn select_value(value: &Value, paths: &[Vec<String>], include: bool) -> Option<V
     }
 }
 
-fn scoped_key(parts: &[&str]) -> AuthResult<String> {
+pub(super) fn scoped_key(parts: &[&str]) -> AuthResult<String> {
     Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(parts)?)))
 }
 fn group_creation_body(

@@ -366,6 +366,31 @@ where
             .map_err(map_db_err)?;
         Ok(())
     }
+    async fn lock_scim_user(
+        &self,
+        id: &str,
+        connection: &str,
+        domain: &str,
+        attributes: &alibi_core::store::ScimUserAttributes,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<alibi_core::store::ScimUserMutationContext> {
+        self.store
+            .lock_scim_user_with_connection(self.tx, id, connection, domain, attributes, now)
+            .await
+    }
+    async fn replace_scim_user(
+        &self,
+        id: &str,
+        data: alibi_core::store::ReplaceScimUser,
+        roles: bool,
+    ) -> AuthResult<(
+        alibi_core::store::ScimUserRecord,
+        Vec<alibi_core::store::ScimProjectionPreparedUser>,
+    )> {
+        self.store
+            .replace_scim_user_with_connection(self.tx, id, data, roles)
+            .await
+    }
     async fn create_scim_user(
         &self,
         data: alibi_core::store::CreateScimUser,
@@ -847,4 +872,5 @@ mod scim_decommission;
 mod scim_groups;
 mod scim_projection;
 mod scim_user_create;
+mod scim_user_replace;
 mod scim_users;
