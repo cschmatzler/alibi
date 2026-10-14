@@ -11,19 +11,25 @@ mod peer;
 backend_tests!(
     sso_callback_redeems_bound_code_and_creates_usable_session,
     sso_shared_callback_selects_provider_from_protected_state,
-    sso_callback_verifies_id_token_authority_claims_and_userinfo_subject
+    sso_callback_verifies_id_token_authority_claims_and_userinfo_subject,
+    sso_callback_defaults_omitted_pkce_to_bound_code_exchange
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, false).await
+    callback_flow::<B>(db, false, false).await
 }
 async fn sso_shared_callback_selects_provider_from_protected_state<B: Backend>(
     db: Db,
 ) -> TestResult {
-    callback_flow::<B>(db, true).await
+    callback_flow::<B>(db, true, false).await
 }
-async fn callback_flow<B: Backend>(db: Db, shared: bool) -> TestResult {
+async fn sso_callback_defaults_omitted_pkce_to_bound_code_exchange<B: Backend>(
+    db: Db,
+) -> TestResult {
+    callback_flow::<B>(db, false, true).await
+}
+async fn callback_flow<B: Backend>(db: Db, shared: bool, default_pkce: bool) -> TestResult {
     let idp = peer::start().await;
     *idp.email.lock().unwrap() = "sso-employee@example.test".into();
     let (connection, store) = db.migrated::<B>(SECRET).await?;
@@ -42,7 +48,22 @@ async fn callback_flow<B: Backend>(db: Db, shared: bool) -> TestResult {
         .build()
         .await?;
     let owner = signup(&auth, "sso-callback-owner@example.test").await;
-    let created=Box::pin(auth.dispatch_endpoint(SsoPlugin::register_sso_provider_endpoint(&json!({"providerId":"callback-provider","issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true,"scopes":["openid","email"],"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base)}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    let mut registration = json!({"providerId":"callback-provider","issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"pkce":true,"scopes":["openid","email"],"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base)}});
+    if default_pkce {
+        _ = registration["oidcConfig"]
+            .as_object_mut()
+            .unwrap()
+            .remove("pkce");
+    }
+    let created = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::register_sso_provider_endpoint(&registration)?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     assert_eq!(created.status, 200);
     let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"callback-provider","callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
     let authorization = body(&started)["url"].as_str().unwrap().to_owned();

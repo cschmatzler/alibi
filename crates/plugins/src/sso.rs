@@ -187,6 +187,7 @@ impl SsoPlugin {
             for field in ["clientId","clientSecret","authorizationEndpoint","tokenEndpoint","privateKeyId","privateKeyAlgorithm","jwksEndpoint","pkce","mapping","scopes","userInfoEndpoint"] {
                 if let Some(value)=config.get(field) { _=output.insert(field.into(),value.clone()); }
             }
+            _=output.insert("pkce".into(),config.get("pkce").cloned().unwrap_or_else(||json!(true)));
             _=output.insert("issuer".into(),json!(issuer));
             _=output.insert("tokenEndpointAuthentication".into(),json!(method));
             _=output.insert("discoveryEndpoint".into(),config.get("discoveryEndpoint").cloned().unwrap_or_else(||json!(format!("{issuer}/.well-known/openid-configuration"))));
