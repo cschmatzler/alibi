@@ -6,7 +6,9 @@ mod discovery;
 mod domain_confirmation;
 mod domain_verification;
 mod domains;
+mod encryption_algorithms;
 mod endpoint_host;
+pub use encryption_algorithms::SsoSamlEncryptionPolicy;
 mod hooks;
 mod idp_metadata_validation;
 mod idp_metadata_xml;
@@ -95,6 +97,7 @@ pub struct SsoConfig {
     pub saml_enable_in_response_to_validation: bool,
     pub saml_allow_idp_initiated: bool,
     pub saml_signing_policy: SsoSamlSigningPolicy,
+    pub saml_encryption_policy: SsoSamlEncryptionPolicy,
     pub saml_idp_initiated_callback_url: Option<String>,
     pub saml_request_ttl: chrono::Duration,
     pub saml_clock_skew: chrono::Duration,
@@ -128,6 +131,7 @@ impl Default for SsoConfig {
             saml_enable_in_response_to_validation: true,
             saml_allow_idp_initiated: false,
             saml_signing_policy: SsoSamlSigningPolicy::default(),
+            saml_encryption_policy: SsoSamlEncryptionPolicy::default(),
             saml_idp_initiated_callback_url: None,
             saml_request_ttl: chrono::Duration::minutes(5),
             saml_clock_skew: chrono::Duration::minutes(5),

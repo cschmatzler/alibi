@@ -151,9 +151,10 @@ impl SsoPlugin {
             &callback,
             self.config.saml_clock_skew,
             self.config.saml_require_timestamps,
+            &self.config.saml_encryption_policy,
         ) {
             Ok(identity) => identity,
-            Err(error) => return fail(error.code, Some(error.message)),
+            Err(error) => return fail(error.code, Some(&error.message)),
         };
         let request_reference = if self.config.saml_enable_in_response_to_validation
             && let Some(response_to) = identity.in_response_to.as_deref()

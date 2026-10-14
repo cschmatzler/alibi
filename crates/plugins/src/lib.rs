@@ -331,6 +331,7 @@ pub use sso::{
     SsoOrganizationRoleResolver, SsoPlugin, SsoPrivateKey, SsoPrivateKeyContext,
     SsoPrivateKeyResolver, SsoProtocol, SsoProviderLimit, SsoProviderLimitResolver,
     SsoProviderMutation, SsoProviderMutationGuard, SsoProvisioner, SsoProvisioningData,
-    SsoResolvedProfile, SsoResolver, SsoRoleResolver, SsoSamlSigningPolicy, SsoUserProvisioner,
-    SsoUserResolution, SsoUserResolutionInput, SsoUserResolver,
+    SsoResolvedProfile, SsoResolver, SsoRoleResolver, SsoSamlEncryptionPolicy,
+    SsoSamlSigningPolicy, SsoUserProvisioner, SsoUserResolution, SsoUserResolutionInput,
+    SsoUserResolver,
 };

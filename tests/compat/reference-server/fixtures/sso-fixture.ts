@@ -374,7 +374,38 @@ export async function ssoFixture(base: BetterAuthOptions) {
               allowedDigestAlgorithms: ["http://www.w3.org/2000/09/xmldsig#sha1"],
             }
           : { allowedSignatureAlgorithms: [], allowedDigestAlgorithms: [] };
+  const encryptionModes = [
+    "encrypted-policy-key-denied",
+    "encrypted-policy-data-denied",
+    "encrypted-policy-key-allowed",
+    "encrypted-policy-data-allowed",
+    "encrypted-policy-key-empty",
+    "encrypted-policy-data-empty",
+    "encrypted-policy-outer-key-denied",
+  ];
+  const encryptionAlgorithms = (mode: string) =>
+    mode.includes("policy-key-denied")
+      ? { allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-1_5"] }
+      : mode.includes("policy-data-denied")
+        ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes128-gcm"] }
+        : mode.includes("policy-key-allowed")
+          ? { allowedKeyEncryptionAlgorithms: ["http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"] }
+          : mode.includes("policy-data-allowed")
+            ? { allowedDataEncryptionAlgorithms: ["http://www.w3.org/2009/xmlenc11#aes256-gcm"] }
+            : mode.includes("policy-data-empty")
+              ? { allowedDataEncryptionAlgorithms: [] }
+              : { allowedKeyEncryptionAlgorithms: [] };
   const instances = new Map([
+    ...encryptionModes.map(
+      (mode) =>
+        [
+          mode,
+          betterAuth({
+            ...options,
+            plugins: [username(), sso({ saml: { algorithms: encryptionAlgorithms(mode) } })],
+          }),
+        ] as const,
+    ),
     ...algorithmModes.map(
       (mode) =>
         [
@@ -476,6 +507,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     const mode = [
+      ...encryptionModes,
       ...algorithmModes,
       ...globalModes,
       "idp-initiated",

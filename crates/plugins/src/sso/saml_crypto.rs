@@ -19,18 +19,18 @@ pub(super) struct SamlIdentity {
 }
 pub(super) struct Failure {
     pub code: &'static str,
-    pub message: &'static str,
+    pub message: String,
 }
 fn invalid() -> Failure {
     Failure {
         code: "saml_error",
-        message: "Invalid SAML response",
+        message: "Invalid SAML response".into(),
     }
 }
 fn binding(message: &'static str) -> Failure {
     Failure {
         code: "invalid_saml_response",
-        message,
+        message: message.into(),
     }
 }
 fn children(doc: &Document<'_>, parent: NodeId, namespace: &str, name: &str) -> Vec<NodeId> {
@@ -57,12 +57,14 @@ pub(super) fn verify(
     recipient: &str,
     clock_skew: chrono::Duration,
     require_timestamps: bool,
+    encryption_policy: &super::SsoSamlEncryptionPolicy,
 ) -> Result<SamlIdentity, Failure> {
     let effective = super::idp_metadata_xml::effective(config).map_err(|_| invalid())?;
     let config = &effective;
     if xml.contains("<!DOCTYPE") || xml.contains("<!ENTITY") {
         return Err(invalid());
     }
+    let encrypted_xml = xml;
     let decrypted;
     let mut ciphertext_response_signed = false;
     let xml = if config
@@ -207,7 +209,7 @@ pub(super) fn verify(
     {
         return Err(Failure {
             code: "saml_error",
-            message: "SAML assertion missing required timestamp conditions",
+            message: "SAML assertion missing required timestamp conditions".into(),
         });
     }
     if let Some(conditions) = conditions {
@@ -216,17 +218,18 @@ pub(super) fn verify(
                 let time = DateTime::parse_from_rfc3339(raw)
                     .map_err(|_| Failure {
                         code: "saml_error",
-                        message: if field == "NotBefore" {
+                        message: (if field == "NotBefore" {
                             "SAML assertion has invalid NotBefore timestamp"
                         } else {
                             "SAML assertion has invalid NotOnOrAfter timestamp"
-                        },
+                        })
+                        .into(),
                     })?
                     .with_timezone(&Utc);
                 if field == "NotBefore" && now < time - clock_skew {
                     return Err(Failure {
                         code: "saml_error",
-                        message: "SAML assertion is not yet valid",
+                        message: "SAML assertion is not yet valid".into(),
                     });
                 }
                 if field == "NotOnOrAfter" {
@@ -234,12 +237,23 @@ pub(super) fn verify(
                     if now > time + clock_skew {
                         return Err(Failure {
                             code: "saml_error",
-                            message: "SAML assertion has expired",
+                            message: "SAML assertion has expired".into(),
                         });
                     }
                 }
             }
         }
+    }
+    // The pinned POST parser applies cipher policy to the original encrypted
+    // document when the assertion signature was verified after decryption.
+    // Its authenticated outer-response path instead exposes decrypted content.
+    if !ciphertext_response_signed
+        && config
+            .get("idpMetadata")
+            .and_then(|metadata| metadata.get("isAssertionEncrypted"))
+            == Some(&Value::Bool(true))
+    {
+        super::encryption_algorithms::validate(encrypted_xml, encryption_policy)?;
     }
     let entity = metadata
         .as_ref()

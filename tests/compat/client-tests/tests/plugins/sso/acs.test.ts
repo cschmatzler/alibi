@@ -5,6 +5,13 @@ import { Cookie } from "tough-cookie";
 import { compatScenario } from "../../../support/scenario";
 import { encryptSamlGrant } from "./encrypt-saml-grant";
 for (const mode of [
+  "encrypted-policy-key-denied",
+  "encrypted-policy-data-denied",
+  "encrypted-policy-key-allowed",
+  "encrypted-policy-data-allowed",
+  "encrypted-policy-key-empty",
+  "encrypted-policy-data-empty",
+  "encrypted-policy-outer-key-denied",
   "manual",
   "xml",
   "encrypted",
@@ -20,6 +27,10 @@ for (const mode of [
   "encrypted-wrong-pass",
   "encrypted-missing-pass",
 ]) {
+  const policyDenied =
+    mode.includes("encrypted-policy-") && !mode.includes("allowed") && !mode.includes("outer");
+  const policyKey = mode.includes("policy-key");
+  const outerPolicy = mode.includes("policy-outer");
   const xmlMetadata = mode === "xml";
   const encrypted = mode.startsWith("encrypted");
   const keyFailure = [
@@ -38,7 +49,10 @@ for (const mode of [
         actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
+          body: JSON.stringify({
+            mode: mode.startsWith("encrypted-policy-") ? mode : "default",
+            ...input,
+          }),
           redirect: "manual",
         });
       const pairs = (response: Response) =>
@@ -59,10 +73,11 @@ for (const mode of [
       const cert = await Bun.file(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
       ).text();
-      const providerId =
-        mode === "encrypted-response" ||
-        mode === "encrypted-outer-only" ||
-        mode.startsWith("encrypted-aes-")
+      const providerId = mode.startsWith("encrypted-policy-")
+        ? mode
+        : mode === "encrypted-response" ||
+            mode === "encrypted-outer-only" ||
+            mode.startsWith("encrypted-aes-")
           ? `${mode}-acs-provider`
           : keyFailure
             ? `${mode}-acs-provider`
@@ -176,7 +191,7 @@ for (const mode of [
               ),
             ).toString("base64");
           }
-          if (mode === "encrypted-response" || mode === "encrypted-outer-only") {
+          if (mode === "encrypted-response" || mode === "encrypted-outer-only" || outerPolicy) {
             const signed = await control({
               action: "sign-saml-logout",
               xml: Buffer.from(grant.SAMLResponse, "base64").toString(),
@@ -209,10 +224,19 @@ for (const mode of [
         const account = (await (
           await control({ action: "saml-account-row", providerId, accountId: email })
         ).json()) as any;
-        if (wrongKey || keyFailure) {
+        if (wrongKey || keyFailure || policyDenied) {
           expect(location.pathname).toBe("/failed");
-          expect(location.searchParams.get("error")).toBe("saml_error");
-          expect(location.searchParams.get("error_description")).toBe("Invalid SAML response");
+          if (policyDenied && !wrongKey) {
+            expect(location.searchParams.get("error")).toBe("saml_algorithm_not_allowed");
+            expect(location.searchParams.get("error_description")).toBe(
+              policyKey
+                ? "SAML key encryption algorithm not in allow-list: http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"
+                : "SAML data encryption algorithm not in allow-list: http://www.w3.org/2009/xmlenc11#aes256-gcm",
+            );
+          } else {
+            expect(location.searchParams.get("error")).toBe("saml_error");
+            expect(location.searchParams.get("error_description")).toBe("Invalid SAML response");
+          }
           expect(request).not.toBe(null);
           expect(used).toBe(null);
           expect(account).toBe(null);
