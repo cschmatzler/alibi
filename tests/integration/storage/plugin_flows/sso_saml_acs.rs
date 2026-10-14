@@ -21,7 +21,8 @@ backend_tests!(
     sso_saml_encrypted_assertions_accept_outer_only_signatures,
     sso_saml_encrypted_assertions_accept_aes128_gcm,
     sso_saml_encrypted_assertions_accept_aes128_cbc,
-    sso_saml_encrypted_assertions_accept_aes256_cbc
+    sso_saml_encrypted_assertions_accept_aes256_cbc,
+    sso_saml_encrypted_assertions_reject_damaged_ciphertext
 );
 async fn sso_saml_acs_validates_signed_grant_and_rejects_wrong_key_and_replay<B: Backend>(
     db: Db,
@@ -78,6 +79,9 @@ async fn sso_saml_encrypted_assertions_accept_aes128_cbc<B: Backend>(db: Db) -> 
 async fn sso_saml_encrypted_assertions_accept_aes256_cbc<B: Backend>(db: Db) -> TestResult {
     acs_flow::<B>(db, AcsCase::Aes256Cbc).await
 }
+async fn sso_saml_encrypted_assertions_reject_damaged_ciphertext<B: Backend>(db: Db) -> TestResult {
+    acs_flow::<B>(db, AcsCase::Tampered).await
+}
 #[derive(Clone, Copy)]
 enum AcsCase {
     Manual,
@@ -89,6 +93,7 @@ enum AcsCase {
     Aes128Gcm,
     Aes128Cbc,
     Aes256Cbc,
+    Tampered,
     MissingKey,
     WrongKey,
     WrongPass,
@@ -102,7 +107,9 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     );
     let encrypted = !matches!(case, AcsCase::Manual | AcsCase::IdpXml);
 
-    let provider_id = if matches!(
+    let provider_id = if matches!(case, AcsCase::Tampered) {
+        "encrypted-tampered-acs-provider"
+    } else if matches!(
         case,
         AcsCase::Aes128Gcm | AcsCase::Aes128Cbc | AcsCase::Aes256Cbc
     ) {
@@ -219,6 +226,43 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         } else {
             grant
         };
+        let grant = if matches!(case, AcsCase::Tampered) {
+            use base64::Engine as _;
+            let xml = String::from_utf8(
+                base64::engine::general_purpose::STANDARD
+                    .decode(grant["SAMLResponse"].as_str().unwrap())?,
+            )?;
+            let doc = bergshamra::xml::uppsala::parse(&xml)?;
+            let root = doc.document_element().ok_or("Response missing")?;
+            let value = doc
+                .descendants(root)
+                .into_iter()
+                .rfind(|node| {
+                    doc.element(*node).is_some_and(|element| {
+                        element
+                            .name
+                            .matches(Some("http://www.w3.org/2001/04/xmlenc#"), "CipherValue")
+                    })
+                })
+                .ok_or("Cipher value missing")?;
+            let mut bytes =
+                base64::engine::general_purpose::STANDARD.decode(doc.text_content_deep(value))?;
+            *bytes.last_mut().ok_or("Ciphertext missing")? ^= 1;
+            let range = doc.node_range(value).ok_or("Cipher range missing")?;
+            let mut xml = xml;
+            xml.replace_range(
+                range,
+                &format!(
+                    "<xenc:CipherValue>{}</xenc:CipherValue>",
+                    base64::engine::general_purpose::STANDARD.encode(bytes)
+                ),
+            );
+            let mut grant = grant;
+            grant["SAMLResponse"] = json!(base64::engine::general_purpose::STANDARD.encode(xml));
+            grant
+        } else {
+            grant
+        };
         let grant = if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly) {
             use base64::Engine as _;
             let xml = String::from_utf8(
@@ -285,7 +329,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             "saml-used-assertion:{}",
             grant["assertionId"].as_str().unwrap()
         );
-        if wrong_key || key_failure {
+        if wrong_key || key_failure || matches!(case, AcsCase::Tampered) {
             assert_eq!(location.path(), "/failed");
             let query = location
                 .query_pairs()
