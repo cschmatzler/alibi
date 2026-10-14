@@ -6,7 +6,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 backend_tests!(scim_user_list_filters_email_indexes_and_validates_only_returned_rows);
 postgres_tests!(scim_user_list_filters_email_indexes_and_validates_only_returned_rows);
-async fn list<S: AuthSchema>(
+pub(super) async fn list<S: AuthSchema>(
     auth: &Alibi<S>,
     query: &Value,
     token: Option<&str>,

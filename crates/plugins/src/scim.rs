@@ -133,6 +133,12 @@ impl ScimPlugin {
     pub fn delete_group_endpoint(id: &str) -> AuthResult<ServerEndpoint<()>> {
         ServerEndpoint::new("scim", "deleteSCIMGroup").with_params(&json!({"groupId":id}))
     }
+    /// Replace the mutable attributes of a connection-owned canonical User.
+    /// # Errors
+    /// Returns an error if parameters cannot be serialized.
+    pub fn replace_user_endpoint(id: &str) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("scim", "replaceSCIMUser").with_params(&json!({"userId":id}))
+    }
     /// Provision a connection-owned canonical SCIM User.
     #[must_use]
     pub const fn create_user_endpoint() -> ServerEndpoint<Value> {
@@ -281,7 +287,8 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         // SCIM emits protocol-specific admission errors in its request handler.
-        if route.path == "/scim/v2/Users"
+        if (route.path.starts_with("/scim/v2/Users/") && route.method == HttpMethod::Put)
+            || route.path == "/scim/v2/Users"
             || route.path == "/scim/v2/Groups"
             || (route.path.starts_with("/scim/v2/Groups/")
                 && matches!(route.method, HttpMethod::Put | HttpMethod::Patch))
@@ -293,6 +300,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::put("/scim/v2/Users/{userId}", "replaceSCIMUser"),
             AuthRoute::post("/scim/v2/Users", "createSCIMUser"),
             AuthRoute::post("/scim/v2/Groups", "createSCIMGroup"),
             AuthRoute::delete("/scim/v2/Users/{userId}", "deleteSCIMUser"),
@@ -345,6 +353,12 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
                 "deleteSCIMGroup",
                 Some("/scim/v2/Groups/:groupId"),
                 HttpMethod::Delete,
+            ),
+            crate::endpoint::definition(
+                "replaceSCIMUser",
+                "replaceSCIMUser",
+                Some("/scim/v2/Users/:userId"),
+                HttpMethod::Put,
             ),
             crate::endpoint::definition(
                 "createSCIMUser",
@@ -526,6 +540,9 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         if call.operation_id() == "deleteSCIMGroup" {
             return self.delete_group(call, ctx).await;
         }
+        if call.operation_id() == "replaceSCIMUser" {
+            return self.replace_user(call, ctx).await;
+        }
         if call.operation_id() == "createSCIMUser" {
             return self.create_user(call, ctx).await;
         }
@@ -604,6 +621,21 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Put
+            && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
+        {
+            let call = EndpointCall::from_http_request(
+                req,
+                &AuthRoute::put("/scim/v2/Users/{userId}", "replaceSCIMUser"),
+            )
+            .with_params_value(alibi_core::utils::json::JsValue::from(json!({"userId":id})));
+            let response = if let Some(error) = resources::mutation_request_error(req, &call) {
+                error
+            } else {
+                self.replace_user(&call, ctx).await?
+            };
+            return Ok(Some(resources::to_http_response(&response)?));
+        }
         if req.method() == &HttpMethod::Delete
             && let Some(id) = req.path().strip_prefix("/scim/v2/Users/")
         {

@@ -4,7 +4,7 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 backend_tests!(scim_user_create_persists_canonical_identity_and_reuses_tombstones);
 postgres_tests!(scim_user_create_persists_canonical_identity_and_reuses_tombstones);
-async fn create<S: AuthSchema>(
+pub(super) async fn create<S: AuthSchema>(
     auth: &Alibi<S>,
     value: &Value,
     token: Option<&str>,

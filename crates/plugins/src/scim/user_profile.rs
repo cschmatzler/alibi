@@ -197,3 +197,67 @@ pub(super) fn parse(raw: &Value) -> Option<Profile> {
         attributes,
     })
 }
+impl Profile {
+    pub(super) fn prepare(
+        &self,
+        connection: &str,
+    ) -> alibi_core::AuthResult<alibi_core::store::ScimUserAttributes> {
+        let name = self.attributes.get("name").unwrap_or(&Value::Null);
+        let emails = self.attributes.get("emails").unwrap_or(&Value::Null);
+        let index = |kind: Option<&str>| -> alibi_core::AuthResult<String> {
+            let mut keys = emails
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|email| {
+                    kind.is_none_or(|kind| email.get("type").and_then(Value::as_str) == Some(kind))
+                })
+                .map(|email| {
+                    super::resources::scoped_key(&[
+                        "scim-email-value",
+                        email.get("value").and_then(Value::as_str).unwrap_or(""),
+                    ])
+                })
+                .collect::<alibi_core::AuthResult<Vec<_>>>()?;
+            keys.sort();
+            keys.dedup();
+            Ok(format!("|{}|", keys.join("|")))
+        };
+        Ok(alibi_core::store::ScimUserAttributes {
+            user_name: self.user_name.clone(),
+            user_name_key: super::resources::scoped_key(&[
+                "scim-user-name",
+                connection,
+                &self.user_name.to_lowercase(),
+            ])?,
+            primary_email: self.primary_email.clone(),
+            work_email_value_index: index(Some("work"))?,
+            email_value_index: index(None)?,
+            display_name: self.display_name.clone(),
+            formatted_name: name
+                .get("formatted")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
+            given_name: name
+                .get("givenName")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            family_name: name
+                .get("familyName")
+                .and_then(Value::as_str)
+                .map(str::to_owned),
+            serialized_emails: serde_json::to_string(emails)?,
+            serialized_attributes: Some(serde_json::to_string(&self.attributes)?),
+            external_id: self.external_id.clone(),
+            external_id_key: self
+                .external_id
+                .as_ref()
+                .map(|value| {
+                    super::resources::scoped_key(&["scim-user-external-id", connection, value])
+                })
+                .transpose()?,
+            active: self.active,
+        })
+    }
+}

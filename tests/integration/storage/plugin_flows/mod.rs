@@ -546,3 +546,5 @@ mod scim_group_patch;
 mod scim_user_delete;
 
 mod scim_user_create;
+
+mod scim_user_replace;
