@@ -81,11 +81,16 @@ pub(super) fn validate_and_copy(
     Ok(())
 }
 
+pub(super) struct ParsedFields {
+    pub values: serde_json::Map<String, Value>,
+    pub has_input_fields: bool,
+}
+
 pub(super) fn parse(
     fields: &SessionFields,
     input: &JsValue,
     create: bool,
-) -> AuthResult<serde_json::Map<String, Value>> {
+) -> AuthResult<ParsedFields> {
     for (name, field) in &fields.0 {
         if !field.input && input.get(name).is_some() {
             return Err(super::api(400, &format!("{name} is not allowed to be set")));
@@ -107,10 +112,15 @@ pub(super) fn parse(
         },
         FieldInputError::Transform(error) => error,
     })?;
-    parsed
+    let has_input_fields = parsed.has_input_fields();
+    let values = parsed
         .iter()
         .map(|(name, value)| Ok((name.clone(), value.to_json_value()?)))
-        .collect()
+        .collect::<AuthResult<_>>()?;
+    Ok(ParsedFields {
+        values,
+        has_input_fields,
+    })
 }
 
 pub(super) fn filter(fields: &SessionFields, output: &mut Value) {

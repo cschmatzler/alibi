@@ -417,7 +417,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
                 required: true,
                 fieldName: "application_label",
                 transform: {
-                  input: (value: unknown) => `input:${value}`,
+                  input: (value: unknown) => (value === "omit" ? undefined : `input:${value}`),
                   output: (value: unknown) => `output:${value}`,
                 },
               },

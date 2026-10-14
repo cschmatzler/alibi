@@ -15,18 +15,19 @@ impl SsoPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = super::super::helpers::ordinary_session(request, ctx).await?;
-        let extras = super::additional_fields::parse(
+        let parsed = super::additional_fields::parse(
             &ctx.config.advanced.database.sso_provider_fields,
             input,
             false,
         )?;
-        if extras.is_empty()
+        if !parsed.has_input_fields
             && !["issuer", "domain", "samlConfig", "oidcConfig"]
                 .iter()
                 .any(|field| input.get(field).is_some_and(JsValue::is_truthy))
         {
             return Err(api(400, "No fields provided for update"));
         }
+        let extras = parsed.values;
         let provider_id = input
             .get("providerId")
             .and_then(JsValue::as_str)

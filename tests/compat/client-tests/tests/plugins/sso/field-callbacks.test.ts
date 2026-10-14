@@ -61,6 +61,20 @@ compatScenario("Provider field callbacks run at storage and read boundaries", as
   const final = (await unrelated.json()) as any;
   expect(final.label).toBe("output:input:input:Changed");
   expect(final.stamp).toBe("generated");
+  const omitted = await control({
+    action: "update",
+    headers,
+    body: { providerId: input.providerId, label: "omit" },
+  });
+  expect(omitted.status).toBe(200);
+  expect(await omitted.json()).toEqual(final);
+  const empty = await control({
+    action: "update",
+    headers,
+    body: { providerId: input.providerId },
+  });
+  expect(empty.status).toBe(400);
+  expect(((await empty.json()) as any).message).toBe("No fields provided for update");
   expect(((await (await control({ action: "restart" })).json()) as any).restarted).toBe(true);
   const read = await control({ action: "get", headers, query: { providerId: input.providerId } });
   expect(read.status).toBe(200);
