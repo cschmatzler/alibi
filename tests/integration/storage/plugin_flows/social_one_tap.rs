@@ -1,7 +1,6 @@
 //! One Tap admission and account outcomes with signed Google ID tokens.
 use super::*;
 use crate::snapshot::Trace;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::oauth::{HttpOAuthJwksSource, OAuthProvider};
 use alibi::plugins::one_tap::{OneTapClientId, OneTapConfig, OneTapPlugin};
 use alibi::plugins::{AdminPlugin, OAuthPlugin};
@@ -29,7 +28,7 @@ impl UserInfoValidator for DenyList {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(data
             .user

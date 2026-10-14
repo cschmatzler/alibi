@@ -372,6 +372,7 @@ impl SsoPlugin {
         }
         scoped.config = Arc::new(scoped_config);
         let policy = OAuthProcessPolicy {
+            user_validation_method: Some("sso-oidc"),
             override_user_info: config
                 .get("overrideUserInfo")
                 .and_then(Value::as_bool)

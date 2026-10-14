@@ -1,7 +1,6 @@
 //! Application admission must run with the real request and before persistence.
 use super::*;
 mod verification_modes;
-use alibi::hooks::RequestHookContext;
 use alibi::user_validation::{
     UserInfoValidator, UserValidationAction, UserValidationData, UserValidationRejection,
 };
@@ -36,8 +35,12 @@ impl UserInfoValidator for Admission {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        context: &RequestHookContext,
+        context: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
+        let context = context
+            .request
+            .as_ref()
+            .expect("HTTP admission requires its actual request");
         assert_eq!(data.source.method, "email-password");
         assert_eq!(data.source.action, UserValidationAction::CreateUser);
         assert!(data.source.oauth.is_none());
@@ -285,8 +288,12 @@ impl UserInfoValidator for ProviderAdmission {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        context: &RequestHookContext,
+        context: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
+        let context = context
+            .request
+            .as_ref()
+            .expect("HTTP provider admission requires its actual request");
         if data.source.method == "email-password" {
             return Ok(None);
         }

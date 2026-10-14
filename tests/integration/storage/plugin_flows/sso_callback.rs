@@ -8,6 +8,8 @@ use alibi::{
 };
 #[path = "../../../support/sso_oidc_peer.rs"]
 mod peer;
+#[path = "../../../support/sso_validation_policy.rs"]
+mod validation_policy;
 backend_tests!(
     sso_callback_redeems_bound_code_and_creates_usable_session,
     sso_shared_callback_selects_provider_from_protected_state,
@@ -15,7 +17,8 @@ backend_tests!(
     sso_callback_defaults_omitted_pkce_to_bound_code_exchange,
     sso_discovery_hydrates_registered_endpoints_and_completes_real_login,
     sso_runtime_discovery_rejects_bad_documents_and_hydrates_login_without_persisting,
-    sso_trusted_oidc_email_verification_accepts_only_exact_true_claims
+    sso_trusted_oidc_email_verification_accepts_only_exact_true_claims,
+    sso_validation_receives_protocol_source_before_identity_writes
 );
 async fn sso_callback_redeems_bound_code_and_creates_usable_session<B: Backend>(
     db: Db,
@@ -535,6 +538,143 @@ async fn sso_trusted_oidc_email_verification_accepts_only_exact_true_claims<B: B
             assert_eq!(body(&session)["user"]["email"], email);
             assert_eq!(body(&session)["user"]["emailVerified"], *expected);
         }
+    }
+    B::close(connection).await
+}
+
+async fn sso_validation_receives_protocol_source_before_identity_writes<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let idp = peer::start().await;
+    let policy = validation_policy::Policy::default();
+    let (connection, store) = db.migrated::<B>(SECRET).await?;
+    let mut config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin(&idp.base);
+    config.user_validation = Some(Arc::new(policy.clone()));
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(SsoPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "sso-validation-owner@example.test").await;
+    let cert = include_str!("../../../compat/fixtures/salesforce-transport/leaf.pem");
+    for saml in [false, true] {
+        policy
+            .deny_returning
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        policy.events.lock().unwrap().clear();
+        let provider = if saml {
+            "validation-saml-provider"
+        } else {
+            "validation-oidc-provider"
+        };
+        let email = if saml {
+            "saml-validation-user@example.test"
+        } else {
+            "oidc-validation-user@example.test"
+        };
+        *idp.email.lock().unwrap() = email.into();
+        let input = if saml {
+            json!({"providerId":provider,"issuer":"https://sp.example.test/entity","domain":"example.test","samlConfig":{"entryPoint":"https://idp.example.test/sso","cert":cert,"idpMetadata":{"entityID":"https://idp.example.test/entity"},"wantAssertionsSigned":true}})
+        } else {
+            json!({"providerId":provider,"issuer":idp.base,"domain":"example.test","oidcConfig":{"clientId":"enterprise-client","clientSecret":"stored-secret","skipDiscovery":true,"authorizationEndpoint":format!("{}/authorize",idp.base),"tokenEndpoint":format!("{}/token",idp.base),"jwksEndpoint":format!("{}/jwks",idp.base),"userInfoEndpoint":format!("{}/userinfo",idp.base)}})
+        };
+        let registered = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::register_sso_provider_endpoint(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(registered.status, 200);
+        let mut established = String::new();
+        for deny in [false, true] {
+            policy
+                .deny_returning
+                .store(deny, std::sync::atomic::Ordering::SeqCst);
+            let started=Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":provider,"callbackURL":format!("{ORIGIN}/complete"),"errorCallbackURL":format!("{ORIGIN}/failed")}))?,EndpointOptions::default())).await?.into_response()?;
+            let endpoint = if saml {
+                let grant =
+                    super::saml_idp::grant(body(&started)["url"].as_str().unwrap(), email, false)?;
+                SsoPlugin::acs_endpoint(provider, &grant)?
+            } else {
+                let grant = reqwest::Client::builder()
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()?
+                    .get(body(&started)["url"].as_str().unwrap())
+                    .send()
+                    .await?;
+                let url = url::Url::parse(grant.headers().get("location").unwrap().to_str()?)?;
+                SsoPlugin::callback_sso_endpoint(
+                    provider,
+                    &json!(
+                        url.query_pairs()
+                            .into_owned()
+                            .collect::<std::collections::HashMap<_, _>>()
+                    ),
+                )?
+            };
+            let completed = Box::pin(auth.dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            let location = url::Url::parse(completed.headers.get("location").unwrap())?;
+            if deny {
+                assert_eq!(location.path(), "/failed");
+                let error = location
+                    .query_pairs()
+                    .into_owned()
+                    .collect::<std::collections::HashMap<_, _>>();
+                assert_eq!(error["error"], "sso_validation_denied");
+                assert_eq!(error["error_description"], "SSO identity rejected");
+                let session = call(&auth, request("/get-session", None, &established), 200).await;
+                assert_eq!(body(&session)["user"]["name"], "Policy SSO user");
+            } else {
+                assert_eq!(location.path(), "/complete");
+                established = cookies(&completed);
+                let session = call(&auth, request("/get-session", None, &established), 200).await;
+                assert_eq!(body(&session)["user"]["name"], "Policy SSO user");
+            }
+        }
+        let events = policy.events.lock().unwrap().clone();
+        assert_eq!(events.len(), 2);
+        for (event, action) in events.iter().zip(["create-user", "sign-in"]) {
+            assert_eq!(
+                event["source"]["method"],
+                if saml { "sso-saml" } else { "sso-oidc" }
+            );
+            assert_eq!(event["source"]["action"], action);
+            assert_eq!(event["source"]["sso"]["providerId"], provider);
+            assert!(event["source"].get("oauth").is_none());
+            assert_eq!(event["source"]["sso"]["profile"]["email"], email);
+            assert_eq!(event["name"], "SSO employee");
+            assert_eq!(event["requestPresent"], false);
+            assert_eq!(
+                event["path"],
+                if saml {
+                    "/sso/saml2/sp/acs/:providerId"
+                } else {
+                    "/sso/callback/:providerId"
+                }
+            );
+        }
+        assert!(
+            store
+                .get_account(provider, if saml { email } else { "employee-subject" })
+                .await?
+                .is_some()
+        );
     }
     B::close(connection).await
 }

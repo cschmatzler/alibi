@@ -88,15 +88,23 @@ pub struct UserValidationRejection {
     pub error_description: Option<String>,
 }
 
+/// The genuine logical endpoint call and its optional original HTTP request.
+/// Headerless server operations have an endpoint and no transport request.
+#[derive(Debug, Clone)]
+pub struct UserValidationContext {
+    pub request: Option<RequestHookContext>,
+    pub endpoint: Option<crate::endpoint::EndpointCall>,
+}
+
 #[async_trait]
 pub trait UserInfoValidator: Send + Sync {
-    /// Observe the actual endpoint request (including original body bytes and
-    /// its typed parsed body extensions), before database creation hooks or
-    /// provider account/session writes. Exceptions are a generic 403 denial.
+    /// Observe the actual endpoint and optional transport request before
+    /// database creation hooks or provider account/session writes.
+    /// Exceptions are a generic 403 denial.
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        request: &RequestHookContext,
+        context: &UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>>;
 }
 
@@ -150,13 +158,17 @@ pub async fn validate_user_info(
         return Ok(());
     };
     assert_source(Some(&data.source))?;
-    let request = current_request_hook_context().ok_or_else(|| {
-        denial(
+    let context = UserValidationContext {
+        request: current_request_hook_context(),
+        endpoint: crate::endpoint::current_endpoint_call_context(),
+    };
+    if context.request.is_none() && context.endpoint.is_none() {
+        return Err(denial(
             "validation_context_missing",
             "User validation requires an endpoint context",
-        )
-    })?;
-    match validator.validate(data, &request).await {
+        ));
+    }
+    match validator.validate(data, &context).await {
         Ok(Some(rejection)) if !rejection.error.is_empty() => {
             let message = rejection
                 .error_description

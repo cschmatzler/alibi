@@ -3,7 +3,6 @@
 use super::social_flows::{Social, authorize};
 use super::*;
 use crate::snapshot::Trace;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::{OAuthProxyConfig, OAuthProxyPlugin};
 use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
@@ -24,7 +23,7 @@ impl UserInfoValidator for Deny {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(data
             .user

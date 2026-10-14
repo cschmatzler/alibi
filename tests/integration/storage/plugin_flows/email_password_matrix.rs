@@ -3,7 +3,6 @@ use super::auth_probe::{fast_password, raw};
 use super::*;
 use crate::snapshot::Trace;
 use alibi::AuthResult;
-use alibi::hooks::RequestHookContext;
 use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail};
 use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use alibi::utils::username::UsernameConfig;
@@ -295,7 +294,7 @@ impl UserInfoValidator for Deny {
     async fn validate(
         &self,
         data: &mut UserValidationData,
-        _: &RequestHookContext,
+        _: &alibi::user_validation::UserValidationContext,
     ) -> AuthResult<Option<UserValidationRejection>> {
         Ok(data
             .user
