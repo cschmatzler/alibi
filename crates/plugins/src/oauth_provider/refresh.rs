@@ -135,6 +135,22 @@ impl OAuthProviderPlugin {
                     }
                 };
                 let scopes = policy.scopes.iter().map(String::as_str).collect::<Vec<_>>();
+                let mut replay_params =
+                    super::OAuthTokenIssueParams::new(client.clone(), policy.scopes.clone());
+                replay_params.refresh_token = Some(original.clone());
+                let confirmation = match self
+                    .resolve_dpop_binding(ctx, req, &replay_params, &policy)
+                    .await
+                {
+                    Ok(value) => value,
+                    Err(error) => {
+                        let mut response = EndpointResponse::error(error.error);
+                        if let Some(body) = error.body {
+                            response = response.with_error_body(*body);
+                        }
+                        return Ok(no_store(response));
+                    }
+                };
 
                 if let Some(ciphertext) = original
                     .metadata
@@ -152,7 +168,7 @@ impl OAuthProviderPlugin {
                                 &scopes,
                                 body,
                                 original.metadata.get("resources"),
-                                original.metadata.get("confirmation"),
+                                confirmation.as_ref(),
                             ))
                         && let Some(mut response) = replay
                             .get("response")
@@ -225,11 +241,6 @@ impl OAuthProviderPlugin {
             .get("referenceId")
             .and_then(Value::as_str)
             .map(str::to_owned);
-        params.confirmation = original
-            .metadata
-            .get("confirmation")
-            .filter(|value| !value.is_null())
-            .cloned();
         params.requested_user_info_claims = original
             .metadata
             .get("requestedUserInfoClaims")
@@ -243,6 +254,19 @@ impl OAuthProviderPlugin {
             });
         let resources = super::resource_policy::resource_list(resource);
         params.resources = (!resources.is_empty()).then_some(resources);
+        params.confirmation = match self
+            .resolve_dpop_binding(ctx, req, &params, &admission)
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                return Ok(no_store(response));
+            }
+        };
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issuance time"))?;
         let rotate =

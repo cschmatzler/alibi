@@ -9,8 +9,14 @@ use alibi::plugins::oauth2::{
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
-backend_tests!(oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt);
-postgres_tests!(oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt);
+backend_tests!(
+    oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt,
+    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh
+);
+postgres_tests!(
+    oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt,
+    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh
+);
 struct ForwardReservations<'a, S: alibi::AuthSchema> {
     context: &'a alibi::AuthContext<S>,
     observed: std::sync::Mutex<Option<DpopVerificationReservation>>,
@@ -26,6 +32,196 @@ impl<S: alibi::AuthSchema> DpopReplayReservations for ForwardReservations<'_, S>
         }
         DpopReplayReservations::reserve_verification_value(self.context, data).await
     }
+}
+async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointCall, EndpointDefinition, EndpointOptions, ServerEndpoint};
+    use alibi::plugins::{OAuthProviderPlugin, OAuthTokenIssueParams, jwt::JwtPlugin};
+    use alibi::store::OAuthTokenKind;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = OAuthProviderPlugin::new();
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "dpop-issuer@example.test").await;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"DPoP issuer","redirect_uris":["https://app.fixture.test/callback"],"scope":"email offline_access","token_endpoint_auth_method":"none","grant_types":["authorization_code"],"dpop_bound_access_tokens":true}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    let client = provider.get_client(auth.context(), &id).await?.unwrap();
+    let user = auth
+        .store()
+        .get_user_by_id(client.user_id.as_deref().unwrap())
+        .await?
+        .unwrap();
+    let mut params =
+        OAuthTokenIssueParams::new(client, vec!["email".into(), "offline_access".into()]);
+    params.user = Some(auth.context().trusted_user_view(&user));
+    let definition = EndpointDefinition {
+        name: "issueTokensFixture",
+        operation_id: "issueTokensFixture",
+        path: Some("/fixture/issue-tokens".into()),
+        method: alibi::HttpMethod::Post,
+    };
+    let call = |jwt: Option<&str>| {
+        EndpointCall::new(
+            &definition,
+            None,
+            None,
+            EndpointOptions {
+                headers: jwt.map(|value| [("DPoP".into(), value.into())].into_iter().collect()),
+                ..Default::default()
+            },
+        )
+    };
+    let missing = provider
+        .issue_tokens(
+            auth.context(),
+            &call(None),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.error.status_code(), 400);
+    assert_eq!(
+        missing.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_dpop_proof","error_description":"DPoP proof header is required"})
+    );
+    let url = format!(
+        "{}{}/oauth2/token",
+        auth.config().base_url.trim_end_matches('/'),
+        auth.config().base_path
+    );
+    let make_proof = |jti: &str| {
+        proof(
+            json!({"htm":"POST","htu":url,"jti":jti,"iat":chrono::Utc::now().timestamp()}),
+            json!({}),
+        )
+    };
+    let invalid = make_proof("native-corrupt")?;
+    let parts = invalid.split('.').collect::<Vec<_>>();
+    let mut signature = URL_SAFE_NO_PAD.decode(parts[2])?;
+    *signature.first_mut().unwrap() ^= 1;
+    let invalid = format!(
+        "{}.{}.{}",
+        parts[0],
+        parts[1],
+        URL_SAFE_NO_PAD.encode(signature)
+    );
+    let denied = provider
+        .issue_tokens(
+            auth.context(),
+            &call(Some(&invalid)),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?["error_description"],
+        "signature verification failed"
+    );
+    let jwt = make_proof("native-issuance")?;
+    let issued = provider
+        .issue_tokens(
+            auth.context(),
+            &call(Some(&jwt)),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await?;
+    assert_eq!(issued["token_type"], "DPoP");
+    let confirmation = json!({"jkt":"yAJQz9pEsZrW3t2ISLq2eQ2bDNmV0AHCGdbF-8RSbko"});
+    assert_eq!(
+        provider
+            .validate_access_token(
+                auth.context(),
+                issued["access_token"].as_str().unwrap(),
+                None
+            )
+            .await?["cnf"],
+        confirmation
+    );
+    let replay = provider
+        .issue_tokens(
+            auth.context(),
+            &call(Some(&jwt)),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        replay.body.unwrap().to_json_value()?["error_description"],
+        "DPoP proof jti has already been used"
+    );
+    let hash = provider
+        .hash_token(issued["refresh_token"].as_str().unwrap(), "refresh_token")
+        .await?;
+    params.refresh_token = auth
+        .store()
+        .get_oauth_token(OAuthTokenKind::Refresh, &hash)
+        .await?;
+    let missing = provider
+        .issue_tokens(
+            auth.context(),
+            &call(None),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(missing.error.status_code(), 400);
+    let jwt = make_proof("native-rotation")?;
+    let rotated = provider
+        .issue_tokens(
+            auth.context(),
+            &call(Some(&jwt)),
+            Some("urn:fixture:dpop"),
+            &params,
+        )
+        .await?;
+    assert_eq!(rotated["token_type"], "DPoP");
+    assert_ne!(rotated["refresh_token"], issued["refresh_token"]);
+    let hash = provider
+        .hash_token(rotated["refresh_token"].as_str().unwrap(), "refresh_token")
+        .await?;
+    assert_eq!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &hash)
+            .await?
+            .unwrap()
+            .metadata["confirmation"],
+        confirmation
+    );
+    let refresh_body = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":rotated["refresh_token"]});
+    let denied = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&refresh_body)?,
+        EndpointOptions::default(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(denied.status, 400);
+    assert_eq!(
+        body(&denied)["error_description"],
+        "DPoP proof header is required"
+    );
+    let jwt = make_proof("native-protocol-refresh")?;
+    let response = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&refresh_body)?,
+        EndpointOptions {
+            headers: Some([("dpop".into(), jwt)].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(response.status, 200);
+    assert_eq!(body(&response)["token_type"], "DPoP");
+    Ok(())
 }
 fn proof(payload: Value, extra: Value) -> TestResult<String> {
     use ed25519_dalek::Signer as _;
