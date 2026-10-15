@@ -78,7 +78,11 @@ impl OAuthProviderPlugin {
         if let Some(time) = proof.get("authTime").and_then(Value::as_i64) {
             _ = payload.insert("auth_time".into(), json!(time.div_euclid(1000)));
         }
-        if let Some(nonce) = proof.get("query").and_then(|query| query.get("nonce")) {
+        if let Some(nonce) = proof
+            .get("query")
+            .and_then(|query| query.get("nonce"))
+            .filter(|v| !v.is_null())
+        {
             _ = payload.insert("nonce".into(), nonce.clone());
         }
         let include_sid = client.metadata.get("enable_end_session") == Some(&Value::Bool(true))
@@ -89,6 +93,39 @@ impl OAuthProviderPlugin {
                 .is_some_and(|value| !value.is_empty());
         if include_sid && let Some(session) = proof.get("sessionId") {
             _ = payload.insert("sid".into(), session.clone());
+        }
+        if let Some(claims) = proof.get("idTokenClaims").and_then(Value::as_object) {
+            for (key, value) in claims {
+                if ![
+                    "iss",
+                    "sub",
+                    "aud",
+                    "exp",
+                    "iat",
+                    "nbf",
+                    "jti",
+                    "nonce",
+                    "auth_time",
+                    "acr",
+                    "amr",
+                    "azp",
+                    "at_hash",
+                    "c_hash",
+                    "s_hash",
+                    "sid",
+                    "name",
+                    "given_name",
+                    "family_name",
+                    "picture",
+                    "email",
+                    "email_verified",
+                ]
+                .contains(&key.as_str())
+                    && !payload.contains_key(key)
+                {
+                    _ = payload.insert(key.clone(), value.clone());
+                }
+            }
         }
         let token = if let Some(jwt) = jwt {
             options.resolved_key = resolved.map(std::sync::Arc::new);

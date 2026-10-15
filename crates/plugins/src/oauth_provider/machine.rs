@@ -2,9 +2,8 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
-use alibi_core::store::{CreateOAuthToken, OAuthTokenKind};
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
-use serde_json::{Value, json};
+use serde_json::Value;
 impl OAuthProviderPlugin {
     pub(super) async fn machine_grant<S: AuthSchema>(
         &self,
@@ -75,33 +74,18 @@ impl OAuthProviderPlugin {
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
         }
-        let token = rand::RngExt::sample_iter(rand::rng(), rand::distr::Alphanumeric)
-            .map(char::from)
-            .filter(char::is_ascii_alphabetic)
-            .take(32)
-            .collect::<String>();
-        let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
-            .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issue time"))?;
-        let expires = issued + chrono::Duration::seconds(3600);
-        _ = ctx
-            .database
-            .create_oauth_token(
-                OAuthTokenKind::Access,
-                CreateOAuthToken {
-                    token: self.hash_token(&token, "access_token").await?,
-                    client_id: client.client_id,
-                    user_id: None,
-                    session_id: None,
-                    authorization_code_id: None,
-                    metadata: json!({"scopes":scopes,"resources":Value::Null}),
-                    created_at: issued,
-                    expires_at: expires,
-                },
-            )
-            .await?;
-        Ok(no_store(EndpointResponse::json(
-            &json!({"access_token":token,"expires_in":3600,"expires_at":expires.timestamp(),"token_type":"Bearer","scope":scopes.join(" ")}),
-        )?))
+        let scopes = scopes.iter().map(|s| (*s).to_owned()).collect();
+        let params = super::OAuthTokenIssueParams::new(client, scopes);
+        match self.mint_tokens(ctx, req, &params).await {
+            Ok(value) => Ok(no_store(EndpointResponse::json(&value)?)),
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                Ok(no_store(response))
+            }
+        }
     }
 }
 fn no_store(response: EndpointResponse) -> EndpointResponse {
