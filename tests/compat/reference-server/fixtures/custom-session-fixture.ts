@@ -195,9 +195,14 @@ export function createCustomSessionFixture(base: BetterAuthOptions) {
           : {}),
         asResponse: true,
       };
-      return input.action === "sign-up"
-        ? auth.api.signUpEmail(options as any)
-        : auth.api.getSession(options);
+      const api = auth.api as any;
+      const operation =
+        input.action === "sign-up"
+          ? "signUpEmail"
+          : input.action === "list"
+            ? "listDeviceSessions"
+            : "getSession";
+      return api[operation](options);
     },
     control(body?: {
       operation?: string;

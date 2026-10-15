@@ -34,8 +34,14 @@ impl<S: AuthSchema> SessionTransform<S> for Projection {
         Ok(session)
     }
 }
-backend_tests!(server_custom_session_overrides_core_get_session_with_real_callback_context);
-postgres_tests!(server_custom_session_overrides_core_get_session_with_real_callback_context);
+backend_tests!(
+    server_custom_session_overrides_core_get_session_with_real_callback_context,
+    server_custom_session_projects_device_lists_only_when_enabled
+);
+postgres_tests!(
+    server_custom_session_overrides_core_get_session_with_real_callback_context,
+    server_custom_session_projects_device_lists_only_when_enabled
+);
 async fn read<S: AuthSchema>(
     auth: &Alibi<S>,
     plugin: &str,
@@ -202,6 +208,106 @@ async fn server_custom_session_overrides_core_get_session_with_real_callback_con
             404,
         )
         .await;
+    }
+    Ok(())
+}
+
+async fn device_list<S: AuthSchema>(
+    auth: &Alibi<S>,
+    cookie: &str,
+    mode: &str,
+    original: bool,
+) -> alibi::AuthResult<AuthResponse> {
+    let headers = [
+        ("cookie".into(), cookie.into()),
+        ("x-custom-session".into(), mode.into()),
+        ("x-custom-marker".into(), "sdk".into()),
+    ]
+    .into_iter()
+    .collect();
+    let request = original.then(|| AuthRequest::new(HttpMethod::Get, "/actual-device-request"));
+    match Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("multi-session", "listDeviceSessions"),
+        EndpointOptions {
+            headers: Some(headers),
+            request,
+            ..Default::default()
+        },
+    ))
+    .await
+    {
+        Ok(output) => output.into_response(),
+        Err(error) => EndpointResponse::error(error.error).to_response(),
+    }
+}
+async fn server_custom_session_projects_device_lists_only_when_enabled<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for enabled in [false, true] {
+        let auth = builder::<B>(&connection)
+            .plugin(CustomSessionPlugin::new(Projection).mutate_device_sessions(enabled))
+            .plugin(alibi::plugins::MultiSessionPlugin::new())
+            .build()
+            .await?;
+        let mut jar = Vec::new();
+        let mut owners = Vec::new();
+        for name in ["first", "second"] {
+            let response =
+                signup(&auth, &format!("custom-list-{enabled}-{name}@example.com")).await;
+            jar.push(cookies(&response));
+            owners.push(body(&response)["user"]["id"].clone());
+        }
+        let cookie = jar.join("; ");
+        let listed = device_list(&auth, &cookie, "", false).await?;
+        assert_eq!(listed.status, 200);
+        let rows = body(&listed);
+        assert_eq!(rows.as_array().unwrap().len(), 2);
+        for row in rows.as_array().unwrap() {
+            assert!(owners.contains(&row["user"]["id"]));
+            if enabled {
+                assert_eq!(row["application"]["userId"], row["user"]["id"]);
+                assert_eq!(
+                    row["application"]["path"],
+                    "/multi-session/list-device-sessions"
+                );
+                assert_eq!(row["application"]["hasRequest"], false);
+                assert_eq!(row["application"]["marker"], "sdk");
+            } else {
+                assert!(row.get("application").is_none());
+            }
+        }
+        if enabled {
+            let original = device_list(&auth, &cookie, "", true).await?;
+            assert!(
+                body(&original)
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .all(|row| row["application"]["hasRequest"] == true)
+            );
+            let filtered = device_list(&auth, &cookie, "filtered", false).await?;
+            for row in body(&filtered).as_array().unwrap() {
+                assert!(owners.contains(&row["userId"]));
+                assert!(row.get("session").is_none());
+            }
+            assert_eq!(
+                body(&device_list(&auth, &cookie, "null", false).await?),
+                json!([null, null])
+            );
+            let denied = device_list(&auth, &cookie, "error", false).await?;
+            assert_eq!(denied.status, 403);
+            assert_eq!(body(&denied)["code"], "CUSTOM_SESSION_DENIED");
+        } else {
+            assert_eq!(
+                device_list(&auth, &cookie, "error", false).await?.status,
+                200
+            );
+        }
+        assert_eq!(
+            body(&device_list(&auth, "", "error", false).await?),
+            json!([])
+        );
     }
     Ok(())
 }
