@@ -125,7 +125,7 @@ impl OAuthProviderPlugin {
                 "DPoP-bound access token requires an HTTP request context",
             );
         }
-        let method = match req.physical_request().map(|request| request.method()) {
+        let method = match req.physical_request().map(alibi_core::AuthRequest::method) {
             Some(HttpMethod::Post) => "POST",
             Some(HttpMethod::Put) => "PUT",
             Some(HttpMethod::Patch) => "PATCH",

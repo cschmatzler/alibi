@@ -89,7 +89,7 @@ async fn oauth_dpop_userinfo_checks_sender_before_releasing_claims<B: Backend>(
                 format!("{scheme} {token}"),
             )]);
             if let Some(jwt) = jwt {
-                headers.insert("dpop".into(), jwt.into());
+                _ = headers.insert("dpop".into(), jwt.into());
             }
             EndpointOptions {
                 headers: Some(headers),
