@@ -449,6 +449,11 @@ fn prepare_dpop_mldsa_key(
         if !matches {
             return Err(invalid());
         }
+        if operations.is_some_and(Vec::is_empty) {
+            return Err(DpopError::proof(
+                "Usages cannot be empty when importing a private key.",
+            ));
+        }
     }
     Ok((
         jwk.clone(),

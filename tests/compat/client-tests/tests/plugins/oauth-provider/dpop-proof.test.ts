@@ -140,6 +140,10 @@ compatScenario(
         [{ priv: "extra" }, "Invalid keyData"],
         [{ priv: null }, `Unsupported key usage for a ${vector.algorithm} key`],
         [
+          { priv: vector.privateSeed, key_ops: [] },
+          "Usages cannot be empty when importing a private key.",
+        ],
+        [
           { priv: vector.privateSeed },
           `CryptoKey instances must be of type "public" for the ${vector.algorithm} algorithm`,
         ],
