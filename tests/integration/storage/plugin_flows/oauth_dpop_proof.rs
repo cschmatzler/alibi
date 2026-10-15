@@ -151,6 +151,78 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
         verify_dpop_proof(&options).await.unwrap_err().message,
         "Invalid or unsupported JWK \"alg\" (Algorithm) Parameter value"
     );
+    let keys: Value = serde_json::from_str(include_str!(
+        "../../../fixtures/oauth/client-assertion-keys.json"
+    ))?;
+    let public_key = keys["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["family"] == "Ed25519")
+        .unwrap()["publicJwk"]
+        .clone();
+    for (extra, message) in [
+        (
+            json!({"key_ops":[]}),
+            "CryptoKey does not support this operation, its usages must include verify.",
+        ),
+        (
+            json!({"key_ops":["sign"]}),
+            "Unsupported key usage for an Ed25519 key",
+        ),
+        (
+            json!({"key_ops":["verify","verify"]}),
+            "\"key_ops\" (Key Operations) Parameter must be an array of unique strings",
+        ),
+        (
+            json!({"ext":0}),
+            "\"ext\" (Extractable) Parameter must be a boolean",
+        ),
+        (
+            json!({"priv":"extra"}),
+            "Unsupported key usage for an Ed25519 key",
+        ),
+    ] {
+        let mut jwk = public_key.clone();
+        jwk.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        let token = proof(
+            json!({"htm":"post","htu":"https://api.fixture.test/resource","jti":"metadata-native","iat":2000000000}),
+            json!({"jwk":jwk}),
+        )?;
+        let mut options =
+            VerifyDpopProofOptions::new(&token, "POST", "https://api.fixture.test/resource");
+        options.now_seconds = Some(2000000000.0);
+        assert_eq!(
+            verify_dpop_proof(&options).await.unwrap_err().message,
+            message
+        );
+    }
+    {
+        use rsa::{
+            signature::{SignatureEncoding as _, Signer as _},
+            traits::PublicKeyParts as _,
+        };
+        let key = rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, 1024)?;
+        let header = json!({"typ":"dpop+jwt","alg":"RS256","jwk":{"kty":"RSA","n":URL_SAFE_NO_PAD.encode(key.n().to_bytes_be()),"e":URL_SAFE_NO_PAD.encode(key.e().to_bytes_be())}});
+        let payload = json!({"htm":"post","htu":"https://api.fixture.test/resource","jti":"weak-rsa-native","iat":2000000000});
+        let message = format!(
+            "{}.{}",
+            URL_SAFE_NO_PAD.encode(header.to_string()),
+            URL_SAFE_NO_PAD.encode(payload.to_string())
+        );
+        let signer = rsa::pkcs1v15::SigningKey::<rsa::sha2::Sha256>::new(key);
+        let signature = signer.sign(message.as_bytes());
+        let token = format!("{message}.{}", URL_SAFE_NO_PAD.encode(signature.to_bytes()));
+        let mut options =
+            VerifyDpopProofOptions::new(&token, "POST", "https://api.fixture.test/resource");
+        options.now_seconds = Some(2000000000.0);
+        assert_eq!(
+            verify_dpop_proof(&options).await.unwrap_err().message,
+            "RS256 requires key modulusLength to be 2048 bits or larger"
+        );
+    }
     let forwarded = ForwardReservations {
         context: auth.context(),
         observed: std::sync::Mutex::new(None),

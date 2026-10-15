@@ -287,6 +287,116 @@ fn decode(value: &str) -> Result<JsValue, DpopError> {
 fn string_claim<'a>(payload: &'a JsValue, key: &str) -> Option<&'a str> {
     payload.get(key)?.as_str().filter(|value| !value.is_empty())
 }
+fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool), DpopError> {
+    if jwk.get("ext").is_some_and(|v| !v.is_boolean()) {
+        return Err(DpopError::proof(
+            "\"ext\" (Extractable) Parameter must be a boolean",
+        ));
+    }
+    let operations = if let Some(value) = jwk.get("key_ops") {
+        let invalid = || {
+            DpopError::proof(
+                "\"key_ops\" (Key Operations) Parameter must be an array of unique strings",
+            )
+        };
+        let values = value.as_array().ok_or_else(invalid)?;
+        let mut unique = std::collections::HashSet::new();
+        for value in values {
+            let value = value.as_str().ok_or_else(invalid)?;
+            if !unique.insert(value) {
+                return Err(invalid());
+            }
+        }
+        Some(values)
+    } else {
+        None
+    };
+    let kty = jwk.get("kty").and_then(Value::as_str);
+    if !matches!(kty, Some("EC" | "OKP" | "RSA" | "AKP")) {
+        return Err(DpopError::proof(
+            "Unsupported \"kty\" (Key Type) Parameter value",
+        ));
+    }
+    let (expected, name, curve) = match algorithm {
+        "EdDSA" | "Ed25519" => ("OKP", "Ed25519", Some("Ed25519")),
+        "ES256" => ("EC", "ECDSA", Some("P-256")),
+        "ES384" => ("EC", "ECDSA", Some("P-384")),
+        "ES512" => ("EC", "ECDSA", Some("P-521")),
+        "RS256" | "RS384" | "RS512" => ("RSA", "RSASSA-PKCS1-v1_5", None),
+        "PS256" | "PS384" | "PS512" => ("RSA", "RSA-PSS", None),
+        _ => {
+            return Err(DpopError::proof(
+                "Invalid or unsupported JWK \"alg\" (Algorithm) Parameter value",
+            ));
+        }
+    };
+    if kty != Some(expected) {
+        return Err(DpopError::proof(
+            "Invalid or unsupported JWK \"alg\" (Algorithm) Parameter value",
+        ));
+    }
+    if expected == "OKP" && jwk.get("crv").and_then(Value::as_str) != curve {
+        return Err(DpopError::proof(
+            "JWK \"crv\" Parameter and algorithm name mismatch",
+        ));
+    }
+    if let Some(values) = operations
+        && values.iter().any(|v| {
+            ![
+                "encrypt",
+                "decrypt",
+                "sign",
+                "verify",
+                "deriveKey",
+                "deriveBits",
+                "wrapKey",
+                "unwrapKey",
+            ]
+            .contains(&v.as_str().unwrap_or_default())
+        })
+    {
+        return Err(DpopError::proof("value must be enumeration (string)"));
+    }
+    let private = jwk
+        .get("priv")
+        .is_some_and(|v| JsValue::from(v.clone()).is_truthy());
+    if operations.map_or(private, |values| {
+        values.iter().any(|v| v.as_str() != Some("verify"))
+    }) {
+        return Err(DpopError::proof(format!(
+            "Unsupported key usage for an {name} key"
+        )));
+    }
+    if expected == "EC" && jwk.get("crv").and_then(Value::as_str) != curve {
+        return Err(DpopError::proof(
+            "JWK \"crv\" does not match the requested algorithm",
+        ));
+    }
+    let can_verify = operations.is_none_or(|values| !values.is_empty());
+    let mut public = jwk
+        .as_object()
+        .cloned()
+        .ok_or_else(|| DpopError::proof("DPoP proof header must include a public jwk"))?;
+    // JOSE imports using the protected algorithm, discards use/alg, and
+    // validates key_ops before passing the key to signature verification.
+    for field in ["priv", "alg", "use", "key_ops"] {
+        _ = public.remove(field);
+    }
+    Ok((Value::Object(public), can_verify))
+}
+fn check_dpop_rsa_size(algorithm: &str, jwk: &Value) -> Result<(), DpopError> {
+    if (algorithm.starts_with("RS") || algorithm.starts_with("PS"))
+        && let Some(n) = jwk.get("n").and_then(Value::as_str)
+        && let Ok(bytes) = crate::jwt::decode_compact_part(n, false)
+        && let Some((first, byte)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0)
+        && (bytes.len() - first) * 8 - (byte.leading_zeros() as usize) < 2048
+    {
+        return Err(DpopError::proof(format!(
+            "{algorithm} requires key modulusLength to be 2048 bits or larger"
+        )));
+    }
+    Ok(())
+}
 pub async fn verify_dpop_proof(
     options: &VerifyDpopProofOptions<'_>,
 ) -> Result<VerifiedDpopProof, DpopError> {
@@ -348,14 +458,7 @@ pub async fn verify_dpop_proof(
             ));
         }
     }
-    if !matches!(
-        jwk.get("kty").and_then(Value::as_str),
-        Some("EC" | "OKP" | "RSA" | "AKP")
-    ) {
-        return Err(DpopError::proof(
-            "Unsupported \"kty\" (Key Type) Parameter value",
-        ));
-    }
+    let (public, can_verify) = prepare_dpop_public_key(algorithm, jwk)?;
     let map = header
         .as_object()
         .ok_or_else(|| DpopError::proof("Protected Header must be a top-level JSON object"))?;
@@ -366,14 +469,21 @@ pub async fn verify_dpop_proof(
         parts.first().copied().unwrap_or_default(),
         parts.get(1).copied().unwrap_or_default()
     );
-    let mut public = jwk.clone();
-    if let Some(public) = public.as_object_mut() {
-        _ = public.remove("priv");
+    let signature_bytes = crate::jwt::decode_compact_part(signature, false)
+        .map_err(|_| DpopError::proof("Failed to base64url decode the signature"))?;
+    if !can_verify {
+        return Err(DpopError::proof(
+            "CryptoKey does not support this operation, its usages must include verify.",
+        ));
     }
-    let valid = if let Ok(algorithm) = crate::jwt::JwtAlgorithm::from_str(algorithm) {
-        let signature = crate::jwt::decode_compact_part(signature, false)
-            .map_err(|_| DpopError::proof("Failed to base64url decode the signature"))?;
-        crate::jwt::crypto::verify(algorithm, &public, input.as_bytes(), &signature)
+    check_dpop_rsa_size(algorithm, &public)?;
+    let native_algorithm = if algorithm == "Ed25519" {
+        Some(crate::jwt::JwtAlgorithm::EdDsa)
+    } else {
+        crate::jwt::JwtAlgorithm::from_str(algorithm).ok()
+    };
+    let valid = if let Some(algorithm) = native_algorithm {
+        crate::jwt::crypto::verify(algorithm, &public, input.as_bytes(), &signature_bytes)
             .unwrap_or(false)
     } else {
         let algorithm = jsonwebtoken::Algorithm::from_str(algorithm).map_err(|_| {
@@ -383,7 +493,13 @@ pub async fn verify_dpop_proof(
             serde_json::from_value(public).map_err(|error| DpopError::proof(error.to_string()))?;
         let key = jsonwebtoken::DecodingKey::from_jwk(&jwk)
             .map_err(|error| DpopError::proof(error.to_string()))?;
-        jsonwebtoken::crypto::verify(signature, input.as_bytes(), &key, algorithm).unwrap_or(false)
+        jsonwebtoken::crypto::verify(
+            &URL_SAFE_NO_PAD.encode(&signature_bytes),
+            input.as_bytes(),
+            &key,
+            algorithm,
+        )
+        .unwrap_or(false)
     };
     if !valid {
         return Err(DpopError::proof("signature verification failed"));

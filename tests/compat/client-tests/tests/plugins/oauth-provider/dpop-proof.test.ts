@@ -1,5 +1,6 @@
 import { expect } from "bun:test";
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync, sign } from "node:crypto";
+const weakKey = generateKeyPairSync("rsa", { modulusLength: 1024 });
 
 import { SignJWT, importJWK } from "jose";
 
@@ -68,13 +69,20 @@ compatScenario(
       ["RSA", "RS256"],
       ["RSA", "PS256"],
       ["P-384", "ES384"],
+      ["RSA", "RS384"],
+      ["RSA", "RS512"],
+      ["RSA", "PS384"],
+      ["RSA", "PS512"],
+      ["Ed25519", "Ed25519"],
     ] as const) {
       const token = await proof(`crypto-${alg}`, {}, {}, family, alg);
       const result = await control({
         operation: "verify",
         ...options,
         proofJwt: token,
-        ...(alg === "ES384" ? { signingAlgorithms: ["ES384"] } : {}),
+        ...(["ES384", "RS384", "RS512", "PS384", "PS512", "Ed25519"].includes(alg)
+          ? { signingAlgorithms: [alg] }
+          : {}),
       });
       expect(result.error).toBeUndefined();
       expect(result.htm).toBe("post");
@@ -243,6 +251,82 @@ compatScenario(
         await control({ operation: "verify", ...options, ...extra, proofJwt: malformed }),
       ).toEqual({ error: "invalid_dpop_proof", message });
     }
+    for (const [extra, message] of [
+      [
+        { key_ops: [] },
+        "CryptoKey does not support this operation, its usages must include verify.",
+      ],
+      [{ key_ops: ["sign"] }, "Unsupported key usage for an Ed25519 key"],
+      [
+        { key_ops: ["verify", "verify"] },
+        '"key_ops" (Key Operations) Parameter must be an array of unique strings',
+      ],
+      [
+        { key_ops: ["verify", 1] },
+        '"key_ops" (Key Operations) Parameter must be an array of unique strings',
+      ],
+      [{ ext: 0 }, '"ext" (Extractable) Parameter must be a boolean'],
+      [{ priv: "extra" }, "Unsupported key usage for an Ed25519 key"],
+    ] as const) {
+      expect(
+        await control({
+          ...options,
+          proofJwt: await proof(
+            "metadata-" + JSON.stringify(extra),
+            {},
+            { jwk: { ...publicKey, ...extra } },
+          ),
+        }),
+      ).toEqual({ error: "invalid_dpop_proof", message });
+    }
+    for (const [family, alg] of [
+      ["Ed25519", "EdDSA"],
+      ["P-384", "ES384"],
+    ] as const) {
+      const key = keys.find((k: any) => k.family === family)!.publicJwk;
+      for (const extra of [
+        { use: "enc", alg: "FOO" },
+        { ext: false },
+        { priv: "extra", key_ops: ["verify"] },
+      ]) {
+        const jwk = { ...key, ...extra };
+        const verified = await control({
+          ...options,
+          signingAlgorithms: [alg],
+          proofJwt: await proof(
+            "metadata-accepted-" + family + JSON.stringify(extra),
+            {},
+            { jwk },
+            family,
+            alg,
+          ),
+        });
+        expect(verified.jwk).toEqual(jwk);
+        expect(verified.jkt).toBe(
+          hash(JSON.stringify({ crv: key.crv, kty: key.kty, x: key.x, y: key.y })),
+        );
+      }
+    }
+    const weakInput =
+      Buffer.from(
+        JSON.stringify({
+          typ: "dpop+jwt",
+          alg: "RS256",
+          jwk: weakKey.publicKey.export({ format: "jwk" }),
+        }),
+      ).toString("base64url") +
+      "." +
+      Buffer.from(
+        JSON.stringify({ htm: "POST", htu: url, jti: "weak-rsa", iat: 2000000000 }),
+      ).toString("base64url");
+    const weakProof =
+      weakInput +
+      "." +
+      sign("RSA-SHA256", Buffer.from(weakInput), weakKey.privateKey).toString("base64url");
+    expect(await control({ ...options, proofJwt: weakProof })).toEqual({
+      error: "invalid_dpop_proof",
+      message: "RS256 requires key modulusLength to be 2048 bits or larger",
+    });
     const bindingNow = Math.floor(Date.now() / 1000);
     const bindingProof = await proof("binding", {
       htm: "GET",
