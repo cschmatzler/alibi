@@ -581,3 +581,5 @@ mod oauth_server_token_issuance;
 mod oauth_remote_client_jwks;
 
 mod oauth_token_expiration;
+
+mod oauth_scope_expiration;

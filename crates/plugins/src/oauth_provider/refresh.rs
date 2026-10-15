@@ -221,8 +221,7 @@ impl OAuthProviderPlugin {
                 _ = metadata.insert(key.into(), value.clone());
             }
         }
-        let expires_claim =
-            super::issuance::expiration(issued.timestamp(), self.config.access_token_expires_in)?;
+        let expires_claim = self.access_expiration(issued.timestamp(), true, &scopes)?;
         let expires = super::issuance::expiration_date(&expires_claim)?;
         _ = ctx
             .database
@@ -244,7 +243,7 @@ impl OAuthProviderPlugin {
             ("access_token".into(), json!(access)),
             (
                 "expires_in".into(),
-                super::issuance::number(self.config.access_token_expires_in)?,
+                super::issuance::remaining(issued.timestamp(), &expires_claim)?,
             ),
             ("expires_at".into(), expires_claim),
             ("token_type".into(), json!("Bearer")),

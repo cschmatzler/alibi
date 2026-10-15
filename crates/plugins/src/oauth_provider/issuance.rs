@@ -76,7 +76,51 @@ pub(super) fn expiration_date(value: &Value) -> AuthResult<chrono::DateTime<chro
     chrono::DateTime::from_timestamp_millis(millis)
         .ok_or_else(|| AuthError::internal("Invalid token expiration"))
 }
+pub(super) fn remaining(issued: i64, expires: &Value) -> AuthResult<Value> {
+    let issued = json!(issued)
+        .as_f64()
+        .ok_or_else(|| AuthError::internal("Invalid issuance time"))?;
+    let expires = expires
+        .as_f64()
+        .ok_or_else(|| AuthError::internal("Invalid token expiration"))?;
+    number(expires - issued)
+}
 impl OAuthProviderPlugin {
+    pub(super) fn access_expiration<T: AsRef<str>>(
+        &self,
+        issued: i64,
+        has_user: bool,
+        scopes: &[T],
+    ) -> AuthResult<Value> {
+        let lifetime = if has_user {
+            self.config.access_token_expires_in
+        } else {
+            self.config.m2m_access_token_expires_in
+        };
+        let mut result = expiration(issued, lifetime)?;
+        for scope in scopes {
+            let Some(configured) = self.config.scope_expirations.get(scope.as_ref()) else {
+                continue;
+            };
+            // The reference tests the configured value's JS truthiness before
+            // converting it: numeric zero/NaN are absent, a Date at epoch isn't.
+            if matches!(configured,crate::jwt::JwtExpiration::Numeric(value) if *value==0.0 || value.is_nan())
+            {
+                continue;
+            }
+            let candidate = configured.timestamp(Some(&json!(issued)));
+            let current = result
+                .as_f64()
+                .ok_or_else(|| AuthError::internal("Invalid scope expiration"))?;
+            let proposed = candidate
+                .as_f64()
+                .ok_or_else(|| AuthError::internal("Invalid scope expiration"))?;
+            if current >= proposed {
+                result = candidate;
+            }
+        }
+        Ok(result)
+    }
     /// Mint authority for an already authorized caller. The grant is required,
     /// but need not be registered: admission is the trusted caller's responsibility.
     pub async fn issue_tokens<S: AuthSchema>(
@@ -110,12 +154,8 @@ impl OAuthProviderPlugin {
     ) -> Result<Value, EndpointError> {
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid token issue time"))?;
-        let lifetime = if p.user.is_some() {
-            self.config.access_token_expires_in
-        } else {
-            self.config.m2m_access_token_expires_in
-        };
-        let expires_claim = expiration(issued.timestamp(), lifetime)?;
+        let expires_claim =
+            self.access_expiration(issued.timestamp(), p.user.is_some(), &p.scopes)?;
         let expires = expiration_date(&expires_claim)?;
         let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
         let mut metadata = serde_json::Map::from_iter([
@@ -323,7 +363,7 @@ impl OAuthProviderPlugin {
         }
         for (key, value) in [
             ("access_token", json!(access)),
-            ("expires_in", number(lifetime)?),
+            ("expires_in", remaining(issued.timestamp(), &expires_claim)?),
             ("expires_at", expires_claim),
             (
                 "token_type",

@@ -75,9 +75,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const tokenStorage={hash:async(token:string,kind:string)=>`app:${kind}:${createHash("sha256").update(token).digest("base64url")}`};
   const tokenHashHelper={id:"token-hash-helper",endpoints:{hashTokenFixture:createAuthEndpoint("/fixture/hash-token",{method:"POST",body:z.object({token:z.string(),kind:z.string(),custom:z.boolean()})},async(ctx)=>ctx.json({hash:await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.custom?{storeTokens:tokenStorage}:{})}).hashToken(ctx.body.token,ctx.body.kind)}))}};
   const accessValidationHelper={id:"access-validation-helper",endpoints:{validateAccessFixture:createAuthEndpoint("/fixture/validate-access",{method:"POST",body:z.object({token:z.string(),clientId:z.string().optional(),requireActive:z.boolean()})},async(ctx)=>{try{return ctx.json(await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"})[ctx.body.requireActive?"requireActiveAccessToken":"validateAccessToken"](ctx.body.token,ctx.body.clientId));}catch(error){if(error instanceof Error && error.name==="APIError")throw error;return ctx.json({ordinary_error:true});}})}};
+  const scopePolicy=(name:string)=>({email:name==="numeric"?1:name==="zero"?0:name==="date"?new Date(0):name==="relative"?"45s":"2h",...(name==="relative"?{profile:"90s"}:{})});
   const expiryPolicy={accessTokenExpiresIn:120,m2mAccessTokenExpiresIn:30,idTokenExpiresIn:600,refreshTokenExpiresIn:900};
   const issuanceHelper={id:"issuance-helper",endpoints:{issueTokensFixture:createAuthEndpoint("/fixture/issue-tokens",{method:"POST",body:z.record(z.string(),z.unknown())},async(ctx:any)=>{
-    const api=getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.expiryProfile?expiryPolicy:{})},ctx.body.grantType);
+    const api=getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.expiryProfile?expiryPolicy:{}),...(ctx.body.scopePolicy?{scopeExpirations:scopePolicy(ctx.body.scopePolicy)}:{})},ctx.body.grantType);
     const client=await api.getClient(ctx.body.clientId);
     const user=ctx.body.userId?await ctx.context.internalAdapter.findUserById(ctx.body.userId):undefined;
     const params={...ctx.body.params,...(ctx.body.params.authTime?{authTime:new Date(ctx.body.params.authTime)}:{})};
@@ -123,6 +124,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     "custom-prefixed-verify":customSecretProfile(true),
     "custom-token-hash":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",storeTokens:tokenStorage}),tokenHashHelper]}),
     "issuance-expiry":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",...expiryPolicy}),issuanceHelper]}),
+    ...Object.fromEntries(["numeric","zero","relative","date","ceiling"].map(name=>[`scope-${name}`,betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",scopeExpirations:scopePolicy(name)}),issuanceHelper]})])),
     default: betterAuth(options),
     "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
     "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),

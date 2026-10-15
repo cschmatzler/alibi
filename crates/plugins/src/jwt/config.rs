@@ -153,7 +153,7 @@ impl JwtExpiration {
         clippy::cast_precision_loss,
         reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
     )]
-    pub(in crate::jwt) fn timestamp(&self, issued_at: Option<&Value>) -> Value {
+    pub(crate) fn timestamp(&self, issued_at: Option<&Value>) -> Value {
         let timestamp = match self {
             Self::After(duration) => {
                 let seconds = (duration.num_milliseconds() as f64 / 1000.0 + 0.5).floor();

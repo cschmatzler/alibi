@@ -246,6 +246,11 @@ pub(crate) async fn router(
         "generated-id",
         "empty-id",
         "basic-special",
+        "scope-numeric",
+        "scope-zero",
+        "scope-relative",
+        "scope-date",
+        "scope-ceiling",
         "issuance-expiry",
         "assertion-short",
         "assertion-zero",
@@ -298,6 +303,7 @@ pub(crate) async fn router(
             ..Default::default()
         };
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
+        if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
         let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
@@ -325,7 +331,7 @@ pub(crate) async fn router(
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="issue-tokens" {
-                let body=&input["body"];let values=&body["params"];let provider=if body["expiryProfile"]==true {OAuthProviderPlugin::with_config(issuance_expiry_config())}else{OAuthProviderPlugin::new()};
+                let body=&input["body"];let values=&body["params"];let provider=if let Some(policy)=body["scopePolicy"].as_str(){OAuthProviderPlugin::with_config(scope_expiry_config(policy))}else if body["expiryProfile"]==true {OAuthProviderPlugin::with_config(issuance_expiry_config())}else{OAuthProviderPlugin::new()};
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());
                 if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(auth.context().trusted_user_view(&user));}
@@ -602,4 +608,18 @@ pub(crate) async fn router(
 
 fn issuance_expiry_config() -> alibi::plugins::OAuthProviderConfig {
     alibi::plugins::OAuthProviderConfig {access_token_expires_in:120.0,m2m_access_token_expires_in:30.0,id_token_expires_in:600.0,refresh_token_expires_in:900.0,..Default::default()}
+}
+
+fn scope_expiry_config(name:&str)->OAuthProviderConfig {
+    use alibi::plugins::jwt::JwtExpiration;
+    let expiration=match name {
+        "numeric"=>JwtExpiration::Numeric(1.0),
+        "zero"=>JwtExpiration::Numeric(0.0),
+        "date"=>JwtExpiration::At(chrono::DateTime::from_timestamp(0,0).unwrap()),
+        "relative"=>JwtExpiration::After(chrono::Duration::seconds(45)),
+        _=>JwtExpiration::After(chrono::Duration::hours(2)),
+    };
+    let mut expirations=HashMap::from([("email".into(),expiration)]);
+    if name=="relative"{_=expirations.insert("profile".into(),JwtExpiration::After(chrono::Duration::seconds(90)));}
+    OAuthProviderConfig{scope_expirations:expirations,..Default::default()}
 }
