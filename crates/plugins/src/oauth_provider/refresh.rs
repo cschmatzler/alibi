@@ -57,7 +57,7 @@ impl OAuthProviderPlugin {
                 return error("invalid_scope", &format!("unable to issue scope {scope}"));
             }
         }
-        let client = match credentials.authenticate(ctx, &self.config).await? {
+        let client = match credentials.authenticate(ctx, self).await? {
             Ok(client) => client,
             Err(response) => return Ok(no_store(response)),
         };

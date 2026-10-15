@@ -1,4 +1,6 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+pub use authentication::{OAuthAuthenticatedClient, OAuthClientAuthenticationOptions};
+mod authentication;
 pub use client_secret::{OAuthClientSecretCipher, OAuthClientSecretHasher};
 mod assertion;
 mod authorization;
@@ -1075,8 +1077,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 "encryption method not recommended, please use 'hashed' or the 'hash' function",
             ));
         }
-        ctx.extensions
-            .insert(client_jwks::Runtime(self.client_jwks.clone()));
         let mut discovery_ids = std::collections::HashSet::new();
         for discovery in &self.config.client_discoveries {
             if alibi_core::utils::javascript::trim(discovery.id()).is_empty() {

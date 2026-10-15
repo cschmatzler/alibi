@@ -19,6 +19,21 @@ pub(super) async fn extract<S: AuthSchema>(
     provider: &super::OAuthProviderPlugin,
     endpoint: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
+    let audience = format!(
+        "{}{}/oauth2/{endpoint}",
+        ctx.config.base_url.trim_end_matches('/'),
+        ctx.config.base_path
+    );
+    extract_for_audience(body, req, ctx, provider, &audience).await
+}
+
+pub(super) async fn extract_for_audience<S: AuthSchema>(
+    body: &Value,
+    req: &impl SessionRequest,
+    ctx: &AuthContext<S>,
+    provider: &super::OAuthProviderPlugin,
+    audience: &str,
+) -> AuthResult<Result<Credentials, EndpointResponse>> {
     let body = match normalize(body, req) {
         Ok(body) => body,
         Err(description) => {
@@ -30,7 +45,7 @@ pub(super) async fn extract<S: AuthSchema>(
         }
     };
     if body.get("client_assertion").is_some() || body.get("client_assertion_type").is_some() {
-        return super::assertion::verify(&body, ctx, provider, endpoint).await;
+        return super::assertion::verify(&body, ctx, provider, audience).await;
     }
     from_normalized(&body, req)
 }
@@ -240,9 +255,10 @@ impl Credentials {
     pub(super) async fn authenticate<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
-        config: &super::OAuthProviderConfig,
+        provider: &super::OAuthProviderPlugin,
     ) -> AuthResult<Result<OAuthClient, EndpointResponse>> {
-        let Some(client) = super::discovery::resolve(ctx, &self.client_id).await? else {
+        let config = &provider.config;
+        let Some(client) = provider.get_client(ctx, &self.client_id).await? else {
             return Ok(Err(self.denied("missing client")?));
         };
         if client.metadata.get("disabled") == Some(&Value::Bool(true)) {

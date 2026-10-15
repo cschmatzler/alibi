@@ -26,7 +26,7 @@ pub(super) async fn verify<S: AuthSchema>(
     body: &Value,
     ctx: &AuthContext<S>,
     provider: &OAuthProviderPlugin,
-    endpoint: &str,
+    endpoint_url: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
     let assertion = body
         .get("client_assertion")
@@ -96,7 +96,7 @@ pub(super) async fn verify<S: AuthSchema>(
     {
         return denied(400, "client_id in body does not match assertion sub/iss");
     }
-    let Some(client) = super::discovery::resolve(ctx, client_id).await? else {
+    let Some(client) = provider.get_client(ctx, client_id).await? else {
         return denied(400, "unknown client");
     };
     if client.metadata.get("disabled") == Some(&Value::Bool(true)) {
@@ -113,18 +113,13 @@ pub(super) async fn verify<S: AuthSchema>(
             "client is not registered for private_key_jwt authentication",
         );
     }
-    let mut jwks = match super::client_jwks::get(ctx, &client).await? {
+    let mut jwks = match super::client_jwks::get(ctx, provider, &client).await? {
         Ok(jwks) => jwks,
         Err(description) => return denied(400, description),
     };
     let metadata = provider.metadata(ctx)?;
-    let endpoint_url = format!(
-        "{}{}/oauth2/{endpoint}",
-        ctx.config.base_url.trim_end_matches('/'),
-        ctx.config.base_path
-    );
     let audiences = [
-        endpoint_url.as_str(),
+        endpoint_url,
         metadata
             .get("issuer")
             .and_then(Value::as_str)
@@ -132,7 +127,7 @@ pub(super) async fn verify<S: AuthSchema>(
     ];
     let mut signature = signature_result(&header, &jwks, alg, assertion);
     if signature == SignatureResult::NoMatchingKey
-        && let Some(refreshed) = super::client_jwks::refetch(ctx, &client).await?
+        && let Some(refreshed) = super::client_jwks::refetch(provider, &client).await?
     {
         jwks = refreshed;
         signature = signature_result(&header, &jwks, alg, assertion);
