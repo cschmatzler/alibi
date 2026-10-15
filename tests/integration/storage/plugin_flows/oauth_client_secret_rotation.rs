@@ -164,7 +164,14 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    for (empty, encrypted) in [(false, false), (true, false), (false, true)] {
+    for (empty, encrypted, prefixed) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+        (false, true, true),
+    ] {
+        let prefix = if prefixed { "client_prefix_" } else { "" };
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let builder = super::auth_probe::fast_builder::<B>(&connection);
         let builder = if encrypted {
@@ -176,6 +183,7 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             .plugin(OAuthProviderPlugin::with_config(
                 alibi::plugins::OAuthProviderConfig {
                     disable_jwt_plugin: encrypted,
+                    client_secret_prefix: prefixed.then(|| prefix.into()),
                     client_secret_generator: Some(Arc::new(OperatorSecrets {
                         calls: calls.clone(),
                         empty,
@@ -187,7 +195,7 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             .await?;
         let owner = signup(
             &auth,
-            &format!("generator-{empty}-{encrypted}@example.test"),
+            &format!("generator-{empty}-{encrypted}-{prefixed}@example.test"),
         )
         .await;
         let options = || EndpointOptions {
@@ -203,7 +211,7 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             assert_eq!(old_secret.len(), 32);
             assert!(old_secret.bytes().all(|c| c.is_ascii_alphabetic()));
         } else {
-            assert_eq!(old_secret, "operator-secret-1");
+            assert_eq!(old_secret, format!("{prefix}operator-secret-1"));
         }
         let public=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Public client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none"}))?,options()).await?.into_response()?;
         let public = body(&public);
@@ -245,13 +253,14 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             assert_eq!(secret.len(), 32);
             assert!(secret.bytes().all(|c| c.is_ascii_alphabetic()));
         } else {
-            assert_eq!(secret, "operator-secret-2");
+            assert_eq!(secret, format!("{prefix}operator-secret-2"));
         }
         assert_ne!(secret, old_secret);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
         let stored = auth.store().get_oauth_client(id).await?.unwrap();
+        let raw_secret = secret.strip_prefix(prefix).unwrap();
         let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .encode(sha2::Sha256::digest(secret.as_bytes()));
+            .encode(sha2::Sha256::digest(raw_secret.as_bytes()));
         if encrypted {
             let protected = stored.client_secret.as_deref().unwrap();
             assert!(!protected.is_empty());
@@ -264,6 +273,18 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
         assert_eq!(stored.id, old.id);
         assert_eq!(stored.user_id, old.user_id);
         assert_eq!(stored.metadata, old.metadata);
+        if prefixed {
+            for invalid in [raw_secret.to_owned(), format!("WRONG_{raw_secret}")] {
+                let error = auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Introspect").with_body(&json!({"client_id":id,"client_secret":invalid,"token":"not-issued"}))?,EndpointOptions::default()).await.unwrap_err();
+                assert_eq!(error.error.status_code(), 401);
+                assert!(
+                    error
+                        .headers
+                        .as_ref()
+                        .is_none_or(|headers| { headers.get("www-authenticate").is_none() })
+                );
+            }
+        }
         for (credential, status) in [(old_secret, 400), (secret, 200)] {
             let output = auth
                 .dispatch_endpoint(
