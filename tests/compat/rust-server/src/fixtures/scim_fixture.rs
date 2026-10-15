@@ -91,6 +91,16 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     if input["sdkDate"]==true {if let JsValue::Object(values)=&mut claims{let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}}
                     *verifier_claims.lock().unwrap()=Some(claims);return Json(json!({"changed":true})).into_response();
                 }
+                if query.get("operation").is_some_and(|operation|operation=="probe-authentication-source") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let plugin=match input["mode"].as_str().unwrap(){"static"=>ScimPlugin::new().connections(resource_connections()),"managed"=>ScimPlugin::new().managed_connections(managed_options()),_=>ScimPlugin::new()};
+                    let candidate=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config.clone(),database.clone())).plugin(plugin).build().await;
+                    return match candidate {
+                        Ok(candidate)=>{let output=candidate.dispatch_endpoint(ScimPlugin::resource_types_endpoint(),EndpointOptions::default()).await.unwrap();alibi::AuthResponse::json(200,output.value()).unwrap().into_response()},
+                        Err(alibi::AuthError::Config(message))=>alibi::AuthResponse::json(400,&json!({"error":message})).unwrap().into_response(),
+                        Err(error)=>error.to_auth_response().into_response(),
+                    };
+                }
                 if query.get("operation").is_some_and(|operation|operation=="verifier-inputs") {let inputs=verifier_inputs.lock().unwrap().clone();return Json(inputs).into_response();}
                 if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-projection"|"configure-role-projection"|"configure-group-create-projection"|"configure-user-delete"|"configure-user-create")) {
                     let base=ScimPlugin::new().managed_connections(managed_options());let base=if query.get("operation").is_some_and(|operation|matches!(operation.as_str(),"configure-group-create-projection"|"configure-user-delete"|"configure-user-create")){base.connections(resource_connections())}else{base};let mut plugin=base.projection::<crate::TestSchema>(Arc::new(FixtureProjection{states:projection_states.clone(),fails:projection_fails.clone()}));if query.get("operation").is_some_and(|operation|operation=="configure-role-projection"){plugin=plugin.roles(Arc::new(FixtureRoles{observations:role_observations.clone(),stage:role_stage.clone()}));}

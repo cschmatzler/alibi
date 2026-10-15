@@ -70,6 +70,19 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "probe-authentication-source") {
+        const input = await request.json() as {mode:string};
+        try {
+          const plugin = scim({connections: input.mode === "static" ? initialScimOptions.connections : [],
+            ...(input.mode === "managed" ? {managedConnections: {credentialHashSecret:"native-scim-catalog-credential-hash-secret-32"}} : {}),
+          });
+          const candidate = betterAuth({...options,plugins:[plugin]});
+          await candidate.$context;
+          return fixtureJson(await candidate.api.getSCIMResourceTypes());
+        } catch (error) {
+          return new Response(JSON.stringify({error:error instanceof Error ? error.message : String(error)}),{status:400,headers:{"content-type":"application/json"}});
+        }
+      }
       if (query.get("operation") === "configure-entra-group-compatibility") {
         const input = (await request.json()) as any;
         options.plugins = [

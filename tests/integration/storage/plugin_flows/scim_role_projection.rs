@@ -98,6 +98,9 @@ async fn scim_role_projection_normalizes_roles_and_persists_grants<B: Backend>(
     let auth = builder::<B>(&connection)
         .plugin(
             ScimPlugin::new()
+                .managed_connections(alibi::plugins::scim::ScimManagedConnectionOptions::new(
+                    "native-scim-catalog-credential-hash-secret-32",
+                ))
                 .projection::<B::Schema>(callbacks.clone())
                 .roles(callbacks),
         )
