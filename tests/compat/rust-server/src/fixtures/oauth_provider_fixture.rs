@@ -117,13 +117,34 @@ fn remote_document(family:&str,algorithm:&str,kid:&str)->serde_json::Value {
     public["alg"]=serde_json::json!(algorithm);public["kid"]=serde_json::json!(kid);serde_json::json!({"keys":[public]})
 }
 
+#[derive(Debug)]
+struct MetadataDiscovery {id:&'static str,empty:bool}
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientDiscovery for MetadataDiscovery {
+    fn id(&self)->&str{self.id}
+    fn matches(&self,_:&str)->bool{false}
+    fn discovery_metadata(&self)->serde_json::Map<String,serde_json::Value>{
+        if self.empty{return serde_json::Map::new();}
+        let value=if self.id=="metadata-first"{serde_json::json!({
+            "client_id_metadata_document_supported":true,"registry_order":"first","registry_first_only":17,
+            "issuer":"https://untrusted.fixture.test","token_endpoint_auth_methods_supported":["wrong"],"scopes_supported":["wrong"],"claims_supported":["wrong"],"jwks_uri":"https://untrusted.fixture.test/keys"
+        })}else{serde_json::json!({"registry_order":"second","registry_second_only":{"enabled":true},"issuer":"https://also-untrusted.fixture.test"})};
+        value.as_object().unwrap().clone()
+    }
+    async fn resolve(&self,_:&alibi::CallbackContext,_:&str,_:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>>{Ok(None)}
+}
+
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router> {
     let mut instances = HashMap::new();
-    for mode in ["default", "oauth", "disabled", "configured"] {
+    for mode in ["default", "oauth", "disabled", "configured", "registry", "registry-oauth", "registry-empty"] {
         let mut provider = OAuthProviderConfig::default();
+        if mode.starts_with("registry") {
+            provider.client_discoveries=["metadata-first","metadata-second"].into_iter().map(|id|Arc::new(MetadataDiscovery{id,empty:mode=="registry-empty"}) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect();
+            if mode=="registry-oauth"{provider.scopes=vec!["read".into()];}
+        }
         let mut jwt = JwtPluginConfig::default();
         if mode == "oauth" || mode == "configured" {
             provider.scopes = vec!["read".into()];
