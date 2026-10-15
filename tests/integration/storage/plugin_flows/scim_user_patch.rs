@@ -6,13 +6,15 @@ backend_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
     scim_user_patch_clones_sdk_dates_as_own_property_records,
     scim_user_patch_reports_first_invalid_profile_attribute,
-    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation
+    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation,
+    scim_user_patch_size_limit_measures_final_normalized_document
 );
 postgres_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
     scim_user_patch_clones_sdk_dates_as_own_property_records,
     scim_user_patch_reports_first_invalid_profile_attribute,
-    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation
+    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation,
+    scim_user_patch_size_limit_measures_final_normalized_document
 );
 async fn patch<S: AuthSchema>(
     auth: &Alibi<S>,
@@ -378,6 +380,78 @@ async fn scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation<B
         } else {
             assert_eq!(body(&result)["title"], "Safe");
         }
+    }
+    B::close(connection).await
+}
+
+fn sized_patch(initial: &Value, size: usize) -> TestResult<Value> {
+    let value = "x".repeat(1024);
+    let mut patch = json!({"roles":vec![json!({"value":value,"display":value});10],"entitlements":vec![json!({"value":value,"display":value});10],"addresses":vec![json!({"formatted":value,"streetAddress":value});10],"phoneNumbers":vec![json!({"value":"x".repeat(250)});10]});
+    patch["phoneNumbers"][9]["value"] = json!("");
+    let mut document = json!({"schemas":initial["schemas"],"userName":initial["userName"],"displayName":initial["displayName"],"active":initial["active"],"name":initial["name"],"emails":initial["emails"]});
+    document
+        .as_object_mut()
+        .unwrap()
+        .extend(patch.as_object().unwrap().clone());
+    let length = serde_json::to_string(&document)?.encode_utf16().count();
+    patch["phoneNumbers"][9]["value"] = json!("x".repeat(size - length));
+    Ok(patch)
+}
+async fn scim_user_patch_size_limit_measures_final_normalized_document<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    for (size, variant) in [
+        (65535, "plain"),
+        (65536, "plain"),
+        (65535, "unknown"),
+        (65535, "padded"),
+        (65535, "unicode"),
+    ] {
+        let initial = body(&super::scim_user_create::create(&auth,&json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":format!("patch-size-{size}-{variant}@example.com")}),Some("group-reader")).await?);
+        let id = initial["id"].as_str().unwrap();
+        let mut changes = sized_patch(&initial, size)?;
+        match variant {
+            "unknown" => changes["roles"][0]["ignored"] = json!("x".repeat(70000)),
+            "padded" => changes["roles"][0]["value"] = json!(format!(" {} ", "x".repeat(1024))),
+            "unicode" => changes["roles"][0]["value"] = json!("🦀".repeat(512)),
+            _ => {}
+        }
+        let before = db.tables(&["user", "scimUser", "scimSubject"]).await?;
+        let response = patch(&auth, id, json!([{"value":changes}]), Some("group-reader")).await?;
+        assert_eq!(response.status, if size <= 65535 { 200 } else { 400 });
+        let value = body(&response);
+        if size > 65535 {
+            assert_eq!(
+                value["detail"],
+                "User: SCIM User attributes exceed the supported serialized size"
+            );
+            assert_eq!(value["scimType"], "invalidValue");
+            assert_eq!(
+                db.tables(&["user", "scimUser", "scimSubject"]).await?,
+                before
+            );
+        } else {
+            assert_eq!(value["id"], id);
+            assert_eq!(value["roles"].as_array().unwrap().len(), 10);
+            assert!(value["roles"][0].get("ignored").is_none());
+            assert_eq!(
+                value["roles"][0]["value"],
+                if variant == "unicode" {
+                    "🦀".repeat(512)
+                } else {
+                    "x".repeat(1024)
+                }
+            );
+            assert!(serde_json::to_string(&value)?.encode_utf16().count() > size);
+        }
+        let read = super::scim_user_read::read(&auth, id, &json!({}), Some("group-reader")).await?;
+        assert_eq!(read.status, 200);
+        assert_eq!(body(&read), if size <= 65535 { value } else { initial });
     }
     B::close(connection).await
 }
