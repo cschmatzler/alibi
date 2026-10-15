@@ -70,6 +70,15 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "discovery-sdk") {
+        const input = await request.json() as {api:string;params?:any;mode:string};
+        const endpoint = (auth.api as any)[input.api];
+        if (input.mode === "headers") {
+          const result = await endpoint({params:input.params,returnHeaders:true});
+          return fixtureJson({response:result.response,headers:Object.fromEntries(result.headers)});
+        }
+        return endpoint({params:input.params,asResponse:true});
+      }
       if (query.get("operation") === "probe-authentication-source") {
         const input = await request.json() as {mode:string};
         try {

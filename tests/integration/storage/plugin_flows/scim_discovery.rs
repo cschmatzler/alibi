@@ -4,12 +4,16 @@ use alibi::endpoint::EndpointOptions;
 backend_tests!(
     scim_service_provider_config_exposes_reference_capabilities,
     scim_startup_requires_an_authentication_source,
+    scim_discovery_sdk_headers_preserve_logical_response_marker,
     scim_resource_types_are_public_and_include_enterprise_user,
     scim_resource_type_lookup_matches_reference_errors,
     scim_schema_listing_exposes_complete_standard_attribute_contracts,
     scim_schema_lookup_decodes_ids_and_preserves_exact_errors
 );
-postgres_tests!(scim_startup_requires_an_authentication_source);
+postgres_tests!(
+    scim_startup_requires_an_authentication_source,
+    scim_discovery_sdk_headers_preserve_logical_response_marker
+);
 async fn scim_startup_requires_an_authentication_source<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let result = builder::<B>(&connection)
@@ -375,4 +379,101 @@ async fn scim_schema_lookup_decodes_ids_and_preserves_exact_errors<B: Backend>(
         );
     }
     Ok(())
+}
+
+async fn scim_discovery_sdk_headers_preserve_logical_response_marker<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::ScimPlugin;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let schema = "urn:ietf:params:scim:schemas:core:2.0:User";
+    for (endpoint, path) in [
+        (
+            ScimPlugin::service_provider_config_endpoint(),
+            "/scim/v2/ServiceProviderConfig".to_owned(),
+        ),
+        (
+            ScimPlugin::resource_types_endpoint(),
+            "/scim/v2/ResourceTypes".to_owned(),
+        ),
+        (
+            ScimPlugin::schemas_endpoint(),
+            "/scim/v2/Schemas".to_owned(),
+        ),
+        (
+            ScimPlugin::resource_type_endpoint("User")?,
+            "/scim/v2/ResourceTypes/User".to_owned(),
+        ),
+        (
+            ScimPlugin::schema_endpoint(schema)?,
+            format!("/scim/v2/Schemas/{schema}"),
+        ),
+    ] {
+        let output = auth
+            .dispatch_endpoint(endpoint, EndpointOptions::default())
+            .await?;
+        assert!(
+            output.headers().get("content-type").is_none(),
+            "logical headers must not force the HTTP media type"
+        );
+        assert_eq!(
+            output
+                .headers()
+                .get("x-better-auth-scim-response")
+                .map(String::as_str),
+            Some("1")
+        );
+        let wire = output.into_response()?;
+        assert_eq!(
+            wire.headers.get("content-type").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(
+            wire.headers
+                .get("x-better-auth-scim-response")
+                .map(String::as_str),
+            Some("1")
+        );
+        let http = call(&auth, request(&path, None, ""), 200).await;
+        assert_eq!(
+            http.headers.get("content-type").map(String::as_str),
+            Some("application/scim+json")
+        );
+        assert!(!http.headers.contains_key("x-better-auth-scim-response"));
+        assert_eq!(body(&http), body(&wire));
+    }
+    for endpoint in [
+        ScimPlugin::schema_endpoint("unknown")?,
+        ScimPlugin::resource_type_endpoint("unknown")?,
+    ] {
+        let error = auth
+            .dispatch_endpoint(endpoint, EndpointOptions::default())
+            .await
+            .unwrap_err();
+        assert_eq!(error.error.status_code(), 404);
+        let mut response = alibi::endpoint::EndpointResponse::error(error.error);
+        if let Some(body) = error.body {
+            response = response.with_error_body(*body);
+        }
+        if let Some(headers) = error.headers {
+            response.merge_headers(headers);
+        }
+        let wire = response.to_response()?;
+        assert_eq!(
+            wire.headers.get("content-type").map(String::as_str),
+            Some("application/json")
+        );
+        assert_eq!(
+            wire.headers
+                .get("x-better-auth-scim-response")
+                .map(String::as_str),
+            Some("1")
+        );
+        assert_eq!(body(&wire)["status"], "404");
+    }
+    B::close(connection).await
 }

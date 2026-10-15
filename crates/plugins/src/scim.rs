@@ -263,7 +263,7 @@ impl ScimPlugin {
             EndpointResponse::error(AuthError::Api {status:404,code:None,message:detail.into()})
                 .with_error_body(alibi_core::utils::json::parse_value(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"404","detail":detail}).to_string())?)
         };
-        Ok(response.with_header("content-type", "application/scim+json"))
+        Ok(response.with_header("x-better-auth-scim-response", "1"))
     }
     /// Read one case-sensitive SCIM resource type through the server API.
     /// # Errors
@@ -718,7 +718,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         }
         if call.operation_id() == "getSCIMSchemas" {
             return Ok(EndpointResponse::json(&Self::schemas(ctx)?)?
-                .with_header("content-type", "application/scim+json"));
+                .with_header("x-better-auth-scim-response", "1"));
         }
         if call.operation_id() == "getSCIMResourceType" {
             return Self::resource_type(
@@ -733,7 +733,7 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         } else {
             Self::service_provider_config(ctx)
         };
-        Ok(EndpointResponse::json(&value)?.with_header("content-type", "application/scim+json"))
+        Ok(EndpointResponse::json(&value)?.with_header("x-better-auth-scim-response", "1"))
     }
     async fn on_request(
         &self,
@@ -965,12 +965,15 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/Schemas/")
         {
-            return Ok(Some(Self::schema(ctx, id)?.to_response()?));
+            return Ok(Some(resources::to_http_response(&Self::schema(ctx, id)?)?));
         }
         if req.method() == &HttpMethod::Get
             && let Some(id) = req.path().strip_prefix("/scim/v2/ResourceTypes/")
         {
-            return Ok(Some(Self::resource_type(ctx, Some(id))?.to_response()?));
+            return Ok(Some(resources::to_http_response(&Self::resource_type(
+                ctx,
+                Some(id),
+            )?)?));
         }
         if req.method() != &HttpMethod::Get
             || !matches!(
