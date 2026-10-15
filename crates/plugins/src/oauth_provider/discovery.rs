@@ -35,11 +35,31 @@ pub(super) async fn resolve<S: AuthSchema>(
     ctx: &AuthContext<S>,
     client_id: &str,
 ) -> AuthResult<Option<OAuthClient>> {
-    let existing = ctx.database.get_oauth_client(client_id).await?;
     let discoveries = ctx.extensions.get::<ClientDiscoveries>();
     let configured = discoveries
         .as_ref()
         .map_or(&[][..], |sources| sources.0.as_slice());
+    resolve_configured(ctx, client_id, configured).await
+}
+
+impl super::OAuthProviderPlugin {
+    /// Resolve the raw client for a trusted server caller, including stored credentials.
+    /// Equivalent to `getOAuthProviderApi(...).getClient`; callers authorize access.
+    pub async fn get_client<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        client_id: &str,
+    ) -> AuthResult<Option<OAuthClient>> {
+        resolve_configured(ctx, client_id, &self.config.client_discoveries).await
+    }
+}
+
+async fn resolve_configured<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    client_id: &str,
+    configured: &[Arc<dyn OAuthClientDiscovery>],
+) -> AuthResult<Option<OAuthClient>> {
+    let existing = ctx.database.get_oauth_client(client_id).await?;
     if let Some(owner) = existing
         .as_ref()
         .and_then(|client| client.metadata.get("client_discovery_id"))

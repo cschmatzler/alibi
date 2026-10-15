@@ -303,6 +303,11 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="provider-client" {
+                let cfg=OAuthProviderConfig{client_discoveries:if input["discover"]==true{[true,false].into_iter().map(|first|Arc::new(RegistryDiscovery{first,state:registry_state.clone()}) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect()}else{Vec::new()},..Default::default()};
+                let client=OAuthProviderPlugin::with_config(cfg).get_client(auth.context(),input["clientId"].as_str().unwrap()).await.unwrap();
+                return axum::Json(client.map(|client|serde_json::json!({"client_id":client.client_id,"client_name":client.metadata.get("client_name"),"discovery_id":client.metadata.get("client_discovery_id"),"user_id":client.user_id,"client_secret":client.client_secret}))).into_response();
+            }
             if input["action"]=="secret-cipher-validation" {
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{client_secret_cipher:Some(Arc::new(CustomSecretCipher)),..Default::default()})).build().await;
                 return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();

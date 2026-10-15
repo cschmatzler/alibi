@@ -1,6 +1,6 @@
 import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
 import {createHash} from "node:crypto";
-import { consumeClientAssertion, oauthProvider } from "@better-auth/oauth-provider";
+import { consumeClientAssertion, getOAuthProviderApi, oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, username } from "better-auth/plugins";
@@ -50,6 +50,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"registry-live",name:"Registry client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"none",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],disabled:false,createdAt:new Date(),updatedAt:new Date()}});
     }},
   ];
+  const providerClientHelper={id:"provider-client-helper",endpoints:{providerResolveClient:createAuthEndpoint("/fixture/provider-client",{method:"POST",body:z.object({clientId:z.string(),discover:z.boolean()})},async(ctx)=>{
+    const client=await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.discover?{extensions:[{clientDiscovery:registryDiscoveries}]}:{})}).getClient(ctx.body.clientId);
+    return ctx.json(client?{client_id:client.clientId,client_name:client.name??null,discovery_id:client.clientDiscoveryId??null,user_id:client.userId??null,client_secret:client.clientSecret??null}:null);
+  })}};
   const assertionHelper = {
     id: "assertion-helper-fixture",
     endpoints: {
@@ -68,7 +72,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" })],
+    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -234,6 +238,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if(input.action==="provider-client")return auth.api.providerResolveClient({body:{clientId:input.clientId,discover:input.discover},asResponse:true});
     if(input.action==="secret-cipher-validation") {
       try {oauthProvider({loginPage:"/login",consentPage:"/consent",storeClientSecret:customCipher});
         return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
