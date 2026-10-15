@@ -9,12 +9,14 @@ use sha2::Digest as _;
 backend_tests!(
     oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
     oauth_sender_confirmation_survives_validation_and_introspection,
-    oauth_jwt_introspection_uses_live_resource_peer_authority
+    oauth_jwt_introspection_uses_live_resource_peer_authority,
+    oauth_requested_userinfo_claims_follow_opaque_refresh_authority
 );
 postgres_tests!(
     oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
     oauth_sender_confirmation_survives_validation_and_introspection,
-    oauth_jwt_introspection_uses_live_resource_peer_authority
+    oauth_jwt_introspection_uses_live_resource_peer_authority,
+    oauth_requested_userinfo_claims_follow_opaque_refresh_authority
 );
 async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B: Backend>(
     db: Db,
@@ -409,6 +411,109 @@ async fn oauth_jwt_introspection_uses_live_resource_peer_authority<B: Backend>(
     assert_eq!(unlinked.status, 200);
     let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[1]["client_id"],"client_secret":clients[1]["client_secret"],"token":token}))?,EndpointOptions::default())).await?.into_response()?;
     assert_eq!(body(&response), json!({"active":false}));
+    Ok(())
+}
+async fn oauth_requested_userinfo_claims_follow_opaque_refresh_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::ServerEndpoint;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = OAuthProviderPlugin::new();
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "requested-info@example.test").await;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Requested claims","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid offline_access","token_endpoint_auth_method":"none","grant_types":["authorization_code"]}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let client = provider
+        .get_client(
+            auth.context(),
+            body(&created)["client_id"].as_str().unwrap(),
+        )
+        .await?
+        .unwrap();
+    let user = auth
+        .store()
+        .get_user_by_id(client.user_id.as_deref().unwrap())
+        .await?
+        .unwrap();
+    let user_id = client.user_id.clone().unwrap();
+    let mut params =
+        OAuthTokenIssueParams::new(client, vec!["openid".into(), "offline_access".into()]);
+    params.user = Some(auth.context().trusted_user_view(&user));
+    params.requested_user_info_claims = Some(vec!["email".into()]);
+    let call = EndpointCall::new(
+        &EndpointDefinition {
+            name: "issueTokensFixture",
+            operation_id: "issueTokensFixture",
+            path: Some("/fixture/issue-tokens".into()),
+            method: alibi::HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    let mut issued = provider
+        .issue_tokens(auth.context(), &call, Some("urn:fixture:claims"), &params)
+        .await?;
+    for stage in ["seed", "inherited", "cleared", "jwt"] {
+        if stage == "jwt" {
+            params.refresh_token = None;
+            params.requested_user_info_claims = Some(vec!["email".into()]);
+            params.resources = Some(vec![format!(
+                "{}{}/oauth2/userinfo",
+                auth.config().base_url.trim_end_matches('/'),
+                auth.config().base_path
+            )]);
+            issued = provider
+                .issue_tokens(auth.context(), &call, Some("urn:fixture:claims"), &params)
+                .await?;
+        }
+        let response = Box::pin(
+            auth.dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_user_info_endpoint(),
+                EndpointOptions {
+                    headers: Some(
+                        [(
+                            "authorization".into(),
+                            format!("Bearer {}", issued["access_token"].as_str().unwrap()),
+                        )]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await?
+        .into_response()?;
+        assert_eq!(response.status, 200);
+        let expected = if matches!(stage, "seed" | "inherited") {
+            json!({"sub":user_id,"email":"requested-info@example.test"})
+        } else {
+            json!({"sub":user_id})
+        };
+        assert_eq!(body(&response), expected);
+        if stage == "seed" || stage == "inherited" {
+            let hash = provider
+                .hash_token(issued["refresh_token"].as_str().unwrap(), "refresh_token")
+                .await?;
+            params.refresh_token = auth
+                .store()
+                .get_oauth_token(OAuthTokenKind::Refresh, &hash)
+                .await?;
+            params.requested_user_info_claims = if stage == "seed" {
+                None
+            } else {
+                Some(Vec::new())
+            };
+            issued = provider
+                .issue_tokens(auth.context(), &call, Some("urn:fixture:claims"), &params)
+                .await?;
+        }
+    }
     Ok(())
 }
 async fn verified_claims<S: alibi::AuthSchema>(

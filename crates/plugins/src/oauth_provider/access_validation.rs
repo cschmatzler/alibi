@@ -5,6 +5,19 @@ use alibi_core::store::OAuthTokenKind;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession};
 use serde_json::{Value, json};
 
+#[derive(Debug)]
+pub(super) struct AccessTokenValidation {
+    pub payload: Value,
+    pub requested_user_info_claims: Vec<String>,
+}
+impl From<Value> for AccessTokenValidation {
+    fn from(payload: Value) -> Self {
+        Self {
+            payload,
+            requested_user_info_claims: Vec::new(),
+        }
+    }
+}
 impl OAuthProviderPlugin {
     /// Validate access authority and return its RFC 7662 payload.
     /// Unknown tokens are errors; recognized but inactive authority returns `active: false`.
@@ -14,6 +27,17 @@ impl OAuthProviderPlugin {
         token: &str,
         client_id: Option<&str>,
     ) -> Result<Value, EndpointError> {
+        Ok(self
+            .resolve_access_token_validation(ctx, token, client_id)
+            .await?
+            .payload)
+    }
+    async fn resolve_access_token_validation<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        token: &str,
+        client_id: Option<&str>,
+    ) -> Result<AccessTokenValidation, EndpointError> {
         if !self.config.disable_jwt_plugin
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
             && let Some(mut claims) = jwt
@@ -29,7 +53,7 @@ impl OAuthProviderPlugin {
             }
             for field in ["exp", "nbf", "iat"] {
                 if claims.get(field).is_some_and(|value| !value.is_number()) {
-                    return Ok(json!({"active":false}));
+                    return Ok(json!({"active":false}).into());
                 }
             }
             if claims
@@ -44,13 +68,13 @@ impl OAuthProviderPlugin {
                 .and_then(Value::as_f64)
                 .is_some_and(|exp| exp <= now)
             {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             }
             let Some(resources) = audience_values(claims.get("aud")) else {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             };
             if !audiences_allowed(ctx, &resources).await? {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             }
             let Some(issuing_id) = claims
                 .get("azp")
@@ -58,15 +82,15 @@ impl OAuthProviderPlugin {
                 .filter(|id| !id.is_empty())
                 .map(str::to_owned)
             else {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             };
             let Some(client) = self.get_client(ctx, &issuing_id).await? else {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             };
             if client.metadata.get("disabled") == Some(&Value::Bool(true))
                 || !authorized(ctx, client_id, &issuing_id, &resources).await?
             {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             }
             if let Some(sid) = claims.get("sid").and_then(Value::as_str)
                 && ctx
@@ -75,7 +99,7 @@ impl OAuthProviderPlugin {
                     .await?
                     .is_none_or(|session| session.expires_at() < chrono::Utc::now())
             {
-                return Ok(json!({"active":false}));
+                return Ok(json!({"active":false}).into());
             }
             _ = claims.insert("client_id".into(), json!(issuing_id));
             _ = claims.insert("active".into(), json!(true));
@@ -92,7 +116,7 @@ impl OAuthProviderPlugin {
                     "Bearer"
                 }),
             );
-            return Ok(Value::Object(claims));
+            return Ok(Value::Object(claims).into());
         }
         if !self.config.disable_jwt_plugin && compact_jwt(token) {
             return Err(AuthError::internal("JWT verification failed").into());
@@ -106,7 +130,7 @@ impl OAuthProviderPlugin {
             return Err(invalid_access_token());
         };
         let Some(row) = super::userinfo::live_access_row(row, ctx, self).await? else {
-            return Ok(json!({"active":false}));
+            return Ok(json!({"active":false}).into());
         };
         let resources = row
             .metadata
@@ -123,7 +147,7 @@ impl OAuthProviderPlugin {
         if !audiences_allowed(ctx, &resources).await?
             || !authorized(ctx, client_id, &row.client_id, &resources).await?
         {
-            return Ok(json!({"active":false}));
+            return Ok(json!({"active":false}).into());
         }
         let scopes = row
             .metadata
@@ -167,7 +191,22 @@ impl OAuthProviderPlugin {
                 },
             );
         }
-        Ok(Value::Object(payload))
+        let requested_user_info_claims = row
+            .metadata
+            .get("requestedUserInfoClaims")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(AccessTokenValidation {
+            payload: Value::Object(payload),
+            requested_user_info_claims,
+        })
     }
     /// Require recognized and active authority, preserving the reference Bearer challenge.
     pub async fn require_active_access_token<S: AuthSchema>(
@@ -176,9 +215,22 @@ impl OAuthProviderPlugin {
         token: &str,
         client_id: Option<&str>,
     ) -> Result<Value, EndpointError> {
-        let payload = self.validate_access_token(ctx, token, client_id).await?;
-        if payload.get("active") == Some(&Value::Bool(true)) {
-            Ok(payload)
+        Ok(self
+            .require_active_access_token_with_claims(ctx, token, client_id)
+            .await?
+            .payload)
+    }
+    pub(super) async fn require_active_access_token_with_claims<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        token: &str,
+        client_id: Option<&str>,
+    ) -> Result<AccessTokenValidation, EndpointError> {
+        let validation = self
+            .resolve_access_token_validation(ctx, token, client_id)
+            .await?;
+        if validation.payload.get("active") == Some(&Value::Bool(true)) {
+            Ok(validation)
         } else {
             Err(invalid_access_token())
         }
