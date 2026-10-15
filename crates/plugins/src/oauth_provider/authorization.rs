@@ -246,6 +246,23 @@ impl OAuthProviderPlugin {
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
         }
+        if let Some(claims) = query.get("claims") {
+            if !requested.contains(&"openid") {
+                return admission_error(
+                    "invalid_request",
+                    "openid scope must be requested when using the claims parameter",
+                );
+            }
+            let Some(claims) = super::claims_request::parse(claims) else {
+                return admission_error(
+                    "invalid_request",
+                    "claims must be a valid Claims request object",
+                );
+            };
+            if !claims.acr_satisfied {
+                return admission_error("access_denied", "essential acr requirement cannot be met");
+            }
+        }
         if query
             .get("resource")
             .is_some_and(|value| !value.is_string() && !value.is_array())

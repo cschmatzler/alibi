@@ -221,6 +221,21 @@ impl OAuthProviderPlugin {
         );
         params.user = Some(ctx.trusted_user_view(&user));
         params.verification_value = Some(value.clone());
+        let supported = self.supported_claims();
+        params.requested_user_info_claims = Some(
+            query
+                .get("claims")
+                .and_then(super::claims_request::parse)
+                .map(|request| {
+                    request
+                        .user_info
+                        .into_iter()
+                        .filter(|name| supported.contains(name))
+                        .collect()
+                })
+                .unwrap_or_default(),
+        );
+
         params.session_id = Some(session_id.into());
         params.authorization_code_id = Some(identifier);
         params.auth_time = value

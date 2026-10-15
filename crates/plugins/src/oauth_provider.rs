@@ -5,6 +5,7 @@ mod authentication;
 pub use client_secret::{OAuthClientSecretCipher, OAuthClientSecretHasher};
 mod assertion;
 mod authorization;
+mod claims_request;
 mod client_jwks;
 mod client_secret;
 mod clients;
@@ -254,24 +255,7 @@ impl OAuthProviderPlugin {
             );
         }
         if self.config.scopes.iter().any(|scope| scope == "openid") {
-            let mut claims = ["sub", "iss", "aud", "exp", "iat", "sid", "scope", "azp"]
-                .map(str::to_owned)
-                .to_vec();
-            for (scope, names) in [
-                (
-                    "profile",
-                    vec!["name", "picture", "given_name", "family_name"],
-                ),
-                ("email", vec!["email", "email_verified"]),
-            ] {
-                if self.config.scopes.iter().any(|value| value == scope) {
-                    claims.extend(names.into_iter().map(str::to_owned));
-                }
-            }
-            _ = output.insert(
-                "claims_supported".into(),
-                json!(self.config.advertised_claims.as_ref().unwrap_or(&claims)),
-            );
+            _ = output.insert("claims_supported".into(), json!(self.supported_claims()));
             _ = output.insert("claims_parameter_supported".into(), json!(true));
             _ = output.insert(
                 "userinfo_endpoint".into(),
