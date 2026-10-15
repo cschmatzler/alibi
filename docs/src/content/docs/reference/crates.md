@@ -19,4 +19,4 @@ Depend on **one** library crate, `alibi`. It re-exports the complete public API 
 
 Install the CLI as a separate tool using the same release version as your application; see the [CLI reference](/reference/cli/).
 
-The workspace release is `0.8.0`. The library and supporting crates are published on crates.io.
+The workspace release is `0.9.0`. The library and supporting crates are published on crates.io.

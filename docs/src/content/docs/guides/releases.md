@@ -19,7 +19,7 @@ For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Be
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The current release is **Alibi `0.8.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
+The current release is **Alibi `0.9.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
 
 ## Compatibility rules
 
