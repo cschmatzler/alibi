@@ -3057,6 +3057,16 @@ function controlRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 async function oneTimeTokenControl(request: Request, url: URL): Promise<Response | undefined> {
+  if (url.pathname === "/__test/server-api/one-time-token" && request.method === "POST") {
+    const input = (await readJson(request)) as any;
+    const auth = ottProfiles.get(input.profile as (typeof OTT_PROFILE_NAMES)[number])?.auth;
+    if (!auth) {
+      return new Response(null, { status: 404 });
+    }
+    return input.action === "verify"
+      ? auth.api.verifyOneTimeToken({ body: input.body, asResponse: true })
+      : auth.api.signUpEmail({ body: input.body, asResponse: true });
+  }
   if (url.pathname !== "/__test/one-time-token" || request.method !== "POST") {
     return;
   }

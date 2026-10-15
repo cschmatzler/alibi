@@ -322,6 +322,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             AuthRoute::post("/one-time-token/verify", "verify_one_time_token"),
         ]
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }
@@ -374,29 +377,63 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
                     ctx,
                 )
                 .await?;
-            let mut expose = response
-                .headers
-                .get("access-control-expose-headers")
-                .into_iter()
-                .flat_map(|value| value.split(','))
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .fold(Vec::<String>::new(), |mut headers, value| {
-                    if !headers.iter().any(|header| header == value) {
-                        headers.push(value.to_owned());
-                    }
-                    headers
-                });
-            if !expose.iter().any(|header| header == "set-ott") {
-                expose.push("set-ott".to_owned());
-            }
+            let expose = exposed_headers(&response.headers);
             _ = response.headers.insert("set-ott", token);
             _ = response
                 .headers
-                .insert("access-control-expose-headers", expose.join(", "));
+                .insert("access-control-expose-headers", expose);
         }
         Ok(response)
     }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OneTimeTokenPlugin {
+    fn matches_after(
+        &self,
+        _call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+        _response: &alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(self.config.set_ott_header_on_new_session)
+    }
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if let Some((user, session)) =
+            alibi_core::session::cookie_cache::runtime::published_session(call)
+        {
+            let token = self
+                .generate_for_session(&OneTimeTokenSession { session, user }, call.request(), ctx)
+                .await?;
+            let expose = exposed_headers(response.headers());
+            response = response
+                .with_header("set-ott", token)
+                .with_header("access-control-expose-headers", expose);
+        }
+        Ok(response)
+    }
+}
+fn exposed_headers(headers: &alibi_core::Headers) -> String {
+    let mut exposed = headers
+        .get("access-control-expose-headers")
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .fold(Vec::<String>::new(), |mut headers, value| {
+            if !headers.iter().any(|header| header == value) {
+                headers.push(value.to_owned());
+            }
+            headers
+        });
+    if !exposed.iter().any(|header| header == "set-ott") {
+        exposed.push("set-ott".into());
+    }
+    exposed.join(", ")
 }
 
 fn message_response(status: u16, message: &str) -> AuthResult<AuthResponse> {
