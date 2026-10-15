@@ -5,6 +5,19 @@ import { jwt, username } from "better-auth/plugins";
 import { createAuthEndpoint } from "better-auth/api";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
+  const registryState={mode:"live",events:[] as string[]};
+  const registryDiscoveries=[
+    {id:"registry-first",matches:(id:string)=>{registryState.events.push("first:matches");return id.startsWith("registry-");},resolve:async()=>{registryState.events.push("first:resolve");return null;}},
+    {id:"registry-live",matches:(id:string)=>{registryState.events.push("live:matches");return registryState.mode!=="mismatch" && id.startsWith("registry-");},resolve:async(ctx:any,id:string,existing:any)=>{
+      registryState.events.push(`live:resolve:${existing?"existing":"new"}`);
+      if(registryState.mode==="reject") return null;
+      if(existing) {
+        if(registryState.mode==="refresh") return ctx.context.adapter.update({model:"oauthClient",where:[{field:"clientId",value:id}],update:{name:"Updated registry",updatedAt:new Date()}});
+        return existing;
+      }
+      return ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"registry-live",name:"Registry client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"none",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],disabled:false,createdAt:new Date(),updatedAt:new Date()}});
+    }},
+  ];
   const assertionHelper = {
     id: "assertion-helper-fixture",
     endpoints: {
@@ -33,6 +46,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    discovered: betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"registry-managed",extensions:[{clientDiscovery:registryDiscoveries}]})]}),
     "assertion-helper": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
     "assertion-helper-peer": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
     "assertion-short": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:30})]}),
@@ -171,6 +185,25 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "discovery-validation") {
+      try {
+        oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:input.ids.map((id:string)=>({id,matches:()=>false,resolve:async()=>null}))}]});
+        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
+      }catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+    }
+    if (input.action === "discovery-state") {
+      registryState.mode=input.state;
+      registryState.events.length=0;
+      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    }
+    if (input.action === "discovery-events") {
+      return new Response(JSON.stringify(registryState.events),{headers:{"content-type":"application/json"}});
+    }
+    if (input.action === "discovery-row") {
+      const context=await auth.$context;
+      const row=await context.adapter.findOne<any>({model:"oauthClient",where:[{field:"clientId",value:input.clientId}]});
+      return new Response(JSON.stringify(row?{clientId:row.clientId,clientDiscoveryId:row.clientDiscoveryId??null,name:row.name}:null),{headers:{"content-type":"application/json"}});
+    }
     if (input.action === "consume-assertion") {
       return (auth.api as any).consumeAssertionFixture({body:input.params,asResponse:true});
     }

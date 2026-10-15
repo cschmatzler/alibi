@@ -383,7 +383,7 @@ impl OAuthProviderPlugin {
             Ok(row) => row,
             Err(response) => return Ok(response),
         };
-        let Some(client) = ctx.database.get_oauth_client(&row.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &row.client_id).await? else {
             return super::clients::status_protocol_error(404, "not_found", "client not found");
         };
         let allowed = client

@@ -86,7 +86,7 @@ impl OAuthProviderPlugin {
                 )?,
             );
         }
-        let client = ctx.database.get_oauth_client(&client_id).await?;
+        let client = super::discovery::resolve(ctx, &client_id).await?;
         let trusted = client.as_ref().is_some_and(|client| {
             client.metadata.get("disabled") != Some(&json!(true))
                 && registered_redirect(&client.metadata, &redirect_uri)

@@ -70,7 +70,7 @@ impl OAuthProviderPlugin {
                 })
             });
         let client = if let Some(id) = client_id {
-            ctx.database.get_oauth_client(id).await?
+            super::discovery::resolve(ctx, id).await?
         } else {
             None
         };
@@ -451,7 +451,7 @@ impl OAuthProviderPlugin {
                 state.get("postLogoutRedirectUri").and_then(Value::as_str),
             )
         {
-            let client = ctx.database.get_oauth_client(id).await?;
+            let client = super::discovery::resolve(ctx, id).await?;
             if client.is_some_and(|client| {
                 client.metadata.get("disabled") != Some(&Value::Bool(true))
                     && client.metadata.get("enable_end_session") == Some(&Value::Bool(true))

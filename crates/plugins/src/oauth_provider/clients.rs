@@ -557,7 +557,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 404,
                 code: None,
@@ -600,7 +600,7 @@ impl OAuthProviderPlugin {
         client_id: &str,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let client = ctx.database.get_oauth_client(client_id).await?;
+        let client = super::discovery::resolve(ctx, client_id).await?;
 
         let Some(client) =
             client.filter(|client| client.metadata.get("disabled") != Some(&json!(true)))
@@ -687,7 +687,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 404,
                 code: None,
@@ -736,7 +736,7 @@ impl OAuthProviderPlugin {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };
         if client.user_id.as_deref() != Some(user.id().as_ref()) {
@@ -1068,7 +1068,7 @@ impl OAuthProviderPlugin {
                 .await?
                 .0
         };
-        let Some(client) = ctx.database.get_oauth_client(&input.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };
         if client.user_id.as_deref() != Some(user.id().as_ref()) {
