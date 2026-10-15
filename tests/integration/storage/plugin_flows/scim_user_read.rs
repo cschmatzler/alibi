@@ -4,7 +4,7 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 backend_tests!(scim_user_read_reconstructs_and_projects_validated_attributes);
 postgres_tests!(scim_user_read_reconstructs_and_projects_validated_attributes);
-async fn read<S: AuthSchema>(
+pub(super) async fn read<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     query: &Value,
