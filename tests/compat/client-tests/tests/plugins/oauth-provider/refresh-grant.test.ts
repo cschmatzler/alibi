@@ -179,6 +179,18 @@ for (const [explicitRefresh, customHash, serverValidation] of [
             false,
           ]);
         }
+        const withoutKid = await control({
+          action: "sign-access",
+          omitKid: true,
+          body: { iss: issuer, aud: audience, azp: id, sub: "owner", iat: now, exp: now + 60 },
+        });
+        expect(withoutKid.status).toBe(200);
+        const noKidToken = ((await withoutKid.json()) as any).token as string;
+        cases.push(["without-kid", noKidToken, undefined, true, false]);
+        const invalidParts = noKidToken.split(".");
+        invalidParts[2] =
+          (invalidParts[2]!.startsWith("A") ? "B" : "A") + invalidParts[2]!.slice(1);
+        cases.push(["bad-signature-without-kid", invalidParts.join("."), undefined, false, false]);
         const signed = cases.find(([name]) => name === "jwt")![1];
         const parts = signed.split(".");
         parts[2] = (parts[2]!.startsWith("A") ? "B" : "A") + parts[2]!.slice(1);
@@ -189,7 +201,7 @@ for (const [explicitRefresh, customHash, serverValidation] of [
               action: "validate-access",
               body: { token: value, clientId, requireActive },
             });
-            if (["issuer", "future", "bad-signature"].includes(name)) {
+            if (["issuer", "future", "bad-signature", "bad-signature-without-kid"].includes(name)) {
               expect(response.status).toBe(200);
               expect(await response.json()).toEqual({ ordinary_error: true });
             } else if (missing || (requireActive && !active)) {
