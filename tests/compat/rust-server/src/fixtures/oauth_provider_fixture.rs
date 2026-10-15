@@ -103,9 +103,16 @@ pub(crate) async fn router(
         "generated-id",
         "empty-id",
         "basic-special",
+        "assertion-short",
+        "assertion-zero",
+        "assertion-negative",
+        "assertion-nan",
+        "assertion-infinite",
+        "assertion-negative-infinite",
     ] {
         let provider = OAuthProviderConfig {
             client_id_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
+            assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
             disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
             client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator") {

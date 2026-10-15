@@ -19,6 +19,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "assertion-short": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:30})]}),
+    "assertion-zero": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:0})]}),
+    "assertion-negative": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:-1})]}),
+    "assertion-nan": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:NaN})]}),
+    "assertion-infinite": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:Infinity})]}),
+    "assertion-negative-infinite": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:-Infinity})]}),
     "basic-special": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"client +/é:fixed",generateClientSecret:()=>"secret +/é:tail"})]}),
     "generated-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>`operator-client-${++generatedClientIds}`})]}),
     "empty-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>""})]}),
