@@ -79,7 +79,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const scopePolicy=(name:string)=>({email:name==="numeric"?1:name==="zero"?0:name==="date"?new Date(0):name==="relative"?"45s":"2h",...(name==="relative"?{profile:"90s"}:{})});
   const expiryPolicy={accessTokenExpiresIn:120,m2mAccessTokenExpiresIn:30,idTokenExpiresIn:600,refreshTokenExpiresIn:900};
   const issuanceHelper={id:"issuance-helper",endpoints:{issueTokensFixture:createAuthEndpoint("/fixture/issue-tokens",{method:"POST",body:z.record(z.string(),z.unknown())},async(ctx:any)=>{
-    const api=getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.expiryProfile?expiryPolicy:{}),...(ctx.body.scopePolicy?{scopeExpirations:scopePolicy(ctx.body.scopePolicy)}:{})},ctx.body.grantType);
+    const api=getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.expiryProfile?expiryPolicy:{}),...(ctx.body.scopePolicy?{scopeExpirations:scopePolicy(ctx.body.scopePolicy)}:{}),...(ctx.body.dpop?{dpop:ctx.body.dpop}:{})},ctx.body.grantType);
     const client=await api.getClient(ctx.body.clientId);
     const user=ctx.body.userId?await ctx.context.internalAdapter.findUserById(ctx.body.userId):undefined;
     const params={...ctx.body.params,...(ctx.body.params.authTime?{authTime:new Date(ctx.body.params.authTime)}:{})};
@@ -593,7 +593,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       });
     }
     if(input.action==="dpop-proof") return (auth.api as any).dpopFixture({body:input.body,asResponse:true});
-    if(input.action==="issue-tokens") return (auth.api as any).issueTokensFixture({body:input.body,asResponse:true});
+    if(input.action==="issue-tokens") return (auth.api as any).issueTokensFixture({body:input.body,headers:input.headers?new Headers(input.headers):undefined,asResponse:true});
     if(input.action==="validate-access") {
       return (auth.api as any).validateAccessFixture({body:input.body,asResponse:true});
     }

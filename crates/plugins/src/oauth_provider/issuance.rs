@@ -27,6 +27,8 @@ pub struct OAuthTokenIssueParams {
     pub id_token_claims: Option<Value>,
     pub token_response: Option<Value>,
     pub confirmation: Option<Value>,
+    /// Captured authorization data, including `query.dpop_jkt`.
+    pub verification_value: Option<Value>,
     pub(crate) authorization_code_id: Option<String>,
 }
 impl OAuthTokenIssueParams {
@@ -47,6 +49,7 @@ impl OAuthTokenIssueParams {
             id_token_claims: None,
             token_response: None,
             confirmation: None,
+            verification_value: None,
             authorization_code_id: None,
         }
     }
@@ -388,26 +391,12 @@ impl OAuthProviderPlugin {
                 .and_then(|row| row.metadata.get("scopes"))
                 .and_then(Value::as_array)
                 .is_some_and(|scopes| scopes.iter().any(|scope| scope == "offline_access"));
-        if p.confirmation.as_ref().is_none_or(Value::is_null)
-            && p.refresh_token
-                .as_ref()
-                .and_then(|row| row.metadata.get("confirmation"))
-                .and_then(|value| value.get("jkt"))
-                .and_then(Value::as_str)
-                .is_some_and(|value| !value.is_empty())
-        {
-            return Err(super::resource_policy::failure(
-                "invalid_dpop_proof",
-                "DPoP proof header is required",
-            ));
-        }
         let mut resolved = p.clone();
         resolved.scopes = admission.scopes.clone();
-        resolved.confirmation = p
-            .confirmation
-            .as_ref()
-            .filter(|value| !value.is_null())
-            .cloned();
+        resolved.confirmation = match p.confirmation.as_ref().filter(|value| !value.is_null()) {
+            Some(confirmation) => Some(confirmation.clone()),
+            None => self.resolve_dpop_binding(ctx, req, p, &admission).await?,
+        };
         if resolved.requested_user_info_claims.is_none() {
             resolved.requested_user_info_claims = p
                 .refresh_token

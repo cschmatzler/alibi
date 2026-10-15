@@ -6,6 +6,7 @@ use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 
 pub(super) struct ResourceAdmission {
+    pub dpop_required: bool,
     pub scopes: Vec<String>,
     pub audiences: Vec<String>,
     pub access_ttl: Option<f64>,
@@ -86,6 +87,7 @@ impl OAuthProviderPlugin {
             .collect::<Vec<_>>();
         if audiences.is_empty() {
             return Ok(ResourceAdmission {
+                dpop_required: false,
                 scopes,
                 audiences,
                 access_ttl: None,
@@ -202,6 +204,9 @@ impl OAuthProviderPlugin {
             audiences.push(userinfo);
         }
         Ok(ResourceAdmission {
+            dpop_required: rows.iter().any(|row| {
+                row.metadata.get("dpopBoundAccessTokensRequired") == Some(&Value::Bool(true))
+            }),
             scopes,
             audiences,
             access_ttl,

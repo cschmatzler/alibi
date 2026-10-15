@@ -12,6 +12,7 @@ mod consent;
 mod continuation;
 mod credentials;
 mod discovery;
+mod dpop;
 mod id_token;
 mod issuance;
 pub use issuance::OAuthTokenIssueParams;
@@ -107,6 +108,7 @@ pub struct OAuthProviderConfig {
     pub disable_jwt_plugin: bool,
     pub pairwise_secret: Option<String>,
     pub dpop_signing_algorithms: Option<Vec<String>>,
+    pub dpop_proof_max_age_seconds: Option<f64>,
 }
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
@@ -146,6 +148,7 @@ impl Default for OAuthProviderConfig {
             disable_jwt_plugin: false,
             pairwise_secret: None,
             dpop_signing_algorithms: None,
+            dpop_proof_max_age_seconds: None,
         }
     }
 }

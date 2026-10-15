@@ -220,6 +220,7 @@ impl OAuthProviderPlugin {
             scope.split(' ').map(str::to_owned).collect(),
         );
         params.user = Some(ctx.trusted_user_view(&user));
+        params.verification_value = Some(value.clone());
         params.session_id = Some(session_id.into());
         params.authorization_code_id = Some(identifier);
         params.auth_time = value
