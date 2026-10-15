@@ -30,7 +30,7 @@ pub(super) fn validate(body: Option<&JsValue>) -> AuthResult<JsValue> {
         let value = claims.to_json_value()?;
         if super::claims_request::parse(&value).is_none() {
             return Err(crate::endpoint::validation(
-                "[body.claims] claims must be a valid Claims request object".into(),
+                "[body.claims] claims must be a valid Claims request object",
             ));
         }
         if let JsValue::Object(object) = &mut output {
