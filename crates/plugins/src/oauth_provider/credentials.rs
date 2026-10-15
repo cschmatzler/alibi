@@ -35,7 +35,7 @@ pub(super) async fn extract<S: AuthSchema>(
     if body.get("client_assertion").is_some() || body.get("client_assertion_type").is_some() {
         return super::assertion::verify(&body, ctx, provider, endpoint).await;
     }
-    Ok(Ok(from_normalized(&body, req)))
+    from_normalized(&body, req)
 }
 
 fn normalize(body: &Value, req: &impl SessionRequest) -> Result<Value, String> {
@@ -96,7 +96,10 @@ fn normalize(body: &Value, req: &impl SessionRequest) -> Result<Value, String> {
     Ok(Value::Object(normalized))
 }
 
-fn from_normalized(body: &Value, req: &impl SessionRequest) -> Credentials {
+fn from_normalized(
+    body: &Value,
+    req: &impl SessionRequest,
+) -> AuthResult<Result<Credentials, EndpointResponse>> {
     let mut client_id = body
         .get("client_id")
         .and_then(Value::as_str)
@@ -109,31 +112,117 @@ fn from_normalized(body: &Value, req: &impl SessionRequest) -> Credentials {
         .to_owned();
     let method = if let Some(header) = req
         .physical_request()
-        .and_then(|r| r.header("authorization"))
-        && let Some(encoded) = header.strip_prefix("Basic ")
-        && let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(encoded)
-        && let Ok(decoded) = String::from_utf8(decoded)
-        && let Some((id, value)) = decoded.split_once(':')
+        .and_then(|request| request.header("authorization"))
+        .filter(|header| !header.is_empty())
     {
-        client_id = urlencoding::decode(id)
-            .unwrap_or_else(|_| id.into())
-            .into_owned();
-        secret = urlencoding::decode(value)
-            .unwrap_or_else(|_| value.into())
-            .into_owned();
-        "client_secret_basic"
+        if header
+            .get(..5)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("Basic"))
+            && header.as_bytes().get(5) == Some(&b' ')
+        {
+            let Some((id, value)) =
+                decode_basic(header.get(6..).unwrap_or_default().trim_start_matches(' '))
+            else {
+                return header_denial(
+                    401,
+                    "invalid_client",
+                    "invalid authorization header format",
+                    Some("Basic"),
+                );
+            };
+            client_id = id;
+            secret = value;
+            "client_secret_basic"
+        } else {
+            let Some(scheme) = authorization_scheme(header) else {
+                return header_denial(
+                    400,
+                    "invalid_request",
+                    "Invalid authorization header format",
+                    None,
+                );
+            };
+            return header_denial(
+                401,
+                "invalid_client",
+                "unsupported authorization scheme",
+                Some(scheme),
+            );
+        }
     } else if secret.is_empty() {
         "none"
     } else {
         "client_secret_post"
     };
-    Credentials {
-        pre_verified: false,
+    Ok(Ok(Credentials {
         client_id,
         secret,
+        pre_verified: false,
         method,
-    }
+    }))
 }
+fn header_denial(
+    status: u16,
+    code: &str,
+    description: &str,
+    scheme: Option<&str>,
+) -> AuthResult<Result<Credentials, EndpointResponse>> {
+    let response = super::clients::status_protocol_error(status, code, description)?;
+    Ok(Err(if let Some(scheme) = scheme {
+        response.with_header("WWW-Authenticate", scheme)
+    } else {
+        response
+    }))
+}
+fn authorization_scheme(header: &str) -> Option<&str> {
+    let end = header
+        .find(|c: char| !c.is_ascii_alphanumeric() && !"!#$%&'*+-.^_`|~".contains(c))
+        .unwrap_or(header.len());
+    let scheme = header.get(..end).filter(|scheme| !scheme.is_empty())?;
+    if header
+        .get(end..)?
+        .chars()
+        .next()
+        .is_some_and(|c| !c.is_whitespace() && c != '\u{feff}')
+    {
+        return None;
+    }
+    Some(scheme)
+}
+fn decode_basic(encoded: &str) -> Option<(String, String)> {
+    // Match @better-auth/utils: select the alphabet from the whole input, stop
+    // at the first padding character, and discard leftover bits without checks.
+    let alphabet = if encoded.contains('-') || encoded.contains('_') {
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    } else {
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    };
+    let mut buffer = 0_u32;
+    let mut bits = 0_u8;
+    let mut bytes = Vec::new();
+    for byte in encoded.bytes().take_while(|byte| *byte != b'=') {
+        let value = alphabet.iter().position(|candidate| *candidate == byte)?;
+        buffer = (buffer << 6) | u32::try_from(value).ok()?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            bytes.push(u8::try_from((buffer >> bits) & 255).ok()?);
+        }
+    }
+    let decoded = String::from_utf8_lossy(&bytes);
+    let decoded = decoded.strip_prefix('\u{feff}').unwrap_or(&decoded);
+    let (id, secret) = decoded.split_once(':')?;
+    if id.is_empty() || secret.is_empty() {
+        return None;
+    }
+    Some((decode_form_value(id)?, decode_form_value(secret)?))
+}
+fn decode_form_value(raw: &str) -> Option<String> {
+    url::form_urlencoded::parse(format!("v={raw}").as_bytes())
+        .next()
+        .map(|(_, value)| value.into_owned())
+}
+
 impl Credentials {
     fn denied(&self, description: &str) -> AuthResult<EndpointResponse> {
         let response = super::clients::status_protocol_error(

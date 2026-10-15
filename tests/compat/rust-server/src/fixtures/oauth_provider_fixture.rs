@@ -40,6 +40,14 @@ struct OperatorClientIds {calls:std::sync::atomic::AtomicUsize,empty:bool}
 impl alibi::plugins::OAuthClientIdGenerator for OperatorClientIds {
     fn generate(&self)->alibi::AuthResult<String> {let call=self.calls.fetch_add(1,std::sync::atomic::Ordering::SeqCst)+1;Ok(if self.empty {String::new()} else {format!("operator-client-{call}")})}
 }
+#[derive(Debug)]
+struct FormCredentials;
+impl alibi::plugins::OAuthClientIdGenerator for FormCredentials {
+    fn generate(&self)->alibi::AuthResult<String>{Ok("client +/é:fixed".into())}
+}
+impl alibi::plugins::OAuthClientSecretGenerator for FormCredentials {
+    fn generate(&self)->alibi::AuthResult<String>{Ok("secret +/é:tail".into())}
+}
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -94,12 +102,13 @@ pub(crate) async fn router(
         "encrypted-prefixed-generator",
         "generated-id",
         "empty-id",
+        "basic-special",
     ] {
         let provider = OAuthProviderConfig {
-            client_id_generator: if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
+            client_id_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
-            client_secret_generator: if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator") {
+            client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
             } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
