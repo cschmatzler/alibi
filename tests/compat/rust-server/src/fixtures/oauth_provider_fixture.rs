@@ -109,6 +109,8 @@ pub(crate) async fn router(
         "assertion-nan",
         "assertion-infinite",
         "assertion-negative-infinite",
+        "assertion-helper",
+        "assertion-helper-peer",
     ] {
         let provider = OAuthProviderConfig {
             client_id_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
@@ -159,6 +161,23 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="consume-assertion" {
+                let params=&input["params"];
+                let payload=alibi::utils::json::JsValue::from(params["payload"].clone());
+                match alibi::plugins::consume_client_assertion(auth.context(),&OAuthProviderConfig::default(),params["namespace"].as_str().unwrap(),&payload,params["expectedAudience"].as_str().unwrap()).await {
+                    Ok(())=>return axum::Json(serde_json::json!({"consumed":true})).into_response(),
+                    Err(error)=>{
+                        let mut response=alibi::endpoint::EndpointResponse::error(error.error);
+                        if let Some(body)=error.body {response=response.with_error_body(*body);}
+                        return response.to_response().unwrap().into_response();
+                    }
+                }
+            }
+            if input["action"]=="assertion-row" {
+                use alibi::seaorm::{sea_orm::EntityTrait as _,store::entities::oauth_client_assertion::Entity};
+                let row=Entity::find_by_id(input["id"].as_str().unwrap()).one(&logout_database).await.unwrap();
+                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"expiresAt":row.expires_at}))).into_response();
+            }
             if input["action"]=="resource-links" {
                 let rows=auth.store().list_oauth_client_resources(input["clientId"].as_str().unwrap()).await.unwrap().into_iter().map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"resourceId":row.resource_id,"metadata":row.metadata,"createdAt":row.created_at})).collect::<Vec<_>>();return axum::Json(rows).into_response();
             }

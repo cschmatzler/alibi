@@ -1,8 +1,8 @@
 //! RFC 7523 authentication using registered asymmetric client keys and durable replay claims.
 use super::{OAuthProviderPlugin, credentials::Credentials};
-use alibi_core::endpoint::EndpointResponse;
+use alibi_core::endpoint::{EndpointError, EndpointResponse};
 use alibi_core::utils::json::{JsValue, parse_value};
-use alibi_core::{AuthContext, AuthResult, AuthSchema};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
@@ -148,8 +148,57 @@ pub(super) async fn verify<S: AuthSchema>(
     {
         return denied(401, SIGNATURE_ERROR);
     }
-    if let Some(description) = lifetime_error(&payload, provider.config.assertion_max_lifetime) {
-        return denied(400, &description);
+    let expected_audience = audiences
+        .iter()
+        .copied()
+        .find(|aud| audience_contains(&payload, aud))
+        .unwrap_or_default();
+    if let Err(error) = consume_client_assertion(
+        ctx,
+        &provider.config,
+        &format!("private_key_jwt:{client_id}"),
+        &payload,
+        expected_audience,
+    )
+    .await
+    {
+        if let Some(body) = error.body {
+            return Ok(Err(
+                EndpointResponse::error(error.error).with_error_body(*body)
+            ));
+        }
+        return Err(error.error);
+    }
+    Ok(Ok(Credentials {
+        client_id: client_id.into(),
+        secret: String::new(),
+        method: "private_key_jwt",
+        pre_verified: true,
+    }))
+}
+/// Check assertion hygiene and atomically consume its durable replay identifier.
+///
+/// Callers must verify the signature and establish the client identity first.
+/// This helper does not authenticate a client or require a registered client row.
+/// Namespace the identifier by authentication method and client to isolate proofs.
+///
+/// # Errors
+/// Returns protocol errors for audience, lifetime, missing or reused identifiers;
+/// database failures retain their original error.
+pub async fn consume_client_assertion<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    config: &super::OAuthProviderConfig,
+    namespace: &str,
+    payload: &JsValue,
+    expected_audience: &str,
+) -> Result<(), EndpointError> {
+    if !audience_contains(payload, expected_audience) {
+        return Err(consumption_error(
+            "client assertion aud does not match the endpoint",
+        ));
+    }
+    if let Some(description) = lifetime_error(payload, config.assertion_max_lifetime) {
+        return Err(consumption_error(&description));
     }
     let exp = payload
         .get("exp")
@@ -160,29 +209,47 @@ pub(super) async fn verify<S: AuthSchema>(
         .and_then(JsValue::as_str)
         .unwrap_or_default();
     if jti.is_empty() {
-        return denied(400, "client assertion must include jti claim");
+        return Err(consumption_error("client assertion must include jti claim"));
     }
-    let digest = Sha256::digest(format!("private_key_jwt:{client_id}:{jti}"));
+    let digest = Sha256::digest(format!("{namespace}:{jti}"));
     let id = URL_SAFE_NO_PAD.encode(digest.iter().take(24).copied().collect::<Vec<_>>());
     #[expect(
         clippy::cast_possible_truncation,
         reason = "ECMAScript Date truncates fractional milliseconds"
     )]
     let expires_at = chrono::DateTime::from_timestamp_millis((exp * 1000.0).trunc() as i64)
-        .ok_or_else(|| alibi_core::AuthError::internal("Invalid assertion expiration"))?;
+        .ok_or_else(|| AuthError::internal("Invalid assertion expiration"))?;
     if !ctx
         .database
         .claim_oauth_client_assertion(&id, expires_at)
         .await?
     {
-        return denied(400, "client assertion jti has already been used");
+        return Err(consumption_error(
+            "client assertion jti has already been used",
+        ));
     }
-    Ok(Ok(Credentials {
-        client_id: client_id.into(),
-        secret: String::new(),
-        method: "private_key_jwt",
-        pre_verified: true,
-    }))
+    Ok(())
+}
+fn consumption_error(description: &str) -> EndpointError {
+    EndpointError {
+        error: AuthError::Api {
+            status: 400,
+            code: None,
+            message: String::new(),
+        },
+        headers: None,
+        body: Some(Box::new(JsValue::from(
+            serde_json::json!({"error":"invalid_client","error_description":description}),
+        ))),
+        body_absent: false,
+    }
+}
+fn audience_contains(payload: &JsValue, expected: &str) -> bool {
+    let aud = payload.get("aud");
+    aud.and_then(JsValue::as_str) == Some(expected)
+        || aud
+            .and_then(JsValue::as_array)
+            .is_some_and(|values| values.iter().any(|value| value.as_str() == Some(expected)))
 }
 fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool {
     if payload.get("iss").and_then(JsValue::as_str) != Some(client_id)
@@ -190,16 +257,7 @@ fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool 
     {
         return false;
     }
-    let aud = payload.get("aud");
-    let audience = aud
-        .and_then(JsValue::as_str)
-        .is_some_and(|aud| audiences.contains(&aud))
-        || aud.and_then(JsValue::as_array).is_some_and(|values| {
-            values
-                .iter()
-                .any(|v| v.as_str().is_some_and(|aud| audiences.contains(&aud)))
-        });
-    if !audience {
+    if !audiences.iter().any(|aud| audience_contains(payload, aud)) {
         return false;
     }
     let now = current_seconds();
