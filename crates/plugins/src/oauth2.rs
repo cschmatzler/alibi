@@ -324,6 +324,7 @@ fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool)
         "ES512" => ("EC", "ECDSA", Some("P-521")),
         "RS256" | "RS384" | "RS512" => ("RSA", "RSASSA-PKCS1-v1_5", None),
         "PS256" | "PS384" | "PS512" => ("RSA", "RSA-PSS", None),
+        "ML-DSA-44" | "ML-DSA-65" | "ML-DSA-87" => ("AKP", algorithm, None),
         _ => {
             return Err(DpopError::proof(
                 "Invalid or unsupported JWK \"alg\" (Algorithm) Parameter value",
@@ -357,6 +358,9 @@ fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool)
     {
         return Err(DpopError::proof("value must be enumeration (string)"));
     }
+    if expected == "AKP" {
+        return prepare_dpop_mldsa_key(algorithm, jwk, operations);
+    }
     let private = jwk
         .get("priv")
         .is_some_and(|v| JsValue::from(v.clone()).is_truthy());
@@ -383,6 +387,81 @@ fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool)
         _ = public.remove(field);
     }
     Ok((Value::Object(public), can_verify))
+}
+fn mldsa_private_key_matches<P: ml_dsa::MlDsaParams>(seed: &[u8], public: &[u8]) -> bool {
+    use ml_dsa::Keypair as _;
+    let Ok(seed) = ml_dsa::Seed::try_from(seed) else {
+        return false;
+    };
+    ml_dsa::SigningKey::<P>::from_seed(&seed)
+        .verifying_key()
+        .encode()
+        .as_slice()
+        == public
+}
+fn prepare_dpop_mldsa_key(
+    algorithm: &str,
+    jwk: &Value,
+    operations: Option<&Vec<Value>>,
+) -> Result<(Value, bool), DpopError> {
+    if jwk.get("alg").and_then(Value::as_str) != Some(algorithm) {
+        return Err(DpopError::proof("JWK alg and alg option value mismatch"));
+    }
+    let private = jwk.get("priv");
+    let private_truthy = private.is_some_and(|value| JsValue::from(value.clone()).is_truthy());
+    let usage = if private.is_some() { "sign" } else { "verify" };
+    let valid_usage = operations.map_or_else(
+        || if private_truthy { "sign" } else { "verify" } == usage,
+        |values| values.iter().all(|value| value.as_str() == Some(usage)),
+    );
+    if !valid_usage {
+        return Err(DpopError::proof(format!(
+            "Unsupported key usage for a {algorithm} key"
+        )));
+    }
+    let invalid = || DpopError::proof("Invalid keyData");
+    let public = jwk.get("pub").and_then(Value::as_str).ok_or_else(invalid)?;
+    let public = crate::jwt::decode_compact_part(public, false).map_err(|_| invalid())?;
+    let expected = match algorithm {
+        "ML-DSA-44" => 1312,
+        "ML-DSA-65" => 1952,
+        _ => 2592,
+    };
+    if public.len() != expected {
+        return Err(invalid());
+    }
+    if let Some(seed) = private {
+        let seed = seed.as_str().ok_or_else(invalid)?;
+        let seed = crate::jwt::decode_compact_part(seed, false).map_err(|_| invalid())?;
+        let matches = match algorithm {
+            "ML-DSA-44" => mldsa_private_key_matches::<ml_dsa::MlDsa44>(&seed, &public),
+            "ML-DSA-65" => mldsa_private_key_matches::<ml_dsa::MlDsa65>(&seed, &public),
+            _ => mldsa_private_key_matches::<ml_dsa::MlDsa87>(&seed, &public),
+        };
+        if !matches {
+            return Err(invalid());
+        }
+    }
+    Ok((
+        jwk.clone(),
+        operations.is_none_or(|values| !values.is_empty()),
+    ))
+}
+fn verify_dpop_mldsa<P: ml_dsa::MlDsaParams>(jwk: &Value, input: &[u8], signature: &[u8]) -> bool {
+    use ml_dsa::{KeyInit as _, Verifier as _};
+    let Some(encoded) = jwk.get("pub").and_then(Value::as_str) else {
+        return false;
+    };
+    let Ok(bytes) = crate::jwt::decode_compact_part(encoded, false) else {
+        return false;
+    };
+    let Ok(key) = ml_dsa::VerifyingKey::<P>::new_from_slice(&bytes) else {
+        return false;
+    };
+    let Ok(signature) = ml_dsa::Signature::<P>::try_from(signature) else {
+        return false;
+    };
+    key.verify(input, &signature).is_ok()
 }
 fn check_dpop_rsa_size(algorithm: &str, jwk: &Value) -> Result<(), DpopError> {
     if (algorithm.starts_with("RS") || algorithm.starts_with("PS"))
@@ -471,6 +550,11 @@ pub async fn verify_dpop_proof(
     );
     let signature_bytes = crate::jwt::decode_compact_part(signature, false)
         .map_err(|_| DpopError::proof("Failed to base64url decode the signature"))?;
+    if algorithm.starts_with("ML-DSA-") && public.get("priv").is_some() {
+        return Err(DpopError::proof(format!(
+            "CryptoKey instances must be of type \"public\" for the {algorithm} algorithm"
+        )));
+    }
     if !can_verify {
         return Err(DpopError::proof(
             "CryptoKey does not support this operation, its usages must include verify.",
@@ -482,7 +566,13 @@ pub async fn verify_dpop_proof(
     } else {
         crate::jwt::JwtAlgorithm::from_str(algorithm).ok()
     };
-    let valid = if let Some(algorithm) = native_algorithm {
+    let valid = if algorithm == "ML-DSA-44" {
+        verify_dpop_mldsa::<ml_dsa::MlDsa44>(&public, input.as_bytes(), &signature_bytes)
+    } else if algorithm == "ML-DSA-65" {
+        verify_dpop_mldsa::<ml_dsa::MlDsa65>(&public, input.as_bytes(), &signature_bytes)
+    } else if algorithm == "ML-DSA-87" {
+        verify_dpop_mldsa::<ml_dsa::MlDsa87>(&public, input.as_bytes(), &signature_bytes)
+    } else if let Some(algorithm) = native_algorithm {
         crate::jwt::crypto::verify(algorithm, &public, input.as_bytes(), &signature_bytes)
             .unwrap_or(false)
     } else {

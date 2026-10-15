@@ -91,6 +91,57 @@ compatScenario(
       expect(Date.parse(result.expiresAt)).toBe(2000000300000);
       results.push({ alg, htu: result.htu });
     }
+    const pq = (await Bun.file(
+      new URL("../../../../../fixtures/oauth/dpop-pq-proofs.json", import.meta.url),
+    ).json()) as { algorithm: string; proofJwt: string; jkt: string; privateSeed: string }[];
+    for (const vector of pq) {
+      const configured = {
+        ...options,
+        proofJwt: vector.proofJwt,
+        signingAlgorithms: [vector.algorithm],
+      };
+      const verified = await control(configured);
+      expect(verified.jkt).toBe(vector.jkt);
+      expect(verified.jti).toBe("pq-" + vector.algorithm);
+      expect(await control({ ...options, proofJwt: vector.proofJwt })).toEqual({
+        error: "invalid_dpop_proof",
+        message: "DPoP proof uses an unsupported JWS algorithm",
+      });
+      const parts = vector.proofJwt.split(".");
+      const signature = Buffer.from(parts[2]!, "base64url");
+      signature[0] = signature[0]! ^ 1;
+      expect(
+        await control({
+          ...configured,
+          proofJwt: parts.slice(0, 2).join(".") + "." + signature.toString("base64url"),
+        }),
+      ).toEqual({ error: "invalid_dpop_proof", message: "signature verification failed" });
+      const header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
+      for (const [extra, message] of [
+        [{ alg: "other" }, "JWK alg and alg option value mismatch"],
+        [{ pub: "AA" }, "Invalid keyData"],
+        [{ priv: "extra" }, "Invalid keyData"],
+        [{ priv: null }, `Unsupported key usage for a ${vector.algorithm} key`],
+        [
+          { priv: vector.privateSeed },
+          `CryptoKey instances must be of type "public" for the ${vector.algorithm} algorithm`,
+        ],
+        [{ key_ops: ["sign"] }, `Unsupported key usage for a ${vector.algorithm} key`],
+        [
+          { key_ops: [] },
+          "CryptoKey does not support this operation, its usages must include verify.",
+        ],
+      ] as const) {
+        const malformed =
+          Buffer.from(JSON.stringify({ ...header, jwk: { ...header.jwk, ...extra } })).toString(
+            "base64url",
+          ) + ".e30.sig";
+        expect(await control({ ...configured, proofJwt: malformed })).toEqual({
+          error: "invalid_dpop_proof",
+          message,
+        });
+      }
+    }
     const accepted = await control({
       operation: "verify",
       ...options,

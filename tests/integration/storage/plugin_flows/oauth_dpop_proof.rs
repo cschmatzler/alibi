@@ -623,3 +623,35 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
     );
     Ok(())
 }
+
+/// Independently produced WebCrypto signatures exercise FIPS-204 verification, not the Rust signer.
+#[tokio::test]
+async fn oauth_dpop_post_quantum_verifies_external_fips204_signatures() -> TestResult {
+    let vectors: Value =
+        serde_json::from_str(include_str!("../../../fixtures/oauth/dpop-pq-proofs.json"))?;
+    for vector in vectors.as_array().unwrap() {
+        let token = vector["proofJwt"].as_str().unwrap();
+        let algorithm = vector["algorithm"].as_str().unwrap();
+        let mut options =
+            VerifyDpopProofOptions::new(token, "POST", "https://api.fixture.test/resource");
+        options.now_seconds = Some(2000000000.0);
+        assert_eq!(
+            verify_dpop_proof(&options).await.unwrap_err().message,
+            "DPoP proof uses an unsupported JWS algorithm"
+        );
+        options.signing_algorithms = Some(vec![algorithm.into()]);
+        let accepted = verify_dpop_proof(&options).await?;
+        assert_eq!(accepted.jkt, vector["jkt"].as_str().unwrap());
+        let mut parts = token.split('.').map(str::to_owned).collect::<Vec<_>>();
+        let mut signature = URL_SAFE_NO_PAD.decode(&parts[2])?;
+        signature[0] ^= 1;
+        parts[2] = URL_SAFE_NO_PAD.encode(signature);
+        let tampered = parts.join(".");
+        options.proof_jwt = &tampered;
+        assert_eq!(
+            verify_dpop_proof(&options).await.unwrap_err().message,
+            "signature verification failed"
+        );
+    }
+    Ok(())
+}

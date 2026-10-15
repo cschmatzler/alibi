@@ -24,6 +24,7 @@ workspace = true
 [dependencies]
 rand_core = { version = "0.6", features = ["getrandom"] }
 signature = "3"
+ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc"] }
 alibi-core = { workspace = true }
 alibi-schema-registry = { workspace = true }
 
