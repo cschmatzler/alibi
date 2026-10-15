@@ -404,6 +404,7 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     for (path, operation) in [
+        ("/__test/server-api/phone-update-user", "updateUser"),
         ("/__test/server-api/phone-verification", "verifyPhoneNumber"),
         ("/__test/server-api/phone-sign-in", "signInPhoneNumber"),
         (
@@ -426,7 +427,10 @@ pub(super) async fn build(
                         .get(input["profile"].as_str().unwrap_or("phone-default"))
                         .unwrap();
                     let mut endpoint =
-                        alibi::endpoint::ServerEndpoint::<Value>::new("phone-number", operation);
+                        alibi::endpoint::ServerEndpoint::<Value>::new(
+                            if operation == "updateUser" { "core" } else { "phone-number" },
+                            operation,
+                        );
                     if let Some(body) = input.get("body") {
                         endpoint = endpoint.with_body(body).unwrap();
                     }

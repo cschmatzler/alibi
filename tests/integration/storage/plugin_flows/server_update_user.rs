@@ -4,7 +4,92 @@ use alibi::endpoint::{
     EndpointCall, EndpointHook, EndpointOptions, EndpointResponse, ServerEndpoint,
 };
 use alibi::{AuthContext, AuthResult, entity::AuthUser};
-backend_tests!(server_update_user_is_builtin_and_publishes_owned_profile);
+backend_tests!(
+    server_update_user_is_builtin_and_publishes_owned_profile,
+    server_phone_profile_guard_precedes_admission
+);
+postgres_tests!(server_phone_profile_guard_precedes_admission);
+
+async fn server_phone_profile_guard_precedes_admission<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .plugin(alibi::plugins::phone_number::PhoneNumberPlugin::new(
+            Default::default(),
+        ))
+        .build()
+        .await?;
+    for phone in [
+        json!(""),
+        json!(0),
+        json!(false),
+        json!([]),
+        json!({}),
+        json!("+15555555555"),
+    ] {
+        let denied = auth
+            .dispatch_endpoint(
+                update_endpoint(&json!({"phoneNumber":phone,"name":42}))?,
+                EndpointOptions {
+                    headers: Some(Default::default()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(denied.error.status_code(), 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&denied.error.to_auth_response().body)?,
+            json!({"code":"PHONE_NUMBER_CANNOT_BE_UPDATED","message":"Phone number cannot be updated"})
+        );
+    }
+    for body in [
+        None,
+        Some(json!(null)),
+        Some(json!(1)),
+        Some(json!("x")),
+        Some(json!(false)),
+        Some(json!([])),
+        Some(json!({})),
+        Some(json!({"phoneNumber":null})),
+    ] {
+        let mut endpoint = ServerEndpoint::<Value>::new("core", "updateUser");
+        if let Some(body) = &body {
+            endpoint = endpoint.with_body(body)?;
+        }
+        let denied = auth
+            .dispatch_endpoint(
+                endpoint,
+                EndpointOptions {
+                    headers: Some(Default::default()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        let expected = match &body {
+            Some(Value::Object(_)) => 401,
+            Some(Value::Array(_)) => 400,
+            _ => 500,
+        };
+        assert_eq!(denied.error.status_code(), expected, "{body:?}: {denied}");
+        if expected == 500 {
+            assert!(
+                denied
+                    .error
+                    .to_string()
+                    .contains("An error occurred during hook matcher execution")
+            );
+        }
+    }
+    assert_eq!(
+        db.tables(&["user", "session", "verification"]).await?,
+        vec!["[]".to_owned(); 3]
+    );
+    B::close(connection).await
+}
+
 #[derive(Clone, Default)]
 struct ProfileObserver(Arc<Mutex<Vec<Option<String>>>>);
 #[async_trait::async_trait]

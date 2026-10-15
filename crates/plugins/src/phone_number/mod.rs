@@ -149,6 +149,7 @@ alibi_core::impl_auth_plugin! {
     }
     extra {
     route_openapi_metadata!(S);
+        fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> { vec![self] }
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
         fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
         async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
@@ -173,6 +174,42 @@ alibi_core::impl_auth_plugin! {
             }
             Ok(None)
         }
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for PhoneNumberPlugin {
+    fn matches_before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<bool> {
+        use alibi_core::utils::json::JsValue;
+        if call.path() != Some("/update-user") {
+            return Ok(false);
+        }
+        match call.body() {
+            Some(JsValue::Object(body)) => Ok(body
+                .get("phoneNumber")
+                .is_some_and(|value| !value.is_null())),
+            Some(JsValue::Array(_) | JsValue::Date(_)) => Ok(false),
+            // The pinned JS matcher uses `"phoneNumber" in ctx.body`, which throws
+            // for missing and primitive bodies before endpoint validation.
+            _ => Err(alibi_core::AuthError::internal(
+                "Phone profile matcher requires an object",
+            )),
+        }
+    }
+    async fn before(
+        &self,
+        _: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        Err(types::phone_error(
+            400,
+            codes::PHONE_NUMBER_CANNOT_BE_UPDATED,
+            "Phone number cannot be updated",
+        ))
     }
 }
 
