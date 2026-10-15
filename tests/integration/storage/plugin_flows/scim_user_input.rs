@@ -2,8 +2,14 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
-backend_tests!(scim_user_input_reports_reference_field_errors_before_authentication);
-postgres_tests!(scim_user_input_reports_reference_field_errors_before_authentication);
+backend_tests!(
+    scim_user_input_reports_reference_field_errors_before_authentication,
+    scim_user_size_bounds_validated_input_before_authentication
+);
+postgres_tests!(
+    scim_user_input_reports_reference_field_errors_before_authentication,
+    scim_user_size_bounds_validated_input_before_authentication
+);
 async fn scim_user_input_reports_reference_field_errors_before_authentication<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -176,4 +182,110 @@ async fn scim_user_input_reports_reference_field_errors_before_authentication<B:
         assert_eq!(body(&created)[enterprise]["manager"], normalized);
     }
     Ok(())
+}
+
+async fn scim_user_size_bounds_validated_input_before_authentication<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    for size in [65534, 65535, 65536, 65000] {
+        let value = "x".repeat(1024);
+        let mut input = json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","roles":vec![json!({"value":value,"display":value});10],"entitlements":vec![json!({"value":value,"display":value});10],"addresses":vec![json!({"formatted":value,"streetAddress":value});10],"phoneNumbers":vec![json!({"value":"x".repeat(250)});10]});
+        input["phoneNumbers"][9]["value"] = json!("");
+        let length = serde_json::to_string(&input)?.encode_utf16().count();
+        input["phoneNumbers"][9]["value"] = json!("x".repeat(size - length));
+        assert_eq!(serde_json::to_string(&input)?.encode_utf16().count(), size);
+        for replace in [false, true] {
+            let endpoint = if replace {
+                ScimPlugin::replace_user_endpoint("missing")?
+            } else {
+                ScimPlugin::create_user_endpoint()
+            }
+            .with_body(&input)?;
+            let rejected = auth
+                .dispatch_endpoint(endpoint, EndpointOptions::default())
+                .await
+                .unwrap_err();
+            assert_eq!(
+                rejected.error.status_code(),
+                if size <= 65535 { 401 } else { 400 },
+                "size {size}, replace {replace}: {rejected}"
+            );
+            if size > 65535 {
+                assert_eq!(
+                    rejected
+                        .body
+                        .as_deref()
+                        .unwrap()
+                        .get("detail")
+                        .and_then(alibi::utils::json::JsValue::as_str),
+                    Some("[body] SCIM User attributes exceed the supported serialized size")
+                );
+            }
+        }
+        if size == 65535 {
+            let mut unknown = input.clone();
+            unknown["ignored"] = json!("x".repeat(70000));
+            unknown["roles"][0]["ignored"] = json!("x".repeat(70000));
+            let mut padded = input.clone();
+            padded["userName"] = json!(" owner@example.com ");
+            padded["roles"][0]["value"] = json!(format!(" {} ", "x".repeat(1024)));
+            let mut scalar = input.clone();
+            scalar["title"] = json!("bounded");
+            let delta = serde_json::to_string(&scalar)?.encode_utf16().count() - size;
+            let fill = scalar["phoneNumbers"][9]["value"].as_str().unwrap().len();
+            scalar["phoneNumbers"][9]["value"] = json!("x".repeat(fill - delta));
+            scalar["title"] = json!([" bounded "]);
+            let mut unicode = input.clone();
+            unicode["roles"][0]["value"] = json!("🦀".repeat(512));
+            for variant in [unknown, padded, scalar, unicode] {
+                for replace in [false, true] {
+                    let endpoint = if replace {
+                        ScimPlugin::replace_user_endpoint("missing")?
+                    } else {
+                        ScimPlugin::create_user_endpoint()
+                    }
+                    .with_body(&variant)?;
+                    let rejected = auth
+                        .dispatch_endpoint(endpoint, EndpointOptions::default())
+                        .await
+                        .unwrap_err();
+                    assert_eq!(
+                        rejected.error.status_code(),
+                        401,
+                        "normalized size must ignore transport padding: {rejected}"
+                    );
+                }
+            }
+        }
+        let authenticated =
+            super::scim_user_create::create(&auth, &input, Some("group-reader")).await?;
+        assert_eq!(
+            authenticated.status,
+            if size == 65000 {
+                201
+            } else if size <= 65535 {
+                500
+            } else {
+                400
+            }
+        );
+        if size == 65000 {
+            assert_eq!(body(&authenticated)["userName"], "owner@example.com");
+            assert_eq!(body(&authenticated)["roles"].as_array().unwrap().len(), 10);
+        } else if size <= 65535 {
+            assert_eq!(
+                body(&authenticated)["detail"],
+                "Stored SCIM User attribute state is invalid"
+            );
+        }
+    }
+    for table in ["user", "scimUser", "scimSubject"] {
+        assert_eq!(db.count(table).await?, 1);
+    }
+    B::close(connection).await
 }
