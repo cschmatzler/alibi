@@ -4,7 +4,7 @@ use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthResult, AuthSchema, AuthSession};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession};
 use serde_json::{Value, json};
 impl OAuthProviderPlugin {
     /// Inspect an access or refresh token using the introspecting client's credentials.
@@ -64,10 +64,8 @@ impl OAuthProviderPlugin {
             .get("token")
             .and_then(Value::as_str)
             .unwrap_or_default();
-        let token = raw
-            .strip_prefix("Bearer ")
-            .or_else(|| raw.strip_prefix("DPoP "))
-            .unwrap_or(raw);
+        let token = crate::oauth2::strip_access_token_authorization_scheme(raw);
+        let token = token.as_str();
         if token.is_empty() {
             return error(
                 400,
@@ -90,13 +88,53 @@ impl OAuthProviderPlugin {
         };
         for kind in kinds {
             let refresh = matches!(kind, OAuthTokenKind::Refresh);
-            let row = if refresh {
-                ctx.database
-                    .get_oauth_token(*kind, &self.hash_token(token, "refresh_token").await?)
-                    .await?
-            } else {
-                super::userinfo::live_access(token, ctx, self).await?
-            };
+            if !refresh {
+                match self
+                    .validate_access_token(ctx, token, Some(&credentials.client_id))
+                    .await
+                {
+                    Ok(payload) => return Ok(no_store(EndpointResponse::json(&payload)?)),
+                    Err(failure) if matches!(&failure.error, AuthError::Api { .. }) => {
+                        if hint != "access_token" {
+                            continue;
+                        }
+                        let inactive_error = failure.error.status_code() == 400
+                            || failure
+                                .body
+                                .as_deref()
+                                .and_then(|body| body.get("error"))
+                                .and_then(JsValue::as_str)
+                                == Some("invalid_token");
+                        if inactive_error {
+                            return inactive();
+                        }
+                        let mut response = EndpointResponse::error(failure.error);
+                        if failure.body_absent {
+                            response = response.without_error_body();
+                        } else if let Some(body) = failure.body {
+                            response = response.with_error_body(*body);
+                        }
+                        if let Some(headers) = failure.headers {
+                            response.merge_headers(headers);
+                        }
+                        return Ok(no_store(response));
+                    }
+                    Err(_) => {
+                        return Ok(no_store(
+                            EndpointResponse::error(AuthError::Api {
+                                status: 500,
+                                code: None,
+                                message: String::new(),
+                            })
+                            .without_error_body(),
+                        ));
+                    }
+                }
+            }
+            let row = ctx
+                .database
+                .get_oauth_token(*kind, &self.hash_token(token, "refresh_token").await?)
+                .await?;
             let Some(row) = row else {
                 continue;
             };
@@ -135,9 +173,6 @@ impl OAuthProviderPlugin {
                 if !sessions.iter().any(|session| {
                     session.id().as_ref() == id && session.expires_at() >= chrono::Utc::now()
                 }) {
-                    if !refresh {
-                        return inactive();
-                    }
                     session_id = None;
                 }
             }
@@ -177,9 +212,6 @@ impl OAuthProviderPlugin {
             }
             if let Some(id) = session_id {
                 _ = fields.insert("sid".into(), json!(id));
-            }
-            if !refresh {
-                _ = fields.insert("azp".into(), json!(row.client_id));
             }
             return Ok(no_store(EndpointResponse::json(&payload)?));
         }
