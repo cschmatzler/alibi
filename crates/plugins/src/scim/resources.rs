@@ -650,7 +650,12 @@ impl ScimPlugin {
         else {
             return Ok(error(
                 400,
-                "Invalid SCIM User attributes",
+                &super::user_input::detail(
+                    &call
+                        .body()
+                        .and_then(|value| value.to_json_value().ok())
+                        .unwrap_or(Value::Null),
+                ),
                 Some("invalidValue"),
             ));
         };
@@ -836,7 +841,12 @@ impl ScimPlugin {
         else {
             return Ok(error(
                 400,
-                "Invalid SCIM User attributes",
+                &super::user_input::detail(
+                    &call
+                        .body()
+                        .and_then(|value| value.to_json_value().ok())
+                        .unwrap_or(Value::Null),
+                ),
                 Some("invalidValue"),
             ));
         };
