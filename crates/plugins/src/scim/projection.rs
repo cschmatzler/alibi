@@ -190,6 +190,13 @@ impl<S: AuthSchema> AuthPlugin<S> for ConfiguredScimPlugin<S> {
     ) -> AuthResult<EndpointResponse> {
         self.base.on_endpoint(call, ctx).await
     }
+    async fn on_http_request_action(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::HttpRequestAction>> {
+        self.base.on_http_request_action(req, ctx).await
+    }
     async fn on_request(
         &self,
         req: &AuthRequest,

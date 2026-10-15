@@ -289,6 +289,63 @@ impl ScimPlugin {
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
+    async fn on_http_request_action(
+        &self,
+        req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::HttpRequestAction>> {
+        let path = req.url().map_or_else(|| req.path(), url::Url::path);
+        if !path.contains("/scim/v2/") {
+            return Ok(None);
+        }
+        if req.method() == &HttpMethod::Delete {
+            let mut replacement = req.clone();
+            replacement.body = None;
+            return Ok(Some(alibi_core::HttpRequestAction::ReplaceRequest(
+                Box::new(replacement),
+            )));
+        }
+        if !matches!(
+            req.method(),
+            HttpMethod::Post | HttpMethod::Put | HttpMethod::Patch
+        ) {
+            return Ok(None);
+        }
+        let media = req
+            .headers
+            .iter()
+            .find_map(|(name, value)| name.eq_ignore_ascii_case("content-type").then_some(value))
+            .and_then(|value| value.split(';').next())
+            .map(alibi_core::utils::javascript::trim);
+        let response = if !media.is_some_and(|media| {
+            media.eq_ignore_ascii_case("application/json")
+                || media.eq_ignore_ascii_case("application/scim+json")
+        }) {
+            Some(resources::error(
+                415,
+                "SCIM requests must use application/scim+json or application/json",
+                None,
+            ))
+        } else if alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(
+            req.body.as_deref().unwrap_or_default(),
+        )
+        .is_err()
+        {
+            Some(resources::error(
+                400,
+                "SCIM request body must contain valid JSON",
+                Some("invalidSyntax"),
+            ))
+        } else {
+            None
+        };
+        response
+            .as_ref()
+            .map(resources::to_http_response)
+            .transpose()
+            .map(|response| response.map(alibi_core::HttpRequestAction::Respond))
+    }
+
     route_openapi_metadata!(S);
     fn name(&self) -> &'static str {
         "scim"
