@@ -286,7 +286,7 @@ impl OAuthProviderPlugin {
                         metadata: Value::Object(metadata),
                         created_at: issued,
                         expires_at: super::issuance::expiration_date(
-                            &super::issuance::expiration(
+                            &admission.refresh_expiration(
                                 issued.timestamp(),
                                 self.config.refresh_token_expires_in,
                             )?,
@@ -299,6 +299,7 @@ impl OAuthProviderPlugin {
             None
         };
         let expires_claim = self.access_expiration(issued.timestamp(), true, &requested_scopes)?;
+        let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
         let access = match self
             .create_access_token(
                 ctx,
@@ -307,7 +308,7 @@ impl OAuthProviderPlugin {
                     params: &params,
                     issued,
                     expires: &expires_claim,
-                    audiences: &admission.audiences,
+                    policy: &admission,
                     refresh_id: next_refresh.as_ref().map(|(id, _)| id.as_str()),
                 },
             )

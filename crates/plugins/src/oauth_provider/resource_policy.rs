@@ -2,12 +2,41 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::EndpointError;
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthSchema};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 
 pub(super) struct ResourceAdmission {
     pub scopes: Vec<String>,
     pub audiences: Vec<String>,
+    pub access_ttl: Option<f64>,
+    pub refresh_ttl: Option<f64>,
+    pub claims: serde_json::Map<String, Value>,
+    pub signing_algorithm: Option<crate::jwt::JwtAlgorithm>,
+    pub signing_key_id: Option<String>,
+}
+impl ResourceAdmission {
+    pub(super) fn access_expiration(
+        &self,
+        issued: i64,
+        scope_expiration: &Value,
+    ) -> AuthResult<Value> {
+        let Some(ttl) = self.access_ttl else {
+            return Ok(scope_expiration.clone());
+        };
+        let resource = super::issuance::expiration(issued, ttl)?
+            .as_f64()
+            .ok_or_else(|| AuthError::internal("Invalid resource expiration"))?;
+        let scope = scope_expiration
+            .as_f64()
+            .ok_or_else(|| AuthError::internal("Invalid scope expiration"))?;
+        super::issuance::number(resource.min(scope))
+    }
+    pub(super) fn refresh_expiration(&self, issued: i64, default: f64) -> AuthResult<Value> {
+        super::issuance::expiration(
+            issued,
+            self.refresh_ttl.map_or(default, |ttl| ttl.min(default)),
+        )
+    }
 }
 pub(super) fn resource_list(value: Option<&Value>) -> Vec<String> {
     let values = match value {
@@ -56,7 +85,15 @@ impl OAuthProviderPlugin {
             .map(|scope| scope.as_ref().to_owned())
             .collect::<Vec<_>>();
         if audiences.is_empty() {
-            return Ok(ResourceAdmission { scopes, audiences });
+            return Ok(ResourceAdmission {
+                scopes,
+                audiences,
+                access_ttl: None,
+                refresh_ttl: None,
+                claims: serde_json::Map::new(),
+                signing_algorithm: None,
+                signing_key_id: None,
+            });
         }
         let userinfo = format!(
             "{}{}/oauth2/userinfo",
@@ -132,6 +169,31 @@ impl OAuthProviderPlugin {
                 return Err(failure("invalid_request", description));
             }
         }
+        let mut access_ttl: Option<f64> = None;
+        let mut refresh_ttl: Option<f64> = None;
+        let mut claims = serde_json::Map::new();
+        for row in &rows {
+            if let Some(ttl) = row.metadata.get("accessTokenTtl").and_then(Value::as_f64) {
+                access_ttl = Some(access_ttl.map_or(ttl, |current| current.min(ttl)));
+            }
+            if let Some(ttl) = row.metadata.get("refreshTokenTtl").and_then(Value::as_f64) {
+                refresh_ttl = Some(refresh_ttl.map_or(ttl, |current| current.min(ttl)));
+            }
+            if let Some(fields) = row.metadata.get("customClaims").and_then(Value::as_object) {
+                claims.extend(fields.clone());
+            }
+        }
+        let signing_algorithm = rows
+            .iter()
+            .filter_map(|row| row.metadata.get("signingAlgorithm").and_then(Value::as_str))
+            .find(|value| !value.is_empty())
+            .map(str::parse)
+            .transpose()?;
+        let signing_key_id = rows
+            .iter()
+            .filter_map(|row| row.metadata.get("signingKeyId").and_then(Value::as_str))
+            .find(|value| !value.is_empty())
+            .map(str::to_owned);
         // The implicit UserInfo audience depends on the original request, not
         // the post-intersection scope set.
         if requested.iter().any(|scope| scope.as_ref() == "openid")
@@ -139,6 +201,14 @@ impl OAuthProviderPlugin {
         {
             audiences.push(userinfo);
         }
-        Ok(ResourceAdmission { scopes, audiences })
+        Ok(ResourceAdmission {
+            scopes,
+            audiences,
+            access_ttl,
+            refresh_ttl,
+            claims,
+            signing_algorithm,
+            signing_key_id,
+        })
     }
 }
