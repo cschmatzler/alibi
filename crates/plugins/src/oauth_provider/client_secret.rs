@@ -68,3 +68,14 @@ pub(super) async fn verify<S: AuthSchema>(
         Ok(bool::from(hash.as_bytes().ct_eq(stored.as_bytes())))
     }
 }
+
+pub(super) async fn decrypt<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    config: &super::OAuthProviderConfig,
+    stored: &str,
+) -> AuthResult<String> {
+    if let Some(cipher) = &config.client_secret_cipher {
+        return cipher.decrypt(stored).await;
+    }
+    crate::token_crypto::decrypt_with_config(stored, &ctx.config)
+}

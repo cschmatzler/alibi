@@ -4,7 +4,13 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
 use sha2::Digest as _;
-backend_tests!(oauth_openid_code_issues_verified_client_and_access_bound_id_token);
+backend_tests!(
+    oauth_openid_code_issues_verified_client_and_access_bound_id_token,
+    oauth_openid_without_jwt_plugin_uses_decrypted_client_secret_and_omits_public_id_tokens
+);
+postgres_tests!(
+    oauth_openid_without_jwt_plugin_uses_decrypted_client_secret_and_omits_public_id_tokens
+);
 async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -160,4 +166,160 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
             .is_none()
     );
     Ok(())
+}
+
+#[derive(Debug)]
+struct IdTokenCipher;
+const ID_TOKEN_CIPHER_KEY: &str = "application-client-secret-encryption-key-32-characters";
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientSecretCipher for IdTokenCipher {
+    async fn encrypt(&self, secret: &str) -> alibi::AuthResult<String> {
+        Ok(format!(
+            "custom:{}",
+            alibi::plugins::oauth::encryption::encrypt_token(secret, ID_TOKEN_CIPHER_KEY)?
+        ))
+    }
+    async fn decrypt(&self, stored: &str) -> alibi::AuthResult<String> {
+        alibi::plugins::oauth::encryption::decrypt_token(
+            stored.strip_prefix("custom:").unwrap(),
+            ID_TOKEN_CIPHER_KEY,
+        )
+    }
+}
+async fn oauth_openid_without_jwt_plugin_uses_decrypted_client_secret_and_omits_public_id_tokens<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for (custom, public) in [(false, false), (true, false), (false, true)] {
+        let prefix = if custom { "client_prefix_" } else { "" };
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    disable_jwt_plugin: true,
+                    client_secret_prefix: custom.then(|| prefix.into()),
+                    client_secret_cipher: custom.then(|| {
+                        Arc::new(IdTokenCipher) as Arc<dyn alibi::plugins::OAuthClientSecretCipher>
+                    }),
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .await?;
+        let owner = signup(
+            &auth,
+            &format!("encrypted-id-{custom}-{public}@example.test"),
+        )
+        .await;
+        let cookie = cookies(&owner);
+        let options = || EndpointOptions {
+            headers: Some(
+                [
+                    ("cookie".into(), cookie.clone()),
+                    ("accept".into(), "application/json".into()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            ..Default::default()
+        };
+        let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Encrypted ID client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email profile","token_endpoint_auth_method":if public{"none"}else{"client_secret_post"},"skip_consent":true}))?,options()).await?.into_response()?;
+        assert_eq!(created.status, 201);
+        let client = body(&created);
+        let id = client["client_id"].as_str().unwrap();
+        let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        let challenge =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
+        let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"openid email profile","state":"encrypted-state","nonce":"encrypted-nonce","code_challenge":challenge,"code_challenge_method":"S256"});
+        let grant = auth
+            .dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
+                EndpointOptions {
+                    request: Some(request("/oauth2/authorize", None, "")),
+                    ..options()
+                },
+            )
+            .await?
+            .into_response()?;
+        assert_eq!(grant.status, 200);
+        let callback = url::Url::parse(body(&grant)["url"].as_str().unwrap())?;
+        let code = callback
+            .query_pairs()
+            .find(|(name, _)| name == "code")
+            .unwrap()
+            .1
+            .into_owned();
+        let mut input = json!({"grant_type":"authorization_code","client_id":id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
+        if !public {
+            input["client_secret"] = client["client_secret"].clone();
+        }
+        let output = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?,
+                EndpointOptions {
+                    request: Some(request("/oauth2/token", Some(input.clone()), "")),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .into_response()?;
+        assert_eq!(
+            output.status,
+            200,
+            "custom={custom} public={public}: {}",
+            body(&output)
+        );
+        let token = body(&output);
+        let access = token["access_token"].as_str().unwrap();
+        assert_eq!(access.len(), 32);
+        assert!(access.bytes().all(|byte| byte.is_ascii_alphabetic()));
+        assert_eq!(token["token_type"], "Bearer");
+        assert_eq!(token["scope"], "openid email profile");
+        assert_eq!(
+            output.headers.get("cache-control").map(String::as_str),
+            Some("no-store")
+        );
+        if public {
+            assert!(token.get("id_token").is_none());
+            continue;
+        }
+        let secret = client["client_secret"]
+            .as_str()
+            .unwrap()
+            .strip_prefix(prefix)
+            .unwrap();
+        let signed = token["id_token"].as_str().unwrap();
+        let header = jsonwebtoken::decode_header(signed)?;
+        assert_eq!(header.alg, jsonwebtoken::Algorithm::HS256);
+        assert!(header.kid.is_none());
+        assert!(header.typ.is_none());
+        let mut validation = jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::HS256);
+        validation.set_audience(&[id]);
+        validation.set_issuer(&[format!("{ORIGIN}/api/auth")]);
+        let key = jsonwebtoken::DecodingKey::from_secret(secret.as_bytes());
+        let payload = jsonwebtoken::decode::<Value>(signed, &key, &validation)?.claims;
+        assert_eq!(payload["sub"], body(&owner)["user"]["id"]);
+        assert_eq!(payload["nonce"], "encrypted-nonce");
+        assert_eq!(payload["acr"], "0");
+        assert_eq!(
+            payload["exp"].as_i64().unwrap() - payload["iat"].as_i64().unwrap(),
+            36000
+        );
+        let digest = sha2::Sha256::digest(access);
+        assert_eq!(
+            payload["at_hash"],
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest[..16])
+        );
+        assert!(
+            jsonwebtoken::decode::<Value>(
+                signed,
+                &jsonwebtoken::DecodingKey::from_secret(b"unrelated-client-secret"),
+                &validation
+            )
+            .is_err()
+        );
+    }
+    assert!(serde_json::from_str::<Vec<Value>>(&db.table("jwks").await?)?.is_empty());
+    B::close(connection).await
 }
