@@ -233,6 +233,11 @@ pub fn apply_scim_group_patch(
                     "noTarget",
                 ));
             }
+            // The reference treats Date as a record, then iterates its own
+            // enumerable properties. A trusted Date has none.
+            if matches!(operation.value, Some(JsValue::Date(_))) {
+                continue;
+            }
             let Some(JsValue::Object(values)) = operation.value.as_ref() else {
                 return Err(error(
                     "A pathless Group PATCH value must be an object",

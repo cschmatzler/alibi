@@ -327,7 +327,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.patchSCIMGroup({
           params: input.params,
-          body: input.body,
+          body: trustedUserBody(input),
           headers:
             input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
           asResponse: true,

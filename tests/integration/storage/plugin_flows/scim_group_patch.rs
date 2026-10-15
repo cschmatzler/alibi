@@ -4,15 +4,40 @@ use super::*;
 use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 use std::sync::atomic::{AtomicBool, Ordering};
-backend_tests!(scim_group_patch_handles_noops_nulls_and_transactional_member_changes);
-postgres_tests!(scim_group_patch_handles_noops_nulls_and_transactional_member_changes);
+backend_tests!(
+    scim_group_patch_handles_noops_nulls_and_transactional_member_changes,
+    scim_group_patch_treats_pathless_sdk_dates_as_empty_records
+);
+postgres_tests!(
+    scim_group_patch_handles_noops_nulls_and_transactional_member_changes,
+    scim_group_patch_treats_pathless_sdk_dates_as_empty_records
+);
 async fn patch<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     operations: Value,
     token: Option<&str>,
 ) -> alibi::AuthResult<AuthResponse> {
-    let result=Box::pin(auth.dispatch_endpoint(ScimPlugin::patch_group_endpoint(id)?.with_body(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":operations}))?,EndpointOptions{headers:token.map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect()),..Default::default()})).await;
+    patch_input(auth, id, json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":operations}).into(), token).await
+}
+async fn patch_input<S: AuthSchema>(
+    auth: &Alibi<S>,
+    id: &str,
+    input: alibi::utils::json::JsValue,
+    token: Option<&str>,
+) -> alibi::AuthResult<AuthResponse> {
+    let result = Box::pin(auth.dispatch_endpoint(
+        ScimPlugin::patch_group_endpoint(id)?.with_body_value(input),
+        EndpointOptions {
+            headers: token.map(|token| {
+                [("authorization".into(), format!("Bearer {token}"))]
+                    .into_iter()
+                    .collect()
+            }),
+            ..Default::default()
+        },
+    ))
+    .await;
     match result {
         Ok(output) => output.into_response(),
         Err(error) => {
@@ -193,4 +218,66 @@ async fn scim_group_patch_handles_noops_nulls_and_transactional_member_changes<B
         409
     );
     Ok(())
+}
+
+async fn scim_group_patch_treats_pathless_sdk_dates_as_empty_records<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::utils::json::JsValue;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let initial = body(&create(&auth, &json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"Date Group"}), &json!({}), Some("group-reader")).await?);
+    let id = initial["id"].as_str().unwrap();
+    let initial_members = db.table("scimGroupMember").await?;
+    for (op, path, expected) in [
+        ("replace", None, 200),
+        ("add", None, 200),
+        ("remove", None, 400),
+        ("replace", Some("displayName"), 400),
+    ] {
+        let mut operation = JsValue::from(json!({"op":op}));
+        if let JsValue::Object(fields) = &mut operation {
+            _ = fields.insert(
+                "value".into(),
+                JsValue::Date(
+                    chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")?.to_utc(),
+                ),
+            );
+            if let Some(path) = path {
+                _ = fields.insert("path".into(), JsValue::String(path.into()));
+            }
+        }
+        let mut input =
+            JsValue::from(json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"]}));
+        if let JsValue::Object(fields) = &mut input {
+            _ = fields.insert("Operations".into(), JsValue::Array(vec![operation]));
+        }
+        let before: Value = serde_json::from_str(&db.table("scimGroup").await?)?;
+        let response = patch_input(&auth, id, input, Some("group-reader")).await?;
+        assert_eq!(response.status, expected);
+        if expected == 200 {
+            assert_eq!(body(&response), initial);
+        } else {
+            assert_eq!(
+                body(&response)["detail"],
+                if op == "remove" {
+                    "A pathless remove operation has no target"
+                } else {
+                    "displayName must be a non-empty string"
+                }
+            );
+        }
+        let mut after: Value = serde_json::from_str(&db.table("scimGroup").await?)?;
+        assert_eq!(
+            after[0]["revision"].as_i64().unwrap(),
+            before[0]["revision"].as_i64().unwrap() + i64::from(expected == 200)
+        );
+        after[0]["revision"] = before[0]["revision"].clone();
+        assert_eq!(after, before);
+        assert_eq!(db.table("scimGroupMember").await?, initial_members);
+    }
+    B::close(connection).await
 }
