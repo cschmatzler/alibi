@@ -1,7 +1,7 @@
 //! Shared trusted minting primitive; grant admission belongs to the caller.
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointCall, EndpointError};
-use alibi_core::store::{CreateOAuthToken, OAuthClient, OAuthTokenKind};
+use alibi_core::store::{CreateOAuthToken, OAuthClient, OAuthToken, OAuthTokenKind};
 use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
 use serde_json::{Value, json};
@@ -19,6 +19,9 @@ pub struct OAuthTokenIssueParams {
     pub auth_time: Option<chrono::DateTime<chrono::Utc>>,
     pub resources: Option<Vec<String>>,
     pub original_resources: Option<Vec<String>>,
+    /// Retained authority supplied by an already-authorized caller. Rotation
+    /// atomically claims its ID; endpoint scope/client admission is not repeated.
+    pub refresh_token: Option<OAuthToken>,
     pub requested_user_info_claims: Option<Vec<String>>,
     pub access_token_claims: Option<Value>,
     pub id_token_claims: Option<Value>,
@@ -38,6 +41,7 @@ impl OAuthTokenIssueParams {
             auth_time: None,
             resources: None,
             original_resources: None,
+            refresh_token: None,
             requested_user_info_claims: None,
             access_token_claims: None,
             id_token_claims: None,
@@ -298,6 +302,71 @@ impl OAuthProviderPlugin {
         };
         Ok(access)
     }
+    pub(super) async fn create_refresh_token<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        p: &OAuthTokenIssueParams,
+        policy: &super::resource_policy::ResourceAdmission,
+        issued: chrono::DateTime<chrono::Utc>,
+        requested: bool,
+    ) -> Result<Option<(String, String)>, EndpointError> {
+        let Some(user) = p.user.as_ref() else {
+            return Ok(None);
+        };
+        if !requested || !super::authentication::client_allows_grant(&p.client, "refresh_token") {
+            return Ok(None);
+        }
+        let token = random_token();
+        let protected = self.hash_token(&token, "refresh_token").await?;
+        if let Some(original) = p.refresh_token.as_ref()
+            && !ctx
+                .database
+                .claim_oauth_refresh_rotation_by_id(
+                    &original.id,
+                    issued,
+                    super::refresh::replay_deadline(
+                        issued,
+                        self.config.refresh_token_reuse_interval,
+                    )?,
+                )
+                .await?
+        {
+            return Err(super::resource_policy::failure(
+                "invalid_grant",
+                "invalid refresh token",
+            ));
+        }
+        let mut metadata = token_metadata(p);
+        let resources = p
+            .refresh_token
+            .as_ref()
+            .and_then(|row| row.metadata.get("resources"))
+            .filter(|value| !value.is_null())
+            .cloned()
+            .unwrap_or_else(|| json!(p.original_resources.as_ref().or(p.resources.as_ref())));
+        _ = metadata.insert("resources".into(), resources);
+        _ = metadata.insert("authTime".into(), json!(p.auth_time));
+        let row = ctx
+            .database
+            .create_oauth_token(
+                OAuthTokenKind::Refresh,
+                CreateOAuthToken {
+                    token: protected,
+                    client_id: p.client.client_id.clone(),
+                    user_id: Some(user.id().as_ref().to_owned()),
+                    session_id: p.session_id.clone(),
+                    authorization_code_id: p.authorization_code_id.clone(),
+                    metadata: Value::Object(metadata),
+                    created_at: issued,
+                    expires_at: expiration_date(&policy.refresh_expiration(
+                        issued.timestamp(),
+                        self.config.refresh_token_expires_in,
+                    )?)?,
+                },
+            )
+            .await?;
+        Ok(Some((row.id, token)))
+    }
     pub(super) async fn mint_tokens<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
@@ -313,46 +382,51 @@ impl OAuthProviderPlugin {
             .admit_resources(ctx, &p.client.client_id, &p.scopes, Some(&resource_value))
             .await?;
         let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
-        let refresh_requested = p.scopes.iter().any(|scope| scope == "offline_access");
+        let refresh_requested = p.scopes.iter().any(|scope| scope == "offline_access")
+            || p.refresh_token
+                .as_ref()
+                .and_then(|row| row.metadata.get("scopes"))
+                .and_then(Value::as_array)
+                .is_some_and(|scopes| scopes.iter().any(|scope| scope == "offline_access"));
+        if p.confirmation.as_ref().is_none_or(Value::is_null)
+            && p.refresh_token
+                .as_ref()
+                .and_then(|row| row.metadata.get("confirmation"))
+                .and_then(|value| value.get("jkt"))
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
+        {
+            return Err(super::resource_policy::failure(
+                "invalid_dpop_proof",
+                "DPoP proof header is required",
+            ));
+        }
         let mut resolved = p.clone();
         resolved.scopes = admission.scopes.clone();
+        resolved.confirmation = p
+            .confirmation
+            .as_ref()
+            .filter(|value| !value.is_null())
+            .cloned();
+        if resolved.requested_user_info_claims.is_none() {
+            resolved.requested_user_info_claims = p
+                .refresh_token
+                .as_ref()
+                .and_then(|row| row.metadata.get("requestedUserInfoClaims"))
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_owned)
+                        .collect()
+                });
+        }
         let p = &resolved;
-        let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
-        let metadata = token_metadata(p);
-        let refresh = if p.user.is_some()
-            && refresh_requested
-            && super::authentication::client_allows_grant(&p.client, "refresh_token")
-        {
-            let token = random_token();
-            let mut retained = metadata.clone();
-            _ = retained.insert(
-                "resources".into(),
-                json!(p.original_resources.as_ref().or(p.resources.as_ref())),
-            );
-            _ = retained.insert("authTime".into(), json!(p.auth_time));
-            let row = ctx
-                .database
-                .create_oauth_token(
-                    OAuthTokenKind::Refresh,
-                    CreateOAuthToken {
-                        token: self.hash_token(&token, "refresh_token").await?,
-                        client_id: p.client.client_id.clone(),
-                        user_id: user_id.clone(),
-                        session_id: p.session_id.clone(),
-                        authorization_code_id: p.authorization_code_id.clone(),
-                        metadata: Value::Object(retained),
-                        created_at: issued,
-                        expires_at: expiration_date(&admission.refresh_expiration(
-                            issued.timestamp(),
-                            self.config.refresh_token_expires_in,
-                        )?)?,
-                    },
-                )
-                .await?;
-            Some((row.id, token))
-        } else {
-            None
-        };
+        let refresh = self
+            .create_refresh_token(ctx, p, &admission, issued, refresh_requested)
+            .await?;
+        let rotated = refresh.is_some();
         let access = self
             .create_access_token(
                 ctx,
@@ -414,6 +488,18 @@ impl OAuthProviderPlugin {
                 Err(response) => return Err(super::authentication::response_error(&response)?),
             }
         }
-        Ok(Value::Object(response))
+        let response = Value::Object(response);
+        if rotated && let Some(original) = p.refresh_token.as_ref() {
+            let scopes = p.scopes.iter().map(String::as_str).collect::<Vec<_>>();
+            let request = super::refresh::replay_request(
+                &scopes,
+                &json!({"resource":p.resources}),
+                None,
+                p.confirmation.as_ref(),
+            );
+            self.store_rotation_replay(ctx, original, request, &response)
+                .await;
+        }
+        Ok(response)
     }
 }

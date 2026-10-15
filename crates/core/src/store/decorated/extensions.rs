@@ -593,6 +593,16 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
     async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
         self.inner.store_oauth_refresh_replay(id, ciphertext).await
     }
+    async fn claim_oauth_refresh_rotation_by_id(
+        &self,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+        replay_expires: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> AuthResult<bool> {
+        self.inner
+            .claim_oauth_refresh_rotation_by_id(id, at, replay_expires)
+            .await
+    }
     async fn claim_oauth_refresh_rotation(
         &self,
         token: &str,
