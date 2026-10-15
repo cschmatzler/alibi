@@ -20,12 +20,19 @@ pub(super) async fn live_access<S: AuthSchema>(
     else {
         return Ok(None);
     };
+    live_access_row(row, ctx, provider).await
+}
+pub(super) async fn live_access_row<S: AuthSchema>(
+    row: OAuthToken,
+    ctx: &AuthContext<S>,
+    provider: &OAuthProviderPlugin,
+) -> AuthResult<Option<OAuthToken>> {
     if row.expires_at < chrono::Utc::now()
         || row.metadata.get("revoked").is_some_and(|v| !v.is_null())
     {
         return Ok(None);
     }
-    let Some(client) = super::discovery::resolve(ctx, &row.client_id).await? else {
+    let Some(client) = provider.get_client(ctx, &row.client_id).await? else {
         return Ok(None);
     };
     if client.metadata.get("disabled") == Some(&Value::Bool(true)) {

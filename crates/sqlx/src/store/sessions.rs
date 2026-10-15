@@ -489,6 +489,17 @@ where
             .await
     }
 
+    async fn get_session_by_id(&self, id: &str) -> AuthResult<Option<S::Session>> {
+        let mut sql = model::select_model::<S::Session>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Session>(
+            <S::Session as SqlxModel>::TABLE,
+            S::Session::id_column(),
+            " = ",
+            S::Session::parse_id(id)?,
+        );
+        self.exec().fetch_optional(sql).await
+    }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         self.exec()
             .fetch_optional(Self::active_session_by_token(self.exec(), token))

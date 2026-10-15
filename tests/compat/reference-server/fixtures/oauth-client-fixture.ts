@@ -4,7 +4,7 @@ import { consumeClientAssertion, getOAuthProviderApi, oauthProvider } from "@bet
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, username } from "better-auth/plugins";
-import { createAuthEndpoint } from "better-auth/api";
+import { APIError, createAuthEndpoint } from "better-auth/api";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
   const remoteKeys=(await Bun.file(new URL("../../../fixtures/oauth/client-assertion-keys.json",import.meta.url)).json()).keys;
@@ -73,13 +73,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   };
   const tokenStorage={hash:async(token:string,kind:string)=>`app:${kind}:${createHash("sha256").update(token).digest("base64url")}`};
   const tokenHashHelper={id:"token-hash-helper",endpoints:{hashTokenFixture:createAuthEndpoint("/fixture/hash-token",{method:"POST",body:z.object({token:z.string(),kind:z.string(),custom:z.boolean()})},async(ctx)=>ctx.json({hash:await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.custom?{storeTokens:tokenStorage}:{})}).hashToken(ctx.body.token,ctx.body.kind)}))}};
+  const accessValidationHelper={id:"access-validation-helper",endpoints:{validateAccessFixture:createAuthEndpoint("/fixture/validate-access",{method:"POST",body:z.object({token:z.string(),clientId:z.string().optional(),requireActive:z.boolean()})},async(ctx)=>{try{return ctx.json(await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"})[ctx.body.requireActive?"requireActiveAccessToken":"validateAccessToken"](ctx.body.token,ctx.body.clientId));}catch(error){if(error instanceof APIError)throw error;return ctx.json({ordinary_error:true});}})}};
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper],
+    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper,accessValidationHelper],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -559,6 +560,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           body: new URLSearchParams(input.formEntries ?? input.body),
         }),
       });
+    }
+    if(input.action==="validate-access") {
+      return (auth.api as any).validateAccessFixture({body:input.body,asResponse:true});
+    }
+    if(input.action==="sign-access") {
+      return auth.api.signJWT({body:{payload:input.body},asResponse:true});
     }
     if(input.action==="hash-token") {
       return (auth.api as any).hashTokenFixture({body:{token:input.token,kind:input.kind,custom:input.mode==="custom-token-hash"},asResponse:true});

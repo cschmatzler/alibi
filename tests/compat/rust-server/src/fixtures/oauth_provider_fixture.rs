@@ -320,6 +320,15 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="validate-access" {
+                let provider=OAuthProviderPlugin::new();let body=&input["body"];let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
+                let result=if body["requireActive"]==true{provider.require_active_access_token(auth.context(),token,client).await}else{provider.validate_access_token(auth.context(),token,client).await};
+                return match result {Ok(payload)=>axum::Json(payload).into_response(),Err(error)=>{if matches!(&error.error,alibi::AuthError::Internal(_)){return axum::Json(serde_json::json!({"ordinary_error":true})).into_response();}let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+            }
+            if input["action"]=="sign-access" {
+                let endpoint=alibi::plugins::jwt::JwtPlugin::sign_endpoint(alibi::utils::json::JsValue::from(input["body"].clone()));
+                return auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await.unwrap().into_response().unwrap().into_response();
+            }
             if input["action"]=="hash-token" {
                 let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{token_hasher:(input["mode"]=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),..Default::default()});
                 return axum::Json(serde_json::json!({"hash":provider.hash_token(input["token"].as_str().unwrap(),input["kind"].as_str().unwrap()).await.unwrap()})).into_response();

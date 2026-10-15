@@ -497,6 +497,16 @@ where
         .await
     }
 
+    async fn get_session_by_id(&self, id: &str) -> AuthResult<Option<S::Session>> {
+        <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(
+                <S::Session as SeaOrmSessionModel>::id_column()
+                    .eq(<S::Session as SeaOrmSessionModel>::parse_id(id)?),
+            )
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+    }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
