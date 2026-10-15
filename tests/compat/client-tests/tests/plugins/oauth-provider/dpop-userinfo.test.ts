@@ -135,7 +135,8 @@ compatScenario(
         email: owner.user.email,
         email_verified: false,
       });
-      successes.push({ kind, claims });
+      const { sub, ...fields } = claims;
+      successes.push({ kind, userId: sub, ...fields });
       const replay = await info({ authorization: `DPoP ${tokens.access_token}`, dpop: jwt });
       expect(replay.status).toBe(401);
       expect(await replay.json()).toEqual({
