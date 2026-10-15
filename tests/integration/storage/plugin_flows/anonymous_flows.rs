@@ -12,6 +12,7 @@ use std::collections::BTreeMap;
 
 backend_tests!(
     anonymous_identity_and_lifecycle,
+    anonymous_server_email_completion_transfers_and_retires_owner,
     anonymous_creation_failures,
     anonymous_deletion_and_linking,
     anonymous_transfer_uses_original_completed_snapshot,
@@ -21,6 +22,66 @@ backend_tests!(
     anonymous_transfer_retains_cached_old_projection_and_new_completed_owner,
     anonymous_passwordless_completion_paths_transfer_actual_owner
 );
+
+postgres_tests!(anonymous_server_email_completion_transfers_and_retires_owner);
+
+async fn anonymous_server_email_completion_transfers_and_retires_owner<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let linker = Arc::new(Linker::default());
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+            on_link_account: Some(linker.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    for operation in ["signUpEmail", "signInEmail"] {
+        let anonymous = auth
+            .dispatch_endpoint(
+                AnonymousPlugin::sign_in_anonymous_endpoint(),
+                Default::default(),
+            )
+            .await?;
+        let old = anonymous.decode()?.user.id.clone();
+        let cookie = cookies(&anonymous.into_response()?);
+        let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password",operation)
+            .with_body(&json!({"name":"SDK Owner","email":"anonymous-sdk-owner@example.test","password":"password123"}))?;
+        let result = auth
+            .dispatch_endpoint(
+                endpoint,
+                alibi::endpoint::EndpointOptions {
+                    headers: Some([("cookie".into(), cookie)].into_iter().collect()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let receipt = result.into_response()?;
+        assert_eq!(receipt.status, 200);
+        let new = body(&receipt)["user"]["id"].as_str().unwrap().to_owned();
+        assert_ne!(old, new);
+        assert_eq!(
+            linker.0.lock().unwrap().last(),
+            Some(&(old.clone(), new.clone()))
+        );
+        assert!(auth.store().get_user_by_id(&old).await?.is_none());
+        assert!(auth.store().get_user_sessions(&old).await?.is_empty());
+        let active = call(
+            &auth,
+            request("/get-session", None, &cookies(&receipt)),
+            200,
+        )
+        .await;
+        assert_eq!(body(&active)["user"]["id"], new);
+    }
+    assert_eq!(linker.0.lock().unwrap().len(), 2);
+    B::close(connection).await
+}
 
 #[derive(Default)]
 struct Identity(Mutex<Option<String>>, Mutex<Vec<bool>>);
@@ -41,7 +102,14 @@ struct Linker(Mutex<Vec<(String, String)>>);
 
 #[async_trait::async_trait]
 impl LinkAnonymousAccount for Linker {
-    async fn link(&self, accounts: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+    async fn link(
+        &self,
+        accounts: &AnonymousLink,
+        context: &alibi::CallbackContext,
+    ) -> AuthResult<()> {
+        if let Some(call) = &context.endpoint {
+            assert_eq!(call.request().is_some(), context.request.is_some());
+        }
         self.0.lock().unwrap().push((
             accounts.anonymous_user.id.clone(),
             accounts.new_user.id.clone(),
@@ -486,8 +554,12 @@ async fn anonymous_transfer_uses_original_completed_snapshot<B: Backend>(db: Db)
     struct Capture(Mutex<Vec<Value>>);
     #[async_trait::async_trait]
     impl LinkAnonymousAccount for Capture {
-        async fn link(&self, link: &AnonymousLink, request: &AuthRequest) -> AuthResult<()> {
-            self.0.lock().unwrap().push(json!({"anonymousUser":link.anonymous_user,"anonymousSession":link.anonymous_session,"newUser":link.new_user,"newSession":link.new_session,"path":request.path}));
+        async fn link(
+            &self,
+            link: &AnonymousLink,
+            request: &alibi::CallbackContext,
+        ) -> AuthResult<()> {
+            self.0.lock().unwrap().push(json!({"anonymousUser":link.anonymous_user,"anonymousSession":link.anonymous_session,"newUser":link.new_user,"newSession":link.new_session,"path":request.request.as_ref().unwrap().path}));
             Ok(())
         }
     }
@@ -583,7 +655,7 @@ async fn anonymous_transfer_failure_preserves_committed_login<B: Backend>(db: Db
     }
     #[async_trait::async_trait]
     impl LinkAnonymousAccount for Reject {
-        async fn link(&self, link: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+        async fn link(&self, link: &AnonymousLink, _: &alibi::CallbackContext) -> AuthResult<()> {
             self.seen.lock().unwrap().push(json!({"oldUser":link.anonymous_user,"oldSession":link.anonymous_session,"newUser":link.new_user,"newSession":link.new_session}));
             Err(if self.mode == 0 {
                 alibi::AuthError::internal("Configured anonymous transfer denied")
@@ -869,7 +941,7 @@ async fn anonymous_transfer_retains_cached_old_projection_and_new_completed_owne
     struct Capture(Mutex<Vec<Value>>);
     #[async_trait::async_trait]
     impl LinkAnonymousAccount for Capture {
-        async fn link(&self, l: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+        async fn link(&self, l: &AnonymousLink, _: &alibi::CallbackContext) -> AuthResult<()> {
             self.0.lock().unwrap().push(json!({"oldUser":l.anonymous_user,"oldSession":l.anonymous_session,"newUser":l.new_user,"newSession":l.new_session}));
             Ok(())
         }
@@ -982,8 +1054,8 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
     struct Capture(Mutex<Vec<Value>>);
     #[async_trait::async_trait]
     impl LinkAnonymousAccount for Capture {
-        async fn link(&self, a: &AnonymousLink, r: &AuthRequest) -> AuthResult<()> {
-            self.0.lock().unwrap().push(json!({"oldUser":a.anonymous_user,"oldSession":a.anonymous_session,"newUser":a.new_user,"newSession":a.new_session,"path":r.path}));
+        async fn link(&self, a: &AnonymousLink, r: &alibi::CallbackContext) -> AuthResult<()> {
+            self.0.lock().unwrap().push(json!({"oldUser":a.anonymous_user,"oldSession":a.anonymous_session,"newUser":a.new_user,"newSession":a.new_session,"path":r.request.as_ref().unwrap().path}));
             Ok(())
         }
     }
@@ -1247,7 +1319,7 @@ async fn anonymous_new_owner_callback_retains_hidden_application_fields() -> Tes
     struct Capture(Mutex<Vec<Value>>);
     #[async_trait::async_trait]
     impl LinkAnonymousAccount for Capture {
-        async fn link(&self, a: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+        async fn link(&self, a: &AnonymousLink, _: &alibi::CallbackContext) -> AuthResult<()> {
             self.0.lock().unwrap().push(
                 json!({"oldUser":a.anonymous_user,"newUser":a.new_user,"newSession":a.new_session}),
             );

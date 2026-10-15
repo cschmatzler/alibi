@@ -107,7 +107,7 @@ impl AnonymousIdentity for Application {
 }
 #[async_trait]
 impl LinkAnonymousAccount for Application {
-    async fn link(&self, accounts: &AnonymousLink, _request: &AuthRequest) -> AuthResult<()> {
+    async fn link(&self, accounts: &AnonymousLink, _request: &alibi::CallbackContext) -> AuthResult<()> {
         tokio::task::yield_now().await;
         self.state.lock().expect("cache fixture receipt lock").events.push(json!({"mode":self.mode,"link":{"anonymousUser":{"user":accounts.anonymous_user,"session":accounts.anonymous_session},"newUser":{"user":accounts.new_user,"session":accounts.new_session}}}));
         Ok(())

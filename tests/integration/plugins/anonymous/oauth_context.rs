@@ -28,7 +28,11 @@ struct Linker(Arc<Mutex<Vec<Value>>>);
 
 #[async_trait]
 impl LinkAnonymousAccount for Linker {
-    async fn link(&self, accounts: &AnonymousLink, _request: &AuthRequest) -> AuthResult<()> {
+    async fn link(
+        &self,
+        accounts: &AnonymousLink,
+        _request: &alibi::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.lock().unwrap().push(json!({
             "anonymousUser": accounts.anonymous_user, "anonymousSession": accounts.anonymous_session,
             "newUser": accounts.new_user, "newSession": accounts.new_session,

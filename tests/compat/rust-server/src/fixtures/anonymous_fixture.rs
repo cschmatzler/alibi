@@ -156,13 +156,16 @@ impl AnonymousIdentity for Application {
 }
 #[async_trait]
 impl LinkAnonymousAccount for Application {
-    async fn link(&self, accounts: &AnonymousLink, request: &AuthRequest) -> AuthResult<()> {
+    async fn link(&self, accounts: &AnonymousLink, request: &alibi::CallbackContext) -> AuthResult<()> {
         tokio::task::yield_now().await;
-        self.fixture.events.lock().expect("anonymous receipt lock").push(json!({
-            "mode": self.mode, "path": request.path(),
+        let mut event = json!({
+            "mode": self.mode, "path": request.endpoint.as_ref().and_then(|call| call.path()).or_else(||request.request.as_ref().map(|request|request.path())),
+            "request": if request.request.is_none() {Some(Value::Null)} else {None::<Value>},
             "anonymousUser": { "user": accounts.anonymous_user, "session": accounts.anonymous_session },
             "newUser": { "user": accounts.new_user, "session": accounts.new_session },
-        }));
+        });
+        if request.request.is_some() { event.as_object_mut().unwrap().remove("request"); }
+        self.fixture.events.lock().expect("anonymous receipt lock").push(event);
         if self.mode == "link-ordinary" {
             return Err(AuthError::internal("Configured anonymous transfer denied"));
         }
@@ -472,20 +475,25 @@ pub(crate) async fn router(
         }),
     );
 
+    for path in ["/__test/server-api/anonymous-sign-in", "/__test/server-api/anonymous-email"] {
+    let runtimes = runtimes.clone();
     router = router.route(
-        "/__test/server-api/anonymous-sign-in",
+        path,
         post(move |Json(input): Json<Value>| {
             let runtimes = runtimes.clone();
             async move {
                 let selected = runtimes
                     .get(input["profile"].as_str().unwrap_or("anonymous-standard"))
                     .unwrap();
+                let mut endpoint = if path.ends_with("anonymous-email") {
+                    alibi::endpoint::ServerEndpoint::<Value>::new("email-password", if input["action"] == "sign-in" {"signInEmail"} else {"signUpEmail"})
+                } else {
+                    alibi::endpoint::ServerEndpoint::<Value>::new("anonymous", "signInAnonymous")
+                };
+                if let Some(body) = input.get("body") { endpoint = endpoint.with_body(body).unwrap(); }
                 match selected
                     .dispatch_endpoint(
-                        alibi::endpoint::ServerEndpoint::<Value>::new(
-                            "anonymous",
-                            "signInAnonymous",
-                        ),
+                        endpoint,
                         alibi::endpoint::EndpointOptions {
                             headers: input
                                 .get("headers")
@@ -516,6 +524,7 @@ pub(crate) async fn router(
             }
         }),
     );
+    }
     let controls = Arc::new(crate::backend::store::<TestSchema>(
         config.clone(),
         database.clone(),
