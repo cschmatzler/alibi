@@ -425,7 +425,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         );
         active.set("clientId", data.client_id);
         active.set("resourceId", data.resource_id);
-        active.set("metadata", Option::<String>::None);
+        active.set("metadata", Option::<serde_json::Value>::None);
         active.set("createdAt", Some(data.created_at));
         model::insert::<super::entities::oauth_client_resource::Model>(self.exec(), &active)
             .await?

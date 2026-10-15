@@ -67,6 +67,11 @@ async fn oauth_client_credentials_issues_unbound_scope_limited_access<B: Backend
             "invalid_scope",
             "The following scopes are invalid: openid",
         ),
+        (
+            json!({"grant_type":"client_credentials","client_id":id,"client_secret":secret,"resource":"https://api.fixture.test/missing-machine"}),
+            "invalid_target",
+            "requested resource https://api.fixture.test/missing-machine is not configured",
+        ),
     ] {
         let denied = Box::pin(auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_token_endpoint(&input)?,

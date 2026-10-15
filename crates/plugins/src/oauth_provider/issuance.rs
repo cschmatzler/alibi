@@ -85,6 +85,38 @@ pub(super) fn remaining(issued: i64, expires: &Value) -> AuthResult<Value> {
         .ok_or_else(|| AuthError::internal("Invalid token expiration"))?;
     number(expires - issued)
 }
+pub(super) struct AccessTokenIssuance<'a> {
+    pub params: &'a OAuthTokenIssueParams,
+    pub issued: chrono::DateTime<chrono::Utc>,
+    pub expires: &'a Value,
+    pub audiences: &'a [String],
+    pub refresh_id: Option<&'a str>,
+}
+fn token_metadata(p: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
+    let mut metadata = serde_json::Map::from_iter([
+        ("scopes".into(), json!(p.scopes)),
+        ("resources".into(), json!(p.resources)),
+    ]);
+    for (key, value) in [
+        (
+            "referenceId",
+            p.reference_id.as_ref().map(|value| json!(value)),
+        ),
+        ("confirmation", p.confirmation.clone()),
+        (
+            "requestedUserInfoClaims",
+            p.requested_user_info_claims
+                .as_ref()
+                .filter(|v| !v.is_empty())
+                .map(|v| json!(v)),
+        ),
+    ] {
+        if let Some(value) = value {
+            _ = metadata.insert(key.into(), value);
+        }
+    }
+    metadata
+}
 impl OAuthProviderPlugin {
     pub(super) fn access_expiration<T: AsRef<str>>(
         &self,
@@ -146,116 +178,32 @@ impl OAuthProviderPlugin {
         }
         self.mint_tokens(ctx, call, params).await
     }
-    pub(super) async fn mint_tokens<S: AuthSchema>(
+    pub(super) async fn create_access_token<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         req: &impl alibi_core::session::SessionRequest,
-        p: &OAuthTokenIssueParams,
-    ) -> Result<Value, EndpointError> {
-        let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
-            .ok_or_else(|| AuthError::internal("Invalid token issue time"))?;
-        let expires_claim =
-            self.access_expiration(issued.timestamp(), p.user.is_some(), &p.scopes)?;
-        let expires = expiration_date(&expires_claim)?;
+        issuance: AccessTokenIssuance<'_>,
+    ) -> Result<String, EndpointError> {
+        let AccessTokenIssuance {
+            params: p,
+            issued,
+            expires: expires_claim,
+            audiences,
+            refresh_id,
+        } = issuance;
+        let expires = expiration_date(expires_claim)?;
         let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
-        let mut metadata = serde_json::Map::from_iter([
-            ("scopes".into(), json!(p.scopes)),
-            ("resources".into(), json!(p.resources)),
-        ]);
-        for (key, value) in [
-            (
-                "referenceId",
-                p.reference_id.as_ref().map(|value| json!(value)),
-            ),
-            ("confirmation", p.confirmation.clone()),
-            (
-                "requestedUserInfoClaims",
-                p.requested_user_info_claims
-                    .as_ref()
-                    .filter(|v| !v.is_empty())
-                    .map(|v| json!(v)),
-            ),
-        ] {
-            if let Some(value) = value {
-                _ = metadata.insert(key.into(), value);
-            }
-        }
-        let refresh = if p.user.is_some()
-            && p.scopes.iter().any(|s| s == "offline_access")
-            && super::authentication::client_allows_grant(&p.client, "refresh_token")
-        {
-            let token = random_token();
-            let mut retained = metadata.clone();
-            _ = retained.insert(
-                "resources".into(),
-                json!(p.original_resources.as_ref().or(p.resources.as_ref())),
-            );
-            _ = retained.insert("authTime".into(), json!(p.auth_time));
-            let row = ctx
-                .database
-                .create_oauth_token(
-                    OAuthTokenKind::Refresh,
-                    CreateOAuthToken {
-                        token: self.hash_token(&token, "refresh_token").await?,
-                        client_id: p.client.client_id.clone(),
-                        user_id: user_id.clone(),
-                        session_id: p.session_id.clone(),
-                        authorization_code_id: p.authorization_code_id.clone(),
-                        metadata: Value::Object(retained),
-                        created_at: issued,
-                        expires_at: expiration_date(&expiration(
-                            issued.timestamp(),
-                            self.config.refresh_token_expires_in,
-                        )?)?,
-                    },
-                )
-                .await?;
-            Some((row.id, token))
-        } else {
-            None
-        };
-        let access = if !self.config.disable_jwt_plugin
-            && p.resources.as_ref().is_some_and(|r| !r.is_empty())
-        {
+        let mut metadata = token_metadata(p);
+        let access = if !self.config.disable_jwt_plugin && !audiences.is_empty() {
             let base = format!(
                 "{}{}",
                 ctx.config.base_url.trim_end_matches('/'),
                 ctx.config.base_path
             );
-            let userinfo = format!("{base}/oauth2/userinfo");
-            let mut audiences = p.resources.clone().unwrap_or_default();
-            // Resource policy is resolved independently of client scope admission.
-            for resource in &audiences {
-                if resource != &userinfo
-                    && ctx.database.get_oauth_resource(resource).await?.is_none()
-                {
-                    return Err(EndpointError {
-                        error: AuthError::Api {
-                            status: 400,
-                            code: None,
-                            message: String::new(),
-                        },
-                        headers: None,
-                        body: Some(Box::new(alibi_core::utils::json::JsValue::from(
-                            json!({"error":"invalid_target","error_description":format!("requested resource {resource} is not configured")}),
-                        ))),
-                        body_absent: false,
-                    });
-                }
-            }
-            if p.scopes.iter().any(|s| s == "openid") && !audiences.contains(&userinfo) {
-                audiences.push(userinfo);
-            }
-            let mut unique = Vec::new();
-            for resource in audiences {
-                if !unique.contains(&resource) {
-                    unique.push(resource);
-                }
-            }
-            let audience = if unique.len() == 1 {
-                json!(unique.first())
+            let audience = if audiences.len() == 1 {
+                json!(audiences.first())
             } else {
-                json!(unique)
+                json!(audiences)
             };
             let jwt = ctx
                 .extensions
@@ -323,7 +271,7 @@ impl OAuthProviderPlugin {
                 .await?
         } else {
             let token = random_token();
-            if let Some((id, _)) = &refresh {
+            if let Some(id) = refresh_id {
                 _ = metadata.insert("refreshId".into(), json!(id));
             }
             _ = ctx
@@ -344,6 +292,75 @@ impl OAuthProviderPlugin {
                 .await?;
             token
         };
+        Ok(access)
+    }
+    pub(super) async fn mint_tokens<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        req: &impl alibi_core::session::SessionRequest,
+        p: &OAuthTokenIssueParams,
+    ) -> Result<Value, EndpointError> {
+        let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
+            .ok_or_else(|| AuthError::internal("Invalid token issue time"))?;
+        let expires_claim =
+            self.access_expiration(issued.timestamp(), p.user.is_some(), &p.scopes)?;
+        let resource_value = json!(p.resources);
+        let admission = self
+            .admit_resources(ctx, &p.client.client_id, &p.scopes, Some(&resource_value))
+            .await?;
+        let refresh_requested = p.scopes.iter().any(|scope| scope == "offline_access");
+        let mut resolved = p.clone();
+        resolved.scopes = admission.scopes;
+        let p = &resolved;
+        let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
+        let metadata = token_metadata(p);
+        let refresh = if p.user.is_some()
+            && refresh_requested
+            && super::authentication::client_allows_grant(&p.client, "refresh_token")
+        {
+            let token = random_token();
+            let mut retained = metadata.clone();
+            _ = retained.insert(
+                "resources".into(),
+                json!(p.original_resources.as_ref().or(p.resources.as_ref())),
+            );
+            _ = retained.insert("authTime".into(), json!(p.auth_time));
+            let row = ctx
+                .database
+                .create_oauth_token(
+                    OAuthTokenKind::Refresh,
+                    CreateOAuthToken {
+                        token: self.hash_token(&token, "refresh_token").await?,
+                        client_id: p.client.client_id.clone(),
+                        user_id: user_id.clone(),
+                        session_id: p.session_id.clone(),
+                        authorization_code_id: p.authorization_code_id.clone(),
+                        metadata: Value::Object(retained),
+                        created_at: issued,
+                        expires_at: expiration_date(&expiration(
+                            issued.timestamp(),
+                            self.config.refresh_token_expires_in,
+                        )?)?,
+                    },
+                )
+                .await?;
+            Some((row.id, token))
+        } else {
+            None
+        };
+        let access = self
+            .create_access_token(
+                ctx,
+                req,
+                AccessTokenIssuance {
+                    params: p,
+                    issued,
+                    expires: &expires_claim,
+                    audiences: &admission.audiences,
+                    refresh_id: refresh.as_ref().map(|(id, _)| id.as_str()),
+                },
+            )
+            .await?;
         let mut response = p
             .token_response
             .as_ref()

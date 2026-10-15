@@ -19,6 +19,7 @@ mod introspection;
 mod logout;
 mod machine;
 mod refresh;
+mod resource_policy;
 mod resources;
 mod revocation;
 mod session_retirement;
