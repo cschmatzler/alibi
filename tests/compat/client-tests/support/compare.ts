@@ -4976,6 +4976,64 @@ export function compareValues(
       !traceShape(path) &&
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)
     ) {
+      if (/^traces\.\d+\.responseHeaders\.set-auth-token$/.test(path)) {
+        const index = Number(path.split(".")[1]);
+        const left = context.leftRequestWindows?.[index];
+        const right = context.rightRequestWindows?.[index];
+        const cookieToken = (cookie: string | undefined) =>
+          cookie && signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token;
+        const at = cookieToken(left?.issuedSessionCookie);
+        const bt = cookieToken(right?.issuedSessionCookie);
+        const observed = (
+          root: unknown,
+          windows: ComparisonContext["leftRequestWindows"],
+          token: string,
+        ) => {
+          if (!record(root) || !Array.isArray(root.traces)) return false;
+          const producer = root.traces[index];
+          return (
+            record(producer) &&
+            producer.path === "/__test/oauth-popup/server-callback" &&
+            producer.responseStatus === 200 &&
+            root.traces.some((trace, position) => {
+              if (
+                position <= index ||
+                !record(trace) ||
+                trace.path !== "/__test/profiles/oauth-popup/api/auth/get-session" ||
+                trace.responseStatus !== 200 ||
+                !record(trace.responseBody)
+              ) {
+                return false;
+              }
+              const body = trace.responseBody;
+              return (
+                record(body.user) &&
+                record(body.session) &&
+                body.user.id === body.session.userId &&
+                body.session.token === token &&
+                issuedCookie(windows?.[position]?.sessionCookie, token)
+              );
+            })
+          );
+        };
+        if (
+          at &&
+          bt &&
+          left?.issuedSessionCookie &&
+          right?.issuedSessionCookie &&
+          decodeURIComponent(
+            left.issuedSessionCookie.slice(left.issuedSessionCookie.indexOf("=") + 1),
+          ) === a &&
+          decodeURIComponent(
+            right.issuedSessionCookie.slice(right.issuedSessionCookie.indexOf("=") + 1),
+          ) === b &&
+          observed(normalizedLeft, context.leftRequestWindows, at) &&
+          observed(normalizedRight, context.rightRequestWindows, bt)
+        ) {
+          identity(at, bt, path, "token");
+          return;
+        }
+      }
       if (
         key === "error_description" &&
         /^traces\.\d+\.responseErrorBody\.error_description$/.test(path)

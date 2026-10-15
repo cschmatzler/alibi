@@ -288,6 +288,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
             output,
         ))
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
     fn name(&self) -> &'static str {
         "oauth-popup"
     }
@@ -308,9 +311,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        Self::complete(req, req.path(), ctx, response)
+    }
+}
+
+impl OAuthPopupPlugin {
+    fn complete<S: AuthSchema>(
+        req: &impl alibi_core::session::SessionRequest,
+        path: &str,
+        ctx: &AuthContext<S>,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        if !(req.path().starts_with("/callback/") || req.path().starts_with("/oauth2/callback/")) {
+        if !(path.starts_with("/callback/") || path.starts_with("/oauth2/callback/")) {
             return Ok(response);
         }
         let Some(redirect) = response.headers.get("location").cloned() else {
@@ -318,7 +332,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
         };
         let name = related_cookie_name(&ctx.config, "oauth_popup");
         let marker = req
-            .headers
+            .session_headers()
             .get("cookie")
             .and_then(|header| {
                 header.split(';').find_map(|part| {
@@ -383,6 +397,45 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
         response.body = html.body;
         for (name, value) in html.headers.iter() {
             _ = response.headers.insert(name.clone(), value.clone());
+        }
+        Ok(response)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthPopupPlugin {
+    fn matches_after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+        _: &alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.path().is_some_and(|path| {
+            path.starts_with("/callback/") || path.starts_with("/oauth2/callback/")
+        }))
+    }
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let wire = response.to_response()?;
+        let cookie_count = wire.headers.get_all("set-cookie").count();
+        let completed = Self::complete(call, call.path().unwrap_or_default(), ctx, wire)?;
+        if completed.status == 200
+            && completed
+                .headers
+                .get("content-type")
+                .is_some_and(|value| value.starts_with("text/html"))
+        {
+            return Ok(alibi_core::endpoint::EndpointResponse::from_http_response(
+                completed,
+            ));
+        }
+        // Invalid markers may expire their cookie without replacing a redirect.
+        for value in completed.headers.get_all("set-cookie").skip(cookie_count) {
+            response = response.with_header("set-cookie", value.clone());
         }
         Ok(response)
     }

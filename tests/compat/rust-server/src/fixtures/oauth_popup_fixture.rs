@@ -92,12 +92,27 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<Router> {
             .build()
             .await?,
     );
+    let callback_auth = auth.clone();
     let server_auth = auth.clone();
     Ok(Router::new().route(&format!("{CONTROL}/server-start"), post(move |Json(input): Json<Value>| {
         let auth = server_auth.clone();
         async move {
             let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("oauth-popup", "oauthPopupStart").with_query(&input["query"]).unwrap();
             match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default()).await {
+                Ok(output) => output.into_response().unwrap().into_response(),
+                Err(error) => {
+                    let mut response = if error.body_absent {alibi::AuthResponse::new(error.error.status_code())} else {error.error.to_auth_response()};
+                    if let Some(body) = error.body { response.body = serde_json::to_vec(&*body).unwrap(); }
+                    if let Some(headers) = error.headers { for (name,value) in headers.iter() { if name.eq_ignore_ascii_case("set-cookie") { response.headers.append(name,value); } else { response.headers.insert(name,value); } } }
+                    response.into_response()
+                }
+            }
+        }
+    })).route(&format!("{CONTROL}/server-callback"), post(move |Json(input): Json<Value>| {
+        let auth = callback_auth.clone();
+        async move {
+            let endpoint = OAuthPlugin::callback_oauth_endpoint("gitlab", None).unwrap().with_query(&input["query"]).unwrap();
+            match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions { headers: Some(serde_json::from_value(input["headers"].clone()).unwrap()), ..Default::default() }).await {
                 Ok(output) => output.into_response().unwrap().into_response(),
                 Err(error) => {
                     let mut response = if error.body_absent {alibi::AuthResponse::new(error.error.status_code())} else {error.error.to_auth_response()};
