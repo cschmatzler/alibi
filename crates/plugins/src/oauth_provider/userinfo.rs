@@ -82,8 +82,8 @@ impl OAuthProviderPlugin {
         }) else {
             return error(401, "invalid_request", "access token not found");
         };
-        let payload = match self
-            .require_active_access_token(ctx, &authorization.token, None)
+        let validation = match self
+            .require_active_access_token_with_claims(ctx, &authorization.token, None)
             .await
         {
             Ok(payload) => payload,
@@ -98,6 +98,8 @@ impl OAuthProviderPlugin {
                 return Ok(no_store(response));
             }
         };
+        let payload = validation.payload;
+        let requested = validation.requested_user_info_claims;
         if payload
             .get("cnf")
             .and_then(crate::oauth2::get_confirmation_jkt)
@@ -157,28 +159,41 @@ impl OAuthProviderPlugin {
         };
         let user = ctx.user_view(&user);
         let mut claims = serde_json::Map::from_iter([("sub".into(), json!(user.id))]);
-        if scopes.contains(&"profile") {
-            if let Some(name) = user.name {
+        let wanted = |name: &str, scope: &str| {
+            scopes.contains(&scope) || requested.iter().any(|claim| claim == name)
+        };
+        if let Some(name) = user.name {
+            if wanted("name", "profile") {
                 _ = claims.insert("name".into(), json!(name));
+            }
+            if wanted("given_name", "profile") || wanted("family_name", "profile") {
                 let parts = name
                     .split(' ')
-                    .filter(|value| !value.is_empty())
+                    .filter(|part| !part.is_empty())
                     .collect::<Vec<_>>();
                 if let Some((family, given)) = parts.split_last()
                     && !given.is_empty()
                 {
-                    _ = claims.insert("given_name".into(), json!(given.join(" ")));
-                    _ = claims.insert("family_name".into(), json!(family));
+                    if wanted("given_name", "profile") {
+                        _ = claims.insert("given_name".into(), json!(given.join(" ")));
+                    }
+                    if wanted("family_name", "profile") {
+                        _ = claims.insert("family_name".into(), json!(family));
+                    }
                 }
             }
-            if let Some(image) = user.image {
-                _ = claims.insert("picture".into(), json!(image));
-            }
         }
-        if scopes.contains(&"email") {
-            if let Some(email) = user.email {
-                _ = claims.insert("email".into(), json!(email));
-            }
+        if wanted("picture", "profile")
+            && let Some(image) = user.image
+        {
+            _ = claims.insert("picture".into(), json!(image));
+        }
+        if wanted("email", "email")
+            && let Some(email) = user.email
+        {
+            _ = claims.insert("email".into(), json!(email));
+        }
+        if wanted("email_verified", "email") {
             _ = claims.insert("email_verified".into(), json!(user.email_verified));
         }
         Ok(no_store(EndpointResponse::json(&claims)?))
