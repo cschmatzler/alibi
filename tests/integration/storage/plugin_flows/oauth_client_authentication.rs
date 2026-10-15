@@ -3,8 +3,14 @@ use super::*;
 use alibi::endpoint::{EndpointOptions, EndpointResponse, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
-backend_tests!(oauth_client_authentication_rejects_ambiguous_methods_and_normalizes_forms);
-postgres_tests!(oauth_client_authentication_rejects_ambiguous_methods_and_normalizes_forms);
+backend_tests!(
+    oauth_client_authentication_rejects_ambiguous_methods_and_normalizes_forms,
+    oauth_client_authentication_parses_basic_form_credentials_and_preserves_reference_decode_quirks
+);
+postgres_tests!(
+    oauth_client_authentication_rejects_ambiguous_methods_and_normalizes_forms,
+    oauth_client_authentication_parses_basic_form_credentials_and_preserves_reference_decode_quirks
+);
 struct Case {
     name: &'static str,
     body: Value,
@@ -217,6 +223,196 @@ async fn oauth_client_authentication_rejects_ambiguous_methods_and_normalizes_fo
             ])
             .await?,
             before
+        );
+    }
+    B::close(connection).await
+}
+
+#[derive(Debug)]
+struct FormCredentials;
+impl alibi::plugins::OAuthClientIdGenerator for FormCredentials {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        Ok("client +/é:fixed".into())
+    }
+}
+impl alibi::plugins::OAuthClientSecretGenerator for FormCredentials {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        Ok("secret +/é:tail".into())
+    }
+}
+async fn oauth_client_authentication_parses_basic_form_credentials_and_preserves_reference_decode_quirks<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let cfg = alibi::plugins::OAuthProviderConfig {
+        client_id_generator: Some(Arc::new(FormCredentials)),
+        client_secret_generator: Some(Arc::new(FormCredentials)),
+        ..Default::default()
+    };
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(cfg))
+        .build()
+        .await?;
+    let owner = signup(&auth, "basic-form-owner@example.test").await;
+    let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Basic grammar","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"client_secret_basic"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let client = body(&created);
+    assert_eq!(client["client_id"], "client +/é:fixed");
+    assert_eq!(client["client_secret"], "secret +/é:tail");
+    let encode = |value: &str| {
+        url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("v", value)
+            .finish()
+            .strip_prefix("v=")
+            .unwrap()
+            .to_owned()
+    };
+    let payload = format!(
+        "{}:{}",
+        encode(client["client_id"].as_str().unwrap()),
+        encode(client["client_secret"].as_str().unwrap())
+    );
+    let b64 = |value: &str| base64::engine::general_purpose::STANDARD.encode(value);
+    let encoded = b64(&payload);
+    let invalid = "invalid authorization header format";
+    let unsupported = "unsupported authorization scheme";
+    let cases = [
+        ("canonical", format!("Basic {encoded}"), 200, None, None),
+        ("lowercase", format!("basic {encoded}"), 200, None, None),
+        ("spaces", format!("bAsIc   {encoded}"), 200, None, None),
+        (
+            "percent-space",
+            format!("Basic {}", b64(&payload.replace('+', "%20"))),
+            200,
+            None,
+            None,
+        ),
+        (
+            "unpadded",
+            format!("Basic {}", encoded.trim_end_matches('=')),
+            200,
+            None,
+            None,
+        ),
+        (
+            "ignored-after-padding",
+            format!("Basic {encoded}=garbage"),
+            200,
+            None,
+            None,
+        ),
+        (
+            "unescaped-secret-separator",
+            format!("Basic {}", b64(&format!("{payload}&ignored=1"))),
+            200,
+            None,
+            None,
+        ),
+        (
+            "missing-colon",
+            format!("Basic {}", b64("no-colon")),
+            401,
+            Some(invalid),
+            Some("Basic"),
+        ),
+        (
+            "empty-id",
+            format!("Basic {}", b64(":secret")),
+            401,
+            Some(invalid),
+            Some("Basic"),
+        ),
+        (
+            "empty-secret",
+            format!("Basic {}", b64("client:")),
+            401,
+            Some(invalid),
+            Some("Basic"),
+        ),
+        (
+            "malformed-base64",
+            "Basic %%%".into(),
+            401,
+            Some(invalid),
+            Some("Basic"),
+        ),
+        (
+            "bare-basic",
+            "Basic".into(),
+            401,
+            Some(unsupported),
+            Some("Basic"),
+        ),
+        (
+            "tab-basic",
+            format!("Basic\t{encoded}"),
+            401,
+            Some(unsupported),
+            Some("Basic"),
+        ),
+        (
+            "bearer",
+            "Bearer example".into(),
+            401,
+            Some(unsupported),
+            Some("Bearer"),
+        ),
+        (
+            "invalid-scheme",
+            "@bad example".into(),
+            400,
+            Some("Invalid authorization header format"),
+            None,
+        ),
+    ];
+    let before = db
+        .tables(&[
+            "oauthClient",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "verification",
+            "oauthClientAssertion",
+        ])
+        .await?;
+    for (name, authorization, status, detail, challenge) in cases {
+        let body = json!({"token":"not-issued"});
+        let response = invoke(
+            &auth,
+            &Case {
+                name,
+                entries: entries(&body),
+                body,
+                authorization: Some(authorization),
+                detail: None,
+            },
+        )
+        .await?;
+        assert_eq!(
+            response.status,
+            status,
+            "{name}: {}",
+            super::body(&response)
+        );
+        assert_eq!(
+            response.headers.get("WWW-Authenticate").map(String::as_str),
+            challenge,
+            "{name}"
+        );
+        assert_eq!(super::body(&response),detail.map_or_else(||json!({"active":false}),|detail|json!({"error":if status==400{"invalid_request"}else{"invalid_client"},"error_description":detail})),"{name}");
+        assert_eq!(
+            db.tables(&[
+                "oauthClient",
+                "oauthAccessToken",
+                "oauthRefreshToken",
+                "verification",
+                "oauthClientAssertion"
+            ])
+            .await?,
+            before,
+            "{name}"
         );
     }
     B::close(connection).await

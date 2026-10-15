@@ -19,6 +19,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "basic-special": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"client +/é:fixed",generateClientSecret:()=>"secret +/é:tail"})]}),
     "generated-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>`operator-client-${++generatedClientIds}`})]}),
     "empty-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>""})]}),
     "prefixed-generator": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",prefix:{clientSecret:"client_prefix_"},generateClientSecret:()=>`operator-secret-${++prefixedSecrets}`})]}),
