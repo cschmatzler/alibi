@@ -60,7 +60,7 @@ compatScenario(
       const assertion = await new SignJWT({
         iss: client.client_id,
         sub: client.client_id,
-        aud: `${ctx.baseURL}/oauth2/introspect`,
+        aud: `${ctx.baseURL}/api/auth/oauth2/introspect`,
         iat: now,
         exp: now + 90,
         jti: randomUUID(),
@@ -91,7 +91,7 @@ compatScenario(
             .setProtectedHeader({ alg: algorithm, kid: "application-key" })
             .sign(signingKey);
         const claimCases: [string, string, unknown, number, string?][] = [
-          ["issuer audience", "aud", ctx.baseURL, 200],
+          ["issuer audience", "aud", `${ctx.baseURL}/api/auth`, 200],
           ["future iat", "iat", now + 600, 200],
           ["whitespace jti", "jti", " ", 200],
           ["missing exp", "exp", undefined, 400, "client assertion must include exp claim"],
@@ -123,7 +123,7 @@ compatScenario(
           const original = {
             iss: client.client_id,
             sub: client.client_id,
-            aud: `${ctx.baseURL}/oauth2/introspect`,
+            aud: `${ctx.baseURL}/api/auth/oauth2/introspect`,
             iat: now,
             exp: now + 90,
             jti: randomUUID(),
