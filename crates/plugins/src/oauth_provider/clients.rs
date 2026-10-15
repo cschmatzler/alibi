@@ -3,11 +3,9 @@ use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use rand::{RngExt as _, distr::Alphanumeric};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 
 /// Metadata accepted when an authenticated owner registers a managed client.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -739,11 +737,7 @@ impl OAuthProviderPlugin {
             );
         }
         let plaintext = self.generate_client_secret()?;
-        let protected = if self.config.disable_jwt_plugin {
-            crate::token_crypto::encrypt_with_config(&plaintext, &ctx.config)?
-        } else {
-            URL_SAFE_NO_PAD.encode(Sha256::digest(plaintext.as_bytes()))
-        };
+        let protected = super::client_secret::store(ctx, &self.config, &plaintext).await?;
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid client update timestamp"))?;
         let Some(client) = ctx
@@ -1153,16 +1147,11 @@ impl OAuthProviderPlugin {
         } else {
             Some(self.generate_client_secret()?)
         };
-        let stored = plaintext
-            .as_deref()
-            .map(|secret| {
-                if self.config.disable_jwt_plugin {
-                    crate::token_crypto::encrypt_with_config(secret, &ctx.config)
-                } else {
-                    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(secret.as_bytes())))
-                }
-            })
-            .transpose()?;
+        let stored = if let Some(secret) = plaintext.as_deref() {
+            Some(super::client_secret::store(ctx, &self.config, secret).await?)
+        } else {
+            None
+        };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid client creation timestamp"))?;
         let client = ctx

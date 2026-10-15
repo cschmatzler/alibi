@@ -15,6 +15,8 @@ compatScenario(
       "encrypted-generator",
       "prefixed-generator",
       "encrypted-prefixed-generator",
+      "custom-hash",
+      "custom-prefixed-verify",
     ]) {
       const prefix = mode.includes("prefixed") ? "client_prefix_" : "";
       const control = (input: any) =>
@@ -90,7 +92,7 @@ compatScenario(
         await control({ action: "row", clientId: client.client_id })
       ).json()) as any;
       const rawSecret = rotated.client_secret.slice(prefix.length);
-      const hash = createHash("sha256").update(rawSecret).digest("base64url");
+      const hash = `${mode.startsWith("custom-") ? "custom:" : ""}${createHash("sha256").update(rawSecret).digest("base64url")}`;
       if (mode.includes("encrypted")) {
         expect(typeof row.client_secret).toBe("string");
         expect(row.client_secret.length).toBeGreaterThan(0);
@@ -122,6 +124,7 @@ compatScenario(
       for (const [secret, status] of [
         [client.client_secret, 400],
         [rotated.client_secret, 200],
+        [`${rotated.client_secret}!`, mode === "custom-prefixed-verify" ? 200 : 400],
       ] as const) {
         const result = await control({
           action: "introspect",
@@ -148,6 +151,17 @@ compatScenario(
         prefixDenials,
       });
     }
-    return ctx.snapshot({ results });
+    const invalid = await actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "secret-hash-validation" }),
+    });
+    expect(invalid.status).toBe(200);
+    const validation = await invalid.json();
+    expect(validation).toEqual({
+      valid: false,
+      message: "unable to store hashed secrets because id tokens will be signed with secret",
+    });
+    return ctx.snapshot({ results, validation });
   },
 );
