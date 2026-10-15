@@ -95,6 +95,8 @@ async function issue(
   link = false,
   cookie = false,
   input: Record<string, unknown> = {},
+  sdk = false,
+  sdkCookie = "",
 ) {
   const fixturePath = cookie ? authProfilePath("oauth-proxy-cookie") : path;
   const body = {
@@ -138,11 +140,25 @@ async function issue(
       ),
     };
   }
-  const started = start
-    ? { data: await start.json(), error: null }
-    : link
-      ? await actor.client.linkSocial(body)
-      : await actor.client.signIn.social(body);
+  const logical = sdk
+    ? await actor.fetch(`${ctx.baseURL}${fixturePath}/__server-social`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        redirect: "manual",
+        body: JSON.stringify({
+          link,
+          body,
+          headers: { "x-skip-oauth-proxy": "1", ...(link ? { cookie: sdkCookie } : {}) },
+        }),
+      })
+    : undefined;
+  const started = logical
+    ? { data: await logical.json(), error: null }
+    : start
+      ? { data: await start.json(), error: null }
+      : link
+        ? await actor.client.linkSocial(body)
+        : await actor.client.signIn.social(body);
   expect(started.error).toBeNull();
 
   const authorization = new URL(started.data!.url!);
@@ -243,126 +259,128 @@ async function forward(
 
 const comparison = { oauthProxyProfileSecret: oauthPurposeSecret(secret, "oauth-proxy-profile") };
 
-for (const operation of ["oAuthProxy", "oAuthProxyCompletion"] as const) {
-  compatScenario(
-    `OAuth proxy ${operation} exchanges on production then consumes preview state for only the provider owner`,
-    async (ctx) => {
-      const owner = ctx.actor("proxy-owner", "oauth-proxy");
-      const foreign = ctx.actor("proxy-foreign", "oauth-proxy");
-      const seeded = await foreign.client.signUp.email({
-        email: ctx.uniqueEmail("proxy-foreign"),
-        name: "Foreign",
-        password: "password123",
-      });
-      expect(seeded.error).toBeNull();
+for (const sdk of [false, true]) {
+  for (const operation of ["oAuthProxy", "oAuthProxyCompletion"] as const) {
+    compatScenario(
+      `OAuth proxy ${sdk ? "SDK" : "HTTP"} ${operation} exchanges on production then consumes preview state for only the provider owner`,
+      async (ctx) => {
+        const owner = ctx.actor("proxy-owner", "oauth-proxy");
+        const foreign = ctx.actor("proxy-foreign", "oauth-proxy");
+        const seeded = await foreign.client.signUp.email({
+          email: ctx.uniqueEmail("proxy-foreign"),
+          name: "Foreign",
+          password: "password123",
+        });
+        expect(seeded.error).toBeNull();
 
-      const before = await state(ctx);
-      const issued = await issue(ctx, owner);
-      const saved = await state(ctx);
-      expect(saved.preview.verification).toHaveLength(1);
+        const before = await state(ctx);
+        const issued = await issue(ctx, owner, false, false, {}, sdk);
+        const saved = await state(ctx);
+        expect(saved.preview.verification).toHaveLength(1);
 
-      const forwarded = await forward(ctx, owner, issued);
-      const production = await state(ctx);
-      expect(production.production).toEqual(before.production);
-      expect(production.preview).toEqual(saved.preview);
+        const forwarded = await forward(ctx, owner, issued);
+        const production = await state(ctx);
+        expect(production.production).toEqual(before.production);
+        expect(production.preview).toEqual(saved.preview);
 
-      const serverComplete = async (
-        query: unknown = Object.fromEntries(new URL(forwarded.bridge).searchParams),
-        provider = "gitlab",
-      ) =>
-        response(
-          await owner.fetch(`${ctx.baseURL}${path}/__server-proxy`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ query, operation, params: { id: provider } }),
+        const serverComplete = async (
+          query: unknown = Object.fromEntries(new URL(forwarded.bridge).searchParams),
+          provider = "gitlab",
+        ) =>
+          response(
+            await owner.fetch(`${ctx.baseURL}${path}/__server-proxy`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ query, operation, params: { id: provider } }),
+              redirect: "manual",
+            }),
+          );
+        const rejected = [];
+        for (const query of [
+          {},
+          { callbackURL: 42 },
+          { callbackURL: `${ctx.baseURL}/proxy-done`, profile: null },
+        ]) {
+          const denied = await serverComplete(query);
+          expect(denied.status).toBe(400);
+          expect(denied.body).toMatchObject({ code: "VALIDATION_ERROR" });
+          expect((await state(ctx)).preview).toEqual(saved.preview);
+          rejected.push(denied);
+        }
+        const providerMismatch =
+          operation === "oAuthProxyCompletion" ? await serverComplete(undefined, "google") : null;
+        if (providerMismatch) {
+          expect(providerMismatch.status).toBe(302);
+          expect(new URL(providerMismatch.location!).searchParams.get("error")).toBe(
+            "provider_mismatch",
+          );
+          expect((await state(ctx)).preview).toEqual(saved.preview);
+        }
+        const completed = await serverComplete();
+        expect(completed.status).toBe(302);
+        expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+
+        const current = await owner.client.getSession();
+        expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+
+        const after = await state(ctx);
+        expect(after.preview.verification).toHaveLength(0);
+        expect(after.preview.users).toHaveLength(2);
+        expect(after.preview.accounts).toHaveLength(2);
+        expect(after.preview.sessions).toHaveLength(2);
+
+        const id = current.data!.user.id;
+        expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(id);
+        expect(after.preview.sessions.find((r) => r.userId === id)!.token).toBe(
+          current.data!.session.token,
+        );
+        expect(after.preview.users.find((r) => r.id === seeded.data!.user.id)).toEqual(
+          before.preview.users[0],
+        );
+        expect(after.preview.sessions.filter((r) => r.userId === seeded.data!.user.id)).toEqual(
+          before.preview.sessions,
+        );
+
+        const replay = await serverComplete();
+        expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
+        expect((await state(ctx)).preview).toEqual(after.preview);
+
+        const codeReplay = await response(
+          await owner.fetch(forwarded.approved.location!, {
             redirect: "manual",
+            credentials: "omit",
           }),
         );
-      const rejected = [];
-      for (const query of [
-        {},
-        { callbackURL: 42 },
-        { callbackURL: `${ctx.baseURL}/proxy-done`, profile: null },
-      ]) {
-        const denied = await serverComplete(query);
-        expect(denied.status).toBe(400);
-        expect(denied.body).toMatchObject({ code: "VALIDATION_ERROR" });
-        expect((await state(ctx)).preview).toEqual(saved.preview);
-        rejected.push(denied);
-      }
-      const providerMismatch =
-        operation === "oAuthProxyCompletion" ? await serverComplete(undefined, "google") : null;
-      if (providerMismatch) {
-        expect(providerMismatch.status).toBe(302);
-        expect(new URL(providerMismatch.location!).searchParams.get("error")).toBe(
-          "provider_mismatch",
-        );
-        expect((await state(ctx)).preview).toEqual(saved.preview);
-      }
-      const completed = await serverComplete();
-      expect(completed.status).toBe(302);
-      expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+        expect(new URL(codeReplay.location!).searchParams.get("error")).toBe("invalid_code");
 
-      const current = await owner.client.getSession();
-      expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+        const final = await state(ctx);
+        expect(final.preview).toEqual(after.preview);
+        expect(final.production).toEqual(before.production);
 
-      const after = await state(ctx);
-      expect(after.preview.verification).toHaveLength(0);
-      expect(after.preview.users).toHaveLength(2);
-      expect(after.preview.accounts).toHaveLength(2);
-      expect(after.preview.sessions).toHaveLength(2);
-
-      const id = current.data!.user.id;
-      expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(id);
-      expect(after.preview.sessions.find((r) => r.userId === id)!.token).toBe(
-        current.data!.session.token,
-      );
-      expect(after.preview.users.find((r) => r.id === seeded.data!.user.id)).toEqual(
-        before.preview.users[0],
-      );
-      expect(after.preview.sessions.filter((r) => r.userId === seeded.data!.user.id)).toEqual(
-        before.preview.sessions,
-      );
-
-      const replay = await serverComplete();
-      expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
-      expect((await state(ctx)).preview).toEqual(after.preview);
-
-      const codeReplay = await response(
-        await owner.fetch(forwarded.approved.location!, {
-          redirect: "manual",
-          credentials: "omit",
-        }),
-      );
-      expect(new URL(codeReplay.location!).searchParams.get("error")).toBe("invalid_code");
-
-      const final = await state(ctx);
-      expect(final.preview).toEqual(after.preview);
-      expect(final.production).toEqual(before.production);
-
-      return {
-        before: observations(before),
-        started: issued.started,
-        issuedState: issued.issuedState,
-        issued: observations(saved),
-        approved: forwarded.approved,
-        forwarded: forwarded.forwarded,
-        oauthProxyProfile: forwarded.atom,
-        afterProduction: observations(production),
-        rejected,
-        providerMismatch,
-        completed,
-        current,
-        after: observations(after),
-        replay,
-        codeReplay,
-        final: observations(final),
-      };
-    },
-    ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
-    undefined,
-    comparison,
-  );
+        return {
+          before: observations(before),
+          started: issued.started,
+          issuedState: issued.issuedState,
+          issued: observations(saved),
+          approved: forwarded.approved,
+          forwarded: forwarded.forwarded,
+          oauthProxyProfile: forwarded.atom,
+          afterProduction: observations(production),
+          rejected,
+          providerMismatch,
+          completed,
+          current,
+          after: observations(after),
+          replay,
+          codeReplay,
+          final: observations(final),
+        };
+      },
+      ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
+      undefined,
+      comparison,
+    );
+  }
 }
 
 compatScenario(
@@ -500,143 +518,154 @@ compatScenario(
   comparison,
 );
 
-compatScenario(
-  "OAuth proxy linking follows the saved authenticated owner without creating any session",
-  async (ctx) => {
-    const owner = ctx.actor("proxy-link-owner", "oauth-proxy");
-    const foreign = ctx.actor("proxy-link-foreign", "oauth-proxy");
-    const signed = await owner.client.signUp.email({
-      email: "proxy-owner@fixture.test",
-      name: "Existing Owner",
-      password: "password123",
-    });
-    const other = await foreign.client.signUp.email({
-      email: ctx.uniqueEmail("proxy-link-foreign"),
-      name: "Foreign",
-      password: "password123",
-    });
-    expect(signed.error).toBeNull();
-    expect(other.error).toBeNull();
-
-    const before = await state(ctx);
-    const issued = await issue(ctx, owner, true);
-    const saved = await state(ctx);
-    const forwarded = await forward(ctx, owner, issued);
-    const completed = await response(
-      await owner.fetch(forwarded.bridge, { redirect: "manual", credentials: "omit" }),
-    );
-    expect(completed.status).toBe(302);
-    expect(completed.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
-
-    const after = await state(ctx);
-    expect(after.production).toEqual(before.production);
-    expect(after.preview.users).toEqual(before.preview.users);
-    expect(after.preview.sessions).toEqual(before.preview.sessions);
-    expect(after.preview.accounts).toHaveLength(3);
-    expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(
-      signed.data!.user.id,
-    );
-    expect(after.preview.verification).toHaveLength(0);
-
-    const current = await owner.client.getSession();
-    expect(current.data!.session.token).toBe(signed.data!.token!);
-
-    const foreignCurrent = await foreign.client.getSession();
-    expect(foreignCurrent.data!.session.token).toBe(other.data!.token!);
-
-    const replay = await response(await foreign.fetch(forwarded.bridge, { redirect: "manual" }));
-    expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
-    expect((await state(ctx)).preview).toEqual(after.preview);
-
-    const denied = [];
-
-    for (const mode of ["different-email", "foreign-account"]) {
-      if (mode === "foreign-account") {
-        const configured = await ctx.rawRequest({
-          path: "/__test/oauth-proxy/profile",
-          method: "POST",
-          json: {
-            id: 777,
-            email: other.data!.user.email,
-            email_verified: true,
-            name: "Proxy Owner",
-            avatar_url: "https://assets.fixture.test/avatar.png",
-            state: "active",
-            locked: false,
+for (const sdk of [false, true]) {
+  compatScenario(
+    `OAuth proxy ${sdk ? "SDK" : "HTTP"} linking follows the saved authenticated owner without creating any session`,
+    async (ctx) => {
+      const owner = ctx.actor("proxy-link-owner", "oauth-proxy");
+      const foreign = ctx.actor("proxy-link-foreign", "oauth-proxy");
+      let sdkCookie = "";
+      const signed = await owner.client.signUp.email({
+        email: "proxy-owner@fixture.test",
+        name: "Existing Owner",
+        password: "password123",
+        fetchOptions: {
+          onSuccess({ response }) {
+            sdkCookie = response.headers
+              .getSetCookie()
+              .map((value) => value.split(";")[0])
+              .join("; ");
           },
+        },
+      });
+      const other = await foreign.client.signUp.email({
+        email: ctx.uniqueEmail("proxy-link-foreign"),
+        name: "Foreign",
+        password: "password123",
+      });
+      expect(signed.error).toBeNull();
+      expect(other.error).toBeNull();
+
+      const before = await state(ctx);
+      const issued = await issue(ctx, owner, true, false, {}, sdk, sdkCookie);
+      const saved = await state(ctx);
+      const forwarded = await forward(ctx, owner, issued);
+      const completed = await response(
+        await owner.fetch(forwarded.bridge, { redirect: "manual", credentials: "omit" }),
+      );
+      expect(completed.status).toBe(302);
+      expect(completed.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+
+      const after = await state(ctx);
+      expect(after.production).toEqual(before.production);
+      expect(after.preview.users).toEqual(before.preview.users);
+      expect(after.preview.sessions).toEqual(before.preview.sessions);
+      expect(after.preview.accounts).toHaveLength(3);
+      expect(after.preview.accounts.find((r) => r.providerId === "gitlab")!.userId).toBe(
+        signed.data!.user.id,
+      );
+      expect(after.preview.verification).toHaveLength(0);
+
+      const current = await owner.client.getSession();
+      expect(current.data!.session.token).toBe(signed.data!.token!);
+
+      const foreignCurrent = await foreign.client.getSession();
+      expect(foreignCurrent.data!.session.token).toBe(other.data!.token!);
+
+      const replay = await response(await foreign.fetch(forwarded.bridge, { redirect: "manual" }));
+      expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
+      expect((await state(ctx)).preview).toEqual(after.preview);
+
+      const denied = [];
+
+      for (const mode of ["different-email", "foreign-account"]) {
+        if (mode === "foreign-account") {
+          const configured = await ctx.rawRequest({
+            path: "/__test/oauth-proxy/profile",
+            method: "POST",
+            json: {
+              id: 777,
+              email: other.data!.user.email,
+              email_verified: true,
+              name: "Proxy Owner",
+              avatar_url: "https://assets.fixture.test/avatar.png",
+              state: "active",
+              locked: false,
+            },
+          });
+          expect(configured.status).toBe(200);
+        }
+
+        const attempt = await issue(ctx, foreign, true);
+        const pending = await state(ctx);
+        const approval = await response(
+          await foreign.fetch(attempt.authorization, { redirect: "manual" }),
+        );
+        const transfer = await response(
+          await foreign.fetch(approval.location!, { redirect: "manual", credentials: "omit" }),
+        );
+        const bridge = new URL(transfer.location!);
+        const token = bridge.searchParams.get("profile")!;
+        const payload = JSON.parse(
+          await symmetricDecrypt({
+            key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+            data: token,
+          }),
+        );
+        expect(payload.state).toBe(attempt.state);
+
+        const rejection = await response(
+          await foreign.fetch(bridge, { redirect: "manual", credentials: "omit" }),
+        );
+        expect(new URL(rejection.location!).searchParams.get("error")).toBe(
+          mode === "different-email"
+            ? "email_does_not_match"
+            : "account_already_linked_to_different_user",
+        );
+
+        const stored = await state(ctx);
+        expect(stored.preview.users).toEqual(after.preview.users);
+        expect(stored.preview.accounts).toEqual(after.preview.accounts);
+        expect(stored.preview.sessions).toEqual(after.preview.sessions);
+        expect(stored.preview.verification).toHaveLength(0);
+        expect(stored.production).toEqual(before.production);
+
+        denied.push({
+          mode,
+          started: attempt.started,
+          issuedState: attempt.issuedState,
+          pending: observations(pending),
+          approval,
+          transfer,
+          oauthProxyProfile: { token, payload },
+          rejection,
+          after: observations(stored),
         });
-        expect(configured.status).toBe(200);
       }
 
-      const attempt = await issue(ctx, foreign, true);
-      const pending = await state(ctx);
-      const approval = await response(
-        await foreign.fetch(attempt.authorization, { redirect: "manual" }),
-      );
-      const transfer = await response(
-        await foreign.fetch(approval.location!, { redirect: "manual", credentials: "omit" }),
-      );
-      const bridge = new URL(transfer.location!);
-      const token = bridge.searchParams.get("profile")!;
-      const payload = JSON.parse(
-        await symmetricDecrypt({
-          key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
-          data: token,
-        }),
-      );
-      expect(payload.state).toBe(attempt.state);
-
-      const rejection = await response(
-        await foreign.fetch(bridge, { redirect: "manual", credentials: "omit" }),
-      );
-      expect(new URL(rejection.location!).searchParams.get("error")).toBe(
-        mode === "different-email"
-          ? "email_does_not_match"
-          : "account_already_linked_to_different_user",
-      );
-
-      const stored = await state(ctx);
-      expect(stored.preview.users).toEqual(after.preview.users);
-      expect(stored.preview.accounts).toEqual(after.preview.accounts);
-      expect(stored.preview.sessions).toEqual(after.preview.sessions);
-      expect(stored.preview.verification).toHaveLength(0);
-      expect(stored.production).toEqual(before.production);
-
-      denied.push({
-        mode,
-        started: attempt.started,
-        issuedState: attempt.issuedState,
-        pending: observations(pending),
-        approval,
-        transfer,
-        oauthProxyProfile: { token, payload },
-        rejection,
-        after: observations(stored),
-      });
-    }
-
-    return {
-      signed,
-      other,
-      before: observations(before),
-      started: issued.started,
-      issuedState: issued.issuedState,
-      saved: observations(saved),
-      approved: forwarded.approved,
-      forwarded: forwarded.forwarded,
-      oauthProxyProfile: forwarded.atom,
-      completed,
-      after: observations(after),
-      current,
-      foreignCurrent,
-      replay,
-      denied,
-    };
-  },
-  ["POST /link-social", "GET /callback/{}/oauth-proxy"],
-  undefined,
-  comparison,
-);
+      return {
+        signed,
+        other,
+        before: observations(before),
+        started: issued.started,
+        issuedState: issued.issuedState,
+        saved: observations(saved),
+        approved: forwarded.approved,
+        forwarded: forwarded.forwarded,
+        oauthProxyProfile: forwarded.atom,
+        completed,
+        after: observations(after),
+        current,
+        foreignCurrent,
+        replay,
+        denied,
+      };
+    },
+    ["POST /link-social", "GET /callback/{}/oauth-proxy"],
+    undefined,
+    comparison,
+  );
+}
 
 compatScenario(
   "OAuth proxy restoration and session failures preserve exact stages rows and retry",

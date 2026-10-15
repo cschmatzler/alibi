@@ -466,8 +466,15 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
             .collect()
     };
 
-    let proxy = alibi_core::hooks::current_request_hook_context()
-        .and_then(|req| req.extensions.get::<crate::oauth_proxy::OAuthProxyFlow>());
+    let proxy = alibi_core::endpoint::current_endpoint_call_context()
+        .and_then(|call| {
+            call.extensions()
+                .get::<crate::oauth_proxy::OAuthProxyFlow>()
+        })
+        .or_else(|| {
+            alibi_core::hooks::current_request_hook_context()
+                .and_then(|req| req.extensions.get::<crate::oauth_proxy::OAuthProxyFlow>())
+        });
     let mut payload = OAuthStatePayload::new(
         proxy
             .as_ref()
@@ -493,13 +500,17 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         "oauthState".to_owned(),
         serde_json::Value::String(state.clone()),
     );
-    if proxy.is_some()
-        && let Some(req) = alibi_core::hooks::current_request_hook_context()
-    {
-        req.extensions.insert(crate::oauth_proxy::IssuedProxyState {
+    if proxy.is_some() {
+        let issued = crate::oauth_proxy::IssuedProxyState {
             state: state.clone(),
             payload: payload.clone(),
-        });
+        };
+        if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
+            call.extensions().insert(issued.clone());
+        }
+        if let Some(req) = alibi_core::hooks::current_request_hook_context() {
+            req.extensions.insert(issued);
+        }
     }
 
     match ctx.config.account.store_state_strategy {

@@ -211,7 +211,144 @@ impl OAuthProxyPlugin {
             }
         }
     }
-    fn current<S: AuthSchema>(&self, req: &AuthRequest, ctx: &AuthContext<S>) -> String {
+    fn wrap_state<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        mut response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        let Some(issued) = req.extensions().get::<IssuedProxyState>() else {
+            return Ok(response);
+        };
+        let Ok(mut body) = alibi_core::utils::json::from_slice::<Value>(&response.body) else {
+            return Ok(response);
+        };
+        let Some(original_url) = body.get("url").and_then(Value::as_str) else {
+            return Ok(response);
+        };
+        let Ok(mut url) = url::Url::parse(original_url) else {
+            return Ok(response);
+        };
+        if !url
+            .query_pairs()
+            .any(|(key, value)| key == "state" && value == issued.state)
+        {
+            return Ok(response);
+        }
+        let package = StatePackage {
+            state: issued.state.clone(),
+            state_cookie: self.encrypt(
+                &alibi_core::utils::json::to_string(&issued.payload)?,
+                ctx,
+                EncryptionPurpose::ProxyState,
+            )?,
+            is_oauth_proxy: true,
+        };
+        let encrypted = self.encrypt(
+            &alibi_core::utils::json::to_string(&package)?,
+            ctx,
+            EncryptionPurpose::ProxyPackage,
+        )?;
+        let pairs: Vec<_> = url
+            .query_pairs()
+            .filter(|(key, _)| key != "state")
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect();
+        _ = url
+            .query_pairs_mut()
+            .clear()
+            .extend_pairs(pairs)
+            .append_pair("state", &encrypted);
+        if let Some(value) = body.get_mut("url") {
+            *value = json!(url.as_str());
+        }
+        response.body = alibi_core::utils::json::to_vec(&body)?;
+        if response.headers.get("location").is_some() {
+            _ = response.headers.insert("Location", url.as_str());
+        }
+        Ok(response)
+    }
+    fn prepare_flow<S: AuthSchema>(
+        &self,
+        req: Option<&AuthRequest>,
+        body: Option<&Value>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<OAuthProxyFlow>> {
+        if req
+            .and_then(|request| request.headers.get("x-skip-oauth-proxy"))
+            .is_some_and(|value| !value.is_empty())
+        {
+            return Ok(None);
+        }
+        let environment_production = std::env::var("BETTER_AUTH_URL")
+            .ok()
+            .filter(|value| !value.is_empty());
+        let production = self
+            .config
+            .production_url
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .or(environment_production.as_deref())
+            .unwrap_or(&ctx.config.base_url);
+        // Skip resolution deliberately uses the transport URL even when its
+        // origin is not trusted. Receiver selection below performs its own check.
+        let transport = req.and_then(AuthRequest::url).map(url::Url::as_str);
+        let vendor = vendor_base_url();
+        let skip_current = self
+            .config
+            .current_url
+            .as_deref()
+            .filter(|value| !value.is_empty())
+            .or(transport)
+            .or(vendor.as_deref());
+        if skip_current
+            .and_then(|value| url::Url::parse(value).ok())
+            .zip(url::Url::parse(production).ok())
+            .is_some_and(|(current, production)| current.origin() == production.origin())
+        {
+            return Ok(None);
+        }
+        let current = url::Url::parse(&self.current(req, ctx))
+            .map_err(|_error| AuthError::config("Invalid OAuth proxy current URL"))?;
+        let Some(body) = body else {
+            return Ok(None);
+        };
+        let Some(provider) = body
+            .get("provider")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
+            return Ok(None);
+        };
+        let original = body
+            .get("callbackURL")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map_or_else(|| auth_base(ctx), String::from);
+        let mut callback = url::Url::parse(&format!(
+            "{}{}/callback/{provider}/oauth-proxy",
+            current.origin().ascii_serialization(),
+            ctx.config.base_path
+        ))
+        .map_err(|_error| AuthError::config("Invalid OAuth proxy callback URL"))?;
+        _ = callback
+            .query_pairs_mut()
+            .append_pair("callbackURL", &original);
+        Ok(Some(OAuthProxyFlow {
+            effective_auth_base_url: format!(
+                "{}{}",
+                self.config
+                    .production_url
+                    .as_deref()
+                    .filter(|value| !value.is_empty())
+                    .unwrap_or(&ctx.config.base_url)
+                    .trim_end_matches('/'),
+                ctx.config.base_path
+            ),
+            callback_url: callback.to_string(),
+        }))
+    }
+    fn current<S: AuthSchema>(&self, req: Option<&AuthRequest>, ctx: &AuthContext<S>) -> String {
         if let Some(value) = self
             .config
             .current_url
@@ -220,7 +357,7 @@ impl OAuthProxyPlugin {
         {
             return value.clone();
         }
-        if let Some(url) = req.url()
+        if let Some(url) = req.and_then(AuthRequest::url)
             && ctx
                 .config
                 .is_redirect_target_trusted(&url.origin().ascii_serialization())
@@ -860,6 +997,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         }
         Ok(output)
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::get("/callback/{provider}/oauth-proxy", "oauth_proxy"),
@@ -882,80 +1022,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         {
             return Ok(None);
         }
-        if req
-            .headers
-            .get("x-skip-oauth-proxy")
-            .is_some_and(|value| !value.is_empty())
+        if let Some(flow) =
+            self.prepare_flow(Some(req), req.body_as_json::<Value>().ok().as_ref(), ctx)?
         {
-            return Ok(None);
+            req.extensions().insert(flow);
         }
-        let environment_production = std::env::var("BETTER_AUTH_URL")
-            .ok()
-            .filter(|value| !value.is_empty());
-        let production = self
-            .config
-            .production_url
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .or(environment_production.as_deref())
-            .unwrap_or(&ctx.config.base_url);
-        // Skip resolution deliberately uses the transport URL even when its
-        // origin is not trusted. Receiver selection below performs its own check.
-        let transport = req.url().map(url::Url::as_str);
-        let vendor = vendor_base_url();
-        let skip_current = self
-            .config
-            .current_url
-            .as_deref()
-            .filter(|value| !value.is_empty())
-            .or(transport)
-            .or(vendor.as_deref());
-        if skip_current
-            .and_then(|value| url::Url::parse(value).ok())
-            .zip(url::Url::parse(production).ok())
-            .is_some_and(|(current, production)| current.origin() == production.origin())
-        {
-            return Ok(None);
-        }
-        let current = url::Url::parse(&self.current(req, ctx))
-            .map_err(|_error| AuthError::config("Invalid OAuth proxy current URL"))?;
-        let Ok(body) = req.body_as_json::<Value>() else {
-            return Ok(None);
-        };
-        let Some(provider) = body
-            .get("provider")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-        else {
-            return Ok(None);
-        };
-        let original = body
-            .get("callbackURL")
-            .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-            .map_or_else(|| auth_base(ctx), String::from);
-        let mut callback = url::Url::parse(&format!(
-            "{}{}/callback/{provider}/oauth-proxy",
-            current.origin().ascii_serialization(),
-            ctx.config.base_path
-        ))
-        .map_err(|_error| AuthError::config("Invalid OAuth proxy callback URL"))?;
-        _ = callback
-            .query_pairs_mut()
-            .append_pair("callbackURL", &original);
-        req.extensions().insert(OAuthProxyFlow {
-            effective_auth_base_url: format!(
-                "{}{}",
-                self.config
-                    .production_url
-                    .as_deref()
-                    .filter(|value| !value.is_empty())
-                    .unwrap_or(&ctx.config.base_url)
-                    .trim_end_matches('/'),
-                ctx.config.base_path
-            ),
-            callback_url: callback.to_string(),
-        });
         Ok(None)
     }
     async fn on_request(
@@ -980,58 +1051,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
-        mut response: AuthResponse,
+        response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        let Some(issued) = req.extensions().get::<IssuedProxyState>() else {
-            return Ok(response);
-        };
-        let Ok(mut body) = alibi_core::utils::json::from_slice::<Value>(&response.body) else {
-            return Ok(response);
-        };
-        let Some(original_url) = body.get("url").and_then(Value::as_str) else {
-            return Ok(response);
-        };
-        let Ok(mut url) = url::Url::parse(original_url) else {
-            return Ok(response);
-        };
-        if !url
-            .query_pairs()
-            .any(|(key, value)| key == "state" && value == issued.state)
-        {
-            return Ok(response);
-        }
-        let package = StatePackage {
-            state: issued.state.clone(),
-            state_cookie: self.encrypt(
-                &alibi_core::utils::json::to_string(&issued.payload)?,
-                ctx,
-                EncryptionPurpose::ProxyState,
-            )?,
-            is_oauth_proxy: true,
-        };
-        let encrypted = self.encrypt(
-            &alibi_core::utils::json::to_string(&package)?,
-            ctx,
-            EncryptionPurpose::ProxyPackage,
-        )?;
-        let pairs: Vec<_> = url
-            .query_pairs()
-            .filter(|(key, _)| key != "state")
-            .map(|(key, value)| (key.into_owned(), value.into_owned()))
-            .collect();
-        _ = url
-            .query_pairs_mut()
-            .clear()
-            .extend_pairs(pairs)
-            .append_pair("state", &encrypted);
-        if let Some(value) = body.get_mut("url") {
-            *value = json!(url.as_str());
-        }
-        response.body = alibi_core::utils::json::to_vec(&body)?;
-        if response.headers.get("location").is_some() {
-            _ = response.headers.insert("Location", url.as_str());
-        }
-        Ok(response)
+        self.wrap_state(req, ctx, response)
     }
 }
 
@@ -1103,4 +1125,55 @@ fn vendor_base_url() -> Option<String> {
     ]
     .into_iter()
     .find_map(|name| std::env::var(name).ok().filter(|value| !value.is_empty()))
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthProxyPlugin {
+    fn matches_before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<bool> {
+        Ok(call
+            .path()
+            .is_some_and(|path| path.starts_with("/sign-in/social") || path == "/link-social"))
+    }
+    async fn before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        let body = call
+            .body()
+            .map(alibi_core::utils::json::to_value)
+            .transpose()?;
+        if let Some(flow) = self.prepare_flow(call.request(), body.as_ref(), ctx)? {
+            call.extensions().insert(flow);
+        }
+        Ok(None)
+    }
+    fn matches_after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+        _: &alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.extensions().get::<IssuedProxyState>().is_some())
+    }
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if response.result().is_ok() {
+            let wire = self.wrap_state(call, ctx, response.to_response()?)?;
+            let value = alibi_core::utils::json::from_slice(&wire.body)?;
+            response.replace(value);
+            if let Some(location) = wire.headers.get("location") {
+                response = response.with_header("location", location.clone());
+            }
+        }
+        Ok(response)
+    }
 }
