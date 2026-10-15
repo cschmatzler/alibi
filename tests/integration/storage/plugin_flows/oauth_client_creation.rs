@@ -3,7 +3,26 @@ use super::*;
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine;
 use sha2::Digest;
-backend_tests!(oauth_client_creation_persists_owned_metadata_and_protected_secret);
+backend_tests!(
+    oauth_client_creation_persists_owned_metadata_and_protected_secret,
+    oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output
+);
+postgres_tests!(oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output);
+#[derive(Debug)]
+struct OperatorClientIds {
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+    empty: bool,
+}
+impl alibi::plugins::OAuthClientIdGenerator for OperatorClientIds {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        Ok(if self.empty {
+            String::new()
+        } else {
+            format!("operator-client-{call}")
+        })
+    }
+}
 async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -188,5 +207,92 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         json!(["com.fixture.app:/callback"])
     );
     assert_eq!(db.count("oauthClient").await?, 2);
+    B::close(connection).await
+}
+
+async fn oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, ServerEndpoint};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for empty in [false, true] {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    client_id_generator: Some(Arc::new(OperatorClientIds {
+                        calls: calls.clone(),
+                        empty,
+                    })),
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .await?;
+        let owner = signup(&auth, &format!("id-generator-{empty}@example.test")).await;
+        let options = || EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        };
+        let input = json!({"client_name":"Generated ID client","redirect_uris":["https://app.fixture.test/callback"],"client_id":"forged"});
+        let rejected = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider", "createOAuthClient")
+                    .with_body(&input)?,
+                EndpointOptions::default(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.error.status_code(), 401);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let response = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider", "createOAuthClient")
+                    .with_body(&input)?,
+                options(),
+            )
+            .await?
+            .into_response()?;
+        assert_eq!(response.status, 201);
+        let client = body(&response);
+        let expected = if empty { "" } else { "operator-client-1" };
+        assert_eq!(client["client_id"], expected);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let stored = auth.store().get_oauth_client(expected).await?.unwrap();
+        assert_eq!(stored.client_id, expected);
+        assert_eq!(
+            stored.user_id.as_deref(),
+            body(&owner)["user"]["id"].as_str()
+        );
+        assert_eq!(
+            stored.client_secret.as_deref(),
+            Some(
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(
+                        client["client_secret"].as_str().unwrap().as_bytes()
+                    ))
+                    .as_str()
+            )
+        );
+        let read = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider", "getOAuthClient")
+                    .with_query(&json!({"client_id":expected}))?,
+                options(),
+            )
+            .await?
+            .into_response()?;
+        assert_eq!(read.status, 200);
+        assert_eq!(body(&read)["client_id"], expected);
+        assert!(body(&read).get("client_secret").is_none());
+        if !empty {
+            let public=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none"}))?,options()).await?.into_response()?;
+            assert_eq!(public.status, 201);
+            assert_eq!(body(&public)["client_id"], "operator-client-2");
+            assert!(body(&public).get("client_secret").is_none());
+            assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        }
+    }
     B::close(connection).await
 }

@@ -830,6 +830,34 @@ test("empty custom device codes compare literally while other empty identities r
   }
 });
 
+test("empty custom OAuth client IDs compare literally without relaxing credential identities", () => {
+  for (const field of ["client_id", "clientId"]) {
+    for (const value of ["", " "]) {
+      expect(compareValues({ [field]: value }, { [field]: value }, context)).toEqual([]);
+      for (const replacement of ["different-client", value === "" ? " " : ""]) {
+        for (const [left, right] of [
+          [value, replacement],
+          [replacement, value],
+        ]) {
+          expect(
+            compareValues({ [field]: left }, { [field]: right }, context).some(
+              (diff) =>
+                diff.path === field && diff.reason === "literal empty OAuth client ID differs",
+            ),
+          ).toBe(true);
+        }
+      }
+    }
+  }
+  for (const field of ["id", "userId", "token", "client_secret", "access_token", "state"]) {
+    expect(
+      compareValues({ [field]: "" }, { [field]: "" }, context).some(
+        (diff) => diff.reason === "empty identity or token",
+      ),
+    ).toBe(true);
+  }
+});
+
 test("computed device session TTL permits only the proved floor boundary", () => {
   const start = Date.parse("2026-09-30T00:00:00.000Z");
   const clocks = {

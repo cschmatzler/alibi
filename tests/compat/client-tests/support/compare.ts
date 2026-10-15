@@ -5176,7 +5176,11 @@ export function compareValues(
       }
 
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) {
-        if (urlQueryContext === "query" && !a.trim() && !b.trim()) {
+        // Pinned custom OAuth client ID generators preserve empty strings.
+        // These compare literally and cannot alias nonempty identifiers.
+        if ((key === "client_id" || key === "clientId") && (!a.trim() || !b.trim())) {
+          if (a !== b) fail(path, "literal empty OAuth client ID differs");
+        } else if (urlQueryContext === "query" && !a.trim() && !b.trim()) {
           if (a !== b) {
             fail(path, "literal empty URL selector differs");
           }
