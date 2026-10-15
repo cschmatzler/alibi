@@ -8,11 +8,13 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
 backend_tests!(
     oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
-    oauth_sender_confirmation_survives_validation_and_introspection
+    oauth_sender_confirmation_survives_validation_and_introspection,
+    oauth_jwt_introspection_uses_live_resource_peer_authority
 );
 postgres_tests!(
     oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
-    oauth_sender_confirmation_survives_validation_and_introspection
+    oauth_sender_confirmation_survives_validation_and_introspection,
+    oauth_jwt_introspection_uses_live_resource_peer_authority
 );
 async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B: Backend>(
     db: Db,
@@ -270,6 +272,143 @@ async fn oauth_sender_confirmation_survives_validation_and_introspection<B: Back
             assert_eq!(payload.get("cnf"), present.then_some(&confirmation));
         }
     }
+    Ok(())
+}
+async fn oauth_jwt_introspection_uses_live_resource_peer_authority<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::ServerEndpoint;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = OAuthProviderPlugin::new();
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "jwt-introspection@example.test").await;
+    let headers = [("cookie".into(), cookies(&owner))]
+        .into_iter()
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut clients = Vec::new();
+    for name in ["issuer", "peer", "stranger"] {
+        let response=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":name,"redirect_uris":["https://app.fixture.test/callback"],"scope":"email offline_access","token_endpoint_auth_method":"client_secret_post","grant_types":["authorization_code"]}))?,EndpointOptions{headers:Some(headers.clone()),..Default::default()})).await?.into_response()?;
+        assert_eq!(response.status, 201);
+        clients.push(body(&response));
+    }
+    let resource = "https://api.fixture.test/introspection/signed";
+    let registered = Box::pin(
+        auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", "adminCreateOAuthResource")
+                .with_body(&json!({"identifier":resource}))?,
+            EndpointOptions {
+                headers: Some(headers.clone()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    assert_eq!(registered.status, 200);
+    for client in &clients[..2] {
+        let linked = Box::pin(
+            auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider", "adminLinkClientResource")
+                    .with_params(&json!({"identifier":resource,"client_id":client["client_id"]}))?,
+                EndpointOptions {
+                    headers: Some(headers.clone()),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await?
+        .into_response()?;
+        assert_eq!(linked.status, 200);
+    }
+    let client = provider
+        .get_client(auth.context(), clients[0]["client_id"].as_str().unwrap())
+        .await?
+        .unwrap();
+    let owner_id = client.user_id.clone().unwrap();
+    let user = auth.store().get_user_by_id(&owner_id).await?.unwrap();
+    let mut params =
+        OAuthTokenIssueParams::new(client, vec!["email".into(), "offline_access".into()]);
+    params.user = Some(auth.context().trusted_user_view(&user));
+    params.resources = Some(vec![resource.into()]);
+    params.confirmation = Some(json!({"jkt":"trusted-binding"}));
+    let call = EndpointCall::new(
+        &EndpointDefinition {
+            name: "issueTokensFixture",
+            operation_id: "issueTokensFixture",
+            path: Some("/fixture/issue-tokens".into()),
+            method: alibi::HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    let issued = provider
+        .issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:introspection"),
+            &params,
+        )
+        .await?;
+    let token = issued["access_token"].as_str().unwrap();
+    for (index, client) in clients.iter().enumerate() {
+        let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":client["client_id"],"client_secret":client["client_secret"],"token":token,"token_type_hint":"access_token"}))?,EndpointOptions::default())).await?.into_response()?;
+        assert_eq!(response.status, 200);
+        let claims = body(&response);
+        if index == 2 {
+            assert_eq!(claims, json!({"active":false}));
+            continue;
+        }
+        assert_eq!(claims["active"], true);
+        assert_eq!(claims["client_id"], clients[0]["client_id"]);
+        assert_eq!(claims["sub"], owner_id);
+        assert_eq!(claims["aud"], resource);
+        assert_eq!(claims["cnf"], json!({"jkt":"trusted-binding"}));
+        assert_eq!(claims["token_type"], "DPoP");
+    }
+    let prefixed = format!("  dpop   {token}  ");
+    let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":prefixed}))?,EndpointOptions::default())).await?.into_response()?;
+    assert_eq!(body(&response)["active"], true);
+    let parts = token.split('.').collect::<Vec<_>>();
+    let mut signature = URL_SAFE_NO_PAD.decode(parts[2])?;
+    *signature.first_mut().unwrap() ^= 1;
+    let tampered = format!(
+        "{}.{}.{}",
+        parts[0],
+        parts[1],
+        URL_SAFE_NO_PAD.encode(signature)
+    );
+    let failure=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":tampered,"token_type_hint":"access_token"}))?,EndpointOptions::default())).await.unwrap_err();
+    assert_eq!(failure.error.status_code(), 500);
+    assert!(failure.body_absent);
+    assert!(
+        failure
+            .headers
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("content-type")
+                && value == "application/json")
+    );
+    let unlinked = Box::pin(
+        auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", "adminUnlinkClientResource")
+                .with_params(&json!({"identifier":resource,"client_id":clients[1]["client_id"]}))?,
+            EndpointOptions {
+                headers: Some(headers),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    assert_eq!(unlinked.status, 200);
+    let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[1]["client_id"],"client_secret":clients[1]["client_secret"],"token":token}))?,EndpointOptions::default())).await?.into_response()?;
+    assert_eq!(body(&response), json!({"active":false}));
     Ok(())
 }
 async fn verified_claims<S: alibi::AuthSchema>(

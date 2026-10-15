@@ -2,26 +2,11 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
-use alibi_core::store::{OAuthToken, OAuthTokenKind};
+use alibi_core::store::OAuthToken;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession, HttpMethod};
 use serde_json::{Value, json};
 /// The shared access-token liveness gate used by public protocol consumers.
-pub(super) async fn live_access<S: AuthSchema>(
-    token: &str,
-    ctx: &AuthContext<S>,
-    provider: &OAuthProviderPlugin,
-) -> AuthResult<Option<OAuthToken>> {
-    let hash = provider.hash_token(token, "access_token").await?;
-    let Some(row) = ctx
-        .database
-        .get_oauth_token(OAuthTokenKind::Access, &hash)
-        .await?
-    else {
-        return Ok(None);
-    };
-    live_access_row(row, ctx, provider).await
-}
 pub(super) async fn live_access_row<S: AuthSchema>(
     row: OAuthToken,
     ctx: &AuthContext<S>,
