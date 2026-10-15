@@ -8,7 +8,8 @@ use alibi::plugins::{
 };
 use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use axum::Router;
+use axum::{Router,Json,routing::post,response::IntoResponse};
+use serde_json::Value;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -21,6 +22,7 @@ impl alibi::AuthPlugin<TestSchema> for ApplicationExposure {
     fn name(&self) -> &'static str {
         "application-exposure"
     }
+    fn endpoint_hooks(&self)->Vec<&dyn alibi::endpoint::EndpointHook<TestSchema>>{vec![self]}
     fn routes(&self) -> Vec<alibi::AuthRoute> {
         Vec::new()
     }
@@ -45,6 +47,10 @@ impl alibi::AuthPlugin<TestSchema> for ApplicationExposure {
     }
 }
 #[async_trait::async_trait]
+impl alibi::endpoint::EndpointHook<TestSchema> for ApplicationExposure{
+ async fn after(&self,_call:&alibi::endpoint::EndpointCall,_ctx:&alibi::AuthContext<TestSchema>,response:alibi::endpoint::EndpointResponse)->AuthResult<alibi::endpoint::EndpointResponse>{Ok(response.with_header("access-control-expose-headers","X-First, X-First, X-Second"))}
+}
+#[async_trait::async_trait]
 impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
@@ -64,6 +70,7 @@ pub(crate) async fn router(
     counter: Arc<AtomicUsize>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
+    let mut sdk_profiles=std::collections::HashMap::new();
     for name in [
         "bearer-default",
         "bearer-signed",
@@ -113,7 +120,14 @@ pub(crate) async fn router(
             builder
         };
         let auth = Arc::new(builder.build().await?);
+        _=sdk_profiles.insert(name.to_owned(),auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    Ok(router)
+    Ok(router.route("/__test/server-api/bearer",post(move|Json(input):Json<Value>|{let profiles=sdk_profiles.clone();async move{
+        let profile=input.get("profile").and_then(Value::as_str).unwrap_or("bearer-default");let Some(auth)=profiles.get(profile)else{return axum::http::StatusCode::NOT_FOUND.into_response();};
+        let sign_up=input.get("action").and_then(Value::as_str)==Some("sign-up");let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new(if sign_up{"email-password"}else{"session-management"},if sign_up{"signUpEmail"}else{"getSession"});if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
+        let request=input.get("requestHeaders").map(|headers|{let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Get,"/get-session");request.headers=serde_json::from_value(headers.clone()).unwrap();request});
+        let options=alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request,..Default::default()};
+        match auth.dispatch_endpoint(endpoint,options).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()}
+    }})))
 }

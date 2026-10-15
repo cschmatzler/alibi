@@ -1,5 +1,8 @@
 //! Bearer authentication through the ordinary signed session-cookie lifecycle.
 
+use alibi_core::endpoint::{
+    BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
+};
 use alibi_core::utils::cookie_utils::sign_cookie_value;
 use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
@@ -13,6 +16,7 @@ use base64::{
 use hmac::{Hmac, KeyInit, Mac};
 use indexmap::IndexMap;
 use sha2::Sha256;
+use std::collections::HashMap;
 
 /// Configuration of the bearer-to-cookie adapter.
 #[derive(Clone, Debug, Default)]
@@ -35,6 +39,25 @@ impl BearerPlugin {
     #[must_use]
     pub const fn with_config(config: BearerConfig) -> Self {
         Self { config }
+    }
+
+    fn authenticated_headers(
+        &self,
+        authorization: &str,
+        existing_headers: &HashMap<String, String>,
+        secret: &str,
+        cookie_name: &str,
+    ) -> Option<HashMap<String, String>> {
+        let token = self.signed_token(authorization, secret)?;
+        let existing = existing_headers
+            .iter()
+            .find_map(|(key, value)| key.eq_ignore_ascii_case("cookie").then_some(value.as_str()))
+            .unwrap_or("");
+        let cookie = replace_cookie(existing, cookie_name, &token);
+        let mut headers = existing_headers.clone();
+        headers.retain(|key, _| !key.eq_ignore_ascii_case("cookie"));
+        _ = headers.insert("cookie".to_owned(), cookie);
+        Some(headers)
     }
 
     fn signed_token(&self, authorization: &str, secret: &str) -> Option<String> {
@@ -142,6 +165,9 @@ fn replace_cookie(header: &str, name: &str, value: &str) -> String {
 impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
     route_openapi_metadata!(S);
 
+    fn endpoint_hooks(&self) -> Vec<&dyn EndpointHook<S>> {
+        vec![self]
+    }
     fn name(&self) -> &'static str {
         "bearer"
     }
@@ -161,18 +187,14 @@ impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
         else {
             return Ok(None);
         };
-        let Some(token) = self.signed_token(authorization, ctx.config.current_secret()) else {
+        let Some(headers) = self.authenticated_headers(
+            authorization,
+            &req.headers,
+            ctx.config.current_secret(),
+            &ctx.config.session.cookie_name,
+        ) else {
             return Ok(None);
         };
-        let existing = req
-            .headers
-            .iter()
-            .find_map(|(key, value)| key.eq_ignore_ascii_case("cookie").then_some(value.as_str()))
-            .unwrap_or("");
-        let cookie = replace_cookie(existing, &ctx.config.session.cookie_name, &token);
-        let mut headers = req.headers.clone();
-        headers.retain(|key, _| !key.eq_ignore_ascii_case("cookie"));
-        _ = headers.insert("cookie".to_owned(), cookie);
         Ok(Some(BeforeRequestAction::ReplaceHeaders { headers }))
     }
 
@@ -190,39 +212,110 @@ impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
         ctx: &AuthContext<S>,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        let token = response
-            .headers
-            .get_all("set-cookie")
-            .filter_map(|header| cookie::Cookie::parse(header.as_str()).ok())
-            .filter(|cookie| cookie.name() == ctx.config.session.cookie_name)
-            .last();
-        if let Some(cookie) = token.filter(|cookie| {
-            !cookie.value().is_empty()
-                && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
-        }) {
-            let token = try_decode(cookie.value());
-            let mut exposed = Vec::new();
-            for name in response
-                .headers
-                .get("access-control-expose-headers")
-                .map_or("", String::as_str)
-                .split(',')
-                .map(str::trim)
-                .filter(|v| !v.is_empty())
-            {
-                if !exposed.contains(&name) {
-                    exposed.push(name);
-                }
-            }
-            if !exposed.contains(&"set-auth-token") {
-                exposed.push("set-auth-token");
-            }
-            let exposed = exposed.join(", ");
+        if let Some((token, exposed)) =
+            issuance_headers(&response.headers, &ctx.config.session.cookie_name)
+        {
             _ = response.headers.insert("set-auth-token", token);
             _ = response
                 .headers
                 .insert("access-control-expose-headers", exposed);
         }
         Ok(response)
+    }
+}
+
+fn issuance_headers(headers: &alibi_core::Headers, cookie_name: &str) -> Option<(String, String)> {
+    let token = headers
+        .get_all("set-cookie")
+        .filter_map(|header| cookie::Cookie::parse(header.as_str()).ok())
+        .filter(|cookie| cookie.name() == cookie_name)
+        .last();
+    if let Some(cookie) = token.filter(|cookie| {
+        !cookie.value().is_empty() && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
+    }) {
+        let token = try_decode(cookie.value());
+        let mut exposed = Vec::new();
+        for name in headers
+            .get("access-control-expose-headers")
+            .map_or("", String::as_str)
+            .split(',')
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
+            if !exposed.contains(&name) {
+                exposed.push(name);
+            }
+        }
+        if !exposed.contains(&"set-auth-token") {
+            exposed.push("set-auth-token");
+        }
+        let exposed = exposed.join(", ");
+        return Some((token, exposed));
+    }
+    None
+}
+
+fn authorization(headers: &HashMap<String, String>) -> Option<&str> {
+    headers
+        .iter()
+        .find_map(|(name, value)| {
+            name.eq_ignore_ascii_case("authorization")
+                .then_some(value.as_str())
+        })
+        .filter(|value| !value.is_empty())
+}
+#[async_trait]
+impl<S: AuthSchema> EndpointHook<S> for BearerPlugin {
+    async fn before(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<BeforeEndpointAction>> {
+        let header = call
+            .request()
+            .and_then(|request| authorization(&request.headers))
+            .or_else(|| call.headers().and_then(authorization));
+        let Some(header) = header else {
+            return Ok(None);
+        };
+        let existing = call
+            .request()
+            .map(|request| &request.headers)
+            .or_else(|| call.headers());
+        let Some(existing) = existing else {
+            return Ok(None);
+        };
+        let Some(headers) = self.authenticated_headers(
+            header,
+            existing,
+            ctx.config.current_secret(),
+            &ctx.config.session.cookie_name,
+        ) else {
+            return Ok(None);
+        };
+        Ok(Some(BeforeEndpointAction::Patch(Box::new(
+            EndpointContextPatch {
+                headers: Some(headers),
+                ..Default::default()
+            },
+        ))))
+    }
+    async fn after(
+        &self,
+        _call: &EndpointCall,
+        ctx: &AuthContext<S>,
+        response: EndpointResponse,
+    ) -> AuthResult<EndpointResponse> {
+        Ok(
+            if let Some((token, exposed)) =
+                issuance_headers(response.headers(), &ctx.config.session.cookie_name)
+            {
+                response
+                    .with_header("set-auth-token", token)
+                    .with_header("access-control-expose-headers", exposed)
+            } else {
+                response
+            },
+        )
     }
 }
