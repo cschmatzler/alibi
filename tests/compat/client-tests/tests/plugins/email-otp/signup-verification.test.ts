@@ -57,3 +57,47 @@ compatScenario(
   },
   ["POST /sign-up/email", "POST /email-otp/verify-email"],
 );
+
+compatScenario("email OTP server signup delivers a scoped consumable verification", async (ctx) => {
+  const actor = ctx.actor();
+  for (const enabled of [false, true]) {
+    const profile = enabled ? "otp-signup-verification" : undefined;
+    const email = ctx.uniqueEmail(`sdk-signup-otp-${enabled}`);
+    const response = await actor.fetch(`${ctx.baseURL}/__test/server-api/email-otp-signup`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        profile,
+        body: { email, name: "Owner", password: "a-native-password-123" },
+        headers: { "x-sdk-marker": "sdk" },
+      }),
+    });
+    expect(response.status).toBe(200);
+    const owner = (await response.json()) as any;
+    expect(owner.user.emailVerified).toBe(false);
+    if (!enabled) {
+      expect(await deliveredOtpCount(ctx, email, "email-verification")).toBe(0);
+      continue;
+    }
+    const otp = await readOtp(ctx, email, "email-verification");
+    expect(await deliveredOtpCount(ctx, email, "sign-in")).toBe(0);
+    const identifier = `email-verification-otp-${email}`;
+    expect(await ctx.readVerificationState({ identifier })).toEqual([
+      expect.objectContaining({ identifier, value: `${otp}:0` }),
+    ]);
+    const verify = () =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/email-otp-verify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ profile, body: { email, otp } }),
+      });
+    expect((await verify()).status).toBe(200);
+    expect(await ctx.readVerificationState({ identifier })).toEqual([]);
+    const state = await ctx.readUserState({ userId: owner.user.id });
+    expect((state as any).user.emailVerified).toBe(true);
+    const replay = await verify();
+    expect(replay.status).toBe(400);
+    expect(await replay.json()).toMatchObject({ code: "INVALID_OTP" });
+  }
+  return { delivered: true, scoped: true, consumed: true };
+});

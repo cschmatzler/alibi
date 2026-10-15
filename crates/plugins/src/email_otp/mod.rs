@@ -280,6 +280,7 @@ alibi_core::impl_auth_plugin! {
                 max_requests: if self.config.rate_limit.max_requests == 0.0 || self.config.rate_limit.max_requests.is_nan() { 3.0 } else { self.config.rate_limit.max_requests },
             } }]
         }
+        fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> { vec![self] }
         fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
         fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
@@ -356,6 +357,53 @@ impl<S: alibi_core::AuthSchema> alibi_core::VerificationEmailOverride<S> for Ema
         _ = ctx.verifications().create_in_transaction(tx, value).await?;
         self.deliver(ctx, request, &email, otp, EmailOtpType::EmailVerification)
             .await
+    }
+}
+
+#[async_trait]
+impl<S: alibi_core::AuthSchema> alibi_core::endpoint::EndpointHook<S> for EmailOtpPlugin {
+    fn matches_after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+        _response: &alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(call.path().is_some_and(|path| path.starts_with("/sign-up"))
+            && self.config.send_verification_on_sign_up
+            && !self.config.override_default_email_verification)
+    }
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        if let Ok(value) = response.result()
+            && let Some(email) = value
+                .get("user")
+                .and_then(|user| user.get("email"))
+                .and_then(alibi_core::utils::json::JsValue::as_str)
+                .filter(|email| !email.is_empty())
+        {
+            let otp = self
+                .issue_code(
+                    ctx,
+                    call.request(),
+                    email,
+                    EmailOtpType::EmailVerification,
+                    None,
+                )
+                .await?;
+            self.deliver(
+                ctx,
+                call.request(),
+                email,
+                otp,
+                EmailOtpType::EmailVerification,
+            )
+            .await?;
+        }
+        Ok(response)
     }
 }
 
