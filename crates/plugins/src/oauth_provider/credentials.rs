@@ -12,7 +12,81 @@ pub(super) struct Credentials {
     pub(super) secret: String,
     pub(super) method: &'static str,
 }
-pub(super) fn extract(body: &Value, req: &impl SessionRequest) -> Credentials {
+const AUTH_FIELDS: [&str; 3] = ["client_secret", "client_assertion", "client_assertion_type"];
+
+pub(super) fn extract(
+    body: &Value,
+    req: &impl SessionRequest,
+) -> AuthResult<Result<Credentials, EndpointResponse>> {
+    match normalize(body, req) {
+        Ok(body) => Ok(Ok(from_normalized(&body, req))),
+        Err(description) => Ok(Err(super::clients::status_protocol_error(
+            400,
+            "invalid_request",
+            &description,
+        )?)),
+    }
+}
+
+fn normalize(body: &Value, req: &impl SessionRequest) -> Result<Value, String> {
+    let mut fields = serde_json::Map::new();
+    for field in std::iter::once("client_id").chain(AUTH_FIELDS) {
+        if let Some(value) = body.get(field) {
+            if value == "" {
+                continue;
+            }
+            if !value.is_string() {
+                return Err(format!("{field} must be a string"));
+            }
+            _ = fields.insert(field.into(), value.clone());
+        }
+    }
+    let request = req.physical_request();
+    if let Some(request) = request
+        && request.header("content-type").is_some_and(|value| {
+            value
+                .to_ascii_lowercase()
+                .contains("application/x-www-form-urlencoded")
+        })
+    {
+        let params = url::form_urlencoded::parse(request.body.as_deref().unwrap_or_default())
+            .into_owned()
+            .collect::<Vec<_>>();
+        for field in std::iter::once("client_id").chain(AUTH_FIELDS) {
+            let values = params
+                .iter()
+                .filter(|(key, value)| key == field && !value.is_empty())
+                .map(|(_, value)| value)
+                .collect::<Vec<_>>();
+            if values.len() > 1 {
+                return Err(format!("{field} must not be repeated"));
+            }
+            if field == "client_id" {
+                _ = fields.remove(field);
+            }
+            if let Some(value) = values.first() {
+                _ = fields.insert(field.into(), Value::String((*value).clone()));
+            }
+        }
+    }
+    let header = request
+        .and_then(|request| request.header("authorization"))
+        .is_some_and(|value| !value.is_empty());
+    let secret = fields.contains_key("client_secret");
+    let assertion =
+        fields.contains_key("client_assertion") || fields.contains_key("client_assertion_type");
+    if (header && (secret || assertion)) || (secret && assertion) {
+        return Err("A request must use only one client authentication method".into());
+    }
+    let mut normalized = body.as_object().cloned().unwrap_or_default();
+    for field in std::iter::once("client_id").chain(AUTH_FIELDS) {
+        _ = normalized.remove(field);
+    }
+    normalized.extend(fields);
+    Ok(Value::Object(normalized))
+}
+
+fn from_normalized(body: &Value, req: &impl SessionRequest) -> Credentials {
     let mut client_id = body
         .get("client_id")
         .and_then(Value::as_str)

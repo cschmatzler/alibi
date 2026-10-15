@@ -59,7 +59,10 @@ impl OAuthProviderPlugin {
                 },
             );
         }
-        let credentials = super::credentials::extract(&body, req);
+        let credentials = match super::credentials::extract(&body, req)? {
+            Ok(credentials) => credentials,
+            Err(response) => return Ok(response),
+        };
         let client_id = credentials.client_id.clone();
         let secret = &credentials.secret;
         if client_id.is_empty() {

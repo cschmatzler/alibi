@@ -14,7 +14,10 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let credentials = super::credentials::extract(body, req);
+        let credentials = match super::credentials::extract(body, req)? {
+            Ok(credentials) => credentials,
+            Err(response) => return Ok(no_store(response)),
+        };
         if credentials.client_id.is_empty() {
             return error("invalid_request", "Missing required client_id");
         }

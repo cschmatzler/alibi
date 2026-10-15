@@ -198,7 +198,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 body:
                   input.contentType === "application/json"
                     ? JSON.stringify(input.body)
-                    : new URLSearchParams(input.body),
+                    : new URLSearchParams(input.formEntries ?? input.body),
               }
             : {}),
         }),
@@ -321,7 +321,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/revoke`, {
             method: "POST",
             headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams(input.body),
+            body: new URLSearchParams(input.formEntries ?? input.body),
           }),
         });
       const responses = await Promise.all([call(), call()]);
@@ -338,7 +338,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/revoke`, {
           method: "POST",
           headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams(input.body),
+          body: new URLSearchParams(input.formEntries ?? input.body),
         }),
       });
     }
@@ -350,7 +350,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/introspect`, {
           method: "POST",
           headers: { ...input.headers, "content-type": "application/x-www-form-urlencoded" },
-          body: new URLSearchParams(input.body),
+          body: new URLSearchParams(input.formEntries ?? input.body),
         }),
       });
     }
@@ -391,7 +391,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             ...input.headers,
             "content-type": "application/x-www-form-urlencoded",
           },
-          body: new URLSearchParams(input.body),
+          body: new URLSearchParams(input.formEntries ?? input.body),
         }),
       });
     }
