@@ -84,6 +84,12 @@ pub struct OAuthProviderConfig {
     pub consent_page: String,
     pub select_account_page: Option<String>,
     pub code_expires_in: f64,
+    /// User access-token lifetime in seconds, including refresh grant issuance.
+    pub access_token_expires_in: f64,
+    /// Access-token lifetime for issuance without a user.
+    pub m2m_access_token_expires_in: f64,
+    pub id_token_expires_in: f64,
+    pub refresh_token_expires_in: f64,
     /// Maximum assertion future expiration and issued-at age, in seconds (default 300).
     pub assertion_max_lifetime: f64,
     pub refresh_token_reuse_interval: f64,
@@ -114,6 +120,10 @@ impl Default for OAuthProviderConfig {
             consent_page: "/consent".into(),
             select_account_page: None,
             code_expires_in: 600.0,
+            access_token_expires_in: 3600.0,
+            m2m_access_token_expires_in: 3600.0,
+            id_token_expires_in: 36_000.0,
+            refresh_token_expires_in: 2_592_000.0,
             assertion_max_lifetime: 300.0,
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,

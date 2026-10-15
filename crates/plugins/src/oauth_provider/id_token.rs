@@ -74,7 +74,7 @@ impl OAuthProviderPlugin {
             .as_ref()
             .and_then(|options| options.issuer.as_ref())
             .unwrap_or(&base);
-        let mut payload=json!({"iss":issuer,"sub":proof.get("userId"),"aud":client.client_id,"iat":issued,"exp":issued+36_000,"acr":"0","at_hash":access_hash}).as_object().cloned().ok_or_else(||AuthError::internal("Invalid OIDC claims"))?;
+        let mut payload=json!({"iss":issuer,"sub":proof.get("userId"),"aud":client.client_id,"iat":issued,"exp":super::issuance::expiration(issued,self.config.id_token_expires_in)?,"acr":"0","at_hash":access_hash}).as_object().cloned().ok_or_else(||AuthError::internal("Invalid OIDC claims"))?;
         if let Some(time) = proof.get("authTime").and_then(Value::as_i64) {
             _ = payload.insert("auth_time".into(), json!(time.div_euclid(1000)));
         }
