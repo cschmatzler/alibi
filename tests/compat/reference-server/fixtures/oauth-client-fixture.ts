@@ -4,7 +4,7 @@ import { consumeClientAssertion, getOAuthProviderApi, oauthProvider } from "@bet
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, username } from "better-auth/plugins";
-import { APIError, createAuthEndpoint } from "better-auth/api";
+import { createAuthEndpoint } from "better-auth/api";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
   const remoteKeys=(await Bun.file(new URL("../../../fixtures/oauth/client-assertion-keys.json",import.meta.url)).json()).keys;
@@ -73,7 +73,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   };
   const tokenStorage={hash:async(token:string,kind:string)=>`app:${kind}:${createHash("sha256").update(token).digest("base64url")}`};
   const tokenHashHelper={id:"token-hash-helper",endpoints:{hashTokenFixture:createAuthEndpoint("/fixture/hash-token",{method:"POST",body:z.object({token:z.string(),kind:z.string(),custom:z.boolean()})},async(ctx)=>ctx.json({hash:await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.custom?{storeTokens:tokenStorage}:{})}).hashToken(ctx.body.token,ctx.body.kind)}))}};
-  const accessValidationHelper={id:"access-validation-helper",endpoints:{validateAccessFixture:createAuthEndpoint("/fixture/validate-access",{method:"POST",body:z.object({token:z.string(),clientId:z.string().optional(),requireActive:z.boolean()})},async(ctx)=>{try{return ctx.json(await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"})[ctx.body.requireActive?"requireActiveAccessToken":"validateAccessToken"](ctx.body.token,ctx.body.clientId));}catch(error){if(error instanceof APIError)throw error;return ctx.json({ordinary_error:true});}})}};
+  const accessValidationHelper={id:"access-validation-helper",endpoints:{validateAccessFixture:createAuthEndpoint("/fixture/validate-access",{method:"POST",body:z.object({token:z.string(),clientId:z.string().optional(),requireActive:z.boolean()})},async(ctx)=>{try{return ctx.json(await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"})[ctx.body.requireActive?"requireActiveAccessToken":"validateAccessToken"](ctx.body.token,ctx.body.clientId));}catch(error){if(error instanceof Error && error.name==="APIError")throw error;return ctx.json({ordinary_error:true});}})}};
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
