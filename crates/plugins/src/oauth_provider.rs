@@ -1,7 +1,9 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+pub use client_secret::OAuthClientSecretHasher;
 mod assertion;
 mod authorization;
 mod client_jwks;
+mod client_secret;
 mod clients;
 mod consent;
 mod continuation;
@@ -63,6 +65,7 @@ pub struct OAuthProviderConfig {
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
+    pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
     pub login_page: String,
@@ -90,6 +93,7 @@ impl Default for OAuthProviderConfig {
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,
+            client_secret_hasher: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),
@@ -1053,6 +1057,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         {
             return Err(AuthError::config(
                 "refresh_token grant requires authorization_code grant",
+            ));
+        }
+        if self.config.disable_jwt_plugin && self.config.client_secret_hasher.is_some() {
+            return Err(AuthError::config(
+                "unable to store hashed secrets because id tokens will be signed with secret",
             ));
         }
         ctx.extensions

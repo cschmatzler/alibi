@@ -118,6 +118,23 @@ fn remote_document(family:&str,algorithm:&str,kid:&str)->serde_json::Value {
 }
 
 #[derive(Debug)]
+struct CustomSecretHash;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientSecretHasher for CustomSecretHash {
+    async fn hash(&self,secret:&str)->alibi::AuthResult<String>{
+        use base64::Engine as _;use sha2::Digest as _;
+        Ok(format!("custom:{}",base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(secret.as_bytes()))))
+    }
+}
+#[derive(Debug)]
+struct CustomSecretVerify;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientSecretHasher for CustomSecretVerify {
+    async fn hash(&self,secret:&str)->alibi::AuthResult<String>{alibi::plugins::OAuthClientSecretHasher::hash(&CustomSecretHash,secret).await}
+    async fn verify(&self,secret:&str,stored:&str)->alibi::AuthResult<bool>{Ok(alibi::plugins::OAuthClientSecretHasher::hash(&CustomSecretHash,secret.strip_suffix('!').unwrap_or(secret)).await?==stored)}
+}
+
+#[derive(Debug)]
 struct MetadataDiscovery {id:&'static str,empty:bool}
 #[async_trait::async_trait]
 impl alibi::plugins::OAuthClientDiscovery for MetadataDiscovery {
@@ -194,6 +211,8 @@ pub(crate) async fn router(
         "encrypted-generator",
         "prefixed-generator",
         "encrypted-prefixed-generator",
+        "custom-hash",
+        "custom-prefixed-verify",
         "generated-id",
         "empty-id",
         "basic-special",
@@ -216,7 +235,8 @@ pub(crate) async fn router(
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
             disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
-            client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator") {
+            client_secret_hasher:match mode {"custom-hash"=>Some(Arc::new(CustomSecretHash)),"custom-prefixed-verify"=>Some(Arc::new(CustomSecretVerify)),_=>None},
+            client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator" | "custom-hash" | "custom-prefixed-verify") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
             } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
@@ -266,6 +286,10 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="secret-hash-validation" {
+                let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{disable_jwt_plugin:true,client_secret_hasher:Some(Arc::new(CustomSecretHash)),..Default::default()})).build().await;
+                return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();
+            }
             if input["action"]=="remote-jwks-document" {
                 *remote_state.document.lock().unwrap()=remote_document(input["family"].as_str().unwrap(),input["algorithm"].as_str().unwrap(),input["kid"].as_str().unwrap());
                 return axum::Json(serde_json::json!({"updated":true})).into_response();

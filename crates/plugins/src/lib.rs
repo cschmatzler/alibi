@@ -290,7 +290,8 @@ pub use oauth_provider::{
     OAuthClientDiscovery, OAuthClientIdGenerator, OAuthClientMetadataAbortSignal,
     OAuthClientMetadataFetchOptions, OAuthClientMetadataFetchResponse,
     OAuthClientMetadataResourceFetch, OAuthClientPrivilegeContext, OAuthClientPrivileges,
-    OAuthClientSecretGenerator, OAuthProviderConfig, OAuthProviderPlugin, consume_client_assertion,
+    OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthProviderConfig, OAuthProviderPlugin,
+    consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};

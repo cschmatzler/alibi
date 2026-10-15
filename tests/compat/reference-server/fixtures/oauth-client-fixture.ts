@@ -1,3 +1,4 @@
+import {createHash} from "node:crypto";
 import { consumeClientAssertion, oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
@@ -74,7 +75,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedGeneratedSecrets = 0;
   let prefixedSecrets = 0;
   let encryptedPrefixedSecrets = 0;
+  const customHash=(secret:string)=>`custom:${createHash("sha256").update(secret).digest("base64url")}`;
+  const customSecretProfile=(verify:boolean)=>{
+    let calls=0;
+    return betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>`operator-secret-${++calls}`,
+      ...(verify?{prefix:{clientSecret:"client_prefix_"}}:{}),
+      storeClientSecret:{hash:async(secret:string)=>customHash(secret),...(verify?{verify:async(secret:string,stored:string)=>customHash(secret.endsWith("!")?secret.slice(0,-1):secret)===stored}:{})}
+    })]});
+  };
   const auths = {
+    "custom-hash":customSecretProfile(false),
+    "custom-prefixed-verify":customSecretProfile(true),
     default: betterAuth(options),
     "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
     "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
@@ -218,6 +229,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if(input.action==="secret-hash-validation") {
+      try {oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,storeClientSecret:{hash:async(secret:string)=>customHash(secret)}});
+        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
+      } catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+    }
     if (input.action === "remote-jwks-document") {
       remoteState.document=remoteDocument(input.family,input.algorithm,input.kid);
       return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
