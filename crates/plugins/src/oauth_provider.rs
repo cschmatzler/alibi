@@ -175,7 +175,9 @@ impl OAuthProviderPlugin {
             "client_secret_post",
             "private_key_jwt",
         ];
-        if self.config.allow_unauthenticated_client_registration {
+        if self.config.allow_unauthenticated_client_registration
+            || !self.config.client_discoveries.is_empty()
+        {
             token_auth.insert(0, "none");
         }
         let signing = [
@@ -269,7 +271,12 @@ impl OAuthProviderPlugin {
                 json!(["login", "consent", "create", "select_account", "none"]),
             );
         }
-        Ok(Value::Object(output))
+        let mut contributed = serde_json::Map::new();
+        for discovery in &self.config.client_discoveries {
+            contributed.extend(discovery.discovery_metadata());
+        }
+        contributed.extend(output);
+        Ok(Value::Object(contributed))
     }
 }
 fn unique(values: Vec<String>) -> Vec<String> {
