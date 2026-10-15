@@ -14,6 +14,28 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn claim_oauth_client_assertion(
+        &self,
+        id: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_client_assertion;
+        let active = oauth_client_assertion::ActiveModel {
+            id: Set(id.into()),
+            expires_at: Set(expires_at),
+        };
+        match active.insert(self.scoped_connection()).await {
+            Ok(_) => Ok(true),
+            Err(error) => match oauth_client_assertion::Entity::find_by_id(id)
+                .one(self.scoped_connection())
+                .await
+            {
+                Ok(Some(_)) => Ok(false),
+                _ => Err(map_db_err(error)),
+            },
+        }
+    }
+
     async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
         use super::entities::oauth_refresh_token;
         _ = oauth_refresh_token::Entity::update_many()

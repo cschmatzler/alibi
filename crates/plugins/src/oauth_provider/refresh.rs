@@ -14,7 +14,7 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let credentials = match super::credentials::extract(body, req)? {
+        let credentials = match super::credentials::extract(body, req, ctx, self, "token").await? {
             Ok(credentials) => credentials,
             Err(response) => return Ok(no_store(response)),
         };

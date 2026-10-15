@@ -10,6 +10,29 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn claim_oauth_client_assertion(
+        &self,
+        id: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_client_assertion::Model as Assertion;
+        let mut active = ActiveRow::new();
+        active.set("id", id);
+        active.set("expiresAt", expires_at);
+        match model::insert::<Assertion>(self.exec(), &active).await {
+            Ok(_) => Ok(true),
+            Err(error) => {
+                let mut sql = model::select_model::<Assertion>(self.exec());
+                sql.push(" WHERE ");
+                sql.compare(Assertion::TABLE, "id", " = ", id);
+                match self.exec().fetch_optional::<Assertion>(sql).await {
+                    Ok(Some(_)) => Ok(false),
+                    _ => Err(error),
+                }
+            }
+        }
+    }
+
     async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
         let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident("oauthRefreshToken");

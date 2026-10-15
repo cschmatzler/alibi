@@ -59,7 +59,7 @@ impl OAuthProviderPlugin {
                 },
             );
         }
-        let credentials = match super::credentials::extract(&body, req)? {
+        let credentials = match super::credentials::extract(&body, req, ctx, self, "token").await? {
             Ok(credentials) => credentials,
             Err(response) => return Ok(response),
         };
@@ -73,7 +73,7 @@ impl OAuthProviderPlugin {
             return error(400, "invalid_request", "code is required");
         }
         let verifier = text("code_verifier");
-        if secret.is_empty() && verifier.is_empty() {
+        if secret.is_empty() && verifier.is_empty() && !credentials.pre_verified {
             return error(
                 400,
                 "invalid_request",
