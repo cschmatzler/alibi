@@ -7,11 +7,33 @@ import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
   const remoteKeys=(await Bun.file(new URL("../../../fixtures/oauth/client-assertion-keys.json",import.meta.url)).json()).keys;
   const remoteDocument=(family:string,algorithm:string,kid:string)=>({keys:[{...remoteKeys.find((key:any)=>key.family===family).publicJwk,alg:algorithm,kid}]});
-  const remoteState={document:remoteDocument("RSA","RS256","first"),fetches:[] as unknown[]};
-  const remoteDiscovery={id:"remote-registry",matches:(id:string)=>id==="https://client.fixture.test/client.json",resolve:async(ctx:any,id:string,existing:any)=>existing??ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"remote-registry",name:"Remote client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"private_key_jwt",jwksUri:"https://client.fixture.test/jwks",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],createdAt:new Date(),updatedAt:new Date()}}),fetchClientMetadataResource:async(url:any,init:any)=>{
+  const remoteState={responseMode:"valid",uri:"https://client.fixture.test/jwks",document:remoteDocument("RSA","RS256","first"),fetches:[] as unknown[]};
+  const remoteFetch=async(url:any,init:any)=>{
     remoteState.fetches.push({url:String(url),accept:new Headers(init.headers).get("accept"),redirect:init.redirect,aborted:init.signal.aborted});
-    return new Response(JSON.stringify(remoteState.document),{headers:{"content-type":"application/jwk-set+json; charset=utf-8"}});
-  }};
+    const mode=remoteState.responseMode;
+    if(mode==="exception")throw new Error("offline");
+    const doc=remoteState.document;const pub=doc.keys[0];
+    let body:any=JSON.stringify(doc);let status=200;
+    let headers:Record<string,string>={"content-type":"application/jwk-set+json; charset=utf-8"};
+    if(mode==="status")status=503;if(mode==="redirect")status=302;
+    if(mode==="type")headers["content-type"]="text/plain";
+    if(mode==="no-type"){headers={};body=new TextEncoder().encode(body);}
+    if(mode==="length")headers["content-length"]="65537";
+    if(mode==="hex-length")headers["content-length"]="0x10001";
+    if(mode==="invalid-length")headers["content-length"]="bogus";
+    if(mode==="exact-body"||mode==="over-body")body=body+" ".repeat((mode==="exact-body"?65536:65537)-body.length);
+    if(mode==="bad-json")body="invalid json";
+    if(mode==="empty-keys")body=JSON.stringify({keys:[]});
+    if(mode==="symmetric")body=JSON.stringify({keys:[{kty:"oct",k:"secret"}]});
+    if(mode==="private-key")body=JSON.stringify({keys:[{...pub,d:"secret"}]});
+    if(mode==="bom")body="\uFEFF"+body;
+    if(mode==="nonfinite")body=JSON.stringify({...doc,extra:"__nonfinite__"}).replace('"__nonfinite__"','1e400');
+    if(mode==="bad-utf8"){const text=JSON.stringify({...doc,extra:"x"});body=Buffer.from(text);body[text.indexOf('"x"')+1]=255;}
+    if(mode==="wrong-kid")body=JSON.stringify({keys:[{...pub,kid:"other"}]});
+    if(mode==="ambiguous")body=JSON.stringify({keys:[pub,pub]});
+    return new Response(body,{status,headers});
+  };
+  const remoteDiscovery={id:"remote-registry",matches:(id:string)=>id==="https://client.fixture.test/client.json",resolve:async(ctx:any,id:string,existing:any)=>({...(existing??await ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"remote-registry",name:"Remote client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"private_key_jwt",jwksUri:remoteState.uri,scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],createdAt:new Date(),updatedAt:new Date()}})),jwksUri:remoteState.uri}),get fetchClientMetadataResource(){return remoteState.responseMode==="no-transport"?undefined:remoteFetch;}};
   const remoteProvider=oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:remoteDiscovery}]});
   const registryState={mode:"live",events:[] as string[]};
   const registryDiscoveries=[
@@ -198,6 +220,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
     if (input.action === "remote-jwks-document") {
       remoteState.document=remoteDocument(input.family,input.algorithm,input.kid);
+      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    }
+    if(input.action === "remote-jwks-response") {
+      remoteState.responseMode=input.responseMode;remoteState.uri=input.uri;remoteState.fetches=[];
       return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
     }
     if (input.action === "remote-jwks-fetches") return new Response(JSON.stringify(remoteState.fetches),{headers:{"content-type":"application/json"}});
