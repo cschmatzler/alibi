@@ -35,6 +35,11 @@ impl alibi::plugins::OAuthClientSecretGenerator for OperatorClientSecrets {
         Ok(if self.empty {String::new()} else {format!("operator-secret-{call}")})
     }
 }
+#[derive(Debug)]
+struct OperatorClientIds {calls:std::sync::atomic::AtomicUsize,empty:bool}
+impl alibi::plugins::OAuthClientIdGenerator for OperatorClientIds {
+    fn generate(&self)->alibi::AuthResult<String> {let call=self.calls.fetch_add(1,std::sync::atomic::Ordering::SeqCst)+1;Ok(if self.empty {String::new()} else {format!("operator-client-{call}")})}
+}
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -85,8 +90,11 @@ pub(crate) async fn router(
         "generated",
         "empty-generator",
         "encrypted-generator",
+        "generated-id",
+        "empty-id",
     ] {
         let provider = OAuthProviderConfig {
+            client_id_generator: if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             disable_jwt_plugin: mode == "encrypted-generator",
             client_secret_generator: if matches!(mode, "generated" | "empty-generator" | "encrypted-generator") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))

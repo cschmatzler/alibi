@@ -1158,7 +1158,10 @@ impl OAuthProviderPlugin {
             .get("token_endpoint_auth_method")
             .and_then(Value::as_str)
             .unwrap_or("client_secret_basic");
-        let client_id = random_credential();
+        let client_id = match &self.config.client_id_generator {
+            Some(generator) => generator.generate()?,
+            None => random_credential(),
+        };
         let plaintext = if ["none", "private_key_jwt"].contains(&auth) {
             None
         } else {
