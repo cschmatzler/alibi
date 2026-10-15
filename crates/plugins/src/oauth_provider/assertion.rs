@@ -148,8 +148,8 @@ pub(super) async fn verify<S: AuthSchema>(
     {
         return denied(401, SIGNATURE_ERROR);
     }
-    if let Some(description) = lifetime_error(&payload) {
-        return denied(400, description);
+    if let Some(description) = lifetime_error(&payload, provider.config.assertion_max_lifetime) {
+        return denied(400, &description);
     }
     let exp = payload
         .get("exp")
@@ -222,26 +222,34 @@ fn claims_valid(payload: &JsValue, client_id: &str, audiences: &[&str]) -> bool 
 fn current_seconds() -> f64 {
     chrono::Utc::now().timestamp() as f64
 }
-fn lifetime_error(payload: &JsValue) -> Option<&'static str> {
+fn lifetime_error(payload: &JsValue, max: f64) -> Option<String> {
     let Some(exp) = payload.get("exp").and_then(JsValue::as_f64) else {
-        return Some("client assertion must include exp claim");
+        return Some("client assertion must include exp claim".into());
     };
     let now = current_seconds();
     if exp <= now {
-        return Some("client assertion has expired");
+        return Some("client assertion has expired".into());
     }
-    if exp - now > 300.0 {
-        return Some("client assertion exp is too far in the future (max 300s)");
+    let limit = || JsValue::Number(max).coerce_string().unwrap_or_default();
+    if exp - now > max {
+        return Some(format!(
+            "client assertion exp is too far in the future (max {}s)",
+            limit()
+        ));
     }
     if payload
         .get("iat")
         .and_then(JsValue::as_f64)
-        .is_some_and(|iat| now - iat > 300.0)
+        .is_some_and(|iat| now - iat > max)
     {
-        return Some("client assertion iat is too far in the past (max 300s)");
+        return Some(format!(
+            "client assertion iat is too far in the past (max {}s)",
+            limit()
+        ));
     }
     None
 }
+
 fn signature_valid(header: &JsValue, jwks: &Value, algorithm: &str, assertion: &str) -> bool {
     if let Some(crit) = header.get("crit")
         && (!crit

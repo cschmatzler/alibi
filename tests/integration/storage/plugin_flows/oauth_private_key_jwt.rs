@@ -9,11 +9,13 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
 backend_tests!(
     oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay,
-    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay
+    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay,
+    oauth_private_key_jwt_honors_configured_lifetime_including_reference_number_semantics
 );
 postgres_tests!(
     oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay,
-    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay
+    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay,
+    oauth_private_key_jwt_honors_configured_lifetime_including_reference_number_semantics
 );
 const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 async fn introspect<S: AuthSchema>(
@@ -479,5 +481,140 @@ async fn oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authori
             .await?
             .is_none()
     );
+    B::close(connection).await
+}
+
+async fn oauth_private_key_jwt_honors_configured_lifetime_including_reference_number_semantics<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let seed = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&seed, "assertion-lifetime-owner@example.test").await;
+    let keys: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/oauth/client-assertion-keys.json"
+    )))?;
+    let key = keys["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["family"] == "RSA")
+        .unwrap();
+    let mut public = key["publicJwk"].clone();
+    public["alg"] = json!("RS256");
+    public["kid"] = json!("application-key");
+    let created=Box::pin(seed.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Assertion lifetime","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"private_key_jwt","jwks":{"keys":[public]}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let client = body(&created);
+    let id = client["client_id"].as_str().unwrap();
+    let unlimited = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(
+            alibi::plugins::OAuthProviderConfig {
+                assertion_max_lifetime: f64::INFINITY,
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await?;
+    let now = chrono::Utc::now().timestamp();
+    for (name, max, exp, iat, status, detail) in [
+        (
+            "short",
+            30.0,
+            90,
+            0,
+            400,
+            Some("client assertion exp is too far in the future (max 30s)"),
+        ),
+        (
+            "short-past",
+            30.0,
+            20,
+            -90,
+            400,
+            Some("client assertion iat is too far in the past (max 30s)"),
+        ),
+        ("short-future", 30.0, 20, 90, 200, None),
+        (
+            "zero",
+            0.0,
+            20,
+            0,
+            400,
+            Some("client assertion exp is too far in the future (max 0s)"),
+        ),
+        (
+            "negative",
+            -1.0,
+            20,
+            0,
+            400,
+            Some("client assertion exp is too far in the future (max -1s)"),
+        ),
+        ("nan", f64::NAN, 600, -600, 200, None),
+        ("infinite", f64::INFINITY, 600, -600, 200, None),
+        (
+            "negative-infinite",
+            f64::NEG_INFINITY,
+            20,
+            0,
+            400,
+            Some("client assertion exp is too far in the future (max -Infinitys)"),
+        ),
+    ] {
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    assertion_max_lifetime: max,
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .await?;
+        let claims = json!({"iss":id,"sub":id,"aud":format!("{}{}/oauth2/introspect",auth.config().base_url,auth.config().base_path),"exp":now+exp,"iat":now+iat,"jti":uuid::Uuid::new_v4().to_string()});
+        let assertion = sign_claims(key, &claims)?;
+        let before = db
+            .tables(&[
+                "oauthClientAssertion",
+                "oauthClient",
+                "oauthAccessToken",
+                "oauthRefreshToken",
+            ])
+            .await?;
+        let response = introspect(&auth, id, &assertion).await?;
+        assert_eq!(response.status, status, "{name}: {}", body(&response));
+        assert_eq!(
+            body(&response),
+            detail.map_or_else(
+                || json!({"active":false}),
+                |detail| json!({"error":"invalid_client","error_description":detail})
+            ),
+            "{name}"
+        );
+        if status != 200 {
+            assert_eq!(
+                db.tables(&[
+                    "oauthClientAssertion",
+                    "oauthClient",
+                    "oauthAccessToken",
+                    "oauthRefreshToken"
+                ])
+                .await?,
+                before,
+                "{name}"
+            );
+            let retry = introspect(&unlimited, id, &assertion).await?;
+            assert_eq!(retry.status, 200, "{name} must not consume jti");
+            assert_eq!(body(&retry), json!({"active":false}));
+        }
+    }
     B::close(connection).await
 }

@@ -60,6 +60,8 @@ pub struct OAuthProviderConfig {
     pub consent_page: String,
     pub select_account_page: Option<String>,
     pub code_expires_in: f64,
+    /// Maximum assertion future expiration and issued-at age, in seconds (default 300).
+    pub assertion_max_lifetime: f64,
     pub refresh_token_reuse_interval: f64,
     pub allow_public_client_prelogin: bool,
     pub enforce_per_client_resources: bool,
@@ -83,6 +85,7 @@ impl Default for OAuthProviderConfig {
             consent_page: "/consent".into(),
             select_account_page: None,
             code_expires_in: 600.0,
+            assertion_max_lifetime: 300.0,
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,
             enforce_per_client_resources: true,
