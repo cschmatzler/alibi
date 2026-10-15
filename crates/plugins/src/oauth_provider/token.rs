@@ -61,7 +61,11 @@ impl OAuthProviderPlugin {
         }
         let credentials = match super::credentials::extract(&body, req, ctx, self, "token").await? {
             Ok(credentials) => credentials,
-            Err(response) => return Ok(response),
+            Err(response) => {
+                return Ok(response
+                    .with_header("Cache-Control", "no-store")
+                    .with_header("Pragma", "no-cache"));
+            }
         };
         let client_id = credentials.client_id.clone();
         let secret = &credentials.secret;

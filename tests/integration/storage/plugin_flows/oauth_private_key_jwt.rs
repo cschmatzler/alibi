@@ -7,8 +7,14 @@ use alibi::plugins::oauth::{
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
-backend_tests!(oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay);
-postgres_tests!(oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay);
+backend_tests!(
+    oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay,
+    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay
+);
+postgres_tests!(
+    oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay,
+    oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay
+);
 const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 async fn introspect<S: AuthSchema>(
     auth: &Alibi<S>,
@@ -16,27 +22,7 @@ async fn introspect<S: AuthSchema>(
     assertion: &str,
 ) -> alibi::AuthResult<AuthResponse> {
     let input = json!({"token":"not-issued","client_id":id,"client_assertion":assertion,"client_assertion_type":ASSERTION_TYPE});
-    let outcome = Box::pin(auth.dispatch_endpoint(
-        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Introspect").with_body(&input)?,
-        EndpointOptions {
-            request: Some(request("/oauth2/introspect", Some(input), "")),
-            ..Default::default()
-        },
-    ))
-    .await;
-    match outcome {
-        Ok(output) => output.into_response(),
-        Err(error) => {
-            let mut response = EndpointResponse::error(error.error);
-            if let Some(body) = error.body {
-                response = response.with_error_body(*body);
-            }
-            if let Some(headers) = error.headers {
-                response.merge_headers(headers);
-            }
-            response.to_response()
-        }
-    }
+    protocol(auth, "oauth2Introspect", "/oauth2/introspect", &input).await
 }
 async fn oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay<B: Backend>(
     db: Db,
@@ -131,6 +117,15 @@ async fn oauth_private_key_jwt_verifies_registered_algorithms_and_rejects_replay
             .await?;
         let replay = introspect(&other, id, &assertion).await?;
         assert_eq!(replay.status, 400);
+        assert_eq!(
+            replay.headers.get("Cache-Control").map(String::as_str),
+            Some("no-store")
+        );
+        assert_eq!(
+            replay.headers.get("Pragma").map(String::as_str),
+            Some("no-cache")
+        );
+
         assert_eq!(
             body(&replay),
             json!({"error":"invalid_client","error_description":"client assertion jti has already been used"})
@@ -283,4 +278,206 @@ async fn claim_cases<S: AuthSchema>(
         }
     }
     Ok(())
+}
+
+async fn protocol<S: AuthSchema>(
+    auth: &Alibi<S>,
+    operation: &'static str,
+    path: &str,
+    input: &Value,
+) -> alibi::AuthResult<AuthResponse> {
+    let outcome = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("oauth-provider", operation).with_body(input)?,
+        EndpointOptions {
+            request: Some(request(path, Some(input.clone()), "")),
+            ..Default::default()
+        },
+    ))
+    .await;
+    match outcome {
+        Ok(output) => output.into_response(),
+        Err(error) => {
+            let mut response = EndpointResponse::error(error.error);
+            if let Some(body) = error.body {
+                response = response.with_error_body(*body);
+            }
+            if let Some(headers) = error.headers {
+                response.merge_headers(headers);
+            }
+            response.to_response()
+        }
+    }
+}
+fn proof<S: AuthSchema>(
+    auth: &Alibi<S>,
+    key: &Value,
+    id: &str,
+    endpoint: &str,
+) -> TestResult<String> {
+    let now = chrono::Utc::now().timestamp();
+    sign_claims(
+        key,
+        &json!({"iss":id,"sub":id,"aud":format!("{}{}/oauth2/{endpoint}",auth.config().base_url,auth.config().base_path),"iat":now,"exp":now+90,"jti":uuid::Uuid::new_v4().to_string()}),
+    )
+}
+async fn oauth_private_key_jwt_redeems_code_without_secret_and_preserves_authority_on_assertion_replay<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "private-jwt-code-owner@example.test").await;
+    let keys: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/oauth/client-assertion-keys.json"
+    )))?;
+    let key = keys["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|key| key["family"] == "RSA")
+        .unwrap();
+    let mut public = key["publicJwk"].clone();
+    public["alg"] = json!("RS256");
+    public["kid"] = json!("application-key");
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Signed code client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"private_key_jwt","scope":"email","skip_consent":true,"require_pkce":false,"jwks":{"keys":[public]}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let client = body(&created);
+    assert!(client.get("client_secret").is_none());
+    let id = client["client_id"].as_str().unwrap();
+    let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"signed-state"});
+    let grant = Box::pin(
+        auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(&owner)),
+                        ("accept".into(), "application/json".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                request: Some(request("/oauth2/authorize", None, "")),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    assert_eq!(grant.status, 200);
+    let callback = url::Url::parse(body(&grant)["url"].as_str().unwrap())?;
+    let code = callback
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned();
+    let assertion = proof(&auth, key, id, "token")?;
+    let mut input = json!({"grant_type":"authorization_code","code":code,"redirect_uri":"https://app.fixture.test/callback","client_assertion":assertion,"client_assertion_type":ASSERTION_TYPE});
+    input["client_assertion"] = json!(proof(&auth, key, id, "introspect")?);
+    let before = db
+        .tables(&[
+            "verification",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "oauthClientAssertion",
+        ])
+        .await?;
+    let rejected = protocol(&auth, "oauth2Token", "/oauth2/token", &input).await?;
+    assert_eq!(rejected.status, 401);
+    assert_eq!(
+        rejected.headers.get("Cache-Control").map(String::as_str),
+        Some("no-store")
+    );
+    assert_eq!(
+        rejected.headers.get("Pragma").map(String::as_str),
+        Some("no-cache")
+    );
+
+    assert_eq!(
+        body(&rejected),
+        json!({"error":"invalid_client","error_description":"client assertion signature verification failed"})
+    );
+    assert_eq!(
+        db.tables(&[
+            "verification",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "oauthClientAssertion"
+        ])
+        .await?,
+        before
+    );
+    input["client_assertion"] = json!(assertion);
+    let response = protocol(&auth, "oauth2Token", "/oauth2/token", &input).await?;
+    assert_eq!(response.status, 200, "{}", body(&response));
+    let token = body(&response);
+    assert_eq!(token["scope"], "email");
+    assert_eq!(token["token_type"], "Bearer");
+    let plaintext = token["access_token"].as_str().unwrap();
+    let hash = URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plaintext));
+    let stored = auth
+        .store()
+        .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+        .await?
+        .unwrap();
+    assert_eq!(stored.client_id, id);
+    assert_eq!(
+        stored.authorization_code_id.as_deref(),
+        Some(URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&code)).as_str())
+    );
+
+    assert_eq!(stored.metadata["scopes"], json!(["email"]));
+    let replay = protocol(&auth, "oauth2Token", "/oauth2/token", &input).await?;
+    assert_eq!(replay.status, 400);
+    assert_eq!(
+        replay.headers.get("Cache-Control").map(String::as_str),
+        Some("no-store")
+    );
+    assert_eq!(
+        replay.headers.get("Pragma").map(String::as_str),
+        Some("no-cache")
+    );
+
+    assert_eq!(
+        body(&replay),
+        json!({"error":"invalid_client","error_description":"client assertion jti has already been used"})
+    );
+    let inspect = json!({"token":plaintext,"client_assertion":proof(&auth,key,id,"introspect")?,"client_assertion_type":ASSERTION_TYPE});
+    let active = protocol(&auth, "oauth2Introspect", "/oauth2/introspect", &inspect).await?;
+    assert_eq!(active.status, 200);
+    assert_eq!(body(&active)["active"], true);
+    assert_eq!(body(&active)["client_id"], id);
+    assert_eq!(body(&active)["azp"], id);
+    assert_eq!(
+        body(&active)["iss"],
+        format!("{}{}", auth.config().base_url, auth.config().base_path)
+    );
+    assert_eq!(body(&active)["sub"], json!(stored.user_id));
+    assert_eq!(body(&active)["sid"], json!(stored.session_id));
+    assert_eq!(body(&active)["exp"], stored.expires_at.timestamp());
+    assert_eq!(body(&active)["iat"], stored.created_at.timestamp());
+    assert_eq!(body(&active)["scope"], "email");
+    assert_eq!(body(&active)["token_type"], "Bearer");
+
+    input["client_assertion"] = json!(proof(&auth, key, id, "token")?);
+    let code_replay = protocol(&auth, "oauth2Token", "/oauth2/token", &input).await?;
+    assert_eq!(code_replay.status, 400);
+    assert_eq!(
+        body(&code_replay),
+        json!({"error":"invalid_grant","error_description":"invalid code"})
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+            .await?
+            .is_none()
+    );
+    B::close(connection).await
 }
