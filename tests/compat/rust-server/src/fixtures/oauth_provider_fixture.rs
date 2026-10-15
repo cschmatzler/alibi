@@ -25,6 +25,12 @@ impl alibi::plugins::OAuthClientPrivileges for MachinePrivileges {
     }
 }
 #[derive(Debug)]
+struct TypedTokenHasher;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthTokenHasher for TypedTokenHasher {
+    async fn hash(&self,token:&str,kind:&str)->alibi::AuthResult<String>{use base64::Engine as _;use sha2::Digest as _;Ok(format!("app:{kind}:{}",base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token))))}
+}
+#[derive(Debug)]
 struct OperatorClientSecrets {
     calls: std::sync::atomic::AtomicUsize,
     empty: bool,
@@ -232,6 +238,7 @@ pub(crate) async fn router(
         "prefixed-generator",
         "encrypted-prefixed-generator",
         "custom-hash",
+        "custom-token-hash",
         "custom-prefixed-verify",
         "custom-encrypted-prefixed",
         "generated-id",
@@ -253,6 +260,7 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let provider = OAuthProviderConfig {
+            token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
@@ -312,6 +320,10 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="hash-token" {
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{token_hasher:(input["mode"]=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),..Default::default()});
+                return axum::Json(serde_json::json!({"hash":provider.hash_token(input["token"].as_str().unwrap(),input["kind"].as_str().unwrap()).await.unwrap()})).into_response();
+            }
             if input["action"]=="authenticate-client" {
                 let body=input["body"].clone();
                 let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,format!("{}/fixture/authenticate-client",auth.config().base_path));
@@ -415,7 +427,7 @@ pub(crate) async fn router(
                 use alibi::AuthVerification as _;
                 use sha2::Digest as _;
                 use base64::Engine as _;
-                let identifier=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap().as_bytes()));
+                let identifier=input["protectedToken"].as_str().map(str::to_owned).unwrap_or_else(||base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap().as_bytes())));
                 let row=auth.store().get_verification_by_identifier(&identifier).await.unwrap();
                 return axum::Json(row.map(|row|serde_json::json!({"value":serde_json::from_str::<serde_json::Value>(row.value()).unwrap(),"createdAt":row.created_at(),"expiresAt":row.expires_at()}))).into_response();
             }
@@ -433,7 +445,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="token-row" {
                 use base64::Engine as _; use sha2::Digest as _;
-                let hashed=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap()));
+                let hashed=input["protectedToken"].as_str().map(str::to_owned).unwrap_or_else(||base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap())));
                 let row=auth.store().get_oauth_token(if input["kind"]=="refresh" {alibi::store::OAuthTokenKind::Refresh}else{alibi::store::OAuthTokenKind::Access},&hashed).await.unwrap();
                 return axum::Json(row.map(|r|serde_json::json!({"id":r.id,"clientId":r.client_id,"userId":r.user_id,"sessionId":r.session_id,"scopes":r.metadata["scopes"],"createdAt":r.created_at,"expiresAt":r.expires_at,"authorizationCodeId":r.authorization_code_id,"token":r.token,"refreshId":r.metadata.get("refreshId"),"authTime":r.metadata.get("authTime"),"resources":r.metadata.get("resources"),"revoked":r.metadata.get("revoked"),"rotatedAt":r.metadata.get("rotatedAt"),"rotationReplayResponse":r.metadata.get("rotationReplayResponse"),"rotationReplayExpiresAt":r.metadata.get("rotationReplayExpiresAt")}))).into_response();
             }

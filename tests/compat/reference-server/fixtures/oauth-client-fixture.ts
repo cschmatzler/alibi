@@ -71,13 +71,15 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       }),
     },
   };
+  const tokenStorage={hash:async(token:string,kind:string)=>`app:${kind}:${createHash("sha256").update(token).digest("base64url")}`};
+  const tokenHashHelper={id:"token-hash-helper",endpoints:{hashTokenFixture:createAuthEndpoint("/fixture/hash-token",{method:"POST",body:z.object({token:z.string(),kind:z.string(),custom:z.boolean()})},async(ctx)=>ctx.json({hash:await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.custom?{storeTokens:tokenStorage}:{})}).hashToken(ctx.body.token,ctx.body.kind)}))}};
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper],
+    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -109,6 +111,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     "custom-encrypted-prefixed":customCipherProfile(),
     "custom-hash":customSecretProfile(false),
     "custom-prefixed-verify":customSecretProfile(true),
+    "custom-token-hash":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",storeTokens:tokenStorage}),tokenHashHelper]}),
     default: betterAuth(options),
     "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
     "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
@@ -420,7 +423,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         where: [
           {
             field: "identifier",
-            value: createHash("sha256").update(input.token).digest("base64url"),
+            value: input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url"),
           },
         ],
       })) as any;
@@ -557,13 +560,16 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       });
     }
+    if(input.action==="hash-token") {
+      return (auth.api as any).hashTokenFixture({body:{token:input.token,kind:input.kind,custom:input.mode==="custom-token-hash"},asResponse:true});
+    }
     if (input.action === "token-row") {
       const { createHash } = await import("node:crypto");
       const context = await auth.$context;
       const row = (await context.adapter.findOne({
         model: input.kind === "refresh" ? "oauthRefreshToken" : "oauthAccessToken",
         where: [
-          { field: "token", value: createHash("sha256").update(input.token).digest("base64url") },
+          { field: "token", value: input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url") },
         ],
       })) as any;
       return new Response(

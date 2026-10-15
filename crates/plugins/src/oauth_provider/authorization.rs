@@ -7,7 +7,7 @@ use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
 use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
+use sha2::Sha256;
 impl OAuthProviderPlugin {
     /// Authorize an OAuth request with its genuine physical request attached.
     pub fn oauth2_authorize_endpoint(
@@ -436,8 +436,7 @@ impl OAuthProviderPlugin {
                 .map_err(|_| AuthError::internal("Invalid authorization code expiration"))?;
             let expires = chrono::DateTime::from_timestamp_millis(expires_ms)
                 .ok_or_else(|| AuthError::internal("Invalid authorization code expiration"))?;
-            let identifier = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .encode(Sha256::digest(code.as_bytes()));
+            let identifier = self.hash_token(&code, "authorization_code").await?;
             let resources = query.get("resource").map_or_else(Vec::new, |value| {
                 value
                     .as_array()

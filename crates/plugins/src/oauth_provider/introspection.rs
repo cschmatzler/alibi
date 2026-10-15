@@ -5,9 +5,7 @@ use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthResult, AuthSchema, AuthSession};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 impl OAuthProviderPlugin {
     /// Inspect an access or refresh token using the introspecting client's credentials.
     pub fn oauth2_introspect_endpoint(
@@ -90,13 +88,14 @@ impl OAuthProviderPlugin {
             "refresh_token" => &[OAuthTokenKind::Refresh],
             _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh],
         };
-        let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(token));
         for kind in kinds {
             let refresh = matches!(kind, OAuthTokenKind::Refresh);
             let row = if refresh {
-                ctx.database.get_oauth_token(*kind, &hash).await?
+                ctx.database
+                    .get_oauth_token(*kind, &self.hash_token(token, "refresh_token").await?)
+                    .await?
             } else {
-                super::userinfo::live_access(token, ctx).await?
+                super::userinfo::live_access(token, ctx, self).await?
             };
             let Some(row) = row else {
                 continue;

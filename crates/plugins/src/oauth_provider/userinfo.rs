@@ -5,15 +5,14 @@ use alibi_core::session::SessionRequest;
 use alibi_core::store::{OAuthToken, OAuthTokenKind};
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthResult, AuthSchema, AuthSession, HttpMethod};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 /// The shared access-token liveness gate used by public protocol consumers.
 pub(super) async fn live_access<S: AuthSchema>(
     token: &str,
     ctx: &AuthContext<S>,
+    provider: &OAuthProviderPlugin,
 ) -> AuthResult<Option<OAuthToken>> {
-    let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(token));
+    let hash = provider.hash_token(token, "access_token").await?;
     let Some(row) = ctx
         .database
         .get_oauth_token(OAuthTokenKind::Access, &hash)
@@ -102,7 +101,7 @@ impl OAuthProviderPlugin {
         else {
             return error(401, "invalid_request", "access token not found");
         };
-        let Some(row) = live_access(token, ctx).await? else {
+        let Some(row) = live_access(token, ctx, self).await? else {
             return invalid_token();
         };
         if scheme == "DPoP" {
