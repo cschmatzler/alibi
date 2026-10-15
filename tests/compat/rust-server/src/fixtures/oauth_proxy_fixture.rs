@@ -396,6 +396,14 @@ async fn build_router(
                 Router::new().nest(
                     path,
                     Router::new()
+                        .route("/__server-callback", post({let auth=auth.clone();move |Json(input):Json<Value>|{let auth=auth.clone();async move {
+                            let mut endpoint=OAuthPlugin::callback_oauth_endpoint("gitlab",None).unwrap().with_query(&input["query"]).unwrap();
+                            if let Some(body)=input.get("body") {endpoint=endpoint.with_body(body).unwrap();}
+                            match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions {headers:Some(Default::default()),..Default::default()}).await {
+                                Ok(output)=>output.into_response().unwrap().into_response(),
+                                Err(error)=>{let mut response=if error.body_absent {AuthResponse::new(error.error.status_code())} else {error.error.to_auth_response()};if let Some(headers)=error.headers {response.headers=headers;}response.into_response()},
+                            }
+                        }}}))
                         .route("/__server-social", post({let auth=auth.clone(); move |Json(input):Json<Value>|{let auth=auth.clone();async move {
                             let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("oauth",if input["link"]==true {"linkSocialAccount"} else {"signInSocial"}).with_body(&input["body"]).unwrap();
                             match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions {headers:Some(serde_json::from_value(input["headers"].clone()).unwrap()),..Default::default()}).await {

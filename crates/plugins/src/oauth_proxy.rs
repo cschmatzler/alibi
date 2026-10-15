@@ -371,15 +371,6 @@ impl OAuthProxyPlugin {
         }
         ctx.config.base_url.clone()
     }
-    #[expect(
-        clippy::as_conversions,
-        clippy::cast_precision_loss,
-        reason = "Preserve JavaScript Number rounding at the compatibility boundary"
-    )]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep proxy state verification, persistence, and redirect construction in protocol order"
-    )]
     async fn forward<S: AuthSchema>(
         &self,
         provider_id: &str,
@@ -400,6 +391,23 @@ impl OAuthProxyPlugin {
                 .iter()
                 .map(|(key, value)| (key.clone(), value.clone())),
         );
+        self.forward_params(provider_id, &params, ctx).await
+    }
+    #[expect(
+        clippy::as_conversions,
+        clippy::cast_precision_loss,
+        reason = "Preserve JavaScript Number rounding at the compatibility boundary"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep proxy state verification, persistence, and redirect construction in protocol order"
+    )]
+    async fn forward_params<S: AuthSchema>(
+        &self,
+        provider_id: &str,
+        params: &std::collections::HashMap<String, String>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
         let Some(encrypted) = params.get("state") else {
             return Ok(None);
         };
@@ -1134,15 +1142,66 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthProxyPlugin {
         call: &alibi_core::endpoint::EndpointCall,
         _: &AuthContext<S>,
     ) -> AuthResult<bool> {
-        Ok(call
-            .path()
-            .is_some_and(|path| path.starts_with("/sign-in/social") || path == "/link-social"))
+        Ok(call.path().is_some_and(|path| {
+            path.starts_with("/sign-in/social") || path == "/link-social" || path == "/callback/:id"
+        }))
     }
     async fn before(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        if call.path() == Some("/callback/:id") {
+            let mut merged = std::collections::HashMap::new();
+            for input in [call.body(), call.query()].into_iter().flatten() {
+                if let Some(object) = input.as_object() {
+                    for (key, value) in object {
+                        if !value.is_null() {
+                            _ = merged.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
+            }
+            let mut params = std::collections::HashMap::new();
+            for (key, value) in merged {
+                if let Some(value) = value.as_str() {
+                    _ = params.insert(key, value.to_owned());
+                } else if [
+                    "state",
+                    "code",
+                    "error",
+                    "error_description",
+                    "device_id",
+                    "user",
+                    "iss",
+                ]
+                .contains(&key.as_str())
+                {
+                    return Ok(None);
+                }
+            }
+            let Some(provider) = call
+                .params()
+                .and_then(|params| params.get("id"))
+                .and_then(alibi_core::utils::json::JsValue::as_str)
+            else {
+                return Ok(None);
+            };
+            if let Some(wire) = self.forward_params(provider, &params, ctx).await? {
+                let mut response = alibi_core::endpoint::EndpointResponse::redirect(
+                    wire.headers.get("location").cloned().unwrap_or_default(),
+                );
+                for (name, value) in wire.headers {
+                    if !name.eq_ignore_ascii_case("content-type") {
+                        response = response.with_header(name, value);
+                    }
+                }
+                return Ok(Some(alibi_core::endpoint::BeforeEndpointAction::Reject(
+                    response,
+                )));
+            }
+            return Ok(None);
+        }
         let body = call
             .body()
             .map(alibi_core::utils::json::to_value)

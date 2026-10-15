@@ -11,11 +11,98 @@ use alibi::{AuthResult, CreateSession};
 backend_tests!(
     proxy_forwards_and_completes_provider_flows,
     proxy_server_initiation_wraps_state_and_completes_real_exchange,
+    proxy_server_receiver_exchanges_without_provisioning_production,
     proxy_error_destinations_and_pass_through,
     proxy_session_and_identity_failures
 );
 
-postgres_tests!(proxy_server_initiation_wraps_state_and_completes_real_exchange);
+postgres_tests!(
+    proxy_server_initiation_wraps_state_and_completes_real_exchange,
+    proxy_server_receiver_exchanges_without_provisioning_production
+);
+
+async fn proxy_server_receiver_exchanges_without_provisioning_production<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for denied in [false, true] {
+        let preview_db = db.fresh().await?;
+        let production_db = db.fresh().await?;
+        let (preview_connection, _) = preview_db.migrated::<B>(SECRET).await?;
+        let (production_connection, _) = production_db.migrated::<B>(SECRET).await?;
+        let social = Social::start().await;
+        let preview = social
+            .auth_configured::<B>(
+                &preview_connection,
+                config(|_| {}),
+                |_| {},
+                |builder| builder.plugin(proxy()),
+                |store| store,
+            )
+            .await?;
+        let production = social
+            .auth_configured::<B>(
+                &production_connection,
+                AuthConfig::new(SECRET).base_url(PRODUCTION),
+                |_| {},
+                |builder| builder.plugin(proxy()),
+                |store| store,
+            )
+            .await?;
+        social
+            .profile
+            .set("sdk-receiver-sub", "sdk-receiver@example.com", true);
+        let (state, cookie) = authorize(&preview, "/sign-in/social", input(), "").await;
+        let query = if denied {
+            json!({"state":state,"error":"access_denied"})
+        } else {
+            json!({"state":state,"code":"grant"})
+        };
+        let endpoint = alibi::plugins::OAuthPlugin::callback_oauth_endpoint("google", None)?
+            .with_query(&query)?
+            .with_body(&if denied {
+                json!({"state":42})
+            } else {
+                json!({"state":42,"code":false})
+            })?;
+        let output = production
+            .dispatch_endpoint(
+                endpoint,
+                alibi::endpoint::EndpointOptions {
+                    headers: Some(Default::default()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(output.error.status_code(), 302);
+        let location = output.headers.as_ref().unwrap().get("location").unwrap();
+        if denied {
+            assert_eq!(location, &format!("{ORIGIN}/failed?error=access_denied"));
+            assert_eq!(preview_db.count("verification").await?, 1);
+        } else {
+            assert!(
+                location.starts_with(&format!("{ORIGIN}/api/auth/callback/google/oauth-proxy?")),
+                "{location}"
+            );
+            let forwarded = AuthResponse::new(302).with_header("location", location.clone());
+            let completed = bridge(&preview, &forwarded, &cookie).await;
+            let session = call(
+                &preview,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], "sdk-receiver@example.com");
+            assert_eq!(preview_db.count("verification").await?, 0);
+        }
+        for table in ["user", "session", "account", "verification"] {
+            assert_eq!(production_db.count(table).await?, 0);
+        }
+        B::close(preview_connection).await?;
+        B::close(production_connection).await?;
+    }
+    Ok(())
+}
 
 async fn proxy_server_initiation_wraps_state_and_completes_real_exchange<B: Backend>(
     db: Db,
@@ -44,7 +131,11 @@ async fn proxy_server_initiation_wraps_state_and_completes_real_exchange<B: Back
         let cookie = owner.as_ref().map(cookies).unwrap_or_default();
         let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
             "oauth",
-            if linked { "linkSocialAccount" } else { "signInSocial" },
+            if linked {
+                "linkSocialAccount"
+            } else {
+                "signInSocial"
+            },
         )
         .with_body(&input())?;
         let issued = auth
