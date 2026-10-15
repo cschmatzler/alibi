@@ -302,6 +302,88 @@ impl MultiSessionPlugin {
         }
         Ok(response)
     }
+    async fn session_hook_headers(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        path: &str,
+        ctx: &AuthContext<impl AuthSchema>,
+        headers: &alibi_core::Headers,
+    ) -> AuthResult<alibi_core::Headers> {
+        let mut additional = alibi_core::Headers::new();
+        if path == "/sign-out" {
+            for (name, token) in Self::signed_tokens(req, ctx) {
+                // The logout hook grants retirement only to truthy signed payloads.
+                // List and fallback intentionally retain string-valued semantics.
+                if token.is_empty() {
+                    continue;
+                }
+                ctx.database.delete_session(&token).await?;
+                additional.append(
+                    "set-cookie",
+                    create_derived_session_cookie(
+                        &name.to_lowercase().replacen("__secure-", "__Secure-", 1),
+                        "",
+                        true,
+                        &ctx.config,
+                    )?,
+                );
+            }
+            return Ok(additional);
+        }
+        if headers.get_all("set-cookie").next().is_none() {
+            return Ok(additional);
+        }
+        let Some((user, session)) =
+            alibi_core::session::cookie_cache::runtime::published_session(req)
+        else {
+            return Ok(additional);
+        };
+        let name = Self::cookie_name(session.token(), ctx);
+        if Self::cookie_value(req, &name).is_some_and(|value| !value.is_empty())
+            || headers.get_all("set-cookie").any(|header| {
+                cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| cookie.name() == name)
+            })
+        {
+            return Ok(additional);
+        }
+        let cookies = Self::signed_tokens(req, ctx);
+        let mut tokens_to_delete = Vec::new();
+        for (old_name, token) in &cookies {
+            if token.is_empty() {
+                continue;
+            }
+            if let Some(old) = ctx.database.get_session_record(token).await?
+                && old.user_id() == user.id()
+            {
+                tokens_to_delete.push(token);
+                additional.append(
+                    "set-cookie",
+                    create_derived_session_cookie(old_name, "", true, &ctx.config)?,
+                );
+            }
+        }
+        // Resolve every proof before deleting: multiple names can carry the same token.
+        for token in &tokens_to_delete {
+            ctx.database.delete_session(token).await?;
+        }
+        let removed = tokens_to_delete.len();
+        // Upstream counts every named cookie, including invalid signatures.
+        let count = Self::multi_cookies(req).len();
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Match upstream JavaScript numeric comparison"
+        )]
+        let budget = (count.saturating_sub(removed) + 1) as f64;
+        if budget > self.config.maximum_sessions {
+            return Ok(additional);
+        }
+        let signed = sign_cookie_value(session.token(), ctx.config.current_secret());
+        additional.append(
+            "set-cookie",
+            create_derived_session_cookie(&name, &signed, false, &ctx.config)?,
+        );
+        Ok(additional)
+    }
 }
 
 #[derive(Deserialize)]
@@ -317,6 +399,10 @@ impl RequestBody for SessionTokenRequest {
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
     route_openapi_metadata!(S);
+
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
 
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
@@ -385,78 +471,33 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         ctx: &AuthContext<S>,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        if req.path() == "/sign-out" {
-            for (name, token) in Self::signed_tokens(req, ctx) {
-                // The logout hook grants retirement only to truthy signed payloads.
-                // List and fallback intentionally retain string-valued semantics.
-                if token.is_empty() {
-                    continue;
-                }
-                ctx.database.delete_session(&token).await?;
-                response.headers.append(
-                    "set-cookie",
-                    create_derived_session_cookie(
-                        &name.to_lowercase().replacen("__secure-", "__Secure-", 1),
-                        "",
-                        true,
-                        &ctx.config,
-                    )?,
-                );
-            }
-            return Ok(response);
+        let headers = self
+            .session_hook_headers(req, req.path(), ctx, &response.headers)
+            .await?;
+        for (name, value) in headers {
+            response.headers.append(name, value);
         }
-        if response.headers.get_all("set-cookie").next().is_none() {
-            return Ok(response);
-        }
-        let Some((user, session)) =
-            alibi_core::session::cookie_cache::runtime::published_session(req)
-        else {
-            return Ok(response);
-        };
-        let name = Self::cookie_name(session.token(), ctx);
-        if Self::cookie_value(req, &name).is_some_and(|value| !value.is_empty())
-            || response.headers.get_all("set-cookie").any(|header| {
-                cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| cookie.name() == name)
-            })
-        {
-            return Ok(response);
-        }
-        let cookies = Self::signed_tokens(req, ctx);
-        let mut tokens_to_delete = Vec::new();
-        for (old_name, token) in &cookies {
-            if token.is_empty() {
-                continue;
-            }
-            if let Some(old) = ctx.database.get_session_record(token).await?
-                && old.user_id() == user.id()
-            {
-                tokens_to_delete.push(token);
-                response.headers.append(
-                    "set-cookie",
-                    create_derived_session_cookie(old_name, "", true, &ctx.config)?,
-                );
-            }
-        }
-        // Resolve every proof before deleting: multiple names can carry the same token.
-        for token in &tokens_to_delete {
-            ctx.database.delete_session(token).await?;
-        }
-        let removed = tokens_to_delete.len();
-        // Upstream counts every named cookie, including invalid signatures.
-        let count = Self::multi_cookies(req).len();
-        #[expect(
-            clippy::cast_precision_loss,
-            reason = "Match upstream JavaScript numeric comparison"
-        )]
-        let budget = (count.saturating_sub(removed) + 1) as f64;
-        if budget > self.config.maximum_sessions {
-            return Ok(response);
-        }
-        let signed = sign_cookie_value(session.token(), ctx.config.current_secret());
-        response.headers.append(
-            "set-cookie",
-            create_derived_session_cookie(&name, &signed, false, &ctx.config)?,
-        );
+        Ok(response)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for MultiSessionPlugin {
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let headers = self
+            .session_hook_headers(
+                call,
+                call.path().unwrap_or_default(),
+                ctx,
+                response.headers(),
+            )
+            .await?;
+        response.merge_headers(headers);
         Ok(response)
     }
 }

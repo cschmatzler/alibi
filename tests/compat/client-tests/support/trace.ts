@@ -383,7 +383,8 @@ export function createTracingFetch(
                 },
               }
             : {}),
-          ...(url.pathname === "/__test/verification-state" ||
+          ...(url.pathname === "/__test/server-api/bearer" ||
+          url.pathname === "/__test/verification-state" ||
           url.pathname === "/__test/social-provider/profile" ||
           /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(
             url.pathname,
@@ -437,7 +438,8 @@ export function createTracingFetch(
         responseHeaders: selectedHeaders,
         responseCookies: responseCookies(response),
         responseBodyShape: bodyShape(responseText),
-        ...(url.pathname === "/__test/api-key/create" ||
+        ...(url.pathname === "/__test/server-api/bearer" ||
+        url.pathname === "/__test/api-key/create" ||
         (request.method === "GET" && url.pathname === "/__test/verification-publications") ||
         (request.method === "POST" &&
           [
