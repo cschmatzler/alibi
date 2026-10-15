@@ -1,5 +1,5 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
-pub use client_secret::OAuthClientSecretHasher;
+pub use client_secret::{OAuthClientSecretCipher, OAuthClientSecretHasher};
 mod assertion;
 mod authorization;
 mod client_jwks;
@@ -66,6 +66,7 @@ pub struct OAuthProviderConfig {
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
+    pub client_secret_cipher: Option<std::sync::Arc<dyn OAuthClientSecretCipher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
     pub login_page: String,
@@ -94,6 +95,7 @@ impl Default for OAuthProviderConfig {
             client_id_generator: None,
             client_secret_generator: None,
             client_secret_hasher: None,
+            client_secret_cipher: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),
@@ -1062,6 +1064,11 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         if self.config.disable_jwt_plugin && self.config.client_secret_hasher.is_some() {
             return Err(AuthError::config(
                 "unable to store hashed secrets because id tokens will be signed with secret",
+            ));
+        }
+        if !self.config.disable_jwt_plugin && self.config.client_secret_cipher.is_some() {
+            return Err(AuthError::config(
+                "encryption method not recommended, please use 'hashed' or the 'hash' function",
             ));
         }
         ctx.extensions

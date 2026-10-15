@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
+import { symmetricDecrypt } from "better-auth/crypto";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
@@ -17,6 +18,7 @@ compatScenario(
       "encrypted-prefixed-generator",
       "custom-hash",
       "custom-prefixed-verify",
+      "custom-encrypted-prefixed",
     ]) {
       const prefix = mode.includes("prefixed") ? "client_prefix_" : "";
       const control = (input: any) =>
@@ -98,6 +100,15 @@ compatScenario(
         expect(row.client_secret.length).toBeGreaterThan(0);
         expect(row.client_secret).not.toBe(rotated.client_secret);
         expect(row.client_secret).not.toBe(hash);
+        if (mode === "custom-encrypted-prefixed") {
+          expect(row.client_secret.startsWith("custom:")).toBe(true);
+          expect(
+            await symmetricDecrypt({
+              key: "application-client-secret-encryption-key-32-characters",
+              data: row.client_secret.slice("custom:".length),
+            }),
+          ).toBe(rawSecret);
+        }
       } else {
         expect(row.client_secret).toBe(hash);
       }
@@ -162,6 +173,20 @@ compatScenario(
       valid: false,
       message: "unable to store hashed secrets because id tokens will be signed with secret",
     });
-    return ctx.snapshot({ results, validation });
+    const invalidCipher = await actor.fetch(
+      `${ctx.baseURL}/__test/server-api/oauth-provider-clients`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "secret-cipher-validation" }),
+      },
+    );
+    expect(invalidCipher.status).toBe(200);
+    const cipherValidation = await invalidCipher.json();
+    expect(cipherValidation).toEqual({
+      valid: false,
+      message: "encryption method not recommended, please use 'hashed' or the 'hash' function",
+    });
+    return ctx.snapshot({ results, validation, cipherValidation });
   },
 );

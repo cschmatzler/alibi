@@ -1,3 +1,4 @@
+import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
 import {createHash} from "node:crypto";
 import { consumeClientAssertion, oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
@@ -75,6 +76,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedGeneratedSecrets = 0;
   let prefixedSecrets = 0;
   let encryptedPrefixedSecrets = 0;
+  const customCipherKey="application-client-secret-encryption-key-32-characters";
+  const customCipher={encrypt:async(secret:string)=>`custom:${await symmetricEncrypt({key:customCipherKey,data:secret})}`,decrypt:async(stored:string)=>symmetricDecrypt({key:customCipherKey,data:stored.slice("custom:".length)})};
+  const customCipherProfile=()=>{let calls=0;return betterAuth({...options,plugins:[username(),oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,prefix:{clientSecret:"client_prefix_"},storeClientSecret:customCipher,generateClientSecret:()=>`operator-secret-${++calls}`})]});};
   const customHash=(secret:string)=>`custom:${createHash("sha256").update(secret).digest("base64url")}`;
   const customSecretProfile=(verify:boolean)=>{
     let calls=0;
@@ -84,6 +88,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     })]});
   };
   const auths = {
+    "custom-encrypted-prefixed":customCipherProfile(),
     "custom-hash":customSecretProfile(false),
     "custom-prefixed-verify":customSecretProfile(true),
     default: betterAuth(options),
@@ -229,6 +234,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if(input.action==="secret-cipher-validation") {
+      try {oauthProvider({loginPage:"/login",consentPage:"/consent",storeClientSecret:customCipher});
+        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
+      } catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+    }
     if(input.action==="secret-hash-validation") {
       try {oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,storeClientSecret:{hash:async(secret:string)=>customHash(secret)}});
         return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});

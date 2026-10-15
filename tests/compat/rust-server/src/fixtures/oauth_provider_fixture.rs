@@ -134,6 +134,21 @@ impl alibi::plugins::OAuthClientSecretHasher for CustomSecretVerify {
     async fn verify(&self,secret:&str,stored:&str)->alibi::AuthResult<bool>{Ok(alibi::plugins::OAuthClientSecretHasher::hash(&CustomSecretHash,secret.strip_suffix('!').unwrap_or(secret)).await?==stored)}
 }
 
+
+const CUSTOM_CIPHER_KEY: &str = "application-client-secret-encryption-key-32-characters";
+#[derive(Debug)]
+struct CustomSecretCipher;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientSecretCipher for CustomSecretCipher {
+    async fn encrypt(&self,secret:&str)->alibi::AuthResult<String>{
+        Ok(format!("custom:{}",alibi::plugins::oauth::encryption::encrypt_token(secret,CUSTOM_CIPHER_KEY)?))
+    }
+    async fn decrypt(&self,stored:&str)->alibi::AuthResult<String>{
+        let ciphertext=stored.strip_prefix("custom:").ok_or_else(||alibi::AuthError::internal("invalid custom ciphertext"))?;
+        alibi::plugins::oauth::encryption::decrypt_token(ciphertext,CUSTOM_CIPHER_KEY)
+    }
+}
+
 #[derive(Debug)]
 struct MetadataDiscovery {id:&'static str,empty:bool}
 #[async_trait::async_trait]
@@ -213,6 +228,7 @@ pub(crate) async fn router(
         "encrypted-prefixed-generator",
         "custom-hash",
         "custom-prefixed-verify",
+        "custom-encrypted-prefixed",
         "generated-id",
         "empty-id",
         "basic-special",
@@ -233,10 +249,11 @@ pub(crate) async fn router(
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
-            disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
+            disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
+            client_secret_cipher:(mode=="custom-encrypted-prefixed").then(||Arc::new(CustomSecretCipher) as Arc<dyn alibi::plugins::OAuthClientSecretCipher>),
             client_secret_hasher:match mode {"custom-hash"=>Some(Arc::new(CustomSecretHash)),"custom-prefixed-verify"=>Some(Arc::new(CustomSecretVerify)),_=>None},
-            client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator" | "custom-hash" | "custom-prefixed-verify") {
+            client_secret_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator" | "custom-hash" | "custom-prefixed-verify" | "custom-encrypted-prefixed") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
             } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
@@ -267,7 +284,7 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator") {builder} else {builder.plugin(JwtPlugin::new())};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(JwtPlugin::new())};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -286,6 +303,10 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="secret-cipher-validation" {
+                let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{client_secret_cipher:Some(Arc::new(CustomSecretCipher)),..Default::default()})).build().await;
+                return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();
+            }
             if input["action"]=="secret-hash-validation" {
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{disable_jwt_plugin:true,client_secret_hasher:Some(Arc::new(CustomSecretHash)),..Default::default()})).build().await;
                 return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();

@@ -17,6 +17,13 @@ pub trait OAuthClientSecretHasher: Send + Sync + std::fmt::Debug {
     }
 }
 
+/// Custom reversible client-secret storage, matching `storeClientSecret.encrypt` and `decrypt`.
+#[async_trait]
+pub trait OAuthClientSecretCipher: Send + Sync + std::fmt::Debug {
+    async fn encrypt(&self, secret: &str) -> AuthResult<String>;
+    async fn decrypt(&self, stored: &str) -> AuthResult<String>;
+}
+
 pub(super) async fn store<S: AuthSchema>(
     ctx: &AuthContext<S>,
     config: &super::OAuthProviderConfig,
@@ -24,6 +31,9 @@ pub(super) async fn store<S: AuthSchema>(
 ) -> AuthResult<String> {
     if let Some(hasher) = &config.client_secret_hasher {
         return hasher.hash(secret).await;
+    }
+    if let Some(cipher) = &config.client_secret_cipher {
+        return cipher.encrypt(secret).await;
     }
     if config.disable_jwt_plugin {
         crate::token_crypto::encrypt_with_config(secret, &ctx.config)
@@ -43,6 +53,10 @@ pub(super) async fn verify<S: AuthSchema>(
     }
     if let Some(hasher) = &config.client_secret_hasher {
         return hasher.verify(secret, stored).await;
+    }
+    if let Some(cipher) = &config.client_secret_cipher {
+        let plaintext = cipher.decrypt(stored).await?;
+        return Ok(bool::from(plaintext.as_bytes().ct_eq(secret.as_bytes())));
     }
     if config.disable_jwt_plugin {
         Ok(

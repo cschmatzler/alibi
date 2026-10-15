@@ -50,6 +50,26 @@ impl OAuthClientSecretHasher for CustomSecretVerify {
             == stored)
     }
 }
+
+const CUSTOM_CIPHER_KEY: &str = "application-client-secret-encryption-key-32-characters";
+#[derive(Debug)]
+struct CustomSecretCipher;
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientSecretCipher for CustomSecretCipher {
+    async fn encrypt(&self, secret: &str) -> alibi::AuthResult<String> {
+        Ok(format!(
+            "custom:{}",
+            alibi::plugins::oauth::encryption::encrypt_token(secret, CUSTOM_CIPHER_KEY)?
+        ))
+    }
+    async fn decrypt(&self, stored: &str) -> alibi::AuthResult<String> {
+        let ciphertext = stored
+            .strip_prefix("custom:")
+            .ok_or_else(|| alibi::AuthError::internal("invalid custom ciphertext"))?;
+        alibi::plugins::oauth::encryption::decrypt_token(ciphertext, CUSTOM_CIPHER_KEY)
+    }
+}
+
 async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -198,6 +218,7 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
         (false, true, true, 0),
         (false, false, false, 1),
         (false, false, true, 2),
+        (false, true, true, 3),
     ] {
         let prefix = if prefixed { "client_prefix_" } else { "" };
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -212,6 +233,10 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
                 alibi::plugins::OAuthProviderConfig {
                     disable_jwt_plugin: encrypted,
                     client_secret_prefix: prefixed.then(|| prefix.into()),
+                    client_secret_cipher: (custom == 3).then(|| {
+                        Arc::new(CustomSecretCipher)
+                            as Arc<dyn alibi::plugins::OAuthClientSecretCipher>
+                    }),
                     client_secret_hasher: match custom {
                         1 => Some(Arc::new(CustomSecretHash)),
                         2 => Some(Arc::new(CustomSecretVerify)),
@@ -304,6 +329,15 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             assert!(!protected.is_empty());
             assert_ne!(protected, secret);
             assert_ne!(protected, hash);
+            if custom == 3 {
+                assert_eq!(
+                    alibi::plugins::oauth::encryption::decrypt_token(
+                        protected.strip_prefix("custom:").unwrap(),
+                        CUSTOM_CIPHER_KEY
+                    )?,
+                    raw_secret
+                );
+            }
         } else {
             assert_eq!(stored.client_secret.as_deref(), Some(hash.as_str()));
         }
@@ -369,6 +403,23 @@ async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authenticat
             "unable to store hashed secrets because id tokens will be signed with secret"
         ),
         _ => panic!("hashed client secrets must be rejected without the JWT plugin"),
+    }
+    let invalid = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(
+            alibi::plugins::OAuthProviderConfig {
+                client_secret_cipher: Some(Arc::new(CustomSecretCipher)),
+                ..Default::default()
+            },
+        ))
+        .build()
+        .await;
+    match invalid {
+        Err(alibi::AuthError::Config(message)) => assert_eq!(
+            message,
+            "encryption method not recommended, please use 'hashed' or the 'hash' function"
+        ),
+        _ => panic!("reversible client secrets must be rejected with JWT enabled"),
     }
     B::close(connection).await
 }
