@@ -15,27 +15,41 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<Option<String>, alibi_core::endpoint::EndpointResponse>> {
-        if self.config.disable_jwt_plugin && client.client_secret.is_none() {
+        if self.config.disable_jwt_plugin
+            && client.client_secret.as_ref().is_none_or(String::is_empty)
+        {
             return Ok(Ok(None));
         }
         let issued = chrono::Utc::now().timestamp();
-        let jwt = ctx
-            .extensions
-            .get::<crate::jwt::JwtPlugin>()
-            .ok_or_else(|| AuthError::config("jwt_config"))?;
-        let mut options = crate::jwt::JwtSignOptions::default();
-        let resolved = jwt
-            .resolve_signing_key(&options, req.physical_request(), ctx)
-            .await?;
-        let algorithm = resolved
-            .as_ref()
-            .map(|key| key.algorithm.as_str().to_owned())
-            .or_else(|| {
+        let jwt = if self.config.disable_jwt_plugin {
+            None
+        } else {
+            Some(
                 ctx.extensions
-                    .get::<crate::jwt::JwtDiscoveryOptions>()
-                    .and_then(|options| options.signing_algorithms.first().cloned())
-            })
-            .ok_or_else(|| AuthError::config("JWT signing algorithm is missing"))?;
+                    .get::<crate::jwt::JwtPlugin>()
+                    .ok_or_else(|| AuthError::config("jwt_config"))?,
+            )
+        };
+        let mut options = crate::jwt::JwtSignOptions::default();
+        let resolved = if let Some(jwt) = jwt.as_ref() {
+            jwt.resolve_signing_key(&options, req.physical_request(), ctx)
+                .await?
+        } else {
+            None
+        };
+        let algorithm = if self.config.disable_jwt_plugin {
+            "HS256".into()
+        } else {
+            resolved
+                .as_ref()
+                .map(|key| key.algorithm.as_str().to_owned())
+                .or_else(|| {
+                    ctx.extensions
+                        .get::<crate::jwt::JwtDiscoveryOptions>()
+                        .and_then(|options| options.signing_algorithms.first().cloned())
+                })
+                .ok_or_else(|| AuthError::config("JWT signing algorithm is missing"))?
+        };
         let hash = match algorithm.as_str() {
             "EdDSA" => Sha512::digest(access_token).to_vec(),
             algorithm if algorithm.ends_with("384") => Sha384::digest(access_token).to_vec(),
@@ -51,7 +65,11 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
-        let discovery = ctx.extensions.get::<crate::jwt::JwtDiscoveryOptions>();
+        let discovery = if self.config.disable_jwt_plugin {
+            None
+        } else {
+            ctx.extensions.get::<crate::jwt::JwtDiscoveryOptions>()
+        };
         let issuer = discovery
             .as_ref()
             .and_then(|options| options.issuer.as_ref())
@@ -72,10 +90,25 @@ impl OAuthProviderPlugin {
         if include_sid && let Some(session) = proof.get("sessionId") {
             _ = payload.insert("sid".into(), session.clone());
         }
-        options.resolved_key = resolved.map(std::sync::Arc::new);
-        let token = jwt
-            .sign_jwt(payload, &options, req.physical_request(), ctx)
-            .await?;
+        let token = if let Some(jwt) = jwt {
+            options.resolved_key = resolved.map(std::sync::Arc::new);
+            jwt.sign_jwt(payload, &options, req.physical_request(), ctx)
+                .await?
+        } else {
+            let stored = client
+                .client_secret
+                .as_deref()
+                .ok_or_else(|| AuthError::internal("Client secret is missing"))?;
+            let secret = super::client_secret::decrypt(ctx, &self.config, stored).await?;
+            let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+            header.typ = None;
+            jsonwebtoken::encode(
+                &header,
+                &payload,
+                &jsonwebtoken::EncodingKey::from_secret(secret.as_bytes()),
+            )
+            .map_err(|error| AuthError::internal(error.to_string()))?
+        };
         let header = token
             .split('.')
             .next()
