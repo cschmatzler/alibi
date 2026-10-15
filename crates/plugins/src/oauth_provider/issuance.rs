@@ -89,7 +89,7 @@ pub(super) struct AccessTokenIssuance<'a> {
     pub params: &'a OAuthTokenIssueParams,
     pub issued: chrono::DateTime<chrono::Utc>,
     pub expires: &'a Value,
-    pub audiences: &'a [String],
+    pub policy: &'a super::resource_policy::ResourceAdmission,
     pub refresh_id: Option<&'a str>,
 }
 fn token_metadata(p: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
@@ -188,9 +188,10 @@ impl OAuthProviderPlugin {
             params: p,
             issued,
             expires: expires_claim,
-            audiences,
+            policy,
             refresh_id,
         } = issuance;
+        let audiences = &policy.audiences;
         let expires = expiration_date(expires_claim)?;
         let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
         let mut metadata = token_metadata(p);
@@ -220,6 +221,7 @@ impl OAuthProviderPlugin {
                 .and_then(Value::as_object)
                 .cloned()
                 .unwrap_or_default();
+            payload.extend(policy.claims.clone());
             for key in [
                 "sub",
                 "aud",
@@ -261,6 +263,8 @@ impl OAuthProviderPlugin {
                 _ = payload.insert("cnf".into(), cnf.clone());
             }
             let options = crate::jwt::JwtSignOptions {
+                signing_algorithm: policy.signing_algorithm,
+                signing_key_id: policy.signing_key_id.clone(),
                 header: Some(serde_json::Map::from_iter([(
                     "typ".into(),
                     json!("at+jwt"),
@@ -308,9 +312,10 @@ impl OAuthProviderPlugin {
         let admission = self
             .admit_resources(ctx, &p.client.client_id, &p.scopes, Some(&resource_value))
             .await?;
+        let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
         let refresh_requested = p.scopes.iter().any(|scope| scope == "offline_access");
         let mut resolved = p.clone();
-        resolved.scopes = admission.scopes;
+        resolved.scopes = admission.scopes.clone();
         let p = &resolved;
         let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
         let metadata = token_metadata(p);
@@ -337,7 +342,7 @@ impl OAuthProviderPlugin {
                         authorization_code_id: p.authorization_code_id.clone(),
                         metadata: Value::Object(retained),
                         created_at: issued,
-                        expires_at: expiration_date(&expiration(
+                        expires_at: expiration_date(&admission.refresh_expiration(
                             issued.timestamp(),
                             self.config.refresh_token_expires_in,
                         )?)?,
@@ -356,7 +361,7 @@ impl OAuthProviderPlugin {
                     params: p,
                     issued,
                     expires: &expires_claim,
-                    audiences: &admission.audiences,
+                    policy: &admission,
                     refresh_id: refresh.as_ref().map(|(id, _)| id.as_str()),
                 },
             )

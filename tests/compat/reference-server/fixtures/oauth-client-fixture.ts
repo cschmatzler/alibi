@@ -125,6 +125,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     "custom-token-hash":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",storeTokens:tokenStorage}),tokenHashHelper]}),
     "issuance-expiry":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",...expiryPolicy}),issuanceHelper]}),
     ...Object.fromEntries(["numeric","zero","relative","date","ceiling"].map(name=>[`scope-${name}`,betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",scopeExpirations:scopePolicy(name)}),issuanceHelper]})])),
+    "resource-keyring":betterAuth({...options,plugins:[username(),jwt({jwks:{keyPairConfigs:[{alg:"ES256",crv:"P-256"}]}}),oauthProvider({loginPage:"/login",consentPage:"/consent"}),issuanceHelper]}),
     default: betterAuth(options),
     "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
     "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
