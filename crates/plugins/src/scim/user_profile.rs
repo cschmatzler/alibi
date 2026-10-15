@@ -150,6 +150,7 @@ pub(super) fn parse(raw: &Value) -> Option<Profile> {
             } else {
                 manager
             };
+            _ = manager.as_object()?;
             let mut result = serde_json::Map::new();
             for (key, max) in [("value", 256), ("$ref", 2048), ("displayName", 1024)] {
                 if let Some(value) = text(&manager, key, max).ok()?
