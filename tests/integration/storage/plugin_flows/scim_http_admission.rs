@@ -3,7 +3,7 @@ use super::*;
 use alibi::plugins::ScimPlugin;
 backend_tests!(scim_http_admission_preserves_protocol_errors_and_ignores_delete_bodies);
 postgres_tests!(scim_http_admission_preserves_protocol_errors_and_ignores_delete_bodies);
-async fn http<S: AuthSchema>(
+pub(super) async fn http<S: AuthSchema>(
     auth: &Alibi<S>,
     method: HttpMethod,
     path: &str,

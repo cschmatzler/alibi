@@ -566,3 +566,5 @@ mod server_last_login;
 mod server_one_time_token_header;
 
 mod scim_http_admission;
+
+mod scim_entra_compatibility;

@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use serde_json::{Value, json};
 mod authentication;
 mod collection;
+mod compatibility;
 mod managed;
 mod projection;
 mod resources;
@@ -86,11 +87,23 @@ impl ScimManagedConnectionOptions {
         }
     }
 }
+/// Optional input compatibility with external provisioning clients.
+#[derive(Clone, Debug, Default)]
+pub struct ScimCompatibilityOptions {
+    pub microsoft_entra: Option<ScimMicrosoftEntraCompatibilityOptions>,
+}
+/// Classic Microsoft Entra Group input compatibility; output remains canonical.
+#[derive(Clone, Debug, Default)]
+pub struct ScimMicrosoftEntraCompatibilityOptions {
+    pub accept_legacy_group_schema: bool,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct ScimPlugin {
     managed_connections: Option<ScimManagedConnectionOptions>,
     connections: Vec<ScimConnectionOptions>,
     has_token_verifier: bool,
+    accept_legacy_group_schema: bool,
 }
 impl ScimPlugin {
     #[must_use]
@@ -99,7 +112,16 @@ impl ScimPlugin {
             managed_connections: None,
             connections: Vec::new(),
             has_token_verifier: false,
+            accept_legacy_group_schema: false,
         }
+    }
+    /// Configure provisioning-client input compatibility.
+    #[must_use]
+    pub fn compatibility(mut self, options: ScimCompatibilityOptions) -> Self {
+        self.accept_legacy_group_schema = options
+            .microsoft_entra
+            .is_some_and(|options| options.accept_legacy_group_schema);
+        self
     }
     #[must_use]
     pub fn managed_connections(mut self, options: ScimManagedConnectionOptions) -> Self {
@@ -317,33 +339,50 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
             .find_map(|(name, value)| name.eq_ignore_ascii_case("content-type").then_some(value))
             .and_then(|value| value.split(';').next())
             .map(alibi_core::utils::javascript::trim);
-        let response = if !media.is_some_and(|media| {
+        if !media.is_some_and(|media| {
             media.eq_ignore_ascii_case("application/json")
                 || media.eq_ignore_ascii_case("application/scim+json")
         }) {
-            Some(resources::error(
-                415,
-                "SCIM requests must use application/scim+json or application/json",
-                None,
-            ))
-        } else if alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(
+            return Ok(Some(alibi_core::HttpRequestAction::Respond(
+                resources::to_http_response(&resources::error(
+                    415,
+                    "SCIM requests must use application/scim+json or application/json",
+                    None,
+                ))?,
+            )));
+        }
+        let Ok(mut body) = alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(
             req.body.as_deref().unwrap_or_default(),
-        )
-        .is_err()
-        {
-            Some(resources::error(
-                400,
-                "SCIM request body must contain valid JSON",
-                Some("invalidSyntax"),
-            ))
-        } else {
-            None
+        ) else {
+            return Ok(Some(alibi_core::HttpRequestAction::Respond(
+                resources::to_http_response(&resources::error(
+                    400,
+                    "SCIM request body must contain valid JSON",
+                    Some("invalidSyntax"),
+                ))?,
+            )));
         };
-        response
-            .as_ref()
-            .map(resources::to_http_response)
-            .transpose()
-            .map(|response| response.map(alibi_core::HttpRequestAction::Respond))
+        match compatibility::normalize_group(
+            path,
+            req.method(),
+            &mut body,
+            self.accept_legacy_group_schema,
+        ) {
+            Ok(false) => Ok(None),
+            Ok(true) => {
+                let mut replacement = req.clone();
+                replacement
+                    .headers
+                    .retain(|name, _| !name.eq_ignore_ascii_case("content-length"));
+                replacement.body = Some(alibi_core::utils::json::to_string(&body)?.into_bytes());
+                Ok(Some(alibi_core::HttpRequestAction::ReplaceRequest(
+                    Box::new(replacement),
+                )))
+            }
+            Err(detail) => Ok(Some(alibi_core::HttpRequestAction::Respond(
+                resources::to_http_response(&resources::error(400, detail, Some("invalidValue")))?,
+            ))),
+        }
     }
 
     route_openapi_metadata!(S);

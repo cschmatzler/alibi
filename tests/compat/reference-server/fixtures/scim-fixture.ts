@@ -44,6 +44,7 @@ export async function scimFixture(base: BetterAuthOptions) {
   };
   await (await getMigrations(options)).runMigrations();
   let auth = betterAuth(options);
+  const initialScimOptions = options.plugins[0]!.options;
   const projectionStates: unknown[] = [];
   let projectionFails = false;
   const identityStates: unknown[] = [];
@@ -59,6 +60,17 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path.startsWith("/__test/profiles/scim/api/auth/")) return auth.handler(request);
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
+      if (query.get("operation") === "configure-entra-group-compatibility") {
+        const input = (await request.json()) as any;
+        options.plugins = [
+          scim({
+            ...initialScimOptions,
+            compatibility: { microsoftEntra: { acceptLegacyGroupSchema: input.enabled === true } },
+          }),
+        ];
+        auth = betterAuth(options);
+        return fixtureJson({ configured: true });
+      }
       if (
         [
           "configure-projection",
