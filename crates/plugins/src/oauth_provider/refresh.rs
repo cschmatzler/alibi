@@ -195,7 +195,12 @@ impl OAuthProviderPlugin {
                         authorization_code_id: original.authorization_code_id.clone(),
                         metadata: Value::Object(metadata),
                         created_at: issued,
-                        expires_at: issued + chrono::Duration::seconds(2_592_000),
+                        expires_at: super::issuance::expiration_date(
+                            &super::issuance::expiration(
+                                issued.timestamp(),
+                                self.config.refresh_token_expires_in,
+                            )?,
+                        )?,
                     },
                 )
                 .await?;
@@ -216,7 +221,9 @@ impl OAuthProviderPlugin {
                 _ = metadata.insert(key.into(), value.clone());
             }
         }
-        let expires = issued + chrono::Duration::seconds(3600);
+        let expires_claim =
+            super::issuance::expiration(issued.timestamp(), self.config.access_token_expires_in)?;
+        let expires = super::issuance::expiration_date(&expires_claim)?;
         _ = ctx
             .database
             .create_oauth_token(
@@ -235,8 +242,11 @@ impl OAuthProviderPlugin {
             .await?;
         let mut response = serde_json::Map::from_iter([
             ("access_token".into(), json!(access)),
-            ("expires_in".into(), json!(3600)),
-            ("expires_at".into(), json!(expires.timestamp())),
+            (
+                "expires_in".into(),
+                super::issuance::number(self.config.access_token_expires_in)?,
+            ),
+            ("expires_at".into(), expires_claim),
             ("token_type".into(), json!("Bearer")),
             ("scope".into(), json!(scopes.join(" "))),
         ]);

@@ -3,7 +3,7 @@ use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointCall, EndpointError};
 use alibi_core::store::{CreateOAuthToken, OAuthClient, OAuthTokenKind};
 use alibi_core::wire::UserView;
-use alibi_core::{AuthContext, AuthError, AuthSchema, AuthUser};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
 use serde_json::{Value, json};
 
 /// Inputs authorized by a trusted grant handler or companion endpoint.
@@ -54,6 +54,28 @@ pub(super) fn random_token() -> String {
         .take(32)
         .collect()
 }
+/// Preserve JavaScript number serialization, including integral default values.
+pub(super) fn number(value: f64) -> AuthResult<Value> {
+    serde_json::from_str(&value.to_string()).map_err(AuthError::from)
+}
+pub(super) fn expiration(issued: i64, lifetime: f64) -> AuthResult<Value> {
+    let issued = json!(issued)
+        .as_f64()
+        .ok_or_else(|| AuthError::internal("Invalid issuance time"))?;
+    number(issued + lifetime)
+}
+pub(super) fn expiration_date(value: &Value) -> AuthResult<chrono::DateTime<chrono::Utc>> {
+    let seconds = value
+        .as_f64()
+        .ok_or_else(|| AuthError::internal("Invalid token expiration"))?;
+    let millis = (seconds * 1000.0)
+        .trunc()
+        .to_string()
+        .parse::<i64>()
+        .map_err(|_| AuthError::internal("Invalid token expiration"))?;
+    chrono::DateTime::from_timestamp_millis(millis)
+        .ok_or_else(|| AuthError::internal("Invalid token expiration"))
+}
 impl OAuthProviderPlugin {
     /// Mint authority for an already authorized caller. The grant is required,
     /// but need not be registered: admission is the trusted caller's responsibility.
@@ -88,7 +110,13 @@ impl OAuthProviderPlugin {
     ) -> Result<Value, EndpointError> {
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid token issue time"))?;
-        let expires = issued + chrono::Duration::seconds(3600);
+        let lifetime = if p.user.is_some() {
+            self.config.access_token_expires_in
+        } else {
+            self.config.m2m_access_token_expires_in
+        };
+        let expires_claim = expiration(issued.timestamp(), lifetime)?;
+        let expires = expiration_date(&expires_claim)?;
         let user_id = p.user.as_ref().map(|user| user.id().as_ref().to_owned());
         let mut metadata = serde_json::Map::from_iter([
             ("scopes".into(), json!(p.scopes)),
@@ -135,7 +163,10 @@ impl OAuthProviderPlugin {
                         authorization_code_id: p.authorization_code_id.clone(),
                         metadata: Value::Object(retained),
                         created_at: issued,
-                        expires_at: issued + chrono::Duration::seconds(2_592_000),
+                        expires_at: expiration_date(&expiration(
+                            issued.timestamp(),
+                            self.config.refresh_token_expires_in,
+                        )?)?,
                     },
                 )
                 .await?;
@@ -230,7 +261,7 @@ impl OAuthProviderPlugin {
                 ("scope", json!(p.scopes.join(" "))),
                 ("iss", json!(issuer)),
                 ("iat", json!(issued.timestamp())),
-                ("exp", json!(expires.timestamp())),
+                ("exp", expires_claim.clone()),
                 ("jti", json!(random_token())),
             ] {
                 _ = payload.insert(key.into(), value);
@@ -292,8 +323,8 @@ impl OAuthProviderPlugin {
         }
         for (key, value) in [
             ("access_token", json!(access)),
-            ("expires_in", json!(3600)),
-            ("expires_at", json!(expires.timestamp())),
+            ("expires_in", number(lifetime)?),
+            ("expires_at", expires_claim),
             (
                 "token_type",
                 json!(

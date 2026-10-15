@@ -246,6 +246,7 @@ pub(crate) async fn router(
         "generated-id",
         "empty-id",
         "basic-special",
+        "issuance-expiry",
         "assertion-short",
         "assertion-zero",
         "assertion-negative",
@@ -261,7 +262,7 @@ pub(crate) async fn router(
         "trusted",
         "trusted-peer",
     ] {
-        let provider = OAuthProviderConfig {
+        let mut provider = OAuthProviderConfig {
             token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
@@ -296,6 +297,7 @@ pub(crate) async fn router(
             allow_unauthenticated_client_registration: mode == "public",
             ..Default::default()
         };
+        if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         let client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
         let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
@@ -323,7 +325,7 @@ pub(crate) async fn router(
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="issue-tokens" {
-                let body=&input["body"];let values=&body["params"];let provider=OAuthProviderPlugin::new();
+                let body=&input["body"];let values=&body["params"];let provider=if body["expiryProfile"]==true {OAuthProviderPlugin::with_config(issuance_expiry_config())}else{OAuthProviderPlugin::new()};
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());
                 if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(auth.context().trusted_user_view(&user));}
@@ -596,4 +598,8 @@ pub(crate) async fn router(
             }
         }),
     ))
+}
+
+fn issuance_expiry_config() -> alibi::plugins::OAuthProviderConfig {
+    alibi::plugins::OAuthProviderConfig {access_token_expires_in:120.0,m2m_access_token_expires_in:30.0,id_token_expires_in:600.0,refresh_token_expires_in:900.0,..Default::default()}
 }
