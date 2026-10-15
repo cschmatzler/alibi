@@ -22,6 +22,7 @@ use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, HttpMethod,
 };
+pub use assertion::consume_client_assertion;
 use async_trait::async_trait;
 pub use clients::CreateOAuthClientInput;
 use serde_json::{Value, json};

@@ -1,8 +1,22 @@
-import { oauthProvider } from "@better-auth/oauth-provider";
+import { consumeClientAssertion, oauthProvider } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, username } from "better-auth/plugins";
+import { createAuthEndpoint } from "better-auth/api";
+import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
+  const assertionHelper = {
+    id: "assertion-helper-fixture",
+    endpoints: {
+      consumeAssertionFixture: createAuthEndpoint("/fixture/consume-assertion", {
+        method: "POST",
+        body: z.object({namespace:z.string(),payload:z.record(z.string(),z.unknown()),expectedAudience:z.string()}),
+      }, async (ctx) => {
+        await consumeClientAssertion(ctx,{loginPage:"/login",consentPage:"/consent"},ctx.body);
+        return ctx.json({consumed:true});
+      }),
+    },
+  };
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
@@ -19,6 +33,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "assertion-helper": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
+    "assertion-helper-peer": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
     "assertion-short": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:30})]}),
     "assertion-zero": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:0})]}),
     "assertion-negative": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:-1})]}),
@@ -155,6 +171,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "consume-assertion") {
+      return (auth.api as any).consumeAssertionFixture({body:input.params,asResponse:true});
+    }
+    if (input.action === "assertion-row") {
+      const context=await auth.$context;
+      const row=await context.adapter.findOne<{id:string;expiresAt:Date}>({model:"oauthClientAssertion",where:[{field:"id",value:input.id}]});
+      return Response.json(row?{id:row.id,expiresAt:row.expiresAt}:null);
+    }
     if (input.action === "signout") {
       const call = () =>
         auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });

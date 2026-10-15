@@ -571,3 +571,5 @@ mod scim_http_admission;
 mod scim_entra_compatibility;
 
 mod oauth_private_key_jwt;
+
+mod oauth_assertion_consumption;
