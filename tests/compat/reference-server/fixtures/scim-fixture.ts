@@ -15,6 +15,11 @@ function trustedUserBody(input: any) {
     const key = input.datePath.at(-1);
     target[key] = new Date(target[key]);
   }
+  if (input.numberPath) {
+    let target = body;
+    for (const key of input.numberPath.slice(0,-1)) target = target[key];
+    target[input.numberPath.at(-1)] = input.numberKind === "NaN" ? NaN : input.numberKind === "-Infinity" ? -Infinity : Infinity;
+  }
   return body;
 }
 export async function scimFixture(base: BetterAuthOptions) {

@@ -851,5 +851,21 @@ fn trusted_user_body(input: &Value) -> alibi::utils::json::JsValue {
         let date = chrono::DateTime::parse_from_rfc3339(target.as_str().unwrap()).unwrap().to_utc();
         *target = JsValue::Date(date);
     }
+    if let Some(path) = input["numberPath"].as_array() {
+        let mut target = &mut body;
+        for key in path {
+            let key = key.as_str().unwrap();
+            target = match target {
+                JsValue::Object(values) => values.get_mut(key).unwrap(),
+                JsValue::Array(values) => &mut values[key.parse::<usize>().unwrap()],
+                _ => panic!("trusted fixture number path"),
+            };
+        }
+        *target = JsValue::Number(match input["numberKind"].as_str().unwrap() {
+            "NaN" => f64::NAN,
+            "-Infinity" => f64::NEG_INFINITY,
+            _ => f64::INFINITY,
+        });
+    }
     body
 }
