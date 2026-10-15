@@ -9,6 +9,11 @@ pub trait OAuthClientDiscovery: Send + Sync + std::fmt::Debug {
     /// Stable provenance identifier. Changing this requires migrating owned client rows.
     fn id(&self) -> &str;
     fn matches(&self, client_id: &str) -> bool;
+    /// Runtime-owned fetch boundary for remote resources referenced by this registry.
+    fn metadata_resource_fetch(&self) -> Option<Arc<dyn super::OAuthClientMetadataResourceFetch>> {
+        None
+    }
+
     /// Resolve or refresh a matching identity using the actual initialized callback context.
     /// Returning None for an owned row fails closed rather than treating it as managed.
     async fn resolve(

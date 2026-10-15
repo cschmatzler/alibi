@@ -80,6 +80,34 @@ impl alibi::plugins::OAuthClientDiscovery for ValidationDiscovery {
 struct ManagedRegistryId;
 impl alibi::plugins::OAuthClientIdGenerator for ManagedRegistryId {fn generate(&self)->alibi::AuthResult<String>{Ok("registry-managed".into())}}
 
+#[derive(Debug)]
+struct RemoteResource {document:std::sync::Mutex<serde_json::Value>,fetches:std::sync::Mutex<Vec<serde_json::Value>>}
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientMetadataResourceFetch for RemoteResource {
+    async fn fetch(&self,url:&str,options:alibi::plugins::OAuthClientMetadataFetchOptions)->alibi::AuthResult<alibi::plugins::OAuthClientMetadataFetchResponse> {
+        self.fetches.lock().unwrap().push(serde_json::json!({"url":url,"accept":options.headers.get("accept"),"redirect":options.redirect,"aborted":options.signal.aborted()}));
+        let response=axum::http::Response::builder().status(200).header("content-type","application/jwk-set+json; charset=utf-8").body(serde_json::to_vec(&*self.document.lock().unwrap())?).unwrap();
+        Ok(alibi::plugins::OAuthClientMetadataFetchResponse{response:response.into(),redirected:false})
+    }
+}
+#[derive(Debug)]
+struct RemoteRegistry {resource:Arc<RemoteResource>}
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientDiscovery for RemoteRegistry {
+    fn id(&self)->&str{"remote-registry"}
+    fn matches(&self,id:&str)->bool{id=="https://client.fixture.test/client.json"}
+    fn metadata_resource_fetch(&self)->Option<Arc<dyn alibi::plugins::OAuthClientMetadataResourceFetch>>{Some(self.resource.clone())}
+    async fn resolve(&self,callback:&alibi::CallbackContext,id:&str,existing:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>> {
+        if existing.is_some(){return Ok(existing);}
+        callback.context::<TestSchema>().unwrap().database.create_oauth_client(alibi::store::CreateOAuthClient{client_id:id.into(),client_secret:None,user_id:None,metadata:serde_json::json!({"client_discovery_id":"remote-registry","client_name":"Remote client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"private_key_jwt","jwks_uri":"https://client.fixture.test/jwks","scope":"email","grant_types":["authorization_code"],"response_types":["code"]}),created_at:chrono::Utc::now()}).await.map(Some)
+    }
+}
+fn remote_document(family:&str,algorithm:&str,kid:&str)->serde_json::Value {
+    let keys:serde_json::Value=serde_json::from_str(include_str!(concat!(env!("CARGO_MANIFEST_DIR"),"/../../fixtures/oauth/client-assertion-keys.json"))).unwrap();
+    let mut public=keys["keys"].as_array().unwrap().iter().find(|key|key["family"]==family).unwrap()["publicJwk"].clone();
+    public["alg"]=serde_json::json!(algorithm);public["kid"]=serde_json::json!(kid);serde_json::json!({"keys":[public]})
+}
+
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -117,6 +145,9 @@ pub(crate) async fn router(
         instances.insert(mode.to_owned(), auth);
     }
     let registry_state=Arc::new(RegistryState::default());
+    let remote_state=Arc::new(RemoteResource{document:std::sync::Mutex::new(remote_document("RSA","RS256","first")),fetches:std::sync::Mutex::default()});
+    let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
+
     let mut client_instances = HashMap::new();
     for mode in [
         "default",
@@ -146,6 +177,8 @@ pub(crate) async fn router(
         "assertion-helper-peer",
         "discovered",
         "uri-host",
+        "remote-jwks",
+        "remote-jwks-peer",
     ] {
         let provider = OAuthProviderConfig {
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
@@ -185,7 +218,8 @@ pub(crate) async fn router(
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator") {builder} else {builder.plugin(JwtPlugin::new())};
-        let auth = Arc::new(builder.plugin(OAuthProviderPlugin::with_config(provider)).build().await?);
+        let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
+        let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }
     let validation_config=config.clone();
@@ -196,11 +230,17 @@ pub(crate) async fn router(
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
         let registry_state=registry_state.clone();
+        let remote_state=remote_state.clone();
         let validation_config=validation_config.clone();
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="remote-jwks-document" {
+                *remote_state.document.lock().unwrap()=remote_document(input["family"].as_str().unwrap(),input["algorithm"].as_str().unwrap(),input["kid"].as_str().unwrap());
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
+            if input["action"]=="remote-jwks-fetches" {return axum::Json(remote_state.fetches.lock().unwrap().clone()).into_response();}
             if input["action"]=="discovery-validation" {
                 let sources=input["ids"].as_array().unwrap().iter().map(|id|Arc::new(ValidationDiscovery(id.as_str().unwrap().into())) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect();
                 let cfg=OAuthProviderConfig{client_discoveries:sources,..Default::default()};

@@ -218,7 +218,7 @@ fn backchannel_uri_error(uri: &str) -> Option<String> {
     private_host(url.host_str().unwrap_or_default())
         .then(|| "backchannel_logout_uri must not point to a private or reserved address".into())
 }
-fn public_jwks_error(value: &Value) -> Option<&'static str> {
+pub(super) fn public_jwks_error(value: &Value) -> Option<&'static str> {
     let keys = value.get("keys").and_then(Value::as_array)?;
     for key in keys {
         if ["k", "d", "p", "q", "dp", "dq", "qi", "oth"]

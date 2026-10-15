@@ -575,3 +575,5 @@ mod oauth_private_key_jwt;
 mod oauth_assertion_consumption;
 
 mod oauth_client_discovery;
+
+mod oauth_remote_client_jwks;
