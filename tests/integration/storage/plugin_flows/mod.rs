@@ -589,3 +589,5 @@ mod oauth_resource_issuance_admission;
 mod oauth_resource_token_policy;
 
 mod oauth_server_refresh_issuance;
+
+mod oauth_dpop_proof;

@@ -13,6 +13,7 @@ pub use callbacks::RemoteJwtClaim;
 pub use callbacks::RemoteJwtPayload;
 pub use callbacks::SignRemoteJwt;
 use claims::decode_compact_json;
+pub(crate) use claims::{decode_compact_part, validate_critical_header};
 pub use config::JwtAlgorithm;
 pub use config::JwtAudience;
 pub use config::JwtClaimsConfig;
@@ -25,7 +26,7 @@ mod keyring;
 mod signing;
 mod verification;
 
-mod crypto;
+pub(crate) mod crypto;
 mod endpoint;
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,

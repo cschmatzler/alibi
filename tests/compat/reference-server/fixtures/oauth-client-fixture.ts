@@ -1,3 +1,4 @@
+import {verifyDpopProof,createDpopReplayStore,createInMemoryDpopReplayStore,isDpopProofError,isDpopBindingError,enforceDpopBinding,parseAccessTokenAuthorization,stripAccessTokenAuthorizationScheme,getConfirmationJkt,getDpopJktFromPayload,normalizeDpopHtu,deriveDpopAth,deriveDpopJkt} from "better-auth/oauth2";
 import {SignJWT,importJWK,decodeProtectedHeader} from "jose";
 import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
 import {createHash} from "node:crypto";
@@ -86,13 +87,28 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if(refreshToken && ctx.body.snapshotToken)refreshToken.token=ctx.body.snapshotToken;
     return api.issueTokens({...params,client,user,...(refreshToken?{refreshToken}:{})});
   })}};
+  const memoryDpopReplay=createInMemoryDpopReplayStore();
+  const dpopHelper={id:"dpop-helper",endpoints:{dpopFixture:createAuthEndpoint("/fixture/dpop",{method:"POST",body:z.record(z.string(),z.unknown())},async(ctx:any)=>{
+    if(ctx.body.operation==="row"){const row=await ctx.context.adapter.findOne({model:"verification",where:[{field:"identifier",value:`dpop-proof:${ctx.body.key}`}]});return ctx.json(row?{value:row.value,expiresAt:row.expiresAt}:null);}
+    let observed:any;
+    const wrapped={reserveVerificationValue:async(data:any)=>{observed=data;return ctx.context.internalAdapter.reserveVerificationValue(data);}};
+    const replayStore=ctx.body.replay==="memory"?memoryDpopReplay:ctx.body.replay==="database"?createDpopReplayStore(ctx.context.internalAdapter):ctx.body.replay==="wrapped"?createDpopReplayStore(wrapped):undefined;
+    try{
+      if(ctx.body.operation==="payload-jkt")return ctx.json({jkt:getDpopJktFromPayload(ctx.body.payload)??null});
+      if(ctx.body.operation==="binding"){await enforceDpopBinding({...ctx.body,replayStore});return ctx.json({accepted:true});}
+      if(ctx.body.operation==="utilities")return ctx.json({authorization:parseAccessTokenAuthorization(ctx.body.authorization)??null,stripped:stripAccessTokenAuthorizationScheme(ctx.body.token),confirmation:getConfirmationJkt(ctx.body.confirmation)??null,normalized:normalizeDpopHtu(ctx.body.url),ath:await deriveDpopAth(ctx.body.accessToken),jkt:await deriveDpopJkt(ctx.body.jwk)});
+      const proof=await verifyDpopProof({...ctx.body,replayStore});
+      return ctx.json({...proof,...(observed?{reservation:observed}:{})});
+    }
+    catch(error){if(isDpopProofError(error)||isDpopBindingError(error))return ctx.json({error:error.code,message:error.message});return ctx.json({ordinary_error:true});}
+  })}};
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper,accessValidationHelper,issuanceHelper],
+    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper,accessValidationHelper,issuanceHelper,dpopHelper],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -576,6 +592,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       });
     }
+    if(input.action==="dpop-proof") return (auth.api as any).dpopFixture({body:input.body,asResponse:true});
     if(input.action==="issue-tokens") return (auth.api as any).issueTokensFixture({body:input.body,asResponse:true});
     if(input.action==="validate-access") {
       return (auth.api as any).validateAccessFixture({body:input.body,asResponse:true});

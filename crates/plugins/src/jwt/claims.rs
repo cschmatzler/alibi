@@ -65,10 +65,7 @@ pub(in crate::jwt) fn js_primitive_string(value: &Value) -> String {
     }
 }
 
-pub(in crate::jwt) fn decode_compact_part(
-    value: &str,
-    allow_whitespace: bool,
-) -> AuthResult<Vec<u8>> {
+pub(crate) fn decode_compact_part(value: &str, allow_whitespace: bool) -> AuthResult<Vec<u8>> {
     use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
     // Bun's JOSE decoder accepts these five ASCII whitespace characters and
     // unused trailing bits, while requiring the exact optional padding count.
@@ -239,7 +236,7 @@ pub(in crate::jwt) fn relative_numeric_date(value: &str) -> AuthResult<f64> {
     Ok(if negative { -seconds } else { seconds })
 }
 
-pub(in crate::jwt) fn validate_critical_header(
+pub(crate) fn validate_critical_header(
     header: &Map<String, Value>,
     signing: bool,
 ) -> AuthResult<()> {
