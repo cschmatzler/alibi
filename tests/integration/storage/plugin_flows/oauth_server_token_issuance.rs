@@ -6,8 +6,14 @@ use alibi::store::OAuthTokenKind;
 use alibi::{AuthSession as _, AuthUser as _};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
-backend_tests!(oauth_server_issue_tokens_persists_machine_user_and_signed_authority);
-postgres_tests!(oauth_server_issue_tokens_persists_machine_user_and_signed_authority);
+backend_tests!(
+    oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
+    oauth_sender_confirmation_survives_validation_and_introspection
+);
+postgres_tests!(
+    oauth_server_issue_tokens_persists_machine_user_and_signed_authority,
+    oauth_sender_confirmation_survives_validation_and_introspection
+);
 async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -183,6 +189,85 @@ async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B:
             );
         } else {
             assert!(issued.get("id_token").is_none());
+        }
+    }
+    Ok(())
+}
+async fn oauth_sender_confirmation_survives_validation_and_introspection<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = OAuthProviderPlugin::new();
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "confirmation-owner@example.test").await;
+    let created=Box::pin(auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Confirmation consumer","redirect_uris":["https://app.fixture.test/callback"],"scope":"email offline_access","token_endpoint_auth_method":"client_secret_post","grant_types":["authorization_code"]}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let created = body(&created);
+    let id = created["client_id"].as_str().unwrap();
+    let client = provider.get_client(auth.context(), id).await?.unwrap();
+    let user = auth
+        .store()
+        .get_user_by_id(client.user_id.as_deref().unwrap())
+        .await?
+        .unwrap();
+    let call = EndpointCall::new(
+        &EndpointDefinition {
+            name: "issueTokensFixture",
+            operation_id: "issueTokensFixture",
+            path: Some("/fixture/issue-tokens".into()),
+            method: alibi::HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    for (confirmation, kind, present) in [
+        (json!({"jkt":"bound-key"}), "DPoP", true),
+        (json!({"x5t#S256":"certificate"}), "Bearer", true),
+        (json!({"jkt":""}), "Bearer", true),
+        (json!({"jkt":17}), "Bearer", true),
+        (json!({}), "Bearer", true),
+        (json!([]), "Bearer", true),
+        (json!(false), "Bearer", false),
+        (Value::Null, "Bearer", false),
+    ] {
+        let mut params = OAuthTokenIssueParams::new(
+            client.clone(),
+            vec!["email".into(), "offline_access".into()],
+        );
+        params.user = Some(auth.context().trusted_user_view(&user));
+        params.confirmation = Some(confirmation.clone());
+        let issued = provider
+            .issue_tokens(
+                auth.context(),
+                &call,
+                Some("urn:fixture:confirmation"),
+                &params,
+            )
+            .await?;
+        assert_eq!(issued["token_type"], kind);
+        let mut payloads = vec![
+            provider
+                .validate_access_token(
+                    auth.context(),
+                    issued["access_token"].as_str().unwrap(),
+                    None,
+                )
+                .await?,
+        ];
+        for token_kind in ["access_token", "refresh_token"] {
+            let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":id,"client_secret":created["client_secret"],"token":issued[token_kind],"token_type_hint":token_kind}))?,EndpointOptions::default())).await?.into_response()?;
+            assert_eq!(response.status, 200);
+            payloads.push(body(&response));
+        }
+        for payload in payloads {
+            assert_eq!(payload["active"], true);
+            assert_eq!(payload["token_type"], kind);
+            assert_eq!(payload.get("cnf"), present.then_some(&confirmation));
         }
     }
     Ok(())

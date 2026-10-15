@@ -165,10 +165,13 @@ impl OAuthProviderPlugin {
                         .collect::<Vec<_>>()
                         .join(" ")
                 });
-            let mut payload = json!({"active":true,"iss":issuer,"client_id":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp(),"scope":scopes,"token_type":"Bearer"});
+            let mut payload = json!({"active":true,"iss":issuer,"client_id":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp(),"scope":scopes});
             let fields = payload
                 .as_object_mut()
                 .ok_or_else(|| alibi_core::AuthError::internal("Invalid introspection payload"))?;
+            fields.extend(super::access_validation::confirmation_claims(
+                row.metadata.get("confirmation"),
+            ));
             if let Some(user) = user_view {
                 _ = fields.insert("sub".into(), json!(user.id));
             }

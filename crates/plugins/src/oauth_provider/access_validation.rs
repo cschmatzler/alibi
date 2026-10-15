@@ -136,11 +136,12 @@ impl OAuthProviderPlugin {
                     .collect::<Vec<_>>()
                     .join(" ")
             });
-        let payload = json!({"active":true,"iss":issuer(ctx,self.config.disable_jwt_plugin),"client_id":row.client_id,"azp":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp(),"token_type":"Bearer"});
+        let payload = json!({"active":true,"iss":issuer(ctx,self.config.disable_jwt_plugin),"client_id":row.client_id,"azp":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp()});
         let mut payload = payload
             .as_object()
             .cloned()
             .ok_or_else(|| AuthError::internal("Invalid access-token payload"))?;
+        payload.extend(confirmation_claims(row.metadata.get("confirmation")));
         if let Some(scope) = scopes {
             _ = payload.insert("scope".into(), json!(scope));
         }
@@ -182,6 +183,26 @@ impl OAuthProviderPlugin {
             Err(invalid_access_token())
         }
     }
+}
+// Opaque access and refresh projections share the same sender-constraint
+// policy. Preserve truthy untrusted confirmation shapes without treating
+// mTLS, arrays, or empty jkt values as DPoP.
+pub(super) fn confirmation_claims(confirmation: Option<&Value>) -> serde_json::Map<String, Value> {
+    let token_type = if confirmation
+        .and_then(crate::oauth2::get_confirmation_jkt)
+        .is_some()
+    {
+        "DPoP"
+    } else {
+        "Bearer"
+    };
+    let mut claims = serde_json::Map::from_iter([("token_type".into(), json!(token_type))]);
+    if let Some(confirmation) = confirmation
+        .filter(|value| alibi_core::utils::json::JsValue::from((**value).clone()).is_truthy())
+    {
+        _ = claims.insert("cnf".into(), confirmation.clone());
+    }
+    claims
 }
 fn base_url<S: AuthSchema>(ctx: &AuthContext<S>) -> String {
     format!(
