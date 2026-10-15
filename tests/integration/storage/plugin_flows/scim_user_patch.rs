@@ -2,15 +2,40 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
-backend_tests!(scim_user_patch_handles_noops_and_ordered_canonical_changes);
-postgres_tests!(scim_user_patch_handles_noops_and_ordered_canonical_changes);
+backend_tests!(
+    scim_user_patch_handles_noops_and_ordered_canonical_changes,
+    scim_user_patch_clones_sdk_dates_as_own_property_records
+);
+postgres_tests!(
+    scim_user_patch_handles_noops_and_ordered_canonical_changes,
+    scim_user_patch_clones_sdk_dates_as_own_property_records
+);
 async fn patch<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     operations: Value,
     token: Option<&str>,
 ) -> alibi::AuthResult<AuthResponse> {
-    let result=Box::pin(auth.dispatch_endpoint(ScimPlugin::patch_user_endpoint(id)?.with_body(&json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":operations}))?,EndpointOptions{headers:token.map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect()),..Default::default()})).await;
+    patch_input(auth,id,alibi::utils::json::JsValue::from(json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"],"Operations":operations})),token).await
+}
+async fn patch_input<S: AuthSchema>(
+    auth: &Alibi<S>,
+    id: &str,
+    input: alibi::utils::json::JsValue,
+    token: Option<&str>,
+) -> alibi::AuthResult<AuthResponse> {
+    let result = Box::pin(auth.dispatch_endpoint(
+        ScimPlugin::patch_user_endpoint(id)?.with_body_value(input),
+        EndpointOptions {
+            headers: token.map(|token| {
+                [("authorization".into(), format!("Bearer {token}"))]
+                    .into_iter()
+                    .collect()
+            }),
+            ..Default::default()
+        },
+    ))
+    .await;
     match result {
         Ok(output) => output.into_response(),
         Err(error) => {
@@ -162,4 +187,71 @@ async fn scim_user_patch_handles_noops_and_ordered_canonical_changes<B: Backend>
     let http = call(&configured, req, 200).await;
     assert_eq!(body(&http)["active"], false);
     Ok(())
+}
+
+async fn scim_user_patch_clones_sdk_dates_as_own_property_records<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::utils::json::JsValue;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let initial=super::scim_user_create::create(&auth,&json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"patch-date-owner@example.com"}),Some("group-reader")).await?;
+    let initial = body(&initial);
+    let id = initial["id"].as_str().unwrap();
+    let before = db.tables(&["user", "scimUser"]).await?;
+    for (path, shape) in [
+        (Some("userName"), "direct"),
+        (Some("userName"), "array"),
+        (None, "object"),
+        (None, "direct"),
+    ] {
+        let mut operation = JsValue::from(json!({"op":"replace"}));
+        if let JsValue::Object(fields) = &mut operation {
+            if let Some(path) = path {
+                _ = fields.insert("path".into(), JsValue::String(path.into()));
+            }
+            let date = JsValue::Date(
+                chrono::DateTime::parse_from_rfc3339("2026-01-02T03:04:05Z")?.to_utc(),
+            );
+            let value = match shape {
+                "array" => JsValue::Array(vec![date]),
+                "object" => JsValue::Object([("userName".into(), date)].into_iter().collect()),
+                _ => date,
+            };
+            _ = fields.insert("value".into(), value);
+        }
+        let mut input =
+            JsValue::from(json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"]}));
+        if let JsValue::Object(fields) = &mut input {
+            _ = fields.insert("Operations".into(), JsValue::Array(vec![operation]));
+        }
+        let subject_before = db.table("scimSubject").await?;
+        let result = patch_input(&auth, id, input, Some("group-reader")).await?;
+        if path.is_some() || shape == "object" {
+            assert_eq!(result.status, 400);
+            assert_eq!(db.table("scimSubject").await?, subject_before);
+            assert_eq!(
+                body(&result)["detail"],
+                "userName must be a non-empty string"
+            );
+        } else {
+            assert_eq!(result.status, 200);
+            assert_eq!(body(&result), initial);
+        }
+        assert_eq!(db.tables(&["user", "scimUser"]).await?, before);
+    }
+    let text = "2026-01-02T03:04:05.000Z";
+    let updated = patch(
+        &auth,
+        id,
+        json!([{"op":"replace","path":"userName","value":text}]),
+        Some("group-reader"),
+    )
+    .await?;
+    assert_eq!(updated.status, 200);
+    assert_eq!(body(&updated)["userName"], text);
+    B::close(connection).await
 }
