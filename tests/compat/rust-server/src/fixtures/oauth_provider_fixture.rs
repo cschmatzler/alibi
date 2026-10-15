@@ -80,13 +80,20 @@ impl alibi::plugins::OAuthClientDiscovery for ValidationDiscovery {
 struct ManagedRegistryId;
 impl alibi::plugins::OAuthClientIdGenerator for ManagedRegistryId {fn generate(&self)->alibi::AuthResult<String>{Ok("registry-managed".into())}}
 
+#[path = "../../../../fixtures/oauth/remote-jwks-response.rs"]
+mod remote_response;
 #[derive(Debug)]
-struct RemoteResource {document:std::sync::Mutex<serde_json::Value>,fetches:std::sync::Mutex<Vec<serde_json::Value>>}
+struct RemoteResource {mode:std::sync::Mutex<String>,uri:std::sync::Mutex<String>,document:std::sync::Mutex<serde_json::Value>,fetches:std::sync::Mutex<Vec<serde_json::Value>>}
 #[async_trait::async_trait]
 impl alibi::plugins::OAuthClientMetadataResourceFetch for RemoteResource {
     async fn fetch(&self,url:&str,options:alibi::plugins::OAuthClientMetadataFetchOptions)->alibi::AuthResult<alibi::plugins::OAuthClientMetadataFetchResponse> {
         self.fetches.lock().unwrap().push(serde_json::json!({"url":url,"accept":options.headers.get("accept"),"redirect":options.redirect,"aborted":options.signal.aborted()}));
-        let response=axum::http::Response::builder().status(200).header("content-type","application/jwk-set+json; charset=utf-8").body(serde_json::to_vec(&*self.document.lock().unwrap())?).unwrap();
+        let mode=self.mode.lock().unwrap().clone();
+        if mode=="exception" {return Err(alibi::AuthError::internal("offline"));}
+        let (status,headers,bytes)=remote_response::response(&mode,&self.document.lock().unwrap());
+        let mut response=axum::http::Response::builder().status(status);
+        for(key,value)in headers{response=response.header(key,value);}
+        let response=response.body(bytes).unwrap();
         Ok(alibi::plugins::OAuthClientMetadataFetchResponse{response:response.into(),redirected:false})
     }
 }
@@ -96,10 +103,12 @@ struct RemoteRegistry {resource:Arc<RemoteResource>}
 impl alibi::plugins::OAuthClientDiscovery for RemoteRegistry {
     fn id(&self)->&str{"remote-registry"}
     fn matches(&self,id:&str)->bool{id=="https://client.fixture.test/client.json"}
-    fn metadata_resource_fetch(&self)->Option<Arc<dyn alibi::plugins::OAuthClientMetadataResourceFetch>>{Some(self.resource.clone())}
+    fn metadata_resource_fetch(&self)->Option<Arc<dyn alibi::plugins::OAuthClientMetadataResourceFetch>>{if *self.resource.mode.lock().unwrap()=="no-transport"{None}else{Some(self.resource.clone())}}
     async fn resolve(&self,callback:&alibi::CallbackContext,id:&str,existing:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>> {
-        if existing.is_some(){return Ok(existing);}
-        callback.context::<TestSchema>().unwrap().database.create_oauth_client(alibi::store::CreateOAuthClient{client_id:id.into(),client_secret:None,user_id:None,metadata:serde_json::json!({"client_discovery_id":"remote-registry","client_name":"Remote client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"private_key_jwt","jwks_uri":"https://client.fixture.test/jwks","scope":"email","grant_types":["authorization_code"],"response_types":["code"]}),created_at:chrono::Utc::now()}).await.map(Some)
+        let mut client=if let Some(existing)=existing{existing}else{
+        callback.context::<TestSchema>().unwrap().database.create_oauth_client(alibi::store::CreateOAuthClient{client_id:id.into(),client_secret:None,user_id:None,metadata:serde_json::json!({"client_discovery_id":"remote-registry","client_name":"Remote client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"private_key_jwt","jwks_uri":"https://client.fixture.test/jwks","scope":"email","grant_types":["authorization_code"],"response_types":["code"]}),created_at:chrono::Utc::now()}).await?};
+        client.metadata["jwks_uri"]=serde_json::json!(*self.resource.uri.lock().unwrap());
+        Ok(Some(client))
     }
 }
 fn remote_document(family:&str,algorithm:&str,kid:&str)->serde_json::Value {
@@ -145,7 +154,7 @@ pub(crate) async fn router(
         instances.insert(mode.to_owned(), auth);
     }
     let registry_state=Arc::new(RegistryState::default());
-    let remote_state=Arc::new(RemoteResource{document:std::sync::Mutex::new(remote_document("RSA","RS256","first")),fetches:std::sync::Mutex::default()});
+    let remote_state=Arc::new(RemoteResource{mode:std::sync::Mutex::new("valid".into()),uri:std::sync::Mutex::new("https://client.fixture.test/jwks".into()),document:std::sync::Mutex::new(remote_document("RSA","RS256","first")),fetches:std::sync::Mutex::default()});
     let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
 
     let mut client_instances = HashMap::new();
@@ -238,6 +247,12 @@ pub(crate) async fn router(
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="remote-jwks-document" {
                 *remote_state.document.lock().unwrap()=remote_document(input["family"].as_str().unwrap(),input["algorithm"].as_str().unwrap(),input["kid"].as_str().unwrap());
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
+            if input["action"]=="remote-jwks-response" {
+                *remote_state.mode.lock().unwrap()=input["responseMode"].as_str().unwrap().into();
+                *remote_state.uri.lock().unwrap()=input["uri"].as_str().unwrap().into();
+                remote_state.fetches.lock().unwrap().clear();
                 return axum::Json(serde_json::json!({"updated":true})).into_response();
             }
             if input["action"]=="remote-jwks-fetches" {return axum::Json(remote_state.fetches.lock().unwrap().clone()).into_response();}
