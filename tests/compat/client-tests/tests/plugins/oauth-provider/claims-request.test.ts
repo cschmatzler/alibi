@@ -66,7 +66,7 @@ compatScenario(
     const accepted = [];
     for (const asString of [false, true]) {
       const request = {
-        userinfo: { email: null, family_name: { essential: true }, unsupported: null },
+        userinfo: { family_name: { essential: true }, email: null, unsupported: null },
         id_token: { acr: { essential: true, value: "0" } },
       };
       const target = await authorize(asString ? JSON.stringify(request) : request);
@@ -93,7 +93,7 @@ compatScenario(
       const fields = (await info.json()) as any;
       expect(fields).toEqual({ sub: owner.user.id, email: owner.user.email, family_name: "Owner" });
       const row = await control({ action: "token-row", token: tokens.access_token });
-      expect(((await row.json()) as any).requestedUserInfoClaims).toEqual(["email", "family_name"]);
+      expect(((await row.json()) as any).requestedUserInfoClaims).toEqual(["family_name", "email"]);
       accepted.push({
         asString,
         userId: fields.sub,
@@ -135,7 +135,9 @@ compatScenario(
       "openid scope must be requested when using the claims parameter",
     );
     // Only the ACR member is typed; arbitrary UserInfo member properties remain valid.
-    const loose = await authorize({ userinfo: { email: { essential: "not-a-boolean" } } });
+    const loose = await authorize(
+      '{"userinfo":{"email":{"essential":"not-a-boolean","value":1e400}}}',
+    );
     expect(loose.searchParams.get("error")).toBeNull();
     expect(loose.searchParams.get("code")).toBeTruthy();
     return ctx.snapshot({ accepted, failures, loose: true, nonOidc: "invalid_request" });
