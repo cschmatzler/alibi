@@ -195,6 +195,14 @@ impl ScimPlugin {
         })
     }
     pub(super) fn validate_connections(&self) -> AuthResult<()> {
+        if self.connections.is_empty()
+            && !self.has_token_verifier
+            && self.managed_connections.is_none()
+        {
+            return Err(AuthError::config(
+                "The scim plugin requires a provisioning connection, bearer token verifier, or managed connection catalog.",
+            ));
+        }
         let mut ids = std::collections::HashSet::new();
         let mut tokens = std::collections::HashSet::new();
         for connection in &self.connections {

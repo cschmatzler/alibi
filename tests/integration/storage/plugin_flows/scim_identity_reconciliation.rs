@@ -49,10 +49,16 @@ async fn scim_identity_callback_receives_global_state_before_session_retirement<
     let states = Arc::new(Mutex::new(Vec::new()));
     let fail = Arc::new(AtomicBool::new(false));
     let auth = builder::<B>(&connection)
-        .plugin(ScimPlugin::new().identity::<B::Schema>(Arc::new(Identity {
-            states: states.clone(),
-            fail: fail.clone(),
-        })))
+        .plugin(
+            ScimPlugin::new()
+                .managed_connections(alibi::plugins::scim::ScimManagedConnectionOptions::new(
+                    "native-scim-catalog-credential-hash-secret-32",
+                ))
+                .identity::<B::Schema>(Arc::new(Identity {
+                    states: states.clone(),
+                    fail: fail.clone(),
+                })),
+        )
         .build()
         .await?;
     let signed = signup(&auth, "identity-owner@example.com").await;

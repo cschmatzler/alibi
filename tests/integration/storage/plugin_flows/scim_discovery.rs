@@ -3,17 +3,51 @@ use super::*;
 use alibi::endpoint::EndpointOptions;
 backend_tests!(
     scim_service_provider_config_exposes_reference_capabilities,
+    scim_startup_requires_an_authentication_source,
     scim_resource_types_are_public_and_include_enterprise_user,
     scim_resource_type_lookup_matches_reference_errors,
     scim_schema_listing_exposes_complete_standard_attribute_contracts,
     scim_schema_lookup_decodes_ids_and_preserves_exact_errors
 );
+postgres_tests!(scim_startup_requires_an_authentication_source);
+async fn scim_startup_requires_an_authentication_source<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let result = builder::<B>(&connection)
+        .plugin(alibi::plugins::ScimPlugin::new())
+        .build()
+        .await;
+    assert!(
+        matches!(result,Err(alibi::AuthError::Config(ref message)) if message=="The scim plugin requires a provisioning connection, bearer token verifier, or managed connection catalog.")
+    );
+    for plugin in [
+        alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        alibi::plugins::ScimPlugin::new().managed_connections(
+            alibi::plugins::scim::ScimManagedConnectionOptions::new(
+                "native-scim-catalog-credential-hash-secret-32",
+            ),
+        ),
+    ] {
+        let auth = builder::<B>(&connection).plugin(plugin).build().await?;
+        let response = auth
+            .dispatch_endpoint(
+                alibi::plugins::ScimPlugin::resource_types_endpoint(),
+                EndpointOptions::default(),
+            )
+            .await?
+            .decode()?;
+        assert_eq!(response["Resources"].as_array().unwrap().len(), 2);
+    }
+    B::close(connection).await
+}
+
 async fn scim_service_provider_config_exposes_reference_capabilities<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
-        .plugin(alibi::plugins::ScimPlugin::new())
+        .plugin(
+            alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        )
         .build()
         .await?;
     let response = call(
@@ -53,7 +87,9 @@ async fn scim_resource_types_are_public_and_include_enterprise_user<B: Backend>(
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
-        .plugin(alibi::plugins::ScimPlugin::new())
+        .plugin(
+            alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        )
         .build()
         .await?;
     let response = call(&auth, request("/scim/v2/ResourceTypes", None, ""), 200).await;
@@ -82,7 +118,9 @@ async fn scim_resource_types_are_public_and_include_enterprise_user<B: Backend>(
 async fn scim_resource_type_lookup_matches_reference_errors<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
-        .plugin(alibi::plugins::ScimPlugin::new())
+        .plugin(
+            alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        )
         .build()
         .await?;
     let group = json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:ResourceType"],"id":"Group","name":"Group","endpoint":"/Groups","description":"Group","schema":"urn:ietf:params:scim:schemas:core:2.0:Group","meta":{"resourceType":"ResourceType","location":format!("{ORIGIN}/api/auth/scim/v2/ResourceTypes/Group")}});
@@ -148,7 +186,9 @@ async fn scim_schema_listing_exposes_complete_standard_attribute_contracts<B: Ba
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
-        .plugin(alibi::plugins::ScimPlugin::new())
+        .plugin(
+            alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        )
         .build()
         .await?;
     let response = call(&auth, request("/scim/v2/Schemas", None, ""), 200).await;
@@ -259,7 +299,9 @@ async fn scim_schema_lookup_decodes_ids_and_preserves_exact_errors<B: Backend>(
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
-        .plugin(alibi::plugins::ScimPlugin::new())
+        .plugin(
+            alibi::plugins::ScimPlugin::new().connections(super::scim_group_read::connections()),
+        )
         .build()
         .await?;
     let endpoint = |id: &str| alibi::plugins::ScimPlugin::schema_endpoint(id);

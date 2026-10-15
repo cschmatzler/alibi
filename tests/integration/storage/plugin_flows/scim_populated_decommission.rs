@@ -52,10 +52,14 @@ async fn scim_populated_decommission_reconciles_access_and_global_session_lifecy
     let fail = Arc::new(AtomicBool::new(false));
     let auth = builder::<B>(&connection)
         .plugin(
-            ScimPlugin::new().projection::<B::Schema>(Arc::new(Projection {
-                states: states.clone(),
-                fail: fail.clone(),
-            })),
+            ScimPlugin::new()
+                .managed_connections(alibi::plugins::scim::ScimManagedConnectionOptions::new(
+                    "native-scim-catalog-credential-hash-secret-32",
+                ))
+                .projection::<B::Schema>(Arc::new(Projection {
+                    states: states.clone(),
+                    fail: fail.clone(),
+                })),
         )
         .build()
         .await?;
