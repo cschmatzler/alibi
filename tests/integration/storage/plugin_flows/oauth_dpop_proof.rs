@@ -11,11 +11,13 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
 backend_tests!(
     oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt,
-    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh
+    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh,
+    oauth_dpop_userinfo_checks_sender_before_releasing_claims
 );
 postgres_tests!(
     oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt,
-    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh
+    oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh,
+    oauth_dpop_userinfo_checks_sender_before_releasing_claims
 );
 struct ForwardReservations<'a, S: alibi::AuthSchema> {
     context: &'a alibi::AuthContext<S>,
@@ -32,6 +34,119 @@ impl<S: alibi::AuthSchema> DpopReplayReservations for ForwardReservations<'_, S>
         }
         DpopReplayReservations::reserve_verification_value(self.context, data).await
     }
+}
+async fn oauth_dpop_userinfo_checks_sender_before_releasing_claims<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointCall, EndpointDefinition, EndpointOptions, ServerEndpoint};
+    use alibi::plugins::{OAuthProviderPlugin, OAuthTokenIssueParams, jwt::JwtPlugin};
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let provider = OAuthProviderPlugin::new();
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "dpop-info@example.test").await;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Bound UserInfo","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    let client = provider.get_client(auth.context(), &id).await?.unwrap();
+    let owner_id = client.user_id.clone().unwrap();
+    let user = auth.store().get_user_by_id(&owner_id).await?.unwrap();
+    let uri = format!(
+        "{}{}/oauth2/userinfo",
+        auth.config().base_url.trim_end_matches('/'),
+        auth.config().base_path
+    );
+    let path = format!("{}/oauth2/userinfo", auth.config().base_path);
+    let call = EndpointCall::new(
+        &EndpointDefinition {
+            name: "issueTokensFixture",
+            operation_id: "issueTokensFixture",
+            path: Some("/fixture/issue-tokens".into()),
+            method: alibi::HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    for kind in ["opaque", "jwt"] {
+        let mut params = OAuthTokenIssueParams::new(
+            client.clone(),
+            vec!["openid".into(), "email".into(), "profile".into()],
+        );
+        params.user = Some(auth.context().trusted_user_view(&user));
+        params.confirmation = Some(json!({"jkt":"yAJQz9pEsZrW3t2ISLq2eQ2bDNmV0AHCGdbF-8RSbko"}));
+        params.resources = (kind == "jwt").then(|| vec![uri.clone()]);
+        let issued = provider
+            .issue_tokens(auth.context(), &call, Some("urn:fixture:info"), &params)
+            .await?;
+        let token = issued["access_token"].as_str().unwrap();
+        let options = |scheme: &str, jwt: Option<&str>, physical: bool| {
+            let mut headers = std::collections::HashMap::from([(
+                "authorization".into(),
+                format!("{scheme} {token}"),
+            )]);
+            if let Some(jwt) = jwt {
+                _ = headers.insert("dpop".into(), jwt.into());
+            }
+            EndpointOptions {
+                headers: Some(headers),
+                request: physical.then(|| {
+                    alibi::AuthRequest::new(alibi::HttpMethod::Get, path.clone())
+                        .with_url(uri.parse().unwrap())
+                }),
+                ..Default::default()
+            }
+        };
+        let denied = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            options("Bearer", None, true),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 401);
+        assert_eq!(
+            denied.body.unwrap().to_json_value()?["error_description"],
+            "DPoP-bound access token requires the DPoP authorization scheme"
+        );
+        let denied = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            options("DPoP", None, false),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(
+            denied.body.unwrap().to_json_value()?["error_description"],
+            "DPoP-bound access token requires an HTTP request context"
+        );
+        let jwt = proof(
+            json!({"htm":"GET","htu":uri,"jti":format!("userinfo-{kind}"),"iat":chrono::Utc::now().timestamp(),"ath":URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token))}),
+            json!({}),
+        )?;
+        let accepted = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            options("DPoP", Some(&jwt), true),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(accepted.status, 200);
+        assert_eq!(body(&accepted)["sub"], owner_id);
+        assert_eq!(body(&accepted)["email"], "dpop-info@example.test");
+        let replay = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            options("DPoP", Some(&jwt), true),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(replay.error.status_code(), 401);
+        assert_eq!(
+            replay.body.unwrap().to_json_value()?["error_description"],
+            "DPoP proof jti has already been used"
+        );
+    }
+    Ok(())
 }
 async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend>(
     db: Db,
