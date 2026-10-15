@@ -123,13 +123,18 @@ compatScenario(
     });
     expect(boundSeedResponse.status).toBe(200);
     const bound = (await boundSeedResponse.json()) as any;
-    const downgrade = await issue({ scopes: ["email", "offline_access"] }, bound.refresh_token);
-    expect(downgrade.status).toBe(400);
-    expect(await downgrade.json()).toEqual({
-      error: "invalid_dpop_proof",
-      error_description: "DPoP proof header is required",
-    });
-    expect((await row(bound.refresh_token)).revoked).toBeNull();
+    for (const params of [
+      { scopes: ["email", "offline_access"] },
+      { scopes: ["email", "offline_access"], confirmation: null },
+    ]) {
+      const downgrade = await issue(params, bound.refresh_token);
+      expect(downgrade.status).toBe(400);
+      expect(await downgrade.json()).toEqual({
+        error: "invalid_dpop_proof",
+        error_description: "DPoP proof header is required",
+      });
+      expect((await row(bound.refresh_token)).revoked).toBeNull();
+    }
     const reboundResponse = await issue(
       { scopes: ["email", "offline_access"], confirmation: { jkt: "replacement-key" } },
       bound.refresh_token,

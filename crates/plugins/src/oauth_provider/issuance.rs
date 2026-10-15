@@ -318,8 +318,8 @@ impl OAuthProviderPlugin {
         }
         let token = random_token();
         let protected = self.hash_token(&token, "refresh_token").await?;
-        if let Some(original) = p.refresh_token.as_ref() {
-            if !ctx
+        if let Some(original) = p.refresh_token.as_ref()
+            && !ctx
                 .database
                 .claim_oauth_refresh_rotation_by_id(
                     &original.id,
@@ -330,12 +330,11 @@ impl OAuthProviderPlugin {
                     )?,
                 )
                 .await?
-            {
-                return Err(super::resource_policy::failure(
-                    "invalid_grant",
-                    "invalid refresh token",
-                ));
-            }
+        {
+            return Err(super::resource_policy::failure(
+                "invalid_grant",
+                "invalid refresh token",
+            ));
         }
         let mut metadata = token_metadata(p);
         let resources = p
