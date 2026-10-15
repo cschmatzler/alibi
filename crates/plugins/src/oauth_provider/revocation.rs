@@ -5,9 +5,7 @@ use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 impl OAuthProviderPlugin {
     /// Revoke an issued token using its client's registered authentication method.
     pub fn oauth2_revoke_endpoint(
@@ -87,8 +85,17 @@ impl OAuthProviderPlugin {
             "refresh_token" => &[OAuthTokenKind::Refresh],
             _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh],
         };
-        let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(token));
         for kind in kinds {
+            let hash = self
+                .hash_token(
+                    token,
+                    if matches!(kind, OAuthTokenKind::Refresh) {
+                        "refresh_token"
+                    } else {
+                        "access_token"
+                    },
+                )
+                .await?;
             let Some(row) = ctx.database.get_oauth_token(*kind, &hash).await? else {
                 continue;
             };

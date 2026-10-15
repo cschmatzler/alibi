@@ -4,9 +4,7 @@ use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
 use alibi_core::store::{CreateOAuthToken, OAuthTokenKind};
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 impl OAuthProviderPlugin {
     pub(super) async fn machine_grant<S: AuthSchema>(
         &self,
@@ -90,7 +88,7 @@ impl OAuthProviderPlugin {
             .create_oauth_token(
                 OAuthTokenKind::Access,
                 CreateOAuthToken {
-                    token: URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),
+                    token: self.hash_token(&token, "access_token").await?,
                     client_id: client.client_id,
                     user_id: None,
                     session_id: None,

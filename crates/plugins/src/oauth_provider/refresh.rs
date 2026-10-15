@@ -4,9 +4,7 @@ use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
 use alibi_core::store::{CreateOAuthToken, OAuthTokenKind};
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
-use sha2::{Digest as _, Sha256};
 impl OAuthProviderPlugin {
     pub(super) async fn refresh_grant<S: AuthSchema>(
         &self,
@@ -31,7 +29,7 @@ impl OAuthProviderPlugin {
                 "Missing a required refresh_token for refresh_token grant",
             );
         }
-        let protected = URL_SAFE_NO_PAD.encode(Sha256::digest(token));
+        let protected = self.hash_token(token, "refresh_token").await?;
         let Some(original) = ctx
             .database
             .get_oauth_token(OAuthTokenKind::Refresh, &protected)
@@ -190,7 +188,7 @@ impl OAuthProviderPlugin {
                 .create_oauth_token(
                     OAuthTokenKind::Refresh,
                     CreateOAuthToken {
-                        token: URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),
+                        token: self.hash_token(&token, "refresh_token").await?,
                         client_id: original.client_id.clone(),
                         user_id: original.user_id.clone(),
                         session_id: original.session_id.clone(),
@@ -224,7 +222,7 @@ impl OAuthProviderPlugin {
             .create_oauth_token(
                 OAuthTokenKind::Access,
                 CreateOAuthToken {
-                    token: URL_SAFE_NO_PAD.encode(Sha256::digest(&access)),
+                    token: self.hash_token(&access, "access_token").await?,
                     client_id: original.client_id.clone(),
                     user_id: original.user_id.clone(),
                     session_id: original.session_id.clone(),

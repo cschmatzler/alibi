@@ -4,17 +4,42 @@ import { createHash } from "node:crypto";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const explicitRefresh of [true, false]) {
+for (const [explicitRefresh, customHash] of [
+  [true, false],
+  [false, false],
+  [false, true],
+]) {
   compatScenario(
-    `Refresh grants ${explicitRefresh ? "explicitly" : "implicitly"} narrow scopes, rotate real authority and reject replay with family cleanup`,
+    `Refresh grants ${customHash ? "with custom token hashing " : ""}${explicitRefresh ? "explicitly" : "implicitly"} narrow scopes, rotate real authority and reject replay with family cleanup`,
     async (ctx) => {
       const actor = ctx.actor();
-      const control = (input: unknown) =>
+      let clientSecret: string | undefined;
+      const control = (input: Record<string, unknown>) =>
         actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify(input),
+          body: JSON.stringify({
+            ...input,
+            ...(customHash ? { mode: "custom-token-hash" } : {}),
+            ...(["token", "introspect", "revoke"].includes(String(input.action)) && clientSecret
+              ? { body: { ...(input.body as object), client_secret: clientSecret } }
+              : {}),
+          }),
         });
+      const protectedToken = (token: string, kind: string) => {
+        const digest = createHash("sha256").update(token).digest("base64url");
+        return customHash ? `app:${kind}:${digest}` : digest;
+      };
+      for (const kind of [
+        "authorization_code",
+        "access_token",
+        "refresh_token",
+        "application-kind",
+      ]) {
+        const receipt = await control({ action: "hash-token", token: "known-token", kind });
+        expect(receipt.status).toBe(200);
+        expect(await receipt.json()).toEqual({ hash: protectedToken("known-token", kind) });
+      }
       const signup = await control({
         action: "signup",
         body: { email: ctx.uniqueEmail("refresh-owner"), name: "Owner", password: "password123" },
@@ -32,7 +57,7 @@ for (const explicitRefresh of [true, false]) {
           client_name: "Token client",
           redirect_uris: ["https://app.fixture.test/callback"],
           scope: "email offline_access",
-          token_endpoint_auth_method: "none",
+          token_endpoint_auth_method: customHash ? "client_secret_post" : "none",
           skip_consent: true,
           grant_types: explicitRefresh
             ? ["authorization_code", "refresh_token"]
@@ -40,7 +65,9 @@ for (const explicitRefresh of [true, false]) {
         },
       });
       expect(created.status).toBe(201);
-      const id = ((await created.json()) as any).client_id;
+      const client = (await created.json()) as any;
+      const id = client.client_id;
+      clientSecret = client.client_secret;
       const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
       const challenge = createHash("sha256").update(verifier).digest("base64url");
       const grant = await control({
@@ -62,6 +89,13 @@ for (const explicitRefresh of [true, false]) {
       expect(callback.searchParams.get("state")).toBe("token-state");
       const code = callback.searchParams.get("code");
       expect(code).toBeTruthy();
+      const grantReceipt = await control({
+        action: "grant-row",
+        token: code,
+        protectedToken: protectedToken(code!, "authorization_code"),
+      });
+      expect(grantReceipt.status).toBe(200);
+      expect(await grantReceipt.json()).not.toBeNull();
       const input = {
         grant_type: "authorization_code",
         client_id: id,
@@ -82,11 +116,21 @@ for (const explicitRefresh of [true, false]) {
       expect(token.id_token).toBeUndefined();
 
       const row = async (kind: string, value: string) => {
-        const r = await control({ action: "token-row", kind, token: value });
+        const r = await control({
+          action: "token-row",
+          kind,
+          token: value,
+          protectedToken: protectedToken(
+            value,
+            kind === "refresh" ? "refresh_token" : "access_token",
+          ),
+        });
         expect(r.status).toBe(200);
         return (await r.json()) as any;
       };
       const original = await row("refresh", token.refresh_token);
+      expect(original.token).toBe(protectedToken(token.refresh_token, "refresh_token"));
+      expect(original.authorizationCodeId).toBe(protectedToken(code!, "authorization_code"));
       const failures = [];
       for (const [input, error, error_description] of [
         [{ grant_type: "refresh_token" }, "invalid_request", "Missing required client_id"],
@@ -153,6 +197,39 @@ for (const explicitRefresh of [true, false]) {
       const linked = await row("access", rotated.access_token);
       expect(linked.refreshId).toBe(next.id);
       expect(await row("access", token.access_token)).not.toBeNull();
+      if (customHash) {
+        for (const value of [rotated.access_token, rotated.refresh_token]) {
+          const response = await control({
+            action: "introspect",
+            body: { client_id: id, token: value },
+          });
+          expect(response.status).toBe(200);
+          const active = (await response.json()) as any;
+          expect(active.active).toBe(true);
+          expect(active.client_id).toBe(id);
+          expect(active.scope).toBe("email");
+        }
+        const userInfo = await control({
+          action: "userinfo",
+          headers: { authorization: `Bearer ${rotated.access_token}` },
+        });
+        expect(userInfo.status).toBe(400);
+        expect(await userInfo.json()).toEqual({
+          error: "invalid_scope",
+          error_description: "Missing required scope",
+        });
+        const revoked = await control({
+          action: "revoke",
+          body: { client_id: id, token: token.access_token },
+        });
+        expect(revoked.status).toBe(200);
+        expect(await row("access", token.access_token)).toBeNull();
+        const inactive = await control({
+          action: "introspect",
+          body: { client_id: id, token: token.access_token },
+        });
+        expect(await inactive.json()).toEqual({ active: false });
+      }
       const replay = await control({
         action: "token",
         body: { grant_type: "refresh_token", client_id: id, refresh_token: token.refresh_token },

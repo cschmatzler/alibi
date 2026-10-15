@@ -20,6 +20,8 @@ mod resources;
 mod revocation;
 mod session_retirement;
 mod token;
+mod token_storage;
+pub use token_storage::OAuthTokenHasher;
 mod userinfo;
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
@@ -70,6 +72,8 @@ pub struct OAuthProviderConfig {
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
+    /// Application token hashing for authorization codes, access and refresh tokens.
+    pub token_hasher: Option<std::sync::Arc<dyn OAuthTokenHasher>>,
     pub client_secret_cipher: Option<std::sync::Arc<dyn OAuthClientSecretCipher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
@@ -101,6 +105,7 @@ impl Default for OAuthProviderConfig {
             client_secret_generator: None,
             client_secret_hasher: None,
             client_secret_cipher: None,
+            token_hasher: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),

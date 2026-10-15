@@ -84,7 +84,7 @@ impl OAuthProviderPlugin {
                 "Either code_verifier or client_secret is required",
             );
         }
-        let identifier = URL_SAFE_NO_PAD.encode(Sha256::digest(code));
+        let identifier = self.hash_token(code, "authorization_code").await?;
         let Some(proof) = ctx.verifications().consume(&identifier).await? else {
             ctx.database
                 .delete_oauth_tokens_for_code(&identifier)
@@ -241,7 +241,7 @@ impl OAuthProviderPlugin {
                 .and_then(Value::as_i64)
                 .and_then(chrono::DateTime::from_timestamp_millis);
             let row = ctx.database.create_oauth_token(OAuthTokenKind::Refresh,CreateOAuthToken {
-                token:URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),client_id:client_id.clone(),user_id:Some(user_id.into()),session_id:Some(session_id.into()),authorization_code_id:Some(identifier.clone()),
+                token:self.hash_token(&token, "refresh_token").await?,client_id:client_id.clone(),user_id:Some(user_id.into()),session_id:Some(session_id.into()),authorization_code_id:Some(identifier.clone()),
                 metadata:json!({"scopes":scopes,"resources":resources,"authTime":auth_time}),created_at:issued,expires_at:issued+chrono::Duration::seconds(2_592_000)
             }).await?;
             Some((row.id, token))
@@ -261,7 +261,7 @@ impl OAuthProviderPlugin {
             .create_oauth_token(
                 OAuthTokenKind::Access,
                 CreateOAuthToken {
-                    token: URL_SAFE_NO_PAD.encode(Sha256::digest(&token)),
+                    token: self.hash_token(&token, "access_token").await?,
                     client_id: client_id.clone(),
                     user_id: Some(user_id.into()),
                     session_id: Some(session_id.into()),
