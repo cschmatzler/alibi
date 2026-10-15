@@ -13,6 +13,8 @@ mod continuation;
 mod credentials;
 mod discovery;
 mod id_token;
+mod issuance;
+pub use issuance::OAuthTokenIssueParams;
 mod introspection;
 mod logout;
 mod machine;

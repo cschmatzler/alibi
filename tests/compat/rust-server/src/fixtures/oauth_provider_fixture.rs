@@ -322,6 +322,21 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="issue-tokens" {
+                let body=&input["body"];let values=&body["params"];let provider=OAuthProviderPlugin::new();
+                let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
+                let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());
+                if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(auth.context().trusted_user_view(&user));}
+                params.session_id=values["sessionId"].as_str().map(str::to_owned);params.reference_id=values["referenceId"].as_str().map(str::to_owned);params.nonce=values["nonce"].as_str().map(str::to_owned);
+                params.auth_time=values["authTime"].as_str().map(|v|chrono::DateTime::parse_from_rfc3339(v).unwrap().with_timezone(&chrono::Utc));
+                params.resources=values.get("resources").map(|v|serde_json::from_value(v.clone()).unwrap());params.requested_user_info_claims=values.get("requestedUserInfoClaims").map(|v|serde_json::from_value(v.clone()).unwrap());
+                params.access_token_claims=values.get("accessTokenClaims").cloned();params.id_token_claims=values.get("idTokenClaims").cloned();params.token_response=values.get("tokenResponse").cloned();params.confirmation=values.get("confirmation").cloned();
+                let call=alibi::endpoint::EndpointCall::new(&alibi::endpoint::EndpointDefinition{name:"issueTokensFixture",operation_id:"issueTokensFixture",path:Some("/fixture/issue-tokens".into()),method:alibi::HttpMethod::Post},None,None,alibi::endpoint::EndpointOptions::default());
+                return match provider.issue_tokens(auth.context(),&call,body["grantType"].as_str(),&params).await {
+                    Ok(payload)=>axum::Json(payload).into_response(),
+                    Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}response.to_response().unwrap().into_response()}
+                };
+            }
             if input["action"]=="validate-access" {
                 let provider=OAuthProviderPlugin::new();let body=&input["body"];let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
                 let result=if body["requireActive"]==true{provider.require_active_access_token(auth.context(),token,client).await}else{provider.validate_access_token(auth.context(),token,client).await};
@@ -466,7 +481,7 @@ pub(crate) async fn router(
                 use base64::Engine as _; use sha2::Digest as _;
                 let hashed=input["protectedToken"].as_str().map(str::to_owned).unwrap_or_else(||base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap())));
                 let row=auth.store().get_oauth_token(if input["kind"]=="refresh" {alibi::store::OAuthTokenKind::Refresh}else{alibi::store::OAuthTokenKind::Access},&hashed).await.unwrap();
-                return axum::Json(row.map(|r|serde_json::json!({"id":r.id,"clientId":r.client_id,"userId":r.user_id,"sessionId":r.session_id,"scopes":r.metadata["scopes"],"createdAt":r.created_at,"expiresAt":r.expires_at,"authorizationCodeId":r.authorization_code_id,"token":r.token,"refreshId":r.metadata.get("refreshId"),"authTime":r.metadata.get("authTime"),"resources":r.metadata.get("resources"),"revoked":r.metadata.get("revoked"),"rotatedAt":r.metadata.get("rotatedAt"),"rotationReplayResponse":r.metadata.get("rotationReplayResponse"),"rotationReplayExpiresAt":r.metadata.get("rotationReplayExpiresAt")}))).into_response();
+                return axum::Json(row.map(|r|serde_json::json!({"id":r.id,"clientId":r.client_id,"userId":r.user_id,"sessionId":r.session_id,"scopes":r.metadata["scopes"],"createdAt":r.created_at,"expiresAt":r.expires_at,"authorizationCodeId":r.authorization_code_id,"token":r.token,"refreshId":r.metadata.get("refreshId"),"referenceId":r.metadata.get("referenceId"),"confirmation":r.metadata.get("confirmation"),"requestedUserInfoClaims":r.metadata.get("requestedUserInfoClaims"),"authTime":r.metadata.get("authTime"),"resources":r.metadata.get("resources"),"revoked":r.metadata.get("revoked"),"rotatedAt":r.metadata.get("rotatedAt"),"rotationReplayResponse":r.metadata.get("rotationReplayResponse"),"rotationReplayExpiresAt":r.metadata.get("rotationReplayExpiresAt")}))).into_response();
             }
             if input["action"]=="replace-refresh-replay" {
                 use base64::Engine as _;use sha2::Digest as _;

@@ -172,7 +172,7 @@ fn failure(code: &str, description: &str) -> EndpointError {
         body_absent: false,
     }
 }
-fn response_error(response: &EndpointResponse) -> Result<EndpointError, EndpointError> {
+pub(super) fn response_error(response: &EndpointResponse) -> Result<EndpointError, EndpointError> {
     let response = response.to_response()?;
     let body_absent = response.body.is_empty();
     let body = if body_absent {
