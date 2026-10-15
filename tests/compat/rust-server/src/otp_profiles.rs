@@ -413,6 +413,16 @@ pub(super) async fn router(
     let outbox_for_get = outbox.clone();
     let read_database = database.clone();
     let write_database = database.clone();
+    let signup_runtimes = runtimes.clone();
+    router = router.route("/__test/server-api/email-otp-signup",post(move |Json(input):Json<Value>| {
+        let runtimes=signup_runtimes.clone();
+        async move {
+            let selected=runtimes.get(input.get("profile").and_then(Value::as_str).unwrap_or("default")).unwrap();
+            let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password","signUpEmail").with_body(&input["body"]).unwrap();
+            let options=alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()};
+            match selected.auth.dispatch_endpoint(endpoint,options).await {Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()}
+        }
+    }));
     let sending_runtimes = runtimes.clone();
     router = router.route(
         "/__test/server-api/email-otp-send",

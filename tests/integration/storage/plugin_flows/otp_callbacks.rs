@@ -13,10 +13,12 @@ backend_tests!(
     email_otp_custom_codec_controls_reuse_and_failure_consumption,
     email_otp_verification_override_owns_signup_transaction_and_direct_delivery,
     email_otp_real_signup_after_hook,
+    email_otp_server_signup_after_hook_delivers_consumable_verification,
     delegated_otp_issuance_retains_original_request_and_live_proof
 );
 postgres_tests!(
     email_otp_custom_codec_controls_reuse_and_failure_consumption,
+    email_otp_server_signup_after_hook_delivers_consumable_verification,
     email_otp_verification_override_owns_signup_transaction_and_direct_delivery
 );
 
@@ -544,4 +546,112 @@ async fn delegated_otp_issuance_retains_original_request_and_live_proof<B: Backe
     authenticated(&auth, &cookies(&owner), "delegated-target@example.test").await;
     _=call(&auth,request("/sign-in/email",Some(json!({"email":"delegated-target@example.test","password":"new-delegated-password"})),""),200).await;
     B::close(connection).await
+}
+
+#[derive(Default)]
+struct ServerSignupDelivery(Mutex<Vec<EmailOtpDelivery>>);
+#[async_trait]
+impl SendEmailOtp for ServerSignupDelivery {
+    async fn send(&self, delivery: &EmailOtpDelivery, context: &CallbackContext) -> AuthResult<()> {
+        assert!(context.request.is_none());
+        let call = context.endpoint.as_ref().unwrap();
+        assert_eq!(call.path(), Some("/sign-up/email"));
+        assert_eq!(
+            call.headers()
+                .unwrap()
+                .get("x-sdk-marker")
+                .map(String::as_str),
+            Some("sdk")
+        );
+        self.0.lock().unwrap().push(delivery.clone());
+        Ok(())
+    }
+}
+async fn email_otp_server_signup_after_hook_delivers_consumable_verification<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for enabled in [false, true] {
+        let sender = Arc::new(ServerSignupDelivery::default());
+        let auth = builder::<B>(&connection)
+            .plugin(EmailOtpPlugin::new(EmailOtpConfig {
+                send_verification_on_sign_up: enabled,
+                send_verification_otp: Some(sender.clone()),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let email = format!("sdk-signup-otp-{enabled}@example.com");
+        let response = Box::pin(
+            auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("email-password", "signUpEmail")
+                    .with_body(&json!({"email":email,"name":"Owner","password":PASSWORD}))?,
+                EndpointOptions {
+                    headers: Some(
+                        [("x-sdk-marker".into(), "sdk".into())]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .map_err(|error| error.error)?
+        .into_response()?;
+        assert_eq!(response.status, 200);
+        assert_eq!(body(&response)["user"]["emailVerified"], false);
+        let deliveries = sender.0.lock().unwrap().clone();
+        if !enabled {
+            assert!(deliveries.is_empty());
+            assert_eq!(db.count("verification").await?, 0);
+            continue;
+        }
+        assert_eq!(
+            deliveries.len(),
+            1,
+            "SDK signup must deliver its configured verification OTP"
+        );
+        let delivery = &deliveries[0];
+        assert_eq!(delivery.email, email);
+        assert_eq!(delivery.otp_type, EmailOtpType::EmailVerification);
+        let identifier = format!("email-verification-otp-{email}");
+        let proof = auth
+            .store()
+            .get_verification_by_identifier(&identifier)
+            .await?
+            .unwrap();
+        use alibi::AuthVerification;
+        assert_eq!(proof.value(), format!("{}:0", delivery.otp));
+        let verified = Box::pin(auth.dispatch_endpoint(
+            EmailOtpPlugin::verify_email_otp_endpoint(&email, &delivery.otp),
+            EndpointOptions::default(),
+        ))
+        .await
+        .map_err(|error| error.error)?
+        .into_response()?;
+        assert_eq!(verified.status, 200);
+        assert!(
+            auth.store()
+                .get_verification_by_identifier(&identifier)
+                .await?
+                .is_none()
+        );
+        let users: Value = serde_json::from_str(&db.table("user").await?)?;
+        let user = users
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|user| user["email"] == email)
+            .unwrap();
+        assert!(user["emailVerified"] == true || user["emailVerified"] == 1);
+        let replay = Box::pin(auth.dispatch_endpoint(
+            EmailOtpPlugin::verify_email_otp_endpoint(&email, &delivery.otp),
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(replay.error.status_code(), 400);
+    }
+    Ok(())
 }
