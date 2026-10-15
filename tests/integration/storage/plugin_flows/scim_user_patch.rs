@@ -4,11 +4,13 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 backend_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
-    scim_user_patch_clones_sdk_dates_as_own_property_records
+    scim_user_patch_clones_sdk_dates_as_own_property_records,
+    scim_user_patch_reports_first_invalid_profile_attribute
 );
 postgres_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
-    scim_user_patch_clones_sdk_dates_as_own_property_records
+    scim_user_patch_clones_sdk_dates_as_own_property_records,
+    scim_user_patch_reports_first_invalid_profile_attribute
 );
 async fn patch<S: AuthSchema>(
     auth: &Alibi<S>,
@@ -253,5 +255,41 @@ async fn scim_user_patch_clones_sdk_dates_as_own_property_records<B: Backend>(
     .await?;
     assert_eq!(updated.status, 200);
     assert_eq!(body(&updated)["userName"], text);
+    B::close(connection).await
+}
+
+async fn scim_user_patch_reports_first_invalid_profile_attribute<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let created = super::scim_user_create::create(&auth, &json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"patch-invalid-owner@example.com"}), Some("group-reader")).await?;
+    let initial = body(&created);
+    let id = initial["id"].as_str().unwrap();
+    let before = db.tables(&["user", "scimUser", "scimSubject"]).await?;
+    for (operations, detail) in [
+        (
+            json!([{"path":"title","value":{}}]),
+            "title: Invalid input: expected string, received object",
+        ),
+        (
+            json!([{"path":"roles","value":[{"value":{}}]}]),
+            "roles.0.value: Invalid input: expected string, received object",
+        ),
+        (
+            json!([{"path":"roles","value":[{"value":{}}]},{"path":"title","value":42}]),
+            "title: Invalid input: expected string, received number",
+        ),
+    ] {
+        let result = patch(&auth, id, operations, Some("group-reader")).await?;
+        assert_eq!(result.status, 400);
+        assert_eq!(body(&result)["scimType"], "invalidValue");
+        assert_eq!(body(&result)["detail"], detail);
+        assert_eq!(
+            db.tables(&["user", "scimUser", "scimSubject"]).await?,
+            before
+        );
+    }
     B::close(connection).await
 }
