@@ -9,7 +9,7 @@ pub trait OAuthClientDiscovery: Send + Sync + std::fmt::Debug {
     /// Stable provenance identifier. Changing this requires migrating owned client rows.
     fn id(&self) -> &str;
     fn matches(&self, client_id: &str) -> bool;
-    /// Additive authorization-server and OpenID discovery fields.
+    /// Additive authorization-server and `OpenID` discovery fields.
     /// Later discoveries override earlier fields; provider-owned fields take precedence.
     fn discovery_metadata(&self) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::new()
