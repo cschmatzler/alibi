@@ -21,7 +21,7 @@ use alibi::{
     },
 };
 use alibi::{AuthRequest, HttpMethod};
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, routing::get, response::IntoResponse};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -69,19 +69,16 @@ impl Application {
     ) -> AuthResult<()> {
         let header =
             |name: &str| {
-                context.request.headers.iter().find_map(|(key, value)| {
-                    key.eq_ignore_ascii_case(name).then_some(value.as_str())
-                })
+                context.header(name).map(String::as_str)
             };
         let new_session = context
             .new_session
             .as_ref()
             .map(|session| json!({"user":session.user,"session":session.session}));
-        let mut event = json!({"kind":kind,"path":context.route_path,"params":context.params,"requestPath":context.request.path,"method":match context.request.method {HttpMethod::Get=>"GET",HttpMethod::Post=>"POST",_=>"OTHER"},"body":context.body.as_ref().map(callback_value),"query":context.request.query,"probe":header("x-last-login-probe"),"newSession":new_session,"loginMethod":method});
+        let mut event = json!({"kind":kind,"path":context.route_path,"params":context.params,"requestPath":context.request.as_ref().map(|request|request.path.as_str()),"method":context.method().map(|method|match method {HttpMethod::Get=>"GET",HttpMethod::Post=>"POST",_=>"OTHER"}),"body":context.body.as_ref().map(callback_value),"query":context.endpoint.as_ref().and_then(|call|call.query()).map(|value|value.to_json_value().unwrap()).or_else(||context.request.as_ref().map(|request|json!(request.query))).unwrap_or(json!({})),"probe":header("x-last-login-probe"),"newSession":new_session,"loginMethod":method});
         if kind == "cookie" && header("x-last-login-body") == Some("true") {
             event["requestBody"] = context
-                .request
-                .body
+                .request.as_ref().and_then(|request|request.body.as_ref())
                 .as_deref()
                 .map(|body| String::from_utf8_lossy(body).into_owned())
                 .into();
@@ -108,10 +105,7 @@ impl ResolveLastLoginMethod for Application {
         self.observe("resolve", context, None)?;
         let header = |name: &str| {
             context
-                .request
-                .headers
-                .iter()
-                .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then_some(value))
+                .header(name)
         };
         if self.mode == "resolver-error"
             && header("x-last-login-resolver-error").is_some_and(|value| value == "true")
@@ -262,6 +256,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router> {
     let state = State::default();
     let mut router = Router::new();
+    let mut sdk_profiles=std::collections::HashMap::new();
     for mode in [
         "default",
         "database",
@@ -353,8 +348,16 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
+        _=sdk_profiles.insert(format!("last-login-{mode}"),auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    router=router.route("/__test/server-api/last-login-method",axum::routing::post(move|Json(input):Json<Value>|{let profiles=sdk_profiles.clone();async move{
+        let profile=input.get("profile").and_then(Value::as_str).unwrap_or("last-login-default");let Some(auth)=profiles.get(profile)else{return axum::http::StatusCode::NOT_FOUND.into_response();};
+        let operation=if input.get("action").and_then(Value::as_str)==Some("sign-in"){"signInEmail"}else{"signUpEmail"};let endpoint=alibi::endpoint::ServerEndpoint::<Value>::new("email-password",operation).with_body(&input["body"]).unwrap();
+        let request=input.get("requestHeaders").map(|headers|{let mut request=AuthRequest::new(HttpMethod::Get,"/actual-sdk-request");request.headers=serde_json::from_value(headers.clone()).unwrap();request});
+        let options=alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request,..Default::default()};
+        match auth.dispatch_endpoint(endpoint,options).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()}
+    }}));
     let observed = state.clone();
     let read_db = database.clone();
     router=router.route("/__test/last-login-method",get(move || {let state=observed.clone();let database=read_db.clone();async move {

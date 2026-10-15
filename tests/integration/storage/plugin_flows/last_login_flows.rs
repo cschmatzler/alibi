@@ -204,7 +204,7 @@ struct Resolver;
 
 impl ResolveLastLoginMethod for Resolver {
     fn resolve(&self, context: &LastLoginMethodContext) -> AuthResult<Option<String>> {
-        let header = |name: &str| context.request.headers.get(name).map(String::as_str);
+        let header = |name: &str| context.header(name).map(String::as_str);
         match header("x-resolve") {
             Some("custom") => Ok(Some("custom method!(*)'".into())),
             Some("empty") => Ok(Some(String::new())),
@@ -436,10 +436,15 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
         let contexts = capture.0.lock().unwrap();
         assert!(contexts.len() >= 3);
         for context in contexts.iter() {
-            assert_eq!(context.request.body.as_deref(), Some(raw.as_bytes()));
+            assert_eq!(
+                context.request.as_ref().unwrap().body.as_deref(),
+                Some(raw.as_bytes())
+            );
             assert_eq!(
                 context
                     .request
+                    .as_ref()
+                    .unwrap()
                     .headers
                     .get("x-last-login-body")
                     .map(String::as_str),

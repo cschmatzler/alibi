@@ -11,7 +11,12 @@ use std::sync::Arc;
 /// Request context retained at the actual adapter or completed-response boundary.
 #[derive(Clone, Debug)]
 pub struct LastLoginMethodContext {
-    pub request: RequestHookContext,
+    /// The actual HTTP request, absent for header-only server calls.
+    pub request: Option<RequestHookContext>,
+    /// The genuine logical call when invoked through the server SDK.
+    pub endpoint: Option<alibi_core::endpoint::EndpointCall>,
+    /// Actual completed logical output; HTTP callbacks use `response` instead.
+    pub endpoint_response: Option<LastLoginMethodEndpointResponse>,
     /// Endpoint input at this callback phase; original HTTP bytes remain in request.body.
     pub body: Option<alibi_core::utils::json::JsValue>,
     /// Admitted endpoint template; original request.path remains the actual URI.
@@ -23,6 +28,41 @@ pub struct LastLoginMethodContext {
     /// Original trusted issuance snapshot; later user-row writes do not replace it.
     pub new_session: Option<LastLoginMethodSession>,
 }
+/// Output retained from an actual completed server operation.
+#[derive(Clone, Debug)]
+pub struct LastLoginMethodEndpointResponse {
+    pub value: Option<alibi_core::utils::json::JsValue>,
+    pub error_body: Option<alibi_core::utils::json::JsValue>,
+    pub headers: alibi_core::Headers,
+    pub status: Option<u16>,
+}
+
+impl LastLoginMethodContext {
+    /// Headers at the actual invocation boundary, independently of a Request.
+    #[must_use]
+    pub fn headers(&self) -> Option<&std::collections::HashMap<String, String>> {
+        if let Some(call) = &self.endpoint {
+            call.headers()
+        } else {
+            self.request.as_ref().map(|request| &request.headers)
+        }
+    }
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&String> {
+        self.headers()?
+            .iter()
+            .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then_some(value))
+    }
+    #[must_use]
+    pub fn method(&self) -> Option<&alibi_core::HttpMethod> {
+        if let Some(call) = &self.endpoint {
+            call.method()
+        } else {
+            self.request.as_ref().map(|request| &request.method)
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct LastLoginMethodSession {
     pub user: alibi_core::wire::UserView,
@@ -118,6 +158,9 @@ impl LastLoginMethodPlugin {
         Ok(method.map(str::to_owned))
     }
     fn adapter_context<S: AuthSchema>(ctx: &AuthContext<S>) -> Option<LastLoginMethodContext> {
+        if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
+            return Some(Self::endpoint_context(&call));
+        }
         let mut request = current_request_hook_context()?;
         request.path = request
             .path
@@ -158,12 +201,40 @@ impl LastLoginMethodPlugin {
             .unwrap_or_default();
         Some(LastLoginMethodContext {
             body,
-            request,
+            request: Some(request),
+            endpoint: None,
+            endpoint_response: None,
             route_path,
             params,
             response: None,
             new_session,
         })
+    }
+    fn endpoint_context(call: &alibi_core::endpoint::EndpointCall) -> LastLoginMethodContext {
+        let new_session = alibi_core::session::cookie_cache::runtime::published_session(call)
+            .map(|(user, session)| LastLoginMethodSession { user, session });
+        let params = call
+            .params()
+            .and_then(|value| value.as_object())
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(|(key, value)| {
+                        value.as_str().map(|value| (key.clone(), value.to_owned()))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        LastLoginMethodContext {
+            request: call.request().map(RequestHookContext::from_request),
+            endpoint: Some(call.clone()),
+            endpoint_response: None,
+            body: call.body().cloned(),
+            route_path: call.path().unwrap_or_default().to_owned(),
+            params,
+            response: None,
+            new_session,
+        }
     }
     fn cookie(&self, method: &str, config: &alibi_core::AuthConfig) -> AuthResult<String> {
         if self.config.max_age > 34_560_000.0 {
@@ -239,6 +310,10 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
     fn routes(&self) -> Vec<AuthRoute> {
         Vec::new()
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
+
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         ctx.set_metadata(
             "last-login-method.store-in-database",
@@ -312,7 +387,9 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
                         .as_deref()
                         .and_then(|body| alibi_core::utils::json::from_slice(body).ok())
                 }),
-            request: RequestHookContext::from_request(req),
+            request: Some(RequestHookContext::from_request(req)),
+            endpoint: None,
+            endpoint_response: None,
             response: Some(response.clone()),
             new_session,
         };
@@ -336,6 +413,45 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
                 response
                     .headers
                     .append("set-cookie", self.cookie(&method, &ctx.config)?);
+            }
+        }
+        Ok(response)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for LastLoginMethodPlugin {
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        let mut context = Self::endpoint_context(call);
+        context.endpoint_response = Some(LastLoginMethodEndpointResponse {
+            value: response.result().as_ref().ok().cloned(),
+            error_body: response.error_body().cloned(),
+            headers: response.headers().clone(),
+            status: response.status(),
+        });
+        if let Some(method) = self.resolve(&context)?.filter(|method| !method.is_empty())
+            && response
+                .headers()
+                .get_all("set-cookie")
+                .any(|header| header.contains(&ctx.config.session.cookie_name))
+        {
+            let permitted = match &self.config.before_store_cookie {
+                None => true,
+                Some(callback) => match callback.before_store(&context, &method).await {
+                    Ok(permitted) => permitted,
+                    Err(error) => {
+                        tracing::error!(%error,"[LastLoginMethod] Error in beforeStoreCookie hook");
+                        false
+                    }
+                },
+            };
+            if permitted {
+                response = response.with_header("set-cookie", self.cookie(&method, &ctx.config)?);
             }
         }
         Ok(response)
