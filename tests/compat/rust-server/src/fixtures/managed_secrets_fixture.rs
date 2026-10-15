@@ -130,6 +130,16 @@ pub(crate) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth.clone()));
         profiles.insert(format!("managed-{mode}"), (auth, jwt));
     }
+    let update_profiles = profiles.clone();
+    router = router.route("/__test/server-api/managed-profile-update", post(move |Json(input):Json<serde_json::Value>| {
+        let profiles=update_profiles.clone(); async move {
+            let (auth, _)=profiles.get(input["profile"].as_str().unwrap()).unwrap();
+            match auth.dispatch_endpoint(alibi::plugins::user_management::update_user_endpoint(&input["body"]).unwrap(), alibi::endpoint::EndpointOptions {headers:Some(serde_json::from_value(input["headers"].clone()).unwrap()), ..Default::default()}).await {
+                Ok(output)=>output.into_response().unwrap().into_response(),
+                Err(error)=>error.error.to_auth_response().into_response(),
+            }
+        }
+    }));
     router = router.route(
         "/__test/managed-secrets/jwk",
         post(move |Json(body): Json<serde_json::Value>| {

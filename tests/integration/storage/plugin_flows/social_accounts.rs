@@ -3,7 +3,6 @@
 use super::social_flows::{Social, authorize, callback, linking};
 use super::*;
 use crate::snapshot::Trace;
-use alibi::AuthResult;
 use alibi::field_policy::FieldConfig;
 use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp};
 use alibi::plugins::oauth::{
@@ -12,9 +11,11 @@ use alibi::plugins::oauth::{
 use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
 use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use alibi::{AccountConfig, CallbackContext};
+use alibi::{AuthResult, AuthUser};
 
 backend_tests!(
     account_cookie_and_token_retention_on_sign_in,
+    server_profile_cache_renews_owned_account_cookie,
     implicit_linking_and_verification_promotion,
     provider_supplied_fields_and_identity_denials,
     id_token_sign_in_failure_modes,
@@ -25,6 +26,93 @@ backend_tests!(
     orphan_oauth_binding_never_adopts_same_email_owner,
     local_email_verification_gates_implicit_oauth_adoption
 );
+
+postgres_tests!(server_profile_cache_renews_owned_account_cookie);
+
+async fn server_profile_cache_renews_owned_account_cookie<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    config.account.store_account_cookie = true;
+    config.session.cookie_cache = Some(alibi::CookieCacheConfig {
+        enabled: true,
+        ..Default::default()
+    });
+    let auth = social
+        .auth_configured::<B>(
+            &connection,
+            config,
+            |_| {},
+            |builder| builder,
+            |store| store,
+        )
+        .await?;
+    let signed = sign_in(&auth, "").await;
+    assert!(account_cookie(&signed));
+    let rows = db.tables(&["account", "session"]).await?;
+    let endpoint = alibi::plugins::user_management::update_user_endpoint(
+        &json!({"name":"SDK Renamed Owner"}),
+    )?;
+    let updated = auth
+        .dispatch_endpoint(
+            endpoint,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&signed))].into_iter().collect()),
+                ..Default::default()
+            },
+        )
+        .await?
+        .into_response()?;
+    assert_eq!(updated.status, 200);
+    assert!(
+        updated
+            .headers
+            .get_all("set-cookie")
+            .any(|value| value.starts_with("better-auth.session_data="))
+    );
+    assert!(
+        account_cookie(&updated),
+        "SDK profile cache publication did not renew account data"
+    );
+    let account = updated
+        .headers
+        .get_all("set-cookie")
+        .find(|value| value.starts_with("better-auth.account_data="))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap();
+    let cookie = format!(
+        "{}; {account}",
+        cookies(&signed)
+            .split(';')
+            .filter(|part| !part.trim().starts_with("better-auth.account_data="))
+            .collect::<Vec<_>>()
+            .join(";")
+    );
+    let token = auth
+        .dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "getAccessToken")
+                .with_body(&json!({"useAccountCookie":true}))?,
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookie)].into_iter().collect()),
+                ..Default::default()
+            },
+        )
+        .await?
+        .decode()?;
+    assert_eq!(token["accessToken"], "provider-access");
+    assert_eq!(db.tables(&["account", "session"]).await?, rows);
+    assert_eq!(
+        auth.store()
+            .get_user_by_email("social@example.com")
+            .await?
+            .unwrap()
+            .name(),
+        Some("SDK Renamed Owner")
+    );
+    B::close(connection).await
+}
 
 struct Deny;
 

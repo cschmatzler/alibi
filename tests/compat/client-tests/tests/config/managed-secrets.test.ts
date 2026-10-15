@@ -423,6 +423,10 @@ compatScenario(
     expect(inherited.data).toBeNull();
     const login = await sdk.signIn.email({ email, password });
     expect(login.error).toBeNull();
+    const sdkCookie = loginHeaders
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
     const renewedRaw = loginHeaders
       .getSetCookie()
       .find((cookie) => cookie.startsWith("better-auth.account_data="))!;
@@ -532,6 +536,48 @@ compatScenario(
     expect(expiredCookie.status).toBe(400);
     const unchanged = await managedState(ctx, signup.data!.user.id);
     expect(unchanged.accounts).toEqual(before.accounts);
+    const updated = await owner.browser.fetch(
+      `${ctx.baseURL}/__test/server-api/managed-profile-update`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          profile: "managed-retained",
+          headers: { cookie: sdkCookie },
+          body: { name: "SDK Renamed Owner" },
+        }),
+      },
+    );
+    expect(updated.status).toBe(200);
+    const sdkAccountRaw = updated.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("better-auth.account_data="));
+    expect(sdkAccountRaw).toBeDefined();
+    const sdkAccountToken = decodeURIComponent(
+      sdkAccountRaw!.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const sdkAccountPayload = await symmetricDecodeJWT(
+      sdkAccountToken,
+      current,
+      "better-auth-account",
+    );
+    expect(sdkAccountPayload?.userId).toBe(signup.data!.user.id);
+    expect(sdkAccountPayload?.accessToken).toBe(renewedPayload?.accessToken);
+    expect(sdkAccountPayload?.refreshToken).toBe(renewedPayload?.refreshToken);
+    const sdkAccountRead = await cookieRead(sdkAccountToken, login.data!.token!);
+    expect(sdkAccountRead.status).toBe(200);
+    expect(sdkAccountRead.body).toMatchObject({ accessToken: "github-access-token" });
+    const sdkAccountRows = await managedState(ctx, signup.data!.user.id);
+    expect(sdkAccountRows.accounts).toEqual(unchanged.accounts);
+    const sdkRenewal = {
+      managedAccountCookie: {
+        authPath: authProfilePath("managed-retained"),
+        token: sdkAccountToken,
+        header: decodeProtectedHeader(sdkAccountToken),
+        payload: sdkAccountPayload,
+        account: renewalRows.accounts.find((row) => row.id === account.id)!,
+      },
+    };
     const refreshed = await sdk.refreshToken({ accountId: String(account.id) });
     expect(refreshed.error).toBeNull();
     const after = await managedState(ctx, signup.data!.user.id);
@@ -541,6 +587,8 @@ compatScenario(
     const currentRead = await retiredSdk.getAccessToken({ accountId: String(account.id) });
     expect(currentRead.error).toBeNull();
     return {
+      sdkRenewal,
+      sdkAccountRead,
       signup,
       linkStart,
       linked,
