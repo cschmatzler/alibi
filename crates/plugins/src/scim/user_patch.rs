@@ -884,6 +884,25 @@ fn generic(
     clean_extension(document);
     Ok(())
 }
+// Source clones PATCH records by their own enumerable properties. A trusted
+// Date has none; serializing it to an ISO string changes mutation semantics.
+fn clone_patch_value(value: &alibi_core::utils::json::JsValue) -> AuthResult<Value> {
+    use alibi_core::utils::json::JsValue;
+    match value {
+        JsValue::Date(_) => Ok(Value::Object(Map::new())),
+        JsValue::Array(values) => values
+            .iter()
+            .map(clone_patch_value)
+            .collect::<AuthResult<Vec<_>>>()
+            .map(Value::Array),
+        JsValue::Object(values) => values
+            .iter()
+            .map(|(key, value)| Ok((key.clone(), clone_patch_value(value)?)))
+            .collect::<AuthResult<Map<String, Value>>>()
+            .map(Value::Object),
+        _ => Ok(value.to_json_value()?),
+    }
+}
 pub(super) fn apply(
     source: &ScimUserRecord,
     operations: &[Operation],
@@ -918,7 +937,7 @@ pub(super) fn apply(
         let value = operation
             .value
             .as_ref()
-            .map(alibi_core::utils::json::JsValue::to_json_value)
+            .map(clone_patch_value)
             .transpose()?
             .unwrap_or(Value::Null);
         if let Some(path) = operation
