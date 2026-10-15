@@ -166,19 +166,8 @@ pub(super) fn parse(raw: &Value) -> Option<Profile> {
         _ = attrs.insert("enterprise".into(), json!(extension));
     }
     let attributes = user_attributes::canonical(&Value::Object(attrs))?;
-    // Bound the validated request, including its top-level scalar profile fields.
-    let mut bounded = attributes.as_object()?.clone();
-    _ = bounded.insert("userName".into(), json!(user_name));
-    if let Some(value) = &external_id {
-        _ = bounded.insert("externalId".into(), json!(value));
-    }
-    if let Some(value) = &display_name {
-        _ = bounded.insert("displayName".into(), json!(value));
-    }
-    if raw.get("active").is_some() {
-        _ = bounded.insert("active".into(), json!(active));
-    }
-    if serde_json::to_string(&bounded).ok()?.encode_utf16().count() > 65535 {
+    // The source bounds validated input before adding canonical defaults.
+    if super::user_input::serialized_size(raw)? > 65535 {
         return None;
     }
     if !attributes
@@ -203,6 +192,14 @@ impl Profile {
         &self,
         connection: &str,
     ) -> alibi_core::AuthResult<alibi_core::store::ScimUserAttributes> {
+        let serialized_attributes = serde_json::to_string(&self.attributes)?;
+        if serialized_attributes.encode_utf16().count() > 65535 {
+            return Err(alibi_core::AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Stored SCIM User attribute state is invalid".into(),
+            });
+        }
         let name = self.attributes.get("name").unwrap_or(&Value::Null);
         let emails = self.attributes.get("emails").unwrap_or(&Value::Null);
         let index = |kind: Option<&str>| -> alibi_core::AuthResult<String> {
@@ -249,7 +246,7 @@ impl Profile {
                 .and_then(Value::as_str)
                 .map(str::to_owned),
             serialized_emails: serde_json::to_string(emails)?,
-            serialized_attributes: Some(serde_json::to_string(&self.attributes)?),
+            serialized_attributes: Some(serialized_attributes),
             external_id: self.external_id.clone(),
             external_id_key: self
                 .external_id

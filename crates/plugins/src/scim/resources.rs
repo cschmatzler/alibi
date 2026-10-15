@@ -683,7 +683,13 @@ impl ScimPlugin {
                 None,
             ));
         }
-        let attributes = profile.prepare(&connection.id)?;
+        let attributes = match profile.prepare(&connection.id) {
+            Ok(attributes) => attributes,
+            Err(AuthError::Api {
+                status, message, ..
+            }) => return Ok(error(status, &message, None)),
+            Err(error) => return Err(error),
+        };
         for (field, key, label) in [
             (
                 "userNameKey",
@@ -870,7 +876,13 @@ impl ScimPlugin {
                 None,
             ));
         }
-        let attributes = profile.prepare(&connection.id)?;
+        let attributes = match profile.prepare(&connection.id) {
+            Ok(attributes) => attributes,
+            Err(AuthError::Api {
+                status, message, ..
+            }) => return Ok(error(status, &message, None)),
+            Err(error) => return Err(error),
+        };
         let name_key = attributes.user_name_key.clone();
         let external_key = attributes.external_id_key.clone();
         for (field, value, label) in [

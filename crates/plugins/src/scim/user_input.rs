@@ -394,9 +394,158 @@ pub(super) fn detail(raw: &Value) -> String {
             format_args!("The Enterprise User extension requires {ENTERPRISE_SCHEMA} in schemas"),
         );
     }
+    if !issues.fatal && serialized_size(raw).is_some_and(|size| size > 65535) {
+        issues.add(
+            "body",
+            "SCIM User attributes exceed the supported serialized size",
+        );
+    }
     if issues.messages.is_empty() {
         "Invalid SCIM User attributes".into()
     } else {
         issues.messages.join("; ")
     }
+}
+
+/// Size of the schema's normalized input, before canonical defaults are added.
+/// Unknown fields and absent optionals do not participate in the source limit.
+pub(super) fn serialized_size(raw: &Value) -> Option<usize> {
+    fn selected(
+        raw: &Value,
+        keys: &[&str],
+        scalar: bool,
+        email: bool,
+    ) -> serde_json::Map<String, Value> {
+        let mut result = serde_json::Map::new();
+        for key in keys {
+            if let Some(value) = raw.get(*key) {
+                let value = if scalar {
+                    value
+                        .as_array()
+                        .filter(|values| values.len() == 1)
+                        .and_then(|values| values.first())
+                        .unwrap_or(value)
+                } else {
+                    value
+                };
+                let value = value
+                    .as_str()
+                    .map(|value| {
+                        if email && *key == "value" {
+                            value.to_owned()
+                        } else if *key == "type" {
+                            trim(value).to_lowercase()
+                        } else {
+                            trim(value).to_owned()
+                        }
+                    })
+                    .map_or_else(|| value.clone(), Value::String);
+                _ = result.insert((*key).into(), value);
+            }
+        }
+        result
+    }
+    _ = raw.as_object()?;
+    let mut result = selected(
+        raw,
+        &["userName", "externalId", "displayName", "active"],
+        false,
+        false,
+    );
+    result.extend(selected(
+        raw,
+        &[
+            "title",
+            "userType",
+            "preferredLanguage",
+            "locale",
+            "timezone",
+        ],
+        true,
+        false,
+    ));
+    if let Some(schemas) = raw.get("schemas") {
+        _ = result.insert("schemas".into(), schemas.clone());
+    }
+    if let Some(name) = raw.get("name") {
+        _ = result.insert(
+            "name".into(),
+            Value::Object(selected(
+                name,
+                &[
+                    "formatted",
+                    "givenName",
+                    "familyName",
+                    "middleName",
+                    "honorificPrefix",
+                    "honorificSuffix",
+                ],
+                false,
+                false,
+            )),
+        );
+    }
+    for (key, fields) in [
+        ("emails", &["value", "primary", "type"][..]),
+        ("phoneNumbers", &["value", "primary", "type"][..]),
+        (
+            "addresses",
+            &[
+                "formatted",
+                "streetAddress",
+                "locality",
+                "region",
+                "postalCode",
+                "country",
+                "type",
+                "primary",
+            ][..],
+        ),
+        ("roles", &["value", "display", "type", "primary"][..]),
+        ("entitlements", &["value", "display", "type", "primary"][..]),
+    ] {
+        if let Some(values) = raw.get(key).and_then(Value::as_array) {
+            _ = result.insert(
+                key.into(),
+                Value::Array(
+                    values
+                        .iter()
+                        .map(|value| Value::Object(selected(value, fields, false, key == "emails")))
+                        .collect(),
+                ),
+            );
+        }
+    }
+    if let Some(enterprise) = raw.get(ENTERPRISE_SCHEMA) {
+        let mut fields = selected(
+            enterprise,
+            &[
+                "employeeNumber",
+                "costCenter",
+                "organization",
+                "division",
+                "department",
+            ],
+            true,
+            false,
+        );
+        if let Some(manager) = enterprise.get("manager") {
+            let manager = manager
+                .as_array()
+                .and_then(|values| values.first())
+                .unwrap_or(manager);
+            let normalized = if let Some(value) = manager.as_str() {
+                serde_json::Map::from_iter([("value".into(), Value::String(trim(value).into()))])
+            } else {
+                selected(manager, &["value", "$ref"], false, false)
+            };
+            if !normalized.is_empty() {
+                _ = fields.insert("manager".into(), Value::Object(normalized));
+            }
+        }
+        _ = result.insert(ENTERPRISE_SCHEMA.into(), Value::Object(fields));
+    }
+    serde_json::to_string(&result)
+        .ok()
+        .map(|serialized| serialized.encode_utf16().count())
 }
