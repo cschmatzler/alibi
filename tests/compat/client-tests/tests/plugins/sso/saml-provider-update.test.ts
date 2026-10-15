@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -29,9 +30,10 @@ compatScenario("SAML updates merge nested credentials and protect linked identit
       .map((raw) => raw.split(";")[0])
       .join("; "),
   };
-  const cert = await Bun.file(
+  const cert = await readFixtureFile(
     new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const registered = await control({
     headers,
     body: {

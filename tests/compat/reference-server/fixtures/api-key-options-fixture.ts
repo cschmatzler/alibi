@@ -1,11 +1,10 @@
-import type { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
-import configurations from "../../api-key-options.json";
+import configurations from "../../api-key-options.json" with { type: "json" };
 
 type Data = Record<string, any>;
 
@@ -197,7 +196,7 @@ export function createApiKeyOptionsFixture(
       if (action === "state") {
         return Response.json({
           keys: database
-            .query(
+            .prepare(
               "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id",
             )
             .all()
@@ -230,7 +229,9 @@ export function createApiKeyOptionsFixture(
           if (!["permissions", "referenceId", "configId"].includes(field)) {
             throw new Error("Unsupported installed field");
           }
-          database.query(`UPDATE apikey SET "${field}"=? WHERE id=?`).run(value as any, body.keyId);
+          database
+            .prepare(`UPDATE apikey SET "${field}"=? WHERE id=?`)
+            .run(value as any, body.keyId);
         }
         return Response.json({ success: true });
       }

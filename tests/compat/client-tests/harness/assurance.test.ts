@@ -1,8 +1,11 @@
-import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { setTimeout } from "node:timers/promises";
 
+import { expect, test } from "vitest";
+
+import { serveFixture } from "../../reference-server/http.ts";
 import { command, digest, upstreamPin, writeJSON } from "../support/assurance/common";
 import { CoverageScope } from "../support/assurance/coverage-scope";
 import { generateCase, generatedCaseSchema, reduceActions } from "../support/assurance/generated";
@@ -433,7 +436,7 @@ test("a subprocess timeout terminates descendants that keep its output pipes ope
     [
       process.execPath,
       "-e",
-      `Bun.spawn([process.execPath, '-e', 'setTimeout(() => {}, 30000)'], { stdout: 'inherit', stderr: 'inherit' }); setTimeout(() => {}, 30000);`,
+      `require('node:child_process').spawn(process.execPath, ['-e', 'globalThis.setTimeout(() => {}, 30000)'], { stdio: 'inherit' }); globalThis.setTimeout(() => {}, 30000);`,
     ],
     { timeoutMs: 300 },
   );
@@ -448,7 +451,7 @@ test("delayed upstream work cannot credit a later scenario's coverage", async ()
   scope.active = "first-window";
   const pending = scope.run(async () => {
     counter.hits++;
-    await Bun.sleep(20);
+    await setTimeout(20);
     counter.hits++;
   });
   expect(counter.hits).toBe(1);
@@ -468,7 +471,7 @@ test("delayed upstream work cannot credit a later scenario's coverage", async ()
 
 test("response mutation preserves fetch metadata independently of its changed header", async () => {
   const directory = await mkdtemp(join(tmpdir(), "compat-wire-"));
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     fetch: () => Response.json({ ok: true }, { headers: { "x-probe": "present" } }),
@@ -489,11 +492,11 @@ test("response mutation preserves fetch metadata independently of its changed he
     const url = new URL("/api/auth/ok", server.url).href;
     const result = await command(
       [
-        process.execPath,
+        "nub",
         "-e",
         `
-      import { setAssurancePhase } from "./support/assurance/evidence";
-      import { mutateTransport } from "./support/assurance/wire";
+      import { setAssurancePhase } from "./support/assurance/evidence.ts";
+      import { mutateTransport } from "./support/assurance/wire.ts";
       setAssurancePhase("probe", "Rust");
       const request = new Request(process.env.COMPAT_PROBE_URL);
       const response = await mutateTransport(request, await fetch(request));
@@ -509,7 +512,7 @@ test("response mutation preserves fetch metadata independently of its changed he
         },
       },
     );
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr).toBe(0);
 
     const native = await fetch(url);
     expect(JSON.parse(result.stdout)).toEqual({

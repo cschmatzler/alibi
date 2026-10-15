@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 const control = "/__test/oauth-popup";

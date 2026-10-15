@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
+import { expect, test } from "vitest";
 
 import { startFixture } from "../support/assurance/processes";
 import {
@@ -48,7 +49,7 @@ async function capture(delay: number) {
     const startedAt = Date.now();
     // Real request pacing makes scenario-relative dates differ; no SQL or
     // recorded request clocks are rewritten to manufacture the regression.
-    await Bun.sleep(delay);
+    await setTimeout(delay);
     async function actor(name: string) {
       const transport = createTracingFetch(fixture.url, name, traces, authPath);
       const client = createAuthClient({

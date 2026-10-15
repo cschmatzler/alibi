@@ -180,8 +180,8 @@ export function createTracingFetch(
         headers.set("origin", origin.origin);
       }
 
-      const outbound = new Request(request, { headers, redirect: "manual" });
       const requestText = await request.clone().text();
+      const outbound = new Request(request.clone(), { headers, redirect: "manual" });
       const startedAt = Date.now();
       const response = await mutateTransport(outbound, await fetch(outbound));
 

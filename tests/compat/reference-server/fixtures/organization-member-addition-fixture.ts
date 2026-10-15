@@ -1,10 +1,10 @@
+import { setTimeout } from "node:timers/promises";
 /** Privileged application control invoking the unchanged published auth.api.addMember. */
-
-import type { Database } from "bun:sqlite";
 
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function organizationMemberAdditionFixture(
   database: Database,
@@ -21,24 +21,24 @@ export function organizationMemberAdditionFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
-        .query(
+        .prepare(
           "SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.createdAt,m.rowid",
         )
         .all(),
-      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+      users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
       sessions: database
-        .query(
+        .prepare(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
       teams: database
-        .query("SELECT id,organizationId,name,memberCount FROM team ORDER BY name,id")
+        .prepare("SELECT id,organizationId,name,memberCount FROM team ORDER BY name,id")
         .all(),
       teamMembers: database
-        .query(
+        .prepare(
           "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN user u ON u.id=m.userId ORDER BY t.name,u.email,m.id",
         )
         .all(),
@@ -48,14 +48,14 @@ export function organizationMemberAdditionFixture(
   function full() {
     return {
       members: database
-        .query("SELECT * FROM member ORDER BY rowid")
+        .prepare("SELECT * FROM member ORDER BY rowid")
         .all()
         .map((value) => {
           const row = value as Record<string, unknown>;
           return { ...row, createdAt: new Date(String(row.createdAt)).toISOString() };
         }),
       teams: database
-        .query("SELECT * FROM team ORDER BY rowid")
+        .prepare("SELECT * FROM team ORDER BY rowid")
         .all()
         .map((value) => {
           const row = value as Record<string, unknown>;
@@ -67,7 +67,7 @@ export function organizationMemberAdditionFixture(
           };
         }),
       teamMembers: database
-        .query("SELECT * FROM teamMember ORDER BY rowid")
+        .prepare("SELECT * FROM teamMember ORDER BY rowid")
         .all()
         .map((value) => {
           const row = value as Record<string, unknown>;
@@ -271,9 +271,9 @@ export function organizationMemberAdditionFixture(
       );
 
       if (mode.startsWith("sql-")) {
-        const user = database.query("SELECT id FROM user WHERE id=?").get(String(body.userId));
+        const user = database.prepare("SELECT id FROM user WHERE id=?").get(String(body.userId));
         const org = database
-          .query("SELECT id FROM organization WHERE id=?")
+          .prepare("SELECT id FROM organization WHERE id=?")
           .get(String(body.organizationId));
 
         if (!user || !org) {
@@ -281,7 +281,7 @@ export function organizationMemberAdditionFixture(
         }
 
         database
-          .query("INSERT INTO __test_addition_guard(userId,organizationId,teamId) VALUES(?,?,?)")
+          .prepare("INSERT INTO __test_addition_guard(userId,organizationId,teamId) VALUES(?,?,?)")
           .run(
             String(body.userId),
             String(body.organizationId),
@@ -334,7 +334,7 @@ export function organizationMemberAdditionFixture(
           : receipts.some((value) => (value as { phase: string }).phase === waitFor));
         n++
       ) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return Response.json({
         receipts,
@@ -376,8 +376,8 @@ export function organizationMemberAdditionFixture(
       const userId = String(body.userId);
 
       if (
-        !database.query("SELECT id FROM organization WHERE id=?").get(organizationId) ||
-        !database.query("SELECT id FROM user WHERE id=?").get(userId)
+        !database.prepare("SELECT id FROM organization WHERE id=?").get(organizationId) ||
+        !database.prepare("SELECT id FROM user WHERE id=?").get(userId)
       ) {
         throw new Error("Actual seed owners required");
       }

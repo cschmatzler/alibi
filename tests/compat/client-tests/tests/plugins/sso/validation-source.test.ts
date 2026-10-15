@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -30,9 +31,10 @@ compatScenario(
       },
     });
     expect(owner.status).toBe(200);
-    const cert = await Bun.file(
+    const cert = await readFixtureFile(
       new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-    ).text();
+      "utf8",
+    );
     const observed = [];
     for (const saml of [false, true]) {
       await control({ action: "validation-reset" });

@@ -1,9 +1,8 @@
-import { Database } from "bun:sqlite";
-
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
+import Database from "better-sqlite3";
 
 /** Genuine application callbacks, immutable policies, and actual callback-time reads. */
 export function passkeyAuthenticationFixture(
@@ -50,9 +49,11 @@ export function passkeyAuthenticationFixture(
               }
 
               const sessions = database
-                .query('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
+                .prepare('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
                 .get((row as { userId: string }).userId);
-              const challenges = database.query("SELECT COUNT(*) AS count FROM verification").get();
+              const challenges = database
+                .prepare("SELECT COUNT(*) AS count FROM verification")
+                .get();
               events.push({
                 profile: name,
                 path: ctx.path,
@@ -65,9 +66,11 @@ export function passkeyAuthenticationFixture(
 
               if (mode === "deletion" || mode === "failed-deletion") {
                 if (mode === "failed-deletion") {
-                  database.run(
-                    `CREATE TEMP TRIGGER reject_callback_delete BEFORE DELETE ON passkey BEGIN SELECT RAISE(ABORT, 'Application deletion failed'); END`,
-                  );
+                  database
+                    .prepare(
+                      `CREATE TEMP TRIGGER reject_callback_delete BEFORE DELETE ON passkey BEGIN SELECT RAISE(ABORT, 'Application deletion failed'); END`,
+                    )
+                    .run();
                 }
                 try {
                   await ctx.context.adapter.delete({
@@ -83,7 +86,7 @@ export function passkeyAuthenticationFixture(
                   }
                 } finally {
                   if (mode === "failed-deletion") {
-                    database.run("DROP TRIGGER reject_callback_delete");
+                    database.prepare("DROP TRIGGER reject_callback_delete").run();
                   }
                 }
               }

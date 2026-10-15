@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario("SCIM managed revocation is idempotent and domain scoped", async (ctx) => {

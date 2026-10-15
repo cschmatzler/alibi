@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { oneTimeTokenClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";
@@ -297,7 +298,7 @@ compatScenario(
 
     // Upstream selects by createdAt; simultaneous millisecond generations have
     // no specified tie order. Make the newer generation observably newer.
-    await Bun.sleep(5);
+    await setTimeout(5);
     const seeded = await ctx.rawRequest({
       path: "/__test/verification-state",
       method: "POST",

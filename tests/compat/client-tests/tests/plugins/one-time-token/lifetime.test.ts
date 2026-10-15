@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { oneTimeTokenClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -52,7 +53,7 @@ compatScenario(
     expect(transferred.data?.user.id).toBe(signup.data!.user.id);
     const replay = await receiver.oneTimeToken.verify({ token: live.data!.token });
     expect(replay.error).toMatchObject({ status: 400, message: "Invalid token" });
-    await Bun.sleep(Math.max(0, expiry - Date.now()) + 100);
+    await setTimeout(Math.max(0, expiry - Date.now()) + 100);
     const expired = await make("expired-receiver").oneTimeToken.verify({
       token: expiring.data!.token,
     });

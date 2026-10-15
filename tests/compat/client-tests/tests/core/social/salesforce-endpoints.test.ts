@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { TS_BASE_URL } from "../../../support/config";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";

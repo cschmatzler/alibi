@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -37,7 +36,7 @@ compatScenario(
       } else {
         expect((await owner.client.sendVerificationEmail({ email })).error).toBeNull();
         proof = ((await ctx.readVerificationEmail({ email })) as { token: string }).token;
-        expect(proof).toBeString();
+        expect(proof).toBeTypeOf("string");
       }
       const guest = ctx.actor(`${mode}-guest`);
       let cookies: string[] = [];

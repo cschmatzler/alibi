@@ -1,5 +1,3 @@
-import type { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { betterAuth } from "better-auth";
@@ -18,6 +16,7 @@ import {
   twoFactor,
   username,
 } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 import { z } from "zod";
 
 const documentationPlugin = () => ({
@@ -174,7 +173,7 @@ export function openApiProfiles(port: number, database: Database) {
   // A real app-owned storage field: the custom schema profile documents this column.
   if (
     !database
-      .query<{ name: string }, []>("PRAGMA table_info(user)")
+      .prepare<[], { name: string }>("PRAGMA table_info(user)")
       .all()
       .some((column) => column.name === "metadata")
   ) {
@@ -184,7 +183,7 @@ export function openApiProfiles(port: number, database: Database) {
   for (const field of ["access", "aliases", "score", "anniversary"]) {
     if (
       !database
-        .query<{ name: string }, []>("PRAGMA table_info(user)")
+        .prepare<[], { name: string }>("PRAGMA table_info(user)")
         .all()
         .some((column) => column.name === field)
     ) {

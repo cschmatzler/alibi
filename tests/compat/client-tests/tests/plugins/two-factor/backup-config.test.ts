@@ -1,8 +1,7 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { symmetricDecrypt } from "better-auth/crypto";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";

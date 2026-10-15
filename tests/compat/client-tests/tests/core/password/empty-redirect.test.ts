@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -40,7 +40,7 @@ compatScenario(
     });
     expect(delivery.status).toBe(200);
     const proof = delivery.body as { url: string; token: string };
-    expect(proof.token).toBeString();
+    expect(proof.token).toBeTypeOf("string");
     expect(new URL(proof.url).searchParams.get("callbackURL")).toBe("");
     const identifier = `reset-password:${proof.token}`;
     const proofBefore = await ctx.readVerificationState({ identifier });
@@ -75,7 +75,7 @@ compatScenario(
     expect(newPassword.data!.user.id).toBe(signup.data!.user.id);
     expect(await ctx.readUserState({ userId: foreignSignup.data!.user.id })).toEqual(foreignBefore);
     const current = await owner.client.getSession();
-    expect(signup.data!.token).toBeString();
+    expect(signup.data!.token).toBeTypeOf("string");
     expect(current.data!.session.token).toBe(signup.data!.token!);
     return ctx.snapshot({
       signup,

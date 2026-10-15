@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -80,7 +81,7 @@ async function fullState(ctx: ScenarioContext) {
       teamMembers: value.full.teamMembers.map((item) => {
         if (item.membershipKey !== null) {
           expect(item.membershipKey).toBe(
-            new Bun.CryptoHasher("sha256")
+            createFixtureHash("sha256")
               .update(JSON.stringify([item.teamId, item.userId]))
               .digest("base64url"),
           );

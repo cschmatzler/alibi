@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 /** Immutable real compact-cache configurations and actual callback/state controls. */
@@ -18,6 +16,7 @@ import {
   phoneNumber,
 } from "better-auth/plugins";
 import { createJwk } from "better-auth/plugins/jwt";
+import Database from "better-sqlite3";
 export async function sessionCookieCacheFixture(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const states = new Map<
@@ -420,7 +419,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
         return Response.json({
           keys: keys.map((key) => {
             const stored = database
-              .query("SELECT metadata FROM apikey WHERE id = ?")
+              .prepare("SELECT metadata FROM apikey WHERE id = ?")
               .get(key.id as string) as { metadata: string | null } | null;
             if (!stored) throw new Error("Actual API-key row missing");
             return { ...key, storedMetadata: stored.metadata };

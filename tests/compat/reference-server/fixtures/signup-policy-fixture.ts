@@ -1,11 +1,11 @@
+import { setTimeout } from "node:timers/promises";
 /** Application options exercised through the actual pinned signup/password routes. */
-
-import type { Database } from "bun:sqlite";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { emailOTP, phoneNumber, username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createSignupPolicyFixture(database: Database, shared: BetterAuthOptions) {
   for (const column of [
@@ -14,7 +14,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
     "synthetic_locale",
     "synthetic_note",
   ]) {
-    database.run(`ALTER TABLE "user" ADD COLUMN ${column} TEXT`);
+    database.prepare(`ALTER TABLE "user" ADD COLUMN ${column} TEXT`).run();
   }
   const events: Record<string, unknown>[] = [];
   let mode = "normal";
@@ -465,7 +465,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
       if (url.pathname === "/__test/signup-policy/synthetic-fields") {
         return Response.json({
           users: database
-            .query(
+            .prepare(
               'SELECT id, synthetic_tier AS syntheticTier, synthetic_secret AS syntheticSecret, synthetic_locale AS syntheticLocale, synthetic_note AS syntheticNote FROM "user" ORDER BY "createdAt", id',
             )
             .all(),
@@ -528,7 +528,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
               { status: 408 },
             );
           }
-          await Bun.sleep(5);
+          await setTimeout(5);
         }
         return Response.json({ events });
       }

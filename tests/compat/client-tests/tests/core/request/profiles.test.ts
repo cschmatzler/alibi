@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath, FIXTURE_PROFILES } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

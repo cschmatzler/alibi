@@ -59,7 +59,7 @@ const { positionals, values } = parseArgs({
 const verb = positionals[0] ?? "run";
 
 if (values.help) {
-  console.log(`Usage: bun run assurance [run|inventory|mutate|generate|replay|shrink|report] [options]
+  console.log(`Usage: nub run assurance [run|inventory|mutate|generate|replay|shrink|report] [options]
   --tests tests/PATH       Repeat to select scenario files/directories (default: tests)
   --budget N              Mutation/reduction budget; untested work stays unresolved
   --mutation ID           Repeat to select exact mutation IDs from inventory/baseline
@@ -208,7 +208,7 @@ if (verb === "generate") {
     try {
       const controlDigest = await harnessDigest();
       console.log("Checking the harness negative controls...");
-      const checked = await command(["bun", "test", "harness"], {
+      const checked = await command(["nub", "exec", "vitest", "run", "harness"], {
         cwd: CLIENT_ROOT,
         timeoutMs: 120_000,
       });

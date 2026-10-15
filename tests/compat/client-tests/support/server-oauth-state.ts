@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "./scenario";
 

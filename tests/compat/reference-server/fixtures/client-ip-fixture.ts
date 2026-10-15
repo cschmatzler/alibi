@@ -1,12 +1,11 @@
-/** Real pinned IP policies; observations read persisted physical session rows. */
-import { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthEndpoint } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, deviceAuthorization } from "better-auth/plugins";
+/** Real pinned IP policies; observations read persisted physical session rows. */
+import Database from "better-sqlite3";
 
 export async function createClientIpFixture(base: BetterAuthOptions, database: Database) {
   const policies = {
@@ -86,7 +85,7 @@ export async function createClientIpFixture(base: BetterAuthOptions, database: D
 
       if (url.pathname === "/__test/client-ip/sessions") {
         const rows = database
-          .query(
+          .prepare(
             "SELECT id,token,userId,expiresAt,createdAt,updatedAt,ipAddress,userAgent FROM session ORDER BY createdAt,id",
           )
           .all() as Array<Record<string, unknown>>;

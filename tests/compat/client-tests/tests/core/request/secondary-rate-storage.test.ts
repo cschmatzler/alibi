@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -55,7 +57,7 @@ compatScenario(
       disabled.push(r);
     }
     expect(await value("198.51.100.231|/list-sessions")).toEqual({ value: null });
-    await Bun.sleep(1300);
+    await setTimeout(1300);
     expect(await value(key)).toEqual({ value: null });
     const recovered = await request("rate-limit-secondary-b");
     expect(recovered.status).toBe(200);

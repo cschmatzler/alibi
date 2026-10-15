@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { customSessionClient, multiSessionClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -41,7 +42,7 @@ compatScenario(
       const deadline = Date.now() + 5000;
       let state = await control();
       while (!predicate(state.events) && Date.now() < deadline) {
-        await Bun.sleep(10);
+        await setTimeout(10);
         state = await control();
       }
       expect(predicate(state.events)).toBe(true);
@@ -132,7 +133,7 @@ compatScenario(
       );
       const failed = await Promise.race([
         pending,
-        Bun.sleep(5000).then(() => {
+        setTimeout(5000).then(() => {
           throw new Error("Aggregate device-list rejection waited for held sibling work");
         }),
       ]);

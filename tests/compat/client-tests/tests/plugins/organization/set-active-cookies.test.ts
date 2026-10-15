@@ -1,5 +1,4 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -70,7 +69,7 @@ compatScenario(
         .parse(issued.find((cookie) => cookie.startsWith(`${preferenceName}=`)))
         .split(";")[0],
     );
-    expect(preference).toStartWith(`${preferenceName}=true.`);
+    expect(preference).toSatisfy((value) => value.startsWith(`${preferenceName}=true.`));
 
     const created = await actor.client.$fetch("/organization/create", {
       method: "POST",
@@ -123,7 +122,7 @@ compatScenario(
       } else {
         expect(cookies.length).toBeGreaterThan(0);
         for (const cookie of cookies) {
-          expect(cookie).toStartWith(`${sessionName}=`);
+          expect(cookie).toSatisfy((value) => value.startsWith(`${sessionName}=`));
           expect(cookie).toMatch(/(?:^|;\s*)Max-Age=604800(?:;|$)/i);
         }
       }

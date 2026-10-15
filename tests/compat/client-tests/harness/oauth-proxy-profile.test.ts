@@ -1,6 +1,5 @@
-import { expect, test } from "bun:test";
-
 import { symmetricDecrypt, symmetricEncrypt, type SecretConfig } from "better-auth/crypto";
+import { expect, test } from "vitest";
 
 import { type ComparisonContext, compareValues } from "../support/compare";
 

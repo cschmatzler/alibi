@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { jwtVerify, createLocalJWKSet } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compareValues } from "../../../support/compare";
 import { compatScenario } from "../../../support/scenario";
@@ -79,7 +79,7 @@ compatScenario(
     expect(token.access_token).toMatch(/^[A-Za-z]{32}$/);
     expect(token.refresh_token).toBeUndefined();
 
-    expect(token.id_token).toBeString();
+    expect(token.id_token).toBeTypeOf("string");
     const sessionResponse = await control({ action: "session", headers: { cookie } });
     expect(sessionResponse.status).toBe(200);
     const session = (await sessionResponse.json()) as any;

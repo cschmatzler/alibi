@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 

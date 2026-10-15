@@ -1,11 +1,11 @@
-import { Database } from "bun:sqlite";
-
 import { sso } from "@better-auth/sso";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { username } from "better-auth/plugins";
+
+import { createDatabase } from "../sqlite.ts";
 export async function ssoDateFixture(base: BetterAuthOptions) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const options = {
     ...base,
     database,
@@ -38,7 +38,7 @@ export async function ssoDateFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "physical") {
-      const rows = database.query("SELECT application_anniversary FROM ssoProvider").all();
+      const rows = database.prepare("SELECT application_anniversary FROM ssoProvider").all();
       return new Response(JSON.stringify(rows), {
         headers: { "content-type": "application/json" },
       });

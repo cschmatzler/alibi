@@ -1,4 +1,6 @@
-import type { Database } from "bun:sqlite";
+import { readFile } from "node:fs/promises";
+
+import type { Database } from "better-sqlite3";
 
 /** Read actual credential/session rows and control trusted fixture clock/counter state. */
 export function passkeyFixture(database: Database) {
@@ -7,25 +9,25 @@ export function passkeyFixture(database: Database) {
 
     if (url.pathname === "/__test/passkey-crl") {
       return new Response(
-        Bun.file(new URL("../../fixtures/passkey-attestation/revoked.der", import.meta.url)),
+        await readFile(new URL("../../fixtures/passkey-attestation/revoked.der", import.meta.url)),
       );
     }
 
     if (url.pathname === "/__test/passkey-state") {
       const userId = url.searchParams.get("userId") ?? "";
       return Response.json({
-        passkeys: database.query('SELECT "userId", counter, name FROM passkey ORDER BY id').all(),
+        passkeys: database.prepare('SELECT "userId", counter, name FROM passkey ORDER BY id').all(),
         sessions: database
-          .query('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
+          .prepare('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
           .get(userId),
-        challenges: database.query("SELECT COUNT(*) AS count FROM verification").get(),
+        challenges: database.prepare("SELECT COUNT(*) AS count FROM verification").get(),
       });
     }
 
     if (url.pathname === "/__test/passkey-current-counter" && request.method === "POST") {
       const body = (await request.json()) as { credentialId: string; counter: number };
       const result = database
-        .query('UPDATE passkey SET counter = ? WHERE "credentialID" = ?')
+        .prepare('UPDATE passkey SET counter = ? WHERE "credentialID" = ?')
         .run(body.counter, body.credentialId);
       return Response.json({ updated: result.changes });
     }
@@ -33,7 +35,7 @@ export function passkeyFixture(database: Database) {
     if (url.pathname === "/__test/passkey-public-key" && request.method === "POST") {
       const body = (await request.json()) as { credentialId: string; publicKey: string };
       const result = database
-        .query('UPDATE passkey SET "publicKey" = ? WHERE "credentialID" = ?')
+        .prepare('UPDATE passkey SET "publicKey" = ? WHERE "credentialID" = ?')
         .run(body.publicKey, body.credentialId);
       return Response.json({ updated: result.changes });
     }
@@ -41,7 +43,7 @@ export function passkeyFixture(database: Database) {
     if (url.pathname === "/__test/passkey-challenge-clock" && request.method === "POST") {
       const body = (await request.json()) as { expiresAt: string };
       database
-        .query('UPDATE verification SET "expiresAt" = ?')
+        .prepare('UPDATE verification SET "expiresAt" = ?')
         .run(new Date(body.expiresAt).getTime());
       return Response.json({ updated: true });
     }

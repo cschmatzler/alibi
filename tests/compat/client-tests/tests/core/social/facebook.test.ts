@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
 import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { expect } from "vitest";
 
 import { credential, issuedAt } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -155,8 +157,8 @@ for (const mode of [
       expect(result.error).toBeNull();
 
       const url = new URL(result.data!.url!);
-      expect(url.searchParams.has("code_challenge")).toBeFalse();
-      expect(url.searchParams.has("code_challenge_method")).toBeFalse();
+      expect(url.searchParams.has("code_challenge")).toBe(false);
+      expect(url.searchParams.has("code_challenge_method")).toBe(false);
       expect(url.origin).toBe(
         mode === "configured-endpoint"
           ? "https://alternate-facebook.example.invalid"
@@ -688,15 +690,17 @@ for (const variant of [
     async (ctx) => {
       const other = await foreign(ctx);
       const original = JSON.parse(
-        await Bun.file(
+        await readFixtureFile(
           new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
       );
       const key = original.keys[0];
       const wrong = createPublicKey(
-        await Bun.file(
+        await readFixtureFile(
           new URL("../../../../../fixtures/one-tap/wrong-private-key.pem", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
       ).export({ format: "jwk" });
       const weak =
         variant === "weak-modulus" ? generateKeyPairSync("rsa", { modulusLength: 1024 }) : null;
@@ -767,7 +771,7 @@ compatScenario(
       .actor("facebook", "social-facebook-disabled-scope")
       .client.signIn.social({ provider: "facebook" });
     expect(result.error).toBeNull();
-    expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
+    expect(new URL(result.data!.url!).searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
 

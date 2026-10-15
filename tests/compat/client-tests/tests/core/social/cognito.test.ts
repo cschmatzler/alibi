@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
 import { createPublicKey, sign } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { expect } from "vitest";
 
 import { credential, issuedAt } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -157,7 +159,7 @@ for (const mode of [
       expect(url.searchParams.get("client_id")).toBe("fixture-social-client");
       expect(url.searchParams.get("code_challenge_method")).toBe("S256");
       expect(url.searchParams.get("code_challenge")).toBeTruthy();
-      expect(url.searchParams.has("login_hint")).toBeFalse();
+      expect(url.searchParams.has("login_hint")).toBe(false);
 
       const configured = ["configured", "disabled-configured"].includes(mode);
       const scopes = [
@@ -877,14 +879,16 @@ for (const variant of ["removed-key", "declared-algorithm", "first-duplicate-key
     async (ctx) => {
       const other = await foreign(ctx);
       const original = JSON.parse(
-        await Bun.file(
+        await readFixtureFile(
           new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
       );
       const wrong = createPublicKey(
-        await Bun.file(
+        await readFixtureFile(
           new URL("../../../../../fixtures/one-tap/wrong-private-key.pem", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
       ).export({ format: "jwk" });
       const key = original.keys[0];
       await control(ctx, {
@@ -968,7 +972,7 @@ compatScenario(
     expect(result.error).toBeNull();
 
     const url = new URL(result.data!.url!);
-    expect(url.searchParams.has("scope")).toBeFalse();
+    expect(url.searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
 
@@ -1128,8 +1132,9 @@ async function nonObjectToken(payload: unknown) {
   ).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const input = `${header}.${body}`;
-  const privateKey = await Bun.file(
+  const privateKey = await readFixtureFile(
     new URL("../../../../../fixtures/one-tap/private-key.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   return `${input}.${sign("RSA-SHA256", Buffer.from(input), privateKey).toString("base64url")}`;
 }

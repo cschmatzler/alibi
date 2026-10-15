@@ -1,10 +1,9 @@
-import { Database } from "bun:sqlite";
-
 import { passkey } from "@better-auth/passkey";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { anonymous, emailOTP, magicLink, oneTap, phoneNumber } from "better-auth/plugins";
+import Database from "better-sqlite3";
 
 /** Application identity/link callbacks; all receipts come from actual plugin calls. */
 export async function anonymousFixture(base: BetterAuthOptions, database: Database) {
@@ -144,11 +143,11 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
                 context?.path === "/sign-up/email"
               ) {
                 database
-                  .query("UPDATE user SET name=? WHERE id=?")
+                  .prepare("UPDATE user SET name=? WHERE id=?")
                   .run("Stored Hook Name", session.userId);
                 if (mode.startsWith("custom")) {
                   database
-                    .query("UPDATE user SET cargo_label=?, cargo_hidden=? WHERE id=?")
+                    .prepare("UPDATE user SET cargo_label=?, cargo_hidden=? WHERE id=?")
                     .run("Application Stored", "Stored Secret", session.userId);
                 }
               }
@@ -205,14 +204,16 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
             await Promise.resolve();
             events.push({
               mode,
-              path: context.request ? new URL(context.request.url).pathname.slice(path.length) : context.path,
+              path: context.request
+                ? new URL(context.request.url).pathname.slice(path.length)
+                : context.path,
               ...(!context.request ? { request: null } : {}),
               anonymousUser,
               newUser,
             });
             if (["custom", "custom-cache", "recovery", "recovery-disabled"].includes(mode)) {
               database
-                .query("UPDATE user SET cargo_label=? WHERE id=?")
+                .prepare("UPDATE user SET cargo_label=? WHERE id=?")
                 .run(`Transferred ${(anonymousUser.user as any).cargoLabel}`, newUser.user.id);
             }
             if (mode === "link-ordinary") throw new Error("Configured anonymous transfer denied");
@@ -329,13 +330,13 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
           isAnonymous: row.isAnonymous ?? false,
           cargoLabel:
             database
-              .query<{ cargo_label: string | null }, [string]>(
+              .prepare<[string], { cargo_label: string | null }>(
                 "SELECT cargo_label FROM user WHERE id=?",
               )
               .get(row.id)?.cargo_label ?? null,
           cargoHidden:
             database
-              .query<{ cargo_hidden: string | null }, [string]>(
+              .prepare<[string], { cargo_hidden: string | null }>(
                 "SELECT cargo_hidden FROM user WHERE id=?",
               )
               .get(row.id)?.cargo_hidden ?? null,

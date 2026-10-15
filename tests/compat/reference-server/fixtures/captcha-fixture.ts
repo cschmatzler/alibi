@@ -1,3 +1,5 @@
+import { setTimeout } from "node:timers/promises";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { type CaptchaOptions, captcha } from "better-auth/plugins";
@@ -61,7 +63,7 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
               events.push({ profile: name, kind: "bot-check" });
 
               if (name === "captcha-botid-timeout") {
-                await Bun.sleep(11_000);
+                await setTimeout(11_000);
                 events.push({ profile: name, kind: "bot-finished" });
               }
 
@@ -210,7 +212,7 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
           new ReadableStream({
             async start(controller) {
               controller.enqueue(new TextEncoder().encode('{"success":'));
-              await Bun.sleep(11_000);
+              await setTimeout(11_000);
               controller.enqueue(new TextEncoder().encode("true}"));
               controller.close();
             },
@@ -220,7 +222,7 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
       }
 
       if (token === "timeout") {
-        await Bun.sleep(11_000);
+        await setTimeout(11_000);
       }
 
       return Response.json({

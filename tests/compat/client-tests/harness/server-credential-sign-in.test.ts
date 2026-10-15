@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+
+import { expect, test } from "vitest";
 
 import { compareValues, type ComparisonContext } from "../support/compare";
 import { authPath, secret, captureSessionIssuer } from "./support/server-session-issuer";

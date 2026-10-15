@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

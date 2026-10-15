@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { anonymousClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";

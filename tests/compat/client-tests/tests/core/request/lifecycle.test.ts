@@ -1,5 +1,4 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
@@ -87,7 +86,7 @@ compatScenario(
     });
     expect(credentialLogin.error).toBeNull();
     expect(credentialLogin.data?.user.id).toBe(issued.state.userId);
-    expect(credentialLogin.data?.token).toBeString();
+    expect(credentialLogin.data?.token).toBeTypeOf("string");
     expect(credentialLogin.data?.token).not.toBe(issued.state.sessions[0]?.token);
 
     const credentialSession = await credentialActor.client.getSession();

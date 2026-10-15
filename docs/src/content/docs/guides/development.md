@@ -14,7 +14,7 @@ devenv shell -- ./scripts/check.sh      # the native gate CI runs
 devenv shell -- ./scripts/compat.sh     # differential suite, once before merging
 ```
 
-Or enter the shell manually with `devenv shell`. Rust tooling and lint rules come from the private `cschmatzler/rust` flake: local development needs GitHub SSH access, and CI fetches the locked revision with the `RUST_STYLE_TOKEN` secret. `devenv.lock` pins every tool, including Bun and Chromium.
+Or enter the shell manually with `devenv shell`. Rust tooling and lint rules come from the private `cschmatzler/rust` flake: local development needs GitHub SSH access, and CI fetches the locked revision with the `RUST_STYLE_TOKEN` secret. `devenv.lock` pins every tool, including Nub and Chromium.
 
 ## Repository map
 
@@ -53,17 +53,17 @@ The [release policy](/guides/releases/) defines Rust versioning, upstream compat
 | End-to-end | `tests/e2e/` | Real HTTP, cookies, authentication and reset delivery against SQLite | `cargo nextest run --test e2e` |
 | Compat | `tests/compat/` | Behavior matches the pinned `better-auth@1.7.7` | `./scripts/compat.sh` |
 
-A bare `cargo nextest run` runs the unit, integration and end-to-end tiers with SQLx, SeaORM, Axum and Poem enabled; it needs no Bun, upstream install or external database. Cases that need PostgreSQL, Redis or the upstream fixture servers are marked `#[ignore]` and run in CI or through the compat harness. `./scripts/check.sh` runs formatting, strict Clippy, feature builds, every native tier, doctests and rustdoc; CI runs it together with the PostgreSQL, Redis and fixed-clock cases. `./scripts/compat.sh` is not part of CI: run it before merging a change. `./scripts/coverage.sh` reports native line coverage against its floor. Read the tier guides before adding a test: [Tests](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/README.md) explains where a new test belongs, and [Compatibility testing](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md) describes the differential harness and the compatibility contract.
+A bare `cargo nextest run` runs the unit, integration and end-to-end tiers with SQLx, SeaORM, Axum and Poem enabled; it needs no Nub, upstream install or external database. Cases that need PostgreSQL, Redis or the upstream fixture servers are marked `#[ignore]` and run in CI or through the compat harness. `./scripts/check.sh` runs formatting, strict Clippy, feature builds, every native tier, doctests and rustdoc; CI runs it together with the PostgreSQL, Redis and fixed-clock cases. `./scripts/compat.sh` is not part of CI: run it before merging a change. `./scripts/coverage.sh` reports native line coverage against its floor. Read the tier guides before adding a test: [Tests](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/README.md) explains where a new test belongs, and [Compatibility testing](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md) describes the differential harness and the compatibility contract.
 
 ## Work on the docs
 
 The documentation is an Astro Starlight site in `docs/`. From the repository root:
 
 ```bash
-bun install
-bun run docs:dev       # live preview
-bun run docs:check     # Astro diagnostics
-bun run docs:build     # static build and search index
+nub install
+nub run docs:dev       # live preview
+nub run docs:check     # Astro diagnostics
+nub run docs:build     # static build and search index
 ```
 
 - Content lives in `docs/src/content/docs`; **navigation** (the sidebar order and groups) is configured explicitly in `docs/astro.config.mjs`. A new page does not appear until you add it there.

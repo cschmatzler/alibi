@@ -1,11 +1,11 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 import { z } from "zod";
 
+import { serveFixture } from "../../reference-server/http.ts";
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues, type ComparisonContext } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
@@ -13,10 +13,10 @@ import { createTracingFetch, requestWindow, type TraceEntry } from "../support/t
 const control = "/__test/server-dispatch-cache/call";
 async function capture(operation: "revokeSession" | "resetPassword") {
   let resetToken = "";
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   let auth: ReturnType<typeof betterAuth>;
   const events: unknown[] = [];
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {

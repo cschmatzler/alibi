@@ -206,11 +206,11 @@ export function passkeyRegistrationFixture(options: Parameters<typeof betterAuth
       const path = new URL(request.url).pathname;
 
       if (path === "/__test/passkey-registration-state") {
-        const database = options.database as import("bun:sqlite").Database;
+        const database = options.database as import("better-sqlite3").Database;
         const userId = new URL(request.url).searchParams.get("userId") ?? "";
         return Response.json({
           rows: database
-            .query("SELECT * FROM passkey WHERE userId=? ORDER BY rowid")
+            .prepare("SELECT * FROM passkey WHERE userId=? ORDER BY rowid")
             .all(userId)
             .map((value) => {
               const row = value as Record<string, unknown>;

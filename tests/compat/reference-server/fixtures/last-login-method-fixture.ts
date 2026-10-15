@@ -1,5 +1,3 @@
-import type { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import {
@@ -11,6 +9,7 @@ import {
   username,
 } from "better-auth/plugins";
 import { siwe } from "better-auth/plugins/siwe";
+import type { Database } from "better-sqlite3";
 
 import { verifyFixtureEip191 } from "./siwe-fixture";
 
@@ -238,7 +237,7 @@ export async function createLastLoginMethodFixture(base: BetterAuthOptions, data
         return Response.json({
           events: [...events],
           users: database
-            .query("SELECT id,email,name,lastLoginMethod FROM user ORDER BY email,id")
+            .prepare("SELECT id,email,name,lastLoginMethod FROM user ORDER BY email,id")
             .all(),
         });
       }

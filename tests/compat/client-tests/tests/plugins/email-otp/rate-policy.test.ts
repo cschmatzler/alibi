@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { readOtp } from "./helpers";
@@ -30,7 +32,7 @@ compatScenario(
     });
     expect(await readOtp(ctx, email, "sign-in")).toBe(otp);
     expect(await ctx.readVerificationState({ identifier })).toEqual(before);
-    await Bun.sleep(1200);
+    await setTimeout(1200);
     const reset = await send();
     expect(reset.error).toBeNull();
     const latest = await readOtp(ctx, email, "sign-in");

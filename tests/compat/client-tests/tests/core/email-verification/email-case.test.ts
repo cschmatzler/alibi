@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { jwtVerify } from "jose";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(

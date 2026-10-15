@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -13,8 +15,8 @@ async function rows(ctx: ScenarioContext): Promise<Rows> {
 }
 async function save(ctx: ScenarioContext, name: string, value: unknown) {
   if (process.env.LOGOUT_EVIDENCE_DIR) {
-    await Bun.write(
-      `${process.env.LOGOUT_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+    await writeArtifact(
+      `${process.env.LOGOUT_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, value }, null, 2),
     );
   }
@@ -137,7 +139,7 @@ for (const [index, item] of cases.entries()) {
           .some((cookie) => cookie.includes("session_token=") && cookie.includes("Max-Age=0")),
       ).toBe(true);
       if (item.endpoint) {
-        expect(body.url).toBeString();
+        expect(body.url).toBeTypeOf("string");
         const url = new URL(body.url);
         expect(url.origin).toBe(`https://${item.endpoint}.example.invalid`);
         expect(url.pathname).toBe("/logout");
@@ -223,7 +225,7 @@ compatScenario(
     };
     await save(ctx, "ordered", result);
     expect(response.status).toBe(200);
-    expect(body.url).toBeString();
+    expect(body.url).toBeTypeOf("string");
     const url = new URL(body.url);
     expect(url.origin).toBe("https://discovered.example.invalid");
     expect(url.searchParams.get("id_token_hint")).toBe("newer-token");

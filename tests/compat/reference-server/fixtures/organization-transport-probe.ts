@@ -1,7 +1,9 @@
+import { setTimeout } from "node:timers/promises";
+
 import type { BetterAuthPlugin } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 
-/** Observe real Bun request aborts independently of the authentication callbacks. */
+/** Observe real Node request aborts independently of the authentication callbacks. */
 export function organizationTransportProbe() {
   const aborted = new Set<string>();
   const completed = new Set<string>();
@@ -41,7 +43,7 @@ export function organizationTransportProbe() {
       if (url.pathname === "/__test/organization-transport-completion") {
         const marker = url.searchParams.get("marker") ?? "";
         for (let i = 0; i < 200 && !completed.has(marker); i++) {
-          await Bun.sleep(10);
+          await setTimeout(10);
         }
         return Response.json({ marker, completed: completed.has(marker) });
       }
@@ -53,7 +55,7 @@ export function organizationTransportProbe() {
       const marker = url.searchParams.get("marker") ?? "";
 
       for (let i = 0; i < 200 && !aborted.has(marker); i++) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
 
       return Response.json({ marker, aborted: aborted.has(marker) });

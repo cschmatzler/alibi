@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { raceOneTimeProof } from "../../../support/one-time-race";
 import { compatScenario } from "../../../support/scenario";

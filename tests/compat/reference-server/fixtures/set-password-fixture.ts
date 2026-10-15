@@ -1,11 +1,10 @@
 /** Trusted controlled interface to the actual pinned server-only operation. */
 
-import type { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createSetPasswordFixture(database: Database, options: BetterAuthOptions) {
   const events: Record<string, unknown>[] = [];
@@ -79,7 +78,7 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
                   const deadline = Date.now() + 3000;
                   while (
                     !database
-                      .query("SELECT id FROM account WHERE userId=? AND password=?")
+                      .prepare("SELECT id FROM account WHERE userId=? AND password=?")
                       .get(watchUserId, firstHash!)
                   ) {
                     if (Date.now() > deadline) {
@@ -206,9 +205,11 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
         let trigger = false;
         try {
           if (mode === "create-error" || mode === "update-error") {
-            database.run(
-              `CREATE TEMP TRIGGER set_password_store_failure BEFORE ${mode === "create-error" ? "INSERT" : "UPDATE"} ON account WHEN NEW.providerId='credential' BEGIN SELECT RAISE(ABORT, 'Actual configured credential write failed'); END`,
-            );
+            database
+              .prepare(
+                `CREATE TEMP TRIGGER set_password_store_failure BEFORE ${mode === "create-error" ? "INSERT" : "UPDATE"} ON account WHEN NEW.providerId='credential' BEGIN SELECT RAISE(ABORT, 'Actual configured credential write failed'); END`,
+              )
+              .run();
             trigger = true;
           }
           return await instance.api.setPassword({
@@ -221,7 +222,7 @@ export function createSetPasswordFixture(database: Database, options: BetterAuth
           });
         } finally {
           if (trigger) {
-            database.run("DROP TRIGGER set_password_store_failure");
+            database.prepare("DROP TRIGGER set_password_store_failure").run();
           }
         }
       }

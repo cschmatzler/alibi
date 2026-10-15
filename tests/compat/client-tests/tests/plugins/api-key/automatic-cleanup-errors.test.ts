@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { control, counts, observation, retained, setup, state } from "./automatic-cleanup-shared";

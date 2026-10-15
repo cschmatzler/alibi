@@ -2,12 +2,14 @@ import { appendFileSync } from "node:fs";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** Run the published factory; redirect only its fixed provider HTTP destinations. */
-export function redditProviderFixture(base: BetterAuthOptions) {
+export async function redditProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -84,7 +86,7 @@ export function redditProviderFixture(base: BetterAuthOptions) {
       url.href === "https://www.reddit.com/api/v1/access_token" ||
       url.href === "https://oauth.reddit.com/api/v1/me"
     ) {
-      // Preserve the exact factory headers independently of Bun ambient defaults.
+      // Preserve the exact factory headers independently of runtime ambient defaults.
       request.headers.set("x-fixture-reddit-accept", request.headers.get("accept") ?? "__absent__");
       request.headers.set(
         "x-fixture-reddit-user-agent",
@@ -98,7 +100,7 @@ export function redditProviderFixture(base: BetterAuthOptions) {
       );
     }
 
-    return previousFetch(input, init);
+    return previousFetch(request);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 

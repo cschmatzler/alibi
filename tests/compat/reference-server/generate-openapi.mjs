@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env nub
 
 import { writeFile } from "node:fs/promises";
 import { resolve } from "node:path";

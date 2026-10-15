@@ -1,6 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
+import { expect } from "vitest";
+
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -52,8 +55,8 @@ function observed(rows: Receipt[]) {
 }
 async function save(ctx: ScenarioContext, name: string, result: unknown) {
   if (process.env.GENERIC_TOKEN_EVIDENCE_DIR) {
-    await Bun.write(
-      `${process.env.GENERIC_TOKEN_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+    await writeArtifact(
+      `${process.env.GENERIC_TOKEN_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
       JSON.stringify(
         { name, baseURL: ctx.baseURL, result, rawReceipts: await receipts(ctx) },
         null,

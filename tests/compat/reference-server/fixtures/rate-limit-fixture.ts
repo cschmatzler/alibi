@@ -1,9 +1,8 @@
-/** Installed Source policies exercised through actual authentication mutations. */
-import { Database } from "bun:sqlite";
-
 import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+/** Installed Source policies exercised through actual authentication mutations. */
+import Database from "better-sqlite3";
 
 export async function createRateLimitFixture(base: BetterAuthOptions) {
   // Share the actual SQL connection provider across concurrent auth instances.

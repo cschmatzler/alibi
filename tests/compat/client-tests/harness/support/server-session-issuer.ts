@@ -1,10 +1,11 @@
-import { Database } from "bun:sqlite";
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { expect } from "vitest";
 
+import { serveFixture } from "../../../reference-server/http.ts";
+import { createDatabase } from "../../../reference-server/sqlite.ts";
 import { cacheReceipt } from "../../support/compact-cache-receipt";
 import { normalizeClientValue } from "../../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../../support/trace";
@@ -15,9 +16,9 @@ const control = "/__test/server-dispatch-cache/call";
 export async function captureSessionIssuer(
   operation: "signInEmail" | "changePassword" | "signUpEmail",
 ) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   let auth: ReturnType<typeof betterAuth>;
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
@@ -121,13 +122,13 @@ export async function captureSessionIssuer(
     expect(restoredBody.session.token).toBe(output.result.value.response.token);
     const userId = output.result.value.response.user.id;
     const user = database
-      .query<{ id: string; email: string; createdAt: number }, [string]>(
+      .prepare<[string], { id: string; email: string; createdAt: number }>(
         "SELECT * FROM user WHERE id=?",
       )
       .get(userId)!;
-    const accounts = database.query("SELECT * FROM account WHERE userId=?").all(userId);
+    const accounts = database.prepare("SELECT * FROM account WHERE userId=?").all(userId);
     const sessions = database
-      .query<{ id: string; token: string; userId: string; expiresAt: number }, [string]>(
+      .prepare<[string], { id: string; token: string; userId: string; expiresAt: number }>(
         "SELECT * FROM session WHERE userId=?",
       )
       .all(userId);

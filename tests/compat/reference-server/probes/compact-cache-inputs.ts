@@ -3,6 +3,8 @@ import { createHmac } from "node:crypto";
 import { safeJSONParse } from "@better-auth/core/utils/json";
 /** Original-byte envelopes measured with the published 1.7.6 decoder. */
 import { getCookieCache } from "better-auth/cookies";
+
+import { writeArtifact } from "../../support/files.ts";
 const secret = "compat-test-only-key-not-real-minimum-32chars";
 const expiresAt = 4070908800000;
 const payload = {
@@ -203,7 +205,7 @@ for (const [name, representation, edit] of [
   });
 }
 
-await Bun.write(
+await writeArtifact(
   new URL("../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
   JSON.stringify({ upstreamVersion: "1.7.6", observations, javascriptOnlyObservations }, null, 2) +
     "\n",

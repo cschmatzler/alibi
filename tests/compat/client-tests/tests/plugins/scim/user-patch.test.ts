@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario("SCIM User PATCH handles noops and ordered canonical changes", async (ctx) => {

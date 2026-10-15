@@ -1,5 +1,8 @@
 import { createHash, randomUUID, sign, verify } from "node:crypto";
-export function ssoOidcFixture() {
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { serveFixture } from "../http.ts";
+export async function ssoOidcFixture() {
   let email = "sso-employee@example.test";
   let idTokenCase = "none";
   let discoveryCase = "valid";
@@ -10,7 +13,7 @@ export function ssoOidcFixture() {
   >();
   const tokens = new Map<string, Record<string, unknown>>();
   const exchanges: any[] = [];
-  const server = Bun.serve({
+  const server = await serveFixture({
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
@@ -102,7 +105,12 @@ export function ssoOidcFixture() {
       }
       if (url.pathname === "/jwks") {
         return Response.json(
-          await Bun.file(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url)).json(),
+          JSON.parse(
+            await readFixtureFile(
+              new URL("../../../fixtures/one-tap/jwks.json", import.meta.url),
+              "utf8",
+            ),
+          ),
         );
       }
       if (url.pathname === "/userinfo" || url.pathname === "/api/v4/user") {
@@ -163,14 +171,15 @@ async function signedIdToken(
   }
   if (tokenCase === "subject") delete claims.sub;
   if (tokenCase === "userinfo-mismatch") claims.sub = "other-subject";
-  const privateKey = await Bun.file(
+  const privateKey = await readFixtureFile(
     new URL(
       tokenCase === "signature"
         ? "../../../fixtures/one-tap/wrong-private-key.pem"
         : "../../../fixtures/one-tap/private-key.pem",
       import.meta.url,
     ),
-  ).text();
+    "utf8",
+  );
   const header = Buffer.from(
     JSON.stringify({ alg: "RS256", typ: "JWT", kid: "one-tap-local-rs256" }),
   ).toString("base64url");
@@ -200,9 +209,10 @@ async function verifyClientAssertion(token: string, audience: string) {
     ) {
       return false;
     }
-    const cert = await Bun.file(
+    const cert = await readFixtureFile(
       new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-    ).text();
+      "utf8",
+    );
     return verify(
       "RSA-SHA256",
       Buffer.from(`${parts[0]}.${parts[1]}`),

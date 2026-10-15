@@ -1,14 +1,13 @@
-import { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { admin, anonymous, twoFactor, username } from "better-auth/plugins";
+import Database from "better-sqlite3";
 
 /** Stored, non-input, hidden application data reaches the real admin callback. */
 export function createAdminBannedMessageFixture(base: BetterAuthOptions, database: Database) {
   if (
     !database
-      .query("PRAGMA table_info(user)")
+      .prepare("PRAGMA table_info(user)")
       .all()
       .some((column: any) => column.name === "metadata")
   ) {
@@ -110,7 +109,7 @@ export function createAdminBannedMessageFixture(base: BetterAuthOptions, databas
 
       const email = url.searchParams.get("email");
       const profile = url.searchParams.get("profile");
-      const user = database.query("SELECT id,metadata FROM user WHERE email=?").get(email) as {
+      const user = database.prepare("SELECT id,metadata FROM user WHERE email=?").get(email) as {
         id: string;
         metadata: string;
       } | null;

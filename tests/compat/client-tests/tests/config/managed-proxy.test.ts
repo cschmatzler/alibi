@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { expect } from "vitest";
 
 import { oauthPurposeSecret } from "../../support/oauth-encryption";
 import { authProfilePath } from "../../support/profiles";

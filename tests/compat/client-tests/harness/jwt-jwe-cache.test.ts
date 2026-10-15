@@ -1,6 +1,5 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { hkdfSync } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { getCurrentAdapter } from "@better-auth/core/context";
 import { betterAuth } from "better-auth";
@@ -17,14 +16,16 @@ import {
   jwtDecrypt,
   type JWK,
 } from "jose";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { type ComparisonContext, compareValues } from "../support/compare";
 
 const secret = "session-cache-harness-independent-secret-32";
 const issuer = "https://session-cache.fixture.test";
 const name = "better-auth.session_data";
 async function observed(strategy: "jwt" | "jwe" | "managed", uuid: boolean) {
-  const db = new Database(":memory:");
+  const db = createDatabase(":memory:");
   const options = {
     baseURL: issuer,
     secret,
@@ -42,7 +43,7 @@ async function observed(strategy: "jwt" | "jwe" | "managed", uuid: boolean) {
               sessionCookieCache: true,
               adapter: {
                 async createJwk(data, ctx) {
-                  await Bun.sleep(1100);
+                  await setTimeout(1100);
                   const adapter = await getCurrentAdapter(ctx.context.adapter);
                   return adapter.create({ model: "jwks", data });
                 },
@@ -289,7 +290,7 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
     };
     // Cross a real second boundary: unchanged re-encryption must still pass,
     // without silently failing because a writer refreshed the issuance clock.
-    await Bun.sleep(1100);
+    await setTimeout(1100);
     expect(compareValues(a, await rewritten(() => {}), ctx)).toEqual([]);
     const changedName = await rewritten((c) => (c.user.name = "X" + c.user.name.slice(1)));
     const nameDifferences = compareValues(a, changedName, ctx);

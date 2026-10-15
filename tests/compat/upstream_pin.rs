@@ -33,7 +33,7 @@ fn pinned_version() -> String {
         .to_owned()
 }
 
-/// Exact dependency pins declared by a Bun project manifest.
+/// Exact dependency pins declared by a Nub project manifest.
 fn declared_pins(manifest: &serde_json::Value) -> Vec<(String, String)> {
     manifest["dependencies"]
         .as_object()
@@ -52,16 +52,21 @@ fn declared_pins(manifest: &serde_json::Value) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Resolved package versions recorded by a committed Bun lockfile.
+/// Resolved package versions in Nub's pnpm-v9-format package and snapshot keys.
 fn locked_versions(lockfile: &str, package: &str) -> Vec<String> {
-    let marker = format!("\"{package}\": [\"{package}@");
+    let prefix = format!("{package}@");
     lockfile
         .lines()
         .filter_map(|line| {
-            let start = line.trim_start().find(&marker)? + marker.len();
-            let rest = line.trim_start().get(start..)?;
-            Some(rest.split('"').next()?.to_owned())
+            let key = line
+                .strip_prefix("  ")?
+                .trim_end_matches(':')
+                .trim_matches('\'');
+            let version = key.strip_prefix(&prefix)?.split('(').next()?;
+            Some(version.to_owned())
         })
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
         .collect()
 }
 
@@ -91,6 +96,21 @@ mod tests {
             "upstreamVersion must be an exact release, got {version}"
         );
 
+        let source = read_json("tests/compat/upstream-source.json");
+        let policy = read_json("tests/compat/assurance-contracts.json");
+        assert_eq!(
+            source["version"], version,
+            "the source archive must target the committed release"
+        );
+        assert_eq!(
+            policy["upstreamVersion"], version,
+            "the assurance policy must target the committed release"
+        );
+        assert_eq!(
+            policy["commit"], source["commit"],
+            "the assurance policy must target the same source commit as the archive"
+        );
+
         for project in ["client-tests", "reference-server"] {
             let manifest_path = format!("tests/compat/{project}/package.json");
             let pins = declared_pins(&read_json(&manifest_path));
@@ -105,7 +125,7 @@ mod tests {
                 );
             }
 
-            let lockfile_path = format!("tests/compat/{project}/bun.lock");
+            let lockfile_path = format!("tests/compat/{project}/nub.lock");
             let lockfile = read(&lockfile_path);
             for (name, _) in &pins {
                 let resolved = locked_versions(&lockfile, name);

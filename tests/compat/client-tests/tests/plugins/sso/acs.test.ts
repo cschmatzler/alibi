@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { encryptSamlGrant } from "./encrypt-saml-grant";
@@ -80,9 +81,10 @@ for (const mode of [
         },
       });
       expect(owner.status).toBe(200);
-      const cert = await Bun.file(
+      const cert = await readFixtureFile(
         new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-      ).text();
+        "utf8",
+      );
       const providerId = signatureDenied
         ? "unsupported-legacy-signature-provider"
         : mode.startsWith("encrypted-policy-") || deprecated
@@ -123,7 +125,7 @@ for (const mode of [
                     ...(mode === "encrypted-missing-key"
                       ? {}
                       : {
-                          encPrivateKey: await Bun.file(
+                          encPrivateKey: await readFixtureFile(
                             new URL(
                               passwordKey
                                 ? "../../../../fixtures/salesforce-transport/encrypted-key.pem"
@@ -132,7 +134,8 @@ for (const mode of [
                                   : "../../../../fixtures/salesforce-transport/key.pem",
                               import.meta.url,
                             ),
-                          ).text(),
+                            "utf8",
+                          ),
                         }),
                     ...(passwordKey && mode !== "encrypted-missing-pass"
                       ? {

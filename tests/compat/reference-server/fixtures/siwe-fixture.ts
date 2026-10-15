@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
@@ -8,6 +6,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { admin, twoFactor, username } from "better-auth/plugins";
 import { siwe } from "better-auth/plugins/siwe";
 import { serializeSignedCookie } from "better-call";
+import Database from "better-sqlite3";
 
 const CONTRACT = "0x1111111111111111111111111111111111111111";
 const CONTRACT_OWNER = "0x6813Eb9362372EEF6200f3b1dbC3f819671cBA69"; // public test scalar 3
@@ -186,27 +185,27 @@ export async function createSiweFixture(
 
   function state() {
     const users = database
-      .query(
+      .prepare(
         "SELECT id,name,email,emailVerified,image,role,banned,twoFactorEnabled,createdAt,updatedAt FROM user ORDER BY rowid",
       )
       .all() as Record<string, unknown>[];
     const wallets = database
-      .query(
+      .prepare(
         "SELECT id,userId,address,chainId,isPrimary,createdAt FROM walletAddress ORDER BY rowid",
       )
       .all() as Record<string, unknown>[];
     const accounts = database
-      .query(
+      .prepare(
         "SELECT id,userId,accountId,providerId,createdAt,updatedAt FROM account ORDER BY rowid",
       )
       .all() as Record<string, unknown>[];
     const sessions = database
-      .query(
+      .prepare(
         "SELECT id,userId,token,createdAt,updatedAt,expiresAt,ipAddress,userAgent FROM session ORDER BY rowid",
       )
       .all() as Record<string, unknown>[];
     const proofs = database
-      .query(
+      .prepare(
         "SELECT id,identifier,value,createdAt,updatedAt,expiresAt FROM verification WHERE identifier LIKE 'siwe%' ORDER BY rowid",
       )
       .all() as Record<string, unknown>[];
@@ -433,7 +432,7 @@ export async function createSiweFixture(
       inputs.length = 0;
       lookups.length = 0;
       rpcCalls.length = 0;
-      database.query("DELETE FROM walletAddress").run();
+      database.prepare("DELETE FROM walletAddress").run();
     },
   };
 }

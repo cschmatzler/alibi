@@ -139,11 +139,11 @@ devenv shell -- ./scripts/compat.sh
 To work on the Astro Starlight documentation site:
 
 ```bash
-bun install
-bun run docs:dev
+nub install
+nub run docs:dev
 ```
 
-Use `bun run docs:check` for diagnostics and `bun run docs:build` for the static build. The [deployment guide](alchemy/README.md) covers hosting.
+Use `nub run docs:check` for diagnostics and `nub run docs:build` for the static build. The [deployment guide](alchemy/README.md) covers hosting.
 
 ## License and origins
 

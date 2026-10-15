@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { getCookieCache } from "better-auth/cookies";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";
@@ -209,7 +210,7 @@ for (const name of ["default", "required", "delivery"]) {
 
       if (name === "delivery") {
         const issuedAt = claims(delivery(registered, "verification-mail").token).iat;
-        await Bun.sleep(Math.max(0, (issuedAt + 1) * 1000 - Date.now() + 10));
+        await setTimeout(Math.max(0, (issuedAt + 1) * 1000 - Date.now() + 10));
       }
 
       const signout = await primary.client.signOut();

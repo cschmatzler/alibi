@@ -2,5 +2,5 @@
   "$schema": "./client-tests/node_modules/oxfmt/configuration_schema.json",
   "printWidth": 100,
   "sortImports": {},
-  "ignorePatterns": ["**/node_modules", "**/target", "client-tests/artifacts", "**/*.json", "**/*.md", "**/bun.lock"]
+  "ignorePatterns": ["**/node_modules", "**/target", "client-tests/artifacts", "**/*.json", "**/*.md", "**/nub.lock"]
 }

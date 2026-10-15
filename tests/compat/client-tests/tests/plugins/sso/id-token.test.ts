@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -123,7 +122,7 @@ compatScenario(
             accountId: "employee-subject",
           })
         ).json()) as any;
-        expect(account.idToken).toBeString();
+        expect(account.idToken).toBeTypeOf("string");
         expect(account.idToken.length).toBeGreaterThan(0);
       }
       observed.push({

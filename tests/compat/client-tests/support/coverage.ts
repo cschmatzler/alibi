@@ -1,7 +1,10 @@
+import { readFile as readFixtureFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 
 import { z } from "zod";
 
+import { writeArtifact } from "../../support/files.ts";
+import { hashLabel } from "../../support/files.ts";
 import { ARTIFACT_ROOT } from "./artifacts";
 import type { TraceEntry } from "./trace";
 import { requestWindow } from "./trace-window";
@@ -57,7 +60,7 @@ export const inventorySchema = z
 export type EvidenceKind = "success" | "rejection" | "authorization" | "state";
 
 const inventory = inventorySchema.parse(
-  await Bun.file(new URL("../../capabilities.json", import.meta.url)).json(),
+  JSON.parse(await readFixtureFile(new URL("../../capabilities.json", import.meta.url), "utf8")),
 );
 
 /** Collect route evidence without conflating it with complete parity. */
@@ -303,8 +306,8 @@ export async function recordCoverage(
   const output = collectCoverage(scenario, traces, stateTransitions, baseURL);
   const directory = new URL("evidence/", ARTIFACT_ROOT);
   await mkdir(directory, { recursive: true });
-  await Bun.write(
-    new URL(`${Bun.hash(scenario)}.json`, directory),
+  await writeArtifact(
+    new URL(`${hashLabel(scenario)}.json`, directory),
     JSON.stringify(output, null, 2),
   );
 }

@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { createServer as createHTTPServer } from "node:http";
 import { createServer as createTLSServer } from "node:tls";
 
+import { ProxyAgent } from "undici";
+
 // Capture the real transport before other deterministic provider mappings install.
 const networkFetch = globalThis.fetch.bind(globalThis);
 const certificate = readFileSync(
@@ -95,9 +97,11 @@ export function salesforceTransport() {
     }
     return `http://127.0.0.1:${address.port}`;
   }
+  let dispatcher: ProxyAgent | undefined;
   return {
     async fetch(request: Request) {
-      return networkFetch(request, { proxy: proxyURL(), tls: { ca: certificate } });
+      dispatcher ??= new ProxyAgent({ uri: proxyURL(), requestTls: { ca: certificate } });
+      return networkFetch(request, { dispatcher } as RequestInit);
     },
     async handle(request: Request) {
       const path = new URL(request.url).pathname;

@@ -1,5 +1,4 @@
-import { beforeAll, expect } from "bun:test";
-
+import { beforeAll, expect } from "vitest";
 import { z } from "zod";
 
 import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "../../../support/config";

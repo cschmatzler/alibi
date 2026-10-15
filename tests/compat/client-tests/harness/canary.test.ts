@@ -1,9 +1,11 @@
-import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { SignJWT } from "jose";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
@@ -11,7 +13,7 @@ import { createTracingFetch, requestWindow, type TraceEntry } from "../support/t
 // They must fail comparison even though both HTTP responses report success.
 test("live response mutations cannot hide broken ownership or cookie security", async () => {
   let mode = "valid";
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     fetch() {
@@ -416,7 +418,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
     const linkUser = `${side}-link-user`;
     const linkToken = `${side}-link-token`;
     const linkedAccounts: Record<string, unknown>[] = [];
-    const server = Bun.serve({
+    const server = await serveFixture({
       hostname: "127.0.0.1",
       port: 0,
       fetch(request) {
@@ -559,7 +561,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
   }
 
   const first = await capture("left");
-  await Bun.sleep(10);
+  await setTimeout(10);
   const second = await capture("right");
   const producerClocks = {
     leftBaseURL: first.baseURL,
@@ -1336,7 +1338,7 @@ test("clock evidence cannot approve another field, entity or a changed lifetime"
 
 test("discarded successful bodies and response policy headers remain observable", async () => {
   let mode = "baseline";
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     fetch: () =>

@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -34,7 +34,7 @@ compatScenario(
     const delivered = (await control()).events
       .filter((event: any) => event.stage === "verification-mail")
       .at(-1);
-    expect(delivered.token).toBeString();
+    expect(delivered.token).toBeTypeOf("string");
     await control("reset");
     const before = await control();
     const guest = ctx.actor("guest", profile);
@@ -99,7 +99,7 @@ compatScenario(
       emailVerified: true,
     });
     const foreignCurrent = await foreign.client.getSession();
-    expect(foreignSignup.data!.token).toBeString();
+    expect(foreignSignup.data!.token).toBeTypeOf("string");
     expect(foreignCurrent.data!.session.token).toBe(foreignSignup.data!.token!);
     const project = (state: any) => ({
       ...state,

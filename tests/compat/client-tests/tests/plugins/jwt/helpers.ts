@@ -1,8 +1,7 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { decodeProtectedHeader, importJWK, type JWK, type JWTPayload, jwtVerify } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";

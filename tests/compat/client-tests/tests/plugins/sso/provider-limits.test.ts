@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario("SSO per-user provider limits resolve before durable registration", async (ctx) => {

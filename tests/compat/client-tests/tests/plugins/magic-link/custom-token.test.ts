@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
 
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
@@ -15,7 +16,7 @@ compatScenario(
     const delivered = await readMagicLink(ctx, email);
     expect(delivered.token).toBe(`custom-link-${email}`);
     expect(new URL(delivered.url).searchParams.get("token")).toBe(delivered.token);
-    const digest = new Bun.CryptoHasher("sha256").update(delivered.token).digest("base64url");
+    const digest = createFixtureHash("sha256").update(delivered.token).digest("base64url");
     const identifier = `magic-link:${digest}`;
     const stored = z
       .array(

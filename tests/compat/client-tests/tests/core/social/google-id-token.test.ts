@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { decodeJwt, decodeProtectedHeader } from "jose";
+import { expect } from "vitest";
 
 import { credential, issuedAt, signedRawToken } from "../../../support/id-token";
 import type { FixtureProfile } from "../../../support/profiles";

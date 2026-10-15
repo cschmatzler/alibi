@@ -1,6 +1,5 @@
-import { Database } from "bun:sqlite";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+import Database from "better-sqlite3";
 export function deleteHooksFixture(base: BetterAuthOptions) {
   const db = base.database as Database;
   db.exec("CREATE TABLE IF NOT EXISTS application_delete_receipts (model TEXT, row_id TEXT)");
@@ -22,7 +21,7 @@ export function deleteHooksFixture(base: BetterAuthOptions) {
           async after(row: any) {
             if (model !== owner) return;
             events.push({ model: owner, phase: "after", rowId: row.id });
-            db.query("INSERT INTO application_delete_receipts (model,row_id) VALUES (?,?)").run(
+            db.prepare("INSERT INTO application_delete_receipts (model,row_id) VALUES (?,?)").run(
               owner,
               row.id,
             );
@@ -53,7 +52,7 @@ export function deleteHooksFixture(base: BetterAuthOptions) {
         return Response.json({
           events,
           receipts: db
-            .query("SELECT model, row_id AS rowId FROM application_delete_receipts")
+            .prepare("SELECT model, row_id AS rowId FROM application_delete_receipts")
             .all(),
         });
       }

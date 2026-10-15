@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT, jwtVerify } from "jose";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -673,7 +672,7 @@ compatScenario(
 
     const persisted = await state(ctx);
     expect(persisted.users).toHaveLength(1);
-    expect(persisted.users[0]!.emailVerified).toBeFalse();
+    expect(persisted.users[0]!.emailVerified).toBe(false);
     expect(persisted.accounts).toHaveLength(1);
     expect(persisted.sessions).toHaveLength(0);
     expect((await flow.actor.client.getSession()).data).toBeNull();

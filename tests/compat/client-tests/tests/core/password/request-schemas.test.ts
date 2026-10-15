@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -138,7 +138,7 @@ for (const mode of ["absent", "invalid", "valid"] as const) {
           path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
         })
       ).body;
-      expect(delivery.token).toBeString();
+      expect(delivery.token).toBeTypeOf("string");
       const identifier = `reset-password:${delivery.token}`;
       const proof = await ctx.readVerificationState({ identifier });
       expect(proof).toHaveLength(1);

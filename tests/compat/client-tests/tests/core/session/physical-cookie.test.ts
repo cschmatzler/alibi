@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { verifyPassword } from "better-auth/crypto";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -177,7 +177,7 @@ for (const mode of [
         password,
       });
       expect(other.error).toBeNull();
-      expect(other.data!.token).toBeString();
+      expect(other.data!.token).toBeTypeOf("string");
 
       const foreignRead = await foreign.getSession();
       expect(foreignRead.error).toBeNull();

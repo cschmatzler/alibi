@@ -10,7 +10,7 @@ Regenerate deliberately from the repository root after installing the frozen
 reference-server dependencies:
 
 ```sh
-devenv shell -- bun tests/fixtures/jwt/generate-typescript-fixture.mjs > tests/fixtures/jwt/typescript-1.7.7-encrypted-jwk.json
+devenv shell -- nub tests/fixtures/jwt/generate-typescript-fixture.mjs > tests/fixtures/jwt/typescript-1.7.7-encrypted-jwk.json
 ```
 
 Generation creates a real random key and cipher nonce, so review fixture changes.

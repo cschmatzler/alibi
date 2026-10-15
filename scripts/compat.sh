@@ -10,15 +10,15 @@ export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
 
 for project in reference-server client-tests; do
   if [[ ! -d "tests/compat/$project/node_modules" ]]; then
-    echo "tests/compat/$project dependencies are missing; run 'bun install --cwd tests/compat/$project --frozen-lockfile'." >&2
+    echo "tests/compat/$project dependencies are missing; run 'nub install --cwd tests/compat/$project --frozen-lockfile'." >&2
     exit 1
   fi
 done
 
-bun run --cwd tests/compat/client-tests format:check
-bun run --cwd tests/compat/client-tests lint
-bun run --cwd tests/compat/client-tests typecheck
-bun tests/compat/client-tests/support/check-coverage.ts --inventory-only
+nub run --cwd tests/compat/client-tests format:check
+nub run --cwd tests/compat/client-tests lint
+nub run --cwd tests/compat/client-tests typecheck
+nub tests/compat/client-tests/support/check-coverage.ts --inventory-only
 
 # Build both fixture backends up front so a compiler failure is not reported as a scenario failure.
 mkdir -p coverage
@@ -26,13 +26,13 @@ cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml
 cp tests/compat/rust-server/target/debug/compat-rust-server coverage/compat-rust-server-sqlx
 cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml --features seaorm
 cp tests/compat/rust-server/target/debug/compat-rust-server coverage/compat-rust-server-seaorm
-bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
+nub tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
 # The route inventory writes coverage/runtime-routes.json for the evidence gate.
 cargo nextest run --locked --test compat -E 'test(/^route_inventory::/)'
 
 # Comparator negative controls first: a comparator that cannot detect drift
 # must not be allowed to report parity.
-bun test --cwd tests/compat/client-tests harness
+nub --cwd tests/compat/client-tests exec vitest run harness
 
 # One total fixture budget for both complete adapters. Each adapter owns its
 # immutable executable and evidence namespace; neither can satisfy the other's gate.

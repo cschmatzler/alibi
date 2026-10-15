@@ -1,4 +1,4 @@
-/** Author-time source port. Run: bun run port-openapi-annotations.ts.
+/** Author-time source port. Run: nub port-openapi-annotations.ts.
  * Reads pinned factories/Zod declarations; never invokes a handler or generator.
  * Documents still derive from actual Rust registrations and application config.
  */

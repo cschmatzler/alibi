@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
@@ -95,7 +97,7 @@ for (const compact of [false, true]) {
         // Consecutive default JWTs can be byte-identical within one second.
         // Observe distinct actual issuance seconds, as the existing dispatch owner does.
         while (Math.floor(Date.now() / 1000) <= previousSecond) {
-          await Bun.sleep(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
+          await setTimeout(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
         }
         const observed = await invoke(ctx, profile, input);
         if (observed.result.ok) {
@@ -176,7 +178,7 @@ for (const compact of [false, true]) {
       const jwtReceipts = [];
       for (const observed of [valid, noRefresh, renewed, expired]) {
         const token = observed.result.value.headers["set-auth-jwt"];
-        expect(token).toBeString();
+        expect(token).toBeTypeOf("string");
         expect(
           observed.result.value.headers["access-control-expose-headers"]
             .split(",")

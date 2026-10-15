@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { betterAuth } from "better-auth";
@@ -9,8 +7,10 @@ import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { twoFactor } from "better-auth/plugins";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { createDatabase } from "../../../../reference-server/sqlite.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 import { generateCurrentTotp } from "../../../support/totp";
@@ -29,7 +29,7 @@ const enrollmentSchema = z.object({ totpURI: z.string(), backupCodes: z.array(z.
 // These ciphertexts come from a real published auth endpoint and SQLite row,
 // rather than a fixture that implements or supplies the encryption under test.
 async function publishedFactor(email: string) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   try {
     const origin = "http://localhost:42117";
     const options = {
@@ -79,7 +79,7 @@ async function publishedFactor(email: string) {
     );
     const row = factorSchema.parse(
       database
-        .query("SELECT id,userId,secret,backupCodes FROM twoFactor WHERE userId=?")
+        .prepare("SELECT id,userId,secret,backupCodes FROM twoFactor WHERE userId=?")
         .get(created.user.id),
     );
     return { row, enrollment };

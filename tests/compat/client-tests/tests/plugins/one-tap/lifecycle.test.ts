@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { credential, issuedAt, signedRawToken } from "../../../support/id-token";
 import { compatScenario } from "../../../support/scenario";

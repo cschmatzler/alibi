@@ -1,4 +1,3 @@
-import { test } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -10,8 +9,11 @@ import {
   magicLinkClient,
   usernameClient,
 } from "better-auth/client/plugins";
+import { test } from "vitest";
 import { ZodError } from "zod";
 
+import { writeArtifact } from "../../support/files.ts";
+import { hashLabel } from "../../support/files.ts";
 import {
   type ComparisonContext,
   compareValues,
@@ -379,8 +381,7 @@ export function compatScenario(
 ) {
   const { oracle, requiresEnvironment, ...comparisonOptions } = options;
   assuranceEvent({ event: "registered", name: scenarioName });
-  const register =
-    requiresEnvironment && !process.env[requiresEnvironment] ? test.skip : test.serial;
+  const register = requiresEnvironment && !process.env[requiresEnvironment] ? test.skip : test;
   register(
     scenarioName,
     async () => {
@@ -419,8 +420,8 @@ export function compatScenario(
         const observationsDirectory = process.env.COMPAT_OBSERVATIONS_DIR;
         if (observationsDirectory) {
           await mkdir(observationsDirectory, { recursive: true });
-          await Bun.write(
-            join(observationsDirectory, `${Bun.hash(scenarioName)}.json`),
+          await writeArtifact(
+            join(observationsDirectory, `${hashLabel(scenarioName)}.json`),
             serializeObservationReceipt({ scenarioName, ts, rust }),
           );
         }
@@ -474,8 +475,8 @@ export function compatScenario(
         const oracleProblems = oracleFindings(ts.traces, oracle);
 
         if (oracle) {
-          await Bun.write(
-            new URL(`${Bun.hash(scenarioName)}.json`, ORACLE_RECEIPTS),
+          await writeArtifact(
+            new URL(`${hashLabel(scenarioName)}.json`, ORACLE_RECEIPTS),
             JSON.stringify({
               scenario: scenarioName,
               needed: oracleFindings(ts.traces).length > 0,
@@ -504,7 +505,9 @@ export function compatScenario(
               : error instanceof Error && error.name === "ModelViolation"
                 ? "model"
                 : error instanceof Error &&
-                    (error.message.startsWith("expect(") || error.name === "ZodError")
+                    (error.name === "AssertionError" ||
+                      error.message.startsWith("expect(") ||
+                      error.name === "ZodError")
                   ? "assertion"
                   : "scenario";
         outcome.phase = phase;

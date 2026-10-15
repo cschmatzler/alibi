@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { readMagicLink } from "./helpers";
@@ -28,7 +30,7 @@ compatScenario(
     });
     expect(await readMagicLink(ctx, email)).toEqual(delivered);
     expect(await ctx.readVerificationState({ identifier })).toEqual(before);
-    await Bun.sleep(1200);
+    await setTimeout(1200);
     const reset = await send();
     expect(reset.error).toBeNull();
     const latest = await readMagicLink(ctx, email);

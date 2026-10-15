@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHash, createHmac, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
 
 import { apiKey } from "@better-auth/api-key";
@@ -10,7 +8,9 @@ import { symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin } from "better-auth/plugins";
 import { decodeProtectedHeader, EncryptJWT } from "jose";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues } from "../support/compare";
 import { jsonShape, normalizeClientValue } from "../support/normalize";
 
@@ -934,7 +934,7 @@ test("computed device session TTL permits only the proved floor boundary", () =>
 test("actual custom API-key generators preserve observational prefix relationships", async () => {
   async function issue(baseURL: string, prefixed: boolean) {
     const startedAt = Date.now();
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     const secret = prefixed ? "raw_abcdefghijklmnop" : "😀abcdefghijklmnop";
     const options = {
       baseURL,
@@ -961,7 +961,7 @@ test("actual custom API-key generators preserve observational prefix relationshi
     });
     // The actual creation response is backed by its real persisted SQLite row.
     const stored = database
-      .query('SELECT "referenceId", prefix, start FROM apikey WHERE id = ?')
+      .prepare('SELECT "referenceId", prefix, start FROM apikey WHERE id = ?')
       .get(issued.id) as { referenceId: string; prefix: string; start: string };
     expect(stored).toEqual({
       referenceId: owner.user.id,
@@ -1194,7 +1194,7 @@ test("published encrypted account cookies retain complete claims, clocks, identi
 
 test("actual admin URLs preserve literal empty selectors without admitting empty generated identities", async () => {
   async function observe(baseURL: string, id: string) {
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     const options = {
       baseURL,
       secret: "query-harness-application-secret32",
@@ -1255,7 +1255,7 @@ test("actual admin URLs preserve literal empty selectors without admitting empty
 
 test("actual admin ID filter URLs retain observed user identities and every literal selector and operand", async () => {
   async function observe(baseURL: string) {
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     const options = {
       baseURL,
       secret: "array-filter-harness-application-secret32",

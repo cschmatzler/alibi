@@ -1,9 +1,10 @@
-/** Immutable real application callbacks; the published plugin owns all mutations. */
-import type { Database } from "bun:sqlite";
+import { setTimeout } from "node:timers/promises";
 
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+/** Immutable real application callbacks; the published plugin owns all mutations. */
+import type { Database } from "better-sqlite3";
 
 import { invitationSnapshot } from "./organization-invitation-acceptance-fixture";
 
@@ -223,7 +224,7 @@ export function organizationInvitationLifecycleFixture(
       return Response.json({ configured: true });
     },
     async state(wait: string | null) {
-      if (wait) for (let n = 0; n < 100 && !gates.length; n++) await Bun.sleep(10);
+      if (wait) for (let n = 0; n < 100 && !gates.length; n++) await setTimeout(10);
       return Response.json({
         receipts,
         snapshot: invitationSnapshot(database),

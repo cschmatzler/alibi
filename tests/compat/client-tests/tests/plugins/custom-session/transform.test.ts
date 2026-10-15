@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { customSessionClient, jwtClient, multiSessionClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -221,7 +222,7 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
       let previousIssuedAt: number | undefined;
       async function nextJwtSecond() {
         if (previousIssuedAt !== undefined) {
-          await Bun.sleep(Math.max(0, (previousIssuedAt + 1) * 1000 - Date.now() + 25));
+          await setTimeout(Math.max(0, (previousIssuedAt + 1) * 1000 - Date.now() + 25));
         }
       }
       function observeJwt(signed: string) {

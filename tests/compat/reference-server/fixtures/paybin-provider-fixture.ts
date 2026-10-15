@@ -1,11 +1,13 @@
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** Run the published factory; redirect only its fixed provider HTTP destinations. */
-export function paybinProviderFixture(base: BetterAuthOptions) {
+export async function paybinProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -57,7 +59,7 @@ export function paybinProviderFixture(base: BetterAuthOptions) {
       return previousFetch(new Request(`${transport.url}${url.pathname.slice(1)}`, request));
     }
 
-    return previousFetch(input, init);
+    return previousFetch(request);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 

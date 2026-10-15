@@ -1,10 +1,13 @@
-import { expect, test } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
+import { expect, test } from "vitest";
+
+import { serveFixture } from "../../reference-server/http.ts";
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
 test("expired, cleared, wrong-domain and wrong-path cookies are never sent", async () => {
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
@@ -39,7 +42,7 @@ test("expired, cleared, wrong-domain and wrong-path cookies are never sent", asy
 
 test("redirects capture intermediate cookies and preserve Fetch method and body semantics", async () => {
   const received: { method: string; body: string; cookie: string | null }[] = [];
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
@@ -92,7 +95,7 @@ test("redirects capture intermediate cookies and preserve Fetch method and body 
 
 test("configured authentication paths preserve Request bodies, cookie scopes and actual trace URLs", async () => {
   const profilePath = "/__test/profiles/org-teams/api/auth";
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
@@ -145,7 +148,7 @@ test("organization application creation receipts retain full bodies with bounded
     "/__test/organization-membership-policy/server",
     "/__test/organization-member-addition/server",
   ];
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     fetch(request) {
@@ -189,7 +192,7 @@ test("organization application creation receipts retain full bodies with bounded
       const first = await (
         await createTracingFetch(server.url.origin, "owner", left)(path, { method: "POST" })
       ).json();
-      await Bun.sleep(10);
+      await setTimeout(10);
       const second = await (
         await createTracingFetch(server.url.origin, "owner", right)(path, { method: "POST" })
       ).json();
@@ -281,7 +284,7 @@ test("concurrent traces retain request order when independent responses finish i
   const slowRelease = new Promise<void>((resolve) => {
     releaseSlow = resolve;
   });
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {

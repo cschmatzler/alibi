@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { apiKey } from "@better-auth/api-key";
@@ -7,14 +5,17 @@ import { betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { organization } from "better-auth/plugins";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
+import { writeArtifact } from "../../support/files.ts";
 import { compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
 type Data = Record<string, any>;
 
 async function capture(baseURL: string) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const events: Data[] = [];
   let serial = 0;
   const snapshot = (stage: string, ctx: Data) =>
@@ -142,7 +143,7 @@ async function capture(baseURL: string) {
       headers,
     });
     const memberRows = database
-      .query("SELECT * FROM member ORDER BY role,createdAt,id")
+      .prepare("SELECT * FROM member ORDER BY role,createdAt,id")
       .all()
       .map((raw) => {
         const row = { ...(raw as Data) };
@@ -176,7 +177,7 @@ async function capture(baseURL: string) {
     });
     expect(emailRemoved.result.ok).toBe(true);
     expect(emailRemoved.result.value.response.member.id).toBe(otherMember.result.value.response.id);
-    expect(database.query("SELECT * FROM member").all()).toHaveLength(1);
+    expect(database.prepare("SELECT * FROM member").all()).toHaveLength(1);
 
     const revokedDenied = await run("removeMember", {
       body: {
@@ -189,7 +190,7 @@ async function capture(baseURL: string) {
     expect(revokedDenied.result.error.body.code).toBe("KEY_DISABLED");
 
     const keyRows = database
-      .query(
+      .prepare(
         "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id",
       )
       .all()
@@ -268,9 +269,9 @@ test("actual Source server selectors retain issued key and member ownership rela
     rightFinishedAt: right.finishedAt,
   };
 
-  if (Bun.env.COMPAT_SERVER_SELECTOR_CAPTURE) {
-    await Bun.write(
-      Bun.env.COMPAT_SERVER_SELECTOR_CAPTURE,
+  if (process.env.COMPAT_SERVER_SELECTOR_CAPTURE) {
+    await writeArtifact(
+      process.env.COMPAT_SERVER_SELECTOR_CAPTURE,
       JSON.stringify({ left: left.value, right: right.value, context }, null, 2),
     );
   }

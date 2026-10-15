@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -59,7 +61,7 @@ compatScenario(
     expect(blocked.headers["x-retry-after"]).toBe("1");
     const limited = await control();
     expect(limited.rows[0].count).toBe(2);
-    await Bun.sleep(1300);
+    await setTimeout(1300);
     const recovered = await request();
     expect(recovered.status).toBe(200);
     const after = await control();

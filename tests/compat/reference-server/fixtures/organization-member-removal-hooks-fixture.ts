@@ -1,10 +1,10 @@
+import { setTimeout } from "node:timers/promises";
 /** Application-owned callbacks over the unchanged pinned removal handler. */
-
-import type { Database } from "bun:sqlite";
 
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function organizationMemberRemovalHooksFixture(
   database: Database,
@@ -19,24 +19,24 @@ export function organizationMemberRemovalHooksFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
-        .query(
+        .prepare(
           "SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id",
         )
         .all(),
-      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+      users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
       sessions: database
-        .query(
+        .prepare(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
       teams: database
-        .query("SELECT id,organizationId,name,memberCount FROM team ORDER BY name,id")
+        .prepare("SELECT id,organizationId,name,memberCount FROM team ORDER BY name,id")
         .all(),
       teamMembers: database
-        .query(
+        .prepare(
           "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN user u ON u.id=m.userId ORDER BY t.name,u.email,m.id",
         )
         .all(),
@@ -161,7 +161,7 @@ export function organizationMemberRemovalHooksFixture(
 
       if (selected.startsWith("sql-")) {
         target = database
-          .query<{ id: string; userId: string; organizationId: string }, [string]>(
+          .prepare<[string], { id: string; userId: string; organizationId: string }>(
             "SELECT id,userId,organizationId FROM member WHERE id=?",
           )
           .get(String(body.memberId));
@@ -197,7 +197,7 @@ export function organizationMemberRemovalHooksFixture(
 
       if (target) {
         database
-          .query(
+          .prepare(
             "INSERT INTO __test_member_removal_guard (memberId,userId,organizationId) VALUES (?,?,?)",
           )
           .run(target.id, target.userId, target.organizationId);
@@ -241,7 +241,7 @@ export function organizationMemberRemovalHooksFixture(
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
       ) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return Response.json({ receipts, snapshot: snapshot() });
     },

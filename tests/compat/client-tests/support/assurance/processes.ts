@@ -1,8 +1,11 @@
 import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout } from "node:timers/promises";
 
 import { z } from "zod";
 
+import { serveFixture } from "../../../reference-server/http.ts";
+import { writeArtifact } from "../../../support/files.ts";
 import {
   activeChildren,
   CLIENT_ROOT,
@@ -32,9 +35,9 @@ async function freePort(): Promise<number> {
   for (;;) {
     const port = 10_000 + Math.floor(Math.random() * 20_000);
     if (assignedPorts.has(port)) continue;
-    let server: ReturnType<typeof Bun.serve>;
+    let server: Awaited<ReturnType<typeof serveFixture>>;
     try {
-      server = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response() });
+      server = await serveFixture({ hostname: "127.0.0.1", port, fetch: () => new Response() });
     } catch (error) {
       if ((error as { code?: string }).code === "EADDRINUSE") continue;
       throw error;
@@ -54,7 +57,7 @@ async function waitUntil(check: () => Promise<boolean>, exited: () => boolean, l
     if (await check()) {
       return;
     }
-    await Bun.sleep(100);
+    await setTimeout(100);
   }
   throw new Error(`${label} readiness timed out`);
 }
@@ -84,10 +87,9 @@ export async function startFixture(options: {
     options.rustExecutable
       ? [options.rustExecutable]
       : [
-          process.execPath,
-          "run",
+          "nub",
           ...(options.instrument
-            ? [`--preload=${join(CLIENT_ROOT, "support/assurance/coverage-preload.ts")}`]
+            ? [`--import=${join(CLIENT_ROOT, "support/assurance/coverage-preload.ts")}`]
             : []),
           "server.ts",
         ],
@@ -118,7 +120,7 @@ export async function startFixture(options: {
 
     if (child.exitCode === null) {
       child.kill("SIGTERM");
-      await Promise.race([child.exited, Bun.sleep(2000)]);
+      await Promise.race([child.exited, setTimeout(2000)]);
       if (child.exitCode === null) {
         child.kill("SIGKILL");
       }
@@ -274,8 +276,8 @@ export async function runSuite(options: {
   await mkdir(options.directory, { recursive: true });
   const eventsPath = join(options.directory, "events.jsonl");
   const before = await harnessDigest();
-  await Bun.write(eventsPath, "");
-  const output = await command([process.execPath, "test", ...options.paths, "--timeout", "60000"], {
+  await writeArtifact(eventsPath, "");
+  const output = await command(["nub", "exec", "vitest", "run", ...options.paths], {
     timeoutMs: options.timeoutMs ?? 1_800_000,
     env: {
       COMPAT_ASSURANCE_WIRE_MUTATION: undefined,
@@ -292,7 +294,7 @@ export async function runSuite(options: {
       COMPAT_ASSURANCE_RIGHT_BRIDGE: options.right.bridge,
     },
   });
-  await Bun.write(join(options.directory, "suite.log"), output.stdout + "\n" + output.stderr);
+  await writeArtifact(join(options.directory, "suite.log"), output.stdout + "\n" + output.stderr);
   const events = (await readFile(eventsPath, "utf8"))
     .split("\n")
     .filter(Boolean)

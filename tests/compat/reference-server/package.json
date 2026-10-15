@@ -3,12 +3,20 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [],
   "description": "Reference better-auth (TS) server for compatibility testing against better-auth-rs",
   "scripts": {
-    "start": "bun run server.ts"
+    "start": "nub server.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.7",
+    "@better-auth/core": "1.7.7",
+    "@better-auth/memory-adapter": "1.7.7",
+    "@simplewebauthn/server": "13.3.2",
+    "better-call": "1.4.0",
+    "fast-xml-parser": "5.11.2",
+    "jose": "6.2.12",
+    "zod": "4.6.5",
     "@better-auth/kysely-adapter": "1.7.7",
     "@better-auth/oauth-provider": "1.7.7",
     "@better-auth/passkey": "1.7.7",
@@ -19,6 +27,26 @@
     "better-auth": "1.7.7",
     "dns-packet": "5.6.1",
     "kysely": "0.29.5",
-    "xml-crypto": "6.3.3"
-  }
+    "xml-crypto": "6.3.3",
+    "@hono/node-server": "2.1.5",
+    "better-sqlite3": "13.0.3",
+    "pg": "8.23.1",
+    "undici": "8.5.0"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "nub",
+      "version": "^0.9.6",
+      "onFail": "ignore"
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "26.6.4",
+    "@types/pg": "8.20.0"
+  },
+  "packageManager": "nub@0.9.6"
 }

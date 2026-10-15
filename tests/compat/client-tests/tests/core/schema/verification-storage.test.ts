@@ -1,9 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { oneTimeTokenClient, twoFactorClient } from "better-auth/client/plugins";
 import { verifyPassword } from "better-auth/crypto";
+import { expect } from "vitest";
 
 import type { FixtureProfile } from "../../../support/profiles";
 import { authProfilePath } from "../../../support/profiles";

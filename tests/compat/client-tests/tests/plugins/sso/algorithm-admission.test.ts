@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
@@ -24,9 +25,10 @@ compatScenario(
       .map((raw) => raw.split(";")[0])
       .join("; ");
     const headers = { cookie };
-    const cert = await Bun.file(
+    const cert = await readFixtureFile(
       new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-    ).text();
+      "utf8",
+    );
     const input = {
       providerId: "algorithm-provider",
       issuer: "https://idp.example.test/entity",

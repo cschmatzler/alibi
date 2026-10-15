@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { SignJWT, importJWK } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -46,10 +47,11 @@ compatScenario(
     };
     const required = await create(true);
     const optional = await create(false);
-    const keys = (
-      await Bun.file(
+    const keys = JSON.parse(
+      await readFixtureFile(
         new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
-      ).json()
+        "utf8",
+      ),
     ).keys;
     const key = keys.find((key: any) => key.family === "Ed25519");
     const jkt = createHash("sha256")

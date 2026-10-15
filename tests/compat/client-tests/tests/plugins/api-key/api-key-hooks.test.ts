@@ -1,14 +1,13 @@
-import { expect } from "bun:test";
-
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
 type RecordValue = Record<string, any>;
 
 function object(value: unknown): RecordValue {
-  expect(value).toBeObject();
+  expect(value).toSatisfy((value) => value !== null && typeof value === "object");
   return value as RecordValue;
 }
 
@@ -70,7 +69,7 @@ async function create(
     }),
   );
   expect(key.referenceId).toBe(ownerId);
-  expect(key.key).toBeString();
+  expect(key.key).toBeTypeOf("string");
   expect(key.remaining).toBe(10);
 
   return key;
@@ -78,7 +77,7 @@ async function create(
 
 async function events(ctx: ScenarioContext) {
   const value = await control(ctx, "events");
-  expect(value).toBeArray();
+  expect(value).toSatisfy(Array.isArray);
   return value as RecordValue[];
 }
 

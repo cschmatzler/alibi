@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 
 import { betterAuth } from "better-auth";
 import { deviceAuthorization } from "better-auth/plugins";
+
+import { writeArtifact } from "../../support/files.ts";
 const origin = "http://localhost:43176";
 const options = {
   secret: "native-device-172-secret-at-least-32-characters",
@@ -111,7 +113,7 @@ await adapter.create({
 assert.equal((await call("/device", undefined, cookies[0], "EXPIRED")).body.error, "expired_token");
 assert.equal((await call("/device/token", token("expired-device"))).body.error, "expired_token");
 assert.equal(await row("expired-device"), null);
-await Bun.write("evidence/source-workflow.json", JSON.stringify(trace, null, 2));
+await writeArtifact("evidence/source-workflow.json", JSON.stringify(trace, null, 2));
 const retained = await call("/device/code", { client_id: "restart" });
 const restarted = betterAuth(options);
 assert.equal(
@@ -174,8 +176,11 @@ assert.equal(
   null,
 );
 effects.push({ missingUpdate, missingClaim, missingDecision, missingConsume, freshRecord: null });
-await Bun.write("evidence/source-restart-workflow.json", JSON.stringify(trace.slice(28), null, 2));
+await writeArtifact(
+  "evidence/source-restart-workflow.json",
+  JSON.stringify(trace.slice(28), null, 2),
+);
 
 effects.push({ restartLost: true, originalRetained: true });
-await Bun.write("evidence/source-record-effects.json", JSON.stringify(effects, null, 2));
+await writeArtifact("evidence/source-record-effects.json", JSON.stringify(effects, null, 2));
 console.log("Published 1.7.6 device workflow, consumption, expiry and restart loss passed");

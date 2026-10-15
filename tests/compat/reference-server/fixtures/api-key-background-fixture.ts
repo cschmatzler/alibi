@@ -1,9 +1,10 @@
-import type { Database } from "bun:sqlite";
+import { setTimeout } from "node:timers/promises";
 
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 /** Application integration; all auth operations use the unchanged pinned runtime. */
 export async function apiKeyBackgroundFixture(
@@ -266,7 +267,7 @@ export async function apiKeyBackgroundFixture(
       if (url.pathname === "/__test/api-key-background/state") {
         const usage = url.searchParams.get("usage") === "true";
         const rows = database
-          .query(
+          .prepare(
             `SELECT id,name,referenceId,configId,key,remaining,requestCount,expiresAt,createdAt,updatedAt,lastRequest,lastRefillAt${usage ? ",refillAmount,refillInterval,rateLimitEnabled,rateLimitTimeWindow,rateLimitMax" : ""} FROM apikey ORDER BY name`,
           )
           .all();
@@ -320,25 +321,25 @@ export async function apiKeyBackgroundFixture(
             if (lastAdmission === null) {
               throw new Error("actual cleanup receipt required");
             }
-            await Bun.sleep(Math.max(0, lastAdmission + 10020 - Date.now()));
+            await setTimeout(Math.max(0, lastAdmission + 10020 - Date.now()));
             break;
           case "remaining":
-            database.query("UPDATE apikey SET remaining=11 WHERE id=?").run(input.keyId);
+            database.prepare("UPDATE apikey SET remaining=11 WHERE id=?").run(input.keyId);
             break;
           case "quota":
             database
-              .query("UPDATE apikey SET remaining=? WHERE id=?")
+              .prepare("UPDATE apikey SET remaining=? WHERE id=?")
               .run(input.remaining, input.keyId);
             break;
           case "refill":
             database
-              .query(
+              .prepare(
                 "UPDATE apikey SET remaining=0,refillAmount=3,refillInterval=60000,lastRefillAt=? WHERE id=?",
               )
               .run(new Date(0).toISOString(), input.keyId);
             break;
           case "timestamps": {
-            if (!database.query("SELECT id FROM apikey WHERE id=?").get(input.keyId)) {
+            if (!database.prepare("SELECT id FROM apikey WHERE id=?").get(input.keyId)) {
               throw new Error("actual API key required");
             }
 
@@ -359,7 +360,7 @@ export async function apiKeyBackgroundFixture(
             }
 
             database
-              .query(
+              .prepare(
                 "UPDATE apikey SET createdAt=?,updatedAt=?,lastRequest=?,lastRefillAt=?,expiresAt=? WHERE id=?",
               )
               .run(...values, input.keyId);
@@ -367,7 +368,7 @@ export async function apiKeyBackgroundFixture(
           }
           case "phase-refill":
             database
-              .query(
+              .prepare(
                 "UPDATE apikey SET remaining=0,refillAmount=3,refillInterval=60000,lastRefillAt=?,lastRequest=NULL,requestCount=0,rateLimitEnabled=1,rateLimitMax=3,rateLimitTimeWindow=60000 WHERE id=?",
               )
               .run(new Date(0).toISOString(), input.keyId);
@@ -400,7 +401,7 @@ export async function apiKeyBackgroundFixture(
             break;
           case "expire":
             database
-              .query("UPDATE apikey SET expiresAt=? WHERE id=?")
+              .prepare("UPDATE apikey SET expiresAt=? WHERE id=?")
               .run(new Date(0).toISOString(), input.keyId);
             break;
           case "veto":

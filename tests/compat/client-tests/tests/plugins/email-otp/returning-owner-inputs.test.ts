@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { emailOTPClient, usernameClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";

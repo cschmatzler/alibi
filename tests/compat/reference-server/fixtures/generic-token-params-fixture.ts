@@ -3,12 +3,13 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { genericOAuth } from "better-auth/plugins";
 
-import assertionKeys from "../../fixtures/client-assertion-keys.json";
-export function genericTokenParamsFixture(base: BetterAuthOptions) {
+import assertionKeys from "../../fixtures/client-assertion-keys.json" with { type: "json" };
+import { serveFixture } from "../http.ts";
+export async function genericTokenParamsFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const userReceipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname === "/token") {
@@ -597,13 +598,13 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
       }
       if (p === "/__test/generic-token/orphan" && request.method === "POST") {
         const body = (await request.json()) as { accountId: string };
-        const db = base.database as import("bun:sqlite").Database;
+        const db = base.database as import("better-sqlite3").Database;
         const prior = db
-          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .prepare<[], { foreign_keys: number }>("PRAGMA foreign_keys")
           .get()!.foreign_keys;
         db.exec("PRAGMA foreign_keys=OFF");
         try {
-          db.query("UPDATE account SET userId='missing-owner' WHERE id=?").run(body.accountId);
+          db.prepare("UPDATE account SET userId='missing-owner' WHERE id=?").run(body.accountId);
         } finally {
           db.exec(`PRAGMA foreign_keys=${prior}`);
         }

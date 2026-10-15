@@ -1,14 +1,15 @@
-import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { bearer, oauthPopup, genericOAuth } from "better-auth/plugins";
 
+import { createDatabase } from "../sqlite.ts";
+
 export async function oauthPopupFixture(base: BetterAuthOptions) {
   const path = "/__test/profiles/oauth-popup/api/auth";
   const control = "/__test/oauth-popup";
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const options: BetterAuthOptions = {
     ...base,
     database,
@@ -61,8 +62,13 @@ export async function oauthPopupFixture(base: BetterAuthOptions) {
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
       if (url.pathname === `${control}/server-callback` && request.method === "POST") {
-        const input = await request.json() as { query: any; headers: Record<string,string> };
-        return auth.api.callbackOAuth({ params: { id: "gitlab" }, query: input.query, headers: new Headers(input.headers), asResponse: true });
+        const input = (await request.json()) as { query: any; headers: Record<string, string> };
+        return auth.api.callbackOAuth({
+          params: { id: "gitlab" },
+          query: input.query,
+          headers: new Headers(input.headers),
+          asResponse: true,
+        });
       }
       if (url.pathname === `${control}/server-start` && request.method === "POST") {
         const input = (await request.json()) as { query: any };

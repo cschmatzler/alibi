@@ -1,10 +1,11 @@
-import { expect } from "bun:test";
 import { mkdir } from "node:fs/promises";
 
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import {
   CertificateDevice,
@@ -49,7 +50,7 @@ async function physical(ctx: ScenarioContext, id: string) {
 async function retain(ctx: ScenarioContext, label: string, value: unknown) {
   if (process.env.COMPAT_OBSERVATIONS_DIR) {
     await mkdir(process.env.COMPAT_OBSERVATIONS_DIR, { recursive: true });
-    await Bun.write(
+    await writeArtifact(
       `${process.env.COMPAT_OBSERVATIONS_DIR}/raw-${new URL(ctx.baseURL).port}-${label}.json`,
       JSON.stringify(value, null, 2),
     );
@@ -144,7 +145,7 @@ for (const format of formats) {
         },
       });
       expect(options.error).toBeNull();
-      expect(challengeCookie).toStartWith("better-auth.ceremony-proof=");
+      expect(challengeCookie).toSatisfy((value) => value.startsWith("better-auth.ceremony-proof="));
       const device = new CertificateDevice(`certificate-${format}-accepted`);
       const proof = device.register(
         options.data,

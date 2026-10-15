@@ -1,10 +1,12 @@
-import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { jwt, signJWT } from "better-auth/plugins/jwt";
 import { compactVerify, CompactSign } from "jose";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
 import { compareValues, type ComparisonContext } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
@@ -51,13 +53,13 @@ async function source(delay: boolean) {
     },
   };
   let auth: ReturnType<typeof betterAuth>;
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
       const body = request.method === "POST" ? await request.clone().json() : undefined;
       if (delay && body?.operation === "sign") {
-        await Bun.sleep(1010 - (Date.now() % 1000));
+        await setTimeout(1010 - (Date.now() % 1000));
       }
       if (request.method === "GET") return Response.json({ events });
       const token = await signJWT({ context: await auth.$context } as any, {
@@ -104,7 +106,7 @@ async function source(delay: boolean) {
     expect(captured.events).toHaveLength(1);
     expect(captured.events[0].payload).toEqual(payload);
     expect(payload.iat).toBeNull();
-    expect(payload.exp).toBeNumber();
+    expect(payload.exp).toBeTypeOf("number");
     const window = traces[0]![requestWindow]!;
     expect(payload.exp).toBeGreaterThanOrEqual(Math.floor(window.startedAt / 1000) + 900);
     expect(payload.exp).toBeLessThanOrEqual(Math.floor(window.finishedAt / 1000) + 900);

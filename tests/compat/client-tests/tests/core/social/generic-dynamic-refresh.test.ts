@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -129,8 +131,8 @@ for (const item of cases) {
           index * (item.mode === "dynamic-error" || item.mode === "dynamic-custom" ? 1 : 2),
         );
         if (process.env.DYNAMIC_REFRESH_EVIDENCE_DIR) {
-          await Bun.write(
-            `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}-round-${index}.json`,
+          await writeArtifact(
+            `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}-round-${index}.json`,
             JSON.stringify(
               {
                 name,
@@ -213,8 +215,8 @@ for (const item of cases) {
       }
       const result = { before, denied: ctx.snapshot(denied), rounds };
       if (process.env.DYNAMIC_REFRESH_EVIDENCE_DIR) {
-        await Bun.write(
-          `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+        await writeArtifact(
+          `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
           JSON.stringify(
             { name, baseURL: ctx.baseURL, result, rawReceipts: await receipts(ctx) },
             null,

@@ -1,8 +1,7 @@
-import type { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createApiKeyHookFixture(
   database: Database,
@@ -69,7 +68,7 @@ export function createApiKeyHookFixture(
         const userId = url.searchParams.get("userId") ?? "";
         return Response.json({
           keys: database
-            .query(
+            .prepare(
               'SELECT id, "referenceId", "configId", remaining, "requestCount", enabled FROM apikey ORDER BY name',
             )
             .all()
@@ -78,7 +77,7 @@ export function createApiKeyHookFixture(
               enabled: !!(row as Record<string, unknown>).enabled,
             })),
           sessions: database
-            .query('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
+            .prepare('SELECT COUNT(*) AS count FROM session WHERE "userId" = ?')
             .get(userId),
         });
       }

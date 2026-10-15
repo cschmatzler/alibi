@@ -1,5 +1,9 @@
-import { expect, test } from "bun:test";
+import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+
+import { expect, test } from "vitest";
+const run = promisify(execFile);
 
 const fixture = fileURLToPath(
   new URL("../../reference-server/runtime-boundaries.mjs", import.meta.url),
@@ -17,13 +21,10 @@ test("actual pinned initialization captures telemetry gates, provider side effec
     "failure",
     "init-failure",
   ]) {
-    const child = Bun.spawn([process.execPath, fixture, mode], {
-      stdout: "pipe",
-      stderr: "pipe",
+    const { stdout, stderr } = await run("nub", [fixture, mode], {
       env: {
         ...process.env,
         NODE_ENV: "production",
-        BUN_ENV: "production",
         VITEST: "",
         TEST: "false",
         BETTER_AUTH_TELEMETRY: "false",
@@ -31,12 +32,7 @@ test("actual pinned initialization captures telemetry gates, provider side effec
         BETTER_AUTH_TELEMETRY_DEBUG: "false",
       },
     });
-    const [stdout, stderr, code] = await Promise.all([
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-      child.exited,
-    ]);
-    expect({ mode, code, stderr }).toEqual({ mode, code: 0, stderr: "" });
+    expect({ mode, stderr }).toEqual({ mode, stderr: "" });
 
     const receipt = JSON.parse(stdout.trim().split("\n").at(-1)!);
 
@@ -69,7 +65,7 @@ test("actual pinned initialization captures telemetry gates, provider side effec
       expect(init.payload.config.emailAndPassword.enabled).toBe(true);
       expect(init.payload.config.plugins).toEqual(["organization", "email-otp", "test-utils"]);
       expect(init.payload.config.socialProviders[0].id).toBe("github");
-      expect(init.payload.runtime.name).toBe("bun");
+      expect(init.payload.runtime.name).toBe("node");
       expect(init.payload.systemInfo.systemPlatform).toBe(process.platform);
       expect(ready.payload).toEqual({ ready: true });
       expect(ready.anonymousId).toBe(init.anonymousId);

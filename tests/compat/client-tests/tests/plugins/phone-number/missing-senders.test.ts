@@ -1,5 +1,4 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
@@ -56,7 +55,7 @@ compatScenario(
       phoneNumber,
     });
     expect(signup.error).toBeNull();
-    expect(signup.data?.user.id).toBeString();
+    expect(signup.data?.user.id).toBeTypeOf("string");
     const issued = await owner.phoneNumber.sendOtp({ phoneNumber });
     expect(issued.error).toBeNull();
     const enrollment = await readPhoneOtp(ctx, phoneNumber);

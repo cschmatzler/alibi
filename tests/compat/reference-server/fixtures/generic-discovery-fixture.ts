@@ -2,10 +2,12 @@ import { readFileSync } from "node:fs";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { genericOAuth } from "better-auth/plugins";
-export function genericDiscoveryFixture(base: BetterAuthOptions) {
+
+import { serveFixture } from "../http.ts";
+export async function genericDiscoveryFixture(base: BetterAuthOptions) {
   let control: Record<string, any> = {};
   const receipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request): Promise<Response> {
       const url = new URL(request.url);

@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 const HASH_SECRET = "managed-scim-credential-hmac-secret-32-chars";
@@ -55,7 +56,7 @@ compatScenario(
     expect(state.credentials).toHaveLength(1);
     expect(state.events).toHaveLength(2);
     const row = state.connections[0];
-      const stored = state.credentials[0];
+    const stored = state.credentials[0];
     expect(row.connectionId).toBe(connection.connectionId);
     expect(row.revision).toBe(2);
     expect(stored.connectionRecordId).toBe(row.id);

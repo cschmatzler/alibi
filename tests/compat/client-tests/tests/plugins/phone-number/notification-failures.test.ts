@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
@@ -35,13 +36,13 @@ compatScenario(
         const state = await control();
         if (predicate(state)) return state;
         if (Date.now() > deadline) throw new Error("Actual notification receipt did not arrive");
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
     };
     const settle = async <T>(promise: Promise<T>) =>
       Promise.race([
         promise,
-        Bun.sleep(5000).then(() => {
+        setTimeout(5000).then(() => {
           throw new Error("Phone HTTP request did not finish after callback gate");
         }),
       ]);

@@ -1,13 +1,13 @@
-/** Actual published hash policy, real HTTP range service and physical SQLite evidence. */
-
-import type { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+/** Actual published hash policy, real HTTP range service and physical SQLite evidence. */
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, emailOTP, phoneNumber } from "better-auth/plugins";
 import { haveIBeenPwned, isPasswordCompromised } from "better-auth/plugins/haveibeenpwned";
+import type { Database } from "better-sqlite3";
+
+import { serveFixture } from "../http.ts";
 
 export async function createCompromisedPasswordFixture(
   database: Database,
@@ -17,7 +17,7 @@ export async function createCompromisedPasswordFixture(
   const receipts: Record<string, unknown>[] = [];
   let hashFailure = false;
   let service = { body: "", status: 200, contentType: "text/plain" };
-  const range = Bun.serve({
+  const range = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {

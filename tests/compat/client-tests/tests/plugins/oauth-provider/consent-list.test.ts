@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario("Consent listing returns only the current users durable grants", async (ctx) => {

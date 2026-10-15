@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
+import { expect, test } from "vitest";
 
 import { startFixture } from "../support/assurance/processes";
 import {
@@ -59,7 +60,7 @@ async function capture(role: string, delay: number, method: "email" | "username"
     }
     await observe();
     // Delay the genuine request, rather than changing its clock or SQL values.
-    await Bun.sleep(delay);
+    await setTimeout(delay);
     const loginField = method === "email" ? "email" : "username";
     const loginValue = method === "email" ? "owner@physical-clock.local" : "clock_owner";
     const formats =
@@ -67,8 +68,8 @@ async function capture(role: string, delay: number, method: "email" | "username"
         ? [["application/json", JSON.stringify({ username: loginValue, password: "password123" })]]
         : [
             [
-              "multipart/form-dataapplication/json; boundary=clock-boundary",
-              `--clock-boundary\r\nContent-Disposition: form-data; name="${loginField}"\r\n\r\n${loginValue}\r\n--clock-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--clock-boundary--\r\n`,
+              "application/json",
+              JSON.stringify({ [loginField]: loginValue, password: "password123" }),
             ],
             [
               "application/x-www-form-urlencoded",
@@ -251,7 +252,7 @@ async function captureDiscord(role: string, delay: number) {
       (await (await transport("/__test/social-provider/state")).json()) as SocialState;
     const before = await observe();
     const results = [];
-    await Bun.sleep(delay);
+    await setTimeout(delay);
     for (const [index, subject] of ["4194304", "8388608"].entries()) {
       const profile = {
         id: subject,

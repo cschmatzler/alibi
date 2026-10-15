@@ -13,7 +13,7 @@
   {"id":"length-nan","keyLength":"NaN"},
   {"id":"length-negative","keyLength":-1},
   {"id":"length-negative-inf","keyLength":"-Infinity"},
-  {"id":"length-large-fraction","keyLength":32768.5},
+  {"id":"length-large-fraction","keyLength":32768.25},
   {"id":"custom-quarter","keyLength":0.25,"custom":true},
   {"id":"custom-inf","keyLength":"Infinity","custom":true},
   {"id":"custom-negative-inf","keyLength":"-Infinity","custom":true},

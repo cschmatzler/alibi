@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ESNext", "module": "Preserve", "moduleResolution": "Bundler",
-    "lib": ["ESNext", "DOM"], "types": ["bun"], "strict": true,
-    "noUncheckedIndexedAccess": true, "noEmit": true, "skipLibCheck": true
+    "lib": ["ESNext", "DOM"], "types": ["node"], "strict": true,
+    "noUncheckedIndexedAccess": true, "noEmit": true, "allowImportingTsExtensions": true, "skipLibCheck": true
   },
   "include": ["support/**/*.ts", "harness/**/*.ts", "tests/**/*.ts", "browser/**/*.ts", "environment/**/*.ts", "process-proofs/**/*.ts"]
 }

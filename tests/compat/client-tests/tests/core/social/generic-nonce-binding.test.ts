@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
 import { readFileSync } from "node:fs";
 
 import { importPKCS8, SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

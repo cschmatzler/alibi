@@ -27,7 +27,6 @@ process.env.BETTER_AUTH_TELEMETRY_ENDPOINT = mode === "no-endpoint" ? "" : endpo
 process.env.BETTER_AUTH_TELEMETRY = mode === "environment" ? "true" : "false";
 process.env.BETTER_AUTH_TELEMETRY_DEBUG = "false";
 process.env.NODE_ENV = mode === "test" ? "test" : "production";
-process.env.BUN_ENV = process.env.NODE_ENV;
 
 const { betterAuth } = await import("better-auth");
 const { memoryAdapter } = await import("better-auth/adapters/memory");

@@ -108,7 +108,7 @@ fn generate_openapi_spec(profile: OpenApiProfile) -> Result<String, String> {
     }
 
     let output_path = temp_output_path(profile);
-    let bun = Command::new("bun")
+    let nub = Command::new("nub")
         .arg("./generate-openapi.mjs")
         .arg("--profile")
         .arg(profile.as_str())
@@ -118,16 +118,16 @@ fn generate_openapi_spec(profile: OpenApiProfile) -> Result<String, String> {
         .output()
         .map_err(|e| {
             format!(
-                "failed to run bun for upstream OpenAPI generation: {e}. Install Bun and run `cd tests/compat/reference-server && bun install`."
+                "failed to run Nub for upstream OpenAPI generation: {e}. Install Nub and run `cd tests/compat/reference-server && nub install`."
             )
         })?;
 
-    if !bun.status.success() {
+    if !nub.status.success() {
         return Err(format!(
-            "failed to generate upstream OpenAPI profile `{}` via `tests/compat/reference-server/generate-openapi.mjs`.\nstdout:\n{}\nstderr:\n{}\nRun `cd tests/compat/reference-server && bun install` to refresh the pinned dependencies.",
+            "failed to generate upstream OpenAPI profile `{}` via `tests/compat/reference-server/generate-openapi.mjs`.\nstdout:\n{}\nstderr:\n{}\nRun `cd tests/compat/reference-server && nub install` to refresh the pinned dependencies.",
             profile.as_str(),
-            String::from_utf8_lossy(&bun.stdout).trim(),
-            String::from_utf8_lossy(&bun.stderr).trim()
+            String::from_utf8_lossy(&nub.stdout).trim(),
+            String::from_utf8_lossy(&nub.stderr).trim()
         ));
     }
 

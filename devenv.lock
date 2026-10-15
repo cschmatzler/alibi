@@ -96,6 +96,27 @@
         "type": "github"
       }
     },
+    "nub": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1790809683,
+        "narHash": "sha256-I+2bKFZvpZw7YR6xAi0htWIQL5AbWsK06RYKRzPjOnM=",
+        "owner": "nubjs",
+        "repo": "nub",
+        "rev": "fdf8d313125b4dfc15a5900477077876284aa5a3",
+        "type": "github"
+      },
+      "original": {
+        "owner": "nubjs",
+        "ref": "v0.9.6",
+        "repo": "nub",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "devenv": "devenv",
@@ -103,6 +124,7 @@
           "rust-style",
           "nixpkgs"
         ],
+        "nub": "nub",
         "rust-style": "rust-style"
       }
     },

@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

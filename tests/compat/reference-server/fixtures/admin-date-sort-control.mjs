@@ -1,5 +1,3 @@
-// Public admin sorting/paging control against published Better Auth 1.7.6.
-import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -7,7 +5,10 @@ import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin } from "better-auth/plugins/admin";
 
-const database = new Database(":memory:");
+// Public admin sorting/paging control against published Better Auth 1.7.6.
+import { createDatabase } from "../sqlite.ts";
+
+const database = createDatabase(":memory:");
 const secret = "numeric-admin-identity-secret-at-least-32";
 const options = {
   database,
@@ -28,7 +29,7 @@ for (const [id, day] of [
 ]) {
   const date = new Date(`2020-01-${String(day).padStart(2, "0")}T00:00:00Z`).toISOString();
   database
-    .query(
+    .prepare(
       "INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt,role,banned) VALUES (?,?,?,0,?,?,'user',0)",
     )
     .run(id, `User ${id}`, `id-${id}@identity.fixture.test`, date, date);
@@ -38,7 +39,7 @@ const snapshot = () =>
   Object.fromEntries(
     ["user", "account", "session"].map((table) => [
       table,
-      database.query(`SELECT * FROM ${table} ORDER BY id`).all(),
+      database.prepare(`SELECT * FROM ${table} ORDER BY id`).all(),
     ]),
   );
 const before = snapshot();

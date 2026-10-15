@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -30,7 +32,7 @@ compatScenario(
       );
       expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(before);
 
-      await Bun.sleep(1_500);
+      await setTimeout(1_500);
       const completed = await events(ctx);
       expect(completed).toEqual(
         profile === "captcha-turnstile" ? [] : [{ profile, kind: "bot-finished" }],

@@ -1,9 +1,8 @@
-/** Application adapter failures over the pinned, real SQL adapter. */
-import type { Database } from "bun:sqlite";
-
 import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { betterAuth } from "better-auth";
 import { deviceAuthorization } from "better-auth/plugins";
+/** Application adapter failures over the pinned, real SQL adapter. */
+import type { Database } from "better-sqlite3";
 
 export async function createSessionAdapterFailureFixture(
   base: Parameters<typeof betterAuth>[0],
@@ -31,7 +30,7 @@ export async function createSessionAdapterFailureFixture(
     releaseReject: () => {},
   };
   const actual = await createKyselyAdapter({ ...base, database });
-  if (!actual.kysely) throw new Error("real Bun Kysely adapter required");
+  if (!actual.kysely) throw new Error("real SQLite Kysely adapter required");
   const factory = kyselyAdapter(actual.kysely, { type: "sqlite" });
   function check(operation: string) {
     if (mode) events.push(operation);

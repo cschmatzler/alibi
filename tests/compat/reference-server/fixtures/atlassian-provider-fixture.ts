@@ -1,11 +1,13 @@
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** The unchanged published factory, redirecting only its fixed trusted HTTP destinations. */
-export function atlassianProviderFixture(base: BetterAuthOptions) {
+export async function atlassianProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -63,7 +65,7 @@ export function atlassianProviderFixture(base: BetterAuthOptions) {
       );
     }
 
-    return previousFetch(input, init);
+    return previousFetch(request);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 

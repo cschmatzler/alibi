@@ -1,7 +1,9 @@
 // Independent secp256k1/EIP-191 fixture for the Rust HTTP-handler test.
-// Run with Bun from this workspace; Better Auth remains pinned to 1.7.6.
+// Run with Nub from this workspace; Better Auth remains pinned to 1.7.6.
 import { secp256k1 } from "@noble/curves/secp256k1.js";
 import { keccak_256 } from "@noble/hashes/sha3.js";
+
+import { writeArtifact } from "../../support/files.ts";
 
 const secretKey = new Uint8Array(32);
 
@@ -43,7 +45,7 @@ const fixture = {
   digest: Buffer.from(hash).toString("hex"),
 };
 
-await Bun.write(
+await writeArtifact(
   new URL("../../../fixtures/siwe/eip191-noble-2.0.1.json", import.meta.url),
   `${JSON.stringify(fixture, null, 2)}\n`,
 );

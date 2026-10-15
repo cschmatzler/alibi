@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";
@@ -111,7 +110,7 @@ async function owned(ctx: ScenarioContext, values: Actor[]) {
   return Promise.all(values.map((actor) => ctx.readUserState({ userId: actor.user.id })));
 }
 
-// Eleven real password signups per runtime exceed Bun's default five-second budget.
+// Eleven real password signups per runtime need an extended test deadline.
 compatScenario(
   "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
   async (ctx) => {

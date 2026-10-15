@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "./scenario";
 /** Separate cookie-less HTTP requests let responses be compared as a multiset:
@@ -28,7 +28,7 @@ export async function raceOneTimeProof(ctx: ScenarioContext, path: string, json?
       for (const cookie of parsed) expect(cookie).toBeDefined();
       const principal = parsed.find((c) => c.key === "better-auth.session_token" && c.maxAge !== 0);
       if (principal) {
-        expect(body.token).toBeString();
+        expect(body.token).toBeTypeOf("string");
         const signature = createHmac("sha256", "compat-test-only-key-not-real-minimum-32chars")
           .update(body.token)
           .digest("base64");

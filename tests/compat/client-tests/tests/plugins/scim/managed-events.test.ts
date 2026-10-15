@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario("SCIM managed event history is ordered, domain scoped and bounded", async (ctx) => {

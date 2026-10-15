@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -65,7 +64,7 @@ compatScenario(
     });
     const foreignCurrent = await foreign.client.getSession();
     expect(foreignCurrent.data!.user.id).toBe(foreignSignup.data!.user.id);
-    expect(foreignSignup.data!.token).toBeString();
+    expect(foreignSignup.data!.token).toBeTypeOf("string");
     expect(foreignCurrent.data!.session.token).toBe(foreignSignup.data!.token!);
     const project = (state: any) => ({
       ...state,

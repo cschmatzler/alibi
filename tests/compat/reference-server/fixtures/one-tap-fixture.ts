@@ -1,10 +1,12 @@
+import { readFile as readFixtureFile } from "node:fs/promises";
+
 /** Actual pinned One Tap configuration profiles with a local Google JWKS transport. */
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { oneTap } from "better-auth/plugins";
 
-const jwks: unknown = await Bun.file(
-  new URL("../../../fixtures/one-tap/jwks.json", import.meta.url),
-).json();
+const jwks: unknown = JSON.parse(
+  await readFixtureFile(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url), "utf8"),
+);
 
 let jwksFetches = 0;
 

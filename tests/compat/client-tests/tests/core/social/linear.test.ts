@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -146,8 +146,8 @@ for (const mode of [
       expect(url.searchParams.get("response_type")).toBe("code");
       expect(url.searchParams.getAll("state")).toHaveLength(1);
       expect(url.searchParams.get("state")).not.toBe("stale");
-      expect(url.searchParams.has("code_challenge_method")).toBeFalse();
-      expect(url.searchParams.has("code_challenge")).toBeFalse();
+      expect(url.searchParams.has("code_challenge_method")).toBe(false);
+      expect(url.searchParams.has("code_challenge")).toBe(false);
       expect(url.searchParams.get("login_hint")).toBe("ignored@example.invalid");
       expect(url.searchParams.get("custom")).toBe("value with space");
       expect(url.searchParams.get("redirect_uri")).toBe(
@@ -562,7 +562,7 @@ compatScenario(
       .actor("linear", "social-linear-disabled-scope")
       .client.signIn.social({ provider: "linear" });
     expect(result.error).toBeNull();
-    expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
+    expect(new URL(result.data!.url!).searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
     return { result: ctx.snapshot(result), before, after: await state(ctx) };

@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
-
 import { decodeJwt, decodeProtectedHeader, importJWK, jwtVerify } from "jose";
+import { expect } from "vitest";
 
-import keys from "../../../../fixtures/client-assertion-keys.json";
+import keys from "../../../../fixtures/client-assertion-keys.json" with { type: "json" };
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 async function state(ctx: ScenarioContext) {
@@ -17,8 +18,8 @@ async function receipts(ctx: ScenarioContext): Promise<any[]> {
 }
 async function save(ctx: ScenarioContext, name: string, value: unknown) {
   if (process.env.CLOSE188_EVIDENCE_DIR) {
-    await Bun.write(
-      `${process.env.CLOSE188_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+    await writeArtifact(
+      `${process.env.CLOSE188_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, value, receipts: await receipts(ctx) }, null, 2),
     );
   }

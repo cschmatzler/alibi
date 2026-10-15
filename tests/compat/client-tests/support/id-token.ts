@@ -1,21 +1,24 @@
 // Fixture-signed ID tokens. The public half of the key is served as the
 // one-tap fixture JWKS, so OAuth providers that verify ID tokens share it.
 import { sign } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { CompactSign, importPKCS8 } from "jose";
 
 export const issuedAt = Math.floor(Date.now() / 1000);
 
-const privatePem = await Bun.file(
+const privatePem = await readFixtureFile(
   new URL("../../../fixtures/one-tap/private-key.pem", import.meta.url),
-).text();
+  "utf8",
+);
 
 const privateKey = await importPKCS8(privatePem, "RS256");
 
 const wrongKey = await importPKCS8(
-  await Bun.file(
+  await readFixtureFile(
     new URL("../../../fixtures/one-tap/wrong-private-key.pem", import.meta.url),
-  ).text(),
+    "utf8",
+  ),
   "RS256",
 );
 

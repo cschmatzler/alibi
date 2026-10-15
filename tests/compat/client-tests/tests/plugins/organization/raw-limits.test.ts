@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import type { FixtureProfile } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

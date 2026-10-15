@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { adminClient, siweClient, twoFactorClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";

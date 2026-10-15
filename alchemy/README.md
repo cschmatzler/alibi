@@ -4,9 +4,9 @@
 
 ```sh
 devenv shell
-bun install
-bun run docs:plan
-bun run docs:deploy
+nub install
+nub run docs:plan
+nub run docs:deploy
 ```
 
 Edit the encrypted credentials directly with `sops secrets.production.sops.json` inside the development shell. Cloudflare needs Zone Read, DNS Edit, and state-store access; Railway needs an account token. Domain and zone settings are in `.env.production`.

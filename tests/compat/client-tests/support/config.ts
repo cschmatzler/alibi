@@ -1,3 +1,5 @@
+import { readFile as readFixtureFile } from "node:fs/promises";
+
 import { z } from "zod";
 
 export const TS_BASE_URL = process.env.AUTH_BASE_URL_TS || "http://localhost:3100";
@@ -8,7 +10,7 @@ export const LOCAL_NO_PROXY = "localhost,127.0.0.1";
 export const UPSTREAM_VERSION: string = z
   .object({ upstreamVersion: z.string().regex(/^\d+\.\d+\.\d+$/) })
   .parse(
-    await Bun.file(new URL("../../capabilities.json", import.meta.url)).json(),
+    JSON.parse(await readFixtureFile(new URL("../../capabilities.json", import.meta.url), "utf8")),
   ).upstreamVersion;
 
 const healthSchema = z.object({

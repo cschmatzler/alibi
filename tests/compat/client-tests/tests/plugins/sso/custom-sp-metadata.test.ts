@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 import { inflateRawSync } from "node:zlib";
 
 import { XMLParser } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -29,9 +30,10 @@ compatScenario(
     });
     expect(owner.status).toBe(200);
     const headers = { cookie: cookies(owner) };
-    const cert = await Bun.file(
+    const cert = await readFixtureFile(
       new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-    ).text();
+      "utf8",
+    );
     const acs = `${ctx.baseURL}/api/auth/sso/saml2/sp/acs/custom-sp-provider?from=metadata`;
     const metadata = `<md:EntityDescriptor xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://sp.example.test/from-xml"><md:SPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol" WantAssertionsSigned="true" AuthnRequestsSigned="false"><md:NameIDFormat>urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress</md:NameIDFormat><md:AssertionConsumerService index="0" Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="${acs}"/></md:SPSSODescriptor></md:EntityDescriptor>`;
     const registration = {

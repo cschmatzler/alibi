@@ -6,14 +6,14 @@
   "scripts": {
     "test": "devenv shell -- ./scripts/check.sh",
     "test:compat": "devenv shell -- ./scripts/compat.sh",
-    "docs:dev": "bun --cwd docs dev",
-    "docs:build": "bun --cwd docs build",
-    "docs:check": "bun --cwd docs check",
-    "docs:preview": "bun --cwd docs preview",
+    "docs:dev": "nub --cwd docs run dev",
+    "docs:build": "nub --cwd docs run build",
+    "docs:check": "nub --cwd docs run check",
+    "docs:preview": "nub --cwd docs run preview",
     "docs:infra:check": "tsc --project alchemy/tsconfig.json",
-    "docs:plan": "APP_ENV=production bun --bun varlock run -- alchemy plan alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
-    "docs:deploy": "APP_ENV=production bun --bun varlock run -- alchemy deploy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
-    "docs:destroy": "APP_ENV=production bun --bun varlock run -- alchemy destroy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs"
+    "docs:plan": "APP_ENV=production nub exec varlock run -- alchemy plan alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
+    "docs:deploy": "APP_ENV=production nub exec varlock run -- alchemy deploy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
+    "docs:destroy": "APP_ENV=production nub exec varlock run -- alchemy destroy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs"
   },
   "keywords": [],
   "author": "",
@@ -24,14 +24,11 @@
   "patchedDependencies": {
     "alchemy@2.0.0-beta.80": "patches/alchemy@2.0.0-beta.80.patch"
   },
-  "packageManager": "bun@1.4.2",
   "private": true,
   "devDependencies": {
     "@distilled.cloud/core": "1.0.0-rc.13",
     "@distilled.cloud/railway": "1.0.0-rc.13",
-    "@effect/platform-bun": "4.0.0",
     "@effect/platform-node": "4.0.0",
-    "@types/bun": "1.4.2",
     "@types/node": "26.6.4",
     "alchemy": "2.0.0-beta.80",
     "effect": "4.0.0",
@@ -39,5 +36,16 @@
     "typescript": "7.0.2",
     "varlock": "1.21.1"
   },
-  "type": "module"
+  "type": "module",
+  "devEngines": {
+    "packageManager": {
+      "name": "nub",
+      "version": "^0.9.6",
+      "onFail": "ignore"
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "nub@0.9.6"
 }

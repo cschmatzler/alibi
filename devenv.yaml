@@ -3,3 +3,8 @@ inputs:
     url: github:cschmatzler/rust
   nixpkgs:
     follows: rust-style/nixpkgs
+  nub:
+    url: github:nubjs/nub/v0.9.6
+    inputs:
+      nixpkgs:
+        follows: nixpkgs

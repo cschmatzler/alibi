@@ -1,9 +1,11 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { importPKCS8, SignJWT } from "jose";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -43,8 +45,8 @@ async function evidence(
 ) {
   const rows = await receipts(ctx);
   if (process.env.DISCOVERY_EVIDENCE_DIR) {
-    await Bun.write(
-      `${process.env.DISCOVERY_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+    await writeArtifact(
+      `${process.env.DISCOVERY_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, result, receipts: rows, rawStateRows }, null, 2),
     );
   }

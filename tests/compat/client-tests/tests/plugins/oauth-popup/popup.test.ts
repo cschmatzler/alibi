@@ -1,22 +1,25 @@
-import { expect } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
+import { build } from "esbuild";
 import { chromium } from "playwright";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { compatScenario } from "../../../support/scenario";
 
 const PATH = "/__test/profiles/oauth-popup/api/auth";
 const CONTROL = "/__test/oauth-popup";
 const APP = "http://app.fixture.test";
 const secret = "compat-test-only-key-not-real-minimum-32chars";
-const bundle = await Bun.build({
-  entrypoints: [new URL("./browser-client.ts", import.meta.url).pathname],
-  target: "browser",
-  minify: false,
+const bundle = await build({
+  entryPoints: [new URL("./browser-client.ts", import.meta.url).pathname],
+  platform: "browser",
+  bundle: true,
+  write: false,
+  format: "esm",
 });
-if (!bundle.success) throw new Error(`Popup client bundling failed: ${bundle.logs}`);
-const clientJS = await bundle.outputs[0]!.text();
+const clientJS = bundle.outputFiles[0]!.text;
 function payload(html: string) {
   const raw = html.match(
     /<script type="application\/json" id="better-auth-oauth-popup">([^]*?)<\/script>/,
@@ -465,7 +468,7 @@ compatScenario(
     } finally {
       const directory = process.env.POPUP_EVIDENCE_DIR || "/tmp/popup132-evidence";
       await mkdir(directory, { recursive: true });
-      await Bun.write(
+      await writeArtifact(
         `${directory}/${base.includes(":3100") ? "source" : base.replace(/\W/g, "_")}-raw.json`,
         JSON.stringify(raw, null, 2),
       );

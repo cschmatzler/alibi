@@ -8,7 +8,8 @@
   imports = [ inputs.rust-style.devenvModules.default ];
 
   packages = [
-    pkgs.bun
+    inputs.nub.packages.${pkgs.stdenv.hostPlatform.system}.default
+    pkgs.nodejs_24
     pkgs.sops
     pkgs.pkg-config
     pkgs.openssl

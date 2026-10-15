@@ -1,5 +1,4 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";

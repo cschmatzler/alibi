@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -36,7 +38,7 @@ for (const mode of ["compact", "jwt", "deferred"] as const) {
       );
       expect(immediate.error).toBeNull();
       expect(cache(immediateCookies)).toBeUndefined();
-      await Bun.sleep(1800);
+      await setTimeout(1800);
       let renewedCookies: string[] = [];
       const renewed = await actor.client.getSession(
         { query: { disableRefresh: true } },

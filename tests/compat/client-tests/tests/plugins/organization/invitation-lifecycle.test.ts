@@ -1,7 +1,9 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -42,7 +44,7 @@ async function state(ctx: ScenarioContext, wait = false): Promise<State> {
     for (const member of snapshot.teamMembers) {
       if (typeof member.membershipKey === "string") {
         expect(member.membershipKey).toBe(
-          new Bun.CryptoHasher("sha256")
+          createFixtureHash("sha256")
             .update(JSON.stringify([member.teamId, member.userId]))
             .digest("base64url"),
         );
@@ -386,7 +388,7 @@ for (const mode of ["record", "delivery-start-error", "delivery-end-internal"] a
     await configure(ctx, mode);
     const before = await state(ctx);
     // Preserve actual time passage: renewed expiry must differ from the original.
-    await Bun.sleep(20);
+    await setTimeout(20);
     const resent = await s.owner.client.organization.inviteMember({
       ...invitationBody(s),
       role: "admin",

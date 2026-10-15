@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];

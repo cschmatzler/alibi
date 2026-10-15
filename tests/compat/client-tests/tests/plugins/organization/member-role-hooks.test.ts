@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";

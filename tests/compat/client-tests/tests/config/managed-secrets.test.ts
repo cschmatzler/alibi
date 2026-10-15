@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient, jwtClient } from "better-auth/client/plugins";
@@ -11,6 +11,7 @@ import {
   makeSignature,
 } from "better-auth/crypto";
 import { decodeProtectedHeader, type JWK } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
@@ -639,7 +640,7 @@ compatScenario(
     expect(signup.error).toBeNull();
     const first = await owner.client.token();
     expect(first.error).toBeNull();
-    await Bun.sleep(1100);
+    await setTimeout(1100);
     const publicOld = await owner.client.jwks();
     expect(publicOld.error).toBeNull();
     const proofOld = await verifyWithOfficialJose(

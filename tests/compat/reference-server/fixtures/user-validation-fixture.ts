@@ -1,5 +1,4 @@
-/** Trusted application policy; all receipts originate in the pinned runtime. */
-import { Database } from "bun:sqlite";
+import { setTimeout } from "node:timers/promises";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
@@ -7,6 +6,8 @@ import { hashPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, anonymous, emailOTP, magicLink, oneTap, phoneNumber } from "better-auth/plugins";
 import { siwe } from "better-auth/plugins/siwe";
+/** Trusted application policy; all receipts originate in the pinned runtime. */
+import Database from "better-sqlite3";
 
 import { verifyFixtureEip191 } from "./siwe-fixture";
 
@@ -282,7 +283,7 @@ export async function createUserValidationFixture(database: Database, shared: Be
               { status: 408 },
             );
           }
-          await Bun.sleep(5);
+          await setTimeout(5);
         }
         return Response.json({ events });
       }

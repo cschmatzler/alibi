@@ -2,23 +2,26 @@
   "name": "better-auth-client-tests",
   "private": true,
   "type": "module",
+  "workspaces": [],
   "scripts": {
-    "assurance": "bun support/assurance/cli.ts",
-    "assurance:inventory": "bun support/assurance/cli.ts inventory",
-    "assurance:mutate": "bun support/assurance/cli.ts mutate",
-    "assurance:generate": "bun support/assurance/cli.ts generate",
-    "assurance:report": "bun support/assurance/cli.ts report",
-    "test": "bun test tests",
+    "assurance": "nub support/assurance/cli.ts",
+    "assurance:inventory": "nub support/assurance/cli.ts inventory",
+    "assurance:mutate": "nub support/assurance/cli.ts mutate",
+    "assurance:generate": "nub support/assurance/cli.ts generate",
+    "assurance:report": "nub support/assurance/cli.ts report",
+    "test": "nub exec vitest run tests",
     "typecheck": "tsc --noEmit",
     "format": "cd .. && oxfmt client-tests reference-server",
     "format:check": "cd .. && oxfmt --check client-tests reference-server",
     "lint": "cd .. && oxlint client-tests reference-server",
-    "test:harness": "bun test harness",
-    "test:browser": "bun test browser",
+    "test:harness": "nub exec vitest run harness",
+    "test:browser": "nub exec vitest run browser",
     "test:environment": "./run-against-both.sh environment"
   },
   "dependencies": {
     "@better-auth/api-key": "1.7.7",
+    "@better-auth/core": "1.7.7",
+    "@noble/ciphers": "2.4.0",
     "@better-auth/passkey": "1.7.7",
     "@levischuck/tiny-cbor": "0.3.6",
     "@noble/curves": "2.0.1",
@@ -30,13 +33,30 @@
   },
   "devDependencies": {
     "@babel/parser": "7.29.9",
-    "@types/bun": "1.4.2",
     "@types/istanbul-lib-instrument": "1.7.8",
     "fast-xml-parser": "5.11.2",
     "istanbul-lib-instrument": "6.0.3",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
     "playwright": "1.63.0",
-    "typescript": "7.0.2"
-  }
+    "typescript": "7.0.2",
+    "@types/node": "26.6.4",
+    "@types/better-sqlite3": "7.6.13",
+    "better-sqlite3": "13.0.3",
+    "vitest": "5.0.4",
+    "esbuild": "0.28.2",
+    "linkedom": "0.18.12",
+    "yaml": "2.9.1"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "nub",
+      "version": "^0.9.6",
+      "onFail": "ignore"
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "nub@0.9.6"
 }

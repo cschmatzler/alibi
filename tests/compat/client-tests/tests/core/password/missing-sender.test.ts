@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -67,7 +67,7 @@ compatScenario(
     const verification = await ctx.readVerificationState({
       identifier: `reset-password:${proof.token}`,
     });
-    expect(verification).toBeArray();
+    expect(verification).toSatisfy(Array.isArray);
     expect(verification).toHaveLength(1);
     expect((verification as { identifier: string }[])[0]!.identifier).toBe(
       `reset-password:${proof.token}`,

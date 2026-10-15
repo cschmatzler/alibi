@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -485,8 +484,8 @@ compatScenario(
     });
     expect(invalidMethod.status).toBe(400);
     expect(invalidMethod.body).toMatchObject({ code: "VALIDATION_ERROR" });
-    expect(z.object({ message: z.string() }).parse(invalidMethod.body).message).toStartWith(
-      "[body.method]",
+    expect(z.object({ message: z.string() }).parse(invalidMethod.body).message).toSatisfy((value) =>
+      value.startsWith("[body.method]"),
     );
 
     const nullIssuer = await body(ctx, profile, "/two-factor/enable", {

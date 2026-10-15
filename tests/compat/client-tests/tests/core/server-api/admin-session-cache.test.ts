@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";

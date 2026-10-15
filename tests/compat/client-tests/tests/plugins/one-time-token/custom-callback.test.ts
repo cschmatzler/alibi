@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { oneTimeTokenClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
@@ -163,7 +163,7 @@ compatScenario(
       after,
     };
     if (process.env.OTT210_PROOF_DIR) {
-      await Bun.write(
+      await writeArtifact(
         `${process.env.OTT210_PROOF_DIR}/${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(result, null, 2),
       );

@@ -1,5 +1,3 @@
-import { expect } from "bun:test";
-
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import {
@@ -12,6 +10,7 @@ import {
   usernameClient,
 } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { Authenticator } from "../../../support/authenticator";

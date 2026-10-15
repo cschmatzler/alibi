@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "../../../support/scenario";
 export async function mappingAdmissionFlow(ctx: ScenarioContext, saml = false, scopes = false) {
@@ -49,9 +50,10 @@ export async function mappingAdmissionFlow(ctx: ScenarioContext, saml = false, s
   const config: Record<string, any> = saml
     ? {
         entryPoint: "https://idp.example.test/sso",
-        cert: await Bun.file(
+        cert: await readFixtureFile(
           new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
         idpMetadata: { entityID: "https://idp.example.test/entity" },
         mapping: {
           email: "mail",

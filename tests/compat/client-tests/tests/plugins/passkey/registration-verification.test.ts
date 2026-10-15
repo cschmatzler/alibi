@@ -1,9 +1,8 @@
-import { expect } from "bun:test";
-
 import { passkeyClient } from "@better-auth/passkey/client";
 import { type CBORType, decodeCBOR, decodePartialCBOR, encodeCBOR } from "@levischuck/tiny-cbor";
 import { createAuthClient } from "better-auth/client";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { Authenticator } from "../../../support/authenticator";

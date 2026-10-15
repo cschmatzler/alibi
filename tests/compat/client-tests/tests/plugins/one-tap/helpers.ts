@@ -1,12 +1,12 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { oneTapClient } from "better-auth/client/plugins";
 import { symmetricDecodeJWT } from "better-auth/crypto";
 import { decodeProtectedHeader } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { type ScenarioContext } from "../../../support/scenario";
 
@@ -153,7 +153,7 @@ export async function oneTap(
           }
 
           if (process.env.COMPAT_OBSERVATIONS_DIR && accountCookie) {
-            await Bun.write(
+            await writeArtifact(
               `${process.env.COMPAT_OBSERVATIONS_DIR}/account-raw-${new URL(ctx.baseURL).port}-${Date.now()}.json`,
               JSON.stringify({ rawCookies, accountCookie }, null, 2),
             );

@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { splitSetCookieHeader } from "better-auth/cookies";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { readUserState } from "../../../support/verification";

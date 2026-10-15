@@ -1,11 +1,11 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
@@ -13,7 +13,7 @@ type Data = Record<string, any>;
 
 async function capture(baseURL: string) {
   const startedAt = Date.now();
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const auth = betterAuth({
     baseURL,
     secret: "sqlite-key-harness-application-secret32",
@@ -60,7 +60,7 @@ async function capture(baseURL: string) {
       headers: new Headers({ cookie }),
     });
     const rows = database
-      .query(
+      .prepare(
         "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id",
       )
       .all()
@@ -89,13 +89,13 @@ async function capture(baseURL: string) {
       expect(key.key).toMatch(/^😀[A-Za-z]{16}$/);
       expect(stored.referenceId).toBe(key.referenceId);
       expect(stored.key).toBe(createHash("sha256").update(key.key).digest("base64url"));
-      expect(stored.startHex).toBe("EDA0BD");
+      expect(stored.startHex).toBe("EFBFBD");
       expect(stored.startType).toBe("text");
-      expect(stored.start).toBe("���");
+      expect(stored.start).toBe("�");
       expect(key.start).toBe(stored.start);
     }
 
-    expect(publicRead.start).toBe("���");
+    expect(publicRead.start).toBe("�");
     expect(publicRead.id).toBe(issued.id);
     expect(issued.key).not.toBe(foreignIssued.key);
 
@@ -183,7 +183,7 @@ test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback an
     },
     {
       mutate: (value) => {
-        ownerRow(value).start = "�";
+        ownerRow(value).start = "���";
       },
       path: ownerPath("start"),
       reason: "SQLite API-key text readback disagrees with its actual bytes",
@@ -198,7 +198,7 @@ test("actual Source API-key SQLite receipts derive hashes UTF16 cuts readback an
     },
     {
       mutate: (value) => {
-        value.publicRead.start = "�";
+        value.publicRead.start = "���";
       },
       path: () => "publicRead.start",
       reason: "API key stored-prefix relationship differs",

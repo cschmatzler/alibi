@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -65,7 +66,7 @@ function protectKeys<T extends z.infer<typeof stateSchema>>(state: T) {
     for (const member of snapshot.teamMembers) {
       if (typeof member.membershipKey === "string") {
         expect(member.membershipKey).toBe(
-          new Bun.CryptoHasher("sha256")
+          createFixtureHash("sha256")
             .update(JSON.stringify([member.teamId, member.userId]))
             .digest("base64url"),
         );

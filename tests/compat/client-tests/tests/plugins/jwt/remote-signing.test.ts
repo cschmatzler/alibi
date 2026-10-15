@@ -1,8 +1,7 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { compactVerify, jwtVerify } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -161,7 +160,7 @@ for (const item of cases) {
         // so the two runs cannot disagree across a second boundary.
         const issuedTo = Math.ceil(Date.now() / 1000);
         for (const payload of [event.payload, verified.payload] as Record<string, unknown>[]) {
-          expect(payload.exp).toBeNumber();
+          expect(payload.exp).toBeTypeOf("number");
           const lifetime = (payload.exp as number) - issuedFrom;
           expect(lifetime).toBeGreaterThanOrEqual(900);
           expect(lifetime).toBeLessThanOrEqual(issuedTo - issuedFrom + 900);
@@ -324,7 +323,7 @@ compatScenario(
       expect(payload.iat).toEqual({ $undefined: true });
       expect(payload.iss).toBe(ctx.baseURL);
       expect(payload.aud).toBe(ctx.baseURL);
-      expect(payload.exp).toBeNumber();
+      expect(payload.exp).toBeTypeOf("number");
       expect(Number.isInteger(payload.exp)).toBe(true);
       expect(payload.exp as number).toBeGreaterThanOrEqual(issuedFrom + 900);
       expect(payload.exp as number).toBeLessThanOrEqual(issuedTo + 900);

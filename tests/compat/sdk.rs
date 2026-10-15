@@ -118,8 +118,8 @@ fn start_reference_server(
     test_flag: &str,
     proxy_environment: bool,
 ) -> ManagedChild {
-    let child = Command::new("bun")
-        .args(["run", "server.ts"])
+    let child = Command::new("nub")
+        .arg("server.ts")
         .current_dir(project_root().join("tests/compat/reference-server"))
         // The process owner deliberately distinguishes vendor receiver, configured
         // auth base, and production skip URL. Keep these inputs out of other suites.
@@ -129,14 +129,13 @@ fn start_reference_server(
         ]).into_iter().flatten())
         .env("PORT", port.to_string())
         .env("NODE_ENV", node_env)
-        .env("BUN_ENV", node_env)
-        .env("TEST", test_flag)
+                .env("TEST", test_flag)
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
-        .unwrap_or_else(|error| panic!("failed to start Bun reference server: {error}"));
+        .unwrap_or_else(|error| panic!("failed to start Nub reference server: {error}"));
 
     ManagedChild::new("ts-reference", child)
 }
@@ -219,8 +218,7 @@ fn start_rust_compat_server(
         ]))
         .env("PORT", port.to_string())
         .env("NODE_ENV", node_env)
-        .env("BUN_ENV", node_env)
-        .env("TEST", test_flag)
+                .env("TEST", test_flag)
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .stdout(Stdio::inherit())
@@ -248,7 +246,7 @@ fn reset_compat_evidence() {
     }
 }
 
-fn run_bun_suite(
+fn run_nub_suite(
     paths: &[&str],
     ts_port: u16,
     rust_port: u16,
@@ -257,8 +255,8 @@ fn run_bun_suite(
     rust_server: &mut ManagedChild,
 ) {
     let started = std::time::Instant::now();
-    let output = Command::new("bun")
-        .arg("test")
+    let output = Command::new("nub")
+        .args(["exec", "vitest", "run"])
         .args(paths)
         .env("COMPAT_COVERAGE", if coverage { "1" } else { "0" })
         .current_dir(project_root().join("tests/compat/client-tests"))
@@ -270,7 +268,7 @@ fn run_bun_suite(
         .env("NO_PROXY", "localhost,127.0.0.1")
         .env("no_proxy", "localhost,127.0.0.1")
         .output()
-        .unwrap_or_else(|error| panic!("failed to run Bun compatibility suite: {error}"));
+        .unwrap_or_else(|error| panic!("failed to run Nub compatibility suite: {error}"));
 
     drop(write!(
         std::io::stdout().lock(),
@@ -290,7 +288,7 @@ fn run_bun_suite(
     ));
     if !output.status.success() {
         panic!(
-            "Bun compatibility suite failed for {paths:?}; fixture exit states: TS={:?}, Rust={:?}; diagnostics printed above",
+            "Nub compatibility suite failed for {paths:?}; fixture exit states: TS={:?}, Rust={:?}; diagnostics printed above",
             ts_server.try_wait(),
             rust_server.try_wait()
         );
@@ -298,8 +296,8 @@ fn run_bun_suite(
 }
 
 fn check_compat_evidence(inventory_only: bool) {
-    let mut command = Command::new("bun");
-    _ = command.args(["run", "support/check-coverage.ts"]);
+    let mut command = Command::new("nub");
+    _ = command.arg("support/check-coverage.ts");
     if inventory_only {
         _ = command.arg("--inventory-only");
     }
@@ -524,7 +522,7 @@ async fn run_client_compat_in_environment(
         loop {
             let next = work.lock().expect("scenario work queue").pop_front();
             let Some(path) = next else { break };
-            run_bun_suite(
+            run_nub_suite(
                 &[&path],
                 ts_port,
                 rust_port,
@@ -534,7 +532,7 @@ async fn run_client_compat_in_environment(
             );
         }
     } else {
-        run_bun_suite(
+        run_nub_suite(
             paths,
             ts_port,
             rust_port,

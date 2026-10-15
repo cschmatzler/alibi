@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { readUserState } from "../../../support/verification";
@@ -23,7 +25,7 @@ compatScenario(
       const deadline = Date.now() + milliseconds;
       while (Date.now() < deadline) {
         if (await predicate()) return true;
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return false;
     };
@@ -90,7 +92,7 @@ compatScenario(
     await control("release");
     const failed = await Promise.race([
       pending,
-      Bun.sleep(5000).then(() => {
+      setTimeout(5000).then(() => {
         throw new Error(
           "Sibling revocation did not complete after releasing the real adapter gate",
         );

@@ -1,9 +1,13 @@
 import { readFileSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { relative } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { FileCoverageData } from "istanbul-lib-coverage";
 import { createInstrumenter } from "istanbul-lib-instrument";
 
+import { setRequestScope } from "../../../reference-server/http";
+import { serveFixture } from "../../../reference-server/http.ts";
 import { digest, packageRoots, readJSON, upstreamPin, writeJSON } from "./common";
 import { CoverageScope } from "./coverage-scope";
 import type { Inventory } from "./inventory";
@@ -76,48 +80,49 @@ const sourceFilter = new RegExp(
   `^(?:${roots.map((root) => root.root.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})/.*\\.mjs$`,
 );
 
-Bun.plugin({
-  name: "pinned-upstream-coverage",
-  setup(build) {
-    build.onLoad({ filter: sourceFilter }, ({ path }) => {
-      const root = roots.find((root) => path.startsWith(root.root + "/"));
+registerHooks({
+  load(url, context, nextLoad) {
+    const result = nextLoad(url, context);
+    if (!url.startsWith("file:")) return result;
+    const path = fileURLToPath(url);
+    if (!sourceFilter.test(path)) return result;
+    const root = roots.find((root) => path.startsWith(root.root + "/"));
 
-      if (!root) {
-        throw new Error(`Unexpected oracle module: ${path}`);
+    if (!root) {
+      throw new Error(`Unexpected oracle module: ${path}`);
+    }
+
+    const id = `npm:${root.name}/${relative(root.root, path).replaceAll("\\", "/")}`;
+    const source = expected.get(id);
+    const text = readFileSync(path, "utf8");
+
+    if (!source || digest(text) !== source.sha256) {
+      throw new Error(`Oracle source changed after inventory: ${id}`);
+    }
+
+    let contents = text;
+
+    if (mutation?.source === id) {
+      if (
+        source.sha256 !== mutation.sourceHash ||
+        text.slice(mutation.start, mutation.end) !== mutation.original
+      ) {
+        throw new Error("Mutation source anchor changed");
       }
+      contents =
+        text.slice(0, mutation.start) +
+        `(globalThis.__compatMutationHits++, (${mutation.replacement}))` +
+        text.slice(mutation.end);
+    }
 
-      const id = `npm:${root.name}/${relative(root.root, path).replaceAll("\\", "/")}`;
-      const source = expected.get(id);
-      const text = readFileSync(path, "utf8");
-
-      if (!source || digest(text) !== source.sha256) {
-        throw new Error(`Oracle source changed after inventory: ${id}`);
-      }
-
-      let contents = text;
-
-      if (mutation?.source === id) {
-        if (
-          source.sha256 !== mutation.sourceHash ||
-          text.slice(mutation.start, mutation.end) !== mutation.original
-        ) {
-          throw new Error("Mutation source anchor changed");
-        }
-        contents =
-          text.slice(0, mutation.start) +
-          `(globalThis.__compatMutationHits++, (${mutation.replacement}))` +
-          text.slice(mutation.end);
-      }
-
-      const instrumenter = createInstrumenter({
-        esModules: true,
-        compact: true,
-        coverageVariable: "__compatCoverage",
-      });
-      contents = instrumenter.instrumentSync(contents, id);
-      loaded.add(id);
-      return { contents, loader: "js" };
+    const instrumenter = createInstrumenter({
+      esModules: true,
+      compact: true,
+      coverageVariable: "__compatCoverage",
     });
+    contents = instrumenter.instrumentSync(contents, id);
+    loaded.add(id);
+    return { ...result, source: contents };
   },
 });
 
@@ -141,7 +146,7 @@ function clearCounters() {
   });
 }
 
-const bridge = Bun.serve({
+const bridge = await serveFixture({
   hostname: "127.0.0.1",
   port: 0,
   async fetch(request) {
@@ -215,33 +220,8 @@ const bridge = Bun.serve({
   },
 });
 
-// Apply to every Bun HTTP fixture created after preload, including local providers.
 // AsyncLocalStorage keeps the originating window on work that outlives its request.
-const originalServe = Bun.serve;
-
-Bun.serve = new Proxy(originalServe, {
-  apply(target, receiver, args: unknown[]) {
-    const options = args[0];
-
-    if (
-      !options ||
-      typeof options !== "object" ||
-      !("fetch" in options) ||
-      typeof options.fetch !== "function"
-    ) {
-      throw new Error("Coverage requires a Bun fetch-handler fixture");
-    }
-
-    const handler = options.fetch;
-    const wrapped = {
-      ...options,
-      fetch(this: unknown, ...request: unknown[]) {
-        return scope.run(() => Reflect.apply(handler, this, request));
-      },
-    };
-    return Reflect.apply(target, receiver, [wrapped, ...args.slice(1)]);
-  },
-});
+setRequestScope((handler) => scope.run(handler));
 
 await writeJSON(readyPath, {
   runId,

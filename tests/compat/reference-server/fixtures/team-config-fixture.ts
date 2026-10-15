@@ -1,33 +1,32 @@
-import type { Database } from "bun:sqlite";
-
 import { APIError } from "better-auth/api";
+import type { Database } from "better-sqlite3";
 
 export const TEAM_CONFIG_PROFILES = ["org-team-hooks", "org-team-factory"] as const;
 const receipts = new Map<string, unknown[]>();
 export function teamConfigSnapshot(database: Database) {
   return {
-    organizations: database.query("SELECT id,name,slug FROM organization ORDER BY slug,id").all(),
+    organizations: database.prepare("SELECT id,name,slug FROM organization ORDER BY slug,id").all(),
     members: database
-      .query(
+      .prepare(
         "SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id",
       )
       .all(),
     teams: database
-      .query(
+      .prepare(
         "SELECT t.id,t.organizationId,t.name,t.memberCount FROM team t JOIN organization o ON o.id=t.organizationId ORDER BY o.slug,t.name,t.id",
       )
       .all(),
     teamMembers: database
-      .query(
+      .prepare(
         "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN organization o ON o.id=t.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,t.name,u.email,m.id",
       )
       .all(),
     sessions: database
-      .query(
+      .prepare(
         "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
       )
       .all(),
-    users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+    users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
   };
 }
 export function teamConfigEvidence(database: Database, organizationId: string) {
@@ -78,7 +77,9 @@ export function teamConfigOptions(name: string, database: Database) {
       // An actual application write is independent of the failing endpoint write.
       const id = crypto.randomUUID();
       database
-        .query("INSERT INTO team(id,organizationId,name,createdAt,memberCount) VALUES (?,?,?,?,0)")
+        .prepare(
+          "INSERT INTO team(id,organizationId,name,createdAt,memberCount) VALUES (?,?,?,?,0)",
+        )
         .run(id, data.organization.id, `Independent:${phase}`, new Date().toISOString());
       value.independentSnapshot = teamConfigSnapshot(database);
       if (marker.includes(`error-${phase}`)) throw new Error(`Callback error ${phase}`);

@@ -1,13 +1,13 @@
-import { Database } from "bun:sqlite";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { openAPI } from "better-auth/plugins";
 import { deviceAuthorization, redeemDeviceCode } from "better-auth/plugins/device-authorization";
 import { z } from "zod";
+
+import { createDatabase } from "../sqlite.ts";
 export async function deviceGrantFixture(base: BetterAuthOptions) {
-  const db = new Database(":memory:");
+  const db = createDatabase(":memory:");
   const events: unknown[] = [];
   db.exec("CREATE TABLE application_grant_receipts (row_id TEXT, owner_id TEXT, audience TEXT)");
   const grant = {
@@ -86,7 +86,7 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
               return { audience: row.grantAudience };
             },
           });
-          db.query(
+          db.prepare(
             "INSERT INTO application_grant_receipts (row_id,owner_id,audience) VALUES (?,?,?)",
           ).run(
             result.claimedDeviceCode.id,
@@ -122,7 +122,7 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
         "verification",
         "user",
       ]) {
-        db.query(`DELETE FROM "${table}"`).run();
+        db.prepare(`DELETE FROM "${table}"`).run();
       }
     },
     async handle(request: Request) {
@@ -134,14 +134,14 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
         if (request.method === "POST") {
           const input = await request.json();
           if (input.expiresAt) {
-            db.query('UPDATE deviceCode SET "expiresAt"=? WHERE "deviceCode"=?').run(
+            db.prepare('UPDATE deviceCode SET "expiresAt"=? WHERE "deviceCode"=?').run(
               new Date(input.expiresAt).getTime(),
               input.deviceCode,
             );
           }
         }
         const rows = db
-          .query(
+          .prepare(
             'SELECT id, "deviceCode", "userCode", "userId", status, "clientId", "grantAudience" AS audience,"grantNonce" AS nonce FROM deviceCode WHERE "deviceCode"=?',
           )
           .all(url.searchParams.get("deviceCode"));
@@ -149,7 +149,7 @@ export async function deviceGrantFixture(base: BetterAuthOptions) {
           rows,
           events,
           receipts: db
-            .query(
+            .prepare(
               "SELECT row_id AS rowId,owner_id AS userId,audience FROM application_grant_receipts",
             )
             .all(),

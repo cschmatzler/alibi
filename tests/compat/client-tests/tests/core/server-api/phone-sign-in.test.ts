@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { phoneClient, readPhoneState, uniquePhone } from "../../plugins/phone-number/helpers";

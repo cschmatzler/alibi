@@ -1,11 +1,13 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** Actual published factory with only its two fixed HTTP destinations redirected. */
-export function naverProviderFixture(base: BetterAuthOptions) {
+export async function naverProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -59,7 +61,7 @@ export function naverProviderFixture(base: BetterAuthOptions) {
           : null;
     return route
       ? previousFetch(new Request(`${transport.url}${route}`, request))
-      : previousFetch(input, init);
+      : previousFetch(request);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const mode of [

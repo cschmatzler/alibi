@@ -1,0 +1,7 @@
+{
+  "$schema": "https://nubjs.com/schema/v0.9.json",
+  // Deployment explicitly owns Varlock. Installs, docs and compat need no secrets.
+  "envFile": false,
+  // Oracle integrity checks inspect real package directories, not store symlinks.
+  "install": { "linker": "hoisted" }
+}

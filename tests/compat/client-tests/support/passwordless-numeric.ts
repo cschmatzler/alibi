@@ -1,9 +1,9 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { phoneNumberClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { hashLabel } from "../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "./profiles";
 import { compatScenario } from "./scenario";
 import { fixtureValue, readUserState, storedVerification, verificationCount } from "./verification";
@@ -46,7 +46,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
           fetchOptions: { customFetchImpl: actor.fetch },
         });
         const email = ctx.uniqueEmail("numeric-owner");
-        const phoneNumber = `+1${String(Bun.hash(ctx.uniqueToken("number")))
+        const phoneNumber = `+1${String(hashLabel(ctx.uniqueToken("number")))
           .padStart(10, "0")
           .slice(-10)}`;
         const issue = () =>

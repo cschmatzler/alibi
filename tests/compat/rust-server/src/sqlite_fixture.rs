@@ -17,7 +17,7 @@ pub(crate) fn options() -> ConnectOptions {
             .filename(name.clone())
             .in_memory(true)
             .shared_cache(true)
-            // Mirror bun:sqlite defaults in the TypeScript fixture.
+            // Match the TypeScript fixture's explicit SQLite foreign-key policy.
             .foreign_keys(false)
     });
     // Closing the final SQLite memory connection destroys every migrated row.

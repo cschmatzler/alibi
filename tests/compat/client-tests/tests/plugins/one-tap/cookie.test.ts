@@ -1,9 +1,10 @@
-import { expect } from "bun:test";
 import { hkdfSync } from "node:crypto";
 
 import { makeSignature, symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
 import { EncryptJWT } from "jose";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { credential } from "../../../support/id-token";
 import { type FixtureProfile } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -34,7 +35,7 @@ compatScenario(
     const delivery = (await ctx.readVerificationEmail({ email })) as {
       token: string;
     };
-    expect(delivery.token).toBeString();
+    expect(delivery.token).toBeTypeOf("string");
 
     const verified = await actor.client.verifyEmail({
       query: { token: delivery.token },
@@ -84,7 +85,7 @@ compatScenario(
       name: "Foreign Cookie Owner",
     });
     expect(foreign.error).toBeNull();
-    expect(foreign.data?.token).toBeString();
+    expect(foreign.data?.token).toBeTypeOf("string");
 
     const initial = await state(ctx);
     const session = signedIn.response.data!.token;
@@ -292,7 +293,7 @@ compatScenario(
     expect(revokedResponse.status).toBe(200);
     const revoked = await revokedResponse.json();
     if (process.env.COMPAT_OBSERVATIONS_DIR) {
-      await Bun.write(
+      await writeArtifact(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/lifecycle-raw-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
           {
@@ -377,7 +378,7 @@ for (const [suffix, lifetime] of [
       expect(response.status).toBe(200);
       const raw = response.headers.getSetCookie();
       const account = raw.find((value) => value.startsWith("better-auth.account_data="))!;
-      expect(account).toBeString();
+      expect(account).toBeTypeOf("string");
       const compact = decodeURIComponent(
         account.split(";")[0]!.slice("better-auth.account_data=".length),
       );
@@ -395,7 +396,7 @@ for (const [suffix, lifetime] of [
         expect(account).toContain("SameSite=Strict");
       }
       if (process.env.COMPAT_OBSERVATIONS_DIR) {
-        await Bun.write(
+        await writeArtifact(
           `${process.env.COMPAT_OBSERVATIONS_DIR}/ttl-raw-${new URL(ctx.baseURL).port}-${suffix}.json`,
           JSON.stringify({ raw, compact, payload }, null, 2),
         );

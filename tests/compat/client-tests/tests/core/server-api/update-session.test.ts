@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { verifyPassword } from "better-auth/crypto";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";

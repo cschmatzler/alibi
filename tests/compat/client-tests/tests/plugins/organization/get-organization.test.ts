@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";
@@ -244,8 +243,8 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
       const other = await otherSession.client.getSession();
       const currentToken = current.data?.session.token;
       const otherToken = other.data?.session.token;
-      expect(currentToken).toBeString();
-      expect(otherToken).toBeString();
+      expect(currentToken).toBeTypeOf("string");
+      expect(otherToken).toBeTypeOf("string");
       expect(currentToken).not.toBe(otherToken);
 
       const before = persisted.parse(await ctx.readUserState({ userId: outsiderId }));

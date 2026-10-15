@@ -1,10 +1,9 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
@@ -12,7 +11,7 @@ type Data = Record<string, any>;
 
 async function capture(baseURL: string) {
   const startedAt = Date.now();
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const entries = new Map<string, { value: string; expiresAt: number | null }>();
   const auth = betterAuth({
     baseURL,

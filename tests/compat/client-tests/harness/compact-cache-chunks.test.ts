@@ -1,16 +1,15 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-
 import { betterAuth } from "better-auth";
 import { getCookieCache } from "better-auth/cookies";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { type ComparisonContext, compareValues } from "../support/compare";
 
 const secret = "compact-chunk-source-fixture-secret-32";
 
 async function observed(baseURL: string, uuid: boolean) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const version = { current: "1" };
   const options = {
     baseURL,

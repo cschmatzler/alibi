@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { signUpAndPromoteAdmin } from "../admin/helpers";

@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, test } from "vitest";
 
 import { oracleFindings } from "../support/oracle";
 import type { TraceEntry } from "../support/trace";

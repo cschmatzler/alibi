@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compareValues } from "../../../support/compare";
 import { compatScenario } from "../../../support/scenario";

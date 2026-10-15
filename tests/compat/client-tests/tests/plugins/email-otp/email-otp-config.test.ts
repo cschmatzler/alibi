@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
 
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { passwordlessNumericScenarios } from "../../../support/passwordless-numeric";
@@ -142,7 +143,7 @@ compatScenario(
     expect(issue.error).toBeNull();
 
     const otp = await readOtp(ctx, email, "sign-in");
-    const hash = new Bun.CryptoHasher("sha256").update(otp).digest("base64url");
+    const hash = createFixtureHash("sha256").update(otp).digest("base64url");
     const stored = await storedVerification(ctx, `sign-in-otp-${email}`);
     expect(stored).toHaveLength(1);
     expect(stored.at(0)?.value).toBe(`${hash}:0`);

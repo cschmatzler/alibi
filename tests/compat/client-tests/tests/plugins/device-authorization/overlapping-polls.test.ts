@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -80,7 +81,7 @@ compatScenario(
     const deadline = Date.now() + 5000;
     let receipt = await control("read");
     while (receipt.events.length < 2 && Date.now() < deadline) {
-      await Bun.sleep(10);
+      await setTimeout(10);
       receipt = await control("read");
     }
     expect(receipt.events).toEqual([
@@ -92,7 +93,7 @@ compatScenario(
     await control("release-first");
     const results = await Promise.race([
       pending,
-      Bun.sleep(5000).then(() => {
+      setTimeout(5000).then(() => {
         throw new Error("Overlapping actual device polls did not finish after adapter release");
       }),
     ]);
@@ -106,7 +107,7 @@ compatScenario(
       error_description: "Invalid device code",
     });
     expect(winners[0]!.data).toMatchObject({ token_type: "Bearer", scope: "openid" });
-    expect(winners[0]!.data?.access_token).toBeString();
+    expect(winners[0]!.data?.access_token).toBeTypeOf("string");
     ctx.recordTransport(entries.sort((a, b) => a.responseStatus - b.responseStatus));
     const token = winners[0]!.data!.access_token;
     const after = await readUserState(ctx, signup.data!.user.id);

@@ -2,15 +2,17 @@ import { readFileSync } from "node:fs";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** Actual published Facebook factory; only fixed trusted HTTP authorities redirect. */
-export function facebookProviderFixture(base: BetterAuthOptions) {
+export async function facebookProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
   const defaultKeys = JSON.parse(
     readFileSync(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url), "utf8"),
   );
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
@@ -102,7 +104,7 @@ export function facebookProviderFixture(base: BetterAuthOptions) {
           : null;
     return route
       ? previousFetch(new Request(`${transport.url}${route}${url.search}`, request))
-      : previousFetch(input, init);
+      : previousFetch(request);
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const modes = [

@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -37,7 +37,7 @@ compatScenario(
     expect(response.status).toBe(200);
     const created = await response.json();
     const { key, ...expected } = created;
-    expect(key).toBeString();
+    expect(key).toBeTypeOf("string");
     async function invoke(query?: Record<string, unknown>, headers?: Record<string, string>) {
       return ctx.rawRequest({
         path: "/__test/server-api/api-key-get",

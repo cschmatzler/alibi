@@ -1,10 +1,9 @@
 /** Application-owned SQL observations; the pinned factor and adapter execute unchanged. */
 
-import type { Database } from "bun:sqlite";
-
 import { createKyselyAdapter } from "@better-auth/kysely-adapter";
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 function phase(sql: string) {
   const query = sql.toLowerCase();
@@ -40,7 +39,7 @@ export async function createTwoFactorPendingLookupFixture(
   const actual = await createKyselyAdapter({ ...base, database });
 
   if (!actual.kysely) {
-    throw new Error("real Bun Kysely adapter required");
+    throw new Error("real SQLite Kysely adapter required");
   }
 
   const pending = new WeakMap<object, string>();
@@ -105,7 +104,7 @@ export async function createTwoFactorPendingLookupFixture(
   function snapshot() {
     return {
       verifications: database
-        .query(
+        .prepare(
           "SELECT id,identifier,value,expiresAt,createdAt,updatedAt FROM verification ORDER BY CASE WHEN identifier LIKE '2fa-attempts-%' THEN 0 WHEN identifier LIKE '2fa-otp-%' THEN 1 WHEN identifier LIKE '2fa-%' THEN 2 ELSE 3 END,createdAt,id",
         )
         .all()
@@ -119,7 +118,7 @@ export async function createTwoFactorPendingLookupFixture(
           };
         }),
       factors: database
-        .query(
+        .prepare(
           "SELECT t.id,t.userId,t.secret,t.backupCodes,t.verified,t.failedVerificationCount,t.lockedUntil FROM twoFactor t JOIN user u ON u.id=t.userId ORDER BY u.email,t.id",
         )
         .all()
@@ -172,7 +171,7 @@ export async function createTwoFactorPendingLookupFixture(
         });
         if (body.createdAt) {
           database
-            .query("UPDATE verification SET createdAt=? WHERE id=?")
+            .prepare("UPDATE verification SET createdAt=? WHERE id=?")
             .run(String(body.createdAt), row.id);
         }
       }
@@ -180,12 +179,12 @@ export async function createTwoFactorPendingLookupFixture(
       if (body.action === "patch") {
         if (body.expiresAt) {
           database
-            .query("UPDATE verification SET expiresAt=? WHERE identifier=?")
+            .prepare("UPDATE verification SET expiresAt=? WHERE identifier=?")
             .run(String(body.expiresAt), String(body.identifier));
         }
         if (body.value) {
           database
-            .query("UPDATE verification SET value=? WHERE identifier=?")
+            .prepare("UPDATE verification SET value=? WHERE identifier=?")
             .run(String(body.value), String(body.identifier));
         }
       }

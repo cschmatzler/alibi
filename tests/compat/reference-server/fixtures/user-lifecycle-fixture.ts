@@ -1,10 +1,10 @@
+import { setTimeout } from "node:timers/promises";
 /** Real configured mailbox and deletion callbacks on the pinned application. */
-
-import type { Database } from "bun:sqlite";
 
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
+import type { Database } from "better-sqlite3";
 
 export function createUserLifecycleFixture(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -228,7 +228,7 @@ export function createUserLifecycleFixture(base: BetterAuthOptions, database: Da
       } else if (body.action === "ready") {
         const deadline = Date.now() + 3000;
         while (!state.held && Date.now() < deadline) {
-          await Bun.sleep(10);
+          await setTimeout(10);
         }
         if (!state.held) {
           return Response.json(

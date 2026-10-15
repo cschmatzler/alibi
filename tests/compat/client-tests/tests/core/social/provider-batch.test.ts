@@ -1,8 +1,11 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
-import inputs from "../../../../fixtures/provider-batch-profiles.json";
+import { expect } from "vitest";
+
+import inputs from "../../../../fixtures/provider-batch-profiles.json" with { type: "json" };
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -60,8 +63,8 @@ async function read(ctx: ScenarioContext, path: string) {
 async function archive(ctx: ScenarioContext, name: string, extra: unknown) {
   if (!process.env.PROVIDER_BATCH_EVIDENCE_DIR) return;
   await mkdir(process.env.PROVIDER_BATCH_EVIDENCE_DIR, { recursive: true });
-  await Bun.write(
-    `${process.env.PROVIDER_BATCH_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+  await writeArtifact(
+    `${process.env.PROVIDER_BATCH_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
     JSON.stringify(
       {
         name,
@@ -472,7 +475,7 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
       expect(token.error).toBeNull();
       expect(token.data?.accessToken).toBe("batch-access");
       const stored = account["accessToken"];
-      expect(stored).toBeString();
+      expect(stored).toBeTypeOf("string");
       expect(stored).not.toBe("batch-access");
       expect(String(stored)).toMatch(/^(?:\$ba\$\d+\$)?[0-9a-f]+$/);
       if (provider === "wechat") {
@@ -1162,7 +1165,7 @@ for (const mode of ["default", "prompt-none", "prompt-consent", "prompt-empty"] 
             ? "consent"
             : "select_account consent",
       );
-      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.url.searchParams.get("state")).toBeTypeOf("string");
       expect(completed.response.status).toBe(302);
       expect(completed.response.headers.get("location")).toBe("/dashboard");
       const session = await completed.actor.client.getSession();
@@ -1213,7 +1216,7 @@ for (const mode of ["default", "language-en"] as const) {
       expect(completed.url.searchParams.get("lang")).toBe(mode === "default" ? "cn" : "en");
       expect(completed.url.searchParams.get("scope")).toBe("snsapi_login");
       expect(completed.url.searchParams.get("appid")).toBe("batch-client");
-      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.url.searchParams.get("state")).toBeTypeOf("string");
       expect(completed.url.hash).toBe("#wechat_redirect");
       expect(completed.response.headers.get("location")).toBe("/dashboard");
       const receipts: any[] = await read(ctx, "receipts");

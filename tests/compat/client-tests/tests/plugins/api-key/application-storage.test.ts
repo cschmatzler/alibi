@@ -1,9 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
 import { organizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../../support/trace";

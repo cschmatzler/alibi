@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { verifyPassword } from "better-auth/crypto";
+import { expect } from "vitest";
 
 import type { FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";

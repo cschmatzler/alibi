@@ -1,5 +1,6 @@
-#!/usr/bin/env bun
-import { Database } from "bun:sqlite";
+#!/usr/bin/env nub
+import { createHash as createFixtureHash } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
@@ -70,9 +71,6 @@ import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture"
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
-import { ssoDateFixture } from "./fixtures/sso-date-fixture";
-import { scimFixture } from "./fixtures/scim-fixture";
-import { ssoFixture } from "./fixtures/sso-fixture";
 import { oauthClientFixture } from "./fixtures/oauth-client-fixture";
 import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
 import { oauthProviderDiscovery } from "./fixtures/oauth-provider-fixture";
@@ -105,6 +103,7 @@ import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
+import { scimFixture } from "./fixtures/scim-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { createServerErrorFixture } from "./fixtures/server-error-fixture";
 import { createSessionAdapterFailureFixture } from "./fixtures/session-adapter-failure-fixture";
@@ -114,6 +113,8 @@ import { createSetPasswordFixture } from "./fixtures/set-password-fixture";
 import { createSignupPolicyFixture } from "./fixtures/signup-policy-fixture";
 import { createSiweFixture } from "./fixtures/siwe-fixture";
 import { socialProviderFixture } from "./fixtures/social-provider-fixture";
+import { ssoDateFixture } from "./fixtures/sso-date-fixture";
+import { ssoFixture } from "./fixtures/sso-fixture";
 import {
   TEAM_CONFIG_PROFILES,
   teamConfigOptions,
@@ -128,11 +129,16 @@ import { createTwoFactorTotpFixture } from "./fixtures/two-factor-totp-fixture";
 import { createUserLifecycleFixture } from "./fixtures/user-lifecycle-fixture";
 import { createUserValidationFixture } from "./fixtures/user-validation-fixture";
 import { createVerificationStorageFixture } from "./fixtures/verification-storage-fixture";
+import { serveFixture } from "./http.ts";
+import { createDatabase } from "./sqlite.ts";
 
 // The installed oracle release. The harness compares it with the committed pin
 // on every health check, so a dependency bump cannot run under a stale label.
-const INSTALLED_BETTER_AUTH_VERSION: string = (
-  await Bun.file(new URL("./node_modules/better-auth/package.json", import.meta.url)).json()
+const INSTALLED_BETTER_AUTH_VERSION: string = JSON.parse(
+  await readFixtureFile(
+    new URL("./node_modules/better-auth/package.json", import.meta.url),
+    "utf8",
+  ),
 ).version;
 
 function getPort() {
@@ -140,7 +146,7 @@ function getPort() {
   if (idx !== -1 && process.argv[idx + 1]) {
     return Number(process.argv[idx + 1]);
   }
-  return Number(process.env.PORT ?? Bun.env.PORT ?? 3100);
+  return Number(process.env.PORT ?? process.env.PORT ?? 3100);
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit) {
@@ -163,7 +169,7 @@ function hasOwn(obj: unknown, key: string) {
 }
 
 const PORT = getPort();
-const database = new Database(":memory:");
+const database = createDatabase(":memory:");
 const resetPasswordOutbox = new Map<string, { url: string; token: string }>();
 const verificationEmailOutbox = new Map<string, { url: string; token: string }>();
 const changeEmailOutbox = new Map<string, { newEmail: string; url: string; token: string }>();
@@ -218,7 +224,7 @@ const defaultGitHubProfile = (): GitHubProfile => ({
 let githubProfile = defaultGitHubProfile();
 let githubEmailStatus = 200;
 const githubRequests: string[] = [];
-const oauthServer = Bun.serve({
+const oauthServer = await serveFixture({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
@@ -355,7 +361,7 @@ const magicPlugin = () =>
   magicLink({
     async sendMagicLink({ email, url, token, metadata }, ctx) {
       const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
-        ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+        ? createFixtureHash("sha256").update(token).digest("base64url")
         : token;
       const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
       magicLinkOutbox.set(email, {
@@ -668,30 +674,30 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
-const railwayFixture = railwayProviderFixture(authOptions);
-const redditFixture = redditProviderFixture(authOptions);
-const polarFixture = polarProviderFixture(authOptions);
-const genericDiscovery = genericDiscoveryFixture(authOptions);
-const genericTokenFixture = genericTokenParamsFixture(authOptions);
-const paypalFixture = paypalProviderFixture(authOptions);
-const notionFixture = notionProviderFixture(authOptions);
-const paybinFixture = paybinProviderFixture(authOptions);
-const cloudflareFixture = cloudflareProviderFixture(authOptions);
-const cognitoFixture = cognitoProviderFixture(authOptions);
-const dropboxFixture = dropboxProviderFixture(authOptions);
-const facebookFixture = facebookProviderFixture(authOptions);
-const microsoftFixture = microsoftProviderFixture(authOptions);
-const figmaFixture = figmaProviderFixture(authOptions);
-const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
-const linkedinFixture = linkedinProviderFixture(authOptions);
-const kakaoFixture = kakaoProviderFixture(authOptions);
-const lineFixture = lineProviderFixture(authOptions);
-const linearFixture = linearProviderFixture(authOptions);
-const naverFixture = naverProviderFixture(authOptions);
-const kickFixture = kickProviderFixture(authOptions);
-const atlassianFixture = atlassianProviderFixture(authOptions);
-const appleFixture = appleProviderFixture(authOptions);
-const socialProvidersFixture = socialProviderFixture(authOptions);
+const railwayFixture = await railwayProviderFixture(authOptions);
+const redditFixture = await redditProviderFixture(authOptions);
+const polarFixture = await polarProviderFixture(authOptions);
+const genericDiscovery = await genericDiscoveryFixture(authOptions);
+const genericTokenFixture = await genericTokenParamsFixture(authOptions);
+const paypalFixture = await paypalProviderFixture(authOptions);
+const notionFixture = await notionProviderFixture(authOptions);
+const paybinFixture = await paybinProviderFixture(authOptions);
+const cloudflareFixture = await cloudflareProviderFixture(authOptions);
+const cognitoFixture = await cognitoProviderFixture(authOptions);
+const dropboxFixture = await dropboxProviderFixture(authOptions);
+const facebookFixture = await facebookProviderFixture(authOptions);
+const microsoftFixture = await microsoftProviderFixture(authOptions);
+const figmaFixture = await figmaProviderFixture(authOptions);
+const huggingfaceFixture = await huggingfaceProviderFixture(authOptions);
+const linkedinFixture = await linkedinProviderFixture(authOptions);
+const kakaoFixture = await kakaoProviderFixture(authOptions);
+const lineFixture = await lineProviderFixture(authOptions);
+const linearFixture = await linearProviderFixture(authOptions);
+const naverFixture = await naverProviderFixture(authOptions);
+const kickFixture = await kickProviderFixture(authOptions);
+const atlassianFixture = await atlassianProviderFixture(authOptions);
+const appleFixture = await appleProviderFixture(authOptions);
+const socialProvidersFixture = await socialProviderFixture(authOptions);
 const oauthPopupProfiles = await oauthPopupFixture(authOptions);
 const oauthProxyProfiles = await oauthProxyFixture(authOptions);
 const cookieProxyProfiles = await oauthProxyFixture(authOptions, false, true);
@@ -700,7 +706,7 @@ const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const additionalFields = await additionalFieldsFixture(authOptions);
-const providerBatch = providerBatchFixture(authOptions, database);
+const providerBatch = await providerBatchFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -1111,9 +1117,10 @@ for (const name of [
 
 // Explicit application trust configuration, through the published verifier API.
 // The synthetic CA is public test material and never a production trust anchor.
-const passkeyTestCA = await Bun.file(
+const passkeyTestCA = await readFixtureFile(
   new URL("../fixtures/passkey-attestation/ca.pem", import.meta.url),
-).text();
+  "utf8",
+);
 const passkeyTrustFormats = [
   "packed",
   "fido-u2f",
@@ -1186,7 +1193,7 @@ function createOtpProfile(name: string) {
           name === "passwordless-custom-hash"
             ? {
                 async hash(otp: string) {
-                  return `application:${new Bun.CryptoHasher("sha256").update(otp).digest("hex")}`;
+                  return `application:${createFixtureHash("sha256").update(otp).digest("hex")}`;
                 },
               }
             : name.startsWith("passwordless-custom-cipher")
@@ -1327,7 +1334,7 @@ for (const name of [
             const identifier = name.startsWith("magic-link-custom-hasher")
               ? `application:${token}`
               : ctx.context.options.basePath?.includes("magic-link-hashed")
-                ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+                ? createFixtureHash("sha256").update(token).digest("base64url")
                 : token;
             const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
             magicLinkOutbox.set(email, {
@@ -1394,9 +1401,9 @@ const verificationStorageFixture = await createVerificationStorageFixture(databa
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
 const serverErrorFixture = createServerErrorFixture(authOptions);
-const serverEndpointFixture = createServerEndpointFixture(database, authOptions);
+const serverEndpointFixture = await createServerEndpointFixture(database, authOptions);
 verificationProfiles.set(serverEndpointFixture.path, serverEndpointFixture.auth);
-const serverEndpointCacheFixture = createServerEndpointFixture(
+const serverEndpointCacheFixture = await createServerEndpointFixture(
   database,
   {
     ...authOptions,
@@ -1408,7 +1415,7 @@ const serverEndpointCacheFixture = createServerEndpointFixture(
   "server-dispatch-cache",
 );
 verificationProfiles.set(serverEndpointCacheFixture.path, serverEndpointCacheFixture.auth);
-const serverEndpointVersionFixture = createServerEndpointFixture(
+const serverEndpointVersionFixture = await createServerEndpointFixture(
   database,
   authOptions,
   "server-dispatch-cache-version",
@@ -1844,7 +1851,7 @@ function numericCallbacks(name: string) {
   return {
     maximumTeams: async ({ organizationId, session }: any, ctx: any) => {
       const row = database
-        .query("SELECT name FROM organization WHERE id=?")
+        .prepare("SELECT name FROM organization WHERE id=?")
         .get(organizationId) as { name: string };
       numericEvent(organizationId, {
         event: "maximumTeams",
@@ -1883,7 +1890,7 @@ function numericCallbacks(name: string) {
     },
     maximumRolesPerOrganization: async (organizationId: string) => {
       const row = database
-        .query("SELECT name FROM organization WHERE id=?")
+        .prepare("SELECT name FROM organization WHERE id=?")
         .get(organizationId) as { name: string };
       numericEvent(organizationId, {
         event: "maximumRolesPerOrganization",
@@ -1976,7 +1983,7 @@ const teamProfiles = new Map(
                   },
                   beforeAddTeamMember: async ({ team, user, organization }) => {
                     if (organization.name === "Legacy seats") {
-                      database.query("UPDATE team SET memberCount=5 WHERE id=?").run(team.id);
+                      database.prepare("UPDATE team SET memberCount=5 WHERE id=?").run(team.id);
                     }
                     numericEvent(organization.id, {
                       event: "beforeAddTeamMember",
@@ -2018,7 +2025,7 @@ const teamProfiles = new Map(
                             );
                           }
                           const row = database
-                            .query("SELECT name FROM organization WHERE id=?")
+                            .prepare("SELECT name FROM organization WHERE id=?")
                             .get(organizationId) as { name: string } | null;
                           if (!row) {
                             throw new Error("Organization not found");
@@ -2147,8 +2154,12 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       invitations,
     });
   }
-  if(url.pathname==="/__test/server-api/bearer"&&request.method==="POST"){return bearerFixture.control(request);}
-  if(url.pathname==="/__test/server-api/custom-session"&&request.method==="POST"){return customSessionFixture.server(request);}
+  if (url.pathname === "/__test/server-api/bearer" && request.method === "POST") {
+    return bearerFixture.control(request);
+  }
+  if (url.pathname === "/__test/server-api/custom-session" && request.method === "POST") {
+    return customSessionFixture.server(request);
+  }
   if (url.pathname === "/__test/server-api/api-key-list" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.listApiKeys({
@@ -2495,12 +2506,21 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
-  if (["/__test/server-api/anonymous-email", "/__test/server-api/anonymous-social"].includes(url.pathname) && request.method === "POST") {
+  if (
+    ["/__test/server-api/anonymous-email", "/__test/server-api/anonymous-social"].includes(
+      url.pathname,
+    ) &&
+    request.method === "POST"
+  ) {
     const input = await readJson(request);
     const selected = anonymousProfiles.profiles.get(
       `/__test/profiles/${input?.profile ?? "anonymous-standard"}/api/auth`,
     )!;
-    const operation = url.pathname.endsWith("anonymous-social") ? "signInSocial" : input?.action === "sign-in" ? "signInEmail" : "signUpEmail";
+    const operation = url.pathname.endsWith("anonymous-social")
+      ? "signInSocial"
+      : input?.action === "sign-in"
+        ? "signInEmail"
+        : "signUpEmail";
     return (selected.api as any)[operation]({
       body: input?.body,
       headers: new Headers(input?.headers as Record<string, string>),
@@ -2777,9 +2797,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       if (body?.operation === "set-team-storage" && typeof body.teamId === "string") {
         if (body.restore) {
           const original = teamStorageBackups.get(body.teamId)!;
-          database.query("DELETE FROM team WHERE id=?").run(body.teamId);
+          database.prepare("DELETE FROM team WHERE id=?").run(body.teamId);
           database
-            .query(
+            .prepare(
               "INSERT INTO team(id,organizationId,name,createdAt,updatedAt,memberCount) VALUES (?,?,?,?,?,?)",
             )
             .run(
@@ -2792,14 +2812,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
             );
         } else {
           const original = database
-            .query("SELECT * FROM team WHERE id=?")
+            .prepare("SELECT * FROM team WHERE id=?")
             .get(body.teamId) as Record<string, unknown>;
           teamStorageBackups.set(body.teamId, original);
           if (typeof body.organizationId === "string") {
             database
-              .query("UPDATE team SET organizationId=? WHERE id=?")
+              .prepare("UPDATE team SET organizationId=? WHERE id=?")
               .run(body.organizationId, body.teamId);
-          } else database.query("DELETE FROM team WHERE id=?").run(body.teamId);
+          } else database.prepare("DELETE FROM team WHERE id=?").run(body.teamId);
         }
         return jsonResponse({ changed: true });
       }
@@ -2813,7 +2833,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
           model: "teamMember",
           data: { teamId: body.teamId, userId: body.userId, createdAt: new Date() },
         });
-        database.query("UPDATE team SET memberCount=memberCount+1 WHERE id=?").run(body.teamId);
+        database.prepare("UPDATE team SET memberCount=memberCount+1 WHERE id=?").run(body.teamId);
         return jsonResponse({ inserted: true });
       }
       if (body?.operation === "team-config-evidence" && typeof body.organizationId === "string") {
@@ -2824,18 +2844,18 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       }
       if (body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
         const row = database
-          .query("SELECT id FROM organization WHERE id=?")
+          .prepare("SELECT id FROM organization WHERE id=?")
           .get(body.organizationId);
         if (!row) {
           return jsonResponse({ message: "Organization not found" }, { status: 400 });
         }
-        database.query("DELETE FROM organization WHERE id=?").run(body.organizationId);
+        database.prepare("DELETE FROM organization WHERE id=?").run(body.organizationId);
         return jsonResponse({ removed: true });
       }
       if (body?.operation === "role-policy" && typeof body.organizationId === "string") {
         if (
           profileName !== "org-roles-callback" ||
-          !database.query("SELECT id FROM organization WHERE id=?").get(body.organizationId)
+          !database.prepare("SELECT id FROM organization WHERE id=?").get(body.organizationId)
         ) {
           return jsonResponse({ message: "Role policy organization not found" }, { status: 400 });
         }
@@ -3067,24 +3087,24 @@ async function resetDatabaseState() {
     "oauthClient",
     "ssoProvider",
   ]) {
-    database.query(`DELETE FROM "${table}"`).run();
+    database.prepare(`DELETE FROM "${table}"`).run();
   }
   // Application-owned keys of the custom-adapter JWT keyring profiles.
-  database.query("DELETE FROM fixtureJwtKeyring").run();
-  database.query("DELETE FROM application_delete_receipts").run();
+  database.prepare("DELETE FROM fixtureJwtKeyring").run();
+  database.prepare("DELETE FROM application_delete_receipts").run();
 }
 
 /** Row counts of every non-empty table; the scenario runner requires none after reset. */
 function databaseResidue() {
   const tables = database
-    .query(
+    .prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     )
     .all() as { name: string }[];
   const residue: Record<string, number> = {};
   for (const { name } of tables) {
     const { n } = database
-      .query(`SELECT count(*) AS n FROM "${name.replaceAll('"', '""')}"`)
+      .prepare(`SELECT count(*) AS n FROM "${name.replaceAll('"', '""')}"`)
       .get() as {
       n: number;
     };
@@ -3154,7 +3174,7 @@ const scimControl = await scimFixture(authOptions);
 const ssoDateControl = await ssoDateFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
-const server = Bun.serve({
+const server = await serveFixture({
   port: PORT,
   // Fixture bodies intentionally pause for eleven seconds after headers. The
   // transport must outlive that proof; the auth verifier retains its own timeout.
@@ -3671,7 +3691,7 @@ const server = Bun.serve({
           return jsonResponse({ message: "Invalid invitation clock" }, { status: 400 });
         }
         const result = database
-          .query("UPDATE invitation SET expiresAt = ? WHERE id = ?")
+          .prepare("UPDATE invitation SET expiresAt = ? WHERE id = ?")
           .run(new Date(body.expiresAt).toISOString(), body.invitationId);
         return jsonResponse({ updated: result.changes });
       }
@@ -3698,7 +3718,9 @@ const server = Bun.serve({
       ) {
         return oauthClients(request);
       }
-      if (url.pathname === "/__test/server-api/sso" && request.method === "POST") return ssoControl(request);
+      if (url.pathname === "/__test/server-api/sso" && request.method === "POST") {
+        return ssoControl(request);
+      }
       if (url.pathname === "/__test/server-api/oauth-provider-metadata") {
         return oauthProviderMetadata(
           url.searchParams.get("mode") ?? "default",
@@ -4066,7 +4088,7 @@ const server = Bun.serve({
         if (body.mode) magicGeneratorState.mode = body.mode;
         if (body.clear) magicGeneratorState.receipts.length = 0;
         const counts = database
-          .query<{ proofCount: number; userCount: number; sessionCount: number }, []>(
+          .prepare<[], { proofCount: number; userCount: number; sessionCount: number }>(
             "SELECT (SELECT COUNT(*) FROM verification) AS proofCount, (SELECT COUNT(*) FROM user) AS userCount, (SELECT COUNT(*) FROM session) AS sessionCount",
           )
           .get()!;
@@ -4358,11 +4380,11 @@ const server = Bun.serve({
           return jsonResponse({ message: "Invalid session clock" }, { status: 400 });
         }
         const result = database
-          .query("UPDATE session SET expiresAt = ? WHERE token = ?")
+          .prepare("UPDATE session SET expiresAt = ? WHERE token = ?")
           .run(new Date(body.expiresAt).toISOString(), body.token);
         if (typeof body.createdAt === "string") {
           database
-            .query("UPDATE session SET createdAt = ? WHERE token = ?")
+            .prepare("UPDATE session SET createdAt = ? WHERE token = ?")
             .run(new Date(body.createdAt).toISOString(), body.token);
         }
         return jsonResponse({ updated: result.changes });
@@ -4739,10 +4761,10 @@ const server = Bun.serve({
 
         if (body?.createdAt !== undefined && body.updatedAt !== undefined) {
           database
-            .query("UPDATE account SET createdAt=?, updatedAt=? WHERE id=?")
+            .prepare("UPDATE account SET createdAt=?, updatedAt=? WHERE id=?")
             .run(body.createdAt, body.updatedAt, localAccountId!);
           const timestamps = database
-            .query("SELECT createdAt,updatedAt FROM account WHERE id=?")
+            .prepare("SELECT createdAt,updatedAt FROM account WHERE id=?")
             .get(localAccountId!);
           return jsonResponse({ status: true, accountId: localAccountId, timestamps });
         }

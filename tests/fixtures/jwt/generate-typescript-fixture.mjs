@@ -1,4 +1,4 @@
-// Run with the repository's pinned Bun after installing the frozen reference lockfile.
+// Run with the repository's pinned Nub after installing the frozen reference lockfile.
 // This uses only Better Auth 1.7.7's published implementation and actual SQLite.
 const runtime = new URL(
   "../../compat/reference-server/node_modules/better-auth/dist/",
@@ -10,7 +10,7 @@ const { getMigrations } = await import(new URL("db/get-migration.mjs", runtime).
 const { jwt, createJwk, signJWT, verifyJWT } = await import(
   new URL("plugins/jwt/index.mjs", runtime).href
 );
-import { Database } from "bun:sqlite";
+import { createDatabase } from "../../compat/reference-server/sqlite.ts";
 const origin = "http://jwt-interoperability.fixture.test";
 const secret = "jwt-interoperability-fixture-secret-at-least-32chars";
 const payload = { sub: "cipher-import-owner", iat: 100, exp: 4102444800, iss: origin, aud: origin };
@@ -28,7 +28,7 @@ const probe = {
   },
 };
 const options = {
-  database: new Database(":memory:"),
+  database: createDatabase(":memory:"),
   baseURL: origin,
   secret,
   plugins: [jwt(), probe],

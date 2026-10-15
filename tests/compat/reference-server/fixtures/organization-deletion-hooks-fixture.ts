@@ -1,9 +1,10 @@
-import type { Database } from "bun:sqlite";
+import { setTimeout } from "node:timers/promises";
 
 /** Application callbacks observe the pinned handler and actual persisted rows. */
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 import type { organizationTransportProbe } from "./organization-transport-probe";
 
@@ -21,28 +22,28 @@ export function organizationDeletionHooksFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
-        .query(
+        .prepare(
           "SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN user u ON u.id=m.userId ORDER BY u.email,m.role,m.id",
         )
         .all(),
       invitations: database
-        .query("SELECT id,organizationId,status,email FROM invitation ORDER BY email,id")
+        .prepare("SELECT id,organizationId,status,email FROM invitation ORDER BY email,id")
         .all(),
-      teams: database.query("SELECT id,organizationId,name FROM team ORDER BY name,id").all(),
+      teams: database.prepare("SELECT id,organizationId,name FROM team ORDER BY name,id").all(),
       teamMembers: database
-        .query(
+        .prepare(
           "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN user u ON u.id=m.userId ORDER BY t.name,u.email,m.id",
         )
         .all(),
       sessions: database
-        .query(
+        .prepare(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
-      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+      users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
 
@@ -149,7 +150,7 @@ export function organizationDeletionHooksFixture(
         waitFor && i < 100 && !receipts.some((r) => (r as { phase: string }).phase === waitFor);
         i++
       ) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return Response.json({ receipts, snapshot: snapshot() });
     },

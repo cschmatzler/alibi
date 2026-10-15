@@ -1,14 +1,13 @@
-import { expect } from "bun:test";
-
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
 type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
 
 function record(value: unknown): Record<string, any> {
-  expect(value).toBeObject();
+  expect(value).toSatisfy((value) => value !== null && typeof value === "object");
   return value as Record<string, any>;
 }
 
@@ -71,7 +70,7 @@ compatScenario("api-key SDK uses the standalone 1.7 client plugin", async (ctx) 
   });
   const created = await client.apiKey.create({ name: "sdk-key" });
   expect(created.error).toBeNull();
-  expect(created.data!.key).toBeString();
+  expect(created.data!.key).toBeTypeOf("string");
 
   const listed = await client.apiKey.list();
   expect(listed.error).toBeNull();

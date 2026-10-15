@@ -1,10 +1,11 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { getCookieCache } from "better-auth/cookies";
 import { compactVerify, importJWK, type JWK, jwtVerify } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -1009,7 +1010,7 @@ compatScenario(
     expect(remaining).toBeLessThanOrEqual(1000);
 
     if (remaining > 0) {
-      await Bun.sleep(remaining + 5);
+      await setTimeout(remaining + 5);
     }
 
     const retained = await owner.token();
@@ -1557,7 +1558,7 @@ compatScenario(
     const expiration = (payload: Record<string, unknown>, duration: number) => {
       expect(Object.hasOwn(payload, "iat")).toBe(false);
       const expected = Math.floor(Date.now() / 1000) + duration;
-      expect(payload.exp).toBeNumber();
+      expect(payload.exp).toBeTypeOf("number");
       expect(payload.exp as number).toBeGreaterThanOrEqual(expected - 5);
       expect(payload.exp as number).toBeLessThanOrEqual(expected + 1);
     };

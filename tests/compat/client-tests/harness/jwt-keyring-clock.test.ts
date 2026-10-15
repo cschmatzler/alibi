@@ -1,9 +1,10 @@
-import { expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { jwtClient } from "better-auth/client/plugins";
 import { importJWK, jwtVerify, type JWK } from "jose";
+import { expect, test } from "vitest";
 
 import { startFixture } from "../support/assurance/processes";
 import { compareValues, type ComparisonContext } from "../support/compare";
@@ -67,7 +68,7 @@ async function capture(role: string, delay: number, profile: string) {
     await control("clear-events");
     const startedAt = Date.now();
     // Force different actual issuance offsets without changing Source, its clocks or stored data.
-    await Bun.sleep(delay);
+    await setTimeout(delay);
     await control("failure", undefined, { operation: "create", kind: "api500" });
     const rejected = await client.jwks();
     expect(rejected.error).toMatchObject({ status: 500, code: "APPLICATION_KEYRING_DENIED" });

@@ -1,9 +1,8 @@
-import type { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createApiKeyGenerationFixture(
   database: Database,
@@ -76,7 +75,7 @@ export function createApiKeyGenerationFixture(
             throw new Error("Private permissions failure");
           }
 
-          const owner = database.query("SELECT name FROM user WHERE id = ?").get(referenceId) as {
+          const owner = database.prepare("SELECT name FROM user WHERE id = ?").get(referenceId) as {
             name: string;
           };
           return Object.fromEntries([
@@ -140,7 +139,7 @@ export function createApiKeyGenerationFixture(
       if (url.pathname === "/__test/api-key-generation/state") {
         return Response.json(
           database
-            .query(
+            .prepare(
               'SELECT id, name, "referenceId", "configId", key, start, prefix, permissions, remaining, "requestCount", "expiresAt" FROM apikey ORDER BY name',
             )
             .all()
@@ -154,7 +153,7 @@ export function createApiKeyGenerationFixture(
       if (url.pathname === "/__test/api-key-generation/expire" && request.method === "POST") {
         const { keyId } = await request.json();
         database
-          .query('UPDATE apikey SET "expiresAt" = ? WHERE id = ?')
+          .prepare('UPDATE apikey SET "expiresAt" = ? WHERE id = ?')
           .run(new Date(0).toISOString(), keyId);
         return Response.json({ success: true });
       }

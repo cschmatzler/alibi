@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT, jwtVerify } from "jose";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -525,7 +524,7 @@ compatScenario(
       .actor("line", "social-line-disabled-scope")
       .client.signIn.social({ provider: "line" });
     expect(result.error).toBeNull();
-    expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
+    expect(new URL(result.data!.url!).searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
     return { result: ctx.snapshot(result), before, after: await state(ctx) };
@@ -936,13 +935,13 @@ for (const variant of ["valid", "expired", "foreign-audience", "malformed-fallba
         variant === "malformed-fallback" ? fallback.sub : signed.claims.sub,
       );
       expect(account.idToken).toBe(idToken);
-      expect(user.emailVerified).toBeFalse();
+      expect(user.emailVerified).toBe(false);
       expect((await flow.actor.client.getSession()).data?.user.id).toBe(user.id);
       const remote = await receipts(ctx);
       expect(remote.map((row) => row.path)).toEqual(
         variant === "malformed-fallback" ? ["/token", "/userinfo"] : ["/token"],
       );
-      expect(remote.some((row) => row.path === "/verify")).toBeFalse();
+      expect(remote.some((row) => row.path === "/verify")).toBe(false);
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),

@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { oauthPurposeSecret } from "../../../support/oauth-encryption";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -1166,7 +1167,7 @@ compatScenario(
     // Retain the bounded pre-fix witness even when the regression assertion
     // stops the comparison before its ordinary full-pair artifact is written.
     if (process.env.COMPAT_OBSERVATIONS_DIR) {
-      await Bun.write(
+      await writeArtifact(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/empty-code-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
           {

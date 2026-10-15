@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 async function state(ctx: ScenarioContext): Promise<any> {
@@ -7,8 +9,8 @@ async function state(ctx: ScenarioContext): Promise<any> {
 }
 async function save(ctx: ScenarioContext, name: string, value: unknown) {
   if (process.env.CLOSE188_EVIDENCE_DIR) {
-    await Bun.write(
-      `${process.env.CLOSE188_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
+    await writeArtifact(
+      `${process.env.CLOSE188_EVIDENCE_DIR}/${hashLabel(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, value }, null, 2),
     );
   }

@@ -1,9 +1,8 @@
-import type { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin, twoFactor, username } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
+import type { Database } from "better-sqlite3";
 
 /** Immutable application roles run through the actual pinned admin plugin. */
 export function createAdminPermissionFixture(base: BetterAuthOptions, database: Database) {
@@ -373,7 +372,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
             }
 
             const result = database
-              .query("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
+              .prepare("UPDATE user SET createdAt=?,updatedAt=? WHERE id=?")
               .run(body.createdAt, body.updatedAt, body.userId);
 
             if (result.changes !== 1) {
@@ -382,7 +381,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
 
             return Response.json(
               database
-                .query("SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?")
+                .prepare("SELECT id AS userId,createdAt,updatedAt FROM user WHERE id=?")
                 .get(body.userId),
             );
           });
@@ -399,7 +398,7 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
       }
 
       const user = database
-        .query(
+        .prepare(
           "SELECT id,email,name,role,banned,banReason,banExpires,createdAt,updatedAt FROM user WHERE email=?",
         )
         .get(email) as {
@@ -420,14 +419,14 @@ export function createAdminPermissionFixture(base: BetterAuthOptions, database: 
           : null,
         accounts: user
           ? database
-              .query(
+              .prepare(
                 "SELECT id,userId,providerId,accountId FROM account WHERE userId=? ORDER BY providerId,createdAt",
               )
               .all(user.id)
           : [],
         sessions: user
           ? database
-              .query(
+              .prepare(
                 "SELECT id,userId,token,impersonatedBy,createdAt,expiresAt FROM session WHERE userId=? ORDER BY createdAt",
               )
               .all(user.id)

@@ -1,7 +1,6 @@
-import type { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createTwoFactorOtpFixture(
   base: Parameters<typeof betterAuth>[0],
@@ -131,13 +130,13 @@ export function createTwoFactorOtpFixture(
     const delivery = deliveries.get(body.email);
     const row = body.identifier
       ? database
-          .query(
+          .prepare(
             "SELECT id,identifier,value,expiresAt FROM verification WHERE identifier=? ORDER BY createdAt DESC",
           )
           .get(body.identifier)
       : delivery
         ? database
-            .query(
+            .prepare(
               "SELECT id,identifier,value,expiresAt FROM verification WHERE identifier LIKE ? OR identifier IN(SELECT '2fa-otp-'||identifier FROM verification WHERE value=? AND identifier LIKE '2fa-%') ORDER BY createdAt DESC",
             )
             .get(`2fa-otp-${delivery.userId}!%`, delivery.userId)
@@ -146,19 +145,19 @@ export function createTwoFactorOtpFixture(
     if (row && typeof body.counter === "string") {
       const current = row as { identifier: string; value: string };
       database
-        .query("UPDATE verification SET value=? WHERE identifier=?")
+        .prepare("UPDATE verification SET value=? WHERE identifier=?")
         .run(`${current.value.split(":")[0]}:${body.counter}`, current.identifier);
     }
 
     if (row && body.expire === true) {
       database
-        .query("UPDATE verification SET expiresAt=? WHERE identifier=?")
+        .prepare("UPDATE verification SET expiresAt=? WHERE identifier=?")
         .run(new Date(Date.now() - 1000).toISOString(), (row as { identifier: string }).identifier);
     }
 
     const current = row
       ? database
-          .query(
+          .prepare(
             "SELECT id,identifier,value,expiresAt FROM verification WHERE identifier=? ORDER BY createdAt DESC",
           )
           .get((row as { identifier: string }).identifier)
@@ -167,7 +166,7 @@ export function createTwoFactorOtpFixture(
     const generations = identifier
       ? (
           database
-            .query("SELECT COUNT(*) AS total FROM verification WHERE identifier=?")
+            .prepare("SELECT COUNT(*) AS total FROM verification WHERE identifier=?")
             .get(identifier) as { total: number }
         ).total
       : 0;

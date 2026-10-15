@@ -1,16 +1,17 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
+import { TS_BASE_URL } from "../../../support/config";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
 type Data = Record<string, any>;
 
 function object(value: unknown): Data {
-  expect(value).toBeObject();
+  expect(value).toSatisfy((value) => value !== null && typeof value === "object");
   return value as Data;
 }
 
@@ -163,6 +164,8 @@ compatScenario(
       ["length-fraction", 3],
       ["length-zero", 64],
       ["length-nan", 64],
+      // The fractional length rounds up, while its doubled random buffer stays
+      // within Node Web Crypto's 65,536-byte per-call quota.
       ["length-large-fraction", 32769],
     ] as const) {
       const issued = await s.owner.apiKey.create({
@@ -259,9 +262,8 @@ compatScenario(
       const callback = await events(ctx);
 
       if (configId === "expiration-fraction") {
-        expect(new Date(key.expiresAt).getTime() - new Date(key.createdAt).getTime()).toBeWithin(
-          60100,
-          60175,
+        expect(new Date(key.expiresAt).getTime() - new Date(key.createdAt).getTime()).toSatisfy(
+          (value) => value >= 60100 && value < 60175,
         );
       } else {
         expect(key.expiresAt).toBeNull();
@@ -357,9 +359,9 @@ compatScenario(
     const expired = object(negative.data);
     const negativeState = await state(ctx);
     const negativeEvents = await events(ctx);
-    expect(
-      new Date(expired.expiresAt).getTime() - new Date(expired.createdAt).getTime(),
-    ).toBeWithin(-3600150, -3600100);
+    expect(new Date(expired.expiresAt).getTime() - new Date(expired.createdAt).getTime()).toSatisfy(
+      (value) => value >= -3600150 && value < -3600100,
+    );
     expect(row(negativeState, expired).key).toBe(hash(expired.key));
 
     const deniedExpired = await verify(ctx, { key: expired.key, configId: "expiration-negative" });
@@ -417,11 +419,20 @@ compatScenario(
       const split = ["start-one", "start-fraction", "plaintext"].includes(configId);
       const all = configId === "start-all";
       const disabled = configId === "start-disabled";
-      const start = split ? "���" : all ? key.key : disabled ? null : "";
+      // Node stores U+FFFD for an unpaired UTF-16 unit; native SQLite retains
+      // WTF-8, which decodes to three replacement characters on readback.
+      const node = ctx.baseURL === TS_BASE_URL;
+      const start = split ? (node ? "�" : "���") : all ? key.key : disabled ? null : "";
       expect(key.start).toBe(start);
       expect(stored.start).toBe(start);
       expect(stored.startHex).toBe(
-        split ? "EDA0BD" : all ? Buffer.from(key.key).toString("hex").toUpperCase() : "",
+        split
+          ? node
+            ? "EFBFBD"
+            : "EDA0BD"
+          : all
+            ? Buffer.from(key.key).toString("hex").toUpperCase()
+            : "",
       );
       expect(stored.startType).toBe(disabled ? "null" : "text");
       expect(stored.key).toBe(configId === "plaintext" ? key.key : hash(key.key));

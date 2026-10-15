@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { emailOTPClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { storedVerification, verificationCount } from "../../../support/verification";
@@ -32,7 +33,7 @@ for (const mode of ["hash", "cipher", "cipher-failure"] as const) {
       expect(initial).toHaveLength(1);
       const encoded =
         mode === "hash"
-          ? `application:${new Bun.CryptoHasher("sha256").update(otp).digest("hex")}`
+          ? `application:${createFixtureHash("sha256").update(otp).digest("hex")}`
           : `application:${Buffer.from([...Buffer.from(otp)].map((byte) => byte ^ 0x5a)).toString("hex")}`;
       expect(initial[0]!.value).toBe(`${encoded}:0`);
       const retrieve = await ctx.rawRequest({
@@ -81,7 +82,7 @@ for (const mode of ["hash", "cipher", "cipher-failure"] as const) {
         expect(resent[0]!.value).toBe(`${encoded}:1`);
       } else {
         expect(resent[0]!.value).toBe(
-          `application:${new Bun.CryptoHasher("sha256").update(nextOtp).digest("hex")}:0`,
+          `application:${createFixtureHash("sha256").update(nextOtp).digest("hex")}:0`,
         );
       }
       const third = await send();

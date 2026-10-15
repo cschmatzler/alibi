@@ -1,4 +1,5 @@
 import { randomUUID, sign as signBytes } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 import { inflateRawSync } from "node:zlib";
 
 import { XMLParser } from "fast-xml-parser";
@@ -61,17 +62,19 @@ export async function samlGrant(
 }
 
 async function samlSigner(wrongKey: boolean, unsupportedSignature = false) {
-  const privateKey = await Bun.file(
+  const privateKey = await readFixtureFile(
     new URL(
       wrongKey
         ? "../../../fixtures/one-tap/wrong-private-key.pem"
         : "../../fixtures/salesforce-transport/key.pem",
       import.meta.url,
     ),
-  ).text();
-  const cert = await Bun.file(
+    "utf8",
+  );
+  const cert = await readFixtureFile(
     new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const signer = new SignedXml({
     privateKey,
     publicCert: cert,

@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

@@ -1,11 +1,13 @@
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
+import { serveFixture } from "../http.ts";
+
 /** Genuine built-in provider configuration with only deterministic local transport. */
-export function socialProviderFixture(base: BetterAuthOptions) {
+export async function socialProviderFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   let profile: Record<string, unknown> = {};
   const receipts: unknown[] = [];
-  const provider = Bun.serve({
+  const provider = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -53,7 +55,7 @@ export function socialProviderFixture(base: BetterAuthOptions) {
       return previousFetch(new Request(`${provider.url}userinfo`, request));
     }
 
-    return previousFetch(input, init);
+    return previousFetch(request);
   }) as typeof fetch;
 
   for (const name of ["google", "github", "discord"] as const) {

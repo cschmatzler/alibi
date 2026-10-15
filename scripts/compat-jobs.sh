@@ -17,7 +17,7 @@ if [[ -r /proc/meminfo ]]; then
       if (( group_kib < available_kib )); then available_kib=$group_kib; fi
     fi
   fi
-  # Measurements include the full Rust/TypeScript pair and Bun client.
+  # Measurements include the full Rust/TypeScript pair and Nub client.
   # Reserve 4 GiB for the host and budget 1.5 GiB per active fixture pair.
   memory_jobs=$(((available_kib - 4 * 1024 * 1024) / (1536 * 1024)))
   if (( memory_jobs < 1 )); then memory_jobs=1; fi

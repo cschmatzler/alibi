@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 import { inflateRawSync, deflateRawSync } from "node:zlib";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "../../../support/scenario";
 import { idpXMLMetadata } from "./idp-metadata-input";
@@ -52,9 +53,10 @@ export async function samlLogoutFlow(
     },
   });
   expect(owner.status).toBe(200);
-  const cert = await Bun.file(
+  const cert = await readFixtureFile(
     new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const created = await control({
     body: {
       providerId,
@@ -73,9 +75,10 @@ export async function samlLogoutFlow(
             ? undefined
             : rollover
               ? [
-                  await Bun.file(
+                  await readFixtureFile(
                     new URL("../../../../fixtures/passkey-attestation/ca.pem", import.meta.url),
-                  ).text(),
+                    "utf8",
+                  ),
                   cert,
                 ]
               : cert,

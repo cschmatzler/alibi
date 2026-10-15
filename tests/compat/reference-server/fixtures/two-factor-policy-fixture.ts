@@ -1,8 +1,7 @@
-import type { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function createTwoFactorPolicyFixture(
   base: Parameters<typeof betterAuth>[0],
@@ -319,13 +318,13 @@ export function createTwoFactorPolicyFixture(
           ? body.pendingKey
           : (
               database
-                .query(
+                .prepare(
                   "SELECT identifier FROM verification WHERE value=? AND identifier LIKE '2fa-%'",
                 )
                 .get(body.userId) as { identifier: string } | null
             )?.identifier;
       const record = (identifier: string) =>
-        database.query("SELECT value FROM verification WHERE identifier=?").get(identifier) as {
+        database.prepare("SELECT value FROM verification WHERE identifier=?").get(identifier) as {
           value: string;
         } | null;
       return Response.json({
@@ -335,7 +334,7 @@ export function createTwoFactorPolicyFixture(
         otpExists: key ? Boolean(record(`2fa-otp-${key}`)) : false,
         trustCount: (
           database
-            .query(
+            .prepare(
               "SELECT count(*) AS n FROM verification WHERE value=? AND identifier LIKE 'trust-device-%'",
             )
             .get(body.userId) as { n: number }
@@ -345,21 +344,21 @@ export function createTwoFactorPolicyFixture(
 
     if (typeof body.trustIdentifier === "string") {
       database
-        .query("UPDATE verification SET value=? WHERE identifier=?")
+        .prepare("UPDATE verification SET value=? WHERE identifier=?")
         .run(body.userId, body.trustIdentifier);
       return Response.json({ status: true });
     }
 
     if (body.emptyCredentialPassword === true) {
       database
-        .query("UPDATE account SET password='' WHERE userId=? AND providerId='credential'")
+        .prepare("UPDATE account SET password='' WHERE userId=? AND providerId='credential'")
         .run(body.userId);
     }
 
     if (body.credentialState === true) {
       return Response.json(
         database
-          .query(
+          .prepare(
             "SELECT userId,providerId,password FROM account WHERE userId=? ORDER BY providerId",
           )
           .all(body.userId)
@@ -380,30 +379,30 @@ export function createTwoFactorPolicyFixture(
         return Response.json({ message: "invalid factor import" }, { status: 400 });
       }
       database
-        .query("UPDATE twoFactor SET secret=?,backupCodes=? WHERE userId=?")
+        .prepare("UPDATE twoFactor SET secret=?,backupCodes=? WHERE userId=?")
         .run(factor.secret, factor.backupCodes, body.userId);
     }
 
     if (Object.hasOwn(body, "count")) {
       database
-        .query("UPDATE twoFactor SET failedVerificationCount=? WHERE userId=?")
+        .prepare("UPDATE twoFactor SET failedVerificationCount=? WHERE userId=?")
         .run(body.count as number | null, body.userId);
     }
 
     if (typeof body.verified === "boolean") {
       database
-        .query("UPDATE twoFactor SET verified=? WHERE userId=?")
+        .prepare("UPDATE twoFactor SET verified=? WHERE userId=?")
         .run(body.verified ? 1 : 0, body.userId);
     }
 
     if (body.expireLock === true) {
       database
-        .query("UPDATE twoFactor SET lockedUntil=? WHERE userId=?")
+        .prepare("UPDATE twoFactor SET lockedUntil=? WHERE userId=?")
         .run(new Date(Date.now() - 1000).toISOString(), body.userId);
     }
 
     const row = database
-      .query(
+      .prepare(
         "SELECT id,userId,secret,backupCodes,verified,failedVerificationCount,lockedUntil FROM twoFactor WHERE userId=?",
       )
       .get(body.userId) as Record<string, unknown> | null;

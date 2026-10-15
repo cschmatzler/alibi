@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { SignJWT, importJWK } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
@@ -39,10 +40,11 @@ compatScenario(
     });
     expect(created.status).toBe(201);
     const client = (await created.json()) as any;
-    const key = (
-      await Bun.file(
+    const key = JSON.parse(
+      await readFixtureFile(
         new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
-      ).json()
+        "utf8",
+      ),
     ).keys.find((key: any) => key.family === "Ed25519");
     const jkt = hash(
       JSON.stringify({ crv: key.publicJwk.crv, kty: key.publicJwk.kty, x: key.publicJwk.x }),

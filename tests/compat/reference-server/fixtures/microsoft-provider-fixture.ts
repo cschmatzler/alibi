@@ -1,16 +1,17 @@
+import { readFileSync } from "node:fs";
+
 import { microsoft } from "@better-auth/core/social-providers";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
+
+import { serveFixture } from "../http.ts";
 /** Unchanged published factory; network receipts come from actual fixed trusted destinations. */
-export function microsoftProviderFixture(base: BetterAuthOptions) {
+export async function microsoftProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const mapperReceipts: unknown[] = [];
   const assertionReceipts: unknown[] = [];
   const defaultKeys = JSON.parse(
-    require("node:fs").readFileSync(
-      new URL("../../../fixtures/one-tap/jwks.json", import.meta.url),
-      "utf8",
-    ),
+    readFileSync(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url), "utf8"),
   );
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   let constructorError: string | null = null;
@@ -25,7 +26,7 @@ export function microsoftProviderFixture(base: BetterAuthOptions) {
   }
   const authority = String(base.baseURL);
   const tenants = ["common", "organizations", "consumers", "fixture-tenant"];
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const path = new URL(request.url).pathname;
@@ -90,7 +91,7 @@ export function microsoftProviderFixture(base: BetterAuthOptions) {
         new Request(new URL("/photo/" + url.pathname.split("/")[4], transport.url), request),
       );
     }
-    return previousFetch(input, init);
+    return previousFetch(request);
   }) as typeof fetch;
   for (const mode of [
     "default",

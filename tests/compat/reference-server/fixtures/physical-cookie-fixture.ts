@@ -1,6 +1,5 @@
-import type { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+import type { Database } from "better-sqlite3";
 
 /** Actual configured producers; every header comes from installed auth routes. */
 export function physicalCookieProfiles(base: BetterAuthOptions, database: Database) {
@@ -191,7 +190,7 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
         (url.searchParams.get("email")
           ? (
               database
-                .query("SELECT id FROM user WHERE email=?")
+                .prepare("SELECT id FROM user WHERE email=?")
                 .get(url.searchParams.get("email")) as { id: string } | null
             )?.id
           : undefined);
@@ -203,15 +202,15 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
       // All declared core columns, physically read with an independently scoped bind.
       return Response.json({
         user: database
-          .query(
+          .prepare(
             "SELECT id,name,email,emailVerified,image,createdAt,updatedAt FROM user WHERE id=?",
           )
           .all(id),
         accounts: database
-          .query("SELECT * FROM account WHERE userId=? ORDER BY providerId,accountId,id")
+          .prepare("SELECT * FROM account WHERE userId=? ORDER BY providerId,accountId,id")
           .all(id),
         sessions: database
-          .query(
+          .prepare(
             "SELECT id,expiresAt,token,createdAt,updatedAt,ipAddress,userAgent,userId FROM session WHERE userId=? ORDER BY createdAt,id",
           )
           .all(id),

@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { symmetricDecrypt } from "better-auth/crypto";
+import { parseHTML } from "linkedom";
+import { expect } from "vitest";
 
 import { oauthPurposeSecret } from "../../../support/oauth-encryption";
 import { authProfilePath } from "../../../support/profiles";
@@ -142,25 +143,13 @@ for (const mode of ["valid", "missing-state", "wrong-state"] as const) {
       expect(provided.headers.get("content-type")).toContain("text/html");
       let action = "";
       const fields = new URLSearchParams();
-      await new HTMLRewriter()
-        .on("form", {
-          element(el) {
-            action = el.getAttribute("action")!;
-            expect(el.getAttribute("method")).toBe("post");
-          },
-        })
-        .on("input", {
-          element(el) {
-            fields.set(el.getAttribute("name")!, el.getAttribute("value")!);
-          },
-        })
-        .transform(provided)
-        .text();
-      // HTMLRewriter retains entity spellings in attribute values.
-      const decode = (value: string) =>
-        value.replaceAll("&quot;", '"').replaceAll("&lt;", "<").replaceAll("&amp;", "&");
-      action = decode(action);
-      for (const [key, value] of fields) fields.set(key, decode(value));
+      const { document } = parseHTML(await provided.text());
+      const form = document.querySelector("form")!;
+      action = form.getAttribute("action")!;
+      expect(form.getAttribute("method")).toBe("post");
+      for (const input of document.querySelectorAll("input")) {
+        fields.set(input.getAttribute("name")!, input.getAttribute("value")!);
+      }
       const payload = JSON.parse(fields.get("user")!);
       expect(payload).toEqual({
         name: { firstName: "Élodie &", lastName: "Form <Owner>" },

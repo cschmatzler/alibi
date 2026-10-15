@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { oneTimeTokenClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 

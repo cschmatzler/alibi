@@ -1,5 +1,6 @@
-import { expect, test } from "bun:test";
 import { deflateRawSync } from "node:zlib";
+
+import { expect, test } from "vitest";
 
 import { compareValues } from "../support/compare";
 const context = {

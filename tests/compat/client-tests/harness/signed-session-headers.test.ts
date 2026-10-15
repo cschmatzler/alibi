@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { betterAuth } from "better-auth";
@@ -10,7 +8,10 @@ import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt, multiSession, oneTimeToken, twoFactor } from "better-auth/plugins";
 import { createLocalJWKSet, jwtVerify } from "jose";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import {
@@ -25,7 +26,7 @@ const secret = "signed-header-harness-application-secret32";
 type Data = Record<string, any>;
 
 async function capture(compact = false) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   const traces: TraceEntry[] = [];
   const events: Data[] = [];
   let baseURL = "";
@@ -49,7 +50,7 @@ async function capture(compact = false) {
       session: ctx.context.session,
     });
   };
-  const server = Bun.serve({
+  const server = await serveFixture({
     port: 0,
     async fetch(request) {
       if (new URL(request.url).pathname !== "/__test/signed-header-call") {
@@ -244,7 +245,7 @@ async function capture(compact = false) {
     );
     expect(replay.statusCode).toBe(400);
     expect(replay.body).toEqual({ message: "Invalid token" });
-    expect(database.query("SELECT * FROM verification").all()).toEqual([]);
+    expect(database.prepare("SELECT * FROM verification").all()).toEqual([]);
 
     let rotatedCookie = "";
     let rotatedHeaders: Headers | undefined;
@@ -264,14 +265,14 @@ async function capture(compact = false) {
     expect(rotated.error).toBeNull();
     expect(rotated.data!.user.id).toBe(owner.result!.user.id);
     expect(rotated.data!.token).not.toBe(owner.result!.token);
-    expect(database.query("SELECT * FROM session").all()).toHaveLength(3);
+    expect(database.prepare("SELECT * FROM session").all()).toHaveLength(3);
 
     const rows: Data = {};
 
     if (compact) {
       for (const table of ["user", "account", "session", "verification"]) {
         const stored = database
-          .query(
+          .prepare(
             table === "account"
               ? "SELECT account.* FROM account JOIN user ON user.id=account.userId ORDER BY user.name,account.id"
               : `SELECT * FROM ${table} ORDER BY ${table === "verification" ? "identifier" : table === "user" ? "name" : "createdAt"},id`,
@@ -382,6 +383,13 @@ test("actual Source signed session headers retain HMAC issuance physical and log
     return `${raw.slice(0, separator + 1)}${encodeURIComponent(`${decoded.slice(0, dot + 1)}${signature[0] === "A" ? "B" : "A"}${signature.slice(1)}`)}`;
   };
   const mutations: { mutate: (value: Data) => void; path: string; reason: string }[] = [
+    {
+      mutate: (value) => {
+        value.observation.observed.events[0].request.headers.host = "foreign.fixture.test";
+      },
+      path: "observation.observed.events.0.request.headers.host",
+      reason: "value or type differs",
+    },
     {
       mutate: (value) => {
         value.observation.owner.headers.cookie = value.observation.foreign.headers.cookie;
@@ -892,11 +900,11 @@ for (const cookieName of [
 ]) {
   test(`${cookieName} actual Source factor rotation binds multi-session issuance and later tombstones to authenticated request ownership`, async () => {
     async function captureRotation(multiple = false) {
-      const database = new Database(":memory:");
+      const database = createDatabase(":memory:");
       const traces: TraceEntry[] = [];
       const requests: Data[] = [];
       let handler: (request: Request) => Promise<Response>;
-      const server = Bun.serve({
+      const server = await serveFixture({
         port: 0,
         async fetch(request) {
           requests.push({
@@ -944,9 +952,9 @@ for (const cookieName of [
         expect(signup.error).toBeNull();
         expect(other.error).toBeNull();
         const state = (id: string) => ({
-          user: database.query("SELECT * FROM user WHERE id=?").get(id),
-          accounts: database.query("SELECT * FROM account WHERE userId=? ORDER BY id").all(id),
-          sessions: database.query("SELECT * FROM session WHERE userId=? ORDER BY id").all(id),
+          user: database.prepare("SELECT * FROM user WHERE id=?").get(id),
+          accounts: database.prepare("SELECT * FROM account WHERE userId=? ORDER BY id").all(id),
+          sessions: database.prepare("SELECT * FROM session WHERE userId=? ORDER BY id").all(id),
         });
         const foreignBefore = state(other.data!.user.id);
         const beforeRotation = state(signup.data!.user.id);
@@ -958,7 +966,7 @@ for (const cookieName of [
         expect(enabled.data).toEqual({ method: "otp" });
 
         const rows = database
-          .query("SELECT token,userId FROM session WHERE userId=?")
+          .prepare("SELECT token,userId FROM session WHERE userId=?")
           .all(signup.data!.user.id) as { token: string; userId: string }[];
         expect(rows).toHaveLength(1);
         expect(rows[0]!.token).not.toBe(signup.data!.token!);
@@ -977,7 +985,7 @@ for (const cookieName of [
         const cookie = cookies.join("; ");
         expect((await owner.signOut({ fetchOptions: { headers: { cookie } } })).error).toBeNull();
         expect(
-          database.query("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id),
+          database.prepare("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id),
         ).toEqual([]);
         const afterLogout = state(signup.data!.user.id);
         const foreignAfter = state(other.data!.user.id);

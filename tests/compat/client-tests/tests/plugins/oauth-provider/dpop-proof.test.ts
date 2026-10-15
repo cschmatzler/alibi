@@ -1,5 +1,7 @@
-import { expect } from "bun:test";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { expect } from "vitest";
 const weakKey = generateKeyPairSync("rsa", { modulusLength: 1024 });
 
 import { SignJWT, importJWK } from "jose";
@@ -24,10 +26,11 @@ compatScenario(
       expect(response.status).toBe(200);
       return (await response.json()) as any;
     };
-    const keys = (
-      await Bun.file(
+    const keys = JSON.parse(
+      await readFixtureFile(
         new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
-      ).json()
+        "utf8",
+      ),
     ).keys;
     const ed = keys.find((key: any) => key.family === "Ed25519");
     const publicKey = ed.publicJwk;

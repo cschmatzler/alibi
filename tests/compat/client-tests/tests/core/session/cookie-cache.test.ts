@@ -1,5 +1,5 @@
-import { expect } from "bun:test";
 import { createHash, createHmac } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { createAuthClient } from "better-auth/client";
 import {
@@ -14,7 +14,9 @@ import { getCookieCache } from "better-auth/cookies";
 import { verifyPassword } from "better-auth/crypto";
 import { type JWK } from "jose";
 import { Cookie, CookieJar } from "tough-cookie";
+import { expect } from "vitest";
 
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import { verifyWithOfficialJose } from "../../plugins/jwt/helpers";
@@ -84,7 +86,7 @@ async function cacheOwnerRows(ctx: ScenarioContext, userId: string, mode?: strin
 
         const hash = account.password;
         expect(hash).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
-        expect(await verifyPassword({ password: "password123", hash })).toBeTrue();
+        expect(await verifyPassword({ password: "password123", hash })).toBe(true);
 
         const [salt, derivedKey] = hash.split(":");
         return {
@@ -128,7 +130,7 @@ compatScenario(
     const issued = owner.headers.at(-1)!;
     const signed = await atom(issued);
     const foreignBefore = await cacheOwnerRows(ctx, other.data!.user.id, "guards");
-    const phoneNumber = `+1${String(Bun.hash(ctx.uniqueToken("compact-phone")))
+    const phoneNumber = `+1${String(hashLabel(ctx.uniqueToken("compact-phone")))
       .padStart(10, "0")
       .slice(-10)}`;
     const delivery = await cacheGuardRequest(ctx, owner, "/phone-number/send-otp", [], {
@@ -146,7 +148,7 @@ compatScenario(
       proof.verifications.some(
         (row) => row.identifier === phoneNumber && row.value === `${sent!.code}:0`,
       ),
-    ).toBeTrue();
+    ).toBe(true);
 
     await control(ctx, "guards", { action: "revoke", token: signup.data!.token });
     const verified = await cacheGuardRequest(
@@ -165,7 +167,7 @@ compatScenario(
       phoneNumberVerified: true,
     });
     expect(after.sessions).toEqual([]);
-    expect(after.verifications.some((row) => row.identifier === phoneNumber)).toBeFalse();
+    expect(after.verifications.some((row) => row.identifier === phoneNumber)).toBe(false);
 
     const receipts = await control(ctx, "guards", { action: "state" });
     expect(receipts.events.filter((event) => event.stage === "phone-verified")).toHaveLength(1);
@@ -936,7 +938,7 @@ compatScenario(
     expect(issued.compactSessionCache.decoded!.session).toEqual(
       original.compactSessionCache.decoded!.session,
     );
-    expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBeTrue();
+    expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBe(true);
 
     const receipts = await control(ctx, "interactions", { action: "state" });
     expect(
@@ -968,7 +970,7 @@ compatScenario(
     const current = active.observation;
     expect(current.status).toBe(200);
     expect(current.body.user.name).toBe("Original Signed Email Snapshot");
-    expect(current.body.user.emailVerified).toBeTrue();
+    expect(current.body.user.emailVerified).toBe(true);
 
     const jwks = await owner.sdk.jwks();
     expect(jwks.error).toBeNull();
@@ -1039,7 +1041,7 @@ compatScenario(
     const issued = await atom(headers);
     expect(issued.compactSessionCache.decoded!.user.id).toBe(signup.data!.user.id);
     expect(issued.compactSessionCache.decoded!.session.token).toBe(signup.data!.token!);
-    expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBeTrue();
+    expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBe(true);
 
     const receipts = await control(ctx, "interactions", { action: "state" });
     const linked = receipts.events.find((event) => event.link)!;
@@ -1232,12 +1234,12 @@ compatScenario(
           (raw) => raw.startsWith(cookieName + "=") || raw.startsWith("better-auth.session_token="),
         )
         .every((raw) => Cookie.parse(raw)?.maxAge === 0),
-    ).toBeTrue();
-    expect(pendingCookies.some((raw) => raw.includes("_multi-"))).toBeFalse();
+    ).toBe(true);
+    expect(pendingCookies.some((raw) => raw.includes("_multi-"))).toBe(false);
 
     const afterPending = await control(ctx, "interactions", { action: "state" });
     expect(afterPending.events).toHaveLength(1);
-    expect(afterPending.events[0]!.user.twoFactorEnabled).toBeTrue();
+    expect(afterPending.events[0]!.user.twoFactorEnabled).toBe(true);
 
     const transient = afterPending.events[0]!.session;
     expect(transient.userId).toBe(signup.data!.user.id);
@@ -1267,7 +1269,7 @@ compatScenario(
     expect(issued.compactSessionCache.decoded!.session.token).toBe(verified.data!.token);
 
     const live = verifiedHeaders.getSetCookie().filter((raw) => Cookie.parse(raw)?.value);
-    expect(live.some((raw) => raw.includes("_multi-"))).toBeTrue();
+    expect(live.some((raw) => raw.includes("_multi-"))).toBe(true);
 
     for (const raw of live.filter((raw) => !raw.includes("_multi-"))) {
       expect(raw).not.toMatch(/(?:Max-Age|Expires)=/i);
@@ -1276,7 +1278,7 @@ compatScenario(
     const completed = await cacheOwnerRows(ctx, signup.data!.user.id, "interactions");
     expect(completed.sessions).toHaveLength(1);
     expect(completed.sessions[0]!.token).toBe(verified.data!.token);
-    expect(completed.verifications.some((row) => row.value === signup.data!.user.id)).toBeFalse();
+    expect(completed.verifications.some((row) => row.value === signup.data!.user.id)).toBe(false);
 
     const current = await owner.sdk.getSession();
     expect(current.data!.session.token).toBe(verified.data!.token);
@@ -1474,7 +1476,7 @@ compatScenario(
     expect(enabled.error).toBeNull();
 
     const replacement = await atom(owner.headers.at(-1)!);
-    expect(replacement.compactSessionCache.decoded!.user.twoFactorEnabled).toBeTrue();
+    expect(replacement.compactSessionCache.decoded!.user.twoFactorEnabled).toBe(true);
 
     const current = await owner.sdk.getSession();
     expect(current.data!.session.token).not.toBe(signup.data!.token!);
@@ -1496,7 +1498,7 @@ compatScenario(
 
     const after = await cacheOwnerRows(ctx, signup.data!.user.id, "interactions");
     expect(after.sessions).toEqual([]);
-    expect(after.users[0]!.twoFactorEnabled).toBeTrue();
+    expect(after.users[0]!.twoFactorEnabled).toBe(true);
 
     return {
       signup,
@@ -2149,9 +2151,12 @@ compatScenario(
 compatScenario(
   "compact exotic original bytes preserve published decoding callback order HTTP fallback and physical owners",
   async (ctx) => {
-    const vectors = (await Bun.file(
-      new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
-    ).json()) as {
+    const vectors = JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
+        "utf8",
+      ),
+    ) as {
       javascriptOnlyObservations: { name: string; header: string; decodedJSON: string }[];
       observations: {
         name: string;
@@ -2300,9 +2305,12 @@ compatScenario(
 compatScenario(
   "compact public helper and HTTP separately preserve noncanonical duplicate gap base and truncation parsing",
   async (ctx) => {
-    const vectors = await Bun.file(
-      new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
-    ).json();
+    const vectors = JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
+        "utf8",
+      ),
+    );
     const input = vectors.observations.find((v: any) => v.name === "canonical");
     await control(ctx, "exotic", { action: "reset" });
     const owner = client(ctx, "exotic");

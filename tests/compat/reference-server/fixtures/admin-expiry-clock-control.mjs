@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -6,6 +5,8 @@ import { APIError } from "@better-auth/core/error";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin } from "better-auth/plugins/admin";
+
+import { createDatabase } from "../sqlite.ts";
 // Explicit fixture clock; published files are untouched. Both constructor and
 // Date.now return the exact same instant; monotonic runtime clocks stay real.
 const RealDate = Date;
@@ -20,7 +21,7 @@ class ProofDate extends RealDate {
 }
 globalThis.Date = ProofDate;
 assert.equal(new Date().getTime(), Date.now());
-const database = new Database(":memory:");
+const database = createDatabase(":memory:");
 const secret = "numeric-admin-identity-secret-at-least-32";
 let mode = 0;
 const events = [];
@@ -77,7 +78,7 @@ const auth = betterAuth(options);
 const ctx = await auth.$context;
 for (const id of [1, 2, 3, 42, 43]) {
   database
-    .query(
+    .prepare(
       "INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt,role,banned) VALUES(?,?,?,0,?,?,'user',0)",
     )
     .run(
@@ -88,7 +89,7 @@ for (const id of [1, 2, 3, 42, 43]) {
       new Date().toISOString(),
     );
   database
-    .query(
+    .prepare(
       "INSERT INTO account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES(?,?,'credential',?,'fixture-password',?,?)",
     )
     .run(id, String(id), id, new Date().toISOString(), new Date().toISOString());
@@ -99,7 +100,7 @@ const snapshot = () =>
   Object.fromEntries(
     ["user", "account", "session"].map((t) => [
       t,
-      database.query(`SELECT * FROM ${t} ORDER BY id`).all(),
+      database.prepare(`SELECT * FROM ${t} ORDER BY id`).all(),
     ]),
   );
 const signed = encodeURIComponent(
@@ -146,7 +147,7 @@ for (const [m, delta, target, status, expected, cleared, inserted] of [
 ]) {
   mode = m;
   database
-    .query("UPDATE user SET banned=1,banReason='boundary',banExpires=?,updatedAt=? WHERE id=42")
+    .prepare("UPDATE user SET banned=1,banReason='boundary',banExpires=?,updatedAt=? WHERE id=42")
     .run(new Date(clockMs + delta).toISOString(), new Date().toISOString());
   events.length = 0;
   const before = snapshot();

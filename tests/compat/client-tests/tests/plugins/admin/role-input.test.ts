@@ -1,8 +1,7 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { adminClient } from "better-auth/client/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";

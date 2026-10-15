@@ -1,36 +1,36 @@
+import { setTimeout } from "node:timers/promises";
 /** Genuine published invitation callbacks with application-owned SQL and barriers. */
-
-import type { Database } from "bun:sqlite";
 
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export function invitationSnapshot(database: Database) {
   return {
     invitations: database
-      .query(
+      .prepare(
         "SELECT id,organizationId,email,role,teamId,status,expiresAt,createdAt,inviterId FROM invitation ORDER BY rowid",
       )
       .all(),
     members: database
-      .query("SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid")
+      .prepare("SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid")
       .all(),
     teams: database
-      .query(
+      .prepare(
         "SELECT id,name,organizationId,memberCount,createdAt,updatedAt FROM team ORDER BY rowid",
       )
       .all(),
     teamMembers: database
-      .query("SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid")
+      .prepare("SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid")
       .all(),
     sessions: database
-      .query(
+      .prepare(
         "SELECT id,userId,token,expiresAt,createdAt,updatedAt,ipAddress,userAgent,impersonatedBy,activeOrganizationId,activeTeamId FROM session ORDER BY rowid",
       )
       .all(),
     organizations: database
-      .query("SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid")
+      .prepare("SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid")
       .all(),
   };
 }
@@ -101,7 +101,7 @@ export function organizationInvitationAcceptanceFixture(
               maximumMembersPerTeam: async (context) => {
                 if (mode !== "off") {
                   const invitationStatus = database
-                    .query(
+                    .prepare(
                       "SELECT id,status FROM invitation WHERE organizationId=? AND email=? ORDER BY rowid",
                     )
                     .all(context.organizationId, context.session.user.email.toLowerCase());
@@ -123,7 +123,7 @@ export function organizationInvitationAcceptanceFixture(
                 await note("before-accept", context);
                 if (mode === "replace-team") {
                   database
-                    .query("UPDATE invitation SET teamId=? WHERE id=?")
+                    .prepare("UPDATE invitation SET teamId=? WHERE id=?")
                     .run(replacementTeamId!, context.invitation.id);
                 }
                 if (mode === "pause-before") {
@@ -190,14 +190,14 @@ export function organizationInvitationAcceptanceFixture(
         const userId = String(body.userId);
 
         if (
-          !database.query("SELECT id FROM invitation WHERE id=?").get(invitationId) ||
-          !database.query("SELECT id FROM user WHERE id=?").get(userId)
+          !database.prepare("SELECT id FROM invitation WHERE id=?").get(invitationId) ||
+          !database.prepare("SELECT id FROM user WHERE id=?").get(userId)
         ) {
           throw new Error("Guard requires actual invitation and user");
         }
 
         database
-          .query("INSERT INTO __test_invitation_stage_guard(invitationId,userId) VALUES(?,?)")
+          .prepare("INSERT INTO __test_invitation_stage_guard(invitationId,userId) VALUES(?,?)")
           .run(invitationId, userId);
 
         if (mode === "sql-member" || mode === "sql-reset") {
@@ -240,7 +240,7 @@ export function organizationInvitationAcceptanceFixture(
     async state(waitFor: string | null) {
       if (waitFor) {
         for (let n = 0; n < 100 && gates.length < Number(waitFor); n++) {
-          await Bun.sleep(10);
+          await setTimeout(10);
         }
       }
       return Response.json({

@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { splitSetCookieHeader } from "better-auth/cookies";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";

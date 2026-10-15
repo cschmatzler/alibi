@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "../../../support/scenario";
 export async function socialDomainMembershipFlow(ctx: ScenarioContext, http: boolean) {

@@ -1,10 +1,10 @@
-import { Database } from "bun:sqlite";
-
 import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { magicLink, openAPI } from "better-auth/plugins";
+
+import { createDatabase } from "../sqlite.ts";
 
 /** Real application entities isolated from other profiles' physical schemas. */
 export async function additionalFieldsFixture(base: BetterAuthOptions) {
@@ -32,7 +32,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
   ] as const) {
     const transformed =
       mode === "output" || mode === "cached" || mode === "provider" || mode === "issuer";
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     const events: Record<string, unknown>[] = [];
     const gates = () => {
       const ready = Promise.withResolvers<void>();
@@ -128,13 +128,14 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
           omittedPresent: Object.hasOwn(record, "omitted"),
           omittedUndefined: record.omitted === undefined,
           persisted: {
-            users: database.query("SELECT COUNT(*) AS count FROM app_user WHERE id = ?").get(owner)!
-              .count,
+            users: database
+              .prepare("SELECT COUNT(*) AS count FROM app_user WHERE id = ?")
+              .get(owner)!.count,
             accounts: database
-              .query("SELECT COUNT(*) AS count FROM app_account WHERE userId = ?")
+              .prepare("SELECT COUNT(*) AS count FROM app_account WHERE userId = ?")
               .get(owner)!.count,
             sessions: database
-              .query("SELECT COUNT(*) AS count FROM app_session WHERE userId = ?")
+              .prepare("SELECT COUNT(*) AS count FROM app_session WHERE userId = ?")
               .get(owner)!.count,
           },
         });
@@ -514,7 +515,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
                           });
                           const token = ctx?.context.session?.session.token;
                           const stored = database
-                            .query("SELECT hidden FROM app_session WHERE token=?")
+                            .prepare("SELECT hidden FROM app_session WHERE token=?")
                             .get(token ?? "") as { hidden: string } | null;
                           const command =
                             data.hidden ??
@@ -537,7 +538,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
 
                           if (command === "delete") {
                             database
-                              .query("DELETE FROM app_session WHERE token=?")
+                              .prepare("DELETE FROM app_session WHERE token=?")
                               .run(token ?? "");
                           }
 
@@ -563,12 +564,14 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     await (await getMigrations(auth.options)).runMigrations();
 
     if (mode !== "plugin") {
-      database.run("ALTER TABLE app_user ADD COLUMN role TEXT");
+      database.prepare("ALTER TABLE app_user ADD COLUMN role TEXT").run();
     }
 
-    database.run(
-      "ALTER TABLE app_user ADD COLUMN private_column TEXT NOT NULL DEFAULT 'physical-private'",
-    );
+    database
+      .prepare(
+        "ALTER TABLE app_user ADD COLUMN private_column TEXT NOT NULL DEFAULT 'physical-private'",
+      )
+      .run();
     profiles.set(path, auth);
     applications.set(mode, {
       database,
@@ -591,7 +594,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         resetCollection();
         events.length = 0;
         for (const table of ["app_session", "app_account", "app_verification", "app_user"]) {
-          database.run(`DELETE FROM ${table}`);
+          database.prepare(`DELETE FROM ${table}`).run();
         }
       }
     },
@@ -670,27 +673,26 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
           await application.releasePending();
         }
 
-        database.run("UPDATE app_session SET expiresAt=? WHERE token=?", [
-          new Date(expiresAt).toISOString(),
-          token,
-        ]);
+        database
+          .prepare("UPDATE app_session SET expiresAt=? WHERE token=?")
+          .run([new Date(expiresAt).toISOString(), token]);
 
         if (label !== undefined) {
-          database.run("UPDATE app_session SET label=? WHERE token=?", [label, token]);
+          database.prepare("UPDATE app_session SET label=? WHERE token=?").run([label, token]);
         }
 
         if (omitted !== undefined) {
-          database.run("UPDATE app_session SET omitted=? WHERE token=?", [omitted, token]);
+          database.prepare("UPDATE app_session SET omitted=? WHERE token=?").run([omitted, token]);
         }
 
         if (hidden !== undefined) {
-          database.run("UPDATE app_session SET hidden=? WHERE token=?", [hidden, token]);
+          database.prepare("UPDATE app_session SET hidden=? WHERE token=?").run([hidden, token]);
         }
       }
 
       const rows = (table: string) =>
         database
-          .query(`SELECT * FROM ${table}`)
+          .prepare(`SELECT * FROM ${table}`)
           .all()
           .map((value) => {
             const row = value as Record<string, unknown>;

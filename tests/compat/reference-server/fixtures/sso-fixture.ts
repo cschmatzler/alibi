@@ -1,4 +1,4 @@
-import { Database } from "bun:sqlite";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { sso } from "@better-auth/sso";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
@@ -6,13 +6,14 @@ import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { organization, username } from "better-auth/plugins";
 
+import { createDatabase } from "../sqlite.ts";
 import { ssoDnsFixture } from "./sso-dns-fixture";
 import { ssoOidcFixture } from "./sso-oidc-fixture";
 import { samlGrant, signedLogout } from "./sso-saml-grant";
 export async function ssoFixture(base: BetterAuthOptions) {
   let providerLimit = 0;
   const limitEvents: any[] = [];
-  const idp = ssoOidcFixture();
+  const idp = await ssoOidcFixture();
   const provisioningEvents: any[] = [];
   const roleEvents: any[] = [];
   const validationEvents: any[] = [];
@@ -116,9 +117,10 @@ export async function ssoFixture(base: BetterAuthOptions) {
       samlConfig: {
         issuer: "https://sp.example.test/entity",
         entryPoint: "https://idp.example.test/sso",
-        cert: await Bun.file(
+        cert: await readFixtureFile(
           new URL("../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-        ).text(),
+          "utf8",
+        ),
         idpMetadata: { entityID: "https://idp.example.test/entity" },
         wantAssertionsSigned: true,
       },
@@ -172,18 +174,22 @@ export async function ssoFixture(base: BetterAuthOptions) {
                   privateKey:
                     mode === "jwk"
                       ? {
-                          privateKeyJwk: await Bun.file(
-                            new URL(
-                              "../../fixtures/salesforce-transport/private.jwk.json",
-                              import.meta.url,
+                          privateKeyJwk: JSON.parse(
+                            await readFixtureFile(
+                              new URL(
+                                "../../fixtures/salesforce-transport/private.jwk.json",
+                                import.meta.url,
+                              ),
+                              "utf8",
                             ),
-                          ).json(),
+                          ),
                           privateKeyPem: "unusable PEM must not be imported",
                         }
                       : {
-                          privateKeyPem: await Bun.file(
+                          privateKeyPem: await readFixtureFile(
                             new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
-                          ).text(),
+                            "utf8",
+                          ),
                         },
                 }
               : {}),
@@ -192,9 +198,10 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   });
-  const privateKeyPem = await Bun.file(
+  const privateKeyPem = await readFixtureFile(
     new URL("../../fixtures/salesforce-transport/key.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const resolverOptions = {
     ...options,
     plugins: [
@@ -347,7 +354,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       }),
     ],
   };
-  const storageDatabase = new Database(":memory:");
+  const storageDatabase = createDatabase(":memory:");
   const storageFields = {
     issuer: "application_issuer",
     domain: "application_domain",
@@ -375,7 +382,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(storageOptions)).runMigrations();
-  const swappedDatabase = new Database(":memory:");
+  const swappedDatabase = createDatabase(":memory:");
   const swappedOptions = {
     ...options,
     database: swappedDatabase,
@@ -393,7 +400,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(swappedOptions)).runMigrations();
-  const domainSwappedDatabase = new Database(":memory:");
+  const domainSwappedDatabase = createDatabase(":memory:");
   const domainSwappedOptions = {
     ...options,
     database: domainSwappedDatabase,
@@ -411,7 +418,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(domainSwappedOptions)).runMigrations();
-  const additionalDatabase = new Database(":memory:");
+  const additionalDatabase = createDatabase(":memory:");
   const additionalOptions = {
     ...options,
     database: additionalDatabase,
@@ -439,7 +446,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
     ],
   };
   await (await getMigrations(additionalOptions)).runMigrations();
-  const callbackDatabase = new Database(":memory:");
+  const callbackDatabase = createDatabase(":memory:");
   const callbackOptions = {
     ...options,
     database: callbackDatabase,
@@ -776,13 +783,13 @@ export async function ssoFixture(base: BetterAuthOptions) {
       const domain = mode === "storage-domain-swap" ? "issuer" : "application_domain";
       const oidc = mode === "storage-swap" ? "issuer" : "application_oidc";
       const tables = selectedDatabase
-        .query("SELECT name FROM sqlite_master WHERE type='table'")
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
         .all() as any[];
       const customTableExists = tables.some((table) => table.name === "application_sso_provider");
       const defaultTableExists = tables.some((table) => table.name === "ssoProvider");
       const rows = customTableExists
         ? selectedDatabase
-            .query(
+            .prepare(
               `SELECT id,${issuer} AS issuer,${domain} AS domain,application_provider AS providerId,application_owner AS userId,application_org AS organizationId,${oidc} AS oidcConfig,application_saml AS samlConfig,application_verified AS domainVerified FROM application_sso_provider ORDER BY application_provider`,
             )
             .all()

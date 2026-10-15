@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { SignJWT, jwtVerify } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 for (const authenticated of [true, false]) {

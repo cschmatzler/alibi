@@ -1,10 +1,10 @@
-import { expect } from "bun:test";
 import { createConnection } from "node:net";
 
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 
 import { Authenticator } from "../../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -876,7 +876,7 @@ for (const profile of ["client-ip-trusted", "client-ip-disabled"] as const) {
         token: string;
         url: string;
       };
-      expect(delivery.token).toBeString();
+      expect(delivery.token).toBeTypeOf("string");
 
       const signOut = await owner.client.signOut();
       expect(signOut.error).toBeNull();

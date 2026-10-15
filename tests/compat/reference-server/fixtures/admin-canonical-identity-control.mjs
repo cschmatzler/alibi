@@ -1,5 +1,3 @@
-// Focused native control for Better Auth 1.7.6; run with Bun from the pinned reference project.
-import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 
@@ -7,7 +5,10 @@ import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { createAccessControl } from "better-auth/plugins/access";
 import { admin } from "better-auth/plugins/admin";
-const database = new Database(":memory:");
+
+// Focused native control for Better Auth 1.7.6; run with Nub from the pinned reference project.
+import { createDatabase } from "../sqlite.ts";
+const database = createDatabase(":memory:");
 const secret = "numeric-admin-identity-secret-at-least-32";
 const ac = createAccessControl({ user: ["impersonate", "impersonate-admins"] });
 const options = {
@@ -39,20 +40,20 @@ for (const [id, role] of [
   [43, "user"],
 ]) {
   database
-    .query(
+    .prepare(
       "INSERT INTO user (id,name,email,emailVerified,createdAt,updatedAt,role,banned) VALUES (?,?,?,0,?,?,?,0)",
     )
     .run(id, `User ${id}`, `id-${id}@identity.fixture.test`, Date.now(), Date.now(), role);
 }
 for (const id of [1, 2, 3, 42, 43]) {
   database
-    .query(
+    .prepare(
       "INSERT INTO account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES (?,?,?, ?,?,?,?)",
     )
     .run(id, String(id), "credential", id, "fixture-password", Date.now(), Date.now());
 }
 assert.equal(
-  database.query("SELECT typeof(id) AS type FROM user WHERE id=42").get().type,
+  database.prepare("SELECT typeof(id) AS type FROM user WHERE id=42").get().type,
   "integer",
 );
 const alias = await ctx.internalAdapter.findUserById("00042");
@@ -68,7 +69,7 @@ for (const [actor, target, status] of [
   const before = Object.fromEntries(
     ["user", "session", "account"].map((table) => [
       table,
-      database.query(`SELECT * FROM ${table} ORDER BY id`).all(),
+      database.prepare(`SELECT * FROM ${table} ORDER BY id`).all(),
     ]),
   );
   const signed = encodeURIComponent(
@@ -89,7 +90,7 @@ for (const [actor, target, status] of [
   const after = Object.fromEntries(
     ["user", "session", "account"].map((table) => [
       table,
-      database.query(`SELECT * FROM ${table} ORDER BY id`).all(),
+      database.prepare(`SELECT * FROM ${table} ORDER BY id`).all(),
     ]),
   );
   console.log(JSON.stringify({ actor, target, status: response.status, body, before, after }));
@@ -109,7 +110,7 @@ for (const [actor, target, status] of [
     assert.equal(body.session.impersonatedBy, actor);
     assert.equal(
       String(
-        database.query("SELECT userId FROM session WHERE token=?").get(body.session.token).userId,
+        database.prepare("SELECT userId FROM session WHERE token=?").get(body.session.token).userId,
       ),
       String(Number(target)),
     );

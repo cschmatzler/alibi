@@ -1,10 +1,9 @@
 /** Immutable application policies over the unchanged published server-only API. */
 
-import type { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 export const MEMBERSHIP_PROFILES = [
   "org-membership-default",
@@ -45,19 +44,19 @@ export function organizationMembershipPolicyFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY rowid")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY rowid")
         .all(),
       members: normalize(
-        database.query("SELECT * FROM member ORDER BY rowid").all() as Record<string, unknown>[],
+        database.prepare("SELECT * FROM member ORDER BY rowid").all() as Record<string, unknown>[],
       ),
       invitations: normalize(
-        database.query("SELECT * FROM invitation ORDER BY rowid").all() as Record<
+        database.prepare("SELECT * FROM invitation ORDER BY rowid").all() as Record<
           string,
           unknown
         >[],
       ),
       teams: normalize(
-        database.query("SELECT * FROM team ORDER BY rowid").all() as Record<string, unknown>[],
+        database.prepare("SELECT * FROM team ORDER BY rowid").all() as Record<string, unknown>[],
       ),
     };
   }

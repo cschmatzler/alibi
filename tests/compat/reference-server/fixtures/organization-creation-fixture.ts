@@ -1,12 +1,11 @@
 /** Private configurations and persistence observations; authentication uses pinned Better Auth. */
 
-import type { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
+import type { Database } from "better-sqlite3";
 
 export const CREATION_PROFILES = [
   "org-creation-denied",
@@ -85,7 +84,7 @@ export function createOrganizationCreationFixture(
                             }
 
                             const row = database
-                              .query("SELECT COUNT(*) AS count FROM member WHERE userId=?")
+                              .prepare("SELECT COUNT(*) AS count FROM member WHERE userId=?")
                               .get(user.id) as { count: number };
                             return row.count >= 1;
                           },
@@ -109,33 +108,33 @@ export function createOrganizationCreationFixture(
         return Response.json({ message: "organizationId required" }, { status: 400 });
       }
       const result = database
-        .query("UPDATE organization SET metadata=? WHERE id=?")
+        .prepare("UPDATE organization SET metadata=? WHERE id=?")
         .run("null", body.organizationId);
       return result.changes === 1
         ? Response.json({ id: body.organizationId })
         : Response.json({ message: "Organization not found" }, { status: 404 });
     },
     state(email: string, includeMetadata = false, includeLogo = false) {
-      const user = database.query("SELECT id FROM user WHERE email=?").get(email) as {
+      const user = database.prepare("SELECT id FROM user WHERE email=?").get(email) as {
         id: string;
       } | null;
       return {
         organizations: user
           ? database
-              .query(
+              .prepare(
                 `SELECT o.id,o.name,o.slug,${includeLogo ? "o.logo," : ""}${includeMetadata ? "o.metadata," : ""}m.id AS memberId,m.userId,m.role FROM organization o JOIN member m ON m.organizationId=o.id WHERE m.userId=? ORDER BY o.createdAt,o.id`,
               )
               .all(user.id)
           : [],
         sessions: user
           ? database
-              .query(
+              .prepare(
                 "SELECT id,token,userId,activeOrganizationId FROM session WHERE userId=? ORDER BY createdAt,id",
               )
               .all(user.id)
           : [],
         orphanOrganizations: database
-          .query(
+          .prepare(
             "SELECT o.id,o.name,o.slug FROM organization o LEFT JOIN member m ON m.organizationId=o.id WHERE m.id IS NULL ORDER BY o.createdAt,o.id",
           )
           .all(),

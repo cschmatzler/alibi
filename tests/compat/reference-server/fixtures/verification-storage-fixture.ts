@@ -1,6 +1,5 @@
 /** Actual installed internalAdapter policy with real SQLite and secondary values. */
 
-import type { Database } from "bun:sqlite";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash } from "node:crypto";
 
@@ -8,6 +7,7 @@ import { runWithTransaction } from "@better-auth/core/context";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { emailOTP, magicLink, oneTimeToken, twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 type Row = Record<string, unknown>;
 
@@ -131,7 +131,7 @@ export async function createVerificationStorageFixture(
   // A cache-only instance deliberately has no verification adapter schema.
   const verificationRows = () =>
     database
-      .query("SELECT * FROM verification ORDER BY createdAt ASC")
+      .prepare("SELECT * FROM verification ORDER BY createdAt ASC")
       .all()
       .map((value) => {
         const row = { ...(value as Row) };

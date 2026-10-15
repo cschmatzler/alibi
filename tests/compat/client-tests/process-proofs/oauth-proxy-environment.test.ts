@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
-
 import { symmetricDecrypt } from "better-auth/crypto";
+import { expect } from "vitest";
 
+import { writeArtifact } from "../../support/files.ts";
 import { oauthPurposeSecret } from "../support/oauth-encryption";
 import { compatScenario } from "../support/scenario";
 const secret = "local-fixture-dedicated-oauth-proxy-secret-32";
@@ -68,7 +68,7 @@ compatScenario(
       }),
     );
     if (process.env.COMPAT_OBSERVATIONS_DIR) {
-      await Bun.write(
+      await writeArtifact(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/vendor-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
           {

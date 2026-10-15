@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
@@ -34,7 +36,7 @@ compatScenario(
     expect(delivered[0].request.marker).toBe("signup-header");
     const before = state;
     // JWT issuance uses whole seconds; separate sends so token identity is deterministic.
-    await Bun.sleep(1100);
+    await setTimeout(1100);
     const signinBody = { email, password: "password123", applicationMarker: "signin-original" };
     const gated = await actor.client.signIn.email(signinBody, {
       headers: { "x-lifecycle-marker": "signin-header" },
@@ -45,7 +47,7 @@ compatScenario(
     expect(delivered).toHaveLength(2);
     expect(delivered[1].requestBody).toEqual(signinBody);
     expect(delivered[1].request.marker).toBe("signin-header");
-    await Bun.sleep(1100);
+    await setTimeout(1100);
     const sendBody = { email, applicationMarker: "direct-original" };
     const sent = await actor.client.sendVerificationEmail(sendBody, {
       headers: { "x-lifecycle-marker": "direct-header" },

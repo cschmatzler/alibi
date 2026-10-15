@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
 import { isAPIError } from "@better-auth/core/utils/is-api-error";
@@ -6,6 +5,8 @@ import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import { genericOAuth, oAuthProxy } from "better-auth/plugins";
+
+import { createDatabase } from "../sqlite.ts";
 
 export const OAUTH_PROXY_SECRET = "local-fixture-dedicated-oauth-proxy-secret-32";
 export const OAUTH_PROXY_PATH = "/__test/profiles/oauth-proxy/api/auth";
@@ -65,7 +66,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
   const instances = new Map<string, ReturnType<typeof betterAuth>>();
 
   for (const origin of [preview, production]) {
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     databases.set(origin, database);
     modes.set(origin, managed ? "old" : "dedicated");
     for (const mode of managed ? ["old", "retained", "retired", "legacy", "bare"] : optionModes) {
@@ -347,9 +348,17 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         const input = await request.json();
         const api = instances.get(`${origin}:${modes.get(origin)}`)!.api;
         try {
-          return await api.callbackOAuth({ params: {id: "gitlab"}, body: input.body, query: input.query, headers: new Headers(input.headers), asResponse: true });
+          return await api.callbackOAuth({
+            params: { id: "gitlab" },
+            body: input.body,
+            query: input.query,
+            headers: new Headers(input.headers),
+            asResponse: true,
+          });
         } catch (error) {
-          if (isAPIError(error)) return new Response(null, {status: error.statusCode, headers: error.headers});
+          if (isAPIError(error)) {
+            return new Response(null, { status: error.statusCode, headers: error.headers });
+          }
           throw error;
         }
       }
@@ -358,7 +367,11 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         const input = await request.json();
         const api = instances.get(`${origin}:${modes.get(origin)}`)!.api;
         const operation = input.link ? "linkSocialAccount" : "signInSocial";
-        return (api as any)[operation]({ body: input.body, headers: new Headers(input.headers), asResponse: true });
+        return (api as any)[operation]({
+          body: input.body,
+          headers: new Headers(input.headers),
+          asResponse: true,
+        });
       }
       if (url.pathname === `${path}/__server-proxy` && request.method === "POST") {
         const origin = databases.has(url.origin) ? url.origin : preview;

@@ -5,6 +5,8 @@ import { memoryAdapter } from "@better-auth/memory-adapter";
 import { betterAuth } from "better-auth";
 import { deviceAuthorization } from "better-auth/plugins";
 
+import { writeArtifact } from "../../support/files.ts";
+
 const origin = "http://localhost:43213";
 const observations: unknown[] = [];
 for (const last of ["approved", "denied"]) {
@@ -130,7 +132,7 @@ for (const last of ["approved", "denied"]) {
   assert.equal((await call("/device/token", tokenBody)).body.error, "invalid_grant");
   observations.push({ last, before, writes, decided, after: physical, trace });
 }
-await Bun.write(
+await writeArtifact(
   process.env.DEVICE_213_OUTPUT ?? "evidence/device-decision-213-source.json",
   JSON.stringify(observations, null, 2),
 );

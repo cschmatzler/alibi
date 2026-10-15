@@ -1,9 +1,9 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -993,7 +993,7 @@ compatScenario(
       json: { deliveryEmail: email },
     });
     const otp = (sent.body as any).otp;
-    expect(otp).toBeString();
+    expect(otp).toBeTypeOf("string");
     const verified = await owner.twoFactor.verifyOtp({ code: otp, trustDevice: true });
     expect(verified.error).toBeNull();
     const trustRaw = latest!

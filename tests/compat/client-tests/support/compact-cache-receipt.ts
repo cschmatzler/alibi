@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 const dispatchSecret = "compat-test-only-key-not-real-minimum-32chars";
 

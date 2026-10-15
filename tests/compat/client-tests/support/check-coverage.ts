@@ -1,7 +1,9 @@
+import { readFile as readFixtureFile } from "node:fs/promises";
 import { readdir } from "node:fs/promises";
 
 import { z } from "zod";
 
+import { writeArtifact } from "../../support/files.ts";
 import { ARTIFACT_ROOT } from "./artifacts";
 import { inventorySchema, type Requirement, requiredScenarios } from "./coverage";
 import { ORACLE_RECEIPTS } from "./oracle";
@@ -10,14 +12,17 @@ const isGap = (requirement: Requirement): requirement is { knownGap: string } =>
   typeof requirement === "object" && "knownGap" in requirement;
 
 const inventoryURL = new URL("../../capabilities.json", import.meta.url);
-const inventory = inventorySchema.parse(await Bun.file(inventoryURL).json());
+const inventory = inventorySchema.parse(JSON.parse(await readFixtureFile(inventoryURL, "utf8")));
 
 // Prevent a dependency update from silently keeping an obsolete oracle label.
 for (const project of ["client-tests", "reference-server"]) {
   for (const name of ["better-auth", "@better-auth/passkey", "@better-auth/api-key"]) {
-    const metadata = await Bun.file(
-      new URL(`../../${project}/node_modules/${name}/package.json`, import.meta.url),
-    ).json();
+    const metadata = JSON.parse(
+      await readFixtureFile(
+        new URL(`../../${project}/node_modules/${name}/package.json`, import.meta.url),
+        "utf8",
+      ),
+    );
     z.object({ version: z.literal(inventory.upstreamVersion) }).parse(metadata);
   }
 }
@@ -39,7 +44,7 @@ const unneededOracleExpectations: string[] = [];
 for (const file of await readdir(ORACLE_RECEIPTS).catch(() => [])) {
   const receipt = z
     .object({ scenario: z.string(), needed: z.boolean() })
-    .parse(await Bun.file(new URL(file, ORACLE_RECEIPTS)).json());
+    .parse(JSON.parse(await readFixtureFile(new URL(file, ORACLE_RECEIPTS), "utf8")));
   if (!receipt.needed) {
     unneededOracleExpectations.push(receipt.scenario);
   }
@@ -54,13 +59,23 @@ const routesSchema = z.array(z.string());
 
 const upstream = new Set(
   routesSchema.parse(
-    await Bun.file(new URL("../../../../coverage/upstream-routes.json", import.meta.url)).json(),
+    JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../coverage/upstream-routes.json", import.meta.url),
+        "utf8",
+      ),
+    ),
   ),
 );
 
 const runtime = new Set(
   routesSchema.parse(
-    await Bun.file(new URL("../../../../coverage/runtime-routes.json", import.meta.url)).json(),
+    JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../coverage/runtime-routes.json", import.meta.url),
+        "utf8",
+      ),
+    ),
   ),
 );
 
@@ -76,7 +91,9 @@ for (const file of await readdir(directory)) {
   if (!file.endsWith(".json")) {
     continue;
   }
-  const observation = evidenceSchema.parse(await Bun.file(new URL(file, directory)).json());
+  const observation = evidenceSchema.parse(
+    JSON.parse(await readFixtureFile(new URL(file, directory), "utf8")),
+  );
   for (const [route, kinds] of Object.entries(observation)) {
     const merged = evidence.get(route) ?? new Map<string, Set<string>>();
     for (const [kind, names] of Object.entries(kinds)) {
@@ -90,7 +107,7 @@ for (const file of await readdir(directory)) {
   }
 }
 
-await Bun.write(
+await writeArtifact(
   new URL("capability-evidence.json", ARTIFACT_ROOT),
   JSON.stringify(
     Object.fromEntries(
@@ -153,7 +170,7 @@ if (process.env.BETTER_AUTH_UPDATE_CAPABILITIES === "1") {
       }),
     ),
   }));
-  await Bun.write(
+  await writeArtifact(
     inventoryURL,
     JSON.stringify({ upstreamVersion: "1.7.7", capabilities }, null, 2) + "\n",
   );

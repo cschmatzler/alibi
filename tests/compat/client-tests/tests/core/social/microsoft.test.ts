@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { expect } from "vitest";
 
 import { credential, issuedAt } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -162,7 +164,7 @@ for (const mode of [
       expect(url.searchParams.get("login_hint")).toBe("login@example.invalid");
       expect(url.searchParams.get("prompt")).toBe(configured ? "login" : null);
       expect(url.searchParams.get("custom")).toBe("value with space");
-      expect(url.searchParams.has("nonce")).toBeFalse();
+      expect(url.searchParams.has("nonce")).toBe(false);
       expect(url.searchParams.get("redirect_uri")).toBe(
         ctx.baseURL + authProfilePath(profile) + "/callback/microsoft",
       );
@@ -851,9 +853,12 @@ for (const variant of [
     `microsoft selected JWK ${variant} rejects genuine signed admission at configured trusted tenant`,
     async (ctx) => {
       const other = await foreign(ctx);
-      const jwks = await Bun.file(
-        new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
-      ).json();
+      const jwks = JSON.parse(
+        await readFixtureFile(
+          new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
+          "utf8",
+        ),
+      );
       const key = { ...jwks.keys[0] };
       if (variant === "missing-algorithm") delete key.alg;
       if (variant === "mismatched-algorithm") key.alg = "RS384";

@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -46,7 +48,7 @@ compatScenario(
     expect(await read()).toEqual(before);
     const independent = await request("rate-limit-database-second", "198.51.100.233");
     expect(independent).toEqual(first);
-    await Bun.sleep(1200);
+    await setTimeout(1200);
     const resumed = await request("rate-limit-database-second");
     expect(resumed).toEqual(first);
     const after = await read();

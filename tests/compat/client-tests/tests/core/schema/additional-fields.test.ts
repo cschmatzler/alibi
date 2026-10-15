@@ -1,12 +1,13 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { getCookieCache } from "better-auth/cookies";
 import { symmetricDecodeJWT } from "better-auth/crypto";
 import { verifyPassword } from "better-auth/crypto";
 import { decodeProtectedHeader } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
@@ -1450,7 +1451,7 @@ compatScenario(
     expect(rawAccountCookies[0]).not.toContain("HttpOnly");
     expect(rawAccountCookies[0]).toContain("SameSite=Strict");
     if (process.env.COMPAT_OBSERVATIONS_DIR) {
-      await Bun.write(
+      await writeArtifact(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/custom-raw-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
           { rawAccountCookies, accountToken, payload, physical: created.body },

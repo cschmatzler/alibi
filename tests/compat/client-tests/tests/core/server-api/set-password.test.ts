@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { issueSession, revocationObservation } from "../../../support/server-session-revocation";

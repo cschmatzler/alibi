@@ -1,5 +1,3 @@
-import { expect } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import {
   anonymousClient,
@@ -10,6 +8,7 @@ import {
 } from "better-auth/client/plugins";
 import { verifyPassword } from "better-auth/crypto";
 import { decodeJwt } from "jose";
+import { expect } from "vitest";
 
 import { credential } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -304,8 +303,8 @@ compatScenario(
           },
         },
       });
-      expect(events[2]!.user.createdAt).toBeString();
-      expect(events[2]!.user.updatedAt).toBeString();
+      expect(events[2]!.user.createdAt).toBeTypeOf("string");
+      expect(events[2]!.user.updatedAt).toBeTypeOf("string");
       expect(events[2]!.user).not.toHaveProperty("id");
       expect(events[2]!.user).not.toHaveProperty("role");
 
@@ -1379,7 +1378,7 @@ async function browserProvider(
 
   const issued = new URL(started.data!.url!);
   const state = issued.searchParams.get("state");
-  expect(state).toBeString();
+  expect(state).toBeTypeOf("string");
 
   const path = `${authProfilePath("validation")}/callback/gitlab?${new URLSearchParams({ code: "fixture-code", state: state! })}`;
   const response = await actor.fetch(path, {

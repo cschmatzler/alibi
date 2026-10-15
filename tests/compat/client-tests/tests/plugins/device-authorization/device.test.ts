@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import type { FixtureProfile } from "../../../support/profiles";
@@ -1375,7 +1376,7 @@ compatScenario(
     expect(await ctx.readUserState({ userId })).toEqual(ownerBefore);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     const repaired = await setOwner(userId);
-    await Bun.sleep(Math.max(code.interval * 1000, retained.pollingInterval ?? 0) + 30);
+    await setTimeout(Math.max(code.interval * 1000, retained.pollingInterval ?? 0) + 30);
     const restored = await deviceActor(ctx, "device").device.token(tokenRequest(code.device_code));
     expect(restored.error).toBeNull();
     expect(restored.data?.access_token).toBeTruthy();
@@ -1526,7 +1527,7 @@ compatScenario(
         expect(approved.data).toEqual({ success: true });
         const redeemed = await client.device.token(tokenRequest(deviceCode!, profile));
         expect(redeemed.error).toBeNull();
-        expect(redeemed.data?.access_token).toBeString();
+        expect(redeemed.data?.access_token).toBeTypeOf("string");
         expect(await ctx.readDeviceState({ deviceCode: deviceCode! })).toBeNull();
         const bearer = await ctx
           .actor(`${profile}-${deviceCode}`, "bearer-default")

@@ -1,9 +1,10 @@
-import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
 import { scim } from "@better-auth/scim";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+
+import { createDatabase } from "../sqlite.ts";
 function fixtureJson(value: unknown) {
   return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 }
@@ -11,21 +12,22 @@ function trustedUserBody(input: any) {
   const body = input.body;
   if (input.datePath) {
     let target = body;
-    for (const key of input.datePath.slice(0,-1)) target = target[key];
+    for (const key of input.datePath.slice(0, -1)) target = target[key];
     const key = input.datePath.at(-1);
     target[key] = new Date(target[key]);
   }
   if (input.numberPath) {
     let target = body;
-    for (const key of input.numberPath.slice(0,-1)) target = target[key];
-    target[input.numberPath.at(-1)] = input.numberKind === "NaN" ? NaN : input.numberKind === "-Infinity" ? -Infinity : Infinity;
+    for (const key of input.numberPath.slice(0, -1)) target = target[key];
+    target[input.numberPath.at(-1)] =
+      input.numberKind === "NaN" ? NaN : input.numberKind === "-Infinity" ? -Infinity : Infinity;
   }
   return body;
 }
 export async function scimFixture(base: BetterAuthOptions) {
   const options = {
     ...base,
-    database: new Database(":memory:"),
+    database: createDatabase(":memory:"),
     basePath: "/__test/profiles/scim/api/auth",
     plugins: [
       scim({
@@ -76,25 +78,38 @@ export async function scimFixture(base: BetterAuthOptions) {
     if (path === "/__test/server-api/scim") {
       const query = new URL(request.url).searchParams;
       if (query.get("operation") === "discovery-sdk") {
-        const input = await request.json() as {api:string;params?:any;mode:string};
+        const input = (await request.json()) as { api: string; params?: any; mode: string };
         const endpoint = (auth.api as any)[input.api];
         if (input.mode === "headers") {
-          const result = await endpoint({params:input.params,returnHeaders:true});
-          return fixtureJson({response:result.response,headers:Object.fromEntries(result.headers)});
+          const result = await endpoint({ params: input.params, returnHeaders: true });
+          return fixtureJson({
+            response: result.response,
+            headers: Object.fromEntries(result.headers),
+          });
         }
-        return endpoint({params:input.params,asResponse:true});
+        return endpoint({ params: input.params, asResponse: true });
       }
       if (query.get("operation") === "probe-authentication-source") {
-        const input = await request.json() as {mode:string};
+        const input = (await request.json()) as { mode: string };
         try {
-          const plugin = scim({connections: input.mode === "static" ? initialScimOptions.connections : [],
-            ...(input.mode === "managed" ? {managedConnections: {credentialHashSecret:"native-scim-catalog-credential-hash-secret-32"}} : {}),
+          const plugin = scim({
+            connections: input.mode === "static" ? initialScimOptions.connections : [],
+            ...(input.mode === "managed"
+              ? {
+                  managedConnections: {
+                    credentialHashSecret: "native-scim-catalog-credential-hash-secret-32",
+                  },
+                }
+              : {}),
           });
-          const candidate = betterAuth({...options,plugins:[plugin]});
+          const candidate = betterAuth({ ...options, plugins: [plugin] });
           await candidate.$context;
           return fixtureJson(await candidate.api.getSCIMResourceTypes());
         } catch (error) {
-          return new Response(JSON.stringify({error:error instanceof Error ? error.message : String(error)}),{status:400,headers:{"content-type":"application/json"}});
+          return new Response(
+            JSON.stringify({ error: error instanceof Error ? error.message : String(error) }),
+            { status: 400, headers: { "content-type": "application/json" } },
+          );
         }
       }
       if (query.get("operation") === "configure-entra-group-compatibility") {
@@ -258,7 +273,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "group-create-owner") {
         return fixtureJson(
           options.database
-            .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
+            .prepare("SELECT name FROM user WHERE email='group-create-owner@example.com'")
             .get(),
         );
       }
@@ -278,7 +293,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           .update(JSON.stringify(["scim-user-external-id", "conn-a", "external-a"]))
           .digest("base64url");
         options.database
-          .query(
+          .prepare(
             "UPDATE scimUser SET externalId='external-a',externalIdKey=?,active=true WHERE id='member-a'",
           )
           .run(key);
@@ -292,7 +307,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           .update(JSON.stringify(["scim-user-external-id", "conn-a", "external-a"]))
           .digest("base64url");
         options.database
-          .query(
+          .prepare(
             "UPDATE scimUser SET provisioningDomainId='tenant-a',externalId='external-a',externalIdKey=? WHERE id='member-c'",
           )
           .run(key);
@@ -304,27 +319,27 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "user-delete-state") {
         return fixtureJson({
           users: options.database
-            .query("SELECT id,connectionId,provisioningDomainId FROM scimUser ORDER BY id")
+            .prepare("SELECT id,connectionId,provisioningDomainId FROM scimUser ORDER BY id")
             .all(),
-          groups: options.database.query("SELECT id,revision FROM scimGroup ORDER BY id").all(),
+          groups: options.database.prepare("SELECT id,revision FROM scimGroup ORDER BY id").all(),
           members: options.database
-            .query("SELECT groupId,scimUserId FROM scimGroupMember ORDER BY groupId,scimUserId")
+            .prepare("SELECT groupId,scimUserId FROM scimGroupMember ORDER BY groupId,scimUserId")
             .all(),
           subjects: options.database
-            .query("SELECT revision,profileSourceId FROM scimSubject")
+            .prepare("SELECT revision,profileSourceId FROM scimSubject")
             .all(),
           tombstones: options.database
-            .query(
+            .prepare(
               "SELECT connectionId,provisioningDomainId,externalId,userId,profile FROM scimIdentityTombstone ORDER BY externalIdKey",
             )
             .all(),
           sessions: options.database
-            .query(
+            .prepare(
               "SELECT COUNT(*) AS n FROM session WHERE userId IN (SELECT id FROM user WHERE email='group-create-owner@example.com')",
             )
             .get(),
           owner: options.database
-            .query("SELECT name FROM user WHERE email='group-create-owner@example.com'")
+            .prepare("SELECT name FROM user WHERE email='group-create-owner@example.com'")
             .get(),
         });
       }
@@ -353,7 +368,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return fixtureJson(
           options.database
-            .query(
+            .prepare(
               "SELECT id,scimUserId FROM scimGroupMember WHERE connectionId='conn-a' AND groupId=? ORDER BY createdAt ASC",
             )
             .all(input.id),
@@ -372,11 +387,11 @@ export async function scimFixture(base: BetterAuthOptions) {
       }
       if (query.get("operation") === "user-create-state") {
         const users = options.database
-          .query("SELECT id,email,name,emailVerified FROM user ORDER BY email")
+          .prepare("SELECT id,email,name,emailVerified FROM user ORDER BY email")
           .all()
           .map((row: any) => ({ ...row, emailVerified: Boolean(row.emailVerified) }));
         const count = (table: string) =>
-          (options.database.query(`SELECT COUNT(*) AS n FROM ${table}`).get() as any).n;
+          (options.database.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as any).n;
         return fixtureJson({
           users,
           sources: count("scimUser"),
@@ -387,31 +402,33 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "drift-user-replace") {
         const input = (await request.json()) as any;
         options.database
-          .query("UPDATE scimUser SET provisioningDomainId='drifted' WHERE id=?")
+          .prepare("UPDATE scimUser SET provisioningDomainId='drifted' WHERE id=?")
           .run(input.id);
         return fixtureJson({ changed: true });
       }
       if (query.get("operation") === "prepare-user-replace") {
         const input = (await request.json()) as any;
         const source = options.database
-          .query("SELECT userId FROM scimUser WHERE id=?")
+          .prepare("SELECT userId FROM scimUser WHERE id=?")
           .get(input.id) as any;
-        options.database.query("UPDATE user SET emailVerified=true WHERE id=?").run(source.userId);
+        options.database
+          .prepare("UPDATE user SET emailVerified=true WHERE id=?")
+          .run(source.userId);
         await (await auth.$context).internalAdapter.createSession(source.userId);
         return fixtureJson({ prepared: true });
       }
       if (query.get("operation") === "detach-user-profile") {
         const input = (await request.json()) as any;
         options.database
-          .query("UPDATE scimSubject SET profileSourceId=NULL WHERE profileSourceId=?")
+          .prepare("UPDATE scimSubject SET profileSourceId=NULL WHERE profileSourceId=?")
           .run(input.id);
         return fixtureJson({ detached: true });
       }
       if (query.get("operation") === "user-replace-state") {
         return fixtureJson({
-          sessions: (options.database.query("SELECT COUNT(*) AS n FROM session").get() as any).n,
+          sessions: (options.database.prepare("SELECT COUNT(*) AS n FROM session").get() as any).n,
           subjects: options.database
-            .query("SELECT revision,profileSourceId FROM scimSubject ORDER BY id")
+            .prepare("SELECT revision,profileSourceId FROM scimSubject ORDER BY id")
             .all(),
         });
       }
@@ -466,7 +483,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           },
         });
         options.database
-          .query(
+          .prepare(
             "INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('group-create-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
           )
           .run(owner.user.id);
@@ -476,7 +493,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["member-c", "conn-a", "tenant-b", "Other domain member"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,'group-create-owner@example.com','[]','[]',?,?,'[]',false,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, cid, domain, owner.user.id, id, id, id, display, display, id);
@@ -485,17 +502,17 @@ export async function scimFixture(base: BetterAuthOptions) {
       }
       if (query.get("operation") === "group-create-state") {
         return fixtureJson({
-          groups: options.database.query("SELECT COUNT(*) AS n FROM scimGroup").get(),
-          members: options.database.query("SELECT COUNT(*) AS n FROM scimGroupMember").get(),
+          groups: options.database.prepare("SELECT COUNT(*) AS n FROM scimGroup").get(),
+          members: options.database.prepare("SELECT COUNT(*) AS n FROM scimGroupMember").get(),
           subject: options.database
-            .query("SELECT revision FROM scimSubject WHERE id='group-create-subject'")
+            .prepare("SELECT revision FROM scimSubject WHERE id='group-create-subject'")
             .get(),
         });
       }
       if (query.get("operation") === "drift-created-group") {
         const input = (await request.json()) as any;
         options.database
-          .query("UPDATE scimGroup SET provisioningDomainId='drifted' WHERE id=?")
+          .prepare("UPDATE scimGroup SET provisioningDomainId='drifted' WHERE id=?")
           .run(input.id);
         return fixtureJson({ changed: true });
       }
@@ -534,7 +551,7 @@ export async function scimFixture(base: BetterAuthOptions) {
             { value: home, type: "home", primary: false },
           ]);
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,externalId,externalIdKey,active,orderKey,createdAt,updatedAt) VALUES (?,?,'tenant-a',?,?,?,?,?,?,?,?,?,?,?, ?,1,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(
@@ -594,7 +611,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           const key = (parts: string[]) =>
             createHash("sha256").update(JSON.stringify(parts)).digest("base64url");
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,'tenant-a',0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(
@@ -620,7 +637,7 @@ export async function scimFixture(base: BetterAuthOptions) {
             .update(JSON.stringify(["scim-group-display-name", "conn-a", name.toLowerCase()]))
             .digest("base64url");
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,'conn-a','tenant-a',0,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, name, key, order);
@@ -640,7 +657,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "user-read-attributes") {
         const input = (await request.json()) as any;
         options.database
-          .query("UPDATE scimUser SET serializedAttributes=? WHERE id='rich'")
+          .prepare("UPDATE scimUser SET serializedAttributes=? WHERE id='rich'")
           .run(input.restore ? userReadAttributes : input.serializedAttributes);
         return new Response(JSON.stringify({ changed: true }), {
           headers: { "content-type": "application/json" },
@@ -691,7 +708,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["drift", "conn-a", "tenant-b"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,givenName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'alice',?,'Alice@example.com','[]','[]','Alice from row',' Legacy Name ',' Legacy ',?,0,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(
@@ -706,7 +723,7 @@ export async function scimFixture(base: BetterAuthOptions) {
             );
         }
         options.database
-          .query(
+          .prepare(
             "UPDATE scimUser SET serializedAttributes=?,externalId='external-alice' WHERE id='rich'",
           )
           .run((userReadAttributes = JSON.stringify(attributes)));
@@ -793,7 +810,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["dynamic", "tenant-dynamic"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Verified Group',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, id, domain, id, id);
@@ -806,7 +823,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         return new Response(
           JSON.stringify(
             options.database
-              .query("SELECT name FROM user WHERE email='verifier-owner@example.com'")
+              .prepare("SELECT name FROM user WHERE email='verifier-owner@example.com'")
               .get(),
           ),
           { headers: { "content-type": "application/json" } },
@@ -829,7 +846,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "seed-managed-group") {
         const input = (await request.json()) as any;
         options.database
-          .query(
+          .prepare(
             "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,orderKey,createdAt,updatedAt) VALUES ('managed-group',?,'tenant-managed',0,'Managed Staff','managed-group','managed-group','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
           )
           .run(input.connectionId);
@@ -848,13 +865,13 @@ export async function scimFixture(base: BetterAuthOptions) {
         ] as const) {
           if (field in input) {
             options.database
-              .query(`UPDATE scimManagedCredential SET ${field}=? WHERE credentialId=?`)
+              .prepare(`UPDATE scimManagedCredential SET ${field}=? WHERE credentialId=?`)
               .run(input[field], input.credentialId);
           }
         }
         if ("connectionStatus" in input) {
           options.database
-            .query("UPDATE scimManagedConnection SET status=? WHERE connectionId=?")
+            .prepare("UPDATE scimManagedConnection SET status=? WHERE connectionId=?")
             .run(input.connectionStatus, input.connectionId);
         }
         return new Response(JSON.stringify({ changed: true }), {
@@ -909,7 +926,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["member-c", "conn-a", "tenant-b", "Other domain member"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,?,?,'group-read-owner@example.com','[]','[]',?,?,'[]',0,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, cid, domain, owner.user.id, id, id, id, display, display, id);
@@ -920,7 +937,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["drift", "conn-a", "tenant-b"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,'Staff',?,'external-staff',?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, cid, domain, id, id);
@@ -931,7 +948,7 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["member-c", "2026-01-02T03:04:05.003Z"],
         ]) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a','staff',?,?,?)",
             )
             .run(id, id, id, time);
@@ -950,12 +967,12 @@ export async function scimFixture(base: BetterAuthOptions) {
           ["group-d", "conn-other", "tenant-a", "Foreign connection", "foreign-connection"],
         ] as const) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroup (id,connectionId,provisioningDomainId,revision,displayName,displayNameKey,externalId,externalIdKey,orderKey,createdAt,updatedAt) VALUES (?,?,?,0,?,?,?,?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, cid, domain, display, id, external, id, id);
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimGroupMember (id,connectionId,groupId,scimUserId,membershipKey,createdAt) VALUES (?,'conn-a',?,'scim-alias-a',?,'2026-01-02T03:04:05.000Z')",
             )
             .run(id, id, id);
@@ -993,7 +1010,7 @@ export async function scimFixture(base: BetterAuthOptions) {
             body: { connectionId, provisioningDomainId },
           });
           options.database
-            .query(
+            .prepare(
               "UPDATE scimConnectionBinding SET decommissionStatus='active',decommissionedAt=NULL,decommissionCompletedAt=NULL WHERE connectionId=?",
             )
             .run(connectionId);
@@ -1073,7 +1090,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         });
         const uid = signed.user.id;
         options.database
-          .query(
+          .prepare(
             "INSERT INTO scimSubject (id,userId,revision,createdAt,updatedAt) VALUES ('projection-subject',?,0,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
           )
           .run(uid);
@@ -1083,13 +1100,13 @@ export async function scimFixture(base: BetterAuthOptions) {
           [aliasC, "conn-c", "tenant-b", 1],
         ] as const) {
           options.database
-            .query(
+            .prepare(
               "INSERT INTO scimUser (id,connectionId,provisioningDomainId,userId,connectionUserKey,userName,userNameKey,primaryEmail,workEmailValueIndex,emailValueIndex,displayName,formattedName,serializedEmails,active,orderKey,createdAt,updatedAt) VALUES (?,?,?,?,?,'projection-owner@example.com',?,'projection-owner@example.com','[]','[]','Owner','Owner','[]',?,?,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
             )
             .run(id, cid, domain, uid, id, id, active, id);
         }
         options.database
-          .query(
+          .prepare(
             "INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('legacy-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','legacy-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
           )
           .run(uid);
@@ -1099,10 +1116,10 @@ export async function scimFixture(base: BetterAuthOptions) {
       }
       if (query.get("operation") === "projection-fails") {
         const owner = options.database
-          .query("SELECT id FROM user WHERE email='projection-owner@example.com'")
+          .prepare("SELECT id FROM user WHERE email='projection-owner@example.com'")
           .get() as any;
         options.database
-          .query(
+          .prepare(
             "INSERT INTO scimProjectionGrant (id,connectionId,provisioningDomainId,scimUserId,userId,sourceKind,sourceId,role,grantKey,createdAt,updatedAt) VALUES ('failure-grant','conn-a','tenant-a','scim-alias-a',?,'group','retired-group','legacy-role','failure-grant','2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",
           )
           .run(owner.id);
@@ -1120,18 +1137,18 @@ export async function scimFixture(base: BetterAuthOptions) {
         return new Response(
           JSON.stringify({
             sessions: options.database
-              .query(
+              .prepare(
                 "SELECT id,userId FROM session WHERE userId IN (SELECT id FROM user WHERE email='projection-owner@example.com')",
               )
               .all(),
             users: options.database
-              .query("SELECT id,name FROM user WHERE email='projection-owner@example.com'")
+              .prepare("SELECT id,name FROM user WHERE email='projection-owner@example.com'")
               .all(),
-            subjects: options.database.query("SELECT * FROM scimSubject").all(),
+            subjects: options.database.prepare("SELECT * FROM scimSubject").all(),
             scimUsers: options.database
-              .query("SELECT id,connectionId,provisioningDomainId,userId,active FROM scimUser")
+              .prepare("SELECT id,connectionId,provisioningDomainId,userId,active FROM scimUser")
               .all(),
-            grants: options.database.query("SELECT * FROM scimProjectionGrant").all(),
+            grants: options.database.prepare("SELECT * FROM scimProjectionGrant").all(),
           }),
           { headers: { "content-type": "application/json" } },
         );
@@ -1145,7 +1162,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "age-connection") {
         const input = (await request.json()) as any;
         options.database
-          .query("UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?")
+          .prepare("UPDATE scimManagedConnection SET createdAt=? WHERE connectionId=?")
           .run("2000-01-01T00:00:00.000Z", input.connectionId);
         return new Response(JSON.stringify({ aged: true }), {
           headers: { "content-type": "application/json" },
@@ -1155,11 +1172,11 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         if (input.policy !== undefined) {
           options.database
-            .query("UPDATE scimManagedCredential SET serializedScopes=? WHERE credentialId=?")
+            .prepare("UPDATE scimManagedCredential SET serializedScopes=? WHERE credentialId=?")
             .run(input.policy, input.credentialId);
         } else {
           options.database
-            .query("UPDATE scimManagedCredential SET expiresAt=? WHERE credentialId=?")
+            .prepare("UPDATE scimManagedCredential SET expiresAt=? WHERE credentialId=?")
             .run("2000-01-01T00:00:00.000Z", input.credentialId);
         }
         return new Response(JSON.stringify({ changed: true }), {
@@ -1233,7 +1250,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "binding-lease") {
         const input = (await request.json()) as any;
         options.database
-          .query(
+          .prepare(
             "UPDATE scimConnectionBinding SET decommissionStatus='reconciling',decommissionLeaseId='other-worker',decommissionCompletedAt=NULL,decommissionReconciledUserCount=7,decommissionBatchCount=2,decommissionLeaseExpiresAt=? WHERE connectionId=?",
           )
           .run("2035-02-03T04:05:06.789Z", input.connectionId);
@@ -1244,7 +1261,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "expire-binding-lease") {
         const input = (await request.json()) as any;
         options.database
-          .query(
+          .prepare(
             "UPDATE scimConnectionBinding SET decommissionLeaseExpiresAt=? WHERE connectionId=?",
           )
           .run("2000-01-01T00:00:00.000Z", input.connectionId);
@@ -1255,7 +1272,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "reject-binding-completion") {
         const input = (await request.json()) as any;
         options.database
-          .query(
+          .prepare(
             "UPDATE scimConnectionBinding SET decommissionStatus='reconciling',decommissionLeaseId='failed-worker',decommissionCompletedAt=NULL,decommissionLeaseExpiresAt=? WHERE connectionId=?",
           )
           .run("2000-01-01T00:00:00.000Z", input.connectionId);
@@ -1291,7 +1308,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       }
       if (query.get("operation") === "binding-storage") {
         return new Response(
-          JSON.stringify(options.database.query("SELECT * FROM scimConnectionBinding").all()),
+          JSON.stringify(options.database.prepare("SELECT * FROM scimConnectionBinding").all()),
           { headers: { "content-type": "application/json" } },
         );
       }
@@ -1377,10 +1394,10 @@ export async function scimFixture(base: BetterAuthOptions) {
       }
       if (query.get("operation") === "managed-storage") {
         const result = {
-          connections: options.database.query("SELECT * FROM scimManagedConnection").all(),
-          credentials: options.database.query("SELECT * FROM scimManagedCredential").all(),
+          connections: options.database.prepare("SELECT * FROM scimManagedConnection").all(),
+          credentials: options.database.prepare("SELECT * FROM scimManagedCredential").all(),
           events: options.database
-            .query("SELECT * FROM scimManagedConnectionEvent ORDER BY sequence")
+            .prepare("SELECT * FROM scimManagedConnectionEvent ORDER BY sequence")
             .all(),
         };
         return new Response(JSON.stringify(result), {

@@ -1,10 +1,10 @@
-import { Database } from "bun:sqlite";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { twoFactor } from "better-auth/plugins";
+
+import { createDatabase } from "../sqlite.ts";
 export async function twoFactorTableFixture(base: BetterAuthOptions) {
-  const db = new Database(":memory:");
+  const db = createDatabase(":memory:");
   const deliveries = new Map<string, string>();
   // The pinned plugin mutates its shared schema when applying mappings.
   // Snapshot this application's schema and restore the module defaults before
@@ -57,11 +57,11 @@ export async function twoFactorTableFixture(base: BetterAuthOptions) {
         return Response.json({ otp: deliveries.get(url.searchParams.get("email")!) });
       }
       if (url.pathname === "/__test/two-factor-custom-table/state") {
-        const tables = db.query("SELECT name FROM sqlite_master WHERE type='table'").all() as {
+        const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as {
           name: string;
         }[];
         const rows = db
-          .query(
+          .prepare(
             "SELECT id, application_owner AS userId, application_secret AS secret, application_backups AS backups FROM application_second_factor WHERE application_owner = ?",
           )
           .all(url.searchParams.get("userId")) as any[];

@@ -1,8 +1,7 @@
-import type { Database } from "bun:sqlite";
-
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
 import { organization, username } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 type Entry = { value: string; expiresAt: number | null };
 
@@ -239,7 +238,7 @@ export async function apiKeyStorageFixture(
         })
         .sort((a, b) => {
           const order = (entry: any) =>
-            `${entry.namespace}:${entry.value.name ?? database.query<{ email: string }, [string]>("SELECT email FROM user WHERE id=?").get(entry.lookup.referenceId)?.email ?? database.query<{ slug: string }, [string]>("SELECT slug FROM organization WHERE id=?").get(entry.lookup.referenceId)?.slug ?? entry.lookup.referenceId}`;
+            `${entry.namespace}:${entry.value.name ?? database.prepare<[string], { email: string }>("SELECT email FROM user WHERE id=?").get(entry.lookup.referenceId)?.email ?? database.prepare<[string], { slug: string }>("SELECT slug FROM organization WHERE id=?").get(entry.lookup.referenceId)?.slug ?? entry.lookup.referenceId}`;
           return order(a).localeCompare(order(b));
         }),
     }));
@@ -276,7 +275,7 @@ export async function apiKeyStorageFixture(
       if (url.pathname === "/__test/api-key-storage/database") {
         return Response.json(
           database
-            .query(
+            .prepare(
               "SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name",
             )
             .all()
@@ -377,7 +376,7 @@ export async function apiKeyStorageFixture(
                 throw new Error("supported application column required");
               }
               database
-                .query(`UPDATE apikey SET ${field}=? WHERE id=?`)
+                .prepare(`UPDATE apikey SET ${field}=? WHERE id=?`)
                 .run(value as any, input.keyId);
             }
           }

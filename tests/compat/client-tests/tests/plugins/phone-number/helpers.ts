@@ -1,10 +1,11 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { phoneNumberClient, twoFactorClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
@@ -65,7 +66,7 @@ export function phoneEnrollmentCode(uri: string) {
 }
 
 export function uniquePhone(ctx: ScenarioContext, prefix: string) {
-  const digits = String(Bun.hash(ctx.uniqueToken(prefix)))
+  const digits = String(hashLabel(ctx.uniqueToken(prefix)))
     .padStart(10, "0")
     .slice(-10);
   return `+1${digits}`;

@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
+
+import { expect } from "vitest";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
@@ -352,7 +354,7 @@ async function signedSignup(ctx: ScenarioContext, name: string) {
     },
   });
   expect(result.error).toBeNull();
-  expect(receipt.cookie).toBeString();
+  expect(receipt.cookie).toBeTypeOf("string");
 
   return { user: record(result.data).user, headers: { cookie: receipt.cookie! } };
 }
@@ -528,7 +530,7 @@ compatScenario(
     const previousSecond = verifiedPhysical.payload.iat!;
     expect(Number.isInteger(previousSecond)).toBe(true);
     while (Math.floor(Date.now() / 1000) <= previousSecond) {
-      await Bun.sleep(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
+      await setTimeout(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
     }
 
     const virtual = await call(ctx, {
@@ -996,7 +998,7 @@ for (const mode of ["ordinary", "cached", "cached-version"] as const) {
         expect(Number.isInteger(previousSecond)).toBe(true);
 
         while (Math.floor(Date.now() / 1000) <= previousSecond) {
-          await Bun.sleep(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
+          await setTimeout(Math.max(1, (previousSecond + 1) * 1000 - Date.now()));
         }
 
         const startedAt = Date.now();
@@ -1004,7 +1006,7 @@ for (const mode of ["ordinary", "cached", "cached-version"] as const) {
         const body = await response.json();
         const finishedAt = Date.now();
         const rawJwt = response.headers.get("set-auth-jwt");
-        expect(rawJwt).toBeString();
+        expect(rawJwt).toBeTypeOf("string");
 
         const signed = await jwtVerify(rawJwt!, verifier);
         const iat = signed.payload.iat!;

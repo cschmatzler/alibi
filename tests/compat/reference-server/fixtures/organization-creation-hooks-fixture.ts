@@ -1,9 +1,10 @@
-import type { Database } from "bun:sqlite";
+import { setTimeout } from "node:timers/promises";
 
 /** Configured callbacks are application-owned; HTTP authentication remains pinned. */
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 import type { organizationTransportProbe } from "./organization-transport-probe";
 
@@ -21,29 +22,29 @@ export function organizationCreationHooksFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
-        .query(
+        .prepare(
           "SELECT m.id,m.organizationId,m.userId,m.role FROM member m JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id",
         )
         .all(),
       teams: database
-        .query(
+        .prepare(
           "SELECT t.id,t.organizationId,t.name FROM team t JOIN organization o ON o.id=t.organizationId ORDER BY o.slug,t.name,t.id",
         )
         .all(),
       teamMembers: database
-        .query(
+        .prepare(
           "SELECT m.id,m.teamId,m.userId FROM teamMember m JOIN team t ON t.id=m.teamId JOIN organization o ON o.id=t.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,t.name,u.email,m.id",
         )
         .all(),
       sessions: database
-        .query(
+        .prepare(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
-      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+      users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
 
@@ -217,7 +218,7 @@ export function organizationCreationHooksFixture(
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
       ) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return Response.json({ receipts, snapshot: snapshot() });
     },

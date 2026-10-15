@@ -1,4 +1,3 @@
-import { expect } from "bun:test";
 import { hkdfSync } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
@@ -7,6 +6,7 @@ import { getCookieCache } from "better-auth/cookies";
 import { signJWT, symmetricEncodeJWT, verifyPassword } from "better-auth/crypto";
 import { decodeProtectedHeader, jwtVerify, jwtDecrypt, type JWK } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -51,7 +51,7 @@ async function normalizedState(value: unknown) {
       state.accounts.map(async (account) => {
         if (typeof account.password !== "string") return account;
         const hash = account.password;
-        expect(await verifyPassword({ password: "password123", hash })).toBeTrue();
+        expect(await verifyPassword({ password: "password123", hash })).toBe(true);
         const [salt, derivedKey] = hash.split(":");
         return {
           ...account,
@@ -216,7 +216,7 @@ for (const mode of ["jwt", "jwe", "managed"] as const) {
       const replacement = owner.headers.at(-1)!;
       const clears = replacement.getSetCookie().filter((raw) => Cookie.parse(raw)?.maxAge === 0);
       expect(clears.length).toBeGreaterThan(1);
-      expect(replacement.getSetCookie().some((raw) => raw.startsWith(cookieName + "="))).toBeTrue();
+      expect(replacement.getSetCookie().some((raw) => raw.startsWith(cookieName + "="))).toBe(true);
       const renewed = await observation(ctx, owner, mode, replacement);
       await control(ctx, mode, { action: "revoke", token: signup.data!.token });
       const cached = await raw(ctx, owner, mode, "/get-session", pairs);
@@ -680,7 +680,7 @@ for (const strategy of ["jwt", "jwe"] as const) {
       const issued = await observation(ctx, owner, strategy, headers);
       expect(issued.sessionCache.decoded!.user.id).toBe(signup.data!.user.id);
       expect(issued.sessionCache.decoded!.session.token).toBe(signup.data!.token!);
-      expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBeTrue();
+      expect(headers.getSetCookie().some((raw) => raw.includes("_multi-"))).toBe(true);
 
       const receipts = await control(ctx, mode, { action: "state" });
       const linked = receipts.events.find((event) => event.link)!;

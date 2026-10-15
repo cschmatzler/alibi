@@ -1,13 +1,13 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthClient } from "better-auth/client";
 import { symmetricDecodeJWT, symmetricEncodeJWT, symmetricEncrypt } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { genericOAuth } from "better-auth/plugins";
 import { decodeProtectedHeader } from "jose";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues, type ComparisonContext } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
@@ -32,9 +32,9 @@ type Atom = {
 // The provider callbacks supply only provider data. The real Source callback
 // owner creates the row and emits the JWE; the adapter independently reads it.
 async function capture() {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   let auth: ReturnType<typeof betterAuth>;
-  const server = Bun.serve({
+  const server = await serveFixture({
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {

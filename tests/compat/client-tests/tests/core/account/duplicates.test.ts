@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { decodeJwt, decodeProtectedHeader } from "jose";
+import { expect } from "vitest";
 
 import { credential } from "../../../support/id-token";
 import { authProfilePath } from "../../../support/profiles";

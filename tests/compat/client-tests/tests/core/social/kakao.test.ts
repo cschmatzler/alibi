@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -167,9 +167,9 @@ for (const mode of [
       expect(url.searchParams.get("response_type")).toBe("code");
       expect(url.searchParams.getAll("state")).toHaveLength(1);
       expect(url.searchParams.get("state")).not.toBe("stale");
-      expect(url.searchParams.has("code_challenge_method")).toBeFalse();
-      expect(url.searchParams.has("code_challenge")).toBeFalse();
-      expect(url.searchParams.has("login_hint")).toBeFalse();
+      expect(url.searchParams.has("code_challenge_method")).toBe(false);
+      expect(url.searchParams.has("code_challenge")).toBe(false);
+      expect(url.searchParams.has("login_hint")).toBe(false);
       expect(url.searchParams.get("custom")).toBe("value with space");
       expect(url.searchParams.get("redirect_uri")).toBe(
         mode === "configured-endpoint"
@@ -250,7 +250,7 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
             ? "https://client.example.invalid/kakao-return"
             : ctx.baseURL + authProfilePath(fixture) + "/callback/kakao",
       });
-      expect(flow.url.searchParams.has("code_challenge")).toBeFalse();
+      expect(flow.url.searchParams.has("code_challenge")).toBe(false);
       expect(raw[0]!.authorization).toBeNull();
       expect(raw[1]).toEqual({
         path: "/userinfo",
@@ -634,7 +634,7 @@ compatScenario(
       .actor("kakao", "social-kakao-disabled-scope")
       .client.signIn.social({ provider: "kakao" });
     expect(result.error).toBeNull();
-    expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
+    expect(new URL(result.data!.url!).searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
 

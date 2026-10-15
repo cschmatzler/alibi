@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { createAuthClient } from "better-auth/client";
 import { deviceAuthorizationClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -59,7 +60,7 @@ compatScenario(
       const deadline = Date.now() + 5000;
       let state = await control("read");
       while (state.events.length < count && Date.now() < deadline) {
-        await Bun.sleep(10);
+        await setTimeout(10);
         state = await control("read");
       }
       expect(state.events).toHaveLength(count);

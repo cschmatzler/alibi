@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 for (const mode of ["default", "shared", "default-pkce", "discovery", "runtime-discovery"]) {

@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -28,7 +27,7 @@ compatScenario(
     ).toBeNull();
     const before = await control();
     const delivered = before.events.findLast((event: any) => event.stage === "verification-mail");
-    expect(delivered?.token).toBeString();
+    expect(delivered?.token).toBeTypeOf("string");
     const original = delivered.token as string;
     const [header, payload, signature] = original.split(".");
     const claims = JSON.parse(Buffer.from(payload!, "base64url").toString());

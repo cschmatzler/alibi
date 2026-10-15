@@ -1,12 +1,12 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { betterAuth } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
 import { getCookieCache } from "better-auth/cookies";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 
@@ -26,7 +26,7 @@ async function observe(
   version?: string,
   captureDetached = false,
 ) {
-  const database = new Database(":memory:");
+  const database = createDatabase(":memory:");
   let detached: { headers: { cookie: string } } | undefined;
   const options = {
     baseURL,

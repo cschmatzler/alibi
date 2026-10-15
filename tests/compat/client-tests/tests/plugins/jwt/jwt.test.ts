@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { decodeJwt } from "jose";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
@@ -23,7 +24,7 @@ async function advancePastJwtSecond(issuedAt: number): Promise<void> {
   // across explicit clock transitions so repeated-token identity cannot depend
   // on one runtime happening to cross a second boundary first.
   while (Math.floor(Date.now() / 1000) <= issuedAt) {
-    await Bun.sleep(Math.max(1, (issuedAt + 1) * 1000 - Date.now()));
+    await setTimeout(Math.max(1, (issuedAt + 1) * 1000 - Date.now()));
   }
 }
 
@@ -47,7 +48,7 @@ compatScenario(
     const persisted = await ctx.rawRequest({ path: "/__test/jwks-state" });
     const persistedKeys = storedKeySchema.parse(persisted.body);
     expect(persistedKeys).toHaveLength(1);
-    expect(persistedKeys[0]?.privateKeyEncrypted).toBeTrue();
+    expect(persistedKeys[0]?.privateKeyEncrypted).toBe(true);
     expect(persistedKeys[0]?.expiresAt).toBeNull();
     expect(persistedKeys[0]?.id).toBe(jwksBefore.data.keys[0]?.kid);
     expect(persistedKeys[0]?.publicKey.x).toBe(jwksBefore.data.keys[0]?.x);
@@ -628,7 +629,7 @@ compatScenario(
     const persistedBefore = await ctx.rawRequest({ path: "/__test/jwks-state" });
     const before = storedKeySchema.parse(persistedBefore.body);
     expect(before).toHaveLength(1);
-    expect(before[0]?.privateKeyEncrypted).toBeFalse();
+    expect(before[0]?.privateKeyEncrypted).toBe(false);
 
     if (!before[0]?.expiresAt) {
       throw new Error("rotation interval must persist a key expiry");

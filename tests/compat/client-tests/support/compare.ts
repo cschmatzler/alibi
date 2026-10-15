@@ -2914,6 +2914,12 @@ export function compareValues(
   // bytes; a complete pair uses ordinary UTF-8. No replacement text is accepted
   // without this derivation and the exact database readback.
   function utf16PrefixUnits(key: string, bytes: Buffer): number | undefined {
+    // Node SQLite bindings replace an unpaired UTF-16 unit with U+FFFD;
+    // the native compatibility stores retain its WTF-8 bytes. In either case
+    // require the exact observed credential prefix and its real SQL readback.
+    for (let units = 0; units <= key.length; units++) {
+      if (Buffer.from(key.slice(0, units), "utf8").equals(bytes)) return units;
+    }
     if (!bytes.length) {
       return 0;
     }
@@ -5286,6 +5292,15 @@ export function compareValues(
       }
 
       if (
+        key === "host" &&
+        path.endsWith(".headers.host") &&
+        a === new URL(context.leftBaseURL).host &&
+        b === new URL(context.rightBaseURL).host
+      ) {
+        return;
+      }
+
+      if (
         urlKeys.has(key) ||
         (key === "content-location" &&
           /\/scim\/v2\/(?:Groups|Users)\//.test(a) &&
@@ -5964,6 +5979,12 @@ export function compareValues(
           applicationApiKeyLookups.has(b)
         ) {
           identity(String(a.key), String(b.key), childPath, "api-key-storage");
+        } else if (sqliteApiKey && childKey === "startHex") {
+          const leftStorage = sqliteStorage(a, leftSqliteApiKeys);
+          const rightStorage = sqliteStorage(b, rightSqliteApiKeys);
+          if (!leftStorage || !rightStorage || leftStorage.units !== rightStorage.units) {
+            fail(childPath, "SQLite API-key stored-prefix relationship differs");
+          }
         } else if (sqliteApiKey && childKey === "key") {
           const leftStorage = sqliteStorage(a, leftSqliteApiKeys);
           const rightStorage = sqliteStorage(b, rightSqliteApiKeys);
@@ -6007,7 +6028,10 @@ export function compareValues(
           typeof b.start === "string" &&
           (issuedLeft !== undefined || issuedRight !== undefined)
         ) {
-          if (a.start.length !== b.start.length) {
+          if (
+            a.start.length !== b.start.length &&
+            (!leftSqliteApiKeys.has(String(a.id)) || !rightSqliteApiKeys.has(String(b.id)))
+          ) {
             fail(childPath, "API key stored-prefix length differs");
           }
           if (issuedLeft === undefined || issuedRight === undefined) {

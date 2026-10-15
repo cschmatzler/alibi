@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";

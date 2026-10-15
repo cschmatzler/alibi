@@ -1,6 +1,7 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "../../../support/scenario";
 type InvalidCase = { field: string; patch: Record<string, unknown>; issue: string };
@@ -42,9 +43,10 @@ export async function samlMetadataAdmissionFlow(ctx: ScenarioContext, idp: boole
       .map((raw) => raw.split(";")[0])
       .join("; "),
   };
-  const cert = await Bun.file(
+  const cert = await readFixtureFile(
     new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const base: any = {
     providerId,
     issuer: "https://sp.example.test/entity",

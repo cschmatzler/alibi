@@ -1,4 +1,4 @@
-//! Enforced runtime route inventory. Behavioral evidence is checked by the Bun suite.
+//! Enforced runtime route inventory. Behavioral evidence is checked by the Nub suite.
 #![allow(
     clippy::expect_used,
     clippy::indexing_slicing,

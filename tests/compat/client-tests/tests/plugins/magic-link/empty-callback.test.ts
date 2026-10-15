@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { magicLinkClient, readMagicLink } from "./helpers";
@@ -17,7 +17,7 @@ compatScenario(
     expect(response.status).toBe(200);
     expect(response.location).toBeNull();
     const body = response.body as any;
-    expect(body.token).toBeString();
+    expect(body.token).toBeTypeOf("string");
     expect(body.user).toMatchObject({ email, name: "JSON owner", emailVerified: true });
     const session = await client.getSession();
     expect(session.error).toBeNull();

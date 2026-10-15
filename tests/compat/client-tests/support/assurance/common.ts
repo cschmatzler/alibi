@@ -205,7 +205,7 @@ export async function command(
 export async function harnessDigest() {
   const paths = [
     join(CLIENT_ROOT, "package.json"),
-    join(CLIENT_ROOT, "bun.lock"),
+    join(CLIENT_ROOT, "nub.lock"),
     ...(await filesUnder(join(CLIENT_ROOT, "support"))),
     ...(await filesUnder(join(CLIENT_ROOT, "tests"))),
     ...(await filesUnder(join(CLIENT_ROOT, "harness"))),

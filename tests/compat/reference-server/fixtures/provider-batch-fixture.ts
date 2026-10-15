@@ -1,10 +1,11 @@
-import type { Database } from "bun:sqlite";
 import { appendFileSync } from "node:fs";
 
 import { applyDefaultAccessTokenExpiry } from "@better-auth/core/oauth2";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+import type { Database } from "better-sqlite3";
 
-import inputs from "../../fixtures/provider-batch-profiles.json";
+import inputs from "../../fixtures/provider-batch-profiles.json" with { type: "json" };
+import { serveFixture } from "../http.ts";
 import { salesforceTransport } from "./salesforce-transport";
 const salesforceFamilyModes = [
   "family-default",
@@ -106,14 +107,14 @@ const destinations: Record<string, { token: string[]; user?: string }> = {
 };
 
 /** Inputs are provider responses; the published factories produce every assertion target. */
-export function providerBatchFixture(base: BetterAuthOptions, database: Database) {
+export async function providerBatchFixture(base: BetterAuthOptions, database: Database) {
   const salesforce = salesforceTransport();
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
   const callbacks: unknown[] = [];
   const jwt = (profile: unknown) =>
     `e30.${Buffer.from(JSON.stringify(profile)).toString("base64url")}.fixture`;
-  const transport = Bun.serve({
+  const transport = await serveFixture({
     port: 0,
     async fetch(request) {
       const url = new URL(request.url);
@@ -202,7 +203,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
           ? "email"
           : "user";
     }
-    if (!stage) return previousFetch(input, init);
+    if (!stage) return previousFetch(request);
     request.headers.set(
       "x-provider-batch-declared-headers",
       JSON.stringify(Object.fromEntries(request.headers)),
@@ -383,7 +384,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
           Object.fromEntries(
             ["user", "account", "session", "verification"].map((table) => [
               table,
-              database.query(`SELECT * FROM "${table}" ORDER BY rowid`).all(),
+              database.prepare(`SELECT * FROM "${table}" ORDER BY rowid`).all(),
             ]),
           ),
         );

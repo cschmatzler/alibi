@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { verifyPassword } from "better-auth/crypto";
+import { expect } from "vitest";
 
 import type { FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";

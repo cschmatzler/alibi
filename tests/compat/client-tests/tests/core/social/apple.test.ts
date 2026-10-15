@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import { expect } from "vitest";
 
 import { credential, issuedAt } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
@@ -77,7 +79,7 @@ for (const mode of ["default", "configured", "disabled-scope", "disabled-configu
       expect(url.searchParams.get("response_mode")).toBe("form_post");
       expect(url.searchParams.get("code_challenge_method")).toBe("S256");
       expect(url.searchParams.get("code_challenge")).toBeTruthy();
-      expect(url.searchParams.has("login_hint")).toBeFalse();
+      expect(url.searchParams.has("login_hint")).toBe(false);
       expect(url.searchParams.get("scope")).toBe(
         [
           ...(mode.startsWith("disabled-") ? [] : ["email", "name"]),
@@ -480,9 +482,12 @@ compatScenario(
 compatScenario(
   "apple JWKS rotation is observed on each signed token admission",
   async (ctx) => {
-    const keys = await Bun.file(
-      new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
-    ).json();
+    const keys = JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
+        "utf8",
+      ),
+    );
     const token = await proof(ctx);
     const actor = ctx.actor("apple", "social-apple-default");
     await control(ctx, { keys });

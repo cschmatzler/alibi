@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -157,7 +157,7 @@ for (const mode of [
       expect(url.searchParams.get("state")).not.toBe("stale");
       expect(url.searchParams.get("code_challenge_method")).toBe("S256");
       expect(url.searchParams.get("code_challenge")).toBeTruthy();
-      expect(url.searchParams.has("login_hint")).toBeFalse();
+      expect(url.searchParams.has("login_hint")).toBe(false);
       expect(url.searchParams.get("custom")).toBe("value with space");
       expect(url.searchParams.get("token_access_type")).toBe(
         ["offline", "online", "legacy"].includes(mode) ? mode : null,
@@ -609,7 +609,7 @@ compatScenario(
       .actor("dropbox", "social-dropbox-disabled-scope")
       .client.signIn.social({ provider: "dropbox" });
     expect(result.error).toBeNull();
-    expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
+    expect(new URL(result.data!.url!).searchParams.has("scope")).toBe(false);
     expect(await state(ctx)).toEqual(before);
     expect(await receipts(ctx)).toEqual([]);
 

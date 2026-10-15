@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { readMagicLink } from "./helpers";
@@ -24,7 +26,7 @@ compatScenario(
     for (const other of [
       digest,
       `magic-link:${delivered.token}`,
-      `magic-link:${new Bun.CryptoHasher("sha256").update(delivered.token).digest("base64url")}`,
+      `magic-link:${createFixtureHash("sha256").update(delivered.token).digest("base64url")}`,
     ]) {
       expect(await ctx.readVerificationState({ identifier: other })).toEqual([]);
     }

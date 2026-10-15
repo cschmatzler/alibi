@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { importJWK, SignJWT } from "jose";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
@@ -14,10 +15,11 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "remote-jwks", ...input }),
       });
-    const keys = (
-      await Bun.file(
+    const keys = JSON.parse(
+      await readFixtureFile(
         new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
-      ).json()
+        "utf8",
+      ),
     ).keys;
     const rsa = await importJWK(keys.find((key: any) => key.family === "RSA").privateJwk, "RS256");
     const ec = await importJWK(keys.find((key: any) => key.family === "P-256").privateJwk, "ES256");

@@ -7,9 +7,9 @@ The probe enables the schema-bearing plugins supported by Alibi, including organ
 To regenerate the SQL, schema metadata, and independent database snapshots:
 
 ```sh
-bun install --cwd tests/compat/reference-server --frozen-lockfile
+nub install --cwd tests/compat/reference-server --frozen-lockfile
 cd tests/compat/reference-server
-BETTER_AUTH_TEST_POSTGRES_URL=postgres://localhost/disposable bun probes/generate-schema-assets.mjs
+BETTER_AUTH_TEST_POSTGRES_URL=postgres://localhost/disposable nub probes/generate-schema-assets.mjs
 ```
 
 The PostgreSQL probe creates and removes its own temporary schema. SQLite runs in memory. Both snapshots describe databases actually migrated by the pinned TypeScript implementation; the Rust integration tests compare adapter-created databases against those snapshots.

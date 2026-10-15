@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -89,7 +90,7 @@ compatScenario(
       error: { ...denied.error, details: { tryAgainIn: "<positive milliseconds>" } },
     };
     expect(await read()).toEqual(used);
-    await Bun.sleep(Math.max(0, Date.parse(used.keys[0]!.lastRequest!) + 600 - Date.now()) + 100);
+    await setTimeout(Math.max(0, Date.parse(used.keys[0]!.lastRequest!) + 600 - Date.now()) + 100);
     const renewed = await use();
     expect(renewed.error).toBeNull();
     expect(renewed.data?.user.id).toBe(signup.data!.user.id);

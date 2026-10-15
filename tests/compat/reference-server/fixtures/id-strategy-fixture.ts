@@ -1,13 +1,13 @@
-import { Database } from "bun:sqlite";
-
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+
+import { createDatabase } from "../sqlite.ts";
 export async function idStrategyFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const databases = new Map<string, Database>();
   const events = new Map<string, unknown[]>();
   for (const mode of ["uuid", "serial", "custom", "false", "throw"]) {
-    const db = new Database(":memory:");
+    const db = createDatabase(":memory:");
     databases.set(mode, db);
     const receipts: unknown[] = [];
     events.set(mode, receipts);
@@ -45,18 +45,18 @@ export async function idStrategyFixture(base: BetterAuthOptions) {
           const db = databases.get(mode)!;
           // Compare identifier values across application-selected integer/text schemas.
           return Response.json({
-            users: db.query("SELECT CAST(id AS TEXT) AS id FROM user").all(),
+            users: db.prepare("SELECT CAST(id AS TEXT) AS id FROM user").all(),
             accounts: db
-              .query(
+              .prepare(
                 'SELECT CAST(id AS TEXT) AS id, CAST("userId" AS TEXT) AS "userId" FROM account',
               )
               .all(),
             sessions: db
-              .query(
+              .prepare(
                 'SELECT CAST(id AS TEXT) AS id, CAST("userId" AS TEXT) AS "userId" FROM session',
               )
               .all(),
-            verification: db.query("SELECT CAST(id AS TEXT) AS id FROM verification").all(),
+            verification: db.prepare("SELECT CAST(id AS TEXT) AS id FROM verification").all(),
             events: events.get(mode),
           });
         }

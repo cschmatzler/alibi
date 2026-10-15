@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { apiKeyClient } from "@better-auth/api-key/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -10,7 +10,7 @@ import { compatScenario, type ScenarioContext } from "../../../support/scenario"
 type Data = Record<string, any>;
 
 function object(value: unknown): Data {
-  expect(value).toBeObject();
+  expect(value).toSatisfy((value) => value !== null && typeof value === "object");
   return value as Data;
 }
 
@@ -59,13 +59,13 @@ async function setup(ctx: ScenarioContext) {
 
 async function events(ctx: ScenarioContext) {
   const result = await control(ctx, "events");
-  expect(result).toBeArray();
+  expect(result).toSatisfy(Array.isArray);
   return result as Data[];
 }
 
 async function state(ctx: ScenarioContext) {
   const result = await control(ctx, "state");
-  expect(result).toBeArray();
+  expect(result).toSatisfy(Array.isArray);
   return result as Data[];
 }
 

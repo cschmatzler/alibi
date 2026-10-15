@@ -1,4 +1,4 @@
-import { expect } from "bun:test";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
@@ -30,7 +30,7 @@ compatScenario(
     expect(authorization.pathname).toBe("/authorize");
     const freshState = authorization.searchParams.get("state")!;
     expect(freshState.length).toBeGreaterThan(20);
-    expect(authorization.searchParams.get("code_challenge")).toBeString();
+    expect(authorization.searchParams.get("code_challenge")).toBeTypeOf("string");
     expect(await state()).toEqual(before);
     expect((await ctx.rawRequest({ path: "/__test/generic-token/receipts" })).body).toEqual([]);
     const wrong = await callback("code=wrong-state&state=unissued-state");

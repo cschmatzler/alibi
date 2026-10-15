@@ -1,5 +1,6 @@
-import { expect } from "bun:test";
+import { setTimeout } from "node:timers/promises";
 
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
@@ -181,7 +182,7 @@ compatScenario(
       const cookie = value.cookies.map((cookie) => cookie.split(";")[0]).join("; ");
       // JWT signatures are deterministic within one iat second. Separate these
       // publications so scheduling cannot change their repeated-token relationship.
-      await Bun.sleep(1100);
+      await setTimeout(1100);
       const read = await ctx.rawRequest({
         path: `/__test/profiles/${profile}/api/auth/get-session`,
         headers: { cookie },

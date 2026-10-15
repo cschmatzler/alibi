@@ -1,7 +1,6 @@
-import type { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { twoFactor } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 type Event = {
   kind: string;
@@ -181,7 +180,7 @@ export function createTwoFactorDeliveryFixture(
         throw new Error("actual identifier required");
       }
       database
-        .query("UPDATE verification SET expiresAt=? WHERE identifier=?")
+        .prepare("UPDATE verification SET expiresAt=? WHERE identifier=?")
         .run(new Date(0).toISOString(), body.identifier);
     }
 
@@ -190,14 +189,14 @@ export function createTwoFactorDeliveryFixture(
       : [...deliveries.values()];
     const rows = body.userId
       ? database
-          .query(
+          .prepare(
             "SELECT * FROM verification WHERE identifier LIKE ? OR identifier IN(SELECT '2fa-otp-'||identifier FROM verification WHERE value=? AND identifier LIKE '2fa-%') ORDER BY createdAt,id",
           )
           .all(`2fa-otp-${body.userId}!%`, body.userId)
       : [];
     const challenges = body.userId
       ? database
-          .query(
+          .prepare(
             "SELECT * FROM verification WHERE value=? AND identifier LIKE '2fa-%' ORDER BY createdAt,id",
           )
           .all(body.userId)

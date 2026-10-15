@@ -1,4 +1,6 @@
-import { expect } from "bun:test";
+import { createHash as createFixtureHash } from "node:crypto";
+
+import { expect } from "vitest";
 
 import { passwordlessNumericScenarios } from "../../../support/passwordless-numeric";
 import { authProfilePath } from "../../../support/profiles";
@@ -15,7 +17,7 @@ compatScenario(
     expect(issue.error).toBeNull();
 
     const link = await readMagicLink(ctx, email);
-    const hash = new Bun.CryptoHasher("sha256").update(link.token).digest("base64url");
+    const hash = createFixtureHash("sha256").update(link.token).digest("base64url");
     expect(await verificationCount(ctx, link.token)).toBe(0);
     expect(await verificationCount(ctx, `magic-link:${hash}`)).toBe(1);
 

@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { credential } from "../../../support/id-token";

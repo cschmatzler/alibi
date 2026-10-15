@@ -1,8 +1,9 @@
-import { expect } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { importJWK, SignJWT } from "jose";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 
@@ -30,9 +31,12 @@ compatScenario(
       .filter((raw) => Boolean(Cookie.parse(raw)?.value))
       .map((raw) => raw.split(";")[0])
       .join("; ");
-    const fixture = await Bun.file(
-      new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
-    ).json();
+    const fixture = JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
+        "utf8",
+      ),
+    );
     const key = fixture.keys.find((key: any) => key.family === "RSA");
     const signingKey = await importJWK(key.privateJwk, "RS256");
     const created = await control({

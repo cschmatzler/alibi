@@ -1,7 +1,8 @@
-import { expect } from "bun:test";
+import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { XMLParser, XMLValidator } from "fast-xml-parser";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import type { ScenarioContext } from "../../../support/scenario";
 export async function samlMetadataFlow(ctx: ScenarioContext, slo: boolean) {
@@ -26,9 +27,10 @@ export async function samlMetadataFlow(ctx: ScenarioContext, slo: boolean) {
     .filter((raw) => Boolean(Cookie.parse(raw)?.value))
     .map((raw) => raw.split(";")[0])
     .join("; ");
-  const cert = await Bun.file(
+  const cert = await readFixtureFile(
     new URL("../../../../fixtures/salesforce-transport/leaf.pem", import.meta.url),
-  ).text();
+    "utf8",
+  );
   const input = {
     providerId: "metadata-provider",
     issuer: "https://sp.example.test/issuer",

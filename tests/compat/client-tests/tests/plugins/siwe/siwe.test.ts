@@ -1,7 +1,7 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { compatScenario } from "../../../support/scenario";
 import { CONTRACT, EOA, message, SECOND_EOA, signature } from "../../../support/siwe-wallet";
 import { control, identity, nonce, siweActor, state, verify } from "./helpers";
@@ -705,7 +705,7 @@ compatScenario(
         headers: Object.fromEntries(response.headers),
         body,
       });
-      await Bun.write(
+      await writeArtifact(
         new URL(`../../../artifacts/siwe-media-${new URL(ctx.baseURL).port}.json`, import.meta.url),
         JSON.stringify(rawMediaResponses, null, 2),
       );

@@ -1,11 +1,12 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthClient } from "better-auth/client";
 import { getMigrations } from "better-auth/db/migration";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
@@ -16,9 +17,9 @@ test("managed profile signatures require the issuing runtime key and actual matc
   const current = "managed-harness-current-key-at-least-32-characters";
   const path = "/__test/profiles/managed-old/api/auth";
   async function observe() {
-    const database = new Database(":memory:");
+    const database = createDatabase(":memory:");
     let auth: ReturnType<typeof betterAuth>;
-    const server = Bun.serve({
+    const server = await serveFixture({
       hostname: "127.0.0.1",
       port: 0,
       fetch: (request) => auth.handler(request),

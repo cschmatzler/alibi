@@ -1,10 +1,9 @@
 /** Concrete app session fields; every handler remains the pinned 1.7.6 runtime. */
 
-import { Database } from "bun:sqlite";
-
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin, openAPI, organization } from "better-auth/plugins";
+import Database from "better-sqlite3";
 
 export async function createSessionFieldsFixture(
   database: Database,
@@ -131,7 +130,7 @@ export async function createSessionFieldsFixture(
             async before(data, ctx) {
               if (data.label === "delete-before") {
                 database
-                  .query("DELETE FROM session WHERE token=?")
+                  .prepare("DELETE FROM session WHERE token=?")
                   .run(ctx?.context.session?.session.token ?? "");
               }
 
@@ -163,12 +162,12 @@ export async function createSessionFieldsFixture(
   return {
     profiles,
     state(email: string) {
-      const user = database.query("SELECT id FROM user WHERE email=?").get(email) as {
+      const user = database.prepare("SELECT id FROM user WHERE email=?").get(email) as {
         id: string;
       } | null;
       const rows = user
         ? (database
-            .query("SELECT * FROM session WHERE userId=? ORDER BY createdAt")
+            .prepare("SELECT * FROM session WHERE userId=? ORDER BY createdAt")
             .all(user.id) as Record<string, unknown>[])
         : [];
       return rows.map((row) => ({

@@ -1,9 +1,8 @@
-/** Application-owned SQLite keys reached by the actual published JWT plugin. */
-import { Database } from "bun:sqlite";
-
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { createJwk, jwt, resolveSigningKey, signJWT } from "better-auth/plugins/jwt";
+/** Application-owned SQLite keys reached by the actual published JWT plugin. */
+import Database from "better-sqlite3";
 
 type StoredKey = {
   rowId: number;
@@ -82,7 +81,9 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
 
   function rows(profile: string) {
     return database
-      .query<StoredKey, [string]>("SELECT * FROM fixtureJwtKeyring WHERE profile=? ORDER BY rowId")
+      .prepare<[string], StoredKey>(
+        "SELECT * FROM fixtureJwtKeyring WHERE profile=? ORDER BY rowId",
+      )
       .all(profile);
   }
 
@@ -220,7 +221,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
         });
         reject("create");
         const inserted = database
-          .query(
+          .prepare(
             "INSERT INTO fixtureJwtKeyring(profile,publicKey,privateKey,createdAt,expiresAt,alg,crv) VALUES(?,?,?,?,?,?,?)",
           )
           .run(
@@ -234,7 +235,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
           );
         const id = `application-key-${inserted.lastInsertRowid}`;
         database
-          .query("UPDATE fixtureJwtKeyring SET id=? WHERE rowId=?")
+          .prepare("UPDATE fixtureJwtKeyring SET id=? WHERE rowId=?")
           .run(id, inserted.lastInsertRowid);
         return key(rows(name).find((row) => row.id === id)!);
       },
@@ -320,8 +321,8 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
       }
 
       if (body.operation === "reset") {
-        database.query("DELETE FROM fixtureJwtKeyring").run();
-        database.query("DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'").run();
+        database.prepare("DELETE FROM fixtureJwtKeyring").run();
+        database.prepare("DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'").run();
         events.length = 0;
         failure = null;
         race = null;
@@ -348,20 +349,20 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
         return Response.json({ released: true });
       } else if (body.operation === "expire") {
         database
-          .query("UPDATE fixtureJwtKeyring SET expiresAt=? WHERE profile=? AND id=?")
+          .prepare("UPDATE fixtureJwtKeyring SET expiresAt=? WHERE profile=? AND id=?")
           .run(Date.parse(body.expiresAt), profile, body.id);
       } else if (body.operation === "corrupt") {
         const column = body.field === "public" ? "publicKey" : "privateKey";
         database
-          .query(`UPDATE fixtureJwtKeyring SET ${column}=? WHERE profile=? AND id=?`)
+          .prepare(`UPDATE fixtureJwtKeyring SET ${column}=? WHERE profile=? AND id=?`)
           .run(body.field === "public" ? "corrupt" : '"corrupt"', profile, body.id);
       } else if (body.operation === "legacy") {
         database
-          .query("UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?")
+          .prepare("UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?")
           .run(profile, body.id);
       } else if (body.operation === "delete") {
         database
-          .query("DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?")
+          .prepare("DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?")
           .run(profile, body.id);
       } else if (
         ["sign", "resolve-sign", "create", "verify", "api-sign", "api-sign-overrides"].includes(

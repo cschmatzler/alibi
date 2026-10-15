@@ -1,6 +1,5 @@
-import { expect } from "bun:test";
-
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";

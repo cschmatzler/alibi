@@ -2,6 +2,9 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 
+import { parse } from "yaml";
+import { z } from "zod";
+
 import {
   CACHE_ROOT,
   command,
@@ -16,18 +19,22 @@ import {
 /** Authenticate installed oracle bytes against the committed npm tarball integrity. */
 export async function verifiedPublishedRoots() {
   const roots = await packageRoots();
-  const lock = await readFile(join(REFERENCE_ROOT, "bun.lock"), "utf8");
+  const lock = z
+    .object({ packages: z.record(z.string(), z.unknown()) })
+    .parse(parse(await readFile(join(REFERENCE_ROOT, "nub.lock"), "utf8")));
   await mkdir(CACHE_ROOT, { recursive: true });
 
   for (const root of roots) {
-    const line = lock
-      .split("\n")
-      .find((line) => line.trimStart().startsWith(`${JSON.stringify(root.name)}: [`));
-    const integrity = line?.match(/"(sha512-[A-Za-z0-9+/=]+)"/)?.[1];
+    const entry = z
+      .object({
+        resolution: z.object({ integrity: z.string().regex(/^sha512-[A-Za-z0-9+/=]+$/) }),
+      })
+      .safeParse(lock.packages[`${root.name}@${upstreamPin.version}`]);
 
-    if (!integrity) {
+    if (!entry.success) {
       throw new Error(`Missing published integrity for ${root.name}`);
     }
+    const integrity = entry.data.resolution.integrity;
 
     const cache = join(CACHE_ROOT, `${digest(integrity)}.tgz`);
     let bytes: Uint8Array;

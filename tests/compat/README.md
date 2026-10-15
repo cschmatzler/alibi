@@ -2,7 +2,7 @@
 
 The published TypeScript `better-auth@1.7.7` runtime is the behavioral reference.
 The client, reference server, passkey plugin and API-key plugin are pinned to
-that version with committed Bun lockfiles. `capabilities.json` carries the single
+that version with committed `nub.lock` files. `capabilities.json` carries the single
 committed `upstreamVersion`; `tests/compat/upstream_pin.rs` fails when any
 manifest, lockfile, document, harness schema or fixture server restates a
 different release, and both fixture servers report the release they reproduce
@@ -42,14 +42,14 @@ one-off diagnostics of dependency internals and checks of comment wording do not
 ```bash
 devenv shell -- ./scripts/compat.sh
 # or, from the repository root:
-bun run test:compat
+nub run test:compat
 ```
 
 CI does not run this suite; it is too slow and resource-hungry for every push.
 Native tests (`./scripts/check.sh`) protect behavior between runs, and the
 differential suite runs once before merging. It installs nothing: run
-`bun install --frozen-lockfile` in `reference-server/` and `client-tests/` first.
-It formats, lints and type-checks the Bun harness, runs the harness negative
+`nub install --frozen-lockfile` in `reference-server/` and `client-tests/` first.
+It formats, lints and type-checks the Vitest harness running on Node through Nub, runs the harness negative
 controls, the complete SDK scenario directory against both store adapters,
 process-environment cases and Chromium tests, then checks each adapter's evidence.
 Every dual-server comparison runs through the official client against both
@@ -67,7 +67,7 @@ alone with `tests/compat/client-tests/run-against-both.sh environment` inside th
 development shell.
 
 Each SDK scenario runs against TypeScript and then Rust and defaults to a
-30-second test deadline, including real password hashing and multi-step tables.
+60-second test deadline, including real password hashing and multi-step tables.
 Workers take the next scenario file from a shared queue, prioritizing measured
 slow files in `scenario-costs.json`; every discovered file still runs. Each pair
 owns separate fixture databases and process-global state, and executes its files
@@ -90,8 +90,9 @@ remain independent. A cold run builds both fixture executables first.
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
 The style input is private and requires GitHub SSH access. `scripts/check.sh`
 combines the Rust and compatibility gates. `devenv.lock` pins all
-tools, including Bun and Chromium. Update the style with `devenv update rust-style`.
-Outside devenv, run `bunx playwright install --with-deps chromium` in
+tools, including Nub 0.9.6, Node 24 and Chromium. The compat projects declare empty
+workspace lists to keep their installs and lockfiles independent of the docs workspace. Update the style with `devenv update rust-style`.
+Outside devenv, run `nubx playwright install --with-deps chromium` in
 `client-tests/` before browser checks.
 
 
@@ -198,12 +199,12 @@ claim that every behavior of an endpoint has been tested.
 
 The assurance runner evaluates what the suite can establish, including missing
 tests and missing assertions. It is an explicit command; CI routing is unchanged.
-Install both Bun projects with their frozen lockfiles and run inside `devenv shell`:
+Install both Nub projects with their frozen lockfiles and run inside `devenv shell`:
 
 ```bash
 cd tests/compat/client-tests
-bun run assurance:inventory
-bun run assurance run --budget 12
+nub run assurance:inventory
+nub run assurance run --budget 12
 ```
 
 `run` builds and owns the Rust fixture, instruments the pinned upstream fixture,
@@ -215,10 +216,10 @@ is a bounded sample, and every unrun mutation stays unresolved. Use repeated
 `--tests tests/path.test.ts` or `--mutation ID` for focused work. For example:
 
 ```bash
-bun run assurance run --report-only --budget 5 \
+nub run assurance run --report-only --budget 5 \
   --tests tests/core/password/password.test.ts \
   --tests tests/core/user/user.test.ts
-bun run assurance:mutate --tests tests/core/password/password.test.ts \
+nub run assurance:mutate --tests tests/core/password/password.test.ts \
   --mutation 'npm:better-auth/dist/api/routes/password.mjs#omit-effect:6479:6541' \
   --report-only
 ```
@@ -232,7 +233,7 @@ Each command owns a fresh directory under `artifacts/assurance/`, containing:
   archive in `../upstream-source.json`, authenticated published npm archives,
   public exports/options, repository source files, upstream test templates,
   static branch arms/functions and source mutation candidates. Installed package
-  bytes must match the committed Bun lockfile's npm integrity. Unloaded modules
+  bytes must match the committed Nub lockfile's npm integrity. Unloaded modules
   remain in the branch denominator. Parameterized tests are counted as templates,
   not guessed expanded cases. Optional chains, loops and catches not measured by
   Istanbul are explicit unmeasured obligations.
@@ -270,10 +271,10 @@ handwritten plugin/configuration scenarios; it does not generate all possible
 plugins, configurations, storage backends or schedules.
 
 ```bash
-bun run assurance:generate --seed 42 --steps 50 --profile session-deferred
-bun run assurance replay --replay artifacts/assurance/RUN/replay.json --report-only
-bun run assurance shrink --replay artifacts/assurance/RUN/parity/replay-0.json --budget 100
-bun run assurance:report --directory artifacts/assurance/RUN
+nub run assurance:generate --seed 42 --steps 50 --profile session-deferred
+nub run assurance replay --replay artifacts/assurance/RUN/replay.json --report-only
+nub run assurance shrink --replay artifacts/assurance/RUN/parity/replay-0.json --budget 100
+nub run assurance:report --directory artifacts/assurance/RUN
 ```
 
 Failed generated cases save their symbolic actions as replay files without
@@ -322,7 +323,7 @@ To update the inventory deliberately after adding routes or tests:
 
 ```bash
 mkdir -p coverage
-bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
+nub tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
 BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat route_inventory::
 BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat sdk::tests::full_client_compat --run-ignored only --no-capture
 ```
@@ -335,13 +336,13 @@ behavior are tracked through capability evidence and their own assertions.
 ## Focused checks
 
 Run these in `devenv shell` after installing both projects with
-`bun install --frozen-lockfile`:
+`nub install --frozen-lockfile`:
 
 ```bash
-bun run --cwd tests/compat/client-tests format:check
-bun run --cwd tests/compat/client-tests lint
-bun run --cwd tests/compat/client-tests typecheck
-bun test --cwd tests/compat/client-tests harness
+nub run --cwd tests/compat/client-tests format:check
+nub run --cwd tests/compat/client-tests lint
+nub run --cwd tests/compat/client-tests typecheck
+nub test --cwd tests/compat/client-tests harness
 tests/compat/client-tests/run-against-both.sh plugins/passkey
 tests/compat/client-tests/run-against-both.sh browser
 tests/compat/client-tests/run-against-both.sh tests/plugins/organization/teams.test.ts
@@ -354,7 +355,7 @@ sync. File-level runs go through `selected_client_compat`, which reads the
 space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
 
 The Rust orchestrator starts and checks both servers on allocated ports and
-stops them on completion. Direct Bun scenario runs require running reference
+stops them on completion. Direct Nub scenario runs require running reference
 and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
 ## One-time tokens

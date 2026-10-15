@@ -1,7 +1,8 @@
 /** Real socket transport. The server abort/drop observer acknowledges closure. */
 
-import { expect } from "bun:test";
 import { connect } from "node:net";
+
+import { expect } from "vitest";
 
 import type { FixtureProfile } from "../../../support/profiles";
 import type { ScenarioContext } from "../../../support/scenario";

@@ -1,114 +1,474 @@
-import {verifyDpopProof,createDpopReplayStore,createInMemoryDpopReplayStore,isDpopProofError,isDpopBindingError,enforceDpopBinding,parseAccessTokenAuthorization,stripAccessTokenAuthorizationScheme,getConfirmationJkt,getDpopJktFromPayload,normalizeDpopHtu,deriveDpopAth,deriveDpopJkt} from "better-auth/oauth2";
-import {SignJWT,importJWK,decodeProtectedHeader} from "jose";
-import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
-import {createHash} from "node:crypto";
-import { consumeClientAssertion, getOAuthProviderApi, oauthProvider } from "@better-auth/oauth-provider";
+import { createHash } from "node:crypto";
+import { readFile as readFixtureFile } from "node:fs/promises";
+
+import {
+  consumeClientAssertion,
+  getOAuthProviderApi,
+  oauthProvider,
+} from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { getMigrations } from "better-auth/db/migration";
-import { jwt, username } from "better-auth/plugins";
 import { createAuthEndpoint } from "better-auth/api";
+import { symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
+import { getMigrations } from "better-auth/db/migration";
+import {
+  verifyDpopProof,
+  createDpopReplayStore,
+  createInMemoryDpopReplayStore,
+  isDpopProofError,
+  isDpopBindingError,
+  enforceDpopBinding,
+  parseAccessTokenAuthorization,
+  stripAccessTokenAuthorizationScheme,
+  getConfirmationJkt,
+  getDpopJktFromPayload,
+  normalizeDpopHtu,
+  deriveDpopAth,
+  deriveDpopJkt,
+} from "better-auth/oauth2";
+import { jwt, username } from "better-auth/plugins";
+import { SignJWT, importJWK, decodeProtectedHeader } from "jose";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
-  const remoteKeys=(await Bun.file(new URL("../../../fixtures/oauth/client-assertion-keys.json",import.meta.url)).json()).keys;
-  const remoteDocument=(family:string,algorithm:string,kid:string)=>({keys:[{...remoteKeys.find((key:any)=>key.family===family).publicJwk,alg:algorithm,kid}]});
-  const remoteState={responseMode:"valid",uri:"https://client.fixture.test/jwks",document:remoteDocument("RSA","RS256","first"),fetches:[] as unknown[]};
-  const remoteFetch=async(url:any,init:any)=>{
-    remoteState.fetches.push({url:String(url),accept:new Headers(init.headers).get("accept"),redirect:init.redirect,aborted:init.signal.aborted});
-    const mode=remoteState.responseMode;
-    if(mode==="exception")throw new Error("offline");
-    const doc=remoteState.document;const pub=doc.keys[0];
-    let body:any=JSON.stringify(doc);let status=200;
-    let headers:Record<string,string>={"content-type":"application/jwk-set+json; charset=utf-8"};
-    if(mode==="status")status=503;if(mode==="redirect")status=302;
-    if(mode==="type")headers["content-type"]="text/plain";
-    if(mode==="no-type"){headers={};body=new TextEncoder().encode(body);}
-    if(mode==="length")headers["content-length"]="65537";
-    if(mode==="hex-length")headers["content-length"]="0x10001";
-    if(mode==="invalid-length")headers["content-length"]="bogus";
-    if(mode==="exact-body"||mode==="over-body")body=body+" ".repeat((mode==="exact-body"?65536:65537)-body.length);
-    if(mode==="bad-json")body="invalid json";
-    if(mode==="empty-keys")body=JSON.stringify({keys:[]});
-    if(mode==="symmetric")body=JSON.stringify({keys:[{kty:"oct",k:"secret"}]});
-    if(mode==="private-key")body=JSON.stringify({keys:[{...pub,d:"secret"}]});
-    if(mode==="bom")body="\uFEFF"+body;
-    if(mode==="nonfinite")body=JSON.stringify({...doc,extra:"__nonfinite__"}).replace('"__nonfinite__"','1e400');
-    if(mode==="bad-utf8"){const text=JSON.stringify({...doc,extra:"x"});body=Buffer.from(text);body[text.indexOf('"x"')+1]=255;}
-    if(mode==="wrong-kid")body=JSON.stringify({keys:[{...pub,kid:"other"}]});
-    if(mode==="ambiguous")body=JSON.stringify({keys:[pub,pub]});
-    return new Response(body,{status,headers});
+  const remoteKeys = JSON.parse(
+    await readFixtureFile(
+      new URL("../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
+      "utf8",
+    ),
+  ).keys;
+  const remoteDocument = (family: string, algorithm: string, kid: string) => ({
+    keys: [
+      { ...remoteKeys.find((key: any) => key.family === family).publicJwk, alg: algorithm, kid },
+    ],
+  });
+  const remoteState = {
+    responseMode: "valid",
+    uri: "https://client.fixture.test/jwks",
+    document: remoteDocument("RSA", "RS256", "first"),
+    fetches: [] as unknown[],
   };
-  const remoteDiscovery={id:"remote-registry",matches:(id:string)=>id==="https://client.fixture.test/client.json",resolve:async(ctx:any,id:string,existing:any)=>({...(existing??await ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"remote-registry",name:"Remote client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"private_key_jwt",jwksUri:remoteState.uri,scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],createdAt:new Date(),updatedAt:new Date()}})),jwksUri:remoteState.uri}),get fetchClientMetadataResource(){return remoteState.responseMode==="no-transport"?undefined:remoteFetch;}};
-  const remoteProvider=oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:remoteDiscovery}]});
-  const registryState={mode:"live",events:[] as string[]};
-  const registryDiscoveries=[
-    {id:"registry-first",matches:(id:string)=>{registryState.events.push("first:matches");return id.startsWith("registry-");},resolve:async()=>{registryState.events.push("first:resolve");return null;}},
-    {id:"registry-live",matches:(id:string)=>{registryState.events.push("live:matches");return registryState.mode!=="mismatch" && id.startsWith("registry-");},resolve:async(ctx:any,id:string,existing:any)=>{
-      registryState.events.push(`live:resolve:${existing?"existing":"new"}`);
-      if(registryState.mode==="reject") return null;
-      if(existing) {
-        if(registryState.mode==="refresh") return ctx.context.adapter.update({model:"oauthClient",where:[{field:"clientId",value:id}],update:{name:"Updated registry",updatedAt:new Date()}});
-        return existing;
-      }
-      return ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"registry-live",name:"Registry client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"none",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],disabled:false,createdAt:new Date(),updatedAt:new Date()}});
-    }},
+  const remoteFetch = async (url: any, init: any) => {
+    remoteState.fetches.push({
+      url: String(url),
+      accept: new Headers(init.headers).get("accept"),
+      redirect: init.redirect,
+      aborted: init.signal.aborted,
+    });
+    const mode = remoteState.responseMode;
+    if (mode === "exception") throw new Error("offline");
+    const doc = remoteState.document;
+    const pub = doc.keys[0];
+    let body: any = JSON.stringify(doc);
+    let status = 200;
+    let headers: Record<string, string> = {
+      "content-type": "application/jwk-set+json; charset=utf-8",
+    };
+    if (mode === "status") status = 503;
+    if (mode === "redirect") status = 302;
+    if (mode === "type") headers["content-type"] = "text/plain";
+    if (mode === "no-type") {
+      headers = {};
+      body = new TextEncoder().encode(body);
+    }
+    if (mode === "length") headers["content-length"] = "65537";
+    if (mode === "hex-length") headers["content-length"] = "0x10001";
+    if (mode === "invalid-length") headers["content-length"] = "bogus";
+    if (mode === "exact-body" || mode === "over-body") {
+      body = body + " ".repeat((mode === "exact-body" ? 65536 : 65537) - body.length);
+    }
+    if (mode === "bad-json") body = "invalid json";
+    if (mode === "empty-keys") body = JSON.stringify({ keys: [] });
+    if (mode === "symmetric") body = JSON.stringify({ keys: [{ kty: "oct", k: "secret" }] });
+    if (mode === "private-key") body = JSON.stringify({ keys: [{ ...pub, d: "secret" }] });
+    if (mode === "bom") body = "\uFEFF" + body;
+    if (mode === "nonfinite") {
+      body = JSON.stringify({ ...doc, extra: "__nonfinite__" }).replace('"__nonfinite__"', "1e400");
+    }
+    if (mode === "bad-utf8") {
+      const text = JSON.stringify({ ...doc, extra: "x" });
+      body = Buffer.from(text);
+      body[text.indexOf('"x"') + 1] = 255;
+    }
+    if (mode === "wrong-kid") body = JSON.stringify({ keys: [{ ...pub, kid: "other" }] });
+    if (mode === "ambiguous") body = JSON.stringify({ keys: [pub, pub] });
+    return new Response(body, { status, headers });
+  };
+  const remoteDiscovery = {
+    id: "remote-registry",
+    matches: (id: string) => id === "https://client.fixture.test/client.json",
+    resolve: async (ctx: any, id: string, existing: any) => ({
+      ...(existing ??
+        (await ctx.context.adapter.create({
+          model: "oauthClient",
+          data: {
+            clientId: id,
+            clientDiscoveryId: "remote-registry",
+            name: "Remote client",
+            redirectUris: ["https://app.fixture.test/callback"],
+            tokenEndpointAuthMethod: "private_key_jwt",
+            jwksUri: remoteState.uri,
+            scopes: ["email"],
+            grantTypes: ["authorization_code"],
+            responseTypes: ["code"],
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        }))),
+      jwksUri: remoteState.uri,
+    }),
+    get fetchClientMetadataResource() {
+      return remoteState.responseMode === "no-transport" ? undefined : remoteFetch;
+    },
+  };
+  const remoteProvider = oauthProvider({
+    loginPage: "/login",
+    consentPage: "/consent",
+    extensions: [{ clientDiscovery: remoteDiscovery }],
+  });
+  const registryState = { mode: "live", events: [] as string[] };
+  const registryDiscoveries = [
+    {
+      id: "registry-first",
+      matches: (id: string) => {
+        registryState.events.push("first:matches");
+        return id.startsWith("registry-");
+      },
+      resolve: async () => {
+        registryState.events.push("first:resolve");
+        return null;
+      },
+    },
+    {
+      id: "registry-live",
+      matches: (id: string) => {
+        registryState.events.push("live:matches");
+        return registryState.mode !== "mismatch" && id.startsWith("registry-");
+      },
+      resolve: async (ctx: any, id: string, existing: any) => {
+        registryState.events.push(`live:resolve:${existing ? "existing" : "new"}`);
+        if (registryState.mode === "reject") return null;
+        if (existing) {
+          if (registryState.mode === "refresh") {
+            return ctx.context.adapter.update({
+              model: "oauthClient",
+              where: [{ field: "clientId", value: id }],
+              update: { name: "Updated registry", updatedAt: new Date() },
+            });
+          }
+          return existing;
+        }
+        return ctx.context.adapter.create({
+          model: "oauthClient",
+          data: {
+            clientId: id,
+            clientDiscoveryId: "registry-live",
+            name: "Registry client",
+            redirectUris: ["https://app.fixture.test/callback"],
+            tokenEndpointAuthMethod: "none",
+            scopes: ["email"],
+            grantTypes: ["authorization_code"],
+            responseTypes: ["code"],
+            disabled: false,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          },
+        });
+      },
+    },
   ];
-  const providerClientOptions={loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:registryDiscoveries}],cachedTrustedClients:new Set(["registry-client"])};
-  const providerClientHelper={id:"provider-client-helper",endpoints:{providerResolveClient:createAuthEndpoint("/fixture/provider-client",{method:"POST",body:z.object({clientId:z.string(),discover:z.boolean()})},async(ctx)=>{
-    const client=await getOAuthProviderApi(ctx,ctx.body.discover?providerClientOptions:{...providerClientOptions,extensions:[]}).getClient(ctx.body.clientId);
-    return ctx.json(client?{client_id:client.clientId,client_name:client.name??null,discovery_id:client.clientDiscoveryId??null,user_id:client.userId??null,client_secret:client.clientSecret??null}:null);
-  })}};
-  const authenticationHelper={id:"client-authentication-helper",endpoints:{authenticateClientFixture:createAuthEndpoint("/fixture/authenticate-client",{method:"POST",body:z.object({requireCredentials:z.boolean().optional(),requestedScopes:z.array(z.string()).optional(),boundGrant:z.string().optional()}).passthrough()},async(ctx)=>{
-    const authenticated=await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"},ctx.body.boundGrant).authenticateClient({requireCredentials:ctx.body.requireCredentials,scopes:ctx.body.requestedScopes});
-    return ctx.json({clientId:authenticated.clientId,method:authenticated.method??null,confirmation:authenticated.confirmation??null,client:{clientId:authenticated.client.clientId,clientName:authenticated.client.name??null,userId:authenticated.client.userId??null}});
-  })}};
+  const providerClientOptions = {
+    loginPage: "/login",
+    consentPage: "/consent",
+    extensions: [{ clientDiscovery: registryDiscoveries }],
+    cachedTrustedClients: new Set(["registry-client"]),
+  };
+  const providerClientHelper = {
+    id: "provider-client-helper",
+    endpoints: {
+      providerResolveClient: createAuthEndpoint(
+        "/fixture/provider-client",
+        { method: "POST", body: z.object({ clientId: z.string(), discover: z.boolean() }) },
+        async (ctx) => {
+          const client = await getOAuthProviderApi(
+            ctx,
+            ctx.body.discover
+              ? providerClientOptions
+              : { ...providerClientOptions, extensions: [] },
+          ).getClient(ctx.body.clientId);
+          return ctx.json(
+            client
+              ? {
+                  client_id: client.clientId,
+                  client_name: client.name ?? null,
+                  discovery_id: client.clientDiscoveryId ?? null,
+                  user_id: client.userId ?? null,
+                  client_secret: client.clientSecret ?? null,
+                }
+              : null,
+          );
+        },
+      ),
+    },
+  };
+  const authenticationHelper = {
+    id: "client-authentication-helper",
+    endpoints: {
+      authenticateClientFixture: createAuthEndpoint(
+        "/fixture/authenticate-client",
+        {
+          method: "POST",
+          body: z
+            .object({
+              requireCredentials: z.boolean().optional(),
+              requestedScopes: z.array(z.string()).optional(),
+              boundGrant: z.string().optional(),
+            })
+            .passthrough(),
+        },
+        async (ctx) => {
+          const authenticated = await getOAuthProviderApi(
+            ctx,
+            { loginPage: "/login", consentPage: "/consent" },
+            ctx.body.boundGrant,
+          ).authenticateClient({
+            requireCredentials: ctx.body.requireCredentials,
+            scopes: ctx.body.requestedScopes,
+          });
+          return ctx.json({
+            clientId: authenticated.clientId,
+            method: authenticated.method ?? null,
+            confirmation: authenticated.confirmation ?? null,
+            client: {
+              clientId: authenticated.client.clientId,
+              clientName: authenticated.client.name ?? null,
+              userId: authenticated.client.userId ?? null,
+            },
+          });
+        },
+      ),
+    },
+  };
   const assertionHelper = {
     id: "assertion-helper-fixture",
     endpoints: {
-      consumeAssertionFixture: createAuthEndpoint("/fixture/consume-assertion", {
-        method: "POST",
-        body: z.object({namespace:z.string(),payload:z.record(z.string(),z.unknown()),expectedAudience:z.string()}),
-      }, async (ctx) => {
-        await consumeClientAssertion(ctx,{loginPage:"/login",consentPage:"/consent"},ctx.body);
-        return ctx.json({consumed:true});
-      }),
+      consumeAssertionFixture: createAuthEndpoint(
+        "/fixture/consume-assertion",
+        {
+          method: "POST",
+          body: z.object({
+            namespace: z.string(),
+            payload: z.record(z.string(), z.unknown()),
+            expectedAudience: z.string(),
+          }),
+        },
+        async (ctx) => {
+          await consumeClientAssertion(
+            ctx,
+            { loginPage: "/login", consentPage: "/consent" },
+            ctx.body,
+          );
+          return ctx.json({ consumed: true });
+        },
+      ),
     },
   };
-  const tokenStorage={hash:async(token:string,kind:string)=>`app:${kind}:${createHash("sha256").update(token).digest("base64url")}`};
-  const tokenHashHelper={id:"token-hash-helper",endpoints:{hashTokenFixture:createAuthEndpoint("/fixture/hash-token",{method:"POST",body:z.object({token:z.string(),kind:z.string(),custom:z.boolean()})},async(ctx)=>ctx.json({hash:await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.custom?{storeTokens:tokenStorage}:{})}).hashToken(ctx.body.token,ctx.body.kind)}))}};
-  const accessValidationHelper={id:"access-validation-helper",endpoints:{validateAccessFixture:createAuthEndpoint("/fixture/validate-access",{method:"POST",body:z.object({token:z.string(),clientId:z.string().optional(),requireActive:z.boolean()})},async(ctx)=>{try{return ctx.json(await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"})[ctx.body.requireActive?"requireActiveAccessToken":"validateAccessToken"](ctx.body.token,ctx.body.clientId));}catch(error){if(error instanceof Error && error.name==="APIError")throw error;return ctx.json({ordinary_error:true});}})}};
-  const scopePolicy=(name:string)=>({email:name==="numeric"?1:name==="zero"?0:name==="date"?new Date(0):name==="relative"?"45s":"2h",...(name==="relative"?{profile:"90s"}:{})});
-  const expiryPolicy={accessTokenExpiresIn:120,m2mAccessTokenExpiresIn:30,idTokenExpiresIn:600,refreshTokenExpiresIn:900};
-  const issuanceHelper={id:"issuance-helper",endpoints:{issueTokensFixture:createAuthEndpoint("/fixture/issue-tokens",{method:"POST",body:z.record(z.string(),z.unknown())},async(ctx:any)=>{
-    const api=getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.expiryProfile?expiryPolicy:{}),...(ctx.body.scopePolicy?{scopeExpirations:scopePolicy(ctx.body.scopePolicy)}:{}),...(ctx.body.dpop?{dpop:ctx.body.dpop}:{})},ctx.body.grantType);
-    const client=await api.getClient(ctx.body.clientId);
-    const user=ctx.body.userId?await ctx.context.internalAdapter.findUserById(ctx.body.userId):undefined;
-    const params={...ctx.body.params,...(ctx.body.params.authTime?{authTime:new Date(ctx.body.params.authTime)}:{})};
-    const refreshToken=ctx.body.originalRefreshToken?await ctx.context.adapter.findOne({model:"oauthRefreshToken",where:[{field:"token",value:await api.hashToken(ctx.body.originalRefreshToken,"refresh_token")}]}):undefined;
-    if(refreshToken && ctx.body.snapshotToken)refreshToken.token=ctx.body.snapshotToken;
-    return api.issueTokens({...params,client,user,...(refreshToken?{refreshToken}:{})});
-  })}};
-  const memoryDpopReplay=createInMemoryDpopReplayStore();
-  const dpopHelper={id:"dpop-helper",endpoints:{dpopFixture:createAuthEndpoint("/fixture/dpop",{method:"POST",body:z.record(z.string(),z.unknown())},async(ctx:any)=>{
-    if(ctx.body.operation==="row"){const row=await ctx.context.adapter.findOne({model:"verification",where:[{field:"identifier",value:`dpop-proof:${ctx.body.key}`}]});return ctx.json(row?{value:row.value,expiresAt:row.expiresAt}:null);}
-    let observed:any;
-    const wrapped={reserveVerificationValue:async(data:any)=>{observed=data;return ctx.context.internalAdapter.reserveVerificationValue(data);}};
-    const replayStore=ctx.body.replay==="memory"?memoryDpopReplay:ctx.body.replay==="database"?createDpopReplayStore(ctx.context.internalAdapter):ctx.body.replay==="wrapped"?createDpopReplayStore(wrapped):undefined;
-    try{
-      if(ctx.body.operation==="payload-jkt")return ctx.json({jkt:getDpopJktFromPayload(ctx.body.payload)??null});
-      if(ctx.body.operation==="binding"){await enforceDpopBinding({...ctx.body,replayStore});return ctx.json({accepted:true});}
-      if(ctx.body.operation==="utilities")return ctx.json({authorization:parseAccessTokenAuthorization(ctx.body.authorization)??null,stripped:stripAccessTokenAuthorizationScheme(ctx.body.token),confirmation:getConfirmationJkt(ctx.body.confirmation)??null,normalized:normalizeDpopHtu(ctx.body.url),ath:await deriveDpopAth(ctx.body.accessToken),jkt:await deriveDpopJkt(ctx.body.jwk)});
-      const proof=await verifyDpopProof({...ctx.body,replayStore});
-      return ctx.json({...proof,...(observed?{reservation:observed}:{})});
-    }
-    catch(error){if(isDpopProofError(error)||isDpopBindingError(error))return ctx.json({error:error.code,message:error.message});return ctx.json({ordinary_error:true});}
-  })}};
+  const tokenStorage = {
+    hash: async (token: string, kind: string) =>
+      `app:${kind}:${createHash("sha256").update(token).digest("base64url")}`,
+  };
+  const tokenHashHelper = {
+    id: "token-hash-helper",
+    endpoints: {
+      hashTokenFixture: createAuthEndpoint(
+        "/fixture/hash-token",
+        {
+          method: "POST",
+          body: z.object({ token: z.string(), kind: z.string(), custom: z.boolean() }),
+        },
+        async (ctx) =>
+          ctx.json({
+            hash: await getOAuthProviderApi(ctx, {
+              loginPage: "/login",
+              consentPage: "/consent",
+              ...(ctx.body.custom ? { storeTokens: tokenStorage } : {}),
+            }).hashToken(ctx.body.token, ctx.body.kind),
+          }),
+      ),
+    },
+  };
+  const accessValidationHelper = {
+    id: "access-validation-helper",
+    endpoints: {
+      validateAccessFixture: createAuthEndpoint(
+        "/fixture/validate-access",
+        {
+          method: "POST",
+          body: z.object({
+            token: z.string(),
+            clientId: z.string().optional(),
+            requireActive: z.boolean(),
+          }),
+        },
+        async (ctx) => {
+          try {
+            return ctx.json(
+              await getOAuthProviderApi(ctx, { loginPage: "/login", consentPage: "/consent" })[
+                ctx.body.requireActive ? "requireActiveAccessToken" : "validateAccessToken"
+              ](ctx.body.token, ctx.body.clientId),
+            );
+          } catch (error) {
+            if (error instanceof Error && error.name === "APIError") throw error;
+            return ctx.json({ ordinary_error: true });
+          }
+        },
+      ),
+    },
+  };
+  const scopePolicy = (name: string) => ({
+    email:
+      name === "numeric"
+        ? 1
+        : name === "zero"
+          ? 0
+          : name === "date"
+            ? new Date(0)
+            : name === "relative"
+              ? "45s"
+              : "2h",
+    ...(name === "relative" ? { profile: "90s" } : {}),
+  });
+  const expiryPolicy = {
+    accessTokenExpiresIn: 120,
+    m2mAccessTokenExpiresIn: 30,
+    idTokenExpiresIn: 600,
+    refreshTokenExpiresIn: 900,
+  };
+  const issuanceHelper = {
+    id: "issuance-helper",
+    endpoints: {
+      issueTokensFixture: createAuthEndpoint(
+        "/fixture/issue-tokens",
+        { method: "POST", body: z.record(z.string(), z.unknown()) },
+        async (ctx: any) => {
+          const api = getOAuthProviderApi(
+            ctx,
+            {
+              loginPage: "/login",
+              consentPage: "/consent",
+              ...(ctx.body.expiryProfile ? expiryPolicy : {}),
+              ...(ctx.body.scopePolicy
+                ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
+                : {}),
+              ...(ctx.body.dpop ? { dpop: ctx.body.dpop } : {}),
+            },
+            ctx.body.grantType,
+          );
+          const client = await api.getClient(ctx.body.clientId);
+          const user = ctx.body.userId
+            ? await ctx.context.internalAdapter.findUserById(ctx.body.userId)
+            : undefined;
+          const params = {
+            ...ctx.body.params,
+            ...(ctx.body.params.authTime ? { authTime: new Date(ctx.body.params.authTime) } : {}),
+          };
+          const refreshToken = ctx.body.originalRefreshToken
+            ? await ctx.context.adapter.findOne({
+                model: "oauthRefreshToken",
+                where: [
+                  {
+                    field: "token",
+                    value: await api.hashToken(ctx.body.originalRefreshToken, "refresh_token"),
+                  },
+                ],
+              })
+            : undefined;
+          if (refreshToken && ctx.body.snapshotToken) refreshToken.token = ctx.body.snapshotToken;
+          return api.issueTokens({
+            ...params,
+            client,
+            user,
+            ...(refreshToken ? { refreshToken } : {}),
+          });
+        },
+      ),
+    },
+  };
+  const memoryDpopReplay = createInMemoryDpopReplayStore();
+  const dpopHelper = {
+    id: "dpop-helper",
+    endpoints: {
+      dpopFixture: createAuthEndpoint(
+        "/fixture/dpop",
+        { method: "POST", body: z.record(z.string(), z.unknown()) },
+        async (ctx: any) => {
+          if (ctx.body.operation === "row") {
+            const row = await ctx.context.adapter.findOne({
+              model: "verification",
+              where: [{ field: "identifier", value: `dpop-proof:${ctx.body.key}` }],
+            });
+            return ctx.json(row ? { value: row.value, expiresAt: row.expiresAt } : null);
+          }
+          let observed: any;
+          const wrapped = {
+            reserveVerificationValue: async (data: any) => {
+              observed = data;
+              return ctx.context.internalAdapter.reserveVerificationValue(data);
+            },
+          };
+          const replayStore =
+            ctx.body.replay === "memory"
+              ? memoryDpopReplay
+              : ctx.body.replay === "database"
+                ? createDpopReplayStore(ctx.context.internalAdapter)
+                : ctx.body.replay === "wrapped"
+                  ? createDpopReplayStore(wrapped)
+                  : undefined;
+          try {
+            if (ctx.body.operation === "payload-jkt") {
+              return ctx.json({ jkt: getDpopJktFromPayload(ctx.body.payload) ?? null });
+            }
+            if (ctx.body.operation === "binding") {
+              await enforceDpopBinding({ ...ctx.body, replayStore });
+              return ctx.json({ accepted: true });
+            }
+            if (ctx.body.operation === "utilities") {
+              return ctx.json({
+                authorization: parseAccessTokenAuthorization(ctx.body.authorization) ?? null,
+                stripped: stripAccessTokenAuthorizationScheme(ctx.body.token),
+                confirmation: getConfirmationJkt(ctx.body.confirmation) ?? null,
+                normalized: normalizeDpopHtu(ctx.body.url),
+                ath: await deriveDpopAth(ctx.body.accessToken),
+                jkt: await deriveDpopJkt(ctx.body.jwk),
+              });
+            }
+            const proof = await verifyDpopProof({ ...ctx.body, replayStore });
+            return ctx.json({ ...proof, ...(observed ? { reservation: observed } : {}) });
+          } catch (error) {
+            if (isDpopProofError(error) || isDpopBindingError(error)) {
+              return ctx.json({ error: error.code, message: error.message });
+            }
+            return ctx.json({ ordinary_error: true });
+          }
+        },
+      ),
+    },
+  };
   const options = {
     baseURL: base.baseURL,
     basePath: base.basePath,
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper,tokenHashHelper,accessValidationHelper,issuanceHelper,dpopHelper],
+    plugins: [
+      username(),
+      jwt(),
+      oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+      providerClientHelper,
+      authenticationHelper,
+      tokenHashHelper,
+      accessValidationHelper,
+      issuanceHelper,
+      dpopHelper,
+    ],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -116,63 +476,317 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedGeneratedSecrets = 0;
   let prefixedSecrets = 0;
   let encryptedPrefixedSecrets = 0;
-  const customCipherKey="application-client-secret-encryption-key-32-characters";
-  const customCipher={encrypt:async(secret:string)=>`custom:${await symmetricEncrypt({key:customCipherKey,data:secret})}`,decrypt:async(stored:string)=>symmetricDecrypt({key:customCipherKey,data:stored.slice("custom:".length)})};
-  const customCipherProfile=()=>{let calls=0;return betterAuth({...options,plugins:[username(),oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,prefix:{clientSecret:"client_prefix_"},storeClientSecret:customCipher,generateClientSecret:()=>`operator-secret-${++calls}`})]});};
-  const customHash=(secret:string)=>`custom:${createHash("sha256").update(secret).digest("base64url")}`;
-  const customSecretProfile=(verify:boolean)=>{
-    let calls=0;
-    return betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>`operator-secret-${++calls}`,
-      ...(verify?{prefix:{clientSecret:"client_prefix_"}}:{}),
-      storeClientSecret:{hash:async(secret:string)=>customHash(secret),...(verify?{verify:async(secret:string,stored:string)=>customHash(secret.endsWith("!")?secret.slice(0,-1):secret)===stored}:{})}
-    })]});
+  const customCipherKey = "application-client-secret-encryption-key-32-characters";
+  const customCipher = {
+    encrypt: async (secret: string) =>
+      `custom:${await symmetricEncrypt({ key: customCipherKey, data: secret })}`,
+    decrypt: async (stored: string) =>
+      symmetricDecrypt({ key: customCipherKey, data: stored.slice("custom:".length) }),
   };
-  const trustedProvider=oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"trusted-client",cachedTrustedClients:new Set(["trusted-client","trusted-missing"])});
-  const trustedHelper={id:"trusted-client-helper",endpoints:{trustedGetClient:createAuthEndpoint("/fixture/trusted-client",{method:"POST",body:z.object({fresh:z.boolean(),rename:z.boolean()})},async(ctx)=>{
-    const client=await getOAuthProviderApi(ctx,ctx.body.fresh?{...trustedProvider.options}:trustedProvider.options).getClient("trusted-client");
-    if(client&&ctx.body.rename)client.name="changed return value";
-    return ctx.json(client?{name:client.name}:null);
-  })}};
-  const trustedPlugins=[username(),jwt(),trustedProvider,trustedHelper];
+  const customCipherProfile = () => {
+    let calls = 0;
+    return betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          disableJwtPlugin: true,
+          prefix: { clientSecret: "client_prefix_" },
+          storeClientSecret: customCipher,
+          generateClientSecret: () => `operator-secret-${++calls}`,
+        }),
+      ],
+    });
+  };
+  const customHash = (secret: string) =>
+    `custom:${createHash("sha256").update(secret).digest("base64url")}`;
+  const customSecretProfile = (verify: boolean) => {
+    let calls = 0;
+    return betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientSecret: () => `operator-secret-${++calls}`,
+          ...(verify ? { prefix: { clientSecret: "client_prefix_" } } : {}),
+          storeClientSecret: {
+            hash: async (secret: string) => customHash(secret),
+            ...(verify
+              ? {
+                  verify: async (secret: string, stored: string) =>
+                    customHash(secret.endsWith("!") ? secret.slice(0, -1) : secret) === stored,
+                }
+              : {}),
+          },
+        }),
+      ],
+    });
+  };
+  const trustedProvider = oauthProvider({
+    loginPage: "/login",
+    consentPage: "/consent",
+    generateClientId: () => "trusted-client",
+    cachedTrustedClients: new Set(["trusted-client", "trusted-missing"]),
+  });
+  const trustedHelper = {
+    id: "trusted-client-helper",
+    endpoints: {
+      trustedGetClient: createAuthEndpoint(
+        "/fixture/trusted-client",
+        { method: "POST", body: z.object({ fresh: z.boolean(), rename: z.boolean() }) },
+        async (ctx) => {
+          const client = await getOAuthProviderApi(
+            ctx,
+            ctx.body.fresh ? { ...trustedProvider.options } : trustedProvider.options,
+          ).getClient("trusted-client");
+          if (client && ctx.body.rename) client.name = "changed return value";
+          return ctx.json(client ? { name: client.name } : null);
+        },
+      ),
+    },
+  };
+  const trustedPlugins = [username(), jwt(), trustedProvider, trustedHelper];
   const auths = {
-    trusted:betterAuth({...options,plugins:trustedPlugins}),
-    "trusted-peer":betterAuth({...options,plugins:trustedPlugins}),
-    "custom-encrypted-prefixed":customCipherProfile(),
-    "custom-hash":customSecretProfile(false),
-    "custom-prefixed-verify":customSecretProfile(true),
-    "custom-token-hash":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",storeTokens:tokenStorage}),tokenHashHelper]}),
-    "issuance-expiry":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",...expiryPolicy}),issuanceHelper]}),
-    ...Object.fromEntries(["numeric","zero","relative","date","ceiling"].map(name=>[`scope-${name}`,betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",scopeExpirations:scopePolicy(name)}),issuanceHelper]})])),
-    "resource-keyring":betterAuth({...options,plugins:[username(),jwt({jwks:{keyPairConfigs:[{alg:"ES256",crv:"P-256"}]}}),oauthProvider({loginPage:"/login",consentPage:"/consent"}),issuanceHelper]}),
+    trusted: betterAuth({ ...options, plugins: trustedPlugins }),
+    "trusted-peer": betterAuth({ ...options, plugins: trustedPlugins }),
+    "custom-encrypted-prefixed": customCipherProfile(),
+    "custom-hash": customSecretProfile(false),
+    "custom-prefixed-verify": customSecretProfile(true),
+    "custom-token-hash": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", storeTokens: tokenStorage }),
+        tokenHashHelper,
+      ],
+    }),
+    "issuance-expiry": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", ...expiryPolicy }),
+        issuanceHelper,
+      ],
+    }),
+    ...Object.fromEntries(
+      ["numeric", "zero", "relative", "date", "ceiling"].map((name) => [
+        `scope-${name}`,
+        betterAuth({
+          ...options,
+          plugins: [
+            username(),
+            jwt(),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              scopeExpirations: scopePolicy(name),
+            }),
+            issuanceHelper,
+          ],
+        }),
+      ]),
+    ),
+    "resource-keyring": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt({ jwks: { keyPairConfigs: [{ alg: "ES256", crv: "P-256" }] } }),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        issuanceHelper,
+      ],
+    }),
     default: betterAuth(options),
-    "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
-    "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
-    "uri-host": betterAuth({...options,trustedOrigins:["https://*"]}),
-    discovered: betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"registry-managed",extensions:[{clientDiscovery:registryDiscoveries}]})]}),
-    "assertion-helper": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
-    "assertion-helper-peer": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
-    "assertion-short": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:30})]}),
-    "assertion-zero": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:0})]}),
-    "assertion-negative": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:-1})]}),
-    "assertion-nan": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:NaN})]}),
-    "assertion-infinite": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:Infinity})]}),
-    "assertion-negative-infinite": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",assertionMaxLifetime:-Infinity})]}),
-    "basic-special": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"client +/é:fixed",generateClientSecret:()=>"secret +/é:tail"})]}),
-    "generated-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>`operator-client-${++generatedClientIds}`})]}),
-    "empty-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>""})]}),
-    "prefixed-generator": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",prefix:{clientSecret:"client_prefix_"},generateClientSecret:()=>`operator-secret-${++prefixedSecrets}`})]}),
-    "encrypted-prefixed-generator": betterAuth({...options,plugins:[username(),oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,prefix:{clientSecret:"client_prefix_"},generateClientSecret:()=>`operator-secret-${++encryptedPrefixedSecrets}`})]}),
+    "remote-jwks": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
+    "remote-jwks-peer": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
+    "uri-host": betterAuth({ ...options, trustedOrigins: ["https://*"] }),
+    discovered: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientId: () => "registry-managed",
+          extensions: [{ clientDiscovery: registryDiscoveries }],
+        }),
+      ],
+    }),
+    "assertion-helper": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        assertionHelper,
+      ],
+    }),
+    "assertion-helper-peer": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        assertionHelper,
+      ],
+    }),
+    "assertion-short": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", assertionMaxLifetime: 30 }),
+      ],
+    }),
+    "assertion-zero": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", assertionMaxLifetime: 0 }),
+      ],
+    }),
+    "assertion-negative": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", assertionMaxLifetime: -1 }),
+      ],
+    }),
+    "assertion-nan": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", assertionMaxLifetime: NaN }),
+      ],
+    }),
+    "assertion-infinite": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          assertionMaxLifetime: Infinity,
+        }),
+      ],
+    }),
+    "assertion-negative-infinite": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          assertionMaxLifetime: -Infinity,
+        }),
+      ],
+    }),
+    "basic-special": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientId: () => "client +/é:fixed",
+          generateClientSecret: () => "secret +/é:tail",
+        }),
+      ],
+    }),
+    "generated-id": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientId: () => `operator-client-${++generatedClientIds}`,
+        }),
+      ],
+    }),
+    "empty-id": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", generateClientId: () => "" }),
+      ],
+    }),
+    "prefixed-generator": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          prefix: { clientSecret: "client_prefix_" },
+          generateClientSecret: () => `operator-secret-${++prefixedSecrets}`,
+        }),
+      ],
+    }),
+    "encrypted-prefixed-generator": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          disableJwtPlugin: true,
+          prefix: { clientSecret: "client_prefix_" },
+          generateClientSecret: () => `operator-secret-${++encryptedPrefixedSecrets}`,
+        }),
+      ],
+    }),
     "encrypted-generator": betterAuth({
       ...options,
-      plugins: [username(), oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,generateClientSecret:()=>`operator-secret-${++encryptedGeneratedSecrets}`})],
+      plugins: [
+        username(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          disableJwtPlugin: true,
+          generateClientSecret: () => `operator-secret-${++encryptedGeneratedSecrets}`,
+        }),
+      ],
     }),
     generated: betterAuth({
       ...options,
-      plugins: [username(), jwt(), oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>`operator-secret-${++generatedSecrets}`})],
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientSecret: () => `operator-secret-${++generatedSecrets}`,
+        }),
+      ],
     }),
     "empty-generator": betterAuth({
       ...options,
-      plugins: [username(), jwt(), oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>""})],
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          generateClientSecret: () => "",
+        }),
+      ],
     }),
     reuse: betterAuth({
       ...options,
@@ -287,71 +901,176 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
-    if(input.action==="authenticate-client") {
-      const headers=new Headers(input.headers??{});headers.set("content-type","application/json");
-      return auth.api.authenticateClientFixture({body:input.body,headers,request:new Request(`${base.baseURL}${base.basePath??"/api/auth"}/fixture/authenticate-client`,{method:"POST",headers,body:JSON.stringify(input.body)}),asResponse:true});
+    if (input.action === "authenticate-client") {
+      const headers = new Headers(input.headers ?? {});
+      headers.set("content-type", "application/json");
+      return auth.api.authenticateClientFixture({
+        body: input.body,
+        headers,
+        request: new Request(
+          `${base.baseURL}${base.basePath ?? "/api/auth"}/fixture/authenticate-client`,
+          { method: "POST", headers, body: JSON.stringify(input.body) },
+        ),
+        asResponse: true,
+      });
     }
-    if(input.action==="trusted-client")return auth.api.trustedGetClient({body:{fresh:input.fresh??false,rename:input.rename??false},asResponse:true});
-    if(input.action==="trusted-external-update"||input.action==="trusted-external-delete"){
-      const ctx=await auth.$context;
-      if(input.action==="trusted-external-update")await ctx.adapter.update({model:"oauthClient",where:[{field:"clientId",value:"trusted-client"}],update:{name:"External update"}});
-      else await ctx.adapter.delete({model:"oauthClient",where:[{field:"clientId",value:"trusted-client"}]});
-      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    if (input.action === "trusted-client") {
+      return auth.api.trustedGetClient({
+        body: { fresh: input.fresh ?? false, rename: input.rename ?? false },
+        asResponse: true,
+      });
     }
-    if(input.action==="provider-client")return auth.api.providerResolveClient({body:{clientId:input.clientId,discover:input.discover},asResponse:true});
-    if(input.action==="secret-cipher-validation") {
-      try {oauthProvider({loginPage:"/login",consentPage:"/consent",storeClientSecret:customCipher});
-        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
-      } catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+    if (input.action === "trusted-external-update" || input.action === "trusted-external-delete") {
+      const ctx = await auth.$context;
+      if (input.action === "trusted-external-update") {
+        await ctx.adapter.update({
+          model: "oauthClient",
+          where: [{ field: "clientId", value: "trusted-client" }],
+          update: { name: "External update" },
+        });
+      } else {
+        await ctx.adapter.delete({
+          model: "oauthClient",
+          where: [{ field: "clientId", value: "trusted-client" }],
+        });
+      }
+      return new Response(JSON.stringify({ updated: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }
-    if(input.action==="secret-hash-validation") {
-      try {oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,storeClientSecret:{hash:async(secret:string)=>customHash(secret)}});
-        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
-      } catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+    if (input.action === "provider-client") {
+      return auth.api.providerResolveClient({
+        body: { clientId: input.clientId, discover: input.discover },
+        asResponse: true,
+      });
+    }
+    if (input.action === "secret-cipher-validation") {
+      try {
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          storeClientSecret: customCipher,
+        });
+        return new Response(JSON.stringify({ valid: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ valid: false, message: (error as Error).message }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+    }
+    if (input.action === "secret-hash-validation") {
+      try {
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          disableJwtPlugin: true,
+          storeClientSecret: { hash: async (secret: string) => customHash(secret) },
+        });
+        return new Response(JSON.stringify({ valid: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ valid: false, message: (error as Error).message }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
     if (input.action === "remote-jwks-document") {
-      remoteState.document=remoteDocument(input.family,input.algorithm,input.kid);
-      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+      remoteState.document = remoteDocument(input.family, input.algorithm, input.kid);
+      return new Response(JSON.stringify({ updated: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }
-    if(input.action === "remote-jwks-response") {
-      remoteState.responseMode=input.responseMode;remoteState.uri=input.uri;remoteState.fetches=[];
-      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    if (input.action === "remote-jwks-response") {
+      remoteState.responseMode = input.responseMode;
+      remoteState.uri = input.uri;
+      remoteState.fetches = [];
+      return new Response(JSON.stringify({ updated: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }
-    if (input.action === "remote-jwks-fetches") return new Response(JSON.stringify(remoteState.fetches),{headers:{"content-type":"application/json"}});
+    if (input.action === "remote-jwks-fetches") {
+      return new Response(JSON.stringify(remoteState.fetches), {
+        headers: { "content-type": "application/json" },
+      });
+    }
     if (input.action === "discovery-validation") {
       try {
-        oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:input.ids.map((id:string)=>({id,matches:()=>false,resolve:async()=>null}))}]});
-        return new Response(JSON.stringify({valid:true}),{headers:{"content-type":"application/json"}});
-      }catch(error){return new Response(JSON.stringify({valid:false,message:(error as Error).message}),{headers:{"content-type":"application/json"}});}
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          extensions: [
+            {
+              clientDiscovery: input.ids.map((id: string) => ({
+                id,
+                matches: () => false,
+                resolve: async () => null,
+              })),
+            },
+          ],
+        });
+        return new Response(JSON.stringify({ valid: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      } catch (error) {
+        return new Response(JSON.stringify({ valid: false, message: (error as Error).message }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
     if (input.action === "discovery-state") {
-      registryState.mode=input.state;
-      registryState.events.length=0;
-      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+      registryState.mode = input.state;
+      registryState.events.length = 0;
+      return new Response(JSON.stringify({ updated: true }), {
+        headers: { "content-type": "application/json" },
+      });
     }
     if (input.action === "discovery-events") {
-      return new Response(JSON.stringify(registryState.events),{headers:{"content-type":"application/json"}});
+      return new Response(JSON.stringify(registryState.events), {
+        headers: { "content-type": "application/json" },
+      });
     }
     if (input.action === "discovery-row") {
-      const context=await auth.$context;
-      const row=await context.adapter.findOne<any>({model:"oauthClient",where:[{field:"clientId",value:input.clientId}]});
-      return new Response(JSON.stringify(row?{clientId:row.clientId,clientDiscoveryId:row.clientDiscoveryId??null,name:row.name}:null),{headers:{"content-type":"application/json"}});
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<any>({
+        model: "oauthClient",
+        where: [{ field: "clientId", value: input.clientId }],
+      });
+      return new Response(
+        JSON.stringify(
+          row
+            ? {
+                clientId: row.clientId,
+                clientDiscoveryId: row.clientDiscoveryId ?? null,
+                name: row.name,
+              }
+            : null,
+        ),
+        { headers: { "content-type": "application/json" } },
+      );
     }
     if (input.action === "consume-assertion") {
-      return (auth.api as any).consumeAssertionFixture({body:input.params,asResponse:true});
+      return (auth.api as any).consumeAssertionFixture({ body: input.params, asResponse: true });
     }
     if (input.action === "assertion-row") {
-      const context=await auth.$context;
-      const row=await context.adapter.findOne<{id:string;expiresAt:Date}>({model:"oauthClientAssertion",where:[{field:"id",value:input.id}]});
-      return new Response(JSON.stringify(row?{id:row.id,expiresAt:row.expiresAt}:null),{headers:{"content-type":"application/json"}});
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<{ id: string; expiresAt: Date }>({
+        model: "oauthClientAssertion",
+        where: [{ field: "id", value: input.id }],
+      });
+      return new Response(JSON.stringify(row ? { id: row.id, expiresAt: row.expiresAt } : null), {
+        headers: { "content-type": "application/json" },
+      });
     }
     if (input.action === "signout") {
       const call = () =>
         auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });
       if (input.foreignKeys === true) {
-        const database = base.database as import("bun:sqlite").Database;
+        const database = base.database as import("better-sqlite3").Database;
         const prior = database
-          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .prepare<[], { foreign_keys: number }>("PRAGMA foreign_keys")
           .get()!.foreign_keys;
         database.exec("PRAGMA foreign_keys=ON");
         try {
@@ -455,7 +1174,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         where: [
           {
             field: "identifier",
-            value: input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url"),
+            value:
+              input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url"),
           },
         ],
       })) as any;
@@ -592,28 +1312,56 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       });
     }
-    if(input.action==="dpop-proof") return (auth.api as any).dpopFixture({body:input.body,asResponse:true});
-    if(input.action==="issue-tokens") return (auth.api as any).issueTokensFixture({body:input.body,headers:input.headers?new Headers(input.headers):undefined,asResponse:true});
-    if(input.action==="validate-access") {
-      return (auth.api as any).validateAccessFixture({body:input.body,asResponse:true});
+    if (input.action === "dpop-proof") {
+      return (auth.api as any).dpopFixture({ body: input.body, asResponse: true });
     }
-    if(input.action==="sign-access") {
-      if(!input.omitKid)return auth.api.signJWT({body:{payload:input.body},asResponse:true});
-      const generated=await auth.api.signJWT({body:{payload:input.body}});
-      const context=await auth.$context;
-      const stored=await context.adapter.findOne<any>({model:"jwks",where:[{field:"id",value:decodeProtectedHeader(generated.token).kid}]});
-      const privateJwk=JSON.parse(await symmetricDecrypt({key:context.secretConfig,data:JSON.parse(stored.privateKey)}));
-      const token=await new SignJWT(input.body).setProtectedHeader({alg:"EdDSA"}).sign(await importJWK(privateJwk,"EdDSA"));
-      return new Response(JSON.stringify({token}),{headers:{"content-type":"application/json"}});
+    if (input.action === "issue-tokens") {
+      return (auth.api as any).issueTokensFixture({
+        body: input.body,
+        headers: input.headers ? new Headers(input.headers) : undefined,
+        asResponse: true,
+      });
     }
-    if(input.action==="hash-token") {
-      return (auth.api as any).hashTokenFixture({body:{token:input.token,kind:input.kind,custom:input.mode==="custom-token-hash"},asResponse:true});
+    if (input.action === "validate-access") {
+      return (auth.api as any).validateAccessFixture({ body: input.body, asResponse: true });
     }
-    if(input.action==="authority-counts"){
-      const context=await auth.$context;
-      const where=[{field:"sessionId",value:input.sessionId}];
-      const [access,refresh]=await Promise.all(["oauthAccessToken","oauthRefreshToken"].map(model=>context.adapter.findMany({model,where})));
-      return new Response(JSON.stringify({access:access.length,refresh:refresh.length}),{headers:{"content-type":"application/json"}});
+    if (input.action === "sign-access") {
+      if (!input.omitKid) {
+        return auth.api.signJWT({ body: { payload: input.body }, asResponse: true });
+      }
+      const generated = await auth.api.signJWT({ body: { payload: input.body } });
+      const context = await auth.$context;
+      const stored = await context.adapter.findOne<any>({
+        model: "jwks",
+        where: [{ field: "id", value: decodeProtectedHeader(generated.token).kid }],
+      });
+      const privateJwk = JSON.parse(
+        await symmetricDecrypt({ key: context.secretConfig, data: JSON.parse(stored.privateKey) }),
+      );
+      const token = await new SignJWT(input.body)
+        .setProtectedHeader({ alg: "EdDSA" })
+        .sign(await importJWK(privateJwk, "EdDSA"));
+      return new Response(JSON.stringify({ token }), {
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (input.action === "hash-token") {
+      return (auth.api as any).hashTokenFixture({
+        body: { token: input.token, kind: input.kind, custom: input.mode === "custom-token-hash" },
+        asResponse: true,
+      });
+    }
+    if (input.action === "authority-counts") {
+      const context = await auth.$context;
+      const where = [{ field: "sessionId", value: input.sessionId }];
+      const [access, refresh] = await Promise.all(
+        ["oauthAccessToken", "oauthRefreshToken"].map((model) =>
+          context.adapter.findMany({ model, where }),
+        ),
+      );
+      return new Response(JSON.stringify({ access: access.length, refresh: refresh.length }), {
+        headers: { "content-type": "application/json" },
+      });
     }
     if (input.action === "token-row") {
       const { createHash } = await import("node:crypto");
@@ -621,7 +1369,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       const row = (await context.adapter.findOne({
         model: input.kind === "refresh" ? "oauthRefreshToken" : "oauthAccessToken",
         where: [
-          { field: "token", value: input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url") },
+          {
+            field: "token",
+            value:
+              input.protectedToken ?? createHash("sha256").update(input.token).digest("base64url"),
+          },
         ],
       })) as any;
       return new Response(
@@ -709,9 +1461,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           asResponse: true,
         });
       if (input.foreignKeys === true) {
-        const database = base.database as import("bun:sqlite").Database;
+        const database = base.database as import("better-sqlite3").Database;
         const prior = database
-          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .prepare<[], { foreign_keys: number }>("PRAGMA foreign_keys")
           .get()!.foreign_keys;
         database.exec("PRAGMA foreign_keys=ON");
         try {

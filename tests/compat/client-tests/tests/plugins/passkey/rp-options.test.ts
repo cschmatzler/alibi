@@ -1,7 +1,6 @@
-import { expect } from "bun:test";
-
 import { passkeyClient } from "@better-auth/passkey/client";
 import { createAuthClient } from "better-auth/client";
+import { expect } from "vitest";
 
 import { Authenticator } from "../../../support/authenticator";
 import { authProfilePath } from "../../../support/profiles";

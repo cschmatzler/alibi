@@ -1,10 +1,10 @@
+import { setTimeout } from "node:timers/promises";
 /** Application-owned update callbacks; pinned HTTP guards and adapter remain active. */
-
-import type { Database } from "bun:sqlite";
 
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
+import type { Database } from "better-sqlite3";
 
 type Actor = { id: string; email: string; name?: string | null };
 type Member = { id: string; organizationId: string; userId: string; role: string; createdAt: Date };
@@ -22,19 +22,19 @@ export function organizationUpdateHooksFixture(
   function snapshot() {
     return {
       organizations: database
-        .query("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
+        .prepare("SELECT id,name,slug,logo,metadata FROM organization ORDER BY slug,id")
         .all(),
       members: database
-        .query(
+        .prepare(
           "SELECT m.id,m.organizationId,m.userId,m.role FROM member m LEFT JOIN organization o ON o.id=m.organizationId JOIN user u ON u.id=m.userId ORDER BY o.slug,u.email,m.id",
         )
         .all(),
       sessions: database
-        .query(
+        .prepare(
           "SELECT s.id,s.userId,s.activeOrganizationId,s.activeTeamId FROM session s JOIN user u ON u.id=s.userId ORDER BY u.email,s.createdAt,s.id",
         )
         .all(),
-      users: database.query("SELECT id,email,name FROM user ORDER BY email,id").all(),
+      users: database.prepare("SELECT id,email,name FROM user ORDER BY email,id").all(),
     };
   }
 
@@ -187,7 +187,7 @@ export function organizationUpdateHooksFixture(
         !receipts.some((receipt) => (receipt as { phase: string }).phase === waitFor);
         attempt++
       ) {
-        await Bun.sleep(10);
+        await setTimeout(10);
       }
       return Response.json({ receipts, snapshot: snapshot() });
     },

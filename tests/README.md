@@ -7,7 +7,7 @@ Four tiers, each with one job. Native tests check the Rust implementation on its
 | Unit | inline `#[cfg(test)] mod tests` at the end of each module in `crates/*` and `src/` | Private logic of one module | `cargo nextest run --lib` |
 | Integration | `tests/integration/` (Cargo target `integration`) | The public builder, router, stores and framework integrations working together | `cargo nextest run --test integration` |
 | End-to-end | `tests/e2e/` (Cargo target `e2e`, feature `axum`) | Real HTTP, cookie handling, authentication and reset delivery with SQLite | `cargo nextest run --test e2e` |
-| Compat | `tests/compat/` (Cargo target `compat` plus the Bun harness) | Behavior matches the pinned upstream release | `./scripts/compat.sh` |
+| Compat | `tests/compat/` (Cargo target `compat` plus the Nub harness) | Behavior matches the pinned upstream release | `./scripts/compat.sh` |
 
 `tests/repo/` (target `repo`) holds repository invariants: banned legacy
 symbols and README/crate consistency. `./scripts/check.sh` runs every native tier and is
@@ -30,7 +30,7 @@ enables Axum, Poem, SeaORM and passkeys alongside SQLx for repository tests, wit
 the features downstream applications enable. No wrapper or special nextest profile
 is needed. Outside the development shell, prefix the command with `devenv shell --`.
 
-No Bun, upstream install, Redis, PostgreSQL, browser install, or external network
+No Nub, upstream install, Redis, PostgreSQL, browser install, or external network
 service is needed. Tests use isolated SQLite databases and ephemeral localhost
 HTTP servers. The first run compiles the workspace; subsequent runs reuse Cargo
 artifacts. The default nextest profile runs cases concurrently, collects all
@@ -45,7 +45,7 @@ A bare run keeps Rust's explicit `#[ignore]` decisions; no nextest default filte
 
 | Ignored cases | Why |
 | --- | --- |
-| Compat SDK runners | Require the upstream and Rust fixture servers and Bun; run through `./scripts/compat.sh` |
+| Compat SDK runners | Require the upstream and Rust fixture servers and Nub; run through `./scripts/compat.sh` |
 | PostgreSQL matrix cases | Require `BETTER_AUTH_TEST_POSTGRES_URL`; the SQLite variants run by default for both stores |
 | Admin clock proofs | Require a controlled `CLOCK_REALTIME` fixed at the documented proof timestamp |
 
@@ -107,7 +107,7 @@ tests/
 │   ├── route_inventory.rs  Rust routes == capabilities.json
 │   ├── upstream_pin.rs     every manifest names the same upstream release
 │   ├── openapi_contract/   in-process shapes against upstream's OpenAPI document
-│   ├── client-tests/       Bun differential suite (scenarios, comparator, harness controls)
+│   ├── client-tests/       Nub differential suite (scenarios, comparator, harness controls)
 │   ├── reference-server/   the pinned TypeScript runtime and its fixtures
 │   └── rust-server/        the Rust fixture server mirroring reference-server
 ├── repo/                   Cargo target `repo`

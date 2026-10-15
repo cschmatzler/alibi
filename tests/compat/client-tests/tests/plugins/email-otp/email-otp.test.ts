@@ -1,9 +1,10 @@
-import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
+import { hashLabel } from "../../../../support/files.ts";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 import {
@@ -752,7 +753,7 @@ async function configuredPasswordlessUsernames(
           .parse(response.body);
       };
       const path = (route: string) => `${authProfilePath(profile)}${route}`;
-      const phoneNumber = `+1555${String(Bun.hash(ctx.uniqueToken(`${profile}-${method}`))).slice(0, 7)}`;
+      const phoneNumber = `+1555${String(hashLabel(ctx.uniqueToken(`${profile}-${method}`))).slice(0, 7)}`;
       const email = ctx.uniqueEmail(`${profile}-${method}`);
       const identity = method === "email-otp" ? { email } : { phoneNumber };
       const issue = async () => {

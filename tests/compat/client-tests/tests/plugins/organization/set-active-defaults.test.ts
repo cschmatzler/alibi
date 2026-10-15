@@ -1,5 +1,4 @@
-import { expect } from "bun:test";
-
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -128,7 +127,7 @@ compatScenario(
 
     const blank = await set(ctx, owner, { organizationId: "", organizationSlug: "" });
     expect(blank.status).toBe(200);
-    expect(blank.hasCookie).toBeTrue();
+    expect(blank.hasCookie).toBe(true);
     expect(z.object({ id: z.string() }).parse(blank.body).id).toBe(firstId);
     expect(await state(ctx, email)).toEqual(before);
 
@@ -189,7 +188,7 @@ compatScenario(
 
     const retried = await set(ctx, owner, { organizationSlug: firstSlug });
     expect(retried.status).toBe(200);
-    expect(retried.hasCookie).toBeTrue();
+    expect(retried.hasCookie).toBe(true);
     expect(z.object({ id: z.string() }).parse(retried.body).id).toBe(firstId);
     expect(await state(ctx, email)).toEqual(before);
 
@@ -298,7 +297,7 @@ compatScenario(
 
     const retry = await set(ctx, owner, { organizationId: firstId });
     expect(retry.status).toBe(200);
-    expect(retry.hasCookie).toBeTrue();
+    expect(retry.hasCookie).toBe(true);
     expect(await state(ctx, email)).toEqual(before);
 
     const missingId = await set(ctx, owner, {

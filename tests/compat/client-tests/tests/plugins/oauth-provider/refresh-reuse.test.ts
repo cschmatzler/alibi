@@ -1,8 +1,8 @@
-import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { Cookie } from "tough-cookie";
+import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(

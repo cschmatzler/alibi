@@ -1,4 +1,3 @@
-import { expect } from "bun:test";
 import { createHmac, hkdfSync } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
@@ -6,6 +5,7 @@ import { multiSessionClient } from "better-auth/client/plugins";
 import { getCookieCache } from "better-auth/cookies";
 import { decodeProtectedHeader, jwtDecrypt } from "jose";
 import { CookieJar } from "tough-cookie";
+import { expect } from "vitest";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -441,7 +441,7 @@ compatScenario(
 
     const invalidBody = await invalidSignin.json();
     const invalidCookies = invalidSignin.headers.getSetCookie();
-    expect(invalidCookies.some((value) => value.includes("_multi-"))).toBeFalse();
+    expect(invalidCookies.some((value) => value.includes("_multi-"))).toBe(false);
 
     const signedCookie = invalidCookies
       .find((value) => value.startsWith("better-auth.session_token="))
@@ -787,8 +787,8 @@ compatScenario(
     expect(logout.status).toBe(200);
     const logoutBody = await logout.json();
     const logoutCookies = logout.headers.getSetCookie();
-    expect(logoutCookies.some((raw) => raw.startsWith("empty_multi-proof="))).toBeFalse();
-    expect(logoutCookies.some((raw) => raw.startsWith("invalid_multi-proof="))).toBeFalse();
+    expect(logoutCookies.some((raw) => raw.startsWith("empty_multi-proof="))).toBe(false);
+    expect(logoutCookies.some((raw) => raw.startsWith("invalid_multi-proof="))).toBe(false);
     expect(
       logoutCookies.filter((raw) => raw.includes("_multi-") && raw.includes("Max-Age=0")),
     ).toHaveLength(2);

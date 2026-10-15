@@ -1,8 +1,8 @@
-import { expect, test } from "bun:test";
-
 import { createAuthClient } from "better-auth/client";
 import { siweClient } from "better-auth/client/plugins";
+import { expect, test } from "vitest";
 
+import { writeArtifact } from "../../../../support/files.ts";
 import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "../../../support/config";
 import { resetServerState } from "../../../support/controls";
 import { message, SECOND_EOA, signature } from "../../../support/siwe-wallet";
@@ -10,7 +10,7 @@ import { createTracingFetch, requestWindow, type TraceEntry } from "../../../sup
 import { identity, stateSchema } from "./helpers";
 
 // This owner intentionally asserts each runtime's literal opaque diagnostic:
-// Bun's enumerable methods have no native transport-object representation.
+// Node's enumerable methods have no native transport-object representation.
 test("SIWE opaque runtime bodies reject before verification and preserve the same signed nonce and foreign wallet", async () => {
   const observations = [];
   for (const [runtime, baseURL] of [
@@ -56,38 +56,16 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
     const signed = message(issued.data!.nonce);
     const before = await physical();
     const responses = [];
-    const streamKeys = [
-      "locked",
-      "cancel",
-      "getReader",
-      "pipeThrough",
-      "pipeTo",
-      "tee",
-      "values",
-      "blob",
-      "bytes",
-      "json",
-      "text",
-    ];
+    const streamKeys = ["locked", "cancel", "getReader", "pipeThrough", "pipeTo", "tee", "values"];
     const blobKeys = [
-      "arrayBuffer",
-      "bytes",
-      "delete",
-      "exists",
-      "formData",
-      "image",
-      "json",
-      "lastModified",
-      "name",
+      "type",
       "size",
       "slice",
-      "stat",
-      "stream",
+      "arrayBuffer",
       "text",
-      "type",
-      "unlink",
-      "write",
-      "writer",
+      "bytes",
+      "stream",
+      "textStream",
     ];
 
     for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
@@ -194,12 +172,12 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
       after,
       traces: traces.map((trace) => ({ ...trace, requestWindow: trace[requestWindow] })),
     });
-    await Bun.write(
+    await writeArtifact(
       new URL("../../../artifacts/siwe-runtime-body-observations.json", import.meta.url),
       JSON.stringify(observations, null, 2),
     );
   }
-  await Bun.write(
+  await writeArtifact(
     new URL("../../../artifacts/siwe-runtime-body-observations.json", import.meta.url),
     JSON.stringify(observations, null, 2),
   );

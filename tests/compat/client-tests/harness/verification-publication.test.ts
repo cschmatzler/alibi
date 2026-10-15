@@ -1,5 +1,3 @@
-import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, randomBytes, randomInt } from "node:crypto";
 
@@ -9,7 +7,10 @@ import { emailOTPClient, magicLinkClient, oneTimeTokenClient } from "better-auth
 import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { emailOTP, genericOAuth, magicLink, oneTimeToken } from "better-auth/plugins";
+import { expect, test } from "vitest";
 
+import { serveFixture } from "../../reference-server/http.ts";
+import { createDatabase } from "../../reference-server/sqlite.ts";
 import { type ComparisonContext, compareValues } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
@@ -47,7 +48,7 @@ async function source(
   extraEvidence = false,
   oauthEmail?: string,
 ) {
-  const db = new Database(":memory:");
+  const db = createDatabase(":memory:");
   const frames = new AsyncLocalStorage<Row>();
   const publications: Row[] = [];
   const deliveries: Row[] = [];
@@ -56,7 +57,7 @@ async function source(
   const grants = new Map<string, Row>();
   const oauthReceipts: Row[] = [];
   let handler: (request: Request) => Promise<Response>;
-  const server = Bun.serve({
+  const server = await serveFixture({
     port: 0,
     hostname: "127.0.0.1",
     async fetch(request) {
@@ -137,10 +138,10 @@ async function source(
               ...entry,
               value: JSON.parse(entry.rawValue),
             })),
-            verificationRows: db.query("SELECT * FROM verification ORDER BY createdAt").all(),
-            users: db.query("SELECT * FROM user").all(),
-            accounts: db.query("SELECT * FROM account").all(),
-            sessions: db.query("SELECT * FROM session").all(),
+            verificationRows: db.prepare("SELECT * FROM verification ORDER BY createdAt").all(),
+            users: db.prepare("SELECT * FROM user").all(),
+            accounts: db.prepare("SELECT * FROM account").all(),
+            sessions: db.prepare("SELECT * FROM session").all(),
           },
         });
       }
