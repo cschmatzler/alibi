@@ -280,7 +280,7 @@ pub use email_verification::{
 pub use haveibeenpwned::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
 pub use last_login_method::{
     BeforeStoreLastLoginMethodCookie, LastLoginMethodConfig, LastLoginMethodContext,
-    LastLoginMethodPlugin, ResolveLastLoginMethod,
+    LastLoginMethodEndpointResponse, LastLoginMethodPlugin, ResolveLastLoginMethod,
 };
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};

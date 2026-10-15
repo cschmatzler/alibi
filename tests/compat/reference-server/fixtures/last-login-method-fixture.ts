@@ -212,6 +212,24 @@ export async function createLastLoginMethodFixture(base: BetterAuthOptions, data
     async handle(request: Request) {
       const url = new URL(request.url);
 
+      if (url.pathname === "/__test/server-api/last-login-method" && request.method === "POST") {
+        const input = (await request.json()) as any;
+        const auth = profiles.get(input.profile ?? "last-login-default");
+        if (!auth) return new Response(null, { status: 404 });
+        const operation = input.action === "sign-in" ? "signInEmail" : "signUpEmail";
+        return (auth.api as any)[operation]({
+          body: input.body,
+          ...(Object.hasOwn(input, "headers") ? { headers: new Headers(input.headers) } : {}),
+          ...(Object.hasOwn(input, "requestHeaders")
+            ? {
+                request: new Request(`${base.baseURL}/actual-sdk-request`, {
+                  headers: input.requestHeaders,
+                }),
+              }
+            : {}),
+          asResponse: true,
+        });
+      }
       if (url.pathname !== "/__test/last-login-method") {
         return null;
       }

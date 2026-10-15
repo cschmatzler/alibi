@@ -560,3 +560,5 @@ mod server_custom_session;
 mod server_multi_session;
 
 mod scim_user_input;
+
+mod server_last_login;
