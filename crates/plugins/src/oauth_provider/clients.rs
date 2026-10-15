@@ -662,6 +662,17 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        if self
+            .config
+            .cached_trusted_clients
+            .contains(&input.client_id)
+        {
+            return status_protocol_error(
+                500,
+                "invalid_client",
+                "trusted clients must be updated manually",
+            );
+        }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 404,
@@ -711,6 +722,17 @@ impl OAuthProviderPlugin {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
+        if self
+            .config
+            .cached_trusted_clients
+            .contains(&input.client_id)
+        {
+            return status_protocol_error(
+                500,
+                "invalid_client",
+                "trusted clients must be updated manually",
+            );
+        }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };
@@ -1039,6 +1061,17 @@ impl OAuthProviderPlugin {
                 .await?
                 .0
         };
+        if self
+            .config
+            .cached_trusted_clients
+            .contains(&input.client_id)
+        {
+            return status_protocol_error(
+                500,
+                "invalid_client",
+                "trusted clients must be updated manually",
+            );
+        }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };

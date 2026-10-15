@@ -77,6 +77,9 @@ impl alibi::plugins::OAuthClientDiscovery for ValidationDiscovery {
     async fn resolve(&self,_:&alibi::CallbackContext,_:&str,_:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>>{Ok(None)}
 }
 #[derive(Debug)]
+struct TrustedClientId;
+impl alibi::plugins::OAuthClientIdGenerator for TrustedClientId {fn generate(&self)->alibi::AuthResult<String>{Ok("trusted-client".into())}}
+#[derive(Debug)]
 struct ManagedRegistryId;
 impl alibi::plugins::OAuthClientIdGenerator for ManagedRegistryId {fn generate(&self)->alibi::AuthResult<String>{Ok("registry-managed".into())}}
 
@@ -208,6 +211,8 @@ pub(crate) async fn router(
     }
     let registry_state=Arc::new(RegistryState::default());
     let remote_state=Arc::new(RemoteResource{mode:std::sync::Mutex::new("valid".into()),uri:std::sync::Mutex::new("https://client.fixture.test/jwks".into()),document:std::sync::Mutex::new(remote_document("RSA","RS256","first")),fetches:std::sync::Mutex::default()});
+    let trusted_config=OAuthProviderConfig{cached_trusted_clients:["trusted-client","trusted-missing"].map(str::to_owned).into(),client_id_generator:Some(Arc::new(TrustedClientId)),..Default::default()};
+    let trusted_provider=OAuthProviderPlugin::with_config(trusted_config.clone());
     let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
 
     let mut client_instances = HashMap::new();
@@ -244,6 +249,8 @@ pub(crate) async fn router(
         "uri-host",
         "remote-jwks",
         "remote-jwks-peer",
+        "trusted",
+        "trusted-peer",
     ] {
         let provider = OAuthProviderConfig {
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
@@ -285,7 +292,7 @@ pub(crate) async fn router(
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(JwtPlugin::new())};
-        let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
+        let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }
@@ -298,13 +305,28 @@ pub(crate) async fn router(
         let logout_database=logout_database.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
+        let trusted_provider=trusted_provider.clone();
+        let trusted_config=trusted_config.clone();
         let validation_config=validation_config.clone();
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="trusted-client" {
+                let provider=if input["fresh"]==true{OAuthProviderPlugin::with_config(trusted_config)}else{trusted_provider};
+                let mut client=provider.get_client(auth.context(),"trusted-client").await.unwrap();
+                if input["rename"]==true {if let Some(client)=client.as_mut(){client.metadata["client_name"]=serde_json::json!("changed return value");}}
+                return axum::Json(client.map(|client|serde_json::json!({"name":client.metadata.get("client_name")}))).into_response();
+            }
+            if input["action"]=="trusted-external-update"||input["action"]=="trusted-external-delete" {
+                if input["action"]=="trusted-external-update" {
+                    let mut client=auth.context().database.get_oauth_client("trusted-client").await.unwrap().unwrap();client.metadata["client_name"]=serde_json::json!("External update");
+                    auth.context().database.update_oauth_client_metadata("trusted-client",client.metadata,chrono::Utc::now()).await.unwrap();
+                }else{auth.context().database.delete_oauth_client("trusted-client").await.unwrap();}
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
             if input["action"]=="provider-client" {
-                let cfg=OAuthProviderConfig{client_discoveries:if input["discover"]==true{[true,false].into_iter().map(|first|Arc::new(RegistryDiscovery{first,state:registry_state.clone()}) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect()}else{Vec::new()},..Default::default()};
+                let cfg=OAuthProviderConfig{cached_trusted_clients:["registry-client".into()].into(),client_discoveries:if input["discover"]==true{[true,false].into_iter().map(|first|Arc::new(RegistryDiscovery{first,state:registry_state.clone()}) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect()}else{Vec::new()},..Default::default()};
                 let client=OAuthProviderPlugin::with_config(cfg).get_client(auth.context(),input["clientId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(client.map(|client|serde_json::json!({"client_id":client.client_id,"client_name":client.metadata.get("client_name"),"discovery_id":client.metadata.get("client_discovery_id"),"user_id":client.user_id,"client_secret":client.client_secret}))).into_response();
             }

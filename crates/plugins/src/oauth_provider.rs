@@ -61,6 +61,8 @@ pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
+    /// Managed identities cached by provider instance and protected from API mutations.
+    pub cached_trusted_clients: std::collections::HashSet<String>,
     /// Operator decision for assigning client-credentials scopes.
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
@@ -91,6 +93,7 @@ impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
             client_discoveries: Vec::new(),
+            cached_trusted_clients: std::collections::HashSet::new(),
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,
@@ -125,6 +128,7 @@ impl Default for OAuthProviderConfig {
 pub struct OAuthProviderPlugin {
     config: OAuthProviderConfig,
     client_jwks: std::sync::Arc<client_jwks::Cache>,
+    trusted_clients: std::sync::Arc<discovery::TrustedCache>,
 }
 impl OAuthProviderPlugin {
     #[must_use]
@@ -1087,6 +1091,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 )));
             }
         }
+        ctx.extensions.insert(discovery::TrustedClients {
+            ids: self.config.cached_trusted_clients.clone(),
+            cache: self.trusted_clients.clone(),
+        });
         ctx.extensions.insert(discovery::ClientDiscoveries(
             self.config.client_discoveries.clone(),
         ));
