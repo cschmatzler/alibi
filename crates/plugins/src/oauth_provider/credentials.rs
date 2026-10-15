@@ -10,22 +10,32 @@ use subtle::ConstantTimeEq;
 pub(super) struct Credentials {
     pub(super) client_id: String,
     pub(super) secret: String,
+    pub(super) pre_verified: bool,
     pub(super) method: &'static str,
 }
 const AUTH_FIELDS: [&str; 3] = ["client_secret", "client_assertion", "client_assertion_type"];
 
-pub(super) fn extract(
+pub(super) async fn extract<S: AuthSchema>(
     body: &Value,
     req: &impl SessionRequest,
+    ctx: &AuthContext<S>,
+    provider: &super::OAuthProviderPlugin,
+    endpoint: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
-    match normalize(body, req) {
-        Ok(body) => Ok(Ok(from_normalized(&body, req))),
-        Err(description) => Ok(Err(super::clients::status_protocol_error(
-            400,
-            "invalid_request",
-            &description,
-        )?)),
+    let body = match normalize(body, req) {
+        Ok(body) => body,
+        Err(description) => {
+            return Ok(Err(super::clients::status_protocol_error(
+                400,
+                "invalid_request",
+                &description,
+            )?));
+        }
+    };
+    if body.get("client_assertion").is_some() || body.get("client_assertion_type").is_some() {
+        return super::assertion::verify(&body, ctx, provider, endpoint).await;
     }
+    Ok(Ok(from_normalized(&body, req)))
 }
 
 fn normalize(body: &Value, req: &impl SessionRequest) -> Result<Value, String> {
@@ -118,6 +128,7 @@ fn from_normalized(body: &Value, req: &impl SessionRequest) -> Credentials {
         "client_secret_post"
     };
     Credentials {
+        pre_verified: false,
         client_id,
         secret,
         method,
@@ -162,7 +173,7 @@ impl Credentials {
                 self.method
             ))?));
         }
-        if registered != "none" && self.secret.is_empty() {
+        if !self.pre_verified && registered != "none" && self.secret.is_empty() {
             return Ok(Err(self.denied("client secret must be provided")?));
         }
         if !self.secret.is_empty() && client.client_secret.is_none() {

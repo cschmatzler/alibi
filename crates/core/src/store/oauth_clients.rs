@@ -52,6 +52,18 @@ pub struct CreateOAuthToken {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    /// Atomically claim a caller-supplied assertion digest; false means it already exists.
+    async fn claim_oauth_client_assertion(
+        &self,
+        id: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<bool> {
+        let _ = (id, expires_at);
+        Err(AuthError::config(
+            "OAuth assertion persistence is not supported by this store",
+        ))
+    }
+
     /// Claim default refresh rotation with both revocation and rotation timestamps.
     async fn store_oauth_refresh_replay(&self, id: &str, ciphertext: &str) -> AuthResult<()> {
         let _ = (id, ciphertext);

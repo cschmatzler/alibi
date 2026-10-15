@@ -52,11 +52,14 @@ impl OAuthProviderPlugin {
                 return error(400, "invalid_request", &format!("{field} is required"));
             }
         }
-        let credentials = match super::credentials::extract(&body, req)? {
-            Ok(credentials) => credentials,
-            Err(response) => return Ok(no_store(response)),
-        };
-        if credentials.client_id.is_empty() || credentials.secret.is_empty() {
+        let credentials =
+            match super::credentials::extract(&body, req, ctx, self, "introspect").await? {
+                Ok(credentials) => credentials,
+                Err(response) => return Ok(no_store(response)),
+            };
+        if credentials.client_id.is_empty()
+            || (credentials.secret.is_empty() && !credentials.pre_verified)
+        {
             return error(401, "invalid_client", "missing required credentials");
         }
         let raw = body

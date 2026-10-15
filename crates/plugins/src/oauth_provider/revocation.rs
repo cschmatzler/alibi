@@ -52,7 +52,8 @@ impl OAuthProviderPlugin {
                 return error(400, "invalid_request", &format!("{field} is required"));
             }
         }
-        let credentials = match super::credentials::extract(&body, req)? {
+        let credentials = match super::credentials::extract(&body, req, ctx, self, "revoke").await?
+        {
             Ok(credentials) => credentials,
             Err(response) => return Ok(response),
         };

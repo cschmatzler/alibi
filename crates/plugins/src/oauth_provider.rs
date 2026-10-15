@@ -1,4 +1,5 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
+mod assertion;
 mod authorization;
 mod clients;
 mod consent;
