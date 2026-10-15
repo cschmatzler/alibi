@@ -12,11 +12,13 @@ use alibi::store::{CreateOAuthClient, OAuthClient};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 backend_tests!(
     oauth_remote_client_jwks_caches_across_instances_and_refetches_only_for_key_misses,
-    oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs
+    oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs,
+    oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order
 );
 postgres_tests!(
     oauth_remote_client_jwks_caches_across_instances_and_refetches_only_for_key_misses,
-    oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs
+    oauth_remote_client_jwks_validates_responses_and_uris_without_consuming_rejected_proofs,
+    oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order
 );
 #[path = "../../../fixtures/oauth/remote-jwks-response.rs"]
 mod remote_response;
@@ -410,6 +412,101 @@ async fn oauth_remote_client_jwks_validates_responses_and_uris_without_consuming
                 "{name} retry"
             );
         }
+    }
+    B::close(connection).await
+}
+
+async fn oauth_remote_client_jwks_evicts_oldest_uri_without_refreshing_its_insertion_order<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let keys: Value = serde_json::from_str(include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/oauth/client-assertion-keys.json"
+    )))?;
+    let key = |family| {
+        keys["keys"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|key| key["family"] == family)
+            .unwrap()
+    };
+    let rsa = key("RSA");
+    let ec = key("P-256");
+    let document = |key: &Value, alg, kid| {
+        let mut public = key["publicJwk"].clone();
+        public["alg"] = json!(alg);
+        public["kid"] = json!(kid);
+        json!({"keys":[public]})
+    };
+    let resource = Arc::new(Resource {
+        mode: std::sync::Mutex::new("valid".into()),
+        uri: std::sync::Mutex::new(URI.into()),
+        document: std::sync::Mutex::new(document(rsa, "RS256", "first")),
+        fetches: std::sync::Mutex::default(),
+    });
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        client_discoveries: vec![Arc::new(Registry::<B::Schema> {
+            resource: resource.clone(),
+            schema: std::marker::PhantomData,
+        })],
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider)
+        .build()
+        .await?;
+    for index in 0..500 {
+        *resource.uri.lock().unwrap() = format!("{URI}?entry={index}");
+        let response = inspect(&auth, &proof(&auth, rsa, "RS256", "first").await?).await?;
+        assert_eq!(response.status, 200, "entry {index}: {}", body(&response));
+        assert_eq!(resource.fetches.lock().unwrap().len(), index + 1);
+    }
+    // Reading and then replacing entry zero must leave it first in FIFO order.
+    *resource.uri.lock().unwrap() = format!("{URI}?entry=0");
+    assert_eq!(
+        inspect(&auth, &proof(&auth, rsa, "RS256", "first").await?)
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(resource.fetches.lock().unwrap().len(), 500);
+    *resource.document.lock().unwrap() = document(ec, "ES256", "second");
+    assert_eq!(
+        inspect(&auth, &proof(&auth, ec, "ES256", "second").await?)
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(resource.fetches.lock().unwrap().len(), 501);
+    *resource.uri.lock().unwrap() = format!("{URI}?entry=500");
+    assert_eq!(
+        inspect(&auth, &proof(&auth, ec, "ES256", "second").await?)
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(resource.fetches.lock().unwrap().len(), 502);
+    // Entry zero was evicted even though it was just read and rotated.
+    *resource.uri.lock().unwrap() = format!("{URI}?entry=0");
+    assert_eq!(
+        inspect(&auth, &proof(&auth, ec, "ES256", "second").await?)
+            .await?
+            .status,
+        200
+    );
+    assert_eq!(resource.fetches.lock().unwrap().len(), 503);
+    // Reinsertion evicts entry one; later entries remain cached.
+    *resource.document.lock().unwrap() = document(rsa, "RS256", "first");
+    for (index, fetches) in [(3, 503), (1, 504), (3, 504)] {
+        *resource.uri.lock().unwrap() = format!("{URI}?entry={index}");
+        let response = inspect(&auth, &proof(&auth, rsa, "RS256", "first").await?).await?;
+        assert_eq!(response.status, 200, "entry {index}: {}", body(&response));
+        assert_eq!(resource.fetches.lock().unwrap().len(), fetches);
     }
     B::close(connection).await
 }
