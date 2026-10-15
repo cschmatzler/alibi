@@ -8,8 +8,14 @@ use alibi::plugins::{
 };
 use alibi::store::{CreateOAuthClient, OAuthClient};
 use std::sync::atomic::{AtomicU8, Ordering};
-backend_tests!(oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed);
-postgres_tests!(oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed);
+backend_tests!(
+    oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed,
+    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries
+);
+postgres_tests!(
+    oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed,
+    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries
+);
 type Events = Arc<std::sync::Mutex<Vec<String>>>;
 struct RegistryDiscovery<S: AuthSchema> {
     first: bool,
@@ -284,6 +290,151 @@ async fn oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as
             (Err(alibi::AuthError::Config(actual)), Some(expected)) => assert_eq!(actual, expected),
             (Err(error), _) => panic!("unexpected configuration error: {error}"),
             (Ok(_), Some(expected)) => panic!("expected configuration error: {expected}"),
+        }
+    }
+    B::close(connection).await
+}
+
+async fn oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::new())
+        .build()
+        .await?;
+    let events: Events = Arc::default();
+    let state = Arc::new(AtomicU8::new(0));
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        client_discoveries: [true, false]
+            .into_iter()
+            .map(|first| {
+                Arc::new(RegistryDiscovery::<B::Schema> {
+                    first,
+                    state: state.clone(),
+                    events: events.clone(),
+                    schema: std::marker::PhantomData,
+                }) as Arc<dyn OAuthClientDiscovery>
+            })
+            .collect(),
+        ..Default::default()
+    });
+    assert!(
+        provider
+            .get_client(auth.context(), "unknown-client")
+            .await?
+            .is_none()
+    );
+    assert_eq!(*events.lock().unwrap(), ["first:matches", "live:matches"]);
+    let owner = signup(&auth, "server-client-owner@example.test").await;
+    let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Server managed","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"client_secret_post"}))?,alibi::endpoint::EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    assert_eq!(created.status, 201);
+    let client = body(&created);
+    let id = client["client_id"].as_str().unwrap();
+    events.lock().unwrap().clear();
+    let stored = auth.store().get_oauth_client(id).await?.unwrap();
+    let raw = provider.get_client(auth.context(), id).await?.unwrap();
+    assert_eq!(raw.client_id, id);
+    assert_eq!(raw.user_id, stored.user_id);
+    assert_eq!(raw.client_secret, stored.client_secret);
+    assert_ne!(
+        raw.client_secret.as_deref(),
+        client["client_secret"].as_str()
+    );
+    assert_eq!(raw.metadata["client_name"], "Server managed");
+    assert!(events.lock().unwrap().is_empty());
+    for (phase, mode, missing, found, expected) in [
+        (
+            "new",
+            0,
+            false,
+            true,
+            vec![
+                "first:matches",
+                "first:resolve",
+                "live:matches",
+                "live:resolve:new",
+            ],
+        ),
+        (
+            "existing",
+            0,
+            false,
+            true,
+            vec!["live:matches", "live:resolve:existing"],
+        ),
+        (
+            "reject",
+            1,
+            false,
+            false,
+            vec!["live:matches", "live:resolve:existing"],
+        ),
+        ("mismatch", 2, false, false, vec!["live:matches"]),
+        ("missing-owner", 0, true, false, vec![]),
+        (
+            "restore",
+            0,
+            false,
+            true,
+            vec!["live:matches", "live:resolve:existing"],
+        ),
+        (
+            "refresh",
+            3,
+            false,
+            true,
+            vec!["live:matches", "live:resolve:existing"],
+        ),
+    ] {
+        state.store(mode, Ordering::SeqCst);
+        events.lock().unwrap().clear();
+        let before = db
+            .tables(&[
+                "oauthClient",
+                "oauthClientAssertion",
+                "oauthAccessToken",
+                "oauthRefreshToken",
+            ])
+            .await?;
+        let raw = if missing {
+            OAuthProviderPlugin::new()
+                .get_client(auth.context(), "registry-client")
+                .await?
+        } else {
+            provider
+                .get_client(auth.context(), "registry-client")
+                .await?
+        };
+        assert_eq!(raw.is_some(), found, "{phase}");
+        assert_eq!(*events.lock().unwrap(), expected, "{phase}");
+        if let Some(raw) = raw {
+            assert_eq!(raw.client_id, "registry-client");
+            assert_eq!(raw.metadata["client_discovery_id"], "registry-live");
+            assert_eq!(
+                raw.metadata["client_name"],
+                if phase == "refresh" {
+                    "Updated registry"
+                } else {
+                    "Registry client"
+                }
+            );
+            assert!(raw.user_id.is_none());
+        } else {
+            assert_eq!(
+                db.tables(&[
+                    "oauthClient",
+                    "oauthClientAssertion",
+                    "oauthAccessToken",
+                    "oauthRefreshToken"
+                ])
+                .await?,
+                before,
+                "{phase}"
+            );
         }
     }
     B::close(connection).await
