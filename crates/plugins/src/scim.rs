@@ -12,6 +12,7 @@ mod managed;
 mod projection;
 mod resources;
 mod user_attributes;
+mod user_input;
 mod user_patch;
 mod user_profile;
 pub use authentication::{ScimBearerTokenVerificationInput, ScimBearerTokenVerifier};
