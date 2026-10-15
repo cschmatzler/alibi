@@ -90,6 +90,9 @@ pub struct OAuthProviderConfig {
     pub m2m_access_token_expires_in: f64,
     pub id_token_expires_in: f64,
     pub refresh_token_expires_in: f64,
+    /// Per-scope access-expiration ceilings. Numeric values are absolute Unix
+    /// seconds (and numeric zero is ignored), matching the reference policy.
+    pub scope_expirations: std::collections::HashMap<String, crate::jwt::JwtExpiration>,
     /// Maximum assertion future expiration and issued-at age, in seconds (default 300).
     pub assertion_max_lifetime: f64,
     pub refresh_token_reuse_interval: f64,
@@ -124,6 +127,7 @@ impl Default for OAuthProviderConfig {
             m2m_access_token_expires_in: 3600.0,
             id_token_expires_in: 36_000.0,
             refresh_token_expires_in: 2_592_000.0,
+            scope_expirations: std::collections::HashMap::new(),
             assertion_max_lifetime: 300.0,
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,
