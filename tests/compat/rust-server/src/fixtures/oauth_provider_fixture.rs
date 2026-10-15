@@ -485,6 +485,12 @@ pub(crate) async fn router(
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
             }
+            if input["action"]=="authority-counts" {
+                let session=input["sessionId"].as_str().unwrap();
+                let access=auth.store().list_oauth_tokens_for_session(alibi::store::OAuthTokenKind::Access,session).await.unwrap();
+                let refresh=auth.store().list_oauth_tokens_for_session(alibi::store::OAuthTokenKind::Refresh,session).await.unwrap();
+                return axum::Json(serde_json::json!({"access":access.len(),"refresh":refresh.len()})).into_response();
+            }
             if input["action"]=="token-row" {
                 use base64::Engine as _; use sha2::Digest as _;
                 let hashed=input["protectedToken"].as_str().map(str::to_owned).unwrap_or_else(||base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["token"].as_str().unwrap())));

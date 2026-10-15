@@ -20,6 +20,7 @@ mod logout;
 mod machine;
 mod refresh;
 mod resources;
+mod resource_policy;
 mod revocation;
 mod session_retirement;
 mod token;

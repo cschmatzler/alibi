@@ -75,6 +75,16 @@ compatScenario(
         "invalid_scope",
         "The following scopes are invalid: openid",
       ],
+      [
+        {
+          grant_type: "client_credentials",
+          client_id: id,
+          client_secret: secret,
+          resource: "https://api.fixture.test/missing-machine",
+        },
+        "invalid_target",
+        "requested resource https://api.fixture.test/missing-machine is not configured",
+      ],
     ] as const) {
       const r = await control({ action: "token", body: input });
       expect(r.status).toBe(400);

@@ -589,6 +589,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if(input.action==="hash-token") {
       return (auth.api as any).hashTokenFixture({body:{token:input.token,kind:input.kind,custom:input.mode==="custom-token-hash"},asResponse:true});
     }
+    if(input.action==="authority-counts"){
+      const context=await auth.$context;
+      const where=[{field:"sessionId",value:input.sessionId}];
+      const [access,refresh]=await Promise.all(["oauthAccessToken","oauthRefreshToken"].map(model=>context.adapter.findMany({model,where})));
+      return new Response(JSON.stringify({access:access.length,refresh:refresh.length}),{headers:{"content-type":"application/json"}});
+    }
     if (input.action === "token-row") {
       const { createHash } = await import("node:crypto");
       const context = await auth.$context;

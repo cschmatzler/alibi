@@ -40,6 +40,25 @@ impl OAuthProviderPlugin {
         if original.client_id != credentials.client_id || original.expires_at < chrono::Utc::now() {
             return error("invalid_grant", "invalid refresh token");
         }
+        let requested_resources = super::resource_policy::resource_list(body.get("resource"))
+            .into_iter()
+            .filter(|value| !value.is_empty())
+            .collect::<Vec<_>>();
+        let original_resources =
+            super::resource_policy::resource_list(original.metadata.get("resources"));
+        if !requested_resources.is_empty()
+            && original
+                .metadata
+                .get("resources")
+                .is_some_and(|value| !value.is_null())
+            && requested_resources
+                .iter()
+                .any(|resource| !original_resources.contains(resource))
+        {
+            return error("invalid_target", "requested resource invalid");
+        }
+        let requested_resource_value =
+            (!requested_resources.is_empty()).then(|| json!(requested_resources));
         let original_scopes = original
             .metadata
             .get("scopes")
@@ -99,6 +118,24 @@ impl OAuthProviderPlugin {
                     .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
                     .is_some_and(|deadline| deadline >= chrono::Utc::now());
             if within {
+                let resource = requested_resource_value
+                    .as_ref()
+                    .or_else(|| original.metadata.get("resources"));
+                let policy = match self
+                    .admit_resources(ctx, &original.client_id, &scopes, resource)
+                    .await
+                {
+                    Ok(policy) => policy,
+                    Err(error) => {
+                        let mut response = EndpointResponse::error(error.error);
+                        if let Some(body) = error.body {
+                            response = response.with_error_body(*body);
+                        }
+                        return Ok(no_store(response));
+                    }
+                };
+                let scopes = policy.scopes.iter().map(String::as_str).collect::<Vec<_>>();
+
                 if let Some(ciphertext) = original
                     .metadata
                     .get("rotationReplayResponse")
@@ -146,9 +183,59 @@ impl OAuthProviderPlugin {
         let Some(user_id) = original.user_id.as_deref() else {
             return error("invalid_request", "user not found");
         };
-        if ctx.database.get_user_by_id(user_id).await?.is_none() {
+        let Some(user) = ctx.database.get_user_by_id(user_id).await? else {
             return error("invalid_request", "user not found");
-        }
+        };
+        let requested_scopes = scopes.clone();
+        let resource = requested_resource_value
+            .as_ref()
+            .or_else(|| original.metadata.get("resources"));
+        let admission = match self
+            .admit_resources(ctx, &original.client_id, &scopes, resource)
+            .await
+        {
+            Ok(policy) => policy,
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                return Ok(no_store(response));
+            }
+        };
+        let scopes = admission
+            .scopes
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>();
+        let mut params =
+            super::OAuthTokenIssueParams::new(client.clone(), admission.scopes.clone());
+        params.user = Some(ctx.trusted_user_view(&user));
+        params.session_id = original.session_id.clone();
+        params.authorization_code_id = original.authorization_code_id.clone();
+        params.reference_id = original
+            .metadata
+            .get("referenceId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        params.confirmation = original
+            .metadata
+            .get("confirmation")
+            .filter(|value| !value.is_null())
+            .cloned();
+        params.requested_user_info_claims = original
+            .metadata
+            .get("requestedUserInfoClaims")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            });
+        let resources = super::resource_policy::resource_list(resource);
+        params.resources = (!resources.is_empty()).then_some(resources);
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issuance time"))?;
         let random = || {
@@ -183,6 +270,9 @@ impl OAuthProviderPlugin {
                 _ = metadata.remove(key);
             }
             _ = metadata.insert("scopes".into(), json!(scopes));
+            if metadata.get("resources").is_none_or(Value::is_null) {
+                _ = metadata.insert("resources".into(), json!(params.resources));
+            }
             let row = ctx
                 .database
                 .create_oauth_token(
@@ -208,37 +298,30 @@ impl OAuthProviderPlugin {
         } else {
             None
         };
-        let access = random();
-        let mut metadata = json!({"scopes":scopes,"resources":original.metadata.get("resources")})
-            .as_object()
-            .cloned()
-            .ok_or_else(|| alibi_core::AuthError::internal("Invalid access metadata"))?;
-        if let Some((id, _)) = &next_refresh {
-            _ = metadata.insert("refreshId".into(), json!(id));
-        }
-        for key in ["referenceId", "confirmation", "requestedUserInfoClaims"] {
-            if let Some(value) = original.metadata.get(key) {
-                _ = metadata.insert(key.into(), value.clone());
-            }
-        }
-        let expires_claim = self.access_expiration(issued.timestamp(), true, &scopes)?;
-        let expires = super::issuance::expiration_date(&expires_claim)?;
-        _ = ctx
-            .database
-            .create_oauth_token(
-                OAuthTokenKind::Access,
-                CreateOAuthToken {
-                    token: self.hash_token(&access, "access_token").await?,
-                    client_id: original.client_id.clone(),
-                    user_id: original.user_id.clone(),
-                    session_id: original.session_id.clone(),
-                    authorization_code_id: original.authorization_code_id.clone(),
-                    metadata: Value::Object(metadata),
-                    created_at: issued,
-                    expires_at: expires,
+        let expires_claim = self.access_expiration(issued.timestamp(), true, &requested_scopes)?;
+        let access = match self
+            .create_access_token(
+                ctx,
+                req,
+                super::issuance::AccessTokenIssuance {
+                    params: &params,
+                    issued,
+                    expires: &expires_claim,
+                    audiences: &admission.audiences,
+                    refresh_id: next_refresh.as_ref().map(|(id, _)| id.as_str()),
                 },
             )
-            .await?;
+            .await
+        {
+            Ok(token) => token,
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                return Ok(no_store(response));
+            }
+        };
         let mut response = serde_json::Map::from_iter([
             ("access_token".into(), json!(access)),
             (
@@ -246,7 +329,20 @@ impl OAuthProviderPlugin {
                 super::issuance::remaining(issued.timestamp(), &expires_claim)?,
             ),
             ("expires_at".into(), expires_claim),
-            ("token_type".into(), json!("Bearer")),
+            (
+                "token_type".into(),
+                json!(if params
+                    .confirmation
+                    .as_ref()
+                    .and_then(|value| value.get("jkt"))
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.is_empty())
+                {
+                    "DPoP"
+                } else {
+                    "Bearer"
+                }),
+            ),
             ("scope".into(), json!(scopes.join(" "))),
         ]);
         if let Some((_, token)) = next_refresh {

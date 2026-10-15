@@ -75,7 +75,9 @@ impl OAuthProviderPlugin {
             );
         }
         let scopes = scopes.iter().map(|s| (*s).to_owned()).collect();
-        let params = super::OAuthTokenIssueParams::new(client, scopes);
+        let mut params = super::OAuthTokenIssueParams::new(client, scopes);
+        let resources = super::resource_policy::resource_list(body.get("resource"));
+        params.resources = (!resources.is_empty()).then_some(resources);
         match self.mint_tokens(ctx, req, &params).await {
             Ok(value) => Ok(no_store(EndpointResponse::json(&value)?)),
             Err(error) => {
