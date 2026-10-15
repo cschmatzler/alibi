@@ -5,6 +5,14 @@ import { jwt, username } from "better-auth/plugins";
 import { createAuthEndpoint } from "better-auth/api";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
+  const remoteKeys=(await Bun.file(new URL("../../../fixtures/oauth/client-assertion-keys.json",import.meta.url)).json()).keys;
+  const remoteDocument=(family:string,algorithm:string,kid:string)=>({keys:[{...remoteKeys.find((key:any)=>key.family===family).publicJwk,alg:algorithm,kid}]});
+  const remoteState={document:remoteDocument("RSA","RS256","first"),fetches:[] as unknown[]};
+  const remoteDiscovery={id:"remote-registry",matches:(id:string)=>id==="https://client.fixture.test/client.json",resolve:async(ctx:any,id:string,existing:any)=>existing??ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"remote-registry",name:"Remote client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"private_key_jwt",jwksUri:"https://client.fixture.test/jwks",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],createdAt:new Date(),updatedAt:new Date()}}),fetchClientMetadataResource:async(url:any,init:any)=>{
+    remoteState.fetches.push({url:String(url),accept:new Headers(init.headers).get("accept"),redirect:init.redirect,aborted:init.signal.aborted});
+    return new Response(JSON.stringify(remoteState.document),{headers:{"content-type":"application/jwk-set+json; charset=utf-8"}});
+  }};
+  const remoteProvider=oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:remoteDiscovery}]});
   const registryState={mode:"live",events:[] as string[]};
   const registryDiscoveries=[
     {id:"registry-first",matches:(id:string)=>{registryState.events.push("first:matches");return id.startsWith("registry-");},resolve:async()=>{registryState.events.push("first:resolve");return null;}},
@@ -46,6 +54,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "remote-jwks": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
+    "remote-jwks-peer": betterAuth({...options,plugins:[username(),jwt(),remoteProvider]}),
     "uri-host": betterAuth({...options,trustedOrigins:["https://*"]}),
     discovered: betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"registry-managed",extensions:[{clientDiscovery:registryDiscoveries}]})]}),
     "assertion-helper": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
@@ -186,6 +196,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "remote-jwks-document") {
+      remoteState.document=remoteDocument(input.family,input.algorithm,input.kid);
+      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    }
+    if (input.action === "remote-jwks-fetches") return new Response(JSON.stringify(remoteState.fetches),{headers:{"content-type":"application/json"}});
     if (input.action === "discovery-validation") {
       try {
         oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:input.ids.map((id:string)=>({id,matches:()=>false,resolve:async()=>null}))}]});

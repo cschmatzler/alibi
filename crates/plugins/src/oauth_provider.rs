@@ -1,6 +1,7 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
 mod assertion;
 mod authorization;
+mod client_jwks;
 mod clients;
 mod consent;
 mod continuation;
@@ -25,6 +26,10 @@ use alibi_core::{
 };
 pub use assertion::consume_client_assertion;
 use async_trait::async_trait;
+pub use client_jwks::{
+    OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
+    OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
+};
 pub use clients::CreateOAuthClientInput;
 pub use discovery::OAuthClientDiscovery;
 use serde_json::{Value, json};
@@ -113,6 +118,7 @@ impl Default for OAuthProviderConfig {
 #[derive(Clone, Debug, Default)]
 pub struct OAuthProviderPlugin {
     config: OAuthProviderConfig,
+    client_jwks: std::sync::Arc<client_jwks::Cache>,
 }
 impl OAuthProviderPlugin {
     #[must_use]
@@ -128,7 +134,10 @@ impl OAuthProviderPlugin {
                 .filter(|scope| !scope.is_empty())
                 .collect(),
         );
-        Self { config }
+        Self {
+            config,
+            ..Self::default()
+        }
     }
     /// Return the issuer's authorization-server configuration for trusted server callers.
     #[must_use]
@@ -1039,6 +1048,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 "refresh_token grant requires authorization_code grant",
             ));
         }
+        ctx.extensions
+            .insert(client_jwks::Runtime(self.client_jwks.clone()));
         let mut discovery_ids = std::collections::HashSet::new();
         for discovery in &self.config.client_discoveries {
             if alibi_core::utils::javascript::trim(discovery.id()).is_empty() {

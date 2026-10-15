@@ -113,22 +113,9 @@ pub(super) async fn verify<S: AuthSchema>(
             "client is not registered for private_key_jwt authentication",
         );
     }
-    let jwks = client.metadata.get("jwks").and_then(|value| {
-        if let Some(raw) = value.as_str() {
-            serde_json::from_str::<Value>(raw).ok()
-        } else {
-            Some(value.clone())
-        }
-    });
-    let Some(jwks) = jwks else {
-        return denied(
-            400,
-            if client.metadata.get("jwks_uri").is_some() {
-                "failed to fetch client JWKS"
-            } else {
-                "client has no JWKS configured"
-            },
-        );
+    let mut jwks = match super::client_jwks::get(ctx, &client).await? {
+        Ok(jwks) => jwks,
+        Err(description) => return denied(400, description),
     };
     let metadata = provider.metadata(ctx)?;
     let endpoint_url = format!(
@@ -143,9 +130,14 @@ pub(super) async fn verify<S: AuthSchema>(
             .and_then(Value::as_str)
             .unwrap_or_default(),
     ];
-    if !signature_valid(&header, &jwks, alg, assertion)
-        || !claims_valid(&payload, client_id, &audiences)
+    let mut signature = signature_result(&header, &jwks, alg, assertion);
+    if signature == SignatureResult::NoMatchingKey
+        && let Some(refreshed) = super::client_jwks::refetch(ctx, &client).await?
     {
+        jwks = refreshed;
+        signature = signature_result(&header, &jwks, alg, assertion);
+    }
+    if signature != SignatureResult::Valid || !claims_valid(&payload, client_id, &audiences) {
         return denied(401, SIGNATURE_ERROR);
     }
     let expected_audience = audiences
@@ -308,17 +300,28 @@ fn lifetime_error(payload: &JsValue, max: f64) -> Option<String> {
     None
 }
 
-fn signature_valid(header: &JsValue, jwks: &Value, algorithm: &str, assertion: &str) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SignatureResult {
+    Valid,
+    NoMatchingKey,
+    Invalid,
+}
+fn signature_result(
+    header: &JsValue,
+    jwks: &Value,
+    algorithm: &str,
+    assertion: &str,
+) -> SignatureResult {
     if let Some(crit) = header.get("crit")
         && (!crit
             .as_array()
             .is_some_and(|values| matches!(values,[JsValue::String(value)] if value=="b64"))
             || header.get("b64") != Some(&JsValue::Bool(true)))
     {
-        return false;
+        return SignatureResult::Invalid;
     }
     let Some(keys) = jwks.get("keys").and_then(Value::as_array) else {
-        return false;
+        return SignatureResult::Invalid;
     };
     let (kty, curve) = match algorithm {
         "EdDSA" => ("OKP", Some("Ed25519")),
@@ -350,10 +353,17 @@ fn signature_valid(header: &JsValue, jwks: &Value, algorithm: &str, assertion: &
                 })
         })
         .collect::<Vec<_>>();
+    if matching.is_empty() {
+        return SignatureResult::NoMatchingKey;
+    }
     let [key] = matching.as_slice() else {
-        return false;
+        return SignatureResult::Invalid;
     };
-    verify_signature(key, algorithm, assertion).unwrap_or(false)
+    if verify_signature(key, algorithm, assertion) == Some(true) {
+        SignatureResult::Valid
+    } else {
+        SignatureResult::Invalid
+    }
 }
 fn verify_signature(key: &Value, algorithm: &str, assertion: &str) -> Option<bool> {
     let (message, signature) = assertion.rsplit_once('.')?;
