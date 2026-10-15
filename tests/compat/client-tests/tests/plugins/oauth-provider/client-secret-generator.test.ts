@@ -5,11 +5,11 @@ import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
-  "OAuth client secret generators govern issuance, rotation and empty fallback",
+  "OAuth client secret policies govern creation, rotation and authentication",
   async (ctx) => {
     const actor = ctx.actor();
     const results = [];
-    for (const mode of ["generated", "empty-generator"]) {
+    for (const mode of ["generated", "empty-generator", "encrypted-generator"]) {
       const control = (input: any) =>
         actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
           method: "POST",
@@ -40,7 +40,7 @@ compatScenario(
       });
       expect(created.status).toBe(201);
       const client = (await created.json()) as any;
-      if (mode === "generated") {
+      if (mode !== "empty-generator") {
         expect(client.client_secret).toBe("operator-secret-1");
       } else {
         expect(client.client_secret).toMatch(/^[a-zA-Z]{32}$/);
@@ -73,7 +73,7 @@ compatScenario(
       });
       expect(response.status).toBe(200);
       const rotated = (await response.json()) as any;
-      if (mode === "generated") {
+      if (mode !== "empty-generator") {
         expect(rotated.client_secret).toBe("operator-secret-2");
       } else {
         expect(rotated.client_secret).toMatch(/^[a-zA-Z]{32}$/);
@@ -82,9 +82,15 @@ compatScenario(
       const row = (await (
         await control({ action: "row", clientId: client.client_id })
       ).json()) as any;
-      expect(row.client_secret).toBe(
-        createHash("sha256").update(rotated.client_secret).digest("base64url"),
-      );
+      const hash = createHash("sha256").update(rotated.client_secret).digest("base64url");
+      if (mode === "encrypted-generator") {
+        expect(typeof row.client_secret).toBe("string");
+        expect(row.client_secret.length).toBeGreaterThan(0);
+        expect(row.client_secret).not.toBe(rotated.client_secret);
+        expect(row.client_secret).not.toBe(hash);
+      } else {
+        expect(row.client_secret).toBe(hash);
+      }
       expect(row.client_secret).not.toBe(old.client_secret);
       expect(row).toEqual({ ...old, client_secret: row.client_secret });
       const authentication = [];
@@ -105,7 +111,9 @@ compatScenario(
         }
         authentication.push({ status, body });
       }
-      results.push({ mode, client, publicClient, rotated, row, authentication });
+      const { client_secret: protectedSecret, ...rowMetadata } = row;
+      expect(protectedSecret).toBeTruthy();
+      results.push({ mode, client, publicClient, rotated, row: rowMetadata, authentication });
     }
     return ctx.snapshot({ results });
   },

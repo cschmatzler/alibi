@@ -18,7 +18,7 @@ impl OAuthProviderPlugin {
         if credentials.client_id.is_empty() {
             return error("invalid_request", "Missing required client_id");
         }
-        let client = match credentials.authenticate(ctx).await? {
+        let client = match credentials.authenticate(ctx, &self.config).await? {
             Ok(client) => client,
             Err(response) => return Ok(no_store(response)),
         };

@@ -84,9 +84,11 @@ pub(crate) async fn router(
         "reuse",
         "generated",
         "empty-generator",
+        "encrypted-generator",
     ] {
         let provider = OAuthProviderConfig {
-            client_secret_generator: if matches!(mode, "generated" | "empty-generator") {
+            disable_jwt_plugin: mode == "encrypted-generator",
+            client_secret_generator: if matches!(mode, "generated" | "empty-generator" | "encrypted-generator") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
             } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
@@ -112,19 +114,12 @@ pub(crate) async fn router(
             allow_unauthenticated_client_registration: mode == "public",
             ..Default::default()
         };
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    config.clone(),
-                    database.clone(),
-                ))
-                .plugin(alibi::plugins::EmailPasswordPlugin::new())
-                .plugin(alibi::plugins::SessionManagementPlugin::new())
-                .plugin(JwtPlugin::new())
-                .plugin(OAuthProviderPlugin::with_config(provider))
-                .build()
-                .await?,
-        );
+        let builder = AuthBuilder::<TestSchema>::new(config.clone())
+            .store(crate::backend::store::<TestSchema>(config.clone(), database.clone()))
+            .plugin(alibi::plugins::EmailPasswordPlugin::new())
+            .plugin(alibi::plugins::SessionManagementPlugin::new());
+        let builder = if mode == "encrypted-generator" {builder} else {builder.plugin(JwtPlugin::new())};
+        let auth = Arc::new(builder.plugin(OAuthProviderPlugin::with_config(provider)).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }
     let logout_database = database.clone();

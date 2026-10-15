@@ -6,9 +6,9 @@ use base64::Engine;
 use sha2::Digest;
 backend_tests!(
     oauth_client_secret_rotation_replaces_hash_and_enforces_owner,
-    oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback
+    oauth_client_secret_policies_apply_to_creation_rotation_and_authentication
 );
-postgres_tests!(oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback);
+postgres_tests!(oauth_client_secret_policies_apply_to_creation_rotation_and_authentication);
 #[derive(Debug)]
 struct OperatorSecrets {
     calls: Arc<std::sync::atomic::AtomicUsize>,
@@ -160,16 +160,22 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     Ok(())
 }
 
-async fn oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback<B: Backend>(
+async fn oauth_client_secret_policies_apply_to_creation_rotation_and_authentication<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    for empty in [false, true] {
+    for (empty, encrypted) in [(false, false), (true, false), (false, true)] {
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let auth = super::auth_probe::fast_builder::<B>(&connection)
-            .plugin(JwtPlugin::new())
+        let builder = super::auth_probe::fast_builder::<B>(&connection);
+        let builder = if encrypted {
+            builder
+        } else {
+            builder.plugin(JwtPlugin::new())
+        };
+        let auth = builder
             .plugin(OAuthProviderPlugin::with_config(
                 alibi::plugins::OAuthProviderConfig {
+                    disable_jwt_plugin: encrypted,
                     client_secret_generator: Some(Arc::new(OperatorSecrets {
                         calls: calls.clone(),
                         empty,
@@ -179,7 +185,11 @@ async fn oauth_client_secret_generator_controls_creation_rotation_and_empty_fall
             ))
             .build()
             .await?;
-        let owner = signup(&auth, &format!("generator-{empty}@example.test")).await;
+        let owner = signup(
+            &auth,
+            &format!("generator-{empty}-{encrypted}@example.test"),
+        )
+        .await;
         let options = || EndpointOptions {
             headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
             ..Default::default()
@@ -240,13 +250,16 @@ async fn oauth_client_secret_generator_controls_creation_rotation_and_empty_fall
         assert_ne!(secret, old_secret);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
         let stored = auth.store().get_oauth_client(id).await?.unwrap();
-        assert_eq!(
-            stored.client_secret,
-            Some(
-                base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .encode(sha2::Sha256::digest(secret.as_bytes()))
-            )
-        );
+        let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(secret.as_bytes()));
+        if encrypted {
+            let protected = stored.client_secret.as_deref().unwrap();
+            assert!(!protected.is_empty());
+            assert_ne!(protected, secret);
+            assert_ne!(protected, hash);
+        } else {
+            assert_eq!(stored.client_secret.as_deref(), Some(hash.as_str()));
+        }
         assert_ne!(stored.client_secret, old.client_secret);
         assert_eq!(stored.id, old.id);
         assert_eq!(stored.user_id, old.user_id);
@@ -260,8 +273,16 @@ async fn oauth_client_secret_generator_controls_creation_rotation_and_empty_fall
                     EndpointOptions::default(),
                 )
                 .await;
+            assert_eq!(
+                output
+                    .as_ref()
+                    .err()
+                    .map_or(200, |error| error.error.status_code()),
+                status
+            );
             if status == 200 {
                 let output = output?.into_response()?;
+                assert_eq!(output.status, 200);
                 assert_eq!(body(&output), json!({"active":false}));
             } else {
                 assert_eq!(output.unwrap_err().error.status_code(), status);
