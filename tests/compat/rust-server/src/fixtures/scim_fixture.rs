@@ -91,6 +91,17 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     if input["sdkDate"]==true {if let JsValue::Object(values)=&mut claims{let date=chrono::DateTime::parse_from_rfc3339(values["expiresAt"].as_str().unwrap()).unwrap().with_timezone(&chrono::Utc);_=values.insert("expiresAt".into(),JsValue::Date(date));}}
                     *verifier_claims.lock().unwrap()=Some(claims);return Json(json!({"changed":true})).into_response();
                 }
+                if query.get("operation").is_some_and(|operation|operation=="discovery-sdk") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let operation=match input["api"].as_str().unwrap(){"getSCIMServiceProviderConfig"=>"getSCIMServiceProviderConfig","getSCIMResourceTypes"=>"getSCIMResourceTypes","getSCIMSchemas"=>"getSCIMSchemas","getSCIMResourceType"=>"getSCIMResourceType","getSCIMSchema"=>"getSCIMSchema",_=>panic!("fixture discovery operation")};
+                    let mut endpoint=ServerEndpoint::<Value>::new("scim",operation);
+                    if let Some(params)=input.get("params"){endpoint=endpoint.with_params(params).unwrap();}
+                    let auth=auth.lock().await.clone();
+                    return match auth.dispatch_endpoint(endpoint,EndpointOptions::default()).await {
+                        Ok(output)=>if input["mode"]=="headers" {let headers:serde_json::Map<String,Value>=output.headers().iter().map(|(name,value)|(name.clone(),json!(value))).collect();alibi::AuthResponse::json(200,&json!({"response":output.value(),"headers":headers})).unwrap().into_response()} else {output.into_response().unwrap().into_response()},
+                        Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()},
+                    };
+                }
                 if query.get("operation").is_some_and(|operation|operation=="probe-authentication-source") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();
                     let plugin=match input["mode"].as_str().unwrap(){"static"=>ScimPlugin::new().connections(resource_connections()),"managed"=>ScimPlugin::new().managed_connections(managed_options()),_=>ScimPlugin::new()};
