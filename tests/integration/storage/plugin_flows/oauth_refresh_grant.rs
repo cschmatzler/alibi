@@ -7,23 +7,25 @@ use sha2::Digest as _;
 backend_tests!(
     oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family,
     oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens,
-    oauth_custom_token_hashing_protects_real_grant_and_refresh_storage
+    oauth_custom_token_hashing_protects_real_grant_and_refresh_storage,
+    oauth_server_access_validation_checks_live_opaque_and_signed_tokens
 );
 postgres_tests!(
     oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens,
-    oauth_custom_token_hashing_protects_real_grant_and_refresh_storage
+    oauth_custom_token_hashing_protects_real_grant_and_refresh_storage,
+    oauth_server_access_validation_checks_live_opaque_and_signed_tokens
 );
 async fn oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family<B: Backend>(
     db: Db,
 ) -> TestResult {
-    refresh_lifecycle::<B>(db, true, false).await
+    refresh_lifecycle::<B>(db, true, false, false).await
 }
 async fn oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens<
     B: Backend,
 >(
     db: Db,
 ) -> TestResult {
-    refresh_lifecycle::<B>(db, false, false).await
+    refresh_lifecycle::<B>(db, false, false, false).await
 }
 #[derive(Debug)]
 struct TypedTokenHasher;
@@ -39,12 +41,18 @@ impl alibi::plugins::OAuthTokenHasher for TypedTokenHasher {
 async fn oauth_custom_token_hashing_protects_real_grant_and_refresh_storage<B: Backend>(
     db: Db,
 ) -> TestResult {
-    refresh_lifecycle::<B>(db, false, true).await
+    refresh_lifecycle::<B>(db, false, true, false).await
+}
+async fn oauth_server_access_validation_checks_live_opaque_and_signed_tokens<B: Backend>(
+    db: Db,
+) -> TestResult {
+    refresh_lifecycle::<B>(db, false, false, true).await
 }
 async fn refresh_lifecycle<B: Backend>(
     db: Db,
     explicit_refresh: bool,
     custom_hash: bool,
+    server_validation: bool,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let provider = OAuthProviderPlugin::with_config(alibi::plugins::OAuthProviderConfig {
@@ -206,6 +214,160 @@ async fn refresh_lifecycle<B: Backend>(
         original.authorization_code_id.as_deref(),
         Some(code_hash.as_str())
     );
+    if server_validation {
+        let now = chrono::Utc::now().timestamp();
+        let audience = format!(
+            "{}{}{}",
+            auth.config().base_url.trim_end_matches('/'),
+            auth.config().base_path,
+            "/oauth2/userinfo"
+        );
+        let issuer = format!(
+            "{}{}",
+            auth.config().base_url.trim_end_matches('/'),
+            auth.config().base_path
+        );
+        let mut cases = vec![
+            ("opaque".to_owned(), plaintext.to_owned(), None, true, false),
+            (
+                "opaque-bound".into(),
+                plaintext.into(),
+                Some(id.clone()),
+                true,
+                false,
+            ),
+            (
+                "opaque-foreign".into(),
+                plaintext.into(),
+                Some("foreign".into()),
+                false,
+                false,
+            ),
+            ("refresh".into(), refresh.into(), None, false, true),
+            ("missing".into(), "missing".into(), None, false, true),
+            (
+                "bearer".into(),
+                format!("Bearer {plaintext}"),
+                None,
+                false,
+                true,
+            ),
+        ];
+        for (name, changes) in [
+            ("jwt", json!({})),
+            ("expired", json!({"exp":now-10})),
+            ("issuer", json!({"iss":"https://foreign.test"})),
+            ("future", json!({"nbf":now+90})),
+            ("audience", json!({"aud":"https://foreign.test"})),
+            ("missing-client", json!({"azp":"missing-client"})),
+            ("no-sub", json!({"sub":null})),
+            ("no-azp", json!({"azp":null})),
+            ("missing-session", json!({"sid":"missing-session"})),
+            ("live-session", json!({"sid":original.session_id})),
+            (
+                "no-sub-live-session",
+                json!({"sub":null,"sid":original.session_id}),
+            ),
+        ] {
+            let mut payload =
+                json!({"iss":issuer,"aud":audience,"azp":id,"sub":"owner","iat":now,"exp":now+60});
+            for (key, value) in changes.as_object().unwrap() {
+                if value.is_null() {
+                    _ = payload.as_object_mut().unwrap().remove(key);
+                } else {
+                    payload[key] = value.clone();
+                }
+            }
+            let jwt = auth.context().extensions.get::<JwtPlugin>().unwrap();
+            let signed = jwt
+                .sign_jwt_json(
+                    &alibi::utils::json::JsValue::from(payload),
+                    &Default::default(),
+                    None,
+                    auth.context(),
+                )
+                .await?;
+            cases.push((
+                name.into(),
+                signed,
+                None,
+                matches!(
+                    name,
+                    "jwt" | "no-sub" | "live-session" | "no-sub-live-session"
+                ),
+                false,
+            ));
+        }
+        let signed = cases
+            .iter()
+            .find(|(name, ..)| name == "jwt")
+            .unwrap()
+            .1
+            .clone();
+        let mut parts = signed.split('.').map(str::to_owned).collect::<Vec<_>>();
+        let first = if parts[2].starts_with('A') { "B" } else { "A" };
+        parts[2].replace_range(..1, first);
+        cases.push(("bad-signature".into(), parts.join("."), None, false, false));
+        for (name, value, bound, active, missing) in cases {
+            for require_active in [false, true] {
+                let result = if require_active {
+                    provider
+                        .require_active_access_token(auth.context(), &value, bound.as_deref())
+                        .await
+                } else {
+                    provider
+                        .validate_access_token(auth.context(), &value, bound.as_deref())
+                        .await
+                };
+                if matches!(name.as_str(), "issuer" | "future" | "bad-signature") {
+                    let error = result.expect_err(&name);
+                    assert_eq!(error.error.status_code(), 500, "{name}");
+                } else if missing || (require_active && !active) {
+                    let error = result.expect_err(&name);
+                    assert_eq!(error.error.status_code(), 401, "{name}");
+                    assert_eq!(
+                        error
+                            .headers
+                            .unwrap()
+                            .get("WWW-Authenticate")
+                            .map(String::as_str),
+                        Some(
+                            "Bearer error=\"invalid_token\", error_description=\"Invalid access token\""
+                        )
+                    );
+                    assert_eq!(
+                        error.body.unwrap().to_json_value()?,
+                        json!({"error":"invalid_token","error_description":"Invalid access token"})
+                    );
+                } else {
+                    let payload = result?;
+                    assert_eq!(payload["active"], active, "{name}");
+                    if active {
+                        assert_eq!(payload["client_id"], id);
+                        assert_eq!(payload["iss"], issuer);
+                        assert_eq!(payload["token_type"], "Bearer");
+                        if name.starts_with("opaque") {
+                            assert_eq!(payload["scope"], "email offline_access");
+                            assert_eq!(payload["sub"], original.user_id.as_deref().unwrap());
+                            assert_eq!(payload["sid"], original.session_id.as_deref().unwrap());
+                        } else {
+                            assert_eq!(payload["aud"], audience);
+                            assert_eq!(
+                                payload.get("sub").and_then(Value::as_str),
+                                if matches!(name.as_str(), "no-sub" | "no-sub-live-session") {
+                                    None
+                                } else {
+                                    Some("owner")
+                                }
+                            );
+                        }
+                    } else {
+                        assert_eq!(payload, json!({"active":false}));
+                    }
+                }
+            }
+        }
+    }
     for (input, code, description) in [
         (
             json!({"grant_type":"refresh_token"}),

@@ -1,5 +1,6 @@
 //! OAuth authorization-server discovery from installed issuer and provider policy.
 pub use authentication::{OAuthAuthenticatedClient, OAuthClientAuthenticationOptions};
+mod access_validation;
 mod authentication;
 pub use client_secret::{OAuthClientSecretCipher, OAuthClientSecretHasher};
 mod assertion;

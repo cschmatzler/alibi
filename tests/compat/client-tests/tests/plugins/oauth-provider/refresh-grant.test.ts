@@ -4,13 +4,14 @@ import { createHash } from "node:crypto";
 import { Cookie } from "tough-cookie";
 
 import { compatScenario } from "../../../support/scenario";
-for (const [explicitRefresh, customHash] of [
-  [true, false],
-  [false, false],
-  [false, true],
+for (const [explicitRefresh, customHash, serverValidation] of [
+  [true, false, false],
+  [false, false, false],
+  [false, true, false],
+  [false, false, true],
 ]) {
   compatScenario(
-    `Refresh grants ${customHash ? "with custom token hashing " : ""}${explicitRefresh ? "explicitly" : "implicitly"} narrow scopes, rotate real authority and reject replay with family cleanup`,
+    `Refresh grants ${serverValidation ? "with server access validation " : ""}${customHash ? "with custom token hashing " : ""}${explicitRefresh ? "explicitly" : "implicitly"} narrow scopes, rotate real authority and reject replay with family cleanup`,
     async (ctx) => {
       const actor = ctx.actor();
       let clientSecret: string | undefined;
@@ -131,6 +132,100 @@ for (const [explicitRefresh, customHash] of [
       const original = await row("refresh", token.refresh_token);
       expect(original.token).toBe(protectedToken(token.refresh_token, "refresh_token"));
       expect(original.authorizationCodeId).toBe(protectedToken(code!, "authorization_code"));
+      if (serverValidation) {
+        const now = Math.floor(Date.now() / 1000);
+        const issuer = `${ctx.baseURL}/api/auth`;
+        const audience = `${issuer}/oauth2/userinfo`;
+        const cases: [string, string, string | undefined, boolean, boolean][] = [
+          ["opaque", token.access_token, undefined, true, false],
+          ["opaque-bound", token.access_token, id, true, false],
+          ["opaque-foreign", token.access_token, "foreign", false, false],
+          ["refresh", token.refresh_token, undefined, false, true],
+          ["missing", "missing", undefined, false, true],
+          ["bearer", `Bearer ${token.access_token}`, undefined, false, true],
+        ];
+        for (const [name, changes] of [
+          ["jwt", {}],
+          ["expired", { exp: now - 10 }],
+          ["issuer", { iss: "https://foreign.test" }],
+          ["future", { nbf: now + 90 }],
+          ["audience", { aud: "https://foreign.test" }],
+          ["missing-client", { azp: "missing-client" }],
+          ["no-sub", { sub: undefined }],
+          ["no-azp", { azp: undefined }],
+          ["missing-session", { sid: "missing-session" }],
+          ["live-session", { sid: original.sessionId }],
+          ["no-sub-live-session", { sub: undefined, sid: original.sessionId }],
+        ] as const) {
+          const signed = await control({
+            action: "sign-access",
+            body: {
+              iss: issuer,
+              aud: audience,
+              azp: id,
+              sub: "owner",
+              iat: now,
+              exp: now + 60,
+              ...changes,
+            },
+          });
+          expect(signed.status).toBe(200);
+          const value = (await signed.json()) as any;
+          cases.push([
+            name,
+            value.token,
+            undefined,
+            ["jwt", "no-sub", "live-session", "no-sub-live-session"].includes(name),
+            false,
+          ]);
+        }
+        const signed = cases.find(([name]) => name === "jwt")![1];
+        const parts = signed.split(".");
+        parts[2] = (parts[2]!.startsWith("A") ? "B" : "A") + parts[2]!.slice(1);
+        cases.push(["bad-signature", parts.join("."), undefined, false, false]);
+        for (const [name, value, clientId, active, missing] of cases) {
+          for (const requireActive of [false, true]) {
+            const response = await control({
+              action: "validate-access",
+              body: { token: value, clientId, requireActive },
+            });
+            if (["issuer", "future", "bad-signature"].includes(name)) {
+              expect(response.status).toBe(200);
+              expect(await response.json()).toEqual({ ordinary_error: true });
+            } else if (missing || (requireActive && !active)) {
+              expect(response.status).toBe(401);
+              expect(response.headers.get("www-authenticate")).toBe(
+                'Bearer error="invalid_token", error_description="Invalid access token"',
+              );
+              expect(await response.json()).toEqual({
+                error: "invalid_token",
+                error_description: "Invalid access token",
+              });
+            } else {
+              expect(response.status).toBe(200);
+              const payload = (await response.json()) as any;
+              expect(payload.active).toBe(active);
+              if (active) {
+                expect(payload.client_id).toBe(id);
+                expect(payload.iss).toBe(issuer);
+                expect(payload.token_type).toBe("Bearer");
+                if (name.startsWith("opaque")) {
+                  expect(payload.scope).toBe("email offline_access");
+                  expect(payload.sub).toBe(original.userId);
+                  expect(payload.sid).toBe(original.sessionId);
+                } else {
+                  expect(payload.aud).toBe(audience);
+                  expect(payload.sub).toBe(
+                    ["no-sub", "no-sub-live-session"].includes(name) ? undefined : "owner",
+                  );
+                }
+              } else {
+                expect(payload).toEqual({ active: false });
+              }
+            }
+          }
+        }
+      }
       const failures = [];
       for (const [input, error, error_description] of [
         [{ grant_type: "refresh_token" }, "invalid_request", "Missing required client_id"],

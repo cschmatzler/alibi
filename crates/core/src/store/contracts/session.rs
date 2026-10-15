@@ -199,6 +199,12 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
 
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>>;
+    /// Read the physical session row by its ID for signed-token liveness.
+    async fn get_session_by_id(&self, _id: &str) -> AuthResult<Option<S::Session>> {
+        Err(AuthError::NotImplemented(
+            "Session ID lookup is unsupported".into(),
+        ))
+    }
 
     /// Fetch matching sessions once each, including expired rows. The bundled
     /// SQLite adapter returns token-index order rather than request order.

@@ -169,6 +169,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         }
         Ok(session)
     }
+    async fn get_session_by_id(&self, id: &str) -> AuthResult<Option<S::Session>> {
+        self.inner.get_session_by_id(id).await
+    }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
         if self.config.session.stateless {
             return Ok(self.ephemeral()?.get(token).cloned());
