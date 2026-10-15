@@ -87,7 +87,14 @@ compatScenario(
         if (confirmation) expect(payload.cnf).toEqual(confirmation);
         else expect(payload).not.toHaveProperty("cnf");
       }
-      receipts.push({ confirmation, payloads });
+      receipts.push({
+        confirmation,
+        payloads: payloads.map((payload) => ({
+          active: payload.active,
+          token_type: payload.token_type,
+          ...(Object.hasOwn(payload, "cnf") ? { cnf: payload.cnf } : {}),
+        })),
+      });
     }
     return ctx.snapshot({ receipts });
   },
