@@ -221,8 +221,12 @@ pub(crate) fn capture_server_context(
     state: &str,
     secret: &str,
 ) -> AuthResult<()> {
-    let Some(context) = alibi_core::hooks::current_request_hook_context()
-        .and_then(|request| request.extensions.get::<CapturedOAuthServerContext>())
+    let Some(context) = alibi_core::endpoint::current_endpoint_call_context()
+        .and_then(|call| call.extensions().get::<CapturedOAuthServerContext>())
+        .or_else(|| {
+            alibi_core::hooks::current_request_hook_context()
+                .and_then(|request| request.extensions.get::<CapturedOAuthServerContext>())
+        })
     else {
         return Ok(());
     };

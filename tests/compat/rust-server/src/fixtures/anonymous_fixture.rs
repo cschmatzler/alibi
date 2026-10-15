@@ -475,7 +475,7 @@ pub(crate) async fn router(
         }),
     );
 
-    for path in ["/__test/server-api/anonymous-sign-in", "/__test/server-api/anonymous-email"] {
+    for path in ["/__test/server-api/anonymous-sign-in", "/__test/server-api/anonymous-email", "/__test/server-api/anonymous-social"] {
     let runtimes = runtimes.clone();
     router = router.route(
         path,
@@ -485,7 +485,9 @@ pub(crate) async fn router(
                 let selected = runtimes
                     .get(input["profile"].as_str().unwrap_or("anonymous-standard"))
                     .unwrap();
-                let mut endpoint = if path.ends_with("anonymous-email") {
+                let mut endpoint = if path.ends_with("anonymous-social") {
+                    alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "signInSocial")
+                } else if path.ends_with("anonymous-email") {
                     alibi::endpoint::ServerEndpoint::<Value>::new("email-password", if input["action"] == "sign-in" {"signInEmail"} else {"signUpEmail"})
                 } else {
                     alibi::endpoint::ServerEndpoint::<Value>::new("anonymous", "signInAnonymous")

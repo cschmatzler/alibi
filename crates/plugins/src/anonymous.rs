@@ -572,6 +572,30 @@ impl AnonymousPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for AnonymousPlugin {
+    fn matches_before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<bool> {
+        Ok(call.path() == Some("/sign-in/social"))
+    }
+    async fn before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        if let Some((user, _)) = anonymous_session(call, ctx).await
+            && user.is_anonymous() == Some(true)
+        {
+            call.extensions()
+                .insert(super::oauth::CapturedOAuthServerContext(
+                    super::oauth::OAuthServerContext {
+                        anonymous_user_id: user.id().into_owned(),
+                    },
+                ));
+        }
+        Ok(None)
+    }
     async fn after(
         &self,
         call: &alibi_core::endpoint::EndpointCall,

@@ -2495,12 +2495,12 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       asResponse: true,
     });
   }
-  if (url.pathname === "/__test/server-api/anonymous-email" && request.method === "POST") {
+  if (["/__test/server-api/anonymous-email", "/__test/server-api/anonymous-social"].includes(url.pathname) && request.method === "POST") {
     const input = await readJson(request);
     const selected = anonymousProfiles.profiles.get(
       `/__test/profiles/${input?.profile ?? "anonymous-standard"}/api/auth`,
     )!;
-    const operation = input?.action === "sign-in" ? "signInEmail" : "signUpEmail";
+    const operation = url.pathname.endsWith("anonymous-social") ? "signInSocial" : input?.action === "sign-in" ? "signInEmail" : "signUpEmail";
     return (selected.api as any)[operation]({
       body: input?.body,
       headers: new Headers(input?.headers as Record<string, string>),
