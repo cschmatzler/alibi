@@ -48,6 +48,38 @@ impl alibi::plugins::OAuthClientIdGenerator for FormCredentials {
 impl alibi::plugins::OAuthClientSecretGenerator for FormCredentials {
     fn generate(&self)->alibi::AuthResult<String>{Ok("secret +/é:tail".into())}
 }
+#[derive(Debug,Default)]
+struct RegistryState {mode:std::sync::atomic::AtomicU8,events:std::sync::Mutex<Vec<String>>}
+#[derive(Debug)]
+struct RegistryDiscovery {first:bool,state:Arc<RegistryState>}
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientDiscovery for RegistryDiscovery {
+    fn id(&self)->&str{if self.first{"registry-first"}else{"registry-live"}}
+    fn matches(&self,id:&str)->bool{self.state.events.lock().unwrap().push(if self.first{"first:matches"}else{"live:matches"}.into());id.starts_with("registry-") && (self.first || self.state.mode.load(std::sync::atomic::Ordering::SeqCst)!=2)}
+    async fn resolve(&self,callback:&alibi::CallbackContext,id:&str,existing:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>> {
+        self.state.events.lock().unwrap().push(if self.first{"first:resolve"}else if existing.is_some(){"live:resolve:existing"}else{"live:resolve:new"}.into());
+        let mode=self.state.mode.load(std::sync::atomic::Ordering::SeqCst);
+        if self.first || mode==1{return Ok(None);}
+        let ctx=callback.context::<TestSchema>().ok_or_else(||alibi::AuthError::internal("Missing real callback context"))?;
+        if let Some(mut existing)=existing {
+            if mode==3 {existing.metadata["client_name"]=serde_json::json!("Updated registry");return ctx.database.update_oauth_client_metadata(id,existing.metadata,chrono::Utc::now()).await;}
+            return Ok(Some(existing));
+        }
+        ctx.database.create_oauth_client(alibi::store::CreateOAuthClient{client_id:id.into(),user_id:None,client_secret:None,metadata:serde_json::json!({"client_discovery_id":"registry-live","client_name":"Registry client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none","scope":"email","grant_types":["authorization_code"],"response_types":["code"],"disabled":false}),created_at:chrono::Utc::now()}).await.map(Some)
+    }
+}
+#[derive(Debug)]
+struct ValidationDiscovery(String);
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthClientDiscovery for ValidationDiscovery {
+    fn id(&self)->&str{&self.0}
+    fn matches(&self,_:&str)->bool{false}
+    async fn resolve(&self,_:&alibi::CallbackContext,_:&str,_:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>>{Ok(None)}
+}
+#[derive(Debug)]
+struct ManagedRegistryId;
+impl alibi::plugins::OAuthClientIdGenerator for ManagedRegistryId {fn generate(&self)->alibi::AuthResult<String>{Ok("registry-managed".into())}}
+
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -84,6 +116,7 @@ pub(crate) async fn router(
         );
         instances.insert(mode.to_owned(), auth);
     }
+    let registry_state=Arc::new(RegistryState::default());
     let mut client_instances = HashMap::new();
     for mode in [
         "default",
@@ -111,9 +144,11 @@ pub(crate) async fn router(
         "assertion-negative-infinite",
         "assertion-helper",
         "assertion-helper-peer",
+        "discovered",
     ] {
         let provider = OAuthProviderConfig {
-            client_id_generator: if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
+            client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
+            client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
             disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
@@ -151,16 +186,35 @@ pub(crate) async fn router(
         let auth = Arc::new(builder.plugin(OAuthProviderPlugin::with_config(provider)).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }
+    let validation_config=config.clone();
     let logout_database = database.clone();
     let logout_origin = config.base_url.clone();
     let authorization_path = format!("{}/oauth2/authorize", config.base_path);
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
+        let registry_state=registry_state.clone();
+        let validation_config=validation_config.clone();
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="discovery-validation" {
+                let sources=input["ids"].as_array().unwrap().iter().map(|id|Arc::new(ValidationDiscovery(id.as_str().unwrap().into())) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect();
+                let cfg=OAuthProviderConfig{client_discoveries:sources,..Default::default()};
+                let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(cfg)).build().await;
+                return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();
+            }
+            if input["action"]=="discovery-state" {
+                registry_state.mode.store(match input["state"].as_str().unwrap(){"reject"=>1,"mismatch"=>2,"refresh"=>3,_=>0},std::sync::atomic::Ordering::SeqCst);
+                registry_state.events.lock().unwrap().clear();
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
+            if input["action"]=="discovery-events" {return axum::Json(registry_state.events.lock().unwrap().clone()).into_response();}
+            if input["action"]=="discovery-row" {
+                let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
+                return axum::Json(row.map(|row|serde_json::json!({"clientId":row.client_id,"clientDiscoveryId":row.metadata.get("client_discovery_id"),"name":row.metadata.get("client_name")}))).into_response();
+            }
             if input["action"]=="consume-assertion" {
                 let params=&input["params"];
                 let payload=alibi::utils::json::JsValue::from(params["payload"].clone());

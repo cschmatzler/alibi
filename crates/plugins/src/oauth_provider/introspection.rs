@@ -77,9 +77,10 @@ impl OAuthProviderPlugin {
                 "missing a required token for introspection",
             );
         }
-        if let Err(response) = credentials.authenticate(ctx, &self.config).await? {
-            return Ok(no_store(response));
-        }
+        let introspecting_client = match credentials.authenticate(ctx, &self.config).await? {
+            Ok(client) => client,
+            Err(response) => return Ok(no_store(response)),
+        };
         let hint = body
             .get("token_type_hint")
             .and_then(Value::as_str)
@@ -105,7 +106,12 @@ impl OAuthProviderPlugin {
             {
                 return inactive();
             }
-            let Some(client) = ctx.database.get_oauth_client(&row.client_id).await? else {
+            let client = if row.client_id == introspecting_client.client_id {
+                Some(introspecting_client.clone())
+            } else {
+                super::discovery::resolve(ctx, &row.client_id).await?
+            };
+            let Some(client) = client else {
                 return inactive();
             };
             if client.metadata.get("disabled") == Some(&Value::Bool(true)) {

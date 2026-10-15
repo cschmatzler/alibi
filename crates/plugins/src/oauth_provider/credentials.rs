@@ -245,7 +245,7 @@ impl Credentials {
         ctx: &AuthContext<S>,
         config: &super::OAuthProviderConfig,
     ) -> AuthResult<Result<OAuthClient, EndpointResponse>> {
-        let Some(client) = ctx.database.get_oauth_client(&self.client_id).await? else {
+        let Some(client) = super::discovery::resolve(ctx, &self.client_id).await? else {
             return Ok(Err(self.denied("missing client")?));
         };
         if client.metadata.get("disabled") == Some(&Value::Bool(true)) {

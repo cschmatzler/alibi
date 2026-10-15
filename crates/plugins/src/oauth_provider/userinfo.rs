@@ -26,7 +26,7 @@ pub(super) async fn live_access<S: AuthSchema>(
     {
         return Ok(None);
     }
-    let Some(client) = ctx.database.get_oauth_client(&row.client_id).await? else {
+    let Some(client) = super::discovery::resolve(ctx, &row.client_id).await? else {
         return Ok(None);
     };
     if client.metadata.get("disabled") == Some(&Value::Bool(true)) {

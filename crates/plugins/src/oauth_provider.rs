@@ -5,6 +5,7 @@ mod clients;
 mod consent;
 mod continuation;
 mod credentials;
+mod discovery;
 mod id_token;
 mod introspection;
 mod logout;
@@ -25,6 +26,7 @@ use alibi_core::{
 pub use assertion::consume_client_assertion;
 use async_trait::async_trait;
 pub use clients::CreateOAuthClientInput;
+pub use discovery::OAuthClientDiscovery;
 use serde_json::{Value, json};
 
 /// Actual authenticated context passed to an operator client-privilege decision.
@@ -51,6 +53,7 @@ pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
+    pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Operator decision for assigning client-credentials scopes.
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
@@ -78,6 +81,7 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            client_discoveries: Vec::new(),
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,
@@ -1035,6 +1039,23 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 "refresh_token grant requires authorization_code grant",
             ));
         }
+        let mut discovery_ids = std::collections::HashSet::new();
+        for discovery in &self.config.client_discoveries {
+            if alibi_core::utils::javascript::trim(discovery.id()).is_empty() {
+                return Err(AuthError::config(
+                    "OAuth Provider extension client discovery id cannot be empty",
+                ));
+            }
+            if !discovery_ids.insert(discovery.id()) {
+                return Err(AuthError::config(format!(
+                    "OAuth Provider extensions register client discovery id \"{}\" more than once. Extension contributions must be disjoint.",
+                    discovery.id()
+                )));
+            }
+        }
+        ctx.extensions.insert(discovery::ClientDiscoveries(
+            self.config.client_discoveries.clone(),
+        ));
         ctx.register_session_deletion_hook(std::sync::Arc::new(
             session_retirement::TokenRetirementHook,
         ));

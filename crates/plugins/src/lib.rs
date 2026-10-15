@@ -287,8 +287,9 @@ pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
 pub use oauth::OAuthPlugin;
 pub use oauth_popup::OAuthPopupPlugin;
 pub use oauth_provider::{
-    OAuthClientIdGenerator, OAuthClientPrivilegeContext, OAuthClientPrivileges,
-    OAuthClientSecretGenerator, OAuthProviderConfig, OAuthProviderPlugin, consume_client_assertion,
+    OAuthClientDiscovery, OAuthClientIdGenerator, OAuthClientPrivilegeContext,
+    OAuthClientPrivileges, OAuthClientSecretGenerator, OAuthProviderConfig, OAuthProviderPlugin,
+    consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};

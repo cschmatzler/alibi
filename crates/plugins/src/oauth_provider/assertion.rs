@@ -96,7 +96,7 @@ pub(super) async fn verify<S: AuthSchema>(
     {
         return denied(400, "client_id in body does not match assertion sub/iss");
     }
-    let Some(client) = ctx.database.get_oauth_client(client_id).await? else {
+    let Some(client) = super::discovery::resolve(ctx, client_id).await? else {
         return denied(400, "unknown client");
     };
     if client.metadata.get("disabled") == Some(&Value::Bool(true)) {
