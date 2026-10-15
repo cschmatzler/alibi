@@ -7,6 +7,16 @@ import { getMigrations } from "better-auth/db/migration";
 function fixtureJson(value: unknown) {
   return new Response(JSON.stringify(value), { headers: { "content-type": "application/json" } });
 }
+function trustedUserBody(input: any) {
+  const body = input.body;
+  if (input.datePath) {
+    let target = body;
+    for (const key of input.datePath.slice(0,-1)) target = target[key];
+    const key = input.datePath.at(-1);
+    target[key] = new Date(target[key]);
+  }
+  return body;
+}
 export async function scimFixture(base: BetterAuthOptions) {
   const options = {
     ...base,
@@ -393,7 +403,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.replaceSCIMUser({
           params: input.params,
-          body: input.body,
+          body: trustedUserBody(input),
           query: input.query,
           headers:
             input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
@@ -403,7 +413,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "createSCIMUser") {
         const input = (await request.json()) as any;
         return auth.api.createSCIMUser({
-          body: input.body,
+          body: trustedUserBody(input),
           query: input.query,
           headers:
             input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
