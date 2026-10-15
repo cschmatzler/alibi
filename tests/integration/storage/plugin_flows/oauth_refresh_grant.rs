@@ -1,5 +1,7 @@
 //! A real authorization grant is consumed once, with PKCE and redirect binding.
 use super::*;
+#[path = "../../../fixtures/oauth/access-jwt.rs"]
+mod access_jwt;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
@@ -304,6 +306,32 @@ async fn refresh_lifecycle<B: Backend>(
             .unwrap()
             .1
             .clone();
+        let encoded = signed.split('.').nth(1).unwrap();
+        let payload: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(encoded)?,
+        )?;
+        let keys = auth.store().list_jwks().await?;
+        let stored: &str = &keys.first().unwrap().private_key;
+        let encrypted: String = serde_json::from_str(stored)?;
+        let private: Value = serde_json::from_str(
+            &alibi::plugins::oauth::encryption::decrypt_token(&encrypted, SECRET)?,
+        )?;
+        let no_kid = access_jwt::sign(&private, &payload)?;
+        let mut invalid_parts = no_kid.split('.').map(str::to_owned).collect::<Vec<_>>();
+        let first = if invalid_parts[2].starts_with('A') {
+            "B"
+        } else {
+            "A"
+        };
+        invalid_parts[2].replace_range(..1, first);
+        cases.push((
+            "bad-signature-without-kid".into(),
+            invalid_parts.join("."),
+            None,
+            false,
+            false,
+        ));
+        cases.push(("without-kid".into(), no_kid, None, true, false));
         let mut parts = signed.split('.').map(str::to_owned).collect::<Vec<_>>();
         let first = if parts[2].starts_with('A') { "B" } else { "A" };
         parts[2].replace_range(..1, first);
@@ -319,7 +347,10 @@ async fn refresh_lifecycle<B: Backend>(
                         .validate_access_token(auth.context(), &value, bound.as_deref())
                         .await
                 };
-                if matches!(name.as_str(), "issuer" | "future" | "bad-signature") {
+                if matches!(
+                    name.as_str(),
+                    "issuer" | "future" | "bad-signature" | "bad-signature-without-kid"
+                ) {
                     let error = result.expect_err(&name);
                     assert_eq!(error.error.status_code(), 500, "{name}");
                 } else if missing || (require_active && !active) {

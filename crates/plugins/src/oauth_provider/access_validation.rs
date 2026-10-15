@@ -16,7 +16,9 @@ impl OAuthProviderPlugin {
     ) -> Result<Value, EndpointError> {
         if !self.config.disable_jwt_plugin
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
-            && let Some(mut claims) = jwt.verify_signed_payload(token, None, ctx).await?
+            && let Some(mut claims) = jwt
+                .verify_signed_payload_with_optional_kid(token, None, ctx)
+                .await?
         {
             let now = serde_json::Number::from(chrono::Utc::now().timestamp())
                 .as_f64()

@@ -94,6 +94,26 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Option<Map<String, Value>>> {
+        self.verify_signed_payload_inner(token, request, ctx, true)
+            .await
+    }
+    /// Resolve algorithm-compatible keys when an OAuth access JWS omits `kid`.
+    pub(crate) async fn verify_signed_payload_with_optional_kid(
+        &self,
+        token: &str,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Option<Map<String, Value>>> {
+        self.verify_signed_payload_inner(token, request, ctx, false)
+            .await
+    }
+    async fn verify_signed_payload_inner(
+        &self,
+        token: &str,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+        require_kid: bool,
+    ) -> AuthResult<Option<Map<String, Value>>> {
         let parts = token.split('.').collect::<Vec<_>>();
         let [header, payload, signature] = parts.as_slice() else {
             return Ok(None);
@@ -105,37 +125,35 @@ impl JwtPlugin {
         if validate_critical_header(header_object, false).is_err() {
             return Ok(None);
         }
-        let Some(kid) = header
+        let kid = header
             .get("kid")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
-        else {
-            return Ok(None);
-        };
-        let Some(key) = self
-            .keys_at_path(request, "virtual:", ctx)
-            .await?
-            .into_iter()
-            .find(|key| key.id == kid)
-        else {
-            return Ok(None);
-        };
-        let algorithm = key
-            .alg
-            .as_deref()
-            .map(JwtAlgorithm::from_str)
-            .unwrap_or(Ok(self.config.key_pair.algorithm))?;
-        if header.get("alg").and_then(Value::as_str) != Some(algorithm.as_str()) {
+            .filter(|kid| !kid.is_empty());
+        if require_kid && kid.is_none() {
             return Ok(None);
         }
-        let public: Value = serde_json::from_str(&key.public_key)?;
         let input = format!("{}.{}", parts.first().copied().unwrap_or_default(), payload);
-        if !crypto::verify(
-            algorithm,
-            &public,
-            input.as_bytes(),
-            &decode_compact_part(signature, true)?,
-        )? {
+        let signature = decode_compact_part(signature, true)?;
+        let mut verified = false;
+        for key in self.keys_at_path(request, "virtual:", ctx).await? {
+            if kid.is_some_and(|kid| key.id != kid) {
+                continue;
+            }
+            let algorithm = key
+                .alg
+                .as_deref()
+                .map(JwtAlgorithm::from_str)
+                .unwrap_or(Ok(self.config.key_pair.algorithm))?;
+            if header.get("alg").and_then(Value::as_str) != Some(algorithm.as_str()) {
+                continue;
+            }
+            let public: Value = serde_json::from_str(&key.public_key)?;
+            if crypto::verify(algorithm, &public, input.as_bytes(), &signature)? {
+                verified = true;
+                break;
+            }
+        }
+        if !verified {
             return Ok(None);
         }
         let Some(payload) = decode_compact_json(payload, true)?.as_object().cloned() else {

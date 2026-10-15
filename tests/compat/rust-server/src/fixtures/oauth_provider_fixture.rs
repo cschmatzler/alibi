@@ -6,6 +6,8 @@ use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{Router, extract::Query, response::IntoResponse, routing::get};
 use std::{collections::HashMap, sync::Arc};
+#[path = "../../../../fixtures/oauth/access-jwt.rs"]
+mod access_jwt;
 #[derive(Debug)]
 struct MachinePrivileges;
 #[async_trait::async_trait]
@@ -327,7 +329,15 @@ pub(crate) async fn router(
             }
             if input["action"]=="sign-access" {
                 let endpoint=alibi::plugins::jwt::JwtPlugin::sign_endpoint(alibi::utils::json::JsValue::from(input["body"].clone()));
-                return auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await.unwrap().into_response().unwrap().into_response();
+                let response=auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await.unwrap().into_response().unwrap();
+                if input["omitKid"]==true {
+                    let keys=auth.store().list_jwks().await.unwrap();let stored=&keys.first().unwrap().private_key;
+                    let encrypted:String=serde_json::from_str(stored).unwrap();
+                    let private:serde_json::Value=serde_json::from_str(&alibi::plugins::oauth::encryption::decrypt_token(&encrypted,auth.config().current_secret()).unwrap()).unwrap();
+                    let token=access_jwt::sign(&private,&input["body"]).unwrap();
+                    return axum::Json(serde_json::json!({"token":token})).into_response();
+                }
+                return response.into_response();
             }
             if input["action"]=="hash-token" {
                 let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{token_hasher:(input["mode"]=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),..Default::default()});

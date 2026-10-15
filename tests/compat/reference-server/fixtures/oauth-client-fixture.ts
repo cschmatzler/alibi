@@ -1,3 +1,4 @@
+import {SignJWT,importJWK,decodeProtectedHeader} from "jose";
 import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
 import {createHash} from "node:crypto";
 import { consumeClientAssertion, getOAuthProviderApi, oauthProvider } from "@better-auth/oauth-provider";
@@ -565,7 +566,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return (auth.api as any).validateAccessFixture({body:input.body,asResponse:true});
     }
     if(input.action==="sign-access") {
-      return auth.api.signJWT({body:{payload:input.body},asResponse:true});
+      if(!input.omitKid)return auth.api.signJWT({body:{payload:input.body},asResponse:true});
+      const generated=await auth.api.signJWT({body:{payload:input.body}});
+      const context=await auth.$context;
+      const stored=await context.adapter.findOne<any>({model:"jwks",where:[{field:"id",value:decodeProtectedHeader(generated.token).kid}]});
+      const privateJwk=JSON.parse(await symmetricDecrypt({key:context.secretConfig,data:JSON.parse(stored.privateKey)}));
+      const token=await new SignJWT(input.body).setProtectedHeader({alg:"EdDSA"}).sign(await importJWK(privateJwk,"EdDSA"));
+      return new Response(JSON.stringify({token}),{headers:{"content-type":"application/json"}});
     }
     if(input.action==="hash-token") {
       return (auth.api as any).hashTokenFixture({body:{token:input.token,kind:input.kind,custom:input.mode==="custom-token-hash"},asResponse:true});
