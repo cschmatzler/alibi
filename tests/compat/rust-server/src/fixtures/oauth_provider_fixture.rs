@@ -145,6 +145,7 @@ pub(crate) async fn router(
         "assertion-helper",
         "assertion-helper-peer",
         "discovered",
+        "uri-host",
     ] {
         let provider = OAuthProviderConfig {
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
@@ -178,8 +179,9 @@ pub(crate) async fn router(
             allow_unauthenticated_client_registration: mode == "public",
             ..Default::default()
         };
-        let builder = AuthBuilder::<TestSchema>::new(config.clone())
-            .store(crate::backend::store::<TestSchema>(config.clone(), database.clone()))
+        let client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
+        let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
+            .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator") {builder} else {builder.plugin(JwtPlugin::new())};
