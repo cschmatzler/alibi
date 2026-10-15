@@ -202,11 +202,11 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         OAuthProviderPlugin::oauth2_token_endpoint(&refresh_body)?,
         EndpointOptions::default(),
     ))
-    .await?
-    .into_response()?;
-    assert_eq!(denied.status, 400);
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 400);
     assert_eq!(
-        body(&denied)["error_description"],
+        denied.body.unwrap().to_json_value()?["error_description"],
         "DPoP proof header is required"
     );
     let jwt = make_proof("native-protocol-refresh")?;
