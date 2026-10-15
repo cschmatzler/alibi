@@ -205,7 +205,8 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
             await Promise.resolve();
             events.push({
               mode,
-              path: new URL(context.request!.url).pathname.slice(path.length),
+              path: context.request ? new URL(context.request.url).pathname.slice(path.length) : context.path,
+              ...(!context.request ? { request: null } : {}),
               anonymousUser,
               newUser,
             });

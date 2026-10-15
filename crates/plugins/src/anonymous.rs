@@ -37,7 +37,11 @@ pub struct AnonymousLink {
 /// Transfer application-owned data before the anonymous account is deleted.
 #[async_trait]
 pub trait LinkAnonymousAccount: Send + Sync {
-    async fn link(&self, accounts: &AnonymousLink, request: &AuthRequest) -> AuthResult<()>;
+    async fn link(
+        &self,
+        accounts: &AnonymousLink,
+        context: &alibi_core::CallbackContext,
+    ) -> AuthResult<()>;
 }
 
 #[derive(Clone, Default)]
@@ -392,6 +396,10 @@ impl AnonymousPlugin {
 impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
     route_openapi_metadata!(S);
 
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
+
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         vec![
             crate::endpoint::definition(
@@ -490,6 +498,19 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         ctx: &AuthContext<S>,
         response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
+        self.link_completed(req, req.path(), ctx, &response).await?;
+        Ok(response)
+    }
+}
+
+impl AnonymousPlugin {
+    async fn link_completed<S: AuthSchema>(
+        &self,
+        req: &impl alibi_core::session::SessionRequest,
+        path: &str,
+        ctx: &AuthContext<S>,
+        response: &AuthResponse,
+    ) -> AuthResult<()> {
         let matches = [
             "/sign-in",
             "/sign-up",
@@ -502,21 +523,21 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
             "/verify-email",
         ]
         .iter()
-        .any(|prefix| req.path().starts_with(prefix));
+        .any(|prefix| path.starts_with(prefix));
         if !matches {
-            return Ok(response);
+            return Ok(());
         }
-        if !response_has_session_cookie(ctx, &response) {
-            return Ok(response);
+        if !response_has_session_cookie(ctx, response) {
+            return Ok(());
         }
         let Some((old_user, old_session)) = resolve_anonymous_session(req, ctx).await? else {
-            return Ok(response);
+            return Ok(());
         };
         if old_user.is_anonymous != Some(true) {
-            return Ok(response);
+            return Ok(());
         }
-        let Some(issued) = completed_response_session(req, ctx, &response) else {
-            return Ok(response);
+        let Some(issued) = completed_response_session(req, ctx, response) else {
+            return Ok(());
         };
         if let Some(linker) = &self.config.on_link_account {
             // The new-user callback receives the real newly issued session,
@@ -531,7 +552,7 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
                         new_user: issued.callback_user(ctx),
                         new_session,
                     },
-                    req,
+                    &alibi_core::CallbackContext::new(ctx, req.physical_request()),
                 )
                 .await
                 .map_err(callback_error)?;
@@ -540,11 +561,30 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
             || old_user.id == issued.user.id().as_ref()
             || issued.user.is_anonymous() == Some(true)
         {
-            return Ok(response);
+            return Ok(());
         }
         if let Err(error) = ctx.database.delete_user(&old_user.id).await {
             tracing::error!(user_id=%old_user.id,error=%error,"Failed to clean up anonymous account");
         }
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for AnonymousPlugin {
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        self.link_completed(
+            call,
+            call.path().unwrap_or_default(),
+            ctx,
+            &response.to_response()?,
+        )
+        .await?;
         Ok(response)
     }
 }
@@ -597,7 +637,7 @@ async fn anonymous_session<S: AuthSchema>(
 }
 
 async fn resolve_anonymous_session<S: AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<Option<(UserView, SessionView)>> {
     if let Some((user, session)) = anonymous_session(req, ctx).await

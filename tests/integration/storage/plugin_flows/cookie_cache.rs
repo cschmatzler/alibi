@@ -644,7 +644,7 @@ async fn cache_version_issuance_failure_preserves_anonymous_principal<B: Backend
     struct Link(AtomicUsize);
     #[async_trait]
     impl LinkAnonymousAccount for Link {
-        async fn link(&self, _: &AnonymousLink, _: &AuthRequest) -> AuthResult<()> {
+        async fn link(&self, _: &AnonymousLink, _: &alibi::CallbackContext) -> AuthResult<()> {
             _ = self.0.fetch_add(1, Ordering::SeqCst);
             Ok(())
         }

@@ -2,7 +2,7 @@ use super::{
     CompletedSession, IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides,
 };
 use alibi_core::entity::AuthUser;
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateUser};
+use alibi_core::{AuthContext, AuthError, AuthResponse, AuthResult, UpdateUser};
 use chrono::Utc;
 
 /// Source ordinary middleware admits the authenticated cache snapshot.
@@ -156,7 +156,7 @@ pub(crate) fn response_has_session_cookie<S: alibi_core::AuthSchema>(
 }
 
 pub(crate) fn completed_response_session<S: alibi_core::AuthSchema>(
-    req: &AuthRequest,
+    req: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
     response: &AuthResponse,
 ) -> Option<std::sync::Arc<CompletedSession<S>>> {
