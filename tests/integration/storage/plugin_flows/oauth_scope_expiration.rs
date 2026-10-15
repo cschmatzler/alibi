@@ -89,7 +89,7 @@ async fn oauth_scope_expiration_preserves_absolute_numeric_zero_and_relative_bou
             )
             .await?
             .unwrap();
-        let expected = absolute.unwrap_or(row.created_at.timestamp() + ttl);
+        let expected = absolute.unwrap_or_else(|| row.created_at.timestamp() + ttl);
         assert_eq!(row.expires_at.timestamp(), expected);
         assert_eq!(issued["expires_at"], expected);
         assert_eq!(issued["expires_in"], expected - row.created_at.timestamp());
@@ -126,7 +126,7 @@ async fn oauth_scope_expiration_preserves_absolute_numeric_zero_and_relative_bou
             )
             .await?
             .unwrap();
-        let expected = absolute.unwrap_or(row.created_at.timestamp() + ttl);
+        let expected = absolute.unwrap_or_else(|| row.created_at.timestamp() + ttl);
         assert_eq!(row.expires_at.timestamp(), expected);
         assert_eq!(rotated["expires_at"], expected);
         assert_eq!(rotated["expires_in"], expected - row.created_at.timestamp());
