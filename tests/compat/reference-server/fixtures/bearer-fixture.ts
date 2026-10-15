@@ -75,6 +75,31 @@ export function createBearerFixture(base: BetterAuthOptions) {
 
   return {
     profiles,
+    async control(request: Request) {
+      const input = (await request.json()) as any;
+      const profile = input.profile ?? "bearer-default";
+      const path = `/__test/profiles/${profile}/api/auth`;
+      const auth = profiles.get(path);
+      if (!auth) {
+        return new Response(null, { status: 404 });
+      }
+      const options = {
+        ...(Object.hasOwn(input, "body") ? { body: input.body } : {}),
+        ...(Object.hasOwn(input, "headers") ? { headers: new Headers(input.headers) } : {}),
+        ...(Object.hasOwn(input, "requestHeaders")
+          ? {
+              request: new Request(
+                `${typeof base.baseURL === "string" ? base.baseURL : "http://localhost:3000"}${path}/get-session`,
+                { headers: input.requestHeaders },
+              ),
+            }
+          : {}),
+        asResponse: true,
+      };
+      return input.action === "sign-up"
+        ? auth.api.signUpEmail(options as any)
+        : auth.api.getSession(options);
+    },
     reset() {
       counter = 0;
     },
