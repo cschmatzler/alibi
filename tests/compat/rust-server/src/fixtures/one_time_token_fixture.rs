@@ -24,7 +24,7 @@ use axum::{
     routing::post,
 };
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
@@ -299,6 +299,34 @@ pub(crate) async fn router(
         let _ = profiles.insert((*name).to_owned(), (auth, ott));
     }
     let profiles = Arc::new(profiles);
+    let sdk_profiles = profiles.clone();
+    router = router.route(
+        "/__test/server-api/one-time-token",
+        post(move |Json(input): Json<Value>| {
+            let profiles = sdk_profiles.clone();
+            async move {
+                let Some((auth, _)) = input
+                    .get("profile")
+                    .and_then(Value::as_str)
+                    .and_then(|profile| profiles.get(profile))
+                else {
+                    return StatusCode::NOT_FOUND.into_response();
+                };
+                let (plugin, operation) = if input.get("action").and_then(Value::as_str) == Some("verify") {
+                    ("one-time-token", "verifyOneTimeToken")
+                } else {
+                    ("email-password", "signUpEmail")
+                };
+                let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(plugin, operation)
+                    .with_body(&input["body"])
+                    .unwrap();
+                match auth.dispatch_endpoint(endpoint, alibi::endpoint::EndpointOptions::default()).await {
+                    Ok(output) => output.into_response().unwrap().into_response(),
+                    Err(error) => error.error.to_auth_response().into_response(),
+                }
+            }
+        }),
+    );
     router = router.route(
         "/__test/one-time-token",
         post(
