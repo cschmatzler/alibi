@@ -315,6 +315,7 @@ pub(crate) async fn router(
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }
+    let dpop_memory=Arc::new(alibi::plugins::oauth2::create_in_memory_dpop_replay_store());
     let validation_config=config.clone();
     let logout_database = database.clone();
     let logout_origin = config.base_url.clone();
@@ -326,11 +327,39 @@ pub(crate) async fn router(
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
         let trusted_config=trusted_config.clone();
+        let dpop_memory=dpop_memory.clone();
         let validation_config=validation_config.clone();
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="dpop-proof"{
+                use alibi::plugins::oauth2::*;
+                let body=&input["body"];
+                if body["operation"]=="row"{
+                    use alibi::AuthVerification as _;
+                    let row=auth.store().get_verification_by_identifier(&format!("dpop-proof:{}",body["key"].as_str().unwrap())).await.unwrap();
+                    return axum::Json(row.map(|row|serde_json::json!({"value":row.value(),"expiresAt":row.expires_at()}))).into_response();
+                }
+                let database=create_dpop_replay_store(auth.context());
+                let capture=DpopReservationCapture{delegate:auth.context(),observed:std::sync::Mutex::new(None)};
+                let wrapped=create_dpop_replay_store(&capture);
+                let replay:Option<&dyn DpopReplayStore>=match body["replay"].as_str(){Some("memory")=>Some(dpop_memory.as_ref()),Some("database")=>Some(&database),Some("wrapped")=>Some(&wrapped),_=>None};
+                if body["operation"]=="utilities"{
+                    let result=(||->Result<serde_json::Value,DpopError>{Ok(serde_json::json!({"authorization":parse_access_token_authorization(body["authorization"].as_str()),"stripped":strip_access_token_authorization_scheme(body["token"].as_str().unwrap()),"confirmation":get_confirmation_jkt(&body["confirmation"]),"normalized":normalize_dpop_htu(body["url"].as_str().unwrap())?,"ath":derive_dpop_ath(body["accessToken"].as_str().unwrap()),"jkt":derive_dpop_jkt(&body["jwk"])?}))})();
+                    return axum::Json(result.unwrap_or_else(|_|serde_json::json!({"ordinary_error":true}))).into_response();
+                }
+                if body["operation"]=="binding"{
+                    let authorization:AccessTokenAuthorization=serde_json::from_value(body["authorization"].clone()).unwrap();
+                    let mut options=EnforceDpopBindingParams::new(&body["payload"],&authorization,body["method"].as_str().unwrap(),body["url"].as_str().unwrap());
+                    options.proof_jwt=body["proofJwt"].as_str();options.replay_store=replay;options.proof_max_age_seconds=body["proofMaxAgeSeconds"].as_f64();options.signing_algorithms=body.get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());
+                    return axum::Json(match enforce_dpop_binding(&options).await{Ok(())=>serde_json::json!({"accepted":true}),Err(error)=>if is_dpop_binding_error(&error){serde_json::json!({"error":error.code,"message":error.message})}else{serde_json::json!({"ordinary_error":true})}}).into_response();
+                }
+                let mut options=VerifyDpopProofOptions::new(body["proofJwt"].as_str().unwrap(),body["method"].as_str().unwrap(),body["url"].as_str().unwrap());
+                options.now_seconds=body["nowSeconds"].as_f64();options.proof_max_age_seconds=body["proofMaxAgeSeconds"].as_f64();
+                options.access_token=body["accessToken"].as_str();options.expected_jkt=body["expectedJkt"].as_str();options.require_ath=body["requireAth"]==true;options.signing_algorithms=body.get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());options.replay_store=replay;
+                return match verify_dpop_proof(&options).await{Ok(proof)=>{let mut value=serde_json::to_value(proof).unwrap();if body["replay"]=="wrapped"{value["reservation"]=serde_json::to_value(capture.observed.lock().unwrap().clone()).unwrap();}axum::Json(value).into_response()},Err(error)=>axum::Json(if is_dpop_proof_error(&error){serde_json::json!({"error":error.code,"message":error.message})}else{serde_json::json!({"ordinary_error":true})}).into_response()};
+            }
             if input["action"]=="issue-tokens" {
                 let body=&input["body"];let values=&body["params"];let provider=if let Some(policy)=body["scopePolicy"].as_str(){OAuthProviderPlugin::with_config(scope_expiry_config(policy))}else if body["expiryProfile"]==true {OAuthProviderPlugin::with_config(issuance_expiry_config())}else{OAuthProviderPlugin::new()};
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
@@ -614,6 +643,14 @@ pub(crate) async fn router(
     ))
 }
 
+struct DpopReservationCapture<'a>{delegate:&'a dyn alibi::plugins::oauth2::DpopReplayReservations,observed:std::sync::Mutex<Option<alibi::plugins::oauth2::DpopVerificationReservation>>}
+#[async_trait::async_trait]
+impl alibi::plugins::oauth2::DpopReplayReservations for DpopReservationCapture<'_>{
+    async fn reserve_verification_value(&self,data:alibi::plugins::oauth2::DpopVerificationReservation)->Result<bool,alibi::plugins::oauth2::DpopError>{
+        { *self.observed.lock().unwrap()=Some(data.clone()); }
+        self.delegate.reserve_verification_value(data).await
+    }
+}
 fn issuance_expiry_config() -> alibi::plugins::OAuthProviderConfig {
     alibi::plugins::OAuthProviderConfig {access_token_expires_in:120.0,m2m_access_token_expires_in:30.0,id_token_expires_in:600.0,refresh_token_expires_in:900.0,..Default::default()}
 }

@@ -170,7 +170,7 @@ pub(super) fn sign(
     }
 }
 
-pub(super) fn verify(
+pub(crate) fn verify(
     algorithm: JwtAlgorithm,
     public: &Value,
     message: &[u8],

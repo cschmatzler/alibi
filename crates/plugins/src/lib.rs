@@ -69,6 +69,7 @@ pub mod magic_link;
 pub mod metadata;
 pub mod multi_session;
 pub mod oauth;
+pub mod oauth2;
 pub mod oauth_popup;
 pub mod oauth_provider;
 pub mod oauth_proxy;
