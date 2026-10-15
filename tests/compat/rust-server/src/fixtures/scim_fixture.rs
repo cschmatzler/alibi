@@ -76,6 +76,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             let config=restart_config.clone();
             let projection_states=projection_states.clone();let projection_fails=projection_fails.clone();let role_observations=role_observations.clone();let role_stage=role_stage.clone();let identity_states=identity_states.clone();let identity_fails=identity_fails.clone();
             async move {
+                if query.get("operation").is_some_and(|operation|operation=="configure-entra-group-compatibility") {
+                    let input:Value=serde_json::from_slice(&bytes).unwrap();
+                    let plugin=ScimPlugin::new().managed_connections(managed_options()).connections(resource_connections()).compatibility(alibi::plugins::scim::ScimCompatibilityOptions{microsoft_entra:Some(alibi::plugins::scim::ScimMicrosoftEntraCompatibilityOptions{accept_legacy_group_schema:input["enabled"]==true})});
+                    let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();
+                    *auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
+                }
                 if query.get("operation").is_some_and(|operation|operation=="configure-verifier") {
                     let plugin=ScimPlugin::new().connections(vec![ScimConnectionOptions{id:"declared".into(),provisioning_domain_id:Some("tenant-declared".into()),credentials:vec![ScimCredential::new("static","static-token")]}]).authentication::<crate::TestSchema>(Arc::new(FixtureVerifier{inputs:verifier_inputs.clone(),claims:verifier_claims.clone()}));
                     let fresh=AuthBuilder::<crate::TestSchema>::new(config.clone()).store(crate::backend::store(config,database.clone())).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(plugin).build().await.unwrap();*auth.lock().await=Arc::new(fresh);return Json(json!({"configured":true})).into_response();
