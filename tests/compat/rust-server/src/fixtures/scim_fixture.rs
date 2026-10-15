@@ -154,11 +154,11 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 }
                 if query.get("operation").is_some_and(|operation|operation=="replaceSCIMUser") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
-                    return match auth.dispatch_endpoint(ScimPlugin::replace_user_endpoint(input["params"]["userId"].as_str().unwrap()).unwrap().with_body(&input["body"]).unwrap().with_query(&input.get("query").cloned().unwrap_or_else(||json!({}))).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+                    return match auth.dispatch_endpoint(ScimPlugin::replace_user_endpoint(input["params"]["userId"].as_str().unwrap()).unwrap().with_body_value(trusted_user_body(&input)).with_query(&input.get("query").cloned().unwrap_or_else(||json!({}))).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="createSCIMUser") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
-                    return match auth.dispatch_endpoint(ScimPlugin::create_user_endpoint().with_body(&input["body"]).unwrap().with_query(&input.get("query").cloned().unwrap_or_else(||json!({}))).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
+                    return match auth.dispatch_endpoint(ScimPlugin::create_user_endpoint().with_body_value(trusted_user_body(&input)).with_query(&input.get("query").cloned().unwrap_or_else(||json!({}))).unwrap(),EndpointOptions{headers,..Default::default()}).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
                 }
                 if query.get("operation").is_some_and(|operation|operation=="createSCIMGroup") {
                     let input:Value=serde_json::from_slice(&bytes).unwrap();let headers=input["token"].as_str().map(|token|[("authorization".into(),format!("Bearer {token}"))].into_iter().collect());
@@ -812,4 +812,23 @@ impl<S:alibi::AuthSchema> alibi::plugins::scim::ScimIdentity<S> for CreateIdenti
   Ok(Resolution::Link{user_id:user.id().to_string(),manage_profile:external=="link-manage"})
  }
  async fn reconcile_user(&self,_input:&alibi::plugins::scim::ScimIdentityState,_database:&dyn alibi::store::AuthTransaction<S>)->alibi::AuthResult<()>{Ok(())}
+}
+
+fn trusted_user_body(input: &Value) -> alibi::utils::json::JsValue {
+    use alibi::utils::json::JsValue;
+    let mut body = JsValue::from(input["body"].clone());
+    if let Some(path) = input["datePath"].as_array() {
+        let mut target = &mut body;
+        for key in path {
+            let key = key.as_str().unwrap();
+            target = match target {
+                JsValue::Object(values) => values.get_mut(key).unwrap(),
+                JsValue::Array(values) => &mut values[key.parse::<usize>().unwrap()],
+                _ => panic!("trusted fixture date path"),
+            };
+        }
+        let date = chrono::DateTime::parse_from_rfc3339(target.as_str().unwrap()).unwrap().to_utc();
+        *target = JsValue::Date(date);
+    }
+    body
 }

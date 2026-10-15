@@ -643,6 +643,11 @@ impl ScimPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         use alibi_core::AuthUser;
+        if let Some(detail) =
+            super::user_input::validation_error(call.body().unwrap_or(&JsValue::Null))
+        {
+            return Ok(error(400, &detail, Some("invalidValue")));
+        }
         let Some(profile) = call
             .body()
             .and_then(|value| value.to_json_value().ok())
@@ -650,12 +655,7 @@ impl ScimPlugin {
         else {
             return Ok(error(
                 400,
-                &super::user_input::detail(
-                    &call
-                        .body()
-                        .and_then(|value| value.to_json_value().ok())
-                        .unwrap_or(Value::Null),
-                ),
+                &super::user_input::detail(call.body().unwrap_or(&JsValue::Null)),
                 Some("invalidValue"),
             ));
         };
@@ -840,6 +840,11 @@ impl ScimPlugin {
     ) -> AuthResult<EndpointResponse> {
         use super::projection::{ScimIdentityResolution, ScimIdentityResolutionInput};
         use alibi_core::AuthUser;
+        if let Some(detail) =
+            super::user_input::validation_error(call.body().unwrap_or(&JsValue::Null))
+        {
+            return Ok(error(400, &detail, Some("invalidValue")));
+        }
         let Some(profile) = call
             .body()
             .and_then(|value| value.to_json_value().ok())
@@ -847,12 +852,7 @@ impl ScimPlugin {
         else {
             return Ok(error(
                 400,
-                &super::user_input::detail(
-                    &call
-                        .body()
-                        .and_then(|value| value.to_json_value().ok())
-                        .unwrap_or(Value::Null),
-                ),
+                &super::user_input::detail(call.body().unwrap_or(&JsValue::Null)),
                 Some("invalidValue"),
             ));
         };

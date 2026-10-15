@@ -1,6 +1,7 @@
 //! Field diagnostics for the User create/replace input shared by both transports.
 use super::user_attributes::{ENTERPRISE_SCHEMA, USER_SCHEMA};
 use alibi_core::utils::javascript::trim;
+use alibi_core::utils::json::JsValue;
 use serde_json::Value;
 
 #[derive(Default)]
@@ -12,15 +13,16 @@ impl Issues {
     fn add(&mut self, path: &str, message: impl std::fmt::Display) {
         self.messages.push(format!("[{path}] {message}"));
     }
-    fn wrong_type(&mut self, path: &str, expected: &str, value: Option<&Value>) {
+    fn wrong_type(&mut self, path: &str, expected: &str, value: Option<&JsValue>) {
         let received = match value {
             None => "undefined",
-            Some(Value::Null) => "null",
-            Some(Value::Bool(_)) => "boolean",
-            Some(Value::Number(_)) => "number",
-            Some(Value::String(_)) => "string",
-            Some(Value::Array(_)) => "array",
-            Some(Value::Object(_)) => "object",
+            Some(JsValue::Null) => "null",
+            Some(JsValue::Bool(_)) => "boolean",
+            Some(JsValue::Number(_)) => "number",
+            Some(JsValue::String(_)) => "string",
+            Some(JsValue::Date(_)) => "Date",
+            Some(JsValue::Array(_)) => "array",
+            Some(JsValue::Object(_)) => "object",
         };
         self.add(
             path,
@@ -28,8 +30,8 @@ impl Issues {
         );
         self.fatal = true;
     }
-    fn string(&mut self, path: &str, value: Option<&Value>, max: usize) {
-        let Some(value) = value.and_then(Value::as_str) else {
+    fn string(&mut self, path: &str, value: Option<&JsValue>, max: usize) {
+        let Some(value) = value.and_then(JsValue::as_str) else {
             self.wrong_type(path, "string", value);
             return;
         };
@@ -44,29 +46,29 @@ impl Issues {
             );
         }
     }
-    fn optional_strings(&mut self, value: &Value, path: &str, fields: &[(&str, usize)]) {
+    fn optional_strings(&mut self, value: &JsValue, path: &str, fields: &[(&str, usize)]) {
         for (key, max) in fields {
-            if let Some(value) = value.get(*key) {
+            if let Some(value) = value.get(key) {
                 self.string(&format!("{path}.{key}"), Some(value), *max);
             }
         }
     }
-    fn boolean(&mut self, path: &str, value: &Value) {
+    fn boolean(&mut self, path: &str, value: &JsValue) {
         if !value.is_boolean() {
             self.wrong_type(path, "boolean", Some(value));
         }
     }
-    fn scalar(&mut self, path: &str, raw: &Value, max: usize) {
+    fn scalar(&mut self, path: &str, raw: &JsValue, max: usize) {
         let value = match raw.as_array() {
             Some(values) if values.len() == 1 => values.first().unwrap_or(raw),
             _ => raw,
         };
         self.string(path, Some(value), max);
-        if value.as_array().is_some_and(Vec::is_empty) {
+        if value.as_array().is_some_and(<[JsValue]>::is_empty) {
             self.add(path, "Too small: expected array to have >=1 items");
         }
     }
-    fn complex_values(&mut self, name: &str, raw: &Value) {
+    fn complex_values(&mut self, name: &str, raw: &JsValue) {
         let path = format!("body.{name}");
         let Some(values) = raw.as_array() else {
             self.wrong_type(&path, "array", Some(raw));
@@ -82,7 +84,7 @@ impl Issues {
             }
             if name == "emails" {
                 let field = format!("{path}.value");
-                if let Some(email) = value.get("value").and_then(Value::as_str) {
+                if let Some(email) = value.get("value").and_then(JsValue::as_str) {
                     if !crate::authentication_helpers::is_valid_email(email) {
                         item.add(&field, "Invalid email address");
                     }
@@ -131,7 +133,7 @@ impl Issues {
                         "country",
                     ]
                     .iter()
-                    .any(|key| value.get(*key).is_some())
+                    .any(|key| value.get(key).is_some())
                 {
                     item.add(&path, "addresses must contain at least one address value");
                 }
@@ -149,7 +151,7 @@ impl Issues {
         if !items.fatal {
             if values
                 .iter()
-                .filter(|value| value.get("primary").and_then(Value::as_bool) == Some(true))
+                .filter(|value| value.get("primary").and_then(JsValue::as_bool) == Some(true))
                 .count()
                 > 1
             {
@@ -164,11 +166,11 @@ impl Issues {
                     !pairs.insert((
                         value
                             .get("type")
-                            .and_then(Value::as_str)
+                            .and_then(JsValue::as_str)
                             .map(|value| trim(value).to_lowercase()),
                         value
                             .get("value")
-                            .and_then(Value::as_str)
+                            .and_then(JsValue::as_str)
                             .map(|value| trim(value).to_lowercase()),
                     ))
                 }) {
@@ -181,7 +183,7 @@ impl Issues {
             let mut types = std::collections::HashSet::new();
             if values
                 .iter()
-                .filter_map(|value| value.get("type").and_then(Value::as_str))
+                .filter_map(|value| value.get("type").and_then(JsValue::as_str))
                 .any(|value| !types.insert(trim(value).to_lowercase()))
             {
                 items.add(
@@ -193,7 +195,7 @@ impl Issues {
         self.fatal |= items.fatal;
         self.messages.extend(items.messages);
     }
-    fn manager(&mut self, path: &str, raw: &Value) {
+    fn manager(&mut self, path: &str, raw: &JsValue) {
         let mut branch = Self::default();
         if raw.is_string() {
             branch.string(path, Some(raw), 256);
@@ -236,7 +238,7 @@ impl Issues {
             self.messages.extend(branch.messages);
         }
     }
-    fn enterprise(&mut self, raw: &Value) {
+    fn enterprise(&mut self, raw: &JsValue) {
         let path = format!("body.{ENTERPRISE_SCHEMA}");
         if !raw.is_object() {
             self.wrong_type(&path, "object", Some(raw));
@@ -259,15 +261,14 @@ impl Issues {
     }
 }
 
-/// Preserve field order and repeated schema issues from the pinned input schema.
-/// The canonical profile parser remains the admission owner for all attributes.
-pub(super) fn detail(raw: &Value) -> String {
+/// Preserve the schema's original SDK types, field order and repeated issues.
+pub(super) fn validation_error(raw: &JsValue) -> Option<String> {
     let mut issues = Issues::default();
     if !raw.is_object() {
         issues.wrong_type("body", "object", Some(raw));
-        return issues.messages.join("; ");
+        return Some(issues.messages.join("; "));
     }
-    if let Some(schemas) = raw.get("schemas").and_then(Value::as_array) {
+    if let Some(schemas) = raw.get("schemas").and_then(JsValue::as_array) {
         for (index, schema) in schemas.iter().enumerate() {
             if !schema.is_string() {
                 issues.wrong_type(&format!("body.schemas.{index}"), "string", Some(schema));
@@ -282,8 +283,8 @@ pub(super) fn detail(raw: &Value) -> String {
         if schemas.len() > 2 {
             issues.add("body.schemas", "Too big: expected array to have <=2 items");
         }
-        if schemas.iter().all(Value::is_string) {
-            for schema in schemas.iter().filter_map(Value::as_str) {
+        if schemas.iter().all(JsValue::is_string) {
+            for schema in schemas.iter().filter_map(JsValue::as_str) {
                 if ![USER_SCHEMA, ENTERPRISE_SCHEMA].contains(&schema) {
                     issues.add(
                         "body.schemas",
@@ -363,10 +364,10 @@ pub(super) fn detail(raw: &Value) -> String {
     if !issues.fatal
         && raw
             .get("emails")
-            .is_none_or(|value| value.as_array().is_some_and(Vec::is_empty))
+            .is_none_or(|value| value.as_array().is_some_and(<[JsValue]>::is_empty))
         && !raw
             .get("userName")
-            .and_then(Value::as_str)
+            .and_then(JsValue::as_str)
             .is_some_and(|value| {
                 let value = trim(value);
                 value.encode_utf16().count() <= 254
@@ -382,7 +383,7 @@ pub(super) fn detail(raw: &Value) -> String {
         && raw.get(ENTERPRISE_SCHEMA).is_some()
         && !raw
             .get("schemas")
-            .and_then(Value::as_array)
+            .and_then(JsValue::as_array)
             .is_some_and(|schemas| {
                 schemas
                     .iter()
@@ -394,17 +395,27 @@ pub(super) fn detail(raw: &Value) -> String {
             format_args!("The Enterprise User extension requires {ENTERPRISE_SCHEMA} in schemas"),
         );
     }
-    if !issues.fatal && serialized_size(raw).is_some_and(|size| size > 65535) {
+    if !issues.fatal
+        && raw
+            .to_json_value()
+            .ok()
+            .and_then(|raw| serialized_size(&raw))
+            .is_some_and(|size| size > 65535)
+    {
         issues.add(
             "body",
             "SCIM User attributes exceed the supported serialized size",
         );
     }
     if issues.messages.is_empty() {
-        "Invalid SCIM User attributes".into()
+        None
     } else {
-        issues.messages.join("; ")
+        Some(issues.messages.join("; "))
     }
+}
+
+pub(super) fn detail(raw: &JsValue) -> String {
+    validation_error(raw).unwrap_or_else(|| "Invalid SCIM User attributes".into())
 }
 
 /// Size of the schema's normalized input, before canonical defaults are added.
