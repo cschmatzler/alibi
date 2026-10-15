@@ -5,7 +5,104 @@ use crate::snapshot::Trace;
 use alibi::AccountConfig;
 use alibi::plugins::OAuthPopupPlugin;
 
-backend_tests!(popup_start_validates_targets_and_forwards_sign_in_options);
+backend_tests!(
+    popup_start_validates_targets_and_forwards_sign_in_options,
+    popup_server_callback_delivers_completion_and_retires_marker
+);
+postgres_tests!(popup_server_callback_delivers_completion_and_retires_marker);
+
+async fn popup_server_callback_delivers_completion_and_retires_marker<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let social = Social::start().await;
+    let auth = social
+        .auth_with::<B>(
+            &connection,
+            AccountConfig::default(),
+            |_| {},
+            |builder| builder.plugin(OAuthPopupPlugin::new()),
+        )
+        .await?;
+    social
+        .profile
+        .set("sdk-popup-sub", "sdk-popup@example.com", true);
+    for denied in [false, true] {
+        let started = start(
+            &auth,
+            &[("provider", "google"), ("callbackURL", "/sdk-popup-done")],
+        )
+        .await;
+        assert_eq!(started.status, 302);
+        let location = url::Url::parse(started.headers.get("location").unwrap())?;
+        let state = location
+            .query_pairs()
+            .find(|(name, _)| name == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        let query = if denied {
+            json!({"state":state,"error":"access_denied","error_description":"User cancelled"})
+        } else {
+            json!({"state":state,"code":"grant"})
+        };
+        let endpoint = alibi::plugins::OAuthPlugin::callback_oauth_endpoint("google", None)?
+            .with_query(&query)?;
+        let result = auth
+            .dispatch_endpoint(
+                endpoint,
+                alibi::endpoint::EndpointOptions {
+                    headers: Some([("cookie".into(), cookies(&started))].into_iter().collect()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        let completed = result.into_response()?;
+        assert_eq!(completed.status, 200);
+        let delivered = payload(&completed);
+        assert_eq!(delivered["nonce"], "nonce-1");
+        assert_eq!(delivered["targetOrigin"], ORIGIN);
+        assert!(completed.headers.get("content-security-policy").is_some());
+        assert!(
+            completed
+                .headers
+                .get_all("set-cookie")
+                .any(|value| value.contains("oauth_popup=") && value.contains("Max-Age=0"))
+        );
+        if denied {
+            assert_eq!(
+                delivered["error"],
+                json!({"code":"access_denied","description":"User cancelled"})
+            );
+            assert!(delivered.get("token").is_none());
+        } else {
+            assert_eq!(delivered["redirectTo"], "/sdk-popup-done");
+            let token = delivered["token"].as_str().unwrap();
+            assert!(
+                cookies(&completed).contains(token)
+                    || cookies(&completed).contains(
+                        &url::form_urlencoded::byte_serialize(token.as_bytes()).collect::<String>()
+                    )
+            );
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], "sdk-popup@example.com");
+        }
+        assert!(
+            auth.store()
+                .get_verification_by_identifier(&format!("auth-state:{state}"))
+                .await?
+                .is_none()
+        );
+    }
+    assert_eq!(db.count("user").await?, 1);
+    assert_eq!(db.count("session").await?, 1);
+    B::close(connection).await
+}
 
 fn payload(response: &AuthResponse) -> Value {
     let html = String::from_utf8_lossy(&response.body);

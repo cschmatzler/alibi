@@ -60,6 +60,10 @@ export async function oauthPopupFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
+      if (url.pathname === `${control}/server-callback` && request.method === "POST") {
+        const input = await request.json() as { query: any; headers: Record<string,string> };
+        return auth.api.callbackOAuth({ params: { id: "gitlab" }, query: input.query, headers: new Headers(input.headers), asResponse: true });
+      }
       if (url.pathname === `${control}/server-start` && request.method === "POST") {
         const input = (await request.json()) as { query: any };
         return (auth.api as any).oauthPopupStart({ query: input.query, asResponse: true });

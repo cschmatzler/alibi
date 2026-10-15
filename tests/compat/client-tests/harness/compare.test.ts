@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { createHash, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
+import { createHash, createHmac, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
 
 import { apiKey } from "@better-auth/api-key";
 import { betterAuth } from "better-auth";
@@ -1448,4 +1448,57 @@ test("SCIM generated locations retain their resource identity and bounded metada
   const invalid = structuredClone(right);
   invalid.traces[0]!.responseBody.meta.created = "yesterday";
   expect(compareValues(left, invalid, clock).length).toBeGreaterThan(0);
+});
+
+test("popup SDK token headers require signed issuance and a subsequent owned session read", () => {
+  const secret = "popup-header-comparator-fixture-secret";
+  const sample = (token: string, owner: string) => {
+    const signed = `${token}.${createHmac("sha256", secret).update(token).digest("base64")}`;
+    const cookie = `better-auth.session_token=${encodeURIComponent(signed)}`;
+    return {
+      value: {
+        traces: [
+          {
+            path: "/__test/oauth-popup/server-callback",
+            responseStatus: 200,
+            responseHeaders: { "set-auth-token": signed },
+          },
+          {
+            path: "/__test/profiles/oauth-popup/api/auth/get-session",
+            responseStatus: 200,
+            responseBody: { user: { id: owner }, session: { userId: owner, token } },
+          },
+        ],
+      },
+      windows: [
+        { startedAt: 0, finishedAt: 1, inputDates: {}, issuedSessionCookie: cookie },
+        { startedAt: 2, finishedAt: 3, inputDates: {}, sessionCookie: cookie },
+      ],
+    };
+  };
+  const left = sample("left-token", "left-owner");
+  const right = sample("right-token", "right-owner");
+  const proof = {
+    ...context,
+    sessionCookieSecret: secret,
+    leftRequestWindows: left.windows,
+    rightRequestWindows: right.windows,
+  };
+  expect(compareValues(left.value, right.value, proof)).toEqual([]);
+  for (const mutation of ["signature", "header", "owner", "read", "endpoint"] as const) {
+    const invalid = structuredClone(right);
+    if (mutation === "signature") invalid.windows[0]!.issuedSessionCookie += "tampered";
+    if (mutation === "header") {
+      invalid.value.traces[0]!.responseHeaders!["set-auth-token"] += "tampered";
+    }
+    if (mutation === "owner") {
+      invalid.value.traces[1]!.responseBody!.session.userId = "foreign-owner";
+    }
+    if (mutation === "read") invalid.windows[1]!.sessionCookie = "";
+    if (mutation === "endpoint") invalid.value.traces[0]!.path = "/unrelated";
+    expect(
+      compareValues(left.value, invalid.value, { ...proof, rightRequestWindows: invalid.windows })
+        .length,
+    ).toBeGreaterThan(0);
+  }
 });
