@@ -88,6 +88,8 @@ compatScenario(
                 sub: "injected",
                 at_hash: "injected",
                 email: "injected",
+                s_hash: "injected",
+                nickname: "Custom nickname",
                 custom: "receipt",
               },
             }
@@ -99,6 +101,9 @@ compatScenario(
                 sub: "injected",
                 iss: "injected",
                 cnf: { jkt: "injected" },
+                auth_time: 123,
+                acr: "injected",
+                amr: ["injected"],
                 custom: "receipt",
               },
             }
@@ -132,6 +137,9 @@ compatScenario(
         expect(payload.azp).toBe(client.client_id);
         expect(payload.custom).toBe("receipt");
         expect(payload.cnf).toBeUndefined();
+        expect(payload.auth_time).toBeUndefined();
+        expect(payload.acr).toBeUndefined();
+        expect(payload.amr).toBeUndefined();
         expect(result.refresh_token).toBeUndefined();
       } else {
         expect(result.access_token).toMatch(/^[A-Za-z]{32}$/);
@@ -175,6 +183,8 @@ compatScenario(
         expect(payload.nonce).toBe("nonce-123");
         expect(payload.custom).toBe("receipt");
         expect(payload.email).toBeUndefined();
+        expect(payload.s_hash).toBeUndefined();
+        expect(payload.nickname).toBe("Custom nickname");
         expect(payload.at_hash).toBe(
           createHash("sha512")
             .update(result.access_token)

@@ -213,6 +213,9 @@ impl OAuthProviderPlugin {
                 "exp",
                 "jti",
                 "cnf",
+                "auth_time",
+                "acr",
+                "amr",
             ] {
                 _ = payload.remove(key);
             }

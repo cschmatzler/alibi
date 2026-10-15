@@ -83,13 +83,14 @@ async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B:
         if name == "openid" {
             params.nonce = Some("nonce-123".into());
             params.id_token_claims = Some(
-                json!({"sub":"injected","at_hash":"injected","email":"injected","custom":"receipt"}),
+                json!({"sub":"injected","at_hash":"injected","email":"injected","s_hash":"injected","nickname":"Custom nickname","custom":"receipt"}),
             );
         }
         if name == "resource" {
             params.resources = Some(vec![userinfo.clone()]);
-            params.access_token_claims =
-                Some(json!({"sub":"injected","iss":"injected","custom":"receipt"}));
+            params.access_token_claims = Some(
+                json!({"sub":"injected","iss":"injected","auth_time":123,"acr":"injected","amr":["injected"],"custom":"receipt"}),
+            );
         }
         if name == "bound" {
             params.confirmation = Some(json!({"jkt":"bound-key"}));
@@ -114,6 +115,9 @@ async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B:
             assert_eq!(claims["iss"], issuer);
             assert_eq!(claims["custom"], "receipt");
             assert_eq!(claims["scope"], "email");
+            for key in ["auth_time", "acr", "amr"] {
+                assert!(claims.get(key).is_none());
+            }
         } else {
             assert_eq!(access.len(), 32);
             assert!(access.bytes().all(|byte| byte.is_ascii_alphabetic()));
@@ -171,6 +175,8 @@ async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B:
             assert_eq!(claims["nonce"], "nonce-123");
             assert_eq!(claims["custom"], "receipt");
             assert!(claims.get("email").is_none());
+            assert!(claims.get("s_hash").is_none());
+            assert_eq!(claims["nickname"], "Custom nickname");
             assert_eq!(
                 claims["at_hash"],
                 URL_SAFE_NO_PAD.encode(&sha2::Sha512::digest(access)[..32])
