@@ -224,13 +224,27 @@ async function forward(
   actor: ReturnType<ScenarioContext["actor"]>,
   issued: Awaited<ReturnType<typeof issue>>,
   cookie = false,
+  sdk = false,
 ) {
   const fixturePath = cookie ? authProfilePath("oauth-proxy-cookie") : path;
   const approved = await response(await actor.fetch(issued.authorization, { redirect: "manual" }));
   expect(approved.status).toBe(302);
 
+  const providerCallback = new URL(approved.location!);
   const forwarded = await response(
-    await actor.fetch(approved.location!, { redirect: "manual", credentials: "omit" }),
+    sdk
+      ? await actor.fetch(`${providerCallback.origin}${fixturePath}/__server-callback`, {
+          method: "POST",
+          redirect: "manual",
+          credentials: "omit",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            query: Object.fromEntries(providerCallback.searchParams),
+            body: { state: 42, code: false },
+            headers: {},
+          }),
+        })
+      : await actor.fetch(approved.location!, { redirect: "manual", credentials: "omit" }),
   );
   expect(forwarded.status).toBe(302);
 
@@ -277,8 +291,34 @@ for (const sdk of [false, true]) {
         const issued = await issue(ctx, owner, false, false, {}, sdk);
         const saved = await state(ctx);
         expect(saved.preview.verification).toHaveLength(1);
+        let receiverError;
+        if (sdk) {
+          const production = new URL(issued.authorization.searchParams.get("redirect_uri")!).origin;
+          receiverError = await response(
+            await owner.fetch(`${production}${path}/__server-callback`, {
+              method: "POST",
+              redirect: "manual",
+              credentials: "omit",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                query: {
+                  state: issued.authorization.searchParams.get("state"),
+                  error: "access_denied",
+                },
+                body: { state: 42 },
+                headers: {},
+              }),
+            }),
+          );
+          expect(receiverError).toEqual({
+            status: 302,
+            location: `${ctx.baseURL}/proxy-error?error=access_denied`,
+            body: "",
+          });
+          expect(await state(ctx)).toEqual(saved);
+        }
 
-        const forwarded = await forward(ctx, owner, issued);
+        const forwarded = await forward(ctx, owner, issued, false, sdk);
         const production = await state(ctx);
         expect(production.production).toEqual(before.production);
         expect(production.preview).toEqual(saved.preview);
@@ -362,6 +402,7 @@ for (const sdk of [false, true]) {
           started: issued.started,
           issuedState: issued.issuedState,
           issued: observations(saved),
+          receiverError,
           approved: forwarded.approved,
           forwarded: forwarded.forwarded,
           oauthProxyProfile: forwarded.atom,
@@ -549,7 +590,7 @@ for (const sdk of [false, true]) {
       const before = await state(ctx);
       const issued = await issue(ctx, owner, true, false, {}, sdk, sdkCookie);
       const saved = await state(ctx);
-      const forwarded = await forward(ctx, owner, issued);
+      const forwarded = await forward(ctx, owner, issued, false, sdk);
       const completed = await response(
         await owner.fetch(forwarded.bridge, { redirect: "manual", credentials: "omit" }),
       );

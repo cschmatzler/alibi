@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
 
+import { isAPIError } from "@better-auth/core/utils/is-api-error";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
@@ -341,6 +342,17 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
 
+      if (url.pathname === `${path}/__server-callback` && request.method === "POST") {
+        const origin = databases.has(url.origin) ? url.origin : preview;
+        const input = await request.json();
+        const api = instances.get(`${origin}:${modes.get(origin)}`)!.api;
+        try {
+          return await api.callbackOAuth({ params: {id: "gitlab"}, body: input.body, query: input.query, headers: new Headers(input.headers), asResponse: true });
+        } catch (error) {
+          if (isAPIError(error)) return new Response(null, {status: error.statusCode, headers: error.headers});
+          throw error;
+        }
+      }
       if (url.pathname === `${path}/__server-social` && request.method === "POST") {
         const origin = databases.has(url.origin) ? url.origin : preview;
         const input = await request.json();
