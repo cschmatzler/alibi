@@ -228,11 +228,7 @@ impl OAuthProviderPlugin {
                 .collect::<String>()
         };
         let scopes = scope.split(' ').collect::<Vec<_>>();
-        let refresh_allowed = client
-            .metadata
-            .get("grant_types")
-            .and_then(Value::as_array)
-            .is_none_or(|grants| grants.iter().any(|g| g == "refresh_token"));
+        let refresh_allowed = super::authentication::client_allows_grant(&client, "refresh_token");
         let resources = value
             .get("resource")
             .filter(|value| value.as_array().is_none_or(|values| !values.is_empty()))

@@ -79,12 +79,7 @@ impl OAuthProviderPlugin {
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
         }
-        if client
-            .metadata
-            .get("grant_types")
-            .and_then(Value::as_array)
-            .is_some_and(|grants| !grants.iter().any(|grant| grant == "refresh_token"))
-        {
+        if !super::authentication::client_allows_grant(&client, "refresh_token") {
             return error(
                 "unauthorized_client",
                 "client is not authorized to use grant type refresh_token",
