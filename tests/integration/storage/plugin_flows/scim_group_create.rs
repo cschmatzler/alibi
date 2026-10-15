@@ -4,11 +4,13 @@ use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
 backend_tests!(
     scim_group_create_persists_members_and_rolls_back_invalid_ownership,
-    scim_group_input_preserves_schema_order_and_member_type_diagnostics
+    scim_group_input_preserves_schema_order_and_member_type_diagnostics,
+    scim_group_sdk_nan_preserves_diagnostic_type
 );
 postgres_tests!(
     scim_group_create_persists_members_and_rolls_back_invalid_ownership,
-    scim_group_input_preserves_schema_order_and_member_type_diagnostics
+    scim_group_input_preserves_schema_order_and_member_type_diagnostics,
+    scim_group_sdk_nan_preserves_diagnostic_type
 );
 pub(super) async fn create<S: AuthSchema>(
     auth: &Alibi<S>,
@@ -340,6 +342,102 @@ async fn scim_group_input_preserves_schema_order_and_member_type_diagnostics<B: 
         "scimConnectionBinding",
     ] {
         assert_eq!(db.table(table).await?, "[]");
+    }
+    B::close(connection).await
+}
+
+async fn scim_group_sdk_nan_preserves_diagnostic_type<B: Backend>(db: Db) -> TestResult {
+    use alibi::utils::json::JsValue;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    for (number, kind) in [
+        (f64::NAN, "NaN"),
+        (f64::INFINITY, "Infinity"),
+        (f64::NEG_INFINITY, "-Infinity"),
+        (42.0, "number"),
+    ] {
+        for (extra, path, field) in [
+            (
+                json!({"externalId":null}),
+                vec!["externalId"],
+                Some("externalId"),
+            ),
+            (
+                json!({"displayName":null}),
+                vec!["displayName"],
+                Some("displayName"),
+            ),
+            (
+                json!({"members":[{"value":null}]}),
+                vec!["members", "0", "value"],
+                Some("members.0.value"),
+            ),
+            (
+                json!({"members":[{"value":"member","type":null}]}),
+                vec!["members", "0", "type"],
+                Some("members.0.type"),
+            ),
+            (json!({"ignored":null}), vec!["ignored"], None),
+        ] {
+            let mut input = json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:Group"],"displayName":"Group"});
+            input
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let mut input = JsValue::from(input);
+            let mut target = &mut input;
+            for key in path {
+                target = match target {
+                    JsValue::Object(values) => values.get_mut(key).unwrap(),
+                    JsValue::Array(values) => &mut values[key.parse::<usize>().unwrap()],
+                    _ => panic!("trusted numeric path"),
+                };
+            }
+            *target = JsValue::Number(number);
+            for endpoint in [
+                ScimPlugin::create_group_endpoint(),
+                ScimPlugin::replace_group_endpoint("missing")?,
+            ] {
+                let rejected = auth
+                    .dispatch_endpoint(
+                        endpoint.with_body_value(input.clone()),
+                        EndpointOptions::default(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert_eq!(
+                    rejected.error.status_code(),
+                    if field.is_some() { 400 } else { 401 }
+                );
+                if let Some(field) = field {
+                    assert_eq!(
+                        rejected
+                            .body
+                            .as_deref()
+                            .unwrap()
+                            .get("detail")
+                            .and_then(JsValue::as_str),
+                        Some(
+                            format!(
+                                "[body.{field}] Invalid input: expected string, received {kind}"
+                            )
+                            .as_str()
+                        )
+                    );
+                }
+            }
+        }
+    }
+    for table in [
+        "user",
+        "scimGroup",
+        "scimGroupMember",
+        "scimConnectionBinding",
+    ] {
+        assert_eq!(db.count(table).await?, 0);
     }
     B::close(connection).await
 }

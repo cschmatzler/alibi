@@ -342,7 +342,7 @@ export async function scimFixture(base: BetterAuthOptions) {
         const input = (await request.json()) as any;
         return auth.api.replaceSCIMGroup({
           params: input.params,
-          body: input.body,
+          body: trustedUserBody(input),
           query: input.query,
           headers:
             input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
@@ -450,7 +450,7 @@ export async function scimFixture(base: BetterAuthOptions) {
       if (query.get("operation") === "createSCIMGroup") {
         const input = (await request.json()) as any;
         return auth.api.createSCIMGroup({
-          body: input.body,
+          body: trustedUserBody(input),
           query: input.query,
           headers:
             input.token === undefined ? undefined : { authorization: `Bearer ${input.token}` },
