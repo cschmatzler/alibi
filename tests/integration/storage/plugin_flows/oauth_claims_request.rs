@@ -139,5 +139,102 @@ async fn oauth_claims_request_validates_and_captures_userinfo_names<B: Backend>(
         );
         assert!(target.query_pairs().all(|(key, _)| key != "code"));
     }
+    let updated = Box::pin(
+        auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", "adminUpdateOAuthClient")
+                .with_body(&json!({"client_id":id,"update":{"skip_consent":false}}))?,
+            EndpointOptions {
+                headers: Some(headers.clone()),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    assert_eq!(updated.status, 200);
+    let base_query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"openid","state":"claims-consent","code_challenge":challenge,"code_challenge_method":"S256"});
+    let initial = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_authorize_endpoint(&base_query)?,
+        authorization_options(),
+    ))
+    .await?
+    .into_response()?;
+    let consent_url = url::Url::parse(&format!(
+        "{}{}",
+        auth.config().base_url,
+        body(&initial)["url"].as_str().unwrap()
+    ))?;
+    let consent_options = || EndpointOptions {
+        headers: Some(headers.clone()),
+        request: Some(
+            alibi::AuthRequest::new(
+                alibi::HttpMethod::Post,
+                format!("{}/oauth2/consent", auth.config().base_path),
+            )
+            .with_url(
+                format!(
+                    "{}{}/oauth2/consent",
+                    auth.config().base_url.trim_end_matches('/'),
+                    auth.config().base_path
+                )
+                .parse()
+                .unwrap(),
+            ),
+        ),
+        ..Default::default()
+    };
+    let bootstrap = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, consent_url.query())?,
+        consent_options(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(bootstrap.status, 200);
+    let mut incremental = base_query.clone();
+    incremental["claims"] = json!({"userinfo":{"email":null,"family_name":null}});
+    incremental["prompt"] = json!("none");
+    let denied = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_authorize_endpoint(&incremental)?,
+        authorization_options(),
+    ))
+    .await?
+    .into_response()?;
+    let target = url::Url::parse(body(&denied)["url"].as_str().unwrap())?;
+    assert_eq!(
+        target
+            .query_pairs()
+            .find(|(key, _)| key == "error")
+            .unwrap()
+            .1,
+        "consent_required"
+    );
+    assert!(target.query_pairs().all(|(key, _)| key != "code"));
+    _ = incremental.as_object_mut().unwrap().remove("prompt");
+    let pending = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_authorize_endpoint(&incremental)?,
+        authorization_options(),
+    ))
+    .await?
+    .into_response()?;
+    let target = url::Url::parse(&format!(
+        "{}{}",
+        auth.config().base_url,
+        body(&pending)["url"].as_str().unwrap()
+    ))?;
+    let subset=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Consent").with_body(&json!({"accept":true,"oauth_query":target.query().unwrap(),"claims":{"userinfo":{"email":null}}}))?,consent_options())).await?.into_response()?;
+    assert_eq!(subset.status, 200);
+    let records = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::get_oauth_consents_endpoint(),
+        EndpointOptions {
+            headers: Some(headers),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(
+        body(&records)[0]["requestedUserInfoClaims"],
+        json!(["email"])
+    );
     Ok(())
 }

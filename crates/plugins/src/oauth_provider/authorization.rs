@@ -246,7 +246,7 @@ impl OAuthProviderPlugin {
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
             );
         }
-        if let Some(claims) = query.get("claims") {
+        let requested_user_info_claims = if let Some(claims) = query.get("claims") {
             if !requested.contains(&"openid") {
                 return admission_error(
                     "invalid_request",
@@ -262,7 +262,15 @@ impl OAuthProviderPlugin {
             if !claims.acr_satisfied {
                 return admission_error("access_denied", "essential acr requirement cannot be met");
             }
-        }
+            let supported = self.supported_claims();
+            claims
+                .user_info
+                .into_iter()
+                .filter(|name| supported.contains(name))
+                .collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
         if query
             .get("resource")
             .is_some_and(|value| !value.is_string() && !value.is_array())
@@ -348,6 +356,15 @@ impl OAuthProviderPlugin {
                 .into_iter()
                 .any(|consent| {
                     consent.client_id == client_id
+                        && requested_user_info_claims.iter().all(|name| {
+                            consent
+                                .metadata
+                                .get("requestedUserInfoClaims")
+                                .and_then(Value::as_array)
+                                .is_some_and(|names| {
+                                    names.iter().any(|value| value.as_str() == Some(name))
+                                })
+                        })
                         && scope.split(' ').all(|scope| {
                             consent
                                 .metadata

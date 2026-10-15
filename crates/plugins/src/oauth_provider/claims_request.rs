@@ -4,6 +4,7 @@ use alibi_core::utils::json::JsValue;
 use serde_json::Value;
 
 pub(super) struct ClaimsRequest {
+    value: JsValue,
     pub user_info: Vec<String>,
     pub acr_satisfied: bool,
 }
@@ -60,9 +61,25 @@ pub(super) fn parse(value: &Value) -> Option<ClaimsRequest> {
         }
     }
     Some(ClaimsRequest {
+        value: parsed,
         user_info,
         acr_satisfied,
     })
+}
+pub(super) fn filter_user_info(value: &Value, accepted: &[String]) -> Option<Value> {
+    let JsValue::Object(mut object) = parse(value)?.value else {
+        return None;
+    };
+    if let Some(JsValue::Object(members)) = object.get_mut("userinfo") {
+        members.retain(|name, _| accepted.contains(name));
+        if members.is_empty() {
+            _ = object.shift_remove("userinfo");
+        }
+    }
+    if object.is_empty() {
+        return None;
+    }
+    JsValue::Object(object).to_json_value().ok()
 }
 impl OAuthProviderPlugin {
     pub(super) fn supported_claims(&self) -> Vec<String> {

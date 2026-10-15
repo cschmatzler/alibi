@@ -10,9 +10,10 @@ pub(super) struct ConsentInput {
     accept: bool,
     scope: Option<String>,
     oauth_query: Option<String>,
+    claims: Option<Value>,
 }
 pub(super) fn validate(body: Option<&JsValue>) -> AuthResult<JsValue> {
-    crate::endpoint::validate_fields(
+    let mut output = crate::endpoint::validate_fields(
         body,
         "body",
         &[
@@ -24,7 +25,19 @@ pub(super) fn validate(body: Option<&JsValue>) -> AuthResult<JsValue> {
             crate::authentication_helpers::JsonField::string("scope", false),
             crate::authentication_helpers::JsonField::string("oauth_query", false),
         ],
-    )
+    )?;
+    if let Some(claims) = body.and_then(|value| value.get("claims")) {
+        let value = claims.to_json_value()?;
+        if super::claims_request::parse(&value).is_none() {
+            return Err(crate::endpoint::validation(
+                "[body.claims] claims must be a valid Claims request object".into(),
+            ));
+        }
+        if let JsValue::Object(object) = &mut output {
+            _ = object.insert("claims".into(), claims.clone());
+        }
+    }
+    Ok(output)
 }
 impl OAuthProviderPlugin {
     /// Accept or deny a provider-issued authorization request as the current user.
@@ -101,6 +114,40 @@ impl OAuthProviderPlugin {
                 "Scope not originally requested",
             );
         }
+        let supported = self.supported_claims();
+        let requested_claims = query
+            .get("claims")
+            .and_then(super::claims_request::parse)
+            .map(|request| {
+                request
+                    .user_info
+                    .into_iter()
+                    .filter(|name| supported.contains(name))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let accepted_claims = input
+            .claims
+            .as_ref()
+            .and_then(super::claims_request::parse)
+            .map(|request| {
+                request
+                    .user_info
+                    .into_iter()
+                    .filter(|name| supported.contains(name))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_else(|| requested_claims.clone());
+        if !accepted_claims
+            .iter()
+            .all(|name| requested_claims.contains(name))
+        {
+            return super::clients::status_protocol_error(
+                400,
+                "invalid_request",
+                "Claim not originally requested",
+            );
+        }
         if !input.accept {
             let redirect = query
                 .get("redirect_uri")
@@ -147,7 +194,7 @@ impl OAuthProviderPlugin {
                 json!([value])
             }
         });
-        let metadata = json!({"scopes":accepted,"requestedUserInfoClaims":[],"resources":resource,"referenceId":null});
+        let metadata = json!({"scopes":accepted,"requestedUserInfoClaims":accepted_claims,"resources":resource,"referenceId":null});
         let existing = ctx
             .database
             .list_oauth_consents_by_user(user.id().as_ref())
@@ -169,6 +216,17 @@ impl OAuthProviderPlugin {
                     created_at: now,
                 })
                 .await?;
+        }
+        if input.claims.is_some()
+            && let Some(original) = query.get("claims")
+        {
+            if let Some(filtered) =
+                super::claims_request::filter_user_info(original, &accepted_claims)
+            {
+                _ = query.insert("claims".into(), json!(serde_json::to_string(&filtered)?));
+            } else {
+                _ = query.remove("claims");
+            }
         }
         if input.scope.is_some() {
             _ = query.insert("scope".into(), json!(accepted.join(" ")));
