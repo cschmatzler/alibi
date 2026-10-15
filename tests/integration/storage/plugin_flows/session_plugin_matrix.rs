@@ -550,7 +550,7 @@ impl<S: AuthSchema> SessionTransform<S> for Projection {
     async fn transform(
         &self,
         session: Value,
-        _: &AuthRequest,
+        _: &alibi::plugins::SessionTransformContext,
         _: &AuthContext<S>,
     ) -> AuthResult<Value> {
         let mode = *self.0.lock().unwrap();

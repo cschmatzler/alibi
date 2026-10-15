@@ -554,3 +554,5 @@ mod scim_user_patch;
 mod organization_feature_surface;
 
 mod server_bearer;
+
+mod server_custom_session;

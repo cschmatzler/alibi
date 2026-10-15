@@ -270,7 +270,7 @@ pub use api_key::{
 };
 pub use bearer::{BearerConfig, BearerPlugin};
 pub use captcha::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
-pub use custom_session::{CustomSessionPlugin, SessionTransform};
+pub use custom_session::{CustomSessionPlugin, SessionTransform, SessionTransformContext};
 pub use device_authorization::DeviceAuthorizationPlugin;
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};

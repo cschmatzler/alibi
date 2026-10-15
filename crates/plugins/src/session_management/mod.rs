@@ -331,6 +331,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
             };
             return EndpointResponse::json(&response);
         }
+        if super::custom_session::configured(ctx) {
+            return super::custom_session::project_endpoint(call, ctx).await;
+        }
         let response = match self.get_session_response(call, ctx).await {
             Ok(value) => EndpointResponse::json(&value)?,
             Err(error) => EndpointResponse::error(error),
@@ -646,6 +649,16 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        if super::custom_session::configured(ctx) {
+            return super::custom_session::project_http(req, ctx).await;
+        }
+        self.handle_base_get_session(req, ctx).await
+    }
+    pub(crate) async fn handle_base_get_session(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
         let response = match self.get_session_response(req, ctx).await {
             Ok(response) => AuthResponse::json(200, &response)?,
             Err(error) => error.to_auth_response(),
@@ -655,7 +668,7 @@ impl SessionManagementPlugin {
             .with_header("pragma", "no-cache"))
     }
 
-    async fn get_session_response(
+    pub(crate) async fn get_session_response(
         &self,
         req: &impl SessionRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,

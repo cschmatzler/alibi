@@ -186,7 +186,12 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
 struct Projection;
 #[async_trait]
 impl<S: AuthSchema> SessionTransform<S> for Projection {
-    async fn transform(&self, _: Value, _: &AuthRequest, _: &AuthContext<S>) -> AuthResult<Value> {
+    async fn transform(
+        &self,
+        _: Value,
+        _: &alibi::plugins::SessionTransformContext,
+        _: &AuthContext<S>,
+    ) -> AuthResult<Value> {
         Ok(json!({"user":{"id":"presentation-only","email":"display@example.test"},"custom":true}))
     }
 }
