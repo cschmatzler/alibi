@@ -2227,21 +2227,6 @@ fn group_creation_body(
             crate::authentication_helpers::json_type(value)
         )),
     }
-    let name = if let Some(value) = body.get("displayName").and_then(JsValue::as_str) {
-        let name = trim(value);
-        if name.is_empty() {
-            errors.push(
-                "[body.displayName] Too small: expected string to have >=1 characters".into(),
-            );
-        }
-        name.to_owned()
-    } else {
-        errors.push(format!(
-            "[body.displayName] Invalid input: expected string, received {}",
-            crate::authentication_helpers::json_type(body.get("displayName"))
-        ));
-        String::new()
-    };
     let external = match body.get("externalId") {
         None => None,
         Some(JsValue::String(value)) => {
@@ -2259,6 +2244,21 @@ fn group_creation_body(
             ));
             None
         }
+    };
+    let name = if let Some(value) = body.get("displayName").and_then(JsValue::as_str) {
+        let name = trim(value);
+        if name.is_empty() {
+            errors.push(
+                "[body.displayName] Too small: expected string to have >=1 characters".into(),
+            );
+        }
+        name.to_owned()
+    } else {
+        errors.push(format!(
+            "[body.displayName] Invalid input: expected string, received {}",
+            crate::authentication_helpers::json_type(body.get("displayName"))
+        ));
+        String::new()
     };
     let mut members = Vec::new();
     match body.get("members") {
@@ -2282,12 +2282,15 @@ fn group_creation_body(
                     None => errors.push(format!("[body.members.{index}.value] Invalid input: expected string, received {}",crate::authentication_helpers::json_type(member.get("value")))),
                 }
 
-                if let Some(value) = member.get("type")
-                    && !value
-                        .as_str()
-                        .is_some_and(|value| value.eq_ignore_ascii_case("user"))
-                {
-                    errors.push(format!("[body.members.{index}.type] Invalid input"));
+                if let Some(value) = member.get("type") {
+                    match value.as_str() {
+                        Some(value) if value.eq_ignore_ascii_case("user") => {}
+                        Some(_) => errors.push(format!("[body.members.{index}.type] Invalid input")),
+                        None => errors.push(format!(
+                            "[body.members.{index}.type] Invalid input: expected string, received {}",
+                            crate::authentication_helpers::json_type(Some(value))
+                        )),
+                    }
                 }
             }
             if values.len() > 1000 {

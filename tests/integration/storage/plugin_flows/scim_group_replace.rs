@@ -6,7 +6,7 @@ use alibi::plugins::ScimPlugin;
 use std::sync::atomic::{AtomicBool, Ordering};
 backend_tests!(scim_group_replace_preserves_retained_members_and_clears_omitted_fields);
 postgres_tests!(scim_group_replace_preserves_retained_members_and_clears_omitted_fields);
-async fn replace<S: AuthSchema>(
+pub(super) async fn replace<S: AuthSchema>(
     auth: &Alibi<S>,
     id: &str,
     value: &Value,

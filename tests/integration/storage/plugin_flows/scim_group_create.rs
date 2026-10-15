@@ -2,8 +2,14 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, EndpointResponse};
 use alibi::plugins::ScimPlugin;
-backend_tests!(scim_group_create_persists_members_and_rolls_back_invalid_ownership);
-postgres_tests!(scim_group_create_persists_members_and_rolls_back_invalid_ownership);
+backend_tests!(
+    scim_group_create_persists_members_and_rolls_back_invalid_ownership,
+    scim_group_input_preserves_schema_order_and_member_type_diagnostics
+);
+postgres_tests!(
+    scim_group_create_persists_members_and_rolls_back_invalid_ownership,
+    scim_group_input_preserves_schema_order_and_member_type_diagnostics
+);
 pub(super) async fn create<S: AuthSchema>(
     auth: &Alibi<S>,
     value: &Value,
@@ -285,4 +291,55 @@ pub(super) async fn seed<S: AuthSchema>(db: &Db, auth: &Alibi<S>) -> TestResult 
         _=db.execute("INSERT INTO \"scimUser\" (\"id\",\"connectionId\",\"provisioningDomainId\",\"userId\",\"connectionUserKey\",\"userName\",\"userNameKey\",\"primaryEmail\",\"workEmailValueIndex\",\"emailValueIndex\",\"displayName\",\"formattedName\",\"serializedEmails\",\"active\",\"orderKey\",\"createdAt\",\"updatedAt\") VALUES ($1,$2,$3,$4,$1,$1,$1,'group-create-owner@example.com','[]','[]',$5,$5,'[]',false,$1,'2026-01-02T03:04:05.000Z','2026-01-02T03:04:05.000Z')",&[id,cid,domain,uid,display]).await?;
     }
     Ok(())
+}
+
+async fn scim_group_input_preserves_schema_order_and_member_type_diagnostics<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let schema = "urn:ietf:params:scim:schemas:core:2.0:Group";
+    let mut cases = vec![
+        (json!({"schemas":[schema],"externalId":false,"displayName":0}), "[body.externalId] Invalid input: expected string, received boolean; [body.displayName] Invalid input: expected string, received number".to_owned()),
+        (json!({"schemas":[schema],"externalId":"","displayName":" "}), "[body.externalId] Too small: expected string to have >=1 characters; [body.displayName] Too small: expected string to have >=1 characters".to_owned()),
+    ];
+    for (value, kind) in [
+        (json!(42), "number"),
+        (json!(null), "null"),
+        (json!(false), "boolean"),
+        (json!([]), "array"),
+        (json!({}), "object"),
+    ] {
+        cases.push((json!({"schemas":[schema],"displayName":"Group","members":[{"value":"member","type":value}]}), format!("[body.members.0.type] Invalid input: expected string, received {kind}")));
+    }
+    for (input, detail) in cases {
+        for response in [
+            create(&auth, &input, &json!({}), None).await?,
+            super::scim_group_replace::replace(&auth, "missing", &input, &json!({}), None).await?,
+        ] {
+            assert_eq!(response.status, 400);
+            assert_eq!(body(&response)["detail"], detail);
+            assert_eq!(body(&response)["scimType"], "invalidValue");
+        }
+    }
+    let valid = json!({"schemas":[schema],"displayName":"Group","members":[{"value":"member","type":"USER"}]});
+    assert_eq!(create(&auth, &valid, &json!({}), None).await?.status, 401);
+    assert_eq!(
+        super::scim_group_replace::replace(&auth, "missing", &valid, &json!({}), None)
+            .await?
+            .status,
+        401
+    );
+    for table in [
+        "user",
+        "scimGroup",
+        "scimGroupMember",
+        "scimConnectionBinding",
+    ] {
+        assert_eq!(db.table(table).await?, "[]");
+    }
+    B::close(connection).await
 }
