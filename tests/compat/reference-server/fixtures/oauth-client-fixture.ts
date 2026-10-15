@@ -13,8 +13,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   };
   await (await getMigrations(options)).runMigrations();
   let generatedSecrets = 0;
+  let encryptedGeneratedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "encrypted-generator": betterAuth({
+      ...options,
+      plugins: [username(), oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,generateClientSecret:()=>`operator-secret-${++encryptedGeneratedSecrets}`})],
+    }),
     generated: betterAuth({
       ...options,
       plugins: [username(), jwt(), oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>`operator-secret-${++generatedSecrets}`})],

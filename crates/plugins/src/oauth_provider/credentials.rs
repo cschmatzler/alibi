@@ -6,6 +6,7 @@ use alibi_core::{AuthContext, AuthResult, AuthSchema};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
+use subtle::ConstantTimeEq;
 pub(super) struct Credentials {
     pub(super) client_id: String,
     pub(super) secret: String,
@@ -68,6 +69,7 @@ impl Credentials {
     pub(super) async fn authenticate<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
+        config: &super::OAuthProviderConfig,
     ) -> AuthResult<Result<OAuthClient, EndpointResponse>> {
         let Some(client) = ctx.database.get_oauth_client(&self.client_id).await? else {
             return Ok(Err(self.denied("missing client")?));
@@ -94,11 +96,20 @@ impl Credentials {
                 self.denied("public client, client secret should not be received")?
             ));
         }
-        if !self.secret.is_empty()
-            && client.client_secret.as_deref()
-                != Some(&URL_SAFE_NO_PAD.encode(Sha256::digest(&self.secret)))
-        {
-            return Ok(Err(self.denied("invalid client_secret")?));
+        if !self.secret.is_empty() {
+            let valid = client.client_secret.as_deref().is_some_and(|stored| {
+                if config.disable_jwt_plugin {
+                    crate::token_crypto::decrypt_with_config(stored, &ctx.config).is_ok_and(
+                        |plaintext| bool::from(plaintext.as_bytes().ct_eq(self.secret.as_bytes())),
+                    )
+                } else {
+                    let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(&self.secret));
+                    bool::from(hash.as_bytes().ct_eq(stored.as_bytes()))
+                }
+            });
+            if !valid {
+                return Ok(Err(self.denied("invalid client_secret")?));
+            }
         }
         Ok(Ok(client))
     }

@@ -110,7 +110,7 @@ impl OAuthProviderPlugin {
         let Some(scope) = query.get("scope").unwrap_or(&Value::Null).as_str() else {
             return error(500, "invalid_scope", "verification scope unset");
         };
-        let client = match credentials.authenticate(ctx).await? {
+        let client = match credentials.authenticate(ctx, &self.config).await? {
             Ok(client) => client,
             Err(response) => {
                 return Ok(response
