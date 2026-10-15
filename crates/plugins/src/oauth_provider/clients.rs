@@ -179,32 +179,9 @@ fn raw_http_host(uri: &str) -> Option<String> {
     }
 }
 fn private_host(host: &str) -> bool {
-    let host = host.trim_matches(['[', ']']).trim_end_matches('.');
-    if host.eq_ignore_ascii_case("localhost")
-        || host.to_ascii_lowercase().ends_with(".localhost")
-        || !host.contains('.')
-    {
-        return true;
-    }
-    host.parse::<std::net::IpAddr>().is_ok_and(|ip| match ip {
-        std::net::IpAddr::V4(ip) => {
-            ip.is_private()
-                || ip.is_loopback()
-                || ip.is_link_local()
-                || ip.is_unspecified()
-                || ip.is_broadcast()
-                || ip.is_documentation()
-                || ip.is_multicast()
-        }
-        std::net::IpAddr::V6(ip) => {
-            ip.is_loopback()
-                || ip.is_unspecified()
-                || ip.is_unique_local()
-                || ip.is_unicast_link_local()
-                || ip.is_multicast()
-        }
-    })
+    !crate::sso::endpoint_host::public(host)
 }
+
 fn remote_key_uri_error<S: AuthSchema>(uri: &str, ctx: &AuthContext<S>) -> Option<String> {
     let Ok(url) = url::Url::parse(uri) else {
         return Some("jwks_uri must be a valid URL".into());

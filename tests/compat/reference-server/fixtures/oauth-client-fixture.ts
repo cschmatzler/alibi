@@ -46,6 +46,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    "uri-host": betterAuth({...options,trustedOrigins:["https://*"]}),
     discovered: betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"registry-managed",extensions:[{clientDiscovery:registryDiscoveries}]})]}),
     "assertion-helper": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),
     "assertion-helper-peer": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent"}),assertionHelper]}),

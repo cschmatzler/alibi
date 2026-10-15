@@ -5,9 +5,13 @@ use base64::Engine;
 use sha2::Digest;
 backend_tests!(
     oauth_client_creation_persists_owned_metadata_and_protected_secret,
-    oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output
+    oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output,
+    oauth_client_uri_hosts_follow_reference_public_routability
 );
-postgres_tests!(oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output);
+postgres_tests!(
+    oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_output,
+    oauth_client_uri_hosts_follow_reference_public_routability
+);
 #[derive(Debug)]
 struct OperatorClientIds {
     calls: Arc<std::sync::atomic::AtomicUsize>,
@@ -292,6 +296,114 @@ async fn oauth_client_id_generator_controls_persisted_ids_and_preserves_empty_ou
             assert_eq!(body(&public)["client_id"], "operator-client-2");
             assert!(body(&public).get("client_secret").is_none());
             assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        }
+    }
+    B::close(connection).await
+}
+
+async fn oauth_client_uri_hosts_follow_reference_public_routability<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::endpoint::{EndpointOptions, EndpointResponse, ServerEndpoint};
+    let hosts = [
+        "100.64.0.1",
+        "198.18.0.1",
+        "192.0.0.9",
+        "192.88.99.1",
+        "240.0.0.1",
+        "metadata.google.internal",
+        "instance-data.ec2.internal",
+        "[::ffff:127.0.0.1]",
+        "[64:ff9b::a00:1]",
+        "[2002:a00:1::]",
+        "[3fff::1]",
+        "[5f00::1]",
+        "8.8.8.8",
+        "[2001:4860:4860::8888]",
+        "keys.fixture.test",
+        "external",
+    ];
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .trusted_origin("https://*");
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "uri-host-owner@example.test").await;
+    for (index, host) in hosts.iter().enumerate() {
+        for field in ["jwks_uri", "backchannel_logout_uri"] {
+            let uri = format!("https://{host}/keys");
+            let mut input = json!({"client_name":"URI host","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":if field=="jwks_uri"{"private_key_jwt"}else{"none"}});
+            input[field] = json!(uri);
+            let before = db
+                .tables(&[
+                    "oauthClient",
+                    "oauthClientAssertion",
+                    "oauthAccessToken",
+                    "oauthRefreshToken",
+                ])
+                .await?;
+            let outcome = Box::pin(
+                auth.dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("oauth-provider", "createOAuthClient")
+                        .with_body(&input)?,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                        ..Default::default()
+                    },
+                ),
+            )
+            .await;
+            let response = match outcome {
+                Ok(output) => output.into_response()?,
+                Err(error) => {
+                    let mut response = EndpointResponse::error(error.error);
+                    if let Some(body) = error.body {
+                        response = response.with_error_body(*body);
+                    }
+                    response.to_response()?
+                }
+            };
+            let allowed = index >= 12;
+            assert_eq!(
+                response.status,
+                if allowed { 201 } else { 400 },
+                "{field}: {host}: {}",
+                body(&response)
+            );
+            if allowed {
+                let client = body(&response);
+                assert_eq!(client[field], uri);
+                assert!(client.get("client_secret").is_none());
+                let row = auth
+                    .store()
+                    .get_oauth_client(client["client_id"].as_str().unwrap())
+                    .await?
+                    .unwrap();
+                assert_eq!(row.metadata[field], uri);
+            } else {
+                assert_eq!(
+                    body(&response),
+                    json!({"error":"invalid_client_metadata","error_description":format!("{field} must not point to a private or reserved address")})
+                );
+                assert_eq!(
+                    db.tables(&[
+                        "oauthClient",
+                        "oauthClientAssertion",
+                        "oauthAccessToken",
+                        "oauthRefreshToken"
+                    ])
+                    .await?,
+                    before
+                );
+            }
         }
     }
     B::close(connection).await

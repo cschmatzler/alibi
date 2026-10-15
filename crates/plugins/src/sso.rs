@@ -8,7 +8,7 @@ mod domain_confirmation;
 mod domain_verification;
 mod domains;
 mod encryption_algorithms;
-mod endpoint_host;
+pub(crate) mod endpoint_host;
 pub use encryption_algorithms::SsoSamlEncryptionPolicy;
 mod hooks;
 mod idp_metadata_validation;

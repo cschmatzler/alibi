@@ -1,6 +1,6 @@
 //! Literal host admission matching the reference's public-routability policy.
 use std::net::{IpAddr, Ipv4Addr};
-pub(super) fn public(host: &str) -> bool {
+pub(crate) fn public(host: &str) -> bool {
     let normalized = host
         .trim_matches(['[', ']'])
         .trim_end_matches('.')
