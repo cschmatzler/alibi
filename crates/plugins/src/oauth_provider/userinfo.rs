@@ -4,7 +4,7 @@ use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
 use alibi_core::store::{OAuthToken, OAuthTokenKind};
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthResult, AuthSchema, AuthSession, HttpMethod};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession, HttpMethod};
 use serde_json::{Value, json};
 /// The shared access-token liveness gate used by public protocol consumers.
 pub(super) async fn live_access<S: AuthSchema>(
@@ -69,22 +69,8 @@ impl OAuthProviderPlugin {
         let header = headers
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-            .map(|(_, value)| value.trim())
-            .filter(|value| !value.is_empty());
-        let authorization = header.map(|value| {
-            let index = value.find(char::is_whitespace);
-            if let Some(index) = index {
-                let (scheme, rest) = value.split_at(index);
-                let rest = rest.trim();
-                if scheme.eq_ignore_ascii_case("Bearer") {
-                    return (rest, "Bearer");
-                }
-                if scheme.eq_ignore_ascii_case("DPoP") {
-                    return (rest, "DPoP");
-                }
-            }
-            (value, "Unknown")
-        });
+            .map(|(_, value)| value.as_str());
+        let authorization = crate::oauth2::parse_access_token_authorization(header);
         let body_token = if req
             .physical_request()
             .is_some_and(|request| *request.method() == HttpMethod::Post)
@@ -103,31 +89,82 @@ impl OAuthProviderPlugin {
                 "Multiple access token transport methods are not allowed",
             );
         }
-        let Some((token, scheme)) =
-            authorization.or_else(|| body_token.map(|token| (token, "Bearer")))
-        else {
+        let Some(authorization) = authorization.or_else(|| {
+            body_token.map(|token| crate::oauth2::AccessTokenAuthorization {
+                scheme: "Bearer".into(),
+                token: token.into(),
+            })
+        }) else {
             return error(401, "invalid_request", "access token not found");
         };
-        let Some(row) = live_access(token, ctx, self).await? else {
-            return invalid_token();
+        let payload = match self
+            .require_active_access_token(ctx, &authorization.token, None)
+            .await
+        {
+            Ok(payload) => payload,
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                if let Some(headers) = error.headers {
+                    response.merge_headers(headers);
+                }
+                return Ok(no_store(response));
+            }
         };
-        if scheme == "DPoP" {
+        if payload
+            .get("cnf")
+            .and_then(crate::oauth2::get_confirmation_jkt)
+            .is_some()
+            && req.physical_request().is_none()
+        {
             return error(
                 401,
                 "invalid_token",
-                "DPoP authorization requires a DPoP-bound access token",
+                "DPoP-bound access token requires an HTTP request context",
             );
         }
-        let scopes = row
-            .metadata
-            .get("scopes")
-            .and_then(Value::as_array)
-            .map(|values| values.iter().filter_map(Value::as_str).collect::<Vec<_>>())
+        let method = match req.physical_request().map(|request| request.method()) {
+            Some(HttpMethod::Post) => "POST",
+            Some(HttpMethod::Put) => "PUT",
+            Some(HttpMethod::Patch) => "PATCH",
+            Some(HttpMethod::Delete) => "DELETE",
+            Some(HttpMethod::Options) => "OPTIONS",
+            Some(HttpMethod::Head) => "HEAD",
+            Some(HttpMethod::Get) | None => "GET",
+        };
+        let url = super::dpop::endpoint_url(ctx, req, "/oauth2/userinfo");
+        let replay = crate::oauth2::create_dpop_replay_store(ctx);
+        let mut binding =
+            crate::oauth2::EnforceDpopBindingParams::new(&payload, &authorization, method, &url);
+        binding.proof_jwt = super::dpop::proof_header(req);
+        binding.replay_store = Some(&replay);
+        binding.proof_max_age_seconds = self.config.dpop_proof_max_age_seconds;
+        binding.signing_algorithms = self.config.dpop_signing_algorithms.clone();
+        if let Err(failure) = crate::oauth2::enforce_dpop_binding(&binding).await {
+            if crate::oauth2::is_dpop_binding_error(&failure) {
+                return error(
+                    401,
+                    failure.code.as_deref().unwrap_or_default(),
+                    &failure.message,
+                );
+            }
+            return Err(AuthError::internal(failure.message));
+        }
+        let scopes = payload
+            .get("scope")
+            .and_then(Value::as_str)
+            .map(|scope| scope.split(' ').collect::<Vec<_>>())
             .unwrap_or_default();
         if !scopes.contains(&"openid") {
             return error(400, "invalid_scope", "Missing required scope");
         }
-        let Some(id) = row.user_id.as_deref() else {
+        let Some(id) = payload
+            .get("sub")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+        else {
             return error(400, "invalid_request", "user not found");
         };
         let Some(user) = ctx.database.get_user_by_id(id).await? else {
@@ -169,12 +206,4 @@ fn no_store(response: EndpointResponse) -> EndpointResponse {
 }
 fn error(status: u16, code: &str, description: &str) -> AuthResult<EndpointResponse> {
     super::clients::status_protocol_error(status, code, description).map(no_store)
-}
-fn invalid_token() -> AuthResult<EndpointResponse> {
-    error(401, "invalid_token", "Invalid access token").map(|response| {
-        response.with_header(
-            "WWW-Authenticate",
-            "Bearer error=\"invalid_token\", error_description=\"Invalid access token\"",
-        )
-    })
 }

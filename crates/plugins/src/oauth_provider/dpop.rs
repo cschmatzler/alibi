@@ -5,6 +5,31 @@ use alibi_core::session::SessionRequest;
 use alibi_core::{AuthContext, AuthError, AuthSchema};
 use serde_json::{Value, json};
 
+pub(super) fn proof_header(req: &impl SessionRequest) -> Option<&str> {
+    req.session_headers()
+        .iter()
+        .find(|(name, _)| name.eq_ignore_ascii_case("dpop"))
+        .map(|(_, value)| value.trim_matches([' ', '\t', '\r', '\n']))
+        .filter(|value| !value.is_empty())
+}
+pub(super) fn endpoint_url<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    req: &impl SessionRequest,
+    path: &str,
+) -> String {
+    req.physical_request()
+        .and_then(|value| value.url())
+        .map_or_else(
+            || {
+                format!(
+                    "{}{}{path}",
+                    ctx.config.base_url.trim_end_matches('/'),
+                    ctx.config.base_path
+                )
+            },
+            ToString::to_string,
+        )
+}
 impl OAuthProviderPlugin {
     pub(super) async fn resolve_dpop_binding<S: AuthSchema>(
         &self,
@@ -39,12 +64,7 @@ impl OAuthProviderPlugin {
             .as_ref()
             .and_then(|v| v.metadata.get("confirmation"))
             .and_then(crate::oauth2::get_confirmation_jkt);
-        let proof = req
-            .session_headers()
-            .iter()
-            .find(|(name, _)| name.eq_ignore_ascii_case("dpop"))
-            .map(|(_, value)| value.trim_matches([' ', '\t', '\r', '\n']))
-            .filter(|v| !v.is_empty());
+        let proof = proof_header(req);
         let Some(proof) = proof else {
             if client_required
                 || policy.dpop_required
@@ -58,16 +78,7 @@ impl OAuthProviderPlugin {
             }
             return Ok(None);
         };
-        let url = req.physical_request().and_then(|v| v.url()).map_or_else(
-            || {
-                format!(
-                    "{}{}/oauth2/token",
-                    ctx.config.base_url.trim_end_matches('/'),
-                    ctx.config.base_path
-                )
-            },
-            ToString::to_string,
-        );
+        let url = endpoint_url(ctx, req, "/oauth2/token");
         let replay = crate::oauth2::create_dpop_replay_store(ctx);
         // The reference deliberately fixes htm to POST, even for a supplied
         // physical request whose method differs from the token endpoint.
