@@ -39,24 +39,16 @@ compatScenario(
     expect(created.status).toBe(201);
     const client = (await created.json()) as any;
     const receipts = [];
-    for (const confirmation of [
-      { jkt: "bound-key" },
-      { "x5t#S256": "certificate" },
-      { jkt: "" },
-      { jkt: 17 },
-      {},
-      [],
-      false,
-      null,
-    ]) {
-      const expectedType =
-        confirmation &&
-        typeof confirmation === "object" &&
-        !Array.isArray(confirmation) &&
-        "jkt" in confirmation &&
-        confirmation.jkt
-          ? "DPoP"
-          : "Bearer";
+    for (const [confirmation, expectedType] of [
+      [{ jkt: "bound-key" }, "DPoP"],
+      [{ "x5t#S256": "certificate" }, "Bearer"],
+      [{ jkt: "" }, "Bearer"],
+      [{ jkt: 17 }, "Bearer"],
+      [{}, "Bearer"],
+      [[], "Bearer"],
+      [false, "Bearer"],
+      [null, "Bearer"],
+    ] as const) {
       const response = await control({
         action: "issue-tokens",
         body: {
