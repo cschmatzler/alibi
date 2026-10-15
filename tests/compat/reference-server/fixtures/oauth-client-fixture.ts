@@ -15,10 +15,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let generatedClientIds = 0;
   let generatedSecrets = 0;
   let encryptedGeneratedSecrets = 0;
+  let prefixedSecrets = 0;
+  let encryptedPrefixedSecrets = 0;
   const auths = {
     default: betterAuth(options),
     "generated-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>`operator-client-${++generatedClientIds}`})]}),
     "empty-id": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>""})]}),
+    "prefixed-generator": betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",prefix:{clientSecret:"client_prefix_"},generateClientSecret:()=>`operator-secret-${++prefixedSecrets}`})]}),
+    "encrypted-prefixed-generator": betterAuth({...options,plugins:[username(),oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,prefix:{clientSecret:"client_prefix_"},generateClientSecret:()=>`operator-secret-${++encryptedPrefixedSecrets}`})]}),
     "encrypted-generator": betterAuth({
       ...options,
       plugins: [username(), oauthProvider({loginPage:"/login",consentPage:"/consent",disableJwtPlugin:true,generateClientSecret:()=>`operator-secret-${++encryptedGeneratedSecrets}`})],

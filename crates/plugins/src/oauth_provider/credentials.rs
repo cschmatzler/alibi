@@ -97,16 +97,33 @@ impl Credentials {
             ));
         }
         if !self.secret.is_empty() {
-            let valid = client.client_secret.as_deref().is_some_and(|stored| {
-                if config.disable_jwt_plugin {
-                    crate::token_crypto::decrypt_with_config(stored, &ctx.config).is_ok_and(
-                        |plaintext| bool::from(plaintext.as_bytes().ct_eq(self.secret.as_bytes())),
-                    )
-                } else {
-                    let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(&self.secret));
-                    bool::from(hash.as_bytes().ct_eq(stored.as_bytes()))
-                }
-            });
+            let secret = if let Some(prefix) = config
+                .client_secret_prefix
+                .as_deref()
+                .filter(|prefix| !prefix.is_empty())
+            {
+                let Some(secret) = self.secret.strip_prefix(prefix) else {
+                    return Ok(Err(super::clients::status_protocol_error(
+                        401,
+                        "invalid_client",
+                        "invalid client_secret",
+                    )?));
+                };
+                secret
+            } else {
+                self.secret.as_str()
+            };
+            let valid = !secret.is_empty()
+                && client.client_secret.as_deref().is_some_and(|stored| {
+                    if config.disable_jwt_plugin {
+                        crate::token_crypto::decrypt_with_config(stored, &ctx.config).is_ok_and(
+                            |plaintext| bool::from(plaintext.as_bytes().ct_eq(secret.as_bytes())),
+                        )
+                    } else {
+                        let hash = URL_SAFE_NO_PAD.encode(Sha256::digest(secret));
+                        bool::from(hash.as_bytes().ct_eq(stored.as_bytes()))
+                    }
+                });
             if !valid {
                 return Ok(Err(self.denied("invalid client_secret")?));
             }

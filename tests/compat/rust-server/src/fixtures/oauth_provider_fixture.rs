@@ -90,13 +90,16 @@ pub(crate) async fn router(
         "generated",
         "empty-generator",
         "encrypted-generator",
+        "prefixed-generator",
+        "encrypted-prefixed-generator",
         "generated-id",
         "empty-id",
     ] {
         let provider = OAuthProviderConfig {
             client_id_generator: if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
-            disable_jwt_plugin: mode == "encrypted-generator",
-            client_secret_generator: if matches!(mode, "generated" | "empty-generator" | "encrypted-generator") {
+            disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"),
+            client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
+            client_secret_generator: if matches!(mode, "generated" | "empty-generator" | "encrypted-generator" | "prefixed-generator" | "encrypted-prefixed-generator") {
                 Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
             } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
@@ -126,7 +129,7 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(config.clone(), database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder = if mode == "encrypted-generator" {builder} else {builder.plugin(JwtPlugin::new())};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator") {builder} else {builder.plugin(JwtPlugin::new())};
         let auth = Arc::new(builder.plugin(OAuthProviderPlugin::with_config(provider)).build().await?);
         client_instances.insert(mode.to_owned(), auth);
     }

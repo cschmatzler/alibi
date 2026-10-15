@@ -53,6 +53,8 @@ pub struct OAuthProviderConfig {
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
+    /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
+    pub client_secret_prefix: Option<String>,
     pub login_page: String,
     pub consent_page: String,
     pub select_account_page: Option<String>,
@@ -75,6 +77,7 @@ impl Default for OAuthProviderConfig {
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,
+            client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),
             select_account_page: None,

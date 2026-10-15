@@ -780,7 +780,10 @@ impl OAuthProviderPlugin {
         _ = output
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("OAuth client metadata must be an object"))?
-            .insert("client_secret".into(), json!(plaintext));
+            .insert(
+                "client_secret".into(),
+                Value::String(self.prefixed_client_secret(plaintext)),
+            );
         EndpointResponse::json(&output)
     }
 }
@@ -1148,6 +1151,12 @@ impl OAuthProviderPlugin {
             .filter(|secret| !secret.is_empty())
             .unwrap_or_else(random_credential))
     }
+    fn prefixed_client_secret(&self, secret: String) -> String {
+        match self.config.client_secret_prefix.as_deref() {
+            Some(prefix) if !prefix.is_empty() => format!("{prefix}{secret}"),
+            _ => secret,
+        }
+    }
     async fn persist_client<S: AuthSchema>(
         &self,
         metadata: serde_json::Map<String, Value>,
@@ -1199,7 +1208,10 @@ impl OAuthProviderPlugin {
             json!(client.created_at.map(|time| time.timestamp())),
         );
         if let Some(secret) = plaintext {
-            _ = output.insert("client_secret".into(), json!(secret));
+            _ = output.insert(
+                "client_secret".into(),
+                Value::String(self.prefixed_client_secret(secret)),
+            );
             _ = output.insert("client_secret_expires_at".into(), json!(0));
         }
         Ok(EndpointResponse::json(&Value::Object(output))?.with_status(201))

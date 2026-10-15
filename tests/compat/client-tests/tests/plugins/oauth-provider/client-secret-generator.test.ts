@@ -9,7 +9,14 @@ compatScenario(
   async (ctx) => {
     const actor = ctx.actor();
     const results = [];
-    for (const mode of ["generated", "empty-generator", "encrypted-generator"]) {
+    for (const mode of [
+      "generated",
+      "empty-generator",
+      "encrypted-generator",
+      "prefixed-generator",
+      "encrypted-prefixed-generator",
+    ]) {
+      const prefix = mode.includes("prefixed") ? "client_prefix_" : "";
       const control = (input: any) =>
         actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
           method: "POST",
@@ -41,7 +48,7 @@ compatScenario(
       expect(created.status).toBe(201);
       const client = (await created.json()) as any;
       if (mode !== "empty-generator") {
-        expect(client.client_secret).toBe("operator-secret-1");
+        expect(client.client_secret).toBe(`${prefix}operator-secret-1`);
       } else {
         expect(client.client_secret).toMatch(/^[a-zA-Z]{32}$/);
       }
@@ -74,7 +81,7 @@ compatScenario(
       expect(response.status).toBe(200);
       const rotated = (await response.json()) as any;
       if (mode !== "empty-generator") {
-        expect(rotated.client_secret).toBe("operator-secret-2");
+        expect(rotated.client_secret).toBe(`${prefix}operator-secret-2`);
       } else {
         expect(rotated.client_secret).toMatch(/^[a-zA-Z]{32}$/);
       }
@@ -82,8 +89,9 @@ compatScenario(
       const row = (await (
         await control({ action: "row", clientId: client.client_id })
       ).json()) as any;
-      const hash = createHash("sha256").update(rotated.client_secret).digest("base64url");
-      if (mode === "encrypted-generator") {
+      const rawSecret = rotated.client_secret.slice(prefix.length);
+      const hash = createHash("sha256").update(rawSecret).digest("base64url");
+      if (mode.includes("encrypted")) {
         expect(typeof row.client_secret).toBe("string");
         expect(row.client_secret.length).toBeGreaterThan(0);
         expect(row.client_secret).not.toBe(rotated.client_secret);
@@ -93,6 +101,23 @@ compatScenario(
       }
       expect(row.client_secret).not.toBe(old.client_secret);
       expect(row).toEqual({ ...old, client_secret: row.client_secret });
+      const prefixDenials = [];
+      if (prefix) {
+        for (const secret of [rawSecret, `WRONG_${rawSecret}`]) {
+          const result = await control({
+            action: "introspect",
+            body: { client_id: client.client_id, client_secret: secret, token: "not-issued" },
+          });
+          expect(result.status).toBe(401);
+          expect(result.headers.get("www-authenticate")).toBeNull();
+          const body = await result.json();
+          expect(body).toEqual({
+            error: "invalid_client",
+            error_description: "invalid client_secret",
+          });
+          prefixDenials.push({ status: result.status, body });
+        }
+      }
       const authentication = [];
       for (const [secret, status] of [
         [client.client_secret, 400],
@@ -113,7 +138,15 @@ compatScenario(
       }
       const { client_secret: protectedSecret, ...rowMetadata } = row;
       expect(protectedSecret).toBeTruthy();
-      results.push({ mode, client, publicClient, rotated, row: rowMetadata, authentication });
+      results.push({
+        mode,
+        client,
+        publicClient,
+        rotated,
+        row: rowMetadata,
+        authentication,
+        prefixDenials,
+      });
     }
     return ctx.snapshot({ results });
   },
