@@ -2148,6 +2148,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
     });
   }
   if(url.pathname==="/__test/server-api/bearer"&&request.method==="POST"){return bearerFixture.control(request);}
+  if(url.pathname==="/__test/server-api/custom-session"&&request.method==="POST"){return customSessionFixture.server(request);}
   if (url.pathname === "/__test/server-api/api-key-list" && request.method === "POST") {
     const input = await readJson(request);
     return auth.api.listApiKeys({

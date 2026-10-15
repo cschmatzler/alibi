@@ -10,7 +10,7 @@ use alibi::seaorm::sea_orm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use alibi::{AuthContext, AuthRequest};
 use async_trait::async_trait;
-use axum::Router;
+use axum::{Router,response::IntoResponse};
 use serde_json::{Value, json};
 use std::sync::{
     Arc,
@@ -64,7 +64,7 @@ impl DeviceListApplication {
     async fn work(
         &self,
         session: &Value,
-        request: &AuthRequest,
+        request: &alibi::plugins::SessionTransformContext,
         context: &AuthContext<TestSchema>,
     ) -> AuthResult<()> {
         let (mode, held, reject) = self.policy.lock().unwrap().clone();
@@ -137,6 +137,7 @@ impl DeviceListApplication {
 struct ApplicationTransform {
     calls: Arc<AtomicUsize>,
     record: bool,
+    frame: bool,
     application: Option<Arc<DeviceListApplication>>,
 }
 #[async_trait]
@@ -144,7 +145,7 @@ impl SessionTransform<TestSchema> for ApplicationTransform {
     async fn transform(
         &self,
         session: Value,
-        request: &AuthRequest,
+        request: &alibi::plugins::SessionTransformContext,
         context: &AuthContext<TestSchema>,
     ) -> AuthResult<Value> {
         let count = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
@@ -186,6 +187,7 @@ impl SessionTransform<TestSchema> for ApplicationTransform {
             "application".into(),
             json!({"userId":user.id(),"label":user.name(),"path":request.path()}),
         ));
+        if self.frame {object.get_mut("application").unwrap()["hasRequest"]=json!(request.request().is_some());object.get_mut("application").unwrap()["marker"]=json!(request.header("x-custom-marker"));}
         if self.record {
             object.get_mut("application").unwrap()["calls"] = json!(count);
         }
@@ -199,9 +201,11 @@ pub(crate) async fn router(
     counter: Arc<AtomicUsize>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
+    let mut sdk_profiles=std::collections::HashMap::new();
     let application = Arc::new(DeviceListApplication::default());
     for name in [
         "custom-session-gated",
+        "custom-session-server",
         "custom-session-list-default",
         "custom-session-list-false",
         "custom-session",
@@ -245,6 +249,7 @@ pub(crate) async fn router(
                 let plugin = CustomSessionPlugin::new(ApplicationTransform {
                     calls: Arc::new(AtomicUsize::new(0)),
                     record: name.starts_with("custom-session-list-"),
+                    frame: name=="custom-session-server",
                     application: (name == "custom-session-gated").then(|| application.clone()),
                 });
                 match name {
@@ -261,8 +266,16 @@ pub(crate) async fn router(
             builder.plugin(JwtPlugin::new())
         };
         let auth = Arc::new(builder.build().await?);
+        _=sdk_profiles.insert(name.to_owned(),auth.clone());
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    router=router.route("/__test/server-api/custom-session",axum::routing::post(move|axum::Json(input):axum::Json<Value>|{let profiles=sdk_profiles.clone();async move{
+        let profile=input.get("profile").and_then(Value::as_str).unwrap_or("custom-session-server");let Some(auth)=profiles.get(profile)else{return axum::http::StatusCode::NOT_FOUND.into_response();};
+        let sign_up=input.get("action").and_then(Value::as_str)==Some("sign-up");let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new(if sign_up{"email-password"}else{"session-management"},if sign_up{"signUpEmail"}else{"getSession"});if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}if let Some(query)=input.get("query"){endpoint=endpoint.with_query(query).unwrap();}
+        let request=input.get("requestHeaders").map(|headers|{let mut request=AuthRequest::new(alibi::HttpMethod::Get,"/get-session");request.headers=serde_json::from_value(headers.clone()).unwrap();request});
+        let options=alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request,..Default::default()};
+        match auth.dispatch_endpoint(endpoint,options).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}}
+    }}));
     let read = application.clone();
     router = router.route(
         "/__test/custom-session-work",

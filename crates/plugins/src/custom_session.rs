@@ -1,11 +1,66 @@
 //! Application-owned asynchronous session response projection.
+use alibi_core::endpoint::{
+    EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointInput, EndpointResponse,
+    ServerEndpoint,
+};
 use alibi_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    HttpMethod,
+    AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
+    AuthRoute, AuthSchema, HttpMethod,
 };
 use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
+/// The actual transport frame supplied to a session projection callback.
+#[derive(Clone)]
+pub enum SessionTransformContext {
+    Http(Box<AuthRequest>),
+    Endpoint(Box<EndpointCall>),
+}
+impl SessionTransformContext {
+    /// A genuine original Request; header-only SDK calls retain absence.
+    #[must_use]
+    pub fn request(&self) -> Option<&AuthRequest> {
+        match self {
+            Self::Http(request) => Some(request),
+            Self::Endpoint(call) => call.request(),
+        }
+    }
+    #[must_use]
+    pub fn endpoint_call(&self) -> Option<&EndpointCall> {
+        match self {
+            Self::Endpoint(call) => Some(call),
+            Self::Http(_) => None,
+        }
+    }
+    #[must_use]
+    pub fn headers(&self) -> Option<&std::collections::HashMap<String, String>> {
+        match self {
+            Self::Http(request) => Some(&request.headers),
+            Self::Endpoint(call) => call.headers(),
+        }
+    }
+    #[must_use]
+    pub fn header(&self, name: &str) -> Option<&String> {
+        self.headers()?
+            .iter()
+            .find_map(|(key, value)| key.eq_ignore_ascii_case(name).then_some(value))
+    }
+    #[must_use]
+    pub fn path(&self) -> &str {
+        match self {
+            Self::Http(request) => request.path(),
+            Self::Endpoint(call) => call.path().unwrap_or(""),
+        }
+    }
+    #[must_use]
+    pub fn method(&self) -> &HttpMethod {
+        match self {
+            Self::Http(request) => request.method(),
+            Self::Endpoint(call) => call.method().unwrap_or(&HttpMethod::Get),
+        }
+    }
+}
+struct SessionTransformHandle<S: AuthSchema>(Arc<dyn SessionTransform<S>>);
 
 /// Project an authenticated session response into application response data.
 ///
@@ -19,14 +74,13 @@ pub trait SessionTransform<S: AuthSchema>: Send + Sync {
     async fn transform(
         &self,
         session: Value,
-        request: &AuthRequest,
+        request: &SessionTransformContext,
         context: &AuthContext<S>,
     ) -> AuthResult<Value>;
 }
 
 /// Replace GET session responses while retaining core authentication and cookies.
-/// Register before an explicitly installed `SessionManagementPlugin` so this
-/// plugin owns the GET route. The replacement accepts GET only, including
+/// The replacement owns the public getSession API and accepts GET only on HTTP, including
 /// when deferred refresh is enabled.
 pub struct CustomSessionPlugin<S: AuthSchema> {
     transform: Arc<dyn SessionTransform<S>>,
@@ -34,6 +88,12 @@ pub struct CustomSessionPlugin<S: AuthSchema> {
 }
 
 impl<S: AuthSchema> CustomSessionPlugin<S> {
+    /// Read the application-projected session through the public server API.
+    #[must_use]
+    pub const fn get_session_endpoint() -> ServerEndpoint<Value> {
+        ServerEndpoint::new("custom-session", "getSession")
+    }
+
     #[must_use]
     pub fn new(transform: impl SessionTransform<S> + 'static) -> Self {
         Self {
@@ -59,6 +119,37 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
         )
     }
 
+    async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
+        ctx.extensions
+            .insert(SessionTransformHandle(self.transform.clone()));
+        Ok(())
+    }
+    fn server_endpoints(&self) -> Vec<EndpointDefinition> {
+        vec![crate::endpoint::definition(
+            "getSession",
+            "get_session",
+            Some("/get-session"),
+            HttpMethod::Get,
+        )]
+    }
+    fn validate_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointInput> {
+        <super::session_management::SessionManagementPlugin as AuthPlugin<S>>::validate_endpoint(
+            &super::session_management::SessionManagementPlugin::new(),
+            call,
+            ctx,
+        )
+    }
+    async fn on_endpoint(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        project_endpoint(call, ctx).await
+    }
     fn name(&self) -> &'static str {
         "custom-session"
     }
@@ -99,43 +190,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
         if req.method() != &HttpMethod::Get {
             return Ok(None);
         }
-        let prior_headers = req.take_response_headers();
-        let mut response = match super::session_management::SessionManagementPlugin::new()
-            .handle_get_session(req, ctx)
-            .await
-        {
-            Ok(response) => response,
-            Err(_) => AuthResponse::json(200, &Value::Null)?,
-        };
-        let session: Value = if response.status >= 400 {
-            Value::Null
-        } else {
-            serde_json::from_slice(&response.body)?
-        };
-        let core_headers = req.take_response_headers();
-        for (name, value) in prior_headers {
-            req.queue_response_header(name, value);
-        }
-        let (issued_cookies, _) =
-            alibi_core::session::cookie_cache::runtime::take_issuance(req.extensions());
-        if session.is_null() {
-            // The replaced endpoint does not forward headers from a missing or
-            // failed core response. Preserve headers emitted before that read.
-            return Ok(Some(AuthResponse::json(200, &Value::Null)?));
-        }
-        let transformed = self
-            .transform
-            .transform(session, req, ctx)
-            .await
-            .map_err(crate::helpers::callback_failure)?;
-        response.body = serde_json::to_vec(&transformed)?;
-        for (name, value) in core_headers {
-            response.headers.append(name, value);
-        }
-        for cookie in issued_cookies {
-            response.headers.append("Set-Cookie", cookie);
-        }
-        Ok(Some(response))
+        Ok(Some(project_http(req, ctx).await?))
     }
 
     async fn after_request(
@@ -152,7 +207,13 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
         }
         let value: Value = serde_json::from_slice(&response.body)?;
         if let Value::Array(sessions) = value {
-            let transformed = self.transform_list(sessions, req, ctx).await?;
+            let transformed = self
+                .transform_list(
+                    sessions,
+                    &SessionTransformContext::Http(Box::new(req.clone())),
+                    ctx,
+                )
+                .await?;
             response.body = serde_json::to_vec(&transformed)?;
         }
         Ok(response)
@@ -163,7 +224,7 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
     async fn transform_list(
         &self,
         sessions: Vec<Value>,
-        request: &AuthRequest,
+        request: &SessionTransformContext,
         context: &AuthContext<S>,
     ) -> AuthResult<Vec<Value>> {
         if sessions.is_empty() {
@@ -214,6 +275,109 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
     }
 }
 
+pub(crate) fn configured<S: AuthSchema>(ctx: &AuthContext<S>) -> bool {
+    ctx.extensions.get::<SessionTransformHandle<S>>().is_some()
+}
+pub(crate) async fn project_http<S: AuthSchema>(
+    req: &AuthRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<AuthResponse> {
+    if req.method() != &HttpMethod::Get {
+        return Ok(AuthResponse::new(404));
+    }
+    let transform = ctx
+        .extensions
+        .get::<SessionTransformHandle<S>>()
+        .ok_or_else(|| AuthError::internal("Custom session projection is not installed"))?;
+    let transform = &transform.0;
+    let prior_headers = req.take_response_headers();
+    let mut response = match super::session_management::SessionManagementPlugin::new()
+        .handle_base_get_session(req, ctx)
+        .await
+    {
+        Ok(response) => response,
+        Err(_) => AuthResponse::json(200, &Value::Null)?,
+    };
+    let session: Value = if response.status >= 400 {
+        Value::Null
+    } else {
+        serde_json::from_slice(&response.body)?
+    };
+    let core_headers = req.take_response_headers();
+    for (name, value) in prior_headers {
+        req.queue_response_header(name, value);
+    }
+    let (issued_cookies, _) =
+        alibi_core::session::cookie_cache::runtime::take_issuance(req.extensions());
+    if session.is_null() {
+        // The replaced endpoint does not forward headers from a missing or
+        // failed core response. Preserve headers emitted before that read.
+        return Ok(AuthResponse::json(200, &Value::Null)?);
+    }
+    let transformed = transform
+        .transform(
+            session,
+            &SessionTransformContext::Http(Box::new(req.clone())),
+            ctx,
+        )
+        .await
+        .map_err(crate::helpers::callback_failure)?;
+    response.body = serde_json::to_vec(&transformed)?;
+    for (name, value) in core_headers {
+        response.headers.append(name, value);
+    }
+    for cookie in issued_cookies {
+        response.headers.append("Set-Cookie", cookie);
+    }
+    Ok(response)
+}
+pub(crate) async fn project_endpoint<S: AuthSchema>(
+    call: &EndpointCall,
+    ctx: &AuthContext<S>,
+) -> AuthResult<EndpointResponse> {
+    let transform = ctx
+        .extensions
+        .get::<SessionTransformHandle<S>>()
+        .ok_or_else(|| AuthError::internal("Custom session projection is not installed"))?;
+    let prior = call.take_response_headers();
+    let mut read = call.clone();
+    EndpointContextPatch {
+        method: Some(HttpMethod::Get),
+        ..Default::default()
+    }
+    .apply(&mut read);
+    let session = super::session_management::SessionManagementPlugin::new()
+        .get_session_response(&read, ctx)
+        .await
+        .ok()
+        .flatten();
+    let core_headers = read.take_response_headers();
+    for (name, value) in prior {
+        call.queue_response_header(name, value);
+    }
+    let (cookies, _) = alibi_core::session::cookie_cache::runtime::take_issuance(read.extensions());
+    let Some(session) = session else {
+        return EndpointResponse::json(&Value::Null);
+    };
+    let value = transform
+        .0
+        .transform(
+            serde_json::to_value(session)?,
+            &SessionTransformContext::Endpoint(Box::new(call.clone())),
+            ctx,
+        )
+        .await
+        .map_err(crate::helpers::callback_failure)?;
+    let mut response = EndpointResponse::json(&value)?
+        .with_header("cache-control", "no-store")
+        .with_header("pragma", "no-cache");
+    response.merge_headers(core_headers);
+    for cookie in cookies {
+        response = response.with_header("set-cookie", cookie);
+    }
+    Ok(response)
+}
+
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
@@ -238,7 +402,7 @@ mod tests {
         async fn transform(
             &self,
             value: Value,
-            req: &AuthRequest,
+            req: &SessionTransformContext,
             ctx: &AuthContext<Schema>,
         ) -> AuthResult<Value> {
             let id = value
