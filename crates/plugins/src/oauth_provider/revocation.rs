@@ -52,7 +52,10 @@ impl OAuthProviderPlugin {
                 return error(400, "invalid_request", &format!("{field} is required"));
             }
         }
-        let credentials = super::credentials::extract(&body, req);
+        let credentials = match super::credentials::extract(&body, req)? {
+            Ok(credentials) => credentials,
+            Err(response) => return Ok(response),
+        };
         if credentials.client_id.is_empty() {
             return error(401, "invalid_client", "missing required credentials");
         }
