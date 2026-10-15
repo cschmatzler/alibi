@@ -12,8 +12,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" })],
   };
   await (await getMigrations(options)).runMigrations();
+  let generatedSecrets = 0;
   const auths = {
     default: betterAuth(options),
+    generated: betterAuth({
+      ...options,
+      plugins: [username(), jwt(), oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>`operator-secret-${++generatedSecrets}`})],
+    }),
+    "empty-generator": betterAuth({
+      ...options,
+      plugins: [username(), jwt(), oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientSecret:()=>""})],
+    }),
     reuse: betterAuth({
       ...options,
       plugins: [

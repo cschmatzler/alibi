@@ -761,7 +761,7 @@ impl OAuthProviderPlugin {
                 "secret rotation is only available for clients using client_secret authentication",
             );
         }
-        let plaintext = random_credential();
+        let plaintext = self.generate_client_secret()?;
         let protected = if self.config.disable_jwt_plugin {
             crate::token_crypto::encrypt_with_config(&plaintext, &ctx.config)?
         } else {
@@ -1137,6 +1137,17 @@ impl OAuthProviderPlugin {
 }
 
 impl OAuthProviderPlugin {
+    fn generate_client_secret(&self) -> AuthResult<String> {
+        let generated = self
+            .config
+            .client_secret_generator
+            .as_ref()
+            .map(|generator| generator.generate())
+            .transpose()?;
+        Ok(generated
+            .filter(|secret| !secret.is_empty())
+            .unwrap_or_else(random_credential))
+    }
     async fn persist_client<S: AuthSchema>(
         &self,
         metadata: serde_json::Map<String, Value>,
@@ -1148,7 +1159,11 @@ impl OAuthProviderPlugin {
             .and_then(Value::as_str)
             .unwrap_or("client_secret_basic");
         let client_id = random_credential();
-        let plaintext = (!["none", "private_key_jwt"].contains(&auth)).then(random_credential);
+        let plaintext = if ["none", "private_key_jwt"].contains(&auth) {
+            None
+        } else {
+            Some(self.generate_client_secret()?)
+        };
         let stored = plaintext
             .as_deref()
             .map(|secret| {
