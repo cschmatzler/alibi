@@ -2,7 +2,7 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
-use alibi_core::store::{CreateOAuthToken, OAuthTokenKind};
+use alibi_core::store::{OAuthToken, OAuthTokenKind};
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 impl OAuthProviderPlugin {
@@ -212,6 +212,13 @@ impl OAuthProviderPlugin {
             super::OAuthTokenIssueParams::new(client.clone(), admission.scopes.clone());
         params.user = Some(ctx.trusted_user_view(&user));
         params.session_id = original.session_id.clone();
+        params.refresh_token = Some(original.clone());
+        params.auth_time = original
+            .metadata
+            .get("authTime")
+            .and_then(Value::as_str)
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&chrono::Utc));
         params.authorization_code_id = original.authorization_code_id.clone();
         params.reference_id = original
             .metadata
@@ -238,65 +245,20 @@ impl OAuthProviderPlugin {
         params.resources = (!resources.is_empty()).then_some(resources);
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issuance time"))?;
-        let random = || {
-            rand::RngExt::sample_iter(rand::rng(), rand::distr::Alphanumeric)
-                .map(char::from)
-                .filter(char::is_ascii_alphabetic)
-                .take(32)
-                .collect::<String>()
-        };
         let rotate =
             original_scopes.contains(&"offline_access") || scopes.contains(&"offline_access");
-        let next_refresh = if rotate {
-            if !ctx
-                .database
-                .claim_oauth_refresh_rotation(
-                    &protected,
-                    issued,
-                    replay_deadline(issued, self.config.refresh_token_reuse_interval)?,
-                )
-                .await?
-            {
-                return error("invalid_grant", "invalid refresh token");
+        let next_refresh = match self
+            .create_refresh_token(ctx, &params, &admission, issued, rotate)
+            .await
+        {
+            Ok(value) => value,
+            Err(error) => {
+                let mut response = EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                return Ok(no_store(response));
             }
-            let token = random();
-            let mut metadata = original.metadata.as_object().cloned().unwrap_or_default();
-            for key in [
-                "revoked",
-                "rotatedAt",
-                "rotationReplayResponse",
-                "rotationReplayExpiresAt",
-            ] {
-                _ = metadata.remove(key);
-            }
-            _ = metadata.insert("scopes".into(), json!(scopes));
-            if metadata.get("resources").is_none_or(Value::is_null) {
-                _ = metadata.insert("resources".into(), json!(params.resources));
-            }
-            let row = ctx
-                .database
-                .create_oauth_token(
-                    OAuthTokenKind::Refresh,
-                    CreateOAuthToken {
-                        token: self.hash_token(&token, "refresh_token").await?,
-                        client_id: original.client_id.clone(),
-                        user_id: original.user_id.clone(),
-                        session_id: original.session_id.clone(),
-                        authorization_code_id: original.authorization_code_id.clone(),
-                        metadata: Value::Object(metadata),
-                        created_at: issued,
-                        expires_at: super::issuance::expiration_date(
-                            &admission.refresh_expiration(
-                                issued.timestamp(),
-                                self.config.refresh_token_expires_in,
-                            )?,
-                        )?,
-                    },
-                )
-                .await?;
-            Some((row.id, token))
-        } else {
-            None
         };
         let expires_claim = self.access_expiration(issued.timestamp(), true, &requested_scopes)?;
         let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
@@ -365,28 +327,47 @@ impl OAuthProviderPlugin {
                 Err(response) => return Ok(no_store(response)),
             }
         }
-        if rotate && self.config.refresh_token_reuse_interval > 0.0 {
-            let replay = json!({"request":replay_request(&scopes,body,original.metadata.get("resources"),original.metadata.get("confirmation")),"response":response});
-            let saved = crate::token_crypto::encrypt_with_config(
-                &serde_json::to_string(&replay)?,
-                &ctx.config,
+        let response = Value::Object(response);
+        if rotate {
+            let request = replay_request(
+                &scopes,
+                body,
+                original.metadata.get("resources"),
+                original.metadata.get("confirmation"),
             );
-            match saved {
-                Ok(ciphertext) => {
-                    if let Err(error) = ctx
-                        .database
-                        .store_oauth_refresh_replay(&original.id, &ciphertext)
-                        .await
-                    {
-                        tracing::error!(%error,"Unable to store refresh rotation replay");
-                    }
-                }
-                Err(error) => {
-                    tracing::error!(%error,"Unable to encrypt refresh rotation replay");
-                }
-            }
+            self.store_rotation_replay(ctx, &original, request, &response)
+                .await;
         }
         Ok(no_store(EndpointResponse::json(&response)?))
+    }
+    pub(super) async fn store_rotation_replay<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        original: &OAuthToken,
+        request: Value,
+        response: &Value,
+    ) {
+        if self.config.refresh_token_reuse_interval <= 0.0 {
+            return;
+        }
+        let replay = json!({"request":request,"response":response});
+        let saved = serde_json::to_string(&replay)
+            .map_err(alibi_core::AuthError::from)
+            .and_then(|value| crate::token_crypto::encrypt_with_config(&value, &ctx.config));
+        match saved {
+            Ok(ciphertext) => {
+                if let Err(error) = ctx
+                    .database
+                    .store_oauth_refresh_replay(&original.id, &ciphertext)
+                    .await
+                {
+                    tracing::error!(%error,"Unable to store refresh rotation replay");
+                }
+            }
+            Err(error) => {
+                tracing::error!(%error,"Unable to encrypt refresh rotation replay");
+            }
+        }
     }
 }
 fn no_store(response: EndpointResponse) -> EndpointResponse {
@@ -398,7 +379,7 @@ fn error(code: &str, description: &str) -> AuthResult<EndpointResponse> {
     super::clients::status_protocol_error(400, code, description).map(no_store)
 }
 
-fn replay_request(
+pub(super) fn replay_request(
     scopes: &[&str],
     body: &Value,
     original_resources: Option<&Value>,
@@ -425,7 +406,7 @@ fn replay_request(
     }
     Value::Object(request)
 }
-fn replay_deadline(
+pub(super) fn replay_deadline(
     issued: chrono::DateTime<chrono::Utc>,
     interval: f64,
 ) -> AuthResult<Option<chrono::DateTime<chrono::Utc>>> {

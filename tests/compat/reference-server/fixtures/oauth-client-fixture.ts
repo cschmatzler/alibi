@@ -82,7 +82,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     const client=await api.getClient(ctx.body.clientId);
     const user=ctx.body.userId?await ctx.context.internalAdapter.findUserById(ctx.body.userId):undefined;
     const params={...ctx.body.params,...(ctx.body.params.authTime?{authTime:new Date(ctx.body.params.authTime)}:{})};
-    return api.issueTokens({...params,client,user});
+    const refreshToken=ctx.body.originalRefreshToken?await ctx.context.adapter.findOne({model:"oauthRefreshToken",where:[{field:"token",value:await api.hashToken(ctx.body.originalRefreshToken,"refresh_token")}]}):undefined;
+    if(refreshToken && ctx.body.snapshotToken)refreshToken.token=ctx.body.snapshotToken;
+    return api.issueTokens({...params,client,user,...(refreshToken?{refreshToken}:{})});
   })}};
   const options = {
     baseURL: base.baseURL,

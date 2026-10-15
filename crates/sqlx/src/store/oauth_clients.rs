@@ -67,6 +67,30 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         Ok(self.exec().execute(sql).await? > 0)
     }
 
+    async fn claim_oauth_refresh_rotation_by_id(
+        &self,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+        replay_expires: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> AuthResult<bool> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident("oauthRefreshToken");
+        sql.push(" SET ");
+        sql.assign("revoked", at);
+        sql.push(", ");
+        sql.assign("rotatedAt", at);
+        if let Some(expires) = replay_expires {
+            sql.push(", ");
+            sql.assign("rotationReplayExpiresAt", expires);
+        }
+        sql.push(" WHERE ");
+        sql.compare("oauthRefreshToken", "id", " = ", id);
+        sql.push(" AND ");
+        sql.ident("revoked");
+        sql.push(" IS NULL");
+        Ok(self.exec().execute(sql).await? > 0)
+    }
+
     async fn mark_oauth_token_revoked(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

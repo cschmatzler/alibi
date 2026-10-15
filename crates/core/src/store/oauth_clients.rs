@@ -71,6 +71,18 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth token persistence is not supported by this store",
         ))
     }
+    /// Atomically rotate the retained row supplied to a trusted grant handler.
+    async fn claim_oauth_refresh_rotation_by_id(
+        &self,
+        id: &str,
+        at: DateTime<Utc>,
+        replay_expires: Option<DateTime<Utc>>,
+    ) -> AuthResult<bool> {
+        let _ = (id, at, replay_expires);
+        Err(AuthError::config(
+            "OAuth refresh rotation by ID is not supported by this store",
+        ))
+    }
     async fn claim_oauth_refresh_rotation(
         &self,
         _token: &str,

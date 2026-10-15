@@ -80,6 +80,37 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         Ok(result.rows_affected > 0)
     }
 
+    async fn claim_oauth_refresh_rotation_by_id(
+        &self,
+        id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+        replay_expires: Option<chrono::DateTime<chrono::Utc>>,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_refresh_token;
+        let mut update = oauth_refresh_token::Entity::update_many()
+            .col_expr(
+                oauth_refresh_token::Column::Revoked,
+                sea_orm::sea_query::Expr::value(at),
+            )
+            .col_expr(
+                oauth_refresh_token::Column::RotatedAt,
+                sea_orm::sea_query::Expr::value(at),
+            )
+            .filter(oauth_refresh_token::Column::Id.eq(id))
+            .filter(oauth_refresh_token::Column::Revoked.is_null());
+        if let Some(expires) = replay_expires {
+            update = update.col_expr(
+                oauth_refresh_token::Column::RotationReplayExpiresAt,
+                sea_orm::sea_query::Expr::value(expires),
+            );
+        }
+        let result = update
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        Ok(result.rows_affected > 0)
+    }
+
     async fn mark_oauth_token_revoked(
         &self,
         kind: alibi_core::store::OAuthTokenKind,

@@ -587,3 +587,5 @@ mod oauth_scope_expiration;
 mod oauth_resource_issuance_admission;
 
 mod oauth_resource_token_policy;
+
+mod oauth_server_refresh_issuance;
