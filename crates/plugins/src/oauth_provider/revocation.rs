@@ -75,7 +75,7 @@ impl OAuthProviderPlugin {
                 "missing a required token for introspection",
             );
         }
-        if let Err(response) = credentials.authenticate(ctx, &self.config).await? {
+        if let Err(response) = credentials.authenticate(ctx, self).await? {
             return Ok(response);
         }
         let hint = body

@@ -77,7 +77,7 @@ impl OAuthProviderPlugin {
                 "missing a required token for introspection",
             );
         }
-        let introspecting_client = match credentials.authenticate(ctx, &self.config).await? {
+        let introspecting_client = match credentials.authenticate(ctx, self).await? {
             Ok(client) => client,
             Err(response) => return Ok(no_store(response)),
         };

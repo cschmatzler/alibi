@@ -64,8 +64,6 @@ struct Entry {
 pub(super) struct Cache {
     entries: Mutex<IndexMap<String, Entry>>,
 }
-#[derive(Clone)]
-pub(super) struct Runtime(pub(super) Arc<Cache>);
 impl Cache {
     fn get(&self, key: &str) -> AuthResult<Option<Entry>> {
         Ok(self
@@ -86,12 +84,6 @@ impl Cache {
         }
         Ok(())
     }
-}
-fn cache<S: AuthSchema>(ctx: &AuthContext<S>) -> AuthResult<Arc<Cache>> {
-    ctx.extensions
-        .get::<Runtime>()
-        .map(|runtime| runtime.0.clone())
-        .ok_or_else(|| AuthError::config("OAuth provider JWKS cache is unavailable"))
 }
 fn owner(client: &OAuthClient) -> Option<&str> {
     client
@@ -117,16 +109,14 @@ fn cache_key(client: &OAuthClient, uri: &str) -> String {
             .unwrap_or("managed")
     )
 }
-fn transport<S: AuthSchema>(
-    ctx: &AuthContext<S>,
+fn transport(
+    provider: &super::OAuthProviderPlugin,
     client: &OAuthClient,
 ) -> Option<Arc<dyn OAuthClientMetadataResourceFetch>> {
     let id = owner(client)?;
-    let sources = ctx
-        .extensions
-        .get::<super::discovery::ClientDiscoveries>()?;
-    sources
-        .0
+    provider
+        .config
+        .client_discoveries
         .iter()
         .find(|source| source.id() == id)?
         .metadata_resource_fetch()
@@ -170,6 +160,7 @@ fn validate_uri<S: AuthSchema>(
 }
 pub(super) async fn get<S: AuthSchema>(
     ctx: &AuthContext<S>,
+    provider: &super::OAuthProviderPlugin,
     client: &OAuthClient,
 ) -> AuthResult<Result<Value, &'static str>> {
     if let Some(inline) = client
@@ -188,7 +179,7 @@ pub(super) async fn get<S: AuthSchema>(
     let Some(uri) = uri(client) else {
         return Ok(Err("client has no JWKS configured"));
     };
-    let fetcher = transport(ctx, client);
+    let fetcher = transport(provider, client);
     if owner(client).is_some() && fetcher.is_none() {
         return Ok(Err(
             "client discovery does not provide a metadata resource transport",
@@ -199,7 +190,7 @@ pub(super) async fn get<S: AuthSchema>(
     }
     let now = chrono::Utc::now().timestamp_millis();
     let key = cache_key(client, uri);
-    let cache = cache(ctx)?;
+    let cache = provider.client_jwks.clone();
     let cached = cache.get(&key)?;
     if let Some(entry) = &cached
         && now.saturating_sub(entry.fetched_at) < 300_000
@@ -223,21 +214,21 @@ pub(super) async fn get<S: AuthSchema>(
         ),
     }
 }
-pub(super) async fn refetch<S: AuthSchema>(
-    ctx: &AuthContext<S>,
+pub(super) async fn refetch(
+    provider: &super::OAuthProviderPlugin,
     client: &OAuthClient,
 ) -> AuthResult<Option<Value>> {
     let Some(uri) = uri(client) else {
         return Ok(None);
     };
-    let fetcher = transport(ctx, client);
+    let fetcher = transport(provider, client);
     if owner(client).is_some() && fetcher.is_none() {
         return Ok(None);
     }
     let Ok(Some(jwks)) = fetch(uri, fetcher).await else {
         return Ok(None);
     };
-    cache(ctx)?.set(
+    provider.client_jwks.set(
         cache_key(client, uri),
         jwks.clone(),
         chrono::Utc::now().timestamp_millis(),

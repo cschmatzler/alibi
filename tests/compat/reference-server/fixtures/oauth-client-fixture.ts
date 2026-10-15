@@ -55,6 +55,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     const client=await getOAuthProviderApi(ctx,ctx.body.discover?providerClientOptions:{...providerClientOptions,extensions:[]}).getClient(ctx.body.clientId);
     return ctx.json(client?{client_id:client.clientId,client_name:client.name??null,discovery_id:client.clientDiscoveryId??null,user_id:client.userId??null,client_secret:client.clientSecret??null}:null);
   })}};
+  const authenticationHelper={id:"client-authentication-helper",endpoints:{authenticateClientFixture:createAuthEndpoint("/fixture/authenticate-client",{method:"POST",body:z.object({requireCredentials:z.boolean().optional(),requestedScopes:z.array(z.string()).optional(),boundGrant:z.string().optional()}).passthrough()},async(ctx)=>{
+    const authenticated=await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent"},ctx.body.boundGrant).authenticateClient({requireCredentials:ctx.body.requireCredentials,scopes:ctx.body.requestedScopes});
+    return ctx.json({clientId:authenticated.clientId,method:authenticated.method??null,confirmation:authenticated.confirmation??null,client:{clientId:authenticated.client.clientId,clientName:authenticated.client.name??null,userId:authenticated.client.userId??null}});
+  })}};
   const assertionHelper = {
     id: "assertion-helper-fixture",
     endpoints: {
@@ -73,7 +77,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     secret: base.secret,
     database: base.database,
     emailAndPassword: { enabled: true },
-    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper],
+    plugins: [username(), jwt(), oauthProvider({ loginPage: "/login", consentPage: "/consent" }),providerClientHelper,authenticationHelper],
   };
   await (await getMigrations(options)).runMigrations();
   let generatedClientIds = 0;
@@ -248,6 +252,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if(input.action==="authenticate-client") {
+      const headers=new Headers(input.headers??{});headers.set("content-type","application/json");
+      return auth.api.authenticateClientFixture({body:input.body,headers,request:new Request(`${base.baseURL}${base.basePath??"/api/auth"}/fixture/authenticate-client`,{method:"POST",headers,body:JSON.stringify(input.body)}),asResponse:true});
+    }
     if(input.action==="trusted-client")return auth.api.trustedGetClient({body:{fresh:input.fresh??false,rename:input.rename??false},asResponse:true});
     if(input.action==="trusted-external-update"||input.action==="trusted-external-delete"){
       const ctx=await auth.$context;

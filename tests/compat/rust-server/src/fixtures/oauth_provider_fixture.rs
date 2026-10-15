@@ -312,6 +312,19 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="authenticate-client" {
+                let body=input["body"].clone();
+                let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,format!("{}/fixture/authenticate-client",auth.config().base_path));
+                request.headers=input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()).unwrap_or_default();
+                _=request.headers.insert("content-type".into(),"application/json".into());request.body=Some(serde_json::to_vec(&body).unwrap());
+                let call=alibi::endpoint::EndpointCall::new(&alibi::endpoint::EndpointDefinition{name:"authenticateClientFixture",operation_id:"authenticateClientFixture",path:Some("/fixture/authenticate-client".into()),method:alibi::HttpMethod::Post},Some(alibi::utils::json::JsValue::from(body.clone())),None,alibi::endpoint::EndpointOptions{headers:Some(request.headers.clone()),request:Some(request),..Default::default()});
+                let options=alibi::plugins::OAuthClientAuthenticationOptions{require_credentials:body["requireCredentials"].as_bool().unwrap_or(true),scopes:body.get("requestedScopes").map(|value|serde_json::from_value(value.clone()).unwrap())};
+                let provider=OAuthProviderPlugin::new();
+                return match provider.authenticate_client(auth.context(),&call,body["boundGrant"].as_str(),&options).await {
+                    Ok(authenticated)=>axum::Json(serde_json::json!({"clientId":authenticated.client_id,"method":authenticated.method,"confirmation":authenticated.confirmation,"client":{"clientId":authenticated.client.client_id,"clientName":authenticated.client.metadata.get("client_name"),"userId":authenticated.client.user_id}})).into_response(),
+                    Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()},
+                };
+            }
             if input["action"]=="trusted-client" {
                 let provider=if input["fresh"]==true{OAuthProviderPlugin::with_config(trusted_config)}else{trusted_provider};
                 let mut client=provider.get_client(auth.context(),"trusted-client").await.unwrap();
