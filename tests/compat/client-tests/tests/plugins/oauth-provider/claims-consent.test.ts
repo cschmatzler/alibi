@@ -103,6 +103,15 @@ compatScenario(
     expect(silent.searchParams.has("code")).toBe(false);
     const request = await authorize(original);
     expect(request.pathname).toBe("/consent");
+    for (const claims of ["{", null, [], { userinfo: { email: 17 } }]) {
+      const malformed = await control({
+        action: "consent",
+        headers: { cookie },
+        body: { accept: true, oauth_query: request.search.slice(1), claims },
+      });
+      expect(malformed.status).toBe(400);
+      expect(((await malformed.json()) as any).code).toBe("VALIDATION_ERROR");
+    }
     const invalid = await consent(request, { userinfo: { name: null } });
     expect(invalid.status).toBe(400);
     expect(await invalid.json()).toEqual({

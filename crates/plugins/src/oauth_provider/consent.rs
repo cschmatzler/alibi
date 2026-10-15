@@ -27,6 +27,9 @@ pub(super) fn validate(body: Option<&JsValue>) -> AuthResult<JsValue> {
         ],
     )?;
     if let Some(claims) = body.and_then(|value| value.get("claims")) {
+        if !claims.is_string() && !claims.is_object() {
+            return Err(crate::endpoint::validation("[body.claims] Invalid input"));
+        }
         let value = claims.to_json_value()?;
         if super::claims_request::parse(&value).is_none() {
             return Err(crate::endpoint::validation(
@@ -130,14 +133,16 @@ impl OAuthProviderPlugin {
             .claims
             .as_ref()
             .and_then(super::claims_request::parse)
-            .map(|request| {
-                request
-                    .user_info
-                    .into_iter()
-                    .filter(|name| supported.contains(name))
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_else(|| requested_claims.clone());
+            .map_or_else(
+                || requested_claims.clone(),
+                |request| {
+                    request
+                        .user_info
+                        .into_iter()
+                        .filter(|name| supported.contains(name))
+                        .collect::<Vec<_>>()
+                },
+            );
         if !accepted_claims
             .iter()
             .all(|name| requested_claims.contains(name))
