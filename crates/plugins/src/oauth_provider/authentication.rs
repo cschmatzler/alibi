@@ -128,26 +128,13 @@ impl OAuthProviderPlugin {
                 }
             }
         }
-        if let Some(grant) = grant_type.filter(|grant| !grant.is_empty()) {
-            let allowed = client
-                .metadata
-                .get("grant_types")
-                .and_then(Value::as_array)
-                .filter(|grants| !grants.is_empty());
-            let permits = allowed.map_or(
-                matches!(grant, "authorization_code" | "refresh_token"),
-                |grants| {
-                    grants.contains(&json!(grant))
-                        || (grant == "refresh_token"
-                            && grants.contains(&json!("authorization_code")))
-                },
-            );
-            if !permits {
-                return Err(failure(
-                    "unauthorized_client",
-                    &format!("client is not authorized to use grant type {grant}"),
-                ));
-            }
+        if let Some(grant) = grant_type.filter(|grant| !grant.is_empty())
+            && !client_allows_grant(&client, grant)
+        {
+            return Err(failure(
+                "unauthorized_client",
+                &format!("client is not authorized to use grant type {grant}"),
+            ));
         }
         Ok(OAuthAuthenticatedClient {
             client_id: credentials.client_id,
@@ -156,6 +143,20 @@ impl OAuthProviderPlugin {
             confirmation: None,
         })
     }
+}
+pub(super) fn client_allows_grant(client: &OAuthClient, grant: &str) -> bool {
+    let allowed = client
+        .metadata
+        .get("grant_types")
+        .and_then(Value::as_array)
+        .filter(|grants| !grants.is_empty());
+    allowed.map_or(
+        matches!(grant, "authorization_code" | "refresh_token"),
+        |grants| {
+            grants.contains(&json!(grant))
+                || (grant == "refresh_token" && grants.contains(&json!("authorization_code")))
+        },
+    )
 }
 fn failure(code: &str, description: &str) -> EndpointError {
     EndpointError {

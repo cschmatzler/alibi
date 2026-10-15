@@ -4,10 +4,24 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
 use sha2::Digest as _;
-backend_tests!(oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family);
+backend_tests!(
+    oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family,
+    oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens
+);
+postgres_tests!(oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens);
 async fn oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family<B: Backend>(
     db: Db,
 ) -> TestResult {
+    refresh_lifecycle::<B>(db, true).await
+}
+async fn oauth_authorization_code_registration_implicitly_issues_and_rotates_refresh_tokens<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    refresh_lifecycle::<B>(db, false).await
+}
+async fn refresh_lifecycle<B: Backend>(db: Db, explicit_refresh: bool) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(JwtPlugin::new())
@@ -21,7 +35,7 @@ async fn oauth_refresh_grant_narrows_scope_rotates_and_replay_removes_family<B: 
     ]
     .into_iter()
     .collect();
-    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email offline_access","token_endpoint_auth_method":"none","skip_consent":true,"grant_types":["authorization_code","refresh_token"]}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
+    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email offline_access","token_endpoint_auth_method":"none","skip_consent":true,"grant_types":if explicit_refresh{vec!["authorization_code","refresh_token"]}else{vec!["authorization_code"]}}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
     assert_eq!(created.status, 201);
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
     let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
