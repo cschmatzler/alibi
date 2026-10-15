@@ -4,7 +4,26 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine;
 use sha2::Digest;
-backend_tests!(oauth_client_secret_rotation_replaces_hash_and_enforces_owner);
+backend_tests!(
+    oauth_client_secret_rotation_replaces_hash_and_enforces_owner,
+    oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback
+);
+postgres_tests!(oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback);
+#[derive(Debug)]
+struct OperatorSecrets {
+    calls: Arc<std::sync::atomic::AtomicUsize>,
+    empty: bool,
+}
+impl alibi::plugins::OAuthClientSecretGenerator for OperatorSecrets {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        Ok(if self.empty {
+            String::new()
+        } else {
+            format!("operator-secret-{call}")
+        })
+    }
+}
 async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -139,4 +158,115 @@ async fn oauth_client_secret_rotation_replaces_hash_and_enforces_owner<B: Backen
     let public = auth.store().get_oauth_client(public_id).await?.unwrap();
     assert!(public.client_secret.is_none());
     Ok(())
+}
+
+async fn oauth_client_secret_generator_controls_creation_rotation_and_empty_fallback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for empty in [false, true] {
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    client_secret_generator: Some(Arc::new(OperatorSecrets {
+                        calls: calls.clone(),
+                        empty,
+                    })),
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .await?;
+        let owner = signup(&auth, &format!("generator-{empty}@example.test")).await;
+        let options = || EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        };
+        let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Generated client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"client_secret_post"}))?,options()).await?.into_response()?;
+        assert_eq!(created.status, 201);
+        let client = body(&created);
+        let id = client["client_id"].as_str().unwrap();
+        let old_secret = client["client_secret"].as_str().unwrap();
+        if empty {
+            assert_eq!(old_secret.len(), 32);
+            assert!(old_secret.bytes().all(|c| c.is_ascii_alphabetic()));
+        } else {
+            assert_eq!(old_secret, "operator-secret-1");
+        }
+        let public=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Public client","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none"}))?,options()).await?.into_response()?;
+        let public = body(&public);
+        assert!(public.get("client_secret").is_none());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        for (target, headers, status) in [
+            (id, None, 401),
+            (
+                public["client_id"].as_str().unwrap(),
+                options().headers,
+                400,
+            ),
+        ] {
+            let error = auth
+                .dispatch_endpoint(
+                    OAuthProviderPlugin::rotate_client_secret_endpoint(target)?,
+                    EndpointOptions {
+                        headers,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.error.status_code(), status);
+        }
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        let old = auth.store().get_oauth_client(id).await?.unwrap();
+        let rotated = auth
+            .dispatch_endpoint(
+                OAuthProviderPlugin::rotate_client_secret_endpoint(id)?,
+                options(),
+            )
+            .await?
+            .into_response()?;
+        assert_eq!(rotated.status, 200);
+        let rotated = body(&rotated);
+        let secret = rotated["client_secret"].as_str().unwrap();
+        if empty {
+            assert_eq!(secret.len(), 32);
+            assert!(secret.bytes().all(|c| c.is_ascii_alphabetic()));
+        } else {
+            assert_eq!(secret, "operator-secret-2");
+        }
+        assert_ne!(secret, old_secret);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        let stored = auth.store().get_oauth_client(id).await?.unwrap();
+        assert_eq!(
+            stored.client_secret,
+            Some(
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(secret.as_bytes()))
+            )
+        );
+        assert_ne!(stored.client_secret, old.client_secret);
+        assert_eq!(stored.id, old.id);
+        assert_eq!(stored.user_id, old.user_id);
+        assert_eq!(stored.metadata, old.metadata);
+        for (credential, status) in [(old_secret, 400), (secret, 200)] {
+            let output = auth
+                .dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("oauth-provider", "oauth2Introspect").with_body(
+                        &json!({"client_id":id,"client_secret":credential,"token":"not-issued"}),
+                    )?,
+                    EndpointOptions::default(),
+                )
+                .await;
+            if status == 200 {
+                let output = output?.into_response()?;
+                assert_eq!(body(&output), json!({"active":false}));
+            } else {
+                assert_eq!(output.unwrap_err().error.status_code(), status);
+            }
+        }
+    }
+    B::close(connection).await
 }

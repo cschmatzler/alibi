@@ -24,6 +24,17 @@ impl alibi::plugins::OAuthClientPrivileges for MachinePrivileges {
             && ctx.session.get("userId") == ctx.user.get("id"))
     }
 }
+#[derive(Debug)]
+struct OperatorClientSecrets {
+    calls: std::sync::atomic::AtomicUsize,
+    empty: bool,
+}
+impl alibi::plugins::OAuthClientSecretGenerator for OperatorClientSecrets {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+        Ok(if self.empty {String::new()} else {format!("operator-secret-{call}")})
+    }
+}
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -71,8 +82,13 @@ pub(crate) async fn router(
         "selection",
         "machine",
         "reuse",
+        "generated",
+        "empty-generator",
     ] {
         let provider = OAuthProviderConfig {
+            client_secret_generator: if matches!(mode, "generated" | "empty-generator") {
+                Some(Arc::new(OperatorClientSecrets {calls: std::sync::atomic::AtomicUsize::new(0), empty: mode == "empty-generator"}))
+            } else {None},
             refresh_token_reuse_interval: if mode == "reuse" { 60.0 } else { 0.0 },
             client_credentials_scope_privileges: if mode == "machine" {
                 Some(Arc::new(MachinePrivileges))

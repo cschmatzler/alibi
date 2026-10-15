@@ -37,12 +37,17 @@ pub struct OAuthClientPrivilegeContext {
 pub trait OAuthClientPrivileges: Send + Sync + std::fmt::Debug {
     async fn allowed(&self, context: &OAuthClientPrivilegeContext) -> AuthResult<bool>;
 }
+/// Application-owned client credential generation. Empty output uses the default generator.
+pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
+    fn generate(&self) -> AuthResult<String>;
+}
 /// Immutable policy shared by authorization-server metadata and grant admission.
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
     /// Operator decision for assigning client-credentials scopes.
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
+    pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
     pub login_page: String,
     pub consent_page: String,
     pub select_account_page: Option<String>,
@@ -63,6 +68,7 @@ impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
             client_credentials_scope_privileges: None,
+            client_secret_generator: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),
             select_account_page: None,
