@@ -4,8 +4,8 @@ use alibi::AuthVerification as _;
 use alibi::plugins::oauth2::{
     AccessTokenAuthorization, DpopError, DpopReplayReservations, DpopVerificationReservation,
     EnforceDpopBindingParams, VerifyDpopProofOptions, create_dpop_replay_store,
-    create_in_memory_dpop_replay_store, enforce_dpop_binding, parse_access_token_authorization,
-    strip_access_token_authorization_scheme, verify_dpop_proof,
+    create_in_memory_dpop_replay_store, enforce_dpop_binding, get_dpop_jkt_from_payload,
+    parse_access_token_authorization, strip_access_token_authorization_scheme, verify_dpop_proof,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::Digest as _;
@@ -224,5 +224,19 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
         "Basic  access"
     );
     assert_eq!(strip_access_token_authorization_scheme("   "), "   ");
+    assert_eq!(
+        get_dpop_jkt_from_payload(&json!({"cnf":{"jkt":"bound"}}))?,
+        Some("bound")
+    );
+    assert_eq!(
+        get_dpop_jkt_from_payload(&json!({"cnf":[{"jkt":"bound"}]}))?,
+        None
+    );
+    assert!(
+        get_dpop_jkt_from_payload(&Value::Null)
+            .unwrap_err()
+            .code
+            .is_none()
+    );
     Ok(())
 }

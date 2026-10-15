@@ -258,8 +258,13 @@ pub fn get_confirmation_jkt(confirmation: &Value) -> Option<&str> {
         .as_str()
         .filter(|value| !value.is_empty())
 }
-pub fn get_dpop_jkt_from_payload(payload: &Value) -> Option<&str> {
-    get_confirmation_jkt(payload.get("cnf")?)
+pub fn get_dpop_jkt_from_payload(payload: &Value) -> Result<Option<&str>, DpopError> {
+    if payload.is_null() {
+        return Err(DpopError::ordinary(
+            "null is not an object (evaluating 'payload.cnf')",
+        ));
+    }
+    Ok(payload.get("cnf").and_then(get_confirmation_jkt))
 }
 fn auth_message(error: alibi_core::AuthError) -> String {
     match error {
@@ -582,12 +587,7 @@ impl<'a> EnforceDpopBindingParams<'a> {
     }
 }
 pub async fn enforce_dpop_binding(params: &EnforceDpopBindingParams<'_>) -> Result<(), DpopError> {
-    if params.payload.is_null() {
-        return Err(DpopError::ordinary(
-            "null is not an object (evaluating 'payload.cnf')",
-        ));
-    }
-    let Some(jkt) = get_dpop_jkt_from_payload(params.payload) else {
+    let Some(jkt) = get_dpop_jkt_from_payload(params.payload)? else {
         if params.authorization.scheme == DPOP_AUTHORIZATION_SCHEME {
             return Err(create_dpop_binding_error(
                 "invalid_token",

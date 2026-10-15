@@ -345,6 +345,9 @@ pub(crate) async fn router(
                 let capture=DpopReservationCapture{delegate:auth.context(),observed:std::sync::Mutex::new(None)};
                 let wrapped=create_dpop_replay_store(&capture);
                 let replay:Option<&dyn DpopReplayStore>=match body["replay"].as_str(){Some("memory")=>Some(dpop_memory.as_ref()),Some("database")=>Some(&database),Some("wrapped")=>Some(&wrapped),_=>None};
+                if body["operation"]=="payload-jkt"{
+                    return axum::Json(match get_dpop_jkt_from_payload(&body["payload"]){Ok(jkt)=>serde_json::json!({"jkt":jkt}),Err(_)=>serde_json::json!({"ordinary_error":true})}).into_response();
+                }
                 if body["operation"]=="utilities"{
                     let result=(||->Result<serde_json::Value,DpopError>{Ok(serde_json::json!({"authorization":parse_access_token_authorization(body["authorization"].as_str()),"stripped":strip_access_token_authorization_scheme(body["token"].as_str().unwrap()),"confirmation":get_confirmation_jkt(&body["confirmation"]),"normalized":normalize_dpop_htu(body["url"].as_str().unwrap())?,"ath":derive_dpop_ath(body["accessToken"].as_str().unwrap()),"jkt":derive_dpop_jkt(&body["jwk"])?}))})();
                     return axum::Json(result.unwrap_or_else(|_|serde_json::json!({"ordinary_error":true}))).into_response();

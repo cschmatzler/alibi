@@ -300,6 +300,14 @@ compatScenario(
       expect(utility.ath).toBe(hash("access"));
       expect(utility.jkt).toBe(jkt);
     }
+    for (const [payload, expected] of [
+      [{ cnf: { jkt: "bound" } }, { jkt: "bound" }],
+      [{ cnf: { "x5t#S256": "certificate" } }, { jkt: null }],
+      [{ cnf: [{ jkt: "bound" }] }, { jkt: null }],
+      [null, { ordinary_error: true }],
+    ] as const) {
+      expect(await control({ operation: "payload-jkt", payload })).toEqual(expected);
+    }
     return ctx.snapshot({ results, thumbprint: jkt });
   },
 );

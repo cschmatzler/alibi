@@ -1,4 +1,4 @@
-import {verifyDpopProof,createDpopReplayStore,createInMemoryDpopReplayStore,isDpopProofError,isDpopBindingError,enforceDpopBinding,parseAccessTokenAuthorization,stripAccessTokenAuthorizationScheme,getConfirmationJkt,normalizeDpopHtu,deriveDpopAth,deriveDpopJkt} from "better-auth/oauth2";
+import {verifyDpopProof,createDpopReplayStore,createInMemoryDpopReplayStore,isDpopProofError,isDpopBindingError,enforceDpopBinding,parseAccessTokenAuthorization,stripAccessTokenAuthorizationScheme,getConfirmationJkt,getDpopJktFromPayload,normalizeDpopHtu,deriveDpopAth,deriveDpopJkt} from "better-auth/oauth2";
 import {SignJWT,importJWK,decodeProtectedHeader} from "jose";
 import {symmetricEncrypt,symmetricDecrypt} from "better-auth/crypto";
 import {createHash} from "node:crypto";
@@ -94,6 +94,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     const wrapped={reserveVerificationValue:async(data:any)=>{observed=data;return ctx.context.internalAdapter.reserveVerificationValue(data);}};
     const replayStore=ctx.body.replay==="memory"?memoryDpopReplay:ctx.body.replay==="database"?createDpopReplayStore(ctx.context.internalAdapter):ctx.body.replay==="wrapped"?createDpopReplayStore(wrapped):undefined;
     try{
+      if(ctx.body.operation==="payload-jkt")return ctx.json({jkt:getDpopJktFromPayload(ctx.body.payload)??null});
       if(ctx.body.operation==="binding"){await enforceDpopBinding({...ctx.body,replayStore});return ctx.json({accepted:true});}
       if(ctx.body.operation==="utilities")return ctx.json({authorization:parseAccessTokenAuthorization(ctx.body.authorization)??null,stripped:stripAccessTokenAuthorizationScheme(ctx.body.token),confirmation:getConfirmationJkt(ctx.body.confirmation)??null,normalized:normalizeDpopHtu(ctx.body.url),ath:await deriveDpopAth(ctx.body.accessToken),jkt:await deriveDpopJkt(ctx.body.jwk)});
       const proof=await verifyDpopProof({...ctx.body,replayStore});
