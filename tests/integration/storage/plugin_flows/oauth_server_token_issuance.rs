@@ -229,6 +229,7 @@ async fn oauth_sender_confirmation_survives_validation_and_introspection<B: Back
         (json!({"jkt":"bound-key"}), "DPoP", true),
         (json!({"x5t#S256":"certificate"}), "Bearer", true),
         (json!({"jkt":""}), "Bearer", true),
+        (json!({"jkt":17}), "Bearer", true),
         (json!({}), "Bearer", true),
         (json!([]), "Bearer", true),
         (json!(false), "Bearer", false),
@@ -248,6 +249,7 @@ async fn oauth_sender_confirmation_survives_validation_and_introspection<B: Back
                 &params,
             )
             .await?;
+        assert_eq!(issued["token_type"], kind);
         let mut payloads = vec![
             provider
                 .validate_access_token(

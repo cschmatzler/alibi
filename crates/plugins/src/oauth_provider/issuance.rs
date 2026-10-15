@@ -463,13 +463,16 @@ impl OAuthProviderPlugin {
             ("expires_at", expires_claim),
             (
                 "token_type",
-                json!(
-                    if p.confirmation.as_ref().and_then(|v| v.get("jkt")).is_some() {
-                        "DPoP"
-                    } else {
-                        "Bearer"
-                    }
-                ),
+                json!(if p
+                    .confirmation
+                    .as_ref()
+                    .and_then(crate::oauth2::get_confirmation_jkt)
+                    .is_some()
+                {
+                    "DPoP"
+                } else {
+                    "Bearer"
+                }),
             ),
             ("scope", json!(p.scopes.join(" "))),
         ] {

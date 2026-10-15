@@ -43,6 +43,7 @@ compatScenario(
       { jkt: "bound-key" },
       { "x5t#S256": "certificate" },
       { jkt: "" },
+      { jkt: 17 },
       {},
       [],
       false,
