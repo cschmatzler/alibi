@@ -124,13 +124,14 @@ for (const [mode, publicClient] of [
             audience: client.client_id,
           }),
         ).rejects.toThrow();
-        if (prefix)
+        if (prefix) {
           await expect(
             jwtVerify(issued.id_token, new TextEncoder().encode(client.client_secret), {
               issuer: `${ctx.baseURL}/api/auth`,
               audience: client.client_id,
             }),
           ).rejects.toThrow();
+        }
       }
       return publicClient
         ? ctx.snapshot({ authorizationSession, clientId: client.client_id, tokens: issued })
