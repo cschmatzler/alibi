@@ -18,6 +18,11 @@ impl Issues {
             None => "undefined",
             Some(JsValue::Null) => "null",
             Some(JsValue::Bool(_)) => "boolean",
+            Some(JsValue::Number(value)) if value.is_nan() => "NaN",
+            Some(JsValue::Number(value)) if value.is_infinite() && value.is_sign_negative() => {
+                "-Infinity"
+            }
+            Some(JsValue::Number(value)) if value.is_infinite() => "Infinity",
             Some(JsValue::Number(_)) => "number",
             Some(JsValue::String(_)) => "string",
             Some(JsValue::Date(_)) => "Date",

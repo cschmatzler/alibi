@@ -5,12 +5,14 @@ use alibi::plugins::ScimPlugin;
 backend_tests!(
     scim_user_input_reports_reference_field_errors_before_authentication,
     scim_user_size_bounds_validated_input_before_authentication,
-    scim_user_sdk_dates_retain_schema_types_before_authentication
+    scim_user_sdk_dates_retain_schema_types_before_authentication,
+    scim_user_sdk_nonfinite_numbers_retain_diagnostic_types
 );
 postgres_tests!(
     scim_user_input_reports_reference_field_errors_before_authentication,
     scim_user_size_bounds_validated_input_before_authentication,
-    scim_user_sdk_dates_retain_schema_types_before_authentication
+    scim_user_sdk_dates_retain_schema_types_before_authentication,
+    scim_user_sdk_nonfinite_numbers_retain_diagnostic_types
 );
 async fn scim_user_input_reports_reference_field_errors_before_authentication<B: Backend>(
     db: Db,
@@ -384,5 +386,100 @@ async fn scim_user_sdk_dates_retain_schema_types_before_authentication<B: Backen
     let json_string=auth.dispatch_endpoint(ScimPlugin::create_user_endpoint().with_body(&json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","title":"2026-01-02T03:04:05.000Z"}))?,EndpointOptions::default()).await.unwrap_err();
     assert_eq!(json_string.error.status_code(), 401);
     assert_eq!(db.count("user").await?, 0);
+    B::close(connection).await
+}
+
+async fn scim_user_sdk_nonfinite_numbers_retain_diagnostic_types<B: Backend>(db: Db) -> TestResult {
+    use alibi::utils::json::JsValue;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    for (number, kind) in [
+        (f64::INFINITY, "Infinity"),
+        (f64::NEG_INFINITY, "-Infinity"),
+        (f64::NAN, "NaN"),
+        (42.0, "number"),
+    ] {
+        for (extra, path, field, expected) in [
+            (
+                json!({"title":null}),
+                vec!["title"],
+                "title",
+                Some("string"),
+            ),
+            (
+                json!({"name":{"formatted":null}}),
+                vec!["name", "formatted"],
+                "name.formatted",
+                Some("string"),
+            ),
+            (
+                json!({"roles":[{"value":null}]}),
+                vec!["roles", "0", "value"],
+                "roles.0.value",
+                Some("string"),
+            ),
+            (
+                json!({"schemas":null}),
+                vec!["schemas"],
+                "schemas",
+                Some("array"),
+            ),
+            (json!({"ignored":null}), vec!["ignored"], "ignored", None),
+        ] {
+            let mut input = json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com"});
+            input
+                .as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            let mut input = JsValue::from(input);
+            let mut target = &mut input;
+            for key in path {
+                target = match target {
+                    JsValue::Object(values) => values.get_mut(key).unwrap(),
+                    JsValue::Array(values) => &mut values[key.parse::<usize>().unwrap()],
+                    _ => panic!("trusted numeric path"),
+                };
+            }
+            *target = JsValue::Number(number);
+            for endpoint in [
+                ScimPlugin::create_user_endpoint(),
+                ScimPlugin::replace_user_endpoint("missing")?,
+            ] {
+                let rejected = auth
+                    .dispatch_endpoint(
+                        endpoint.with_body_value(input.clone()),
+                        EndpointOptions::default(),
+                    )
+                    .await
+                    .unwrap_err();
+                assert_eq!(
+                    rejected.error.status_code(),
+                    if expected.is_some() { 400 } else { 401 }
+                );
+                if let Some(expected) = expected {
+                    assert_eq!(
+                        rejected
+                            .body
+                            .as_deref()
+                            .unwrap()
+                            .get("detail")
+                            .and_then(JsValue::as_str),
+                        Some(
+                            format!(
+                                "[body.{field}] Invalid input: expected {expected}, received {kind}"
+                            )
+                            .as_str()
+                        )
+                    );
+                }
+            }
+        }
+    }
+    for table in ["user", "scimUser", "scimSubject", "scimConnectionBinding"] {
+        assert_eq!(db.count(table).await?, 0);
+    }
     B::close(connection).await
 }
