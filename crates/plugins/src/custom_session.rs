@@ -1,7 +1,7 @@
 //! Application-owned asynchronous session response projection.
 use alibi_core::endpoint::{
-    EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointInput, EndpointResponse,
-    ServerEndpoint,
+    EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook, EndpointInput,
+    EndpointResponse, ServerEndpoint,
 };
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
@@ -124,6 +124,9 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
             .insert(SessionTransformHandle(self.transform.clone()));
         Ok(())
     }
+    fn endpoint_hooks(&self) -> Vec<&dyn EndpointHook<S>> {
+        vec![self]
+    }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
         vec![crate::endpoint::definition(
             "getSession",
@@ -215,6 +218,41 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
                 )
                 .await?;
             response.body = serde_json::to_vec(&transformed)?;
+        }
+        Ok(response)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> EndpointHook<S> for CustomSessionPlugin<S> {
+    fn matches_after(
+        &self,
+        call: &EndpointCall,
+        _ctx: &AuthContext<S>,
+        _response: &EndpointResponse,
+    ) -> AuthResult<bool> {
+        Ok(self.mutate_device_sessions
+            && call.path() == Some("/multi-session/list-device-sessions"))
+    }
+    async fn after(
+        &self,
+        call: &EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: EndpointResponse,
+    ) -> AuthResult<EndpointResponse> {
+        if let Ok(alibi_core::utils::json::JsValue::Array(sessions)) = response.result() {
+            let sessions = sessions
+                .iter()
+                .map(alibi_core::utils::json::JsValue::to_json_value)
+                .collect::<Result<Vec<_>, _>>()?;
+            let transformed = self
+                .transform_list(
+                    sessions,
+                    &SessionTransformContext::Endpoint(Box::new(call.clone())),
+                    ctx,
+                )
+                .await?;
+            response.replace(Value::Array(transformed).into());
         }
         Ok(response)
     }
