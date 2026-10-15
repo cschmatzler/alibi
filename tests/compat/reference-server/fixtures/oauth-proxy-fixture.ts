@@ -341,6 +341,13 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
 
+      if (url.pathname === `${path}/__server-social` && request.method === "POST") {
+        const origin = databases.has(url.origin) ? url.origin : preview;
+        const input = await request.json();
+        const api = instances.get(`${origin}:${modes.get(origin)}`)!.api;
+        const operation = input.link ? "linkSocialAccount" : "signInSocial";
+        return (api as any)[operation]({ body: input.body, headers: new Headers(input.headers), asResponse: true });
+      }
       if (url.pathname === `${path}/__server-proxy` && request.method === "POST") {
         const origin = databases.has(url.origin) ? url.origin : preview;
         const input = await request.json();

@@ -10,9 +10,101 @@ use alibi::{AuthResult, CreateSession};
 
 backend_tests!(
     proxy_forwards_and_completes_provider_flows,
+    proxy_server_initiation_wraps_state_and_completes_real_exchange,
     proxy_error_destinations_and_pass_through,
     proxy_session_and_identity_failures
 );
+
+postgres_tests!(proxy_server_initiation_wraps_state_and_completes_real_exchange);
+
+async fn proxy_server_initiation_wraps_state_and_completes_real_exchange<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for linked in [false, true] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let social = Social::start().await;
+        let auth = social
+            .auth_configured::<B>(
+                &connection,
+                config(|_| {}),
+                |_| {},
+                |builder| builder.plugin(proxy()),
+                |store| store,
+            )
+            .await?;
+        social
+            .profile
+            .set("sdk-proxy-sub", "sdk-proxy@example.com", true);
+        let owner = if linked {
+            Some(signup(&auth, "sdk-proxy@example.com").await)
+        } else {
+            None
+        };
+        let cookie = owner.as_ref().map(cookies).unwrap_or_default();
+        let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new(
+            "oauth",
+            if linked { "linkSocialAccount" } else { "signInSocial" },
+        )
+        .with_body(&input())?;
+        let issued = auth
+            .dispatch_endpoint(
+                endpoint,
+                alibi::endpoint::EndpointOptions {
+                    headers: Some(
+                        [
+                            ("cookie".into(), cookie),
+                            ("x-skip-oauth-proxy".into(), "1".into()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .into_response()?;
+        let url = url::Url::parse(body(&issued)["url"].as_str().unwrap())?;
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "redirect_uri")
+                .unwrap()
+                .1,
+            format!("{PRODUCTION}/api/auth/callback/google")
+        );
+        let state = url
+            .query_pairs()
+            .find(|(key, _)| key == "state")
+            .unwrap()
+            .1
+            .into_owned();
+        assert!(state.len() > 100, "SDK state was not packaged");
+        let forwarded = forward(&auth, &state, "grant", &cookies(&issued)).await;
+        let completed = bridge(&auth, &forwarded, &cookies(&issued)).await;
+        assert_eq!(completed.status, 302);
+        assert_eq!(db.count("user").await?, 1);
+        assert_eq!(db.count("account").await?, if linked { 2 } else { 1 });
+        assert_eq!(db.count("verification").await?, 0);
+        if let Some(owner) = owner {
+            assert!(
+                auth.store()
+                    .get_user_by_id(body(&owner)["user"]["id"].as_str().unwrap())
+                    .await?
+                    .is_some()
+            );
+        } else {
+            let session = call(
+                &auth,
+                request("/get-session", None, &cookies(&completed)),
+                200,
+            )
+            .await;
+            assert_eq!(body(&session)["user"]["email"], "sdk-proxy@example.com");
+        }
+        B::close(connection).await?;
+    }
+    Ok(())
+}
 
 const PRODUCTION: &str = "http://127.0.0.1:43219";
 
