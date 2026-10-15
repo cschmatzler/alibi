@@ -50,8 +50,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return ctx.context.adapter.create({model:"oauthClient",data:{clientId:id,clientDiscoveryId:"registry-live",name:"Registry client",redirectUris:["https://app.fixture.test/callback"],tokenEndpointAuthMethod:"none",scopes:["email"],grantTypes:["authorization_code"],responseTypes:["code"],disabled:false,createdAt:new Date(),updatedAt:new Date()}});
     }},
   ];
+  const providerClientOptions={loginPage:"/login",consentPage:"/consent",extensions:[{clientDiscovery:registryDiscoveries}],cachedTrustedClients:new Set(["registry-client"])};
   const providerClientHelper={id:"provider-client-helper",endpoints:{providerResolveClient:createAuthEndpoint("/fixture/provider-client",{method:"POST",body:z.object({clientId:z.string(),discover:z.boolean()})},async(ctx)=>{
-    const client=await getOAuthProviderApi(ctx,{loginPage:"/login",consentPage:"/consent",...(ctx.body.discover?{extensions:[{clientDiscovery:registryDiscoveries}]}:{})}).getClient(ctx.body.clientId);
+    const client=await getOAuthProviderApi(ctx,ctx.body.discover?providerClientOptions:{...providerClientOptions,extensions:[]}).getClient(ctx.body.clientId);
     return ctx.json(client?{client_id:client.clientId,client_name:client.name??null,discovery_id:client.clientDiscoveryId??null,user_id:client.userId??null,client_secret:client.clientSecret??null}:null);
   })}};
   const assertionHelper = {
@@ -91,7 +92,16 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       storeClientSecret:{hash:async(secret:string)=>customHash(secret),...(verify?{verify:async(secret:string,stored:string)=>customHash(secret.endsWith("!")?secret.slice(0,-1):secret)===stored}:{})}
     })]});
   };
+  const trustedProvider=oauthProvider({loginPage:"/login",consentPage:"/consent",generateClientId:()=>"trusted-client",cachedTrustedClients:new Set(["trusted-client","trusted-missing"])});
+  const trustedHelper={id:"trusted-client-helper",endpoints:{trustedGetClient:createAuthEndpoint("/fixture/trusted-client",{method:"POST",body:z.object({fresh:z.boolean(),rename:z.boolean()})},async(ctx)=>{
+    const client=await getOAuthProviderApi(ctx,ctx.body.fresh?{...trustedProvider.options}:trustedProvider.options).getClient("trusted-client");
+    if(client&&ctx.body.rename)client.name="changed return value";
+    return ctx.json(client?{name:client.name}:null);
+  })}};
+  const trustedPlugins=[username(),jwt(),trustedProvider,trustedHelper];
   const auths = {
+    trusted:betterAuth({...options,plugins:trustedPlugins}),
+    "trusted-peer":betterAuth({...options,plugins:trustedPlugins}),
     "custom-encrypted-prefixed":customCipherProfile(),
     "custom-hash":customSecretProfile(false),
     "custom-prefixed-verify":customSecretProfile(true),
@@ -238,6 +248,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if(input.action==="trusted-client")return auth.api.trustedGetClient({body:{fresh:input.fresh??false,rename:input.rename??false},asResponse:true});
+    if(input.action==="trusted-external-update"||input.action==="trusted-external-delete"){
+      const ctx=await auth.$context;
+      if(input.action==="trusted-external-update")await ctx.adapter.update({model:"oauthClient",where:[{field:"clientId",value:"trusted-client"}],update:{name:"External update"}});
+      else await ctx.adapter.delete({model:"oauthClient",where:[{field:"clientId",value:"trusted-client"}]});
+      return new Response(JSON.stringify({updated:true}),{headers:{"content-type":"application/json"}});
+    }
     if(input.action==="provider-client")return auth.api.providerResolveClient({body:{clientId:input.clientId,discover:input.discover},asResponse:true});
     if(input.action==="secret-cipher-validation") {
       try {oauthProvider({loginPage:"/login",consentPage:"/consent",storeClientSecret:customCipher});

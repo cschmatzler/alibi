@@ -10,11 +10,13 @@ use alibi::store::{CreateOAuthClient, OAuthClient};
 use std::sync::atomic::{AtomicU8, Ordering};
 backend_tests!(
     oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed,
-    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries
+    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries,
+    oauth_trusted_client_cache_preserves_shared_authority_and_blocks_mutations
 );
 postgres_tests!(
     oauth_client_discovery_resolves_in_order_and_never_treats_owned_rows_as_managed,
-    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries
+    oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_discoveries,
+    oauth_trusted_client_cache_preserves_shared_authority_and_blocks_mutations
 );
 type Events = Arc<std::sync::Mutex<Vec<String>>>;
 struct RegistryDiscovery<S: AuthSchema> {
@@ -309,6 +311,7 @@ async fn oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_di
     let events: Events = Arc::default();
     let state = Arc::new(AtomicU8::new(0));
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        cached_trusted_clients: ["registry-client".into()].into(),
         client_discoveries: [true, false]
             .into_iter()
             .map(|first| {
@@ -437,5 +440,178 @@ async fn oauth_server_client_resolution_returns_raw_clients_and_uses_supplied_di
             );
         }
     }
+    B::close(connection).await
+}
+
+#[derive(Debug)]
+struct TrustedClientId;
+impl OAuthClientIdGenerator for TrustedClientId {
+    fn generate(&self) -> alibi::AuthResult<String> {
+        Ok("trusted-client".into())
+    }
+}
+async fn oauth_trusted_client_cache_preserves_shared_authority_and_blocks_mutations<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = OAuthProviderConfig {
+        cached_trusted_clients: ["trusted-client", "trusted-missing"]
+            .map(str::to_owned)
+            .into(),
+        client_id_generator: Some(Arc::new(TrustedClientId)),
+        ..Default::default()
+    };
+    let provider = OAuthProviderPlugin::with_config(config.clone());
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let peer = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "trusted-owner@example.test").await;
+    let other = signup(&auth, "trusted-other@example.test").await;
+    let create=ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Original trusted","redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"client_secret_post"}))?;
+    let created = auth
+        .dispatch_endpoint(
+            create,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                ..Default::default()
+            },
+        )
+        .await?
+        .into_response()?;
+    assert_eq!(created.status, 201);
+    let client = body(&created);
+    assert_eq!(client["client_id"], "trusted-client");
+    let first = provider
+        .get_client(auth.context(), "trusted-client")
+        .await?
+        .unwrap();
+    assert_eq!(first.metadata["client_name"], "Original trusted");
+    let mut metadata = first.metadata.clone();
+    metadata["client_name"] = json!("External update");
+    let updated = auth
+        .store()
+        .update_oauth_client_metadata("trusted-client", metadata, chrono::Utc::now())
+        .await?;
+    assert!(updated.is_some());
+    let mut returned = provider
+        .get_client(auth.context(), "trusted-client")
+        .await?
+        .unwrap();
+    assert_eq!(returned.metadata["client_name"], "Original trusted");
+    returned.metadata["client_name"] = json!("changed return value");
+    assert_eq!(
+        provider
+            .get_client(auth.context(), "trusted-client")
+            .await?
+            .unwrap()
+            .metadata["client_name"],
+        "Original trusted"
+    );
+    assert_eq!(
+        OAuthProviderPlugin::with_config(config.clone())
+            .get_client(auth.context(), "trusted-client")
+            .await?
+            .unwrap()
+            .metadata["client_name"],
+        "External update"
+    );
+    let before = db
+        .tables(&[
+            "oauthClient",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "verification",
+        ])
+        .await?;
+    for cookie in [cookies(&owner), cookies(&other)] {
+        for id in ["trusted-client", "trusted-missing"] {
+            for operation in [
+                "updateOAuthClient",
+                "rotateClientSecret",
+                "deleteOAuthClient",
+            ] {
+                let input = if operation == "updateOAuthClient" {
+                    json!({"client_id":id,"update":{"client_name":"Forbidden"}})
+                } else {
+                    json!({"client_id":id})
+                };
+                let result = auth
+                    .dispatch_endpoint(
+                        ServerEndpoint::<Value>::new("oauth-provider", operation)
+                            .with_body(&input)?,
+                        EndpointOptions {
+                            headers: Some(
+                                [("cookie".into(), cookie.clone())].into_iter().collect(),
+                            ),
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                let response = match result {
+                    Ok(output) => output.into_response()?,
+                    Err(error) => {
+                        let mut response = EndpointResponse::error(error.error);
+                        if let Some(body) = error.body {
+                            response = response.with_error_body(*body);
+                        }
+                        response.to_response()?
+                    }
+                };
+                assert_eq!(
+                    response.status,
+                    500,
+                    "{operation} {id}: {}",
+                    body(&response)
+                );
+                assert_eq!(
+                    body(&response),
+                    json!({"error":"invalid_client","error_description":"trusted clients must be updated manually"})
+                );
+                assert_eq!(
+                    db.tables(&[
+                        "oauthClient",
+                        "oauthAccessToken",
+                        "oauthRefreshToken",
+                        "verification"
+                    ])
+                    .await?,
+                    before
+                );
+            }
+        }
+    }
+    auth.store().delete_oauth_client("trusted-client").await?;
+    assert!(
+        auth.store()
+            .get_oauth_client("trusted-client")
+            .await?
+            .is_none()
+    );
+    for instance in [&auth, &peer] {
+        assert_eq!(
+            provider
+                .get_client(instance.context(), "trusted-client")
+                .await?
+                .unwrap()
+                .metadata["client_name"],
+            "Original trusted"
+        );
+        let result=instance.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Introspect").with_body(&json!({"client_id":"trusted-client","client_secret":client["client_secret"],"token":"not-issued"}))?,EndpointOptions::default()).await?.into_response()?;
+        assert_eq!(result.status, 200);
+        assert_eq!(body(&result), json!({"active":false}));
+    }
+    assert!(
+        OAuthProviderPlugin::with_config(config)
+            .get_client(auth.context(), "trusted-client")
+            .await?
+            .is_none()
+    );
     B::close(connection).await
 }
