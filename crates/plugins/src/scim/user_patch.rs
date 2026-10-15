@@ -976,7 +976,11 @@ pub(super) fn apply(
     } else {
         _ = state.document.remove("externalId");
     }
-    let profile = user_profile::parse(&json!(state.document))
+    let document = json!(state.document);
+    if let Some(detail) = super::user_input::patch_validation_error(&document.clone().into()) {
+        return Err(invalid(detail));
+    }
+    let profile = user_profile::parse(&document)
         .ok_or_else(|| invalid("The patched User resource is invalid"))?;
     let changed = source.user_name != profile.user_name
         || source.primary_email != profile.primary_email

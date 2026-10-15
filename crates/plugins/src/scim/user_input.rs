@@ -6,12 +6,12 @@ use serde_json::Value;
 
 #[derive(Default)]
 struct Issues {
-    messages: Vec<String>,
+    messages: Vec<(String, String)>,
     fatal: bool,
 }
 impl Issues {
     fn add(&mut self, path: &str, message: impl std::fmt::Display) {
-        self.messages.push(format!("[{path}] {message}"));
+        self.messages.push((path.into(), message.to_string()));
     }
     fn wrong_type(&mut self, path: &str, expected: &str, value: Option<&JsValue>) {
         let received = match value {
@@ -262,11 +262,11 @@ impl Issues {
 }
 
 /// Preserve the schema's original SDK types, field order and repeated issues.
-pub(super) fn validation_error(raw: &JsValue) -> Option<String> {
+fn validation_issues(raw: &JsValue) -> Issues {
     let mut issues = Issues::default();
     if !raw.is_object() {
         issues.wrong_type("body", "object", Some(raw));
-        return Some(issues.messages.join("; "));
+        return issues;
     }
     if let Some(schemas) = raw.get("schemas").and_then(JsValue::as_array) {
         for (index, schema) in schemas.iter().enumerate() {
@@ -407,11 +407,31 @@ pub(super) fn validation_error(raw: &JsValue) -> Option<String> {
             "SCIM User attributes exceed the supported serialized size",
         );
     }
-    if issues.messages.is_empty() {
-        None
-    } else {
-        Some(issues.messages.join("; "))
-    }
+    issues
+}
+
+pub(super) fn validation_error(raw: &JsValue) -> Option<String> {
+    let issues = validation_issues(raw);
+    (!issues.messages.is_empty()).then(|| {
+        issues
+            .messages
+            .iter()
+            .map(|(path, message)| format!("[{path}] {message}"))
+            .collect::<Vec<_>>()
+            .join("; ")
+    })
+}
+
+/// PATCH finalization exposes the first schema issue with an unprefixed path.
+pub(super) fn patch_validation_error(raw: &JsValue) -> Option<String> {
+    validation_issues(raw)
+        .messages
+        .into_iter()
+        .next()
+        .map(|(path, message)| {
+            let path = path.strip_prefix("body.").unwrap_or("User");
+            format!("{path}: {message}")
+        })
 }
 
 pub(super) fn detail(raw: &JsValue) -> String {
