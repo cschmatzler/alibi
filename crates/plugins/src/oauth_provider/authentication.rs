@@ -90,7 +90,7 @@ impl OAuthProviderPlugin {
         .await?
         {
             Ok(credentials) => credentials,
-            Err(response) => return Err(response_error(response)?),
+            Err(response) => return Err(response_error(&response)?),
         };
         if credentials.client_id.is_empty() {
             return Err(failure("invalid_request", "Missing required client_id"));
@@ -104,7 +104,7 @@ impl OAuthProviderPlugin {
         }
         let client = match credentials.authenticate(ctx, self).await? {
             Ok(client) => client,
-            Err(response) => return Err(response_error(response)?),
+            Err(response) => return Err(response_error(&response)?),
         };
         if let Some(requested) = &options.scopes {
             let allowed = client.metadata.get("scope").and_then(|scope| {
@@ -171,7 +171,7 @@ fn failure(code: &str, description: &str) -> EndpointError {
         body_absent: false,
     }
 }
-fn response_error(response: EndpointResponse) -> Result<EndpointError, EndpointError> {
+fn response_error(response: &EndpointResponse) -> Result<EndpointError, EndpointError> {
     let response = response.to_response()?;
     let body_absent = response.body.is_empty();
     let body = if body_absent {
