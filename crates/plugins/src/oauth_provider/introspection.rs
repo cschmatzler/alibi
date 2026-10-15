@@ -126,7 +126,8 @@ impl OAuthProviderPlugin {
                                 code: None,
                                 message: String::new(),
                             })
-                            .without_error_body(),
+                            .without_error_body()
+                            .with_header("content-type", "application/json"),
                         ));
                     }
                 }

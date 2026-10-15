@@ -373,6 +373,27 @@ async fn oauth_jwt_introspection_uses_live_resource_peer_authority<B: Backend>(
     let prefixed = format!("  dpop   {token}  ");
     let response=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":prefixed}))?,EndpointOptions::default())).await?.into_response()?;
     assert_eq!(body(&response)["active"], true);
+    let parts = token.split('.').collect::<Vec<_>>();
+    let mut signature = URL_SAFE_NO_PAD.decode(parts[2])?;
+    *signature.first_mut().unwrap() ^= 1;
+    let tampered = format!(
+        "{}.{}.{}",
+        parts[0],
+        parts[1],
+        URL_SAFE_NO_PAD.encode(signature)
+    );
+    let failure=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":tampered,"token_type_hint":"access_token"}))?,EndpointOptions::default())).await.unwrap_err();
+    assert_eq!(failure.error.status_code(), 500);
+    assert!(failure.body_absent);
+    assert!(
+        failure
+            .headers
+            .as_ref()
+            .unwrap()
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("content-type")
+                && value == "application/json")
+    );
     let unlinked = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "adminUnlinkClientResource")

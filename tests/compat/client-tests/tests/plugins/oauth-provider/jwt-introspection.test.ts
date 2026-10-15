@@ -127,6 +127,8 @@ compatScenario(
     parts[2] = signature.toString("base64url");
     const tampered = await introspect(issuer, parts.join("."));
     expect(tampered.status).toBe(500);
+    expect(tampered.headers.get("content-type")).toBe("application/json");
+    expect(await tampered.text()).toBe("");
     const unlinked = await control({
       action: "resource-unlink",
       headers: { cookie },
