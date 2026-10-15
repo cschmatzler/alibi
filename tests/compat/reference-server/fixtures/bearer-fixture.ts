@@ -96,9 +96,15 @@ export function createBearerFixture(base: BetterAuthOptions) {
           : {}),
         asResponse: true,
       };
-      return input.action === "sign-up"
-        ? auth.api.signUpEmail(options as any)
-        : auth.api.getSession(options);
+      const api = auth.api as any;
+      const operation =
+        (
+          { "sign-up": "signUpEmail", list: "listDeviceSessions", "sign-out": "signOut" } as Record<
+            string,
+            string
+          >
+        )[input.action] ?? "getSession";
+      return api[operation](options);
     },
     reset() {
       counter = 0;

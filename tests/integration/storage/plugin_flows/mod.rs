@@ -556,3 +556,5 @@ mod organization_feature_surface;
 mod server_bearer;
 
 mod server_custom_session;
+
+mod server_multi_session;

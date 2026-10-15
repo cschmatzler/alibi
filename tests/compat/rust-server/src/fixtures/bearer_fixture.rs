@@ -125,7 +125,7 @@ pub(crate) async fn router(
     }
     Ok(router.route("/__test/server-api/bearer",post(move|Json(input):Json<Value>|{let profiles=sdk_profiles.clone();async move{
         let profile=input.get("profile").and_then(Value::as_str).unwrap_or("bearer-default");let Some(auth)=profiles.get(profile)else{return axum::http::StatusCode::NOT_FOUND.into_response();};
-        let sign_up=input.get("action").and_then(Value::as_str)==Some("sign-up");let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new(if sign_up{"email-password"}else{"session-management"},if sign_up{"signUpEmail"}else{"getSession"});if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
+        let (plugin,operation)=match input.get("action").and_then(Value::as_str){Some("sign-up")=>("email-password","signUpEmail"),Some("list")=>("multi-session","listDeviceSessions"),Some("sign-out")=>("session-management","signOut"),_=>("session-management","getSession")};let mut endpoint=alibi::endpoint::ServerEndpoint::<Value>::new(plugin,operation);if let Some(body)=input.get("body"){endpoint=endpoint.with_body(body).unwrap();}
         let request=input.get("requestHeaders").map(|headers|{let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Get,"/get-session");request.headers=serde_json::from_value(headers.clone()).unwrap();request});
         let options=alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request,..Default::default()};
         match auth.dispatch_endpoint(endpoint,options).await{Ok(output)=>output.into_response().unwrap().into_response(),Err(error)=>error.error.to_auth_response().into_response()}

@@ -587,10 +587,18 @@ export function compareValues(
         trace.responseStatus === 200 &&
         other.responseStatus === 200
       ) {
+        const sdkIssuance =
+          trace.path === "/__test/server-api/bearer" &&
+          record(left.verificationInput) &&
+          record(right.verificationInput) &&
+          left.verificationInput.action === "sign-up" &&
+          right.verificationInput.action === "sign-up" &&
+          left.verificationInput.profile === "bearer-composition" &&
+          right.verificationInput.profile === "bearer-composition";
         const issuancePath =
           /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/sign-(?:in\/(?:email|username)|up\/email)$/.exec(
             trace.path,
-          );
+          ) ?? (sdkIssuance ? [trace.path, "/__test/profiles/bearer-composition/api/auth"] : null);
         const a = trace.responseBody;
         const b = other.responseBody;
 
@@ -4338,7 +4346,14 @@ export function compareValues(
             trace.method === "POST" &&
             trace.responseStatus === 200 &&
             typeof trace.path === "string" &&
-            /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/sign-out$/.test(trace.path)
+            (/^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/sign-out$/.test(trace.path) ||
+              (trace.path === "/__test/server-api/bearer" &&
+                record(leftWindow?.verificationInput) &&
+                record(rightWindow?.verificationInput) &&
+                leftWindow.verificationInput.action === "sign-out" &&
+                rightWindow.verificationInput.action === "sign-out" &&
+                leftWindow.verificationInput.profile === "bearer-composition" &&
+                rightWindow.verificationInput.profile === "bearer-composition"))
           );
         };
         // Source verifies logout cookies concurrently and publishes each unique
