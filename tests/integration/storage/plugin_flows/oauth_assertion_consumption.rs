@@ -181,5 +181,36 @@ async fn oauth_public_assertion_consumption_checks_claims_and_namespaces_durable
         .await?,
         before
     );
+    let contested = JsValue::from(json!({"aud":audience,"exp":now+90,"iat":now,"jti":"contested"}));
+    let (first, second) = tokio::join!(
+        consume_client_assertion(auth.context(), &cfg, "extension:race", &contested, audience),
+        consume_client_assertion(
+            other.context(),
+            &cfg,
+            "extension:race",
+            &contested,
+            audience
+        )
+    );
+    let outcomes = [first, second];
+    let mut statuses = outcomes
+        .iter()
+        .map(|result| {
+            result
+                .as_ref()
+                .map_or_else(|error| error.error.status_code(), |()| 200)
+        })
+        .collect::<Vec<_>>();
+    statuses.sort_unstable();
+    assert_eq!(statuses, vec![200, 400]);
+    for error in outcomes.into_iter().filter_map(Result::err) {
+        assert_eq!(
+            error.body.unwrap().to_json_value()?,
+            json!({"error":"invalid_client","error_description":"client assertion jti has already been used"})
+        );
+    }
+    let id = URL_SAFE_NO_PAD.encode(&sha2::Sha256::digest("extension:race:contested")[..24]);
+    let rows: Vec<Value> = serde_json::from_str(&db.table("oauthClientAssertion").await?)?;
+    assert_eq!(rows.iter().filter(|row| row["id"] == id).count(), 1);
     B::close(connection).await
 }

@@ -90,6 +90,35 @@ compatScenario(
       error: "invalid_client",
       error_description: "client assertion jti has already been used",
     });
+    const contested = { aud: audience, exp: now + 90, iat: now, jti: "contested" };
+    const race = await Promise.all(
+      ["assertion-helper", "assertion-helper-peer"].map((mode) =>
+        control({
+          mode,
+          action: "consume-assertion",
+          params: { namespace: "extension:race", payload: contested, expectedAudience: audience },
+        }),
+      ),
+    );
+    expect(race.map((response) => response.status).sort()).toEqual([200, 400]);
+    for (const response of race) {
+      expect(await response.json()).toEqual(
+        response.status === 200
+          ? { consumed: true }
+          : {
+              error: "invalid_client",
+              error_description: "client assertion jti has already been used",
+            },
+      );
+    }
+    const raceId = createHash("sha256")
+      .update("extension:race:contested")
+      .digest()
+      .subarray(0, 24)
+      .toString("base64url");
+    const raceRow = (await (await control({ action: "assertion-row", id: raceId })).json()) as any;
+    expect(raceRow.id).toBe(raceId);
+    expect(Date.parse(raceRow.expiresAt) / 1000).toBe(now + 90);
     return ctx.snapshot({ results, receipts, replay: { status: replay.status, body: replayBody } });
   },
 );

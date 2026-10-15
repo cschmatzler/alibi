@@ -177,7 +177,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "assertion-row") {
       const context=await auth.$context;
       const row=await context.adapter.findOne<{id:string;expiresAt:Date}>({model:"oauthClientAssertion",where:[{field:"id",value:input.id}]});
-      return Response.json(row?{id:row.id,expiresAt:row.expiresAt}:null);
+      return new Response(JSON.stringify(row?{id:row.id,expiresAt:row.expiresAt}:null),{headers:{"content-type":"application/json"}});
     }
     if (input.action === "signout") {
       const call = () =>
