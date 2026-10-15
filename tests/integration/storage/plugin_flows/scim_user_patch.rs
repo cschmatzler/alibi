@@ -5,12 +5,14 @@ use alibi::plugins::ScimPlugin;
 backend_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
     scim_user_patch_clones_sdk_dates_as_own_property_records,
-    scim_user_patch_reports_first_invalid_profile_attribute
+    scim_user_patch_reports_first_invalid_profile_attribute,
+    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation
 );
 postgres_tests!(
     scim_user_patch_handles_noops_and_ordered_canonical_changes,
     scim_user_patch_clones_sdk_dates_as_own_property_records,
-    scim_user_patch_reports_first_invalid_profile_attribute
+    scim_user_patch_reports_first_invalid_profile_attribute,
+    scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation
 );
 async fn patch<S: AuthSchema>(
     auth: &Alibi<S>,
@@ -290,6 +292,92 @@ async fn scim_user_patch_reports_first_invalid_profile_attribute<B: Backend>(db:
             db.tables(&["user", "scimUser", "scimSubject"]).await?,
             before
         );
+    }
+    B::close(connection).await
+}
+
+async fn scim_user_patch_preserves_nonfinite_sdk_values_until_final_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::utils::json::JsValue;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let auth = builder::<B>(&connection)
+        .plugin(ScimPlugin::new().connections(super::scim_group_read::connections()))
+        .build()
+        .await?;
+    let initial=body(&super::scim_user_create::create(&auth,&json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"patch-number-owner@example.com"}),Some("group-reader")).await?);
+    let id = initial["id"].as_str().unwrap();
+    let before = db.tables(&["user", "scimUser", "scimSubject"]).await?;
+    for (number, kind) in [
+        (f64::NAN, "NaN"),
+        (f64::INFINITY, "Infinity"),
+        (f64::NEG_INFINITY, "-Infinity"),
+    ] {
+        for (path, nested, field) in [
+            ("title", false, "title"),
+            ("roles", true, "roles.0.value"),
+            ("roles[type eq \"access\"].value", false, "roles.0.value"),
+        ] {
+            let mut operation = JsValue::from(json!({"path":path}));
+            let value = JsValue::Number(number);
+            let value = if nested {
+                JsValue::Array(vec![JsValue::Object(
+                    [("value".into(), value)].into_iter().collect(),
+                )])
+            } else {
+                value
+            };
+            if let JsValue::Object(fields) = &mut operation {
+                _ = fields.insert("value".into(), value);
+            }
+            let mut input =
+                JsValue::from(json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"]}));
+            if let JsValue::Object(fields) = &mut input {
+                _ = fields.insert("Operations".into(), JsValue::Array(vec![operation]));
+            }
+            let result = patch_input(&auth, id, input, Some("group-reader")).await?;
+            assert_eq!(result.status, 400);
+            assert_eq!(
+                body(&result)["detail"],
+                format!("{field}: Invalid input: expected string, received {kind}")
+            );
+            assert_eq!(
+                db.tables(&["user", "scimUser", "scimSubject"]).await?,
+                before
+            );
+        }
+    }
+    let mut invalid = JsValue::from(json!({"path":"title"}));
+    if let JsValue::Object(fields) = &mut invalid {
+        _ = fields.insert("value".into(), JsValue::Number(f64::NAN));
+    }
+    for (last, expected, detail) in [
+        (
+            json!({"path":"unknown","value":null}),
+            400,
+            Some("User PATCH path unknown is not supported"),
+        ),
+        (json!({"path":"title","value":"Safe"}), 200, None),
+    ] {
+        let mut input =
+            JsValue::from(json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:PatchOp"]}));
+        if let JsValue::Object(fields) = &mut input {
+            _ = fields.insert(
+                "Operations".into(),
+                JsValue::Array(vec![invalid.clone(), JsValue::from(last)]),
+            );
+        }
+        let result = patch_input(&auth, id, input, Some("group-reader")).await?;
+        assert_eq!(result.status, expected);
+        if let Some(detail) = detail {
+            assert_eq!(body(&result)["detail"], detail);
+            assert_eq!(
+                db.tables(&["user", "scimUser", "scimSubject"]).await?,
+                before
+            );
+        } else {
+            assert_eq!(body(&result)["title"], "Safe");
+        }
     }
     B::close(connection).await
 }
