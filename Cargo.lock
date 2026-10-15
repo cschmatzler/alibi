@@ -239,6 +239,7 @@ dependencies = [
  "indexmap 2.14.2",
  "jsonwebtoken",
  "k256",
+ "ml-dsa",
  "num-traits",
  "openssl",
  "p256 0.14.0",
