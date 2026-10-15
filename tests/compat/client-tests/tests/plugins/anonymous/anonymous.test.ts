@@ -439,37 +439,45 @@ compatScenario(
   ["POST /sign-in/anonymous", "POST /sign-up/email"],
 );
 
-compatScenario(
-  "anonymous OAuth recovers only server-captured owner without the original anonymous cookie",
-  async (ctx) => {
-    const primary = actor(ctx, "primary");
-    const foreign = actor(ctx, "foreign");
-    const foreignAnonymous = await foreign.anonymous.signIn.anonymous();
-    const foreignBefore = await ctx.readUserState({ userId: foreignAnonymous.data!.user.id });
-    const issued = await primary.anonymous.signIn.anonymous();
-    const oldSession = await primary.client.getSession();
-    expect(issued.error).toBeNull();
+for (const sdk of [false, true]) {
+  compatScenario(
+    `anonymous ${sdk ? "SDK" : "HTTP"} OAuth recovers only server-captured owner without the original anonymous cookie`,
+    async (ctx) => {
+      const primary = actor(ctx, "primary");
+      const foreign = actor(ctx, "foreign");
+      const foreignAnonymous = await foreign.anonymous.signIn.anonymous();
+      const foreignBefore = await ctx.readUserState({ userId: foreignAnonymous.data!.user.id });
+      let anonymousCookies: string[] = [];
+      const issued = await primary.anonymous.signIn.anonymous(
+        {},
+        {
+          onSuccess(context) {
+            anonymousCookies = context.response.headers.getSetCookie();
+          },
+        },
+      );
+      const oldSession = await primary.client.getSession();
+      expect(issued.error).toBeNull();
 
-    const profile = {
-      id: 123456,
-      email: ctx.uniqueEmail("anonymous-oauth"),
-      name: "OAuth Upgrade",
-      username: "oauth-upgrade",
-      avatar_url: null,
-      email_verified: true,
-      state: "active",
-      locked: false,
-    };
-    const configured = await ctx.rawRequest({
-      path: "/__test/social-provider/profile",
-      method: "POST",
-      json: profile,
-    });
-    expect(configured.status).toBe(200);
+      const profile = {
+        id: 123456,
+        email: ctx.uniqueEmail("anonymous-oauth"),
+        name: "OAuth Upgrade",
+        username: "oauth-upgrade",
+        avatar_url: null,
+        email_verified: true,
+        state: "active",
+        locked: false,
+      };
+      const configured = await ctx.rawRequest({
+        path: "/__test/social-provider/profile",
+        method: "POST",
+        json: profile,
+      });
+      expect(configured.status).toBe(200);
 
-    let cookies: string[] = [];
-    const initiated = await primary.client.signIn.social(
-      {
+      let cookies: string[] = [];
+      const input = {
         provider: "gitlab",
         callbackURL: "/anonymous-done",
         disableRedirect: true,
@@ -478,94 +486,112 @@ compatScenario(
           _serverContextProof: "forged",
           application: "retained",
         },
-      },
-      {
-        onSuccess(context) {
-          cookies = context.response.headers.getSetCookie();
-        },
-      },
-    );
-    expect(initiated.error).toBeNull();
-    expect(cookies).toHaveLength(1);
-    expect(cookies[0]).not.toContain("session_token");
+      };
+      let initiated;
+      if (sdk) {
+        const response = await primary.fetch(`${ctx.baseURL}/__test/server-api/anonymous-social`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            body: input,
+            headers: { cookie: anonymousCookies.map((value) => value.split(";")[0]).join("; ") },
+          }),
+        });
+        expect(response.status).toBe(200);
+        cookies = response.headers.getSetCookie();
+        initiated = { data: await response.json(), error: null };
+      } else {
+        initiated = await primary.client.signIn.social(input, {
+          onSuccess(context) {
+            cookies = context.response.headers.getSetCookie();
+          },
+        });
+      }
+      expect(initiated.error).toBeNull();
+      expect(cookies).toHaveLength(1);
+      expect(cookies[0]).not.toContain("session_token");
 
-    const before = await state(ctx);
-    const authorization = new URL(initiated.data!.url!);
-    const stateId = authorization.searchParams.get("state")!;
-    const callbackPath = `${authProfilePath(primary.profile)}/callback/gitlab?code=fixture-code&state=${encodeURIComponent(stateId)}`;
-    const cookie = cookies.map((value) => value.split(";")[0]).join("; ");
-    expect(cookie).not.toContain(issued.data!.token);
+      const before = await state(ctx);
+      const authorization = new URL(initiated.data!.url!);
+      const stateId = authorization.searchParams.get("state")!;
+      const callbackPath = `${authProfilePath(primary.profile)}/callback/gitlab?code=fixture-code&state=${encodeURIComponent(stateId)}`;
+      const cookie = cookies.map((value) => value.split(";")[0]).join("; ");
+      expect(cookie).not.toContain(issued.data!.token);
 
-    const response = await primary.fetch(callbackPath, { redirect: "manual", headers: { cookie } });
-    const completedWire = {
-      status: response.status,
-      location: response.headers.get("location"),
-      body: await response.text(),
-      cookies: response.headers.getSetCookie(),
-    };
-    const completed = {
-      ...completedWire,
-      cookies: await observedCookies(ctx, completedWire.cookies, {
-        token: (await primary.client.getSession()).data!.session.token,
-      }),
-    };
-    expect(completed).toMatchObject({ status: 302, location: "/anonymous-done" });
+      const response = await primary.fetch(callbackPath, {
+        redirect: "manual",
+        headers: { cookie },
+      });
+      const completedWire = {
+        status: response.status,
+        location: response.headers.get("location"),
+        body: await response.text(),
+        cookies: response.headers.getSetCookie(),
+      };
+      const completed = {
+        ...completedWire,
+        cookies: await observedCookies(ctx, completedWire.cookies, {
+          token: (await primary.client.getSession()).data!.session.token,
+        }),
+      };
+      expect(completed).toMatchObject({ status: 302, location: "/anonymous-done" });
 
-    const current = await primary.client.getSession();
-    const after = await state(ctx);
-    expect(current.data!.user).toMatchObject({
-      email: profile.email,
-      name: profile.name,
-      isAnonymous: false,
-    });
-    expect(current.data!.user.id).not.toBe(issued.data!.user.id);
-    expect(current.data!.user.id).not.toBe(foreignAnonymous.data!.user.id);
-    expect(after.events).toHaveLength(1);
-    expect(after.events[0]).toMatchObject(
-      ctx.snapshot({
-        path: "/callback/gitlab",
-        anonymousUser: { user: issued.data!.user, session: oldSession.data!.session },
-        newUser: { user: current.data!.user, session: current.data!.session },
-      }) as any,
-    );
-    expect(after.users.some((row) => row.id === issued.data!.user.id)).toBe(false);
-    expect(after.sessions.some((row) => row.userId === issued.data!.user.id)).toBe(false);
-    expect(await ctx.readUserState({ userId: foreignAnonymous.data!.user.id })).toEqual(
-      foreignBefore,
-    );
+      const current = await primary.client.getSession();
+      const after = await state(ctx);
+      expect(current.data!.user).toMatchObject({
+        email: profile.email,
+        name: profile.name,
+        isAnonymous: false,
+      });
+      expect(current.data!.user.id).not.toBe(issued.data!.user.id);
+      expect(current.data!.user.id).not.toBe(foreignAnonymous.data!.user.id);
+      expect(after.events).toHaveLength(1);
+      expect(after.events[0]).toMatchObject(
+        ctx.snapshot({
+          path: "/callback/gitlab",
+          anonymousUser: { user: issued.data!.user, session: oldSession.data!.session },
+          newUser: { user: current.data!.user, session: current.data!.session },
+        }) as any,
+      );
+      expect(after.users.some((row) => row.id === issued.data!.user.id)).toBe(false);
+      expect(after.sessions.some((row) => row.userId === issued.data!.user.id)).toBe(false);
+      expect(await ctx.readUserState({ userId: foreignAnonymous.data!.user.id })).toEqual(
+        foreignBefore,
+      );
 
-    const replayResponse = await primary.fetch(callbackPath, {
-      redirect: "manual",
-      headers: { cookie },
-    });
-    const replay = {
-      status: replayResponse.status,
-      location: replayResponse.headers.get("location"),
-      body: await replayResponse.text(),
-      cookies: await observedCookies(ctx, replayResponse.headers.getSetCookie()),
-    };
-    expect(replay.location).toContain("state_mismatch");
-    expect(await state(ctx)).toEqual(after);
+      const replayResponse = await primary.fetch(callbackPath, {
+        redirect: "manual",
+        headers: { cookie },
+      });
+      const replay = {
+        status: replayResponse.status,
+        location: replayResponse.headers.get("location"),
+        body: await replayResponse.text(),
+        cookies: await observedCookies(ctx, replayResponse.headers.getSetCookie()),
+      };
+      expect(replay.location).toContain("state_mismatch");
+      expect(await state(ctx)).toEqual(after);
 
-    return {
-      foreignAnonymous,
-      foreignBefore,
-      issued,
-      oldSession,
-      configured,
-      initiated,
-      stateCookies: await observedCookies(ctx, cookies, { state: stateId }),
-      before,
-      completed,
-      current,
-      after,
-      replay,
-      final: await state(ctx),
-      foreignAfter: await ctx.readUserState({ userId: foreignAnonymous.data!.user.id }),
-    };
-  },
-  ["POST /sign-in/social", "GET /callback/{}"],
-);
+      return {
+        foreignAnonymous,
+        foreignBefore,
+        issued,
+        oldSession,
+        configured,
+        initiated,
+        stateCookies: await observedCookies(ctx, cookies, { state: stateId }),
+        before,
+        completed,
+        current,
+        after,
+        replay,
+        final: await state(ctx),
+        foreignAfter: await ctx.readUserState({ userId: foreignAnonymous.data!.user.id }),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}"],
+  );
+}
 
 compatScenario(
   "anonymous issuance inherits only a real signed browser-session preference",

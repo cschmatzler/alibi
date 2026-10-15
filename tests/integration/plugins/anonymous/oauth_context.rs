@@ -82,11 +82,35 @@ async fn initiate<S: AuthSchema>(
     auth: &Alibi<S>,
     cookie: &str,
     foreign: &str,
+    sdk: bool,
 ) -> (String, String, Value) {
-    let response = Box::pin(auth.handle_request(request("/api/auth/sign-in/social", Some(json!({
+    let input = json!({
         "provider":"gitlab", "callbackURL":"/completed", "disableRedirect":true,
         "additionalData":{"serverContext":{"anonymousUserId":foreign},"_serverContextProof":"forged", "application":{"kept":true}},
-    })), Some(cookie)))).await.unwrap();
+    });
+    let response = if sdk {
+        auth.dispatch_endpoint(
+            alibi::endpoint::ServerEndpoint::<Value>::new("oauth", "signInSocial")
+                .with_body(&input)
+                .unwrap(),
+            alibi::endpoint::EndpointOptions {
+                headers: Some([("cookie".into(), cookie.into())].into_iter().collect()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap()
+        .into_response()
+        .unwrap()
+    } else {
+        Box::pin(auth.handle_request(request(
+            "/api/auth/sign-in/social",
+            Some(input),
+            Some(cookie),
+        )))
+        .await
+        .unwrap()
+    };
     assert_eq!(response.status, 200);
     let body: Value = serde_json::from_slice(&response.body).unwrap();
     let url = url::Url::parse(body.get("url").unwrap().as_str().unwrap()).unwrap();
@@ -140,6 +164,7 @@ mod tests {
         db: Db,
     ) -> TestResult {
         for mode in [
+            "sdk-captured",
             "captured",
             "modified-owner",
             "copied-proof",
@@ -226,8 +251,13 @@ mod tests {
                 .unwrap()
                 .unwrap();
             let foreign_sessions_before = auth.store().get_user_sessions(foreign_id).await.unwrap();
-            let (state, state_cookie, mut payload) =
-                initiate(&auth, &cookies(&anonymous), foreign_id).await;
+            let (state, state_cookie, mut payload) = initiate(
+                &auth,
+                &cookies(&anonymous),
+                foreign_id,
+                mode == "sdk-captured",
+            )
+            .await;
             assert_eq!(
                 payload
                     .get("serverContext")
@@ -263,8 +293,13 @@ mod tests {
                         .unwrap() = json!(foreign_id);
                 }
                 "copied-proof" => {
-                    let (_other_state, _other_cookie, other) =
-                        initiate(&auth, &cookies(&anonymous), foreign_id).await;
+                    let (_other_state, _other_cookie, other) = initiate(
+                        &auth,
+                        &cookies(&anonymous),
+                        foreign_id,
+                        mode == "sdk-captured",
+                    )
+                    .await;
                     assert_ne!(
                         other.get("_serverContextProof").unwrap(),
                         payload.get("_serverContextProof").unwrap()
@@ -295,7 +330,13 @@ mod tests {
                     *payload.get_mut("_serverContextProof").unwrap() = json!(99);
                 }
                 "wrong-cookie" => {
-                    let (_, cookie, _) = initiate(&auth, &cookies(&anonymous), foreign_id).await;
+                    let (_, cookie, _) = initiate(
+                        &auth,
+                        &cookies(&anonymous),
+                        foreign_id,
+                        mode == "sdk-captured",
+                    )
+                    .await;
                     selected_cookie = cookie;
                 }
                 "expired" => {
@@ -304,13 +345,15 @@ mod tests {
                 }
                 _ => {}
             }
-            let edited = db
-                .execute(
-                    "UPDATE \"verification\" SET \"value\"=$1 WHERE id=$2",
-                    &[&payload.to_string(), row.id().as_ref()],
-                )
-                .await?;
-            assert_eq!(edited, 1);
+            if !matches!(mode, "captured" | "sdk-captured") {
+                let edited = db
+                    .execute(
+                        "UPDATE \"verification\" SET \"value\"=$1 WHERE id=$2",
+                        &[&payload.to_string(), row.id().as_ref()],
+                    )
+                    .await?;
+                assert_eq!(edited, 1);
+            }
             let response = callback(&auth, &state, &selected_cookie).await;
             assert_eq!(response.status, 302, "{mode}");
             let denied = matches!(mode, "wrong-cookie" | "expired");
@@ -363,7 +406,7 @@ mod tests {
                     1
                 );
             }
-            let transferred = mode == "captured";
+            let transferred = matches!(mode, "captured" | "sdk-captured");
             assert_eq!(
                 events.lock().unwrap().len(),
                 usize::from(transferred),
