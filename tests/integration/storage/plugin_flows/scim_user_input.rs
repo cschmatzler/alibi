@@ -41,6 +41,52 @@ async fn scim_user_input_reports_reference_field_errors_before_authentication<B:
  ("emails",json!([{}]),"[body.emails.0.value] Invalid input: expected string, received undefined".into()),
  ("emails",json!([{"value":"a@example.com","type":" "}]),"[body.emails.0.type] Too small: expected string to have >=1 characters".into()),
  ] {let mut input=valid.clone();input[key]=value;cases.push((input,detail));}
+    cases.extend([
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","emails":[{"value":"a@example.com","primary":true},{"value":"b@example.com","primary":true}]}), "[body.emails] emails cannot contain multiple primary values".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","emails":[{"value":"a@example.com","type":"WORK"},{"value":"a@example.com","type":"work"}]}), "[body.emails] emails cannot contain duplicate type and value pairs; [body.emails] emails cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","emails":[{"value":"a@example.com","type":"WORK"},{"value":"b@example.com","type":"work"}]}), "[body.emails] emails cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","emails":[{"value":"a0@example.com"},{"value":"a1@example.com"},{"value":"a2@example.com"},{"value":"a3@example.com"},{"value":"a4@example.com"},{"value":"a5@example.com"},{"value":"a6@example.com"},{"value":"a7@example.com"},{"value":"a8@example.com"},{"value":"a9@example.com"},{"value":"a10@example.com"},{"value":"a11@example.com"},{"value":"a12@example.com"},{"value":"a13@example.com"},{"value":"a14@example.com"},{"value":"a15@example.com"},{"value":"a16@example.com"},{"value":"a17@example.com"},{"value":"a18@example.com"},{"value":"a19@example.com"},{"value":"a20@example.com"}]}), "[body.emails] Too big: expected array to have <=20 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":null}), "[body.phoneNumbers] Invalid input: expected array, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[null]}), "[body.phoneNumbers.0] Invalid input: expected object, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{}]}), "[body.phoneNumbers.0.value] Invalid input: expected string, received undefined".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":42}]}), "[body.phoneNumbers.0.value] Invalid input: expected string, received number".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":"123","primary":null}]}), "[body.phoneNumbers.0.primary] Invalid input: expected boolean, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":"123","type":"WORK"},{"value":"456","type":"work"}]}), "[body.phoneNumbers] phoneNumbers cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":"123","primary":true},{"value":"456","primary":true}]}), "[body.phoneNumbers] phoneNumbers cannot contain multiple primary values".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":"0"},{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"},{"value":"5"},{"value":"6"},{"value":"7"},{"value":"8"},{"value":"9"},{"value":"10"}]}), "[body.phoneNumbers] Too big: expected array to have <=10 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","addresses":[{}]}), "[body.addresses.0] addresses must contain at least one address value".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","addresses":[{"type":"home","primary":true}]}), "[body.addresses.0] addresses must contain at least one address value".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","addresses":[{"locality":42}]}), "[body.addresses.0.locality] Invalid input: expected string, received number".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","addresses":[{"formatted":"a","type":"HOME"},{"formatted":"b","type":"home"}]}), "[body.addresses] addresses cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","roles":[{}]}), "[body.roles.0.value] Invalid input: expected string, received undefined".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","roles":[{"value":"a","display":null}]}), "[body.roles.0.display] Invalid input: expected string, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","roles":[{"value":"a","primary":true},{"value":"b","primary":true}]}), "[body.roles] roles cannot contain multiple primary values".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","roles":[{"value":"a","type":"WORK"},{"value":"b","type":"work"}]}), "[body.roles] roles cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","entitlements":null}), "[body.entitlements] Invalid input: expected array, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","entitlements":[{"value":""}]}), "[body.entitlements.0.value] Too small: expected string to have >=1 characters".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","entitlements":[{"value":"a","type":"WORK"},{"value":"b","type":"work"}]}), "[body.entitlements] entitlements cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{}}), "[body.schemas] The Enterprise User extension requires urn:ietf:params:scim:schemas:extension:enterprise:2.0:User in schemas".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":null}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User] Invalid input: expected object, received null".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"employeeNumber":42}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.employeeNumber] Invalid input: expected string, received number".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"employeeNumber":[]}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.employeeNumber] Invalid input: expected string, received array; [body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.employeeNumber] Too small: expected array to have >=1 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":42}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Invalid input".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":{"value":null}}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Invalid input".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":[]}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Too small: expected array to have exactly 1 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":[{},{}]}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Too big: expected array to have exactly 1 items".into()),
+    ]);
+    cases.extend([
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","emails":[{"value":"bad","primary":true},{"value":"bad","primary":true}]}), "[body.emails.0.value] Invalid email address; [body.emails.1.value] Invalid email address; [body.emails] emails cannot contain multiple primary values; [body.emails] emails cannot contain duplicate type and value pairs".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","emails":[{"value":"a@example.com","type":" ","primary":true},{"value":"b@example.com","type":" ","primary":true}]}), "[body.emails.0.type] Too small: expected string to have >=1 characters; [body.emails.1.type] Too small: expected string to have >=1 characters; [body.emails] emails cannot contain multiple primary values; [body.emails] emails cannot contain duplicate defined types".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","roles":[{"value":" ","primary":true},{"value":" ","primary":true}]}), "[body.roles.0.value] Too small: expected string to have >=1 characters; [body.roles.1.value] Too small: expected string to have >=1 characters; [body.roles] roles cannot contain multiple primary values".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":""}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Too small: expected string to have >=1 characters".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":{"value":""}}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager.value] Too small: expected string to have >=1 characters".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":[{"value":""}]}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager.0.value] Too small: expected string to have >=1 characters".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":{"value":42}}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Invalid input".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"],"userName":"owner@example.com","urn:ietf:params:scim:schemas:extension:enterprise:2.0:User":{"manager":{"displayName":42}}}), "[body.urn:ietf:params:scim:schemas:extension:enterprise:2.0:User.manager] Invalid input".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","emails":[{"value":"bad"},{"value":"a1@example.com"},{"value":"a2@example.com"},{"value":"a3@example.com"},{"value":"a4@example.com"},{"value":"a5@example.com"},{"value":"a6@example.com"},{"value":"a7@example.com"},{"value":"a8@example.com"},{"value":"a9@example.com"},{"value":"a10@example.com"},{"value":"a11@example.com"},{"value":"a12@example.com"},{"value":"a13@example.com"},{"value":"a14@example.com"},{"value":"a15@example.com"},{"value":"a16@example.com"},{"value":"a17@example.com"},{"value":"a18@example.com"},{"value":"a19@example.com"},{"value":"a20@example.com"}]}), "[body.emails.0.value] Invalid email address; [body.emails] Too big: expected array to have <=20 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User"],"userName":"owner@example.com","phoneNumbers":[{"value":null},{"value":"1"},{"value":"2"},{"value":"3"},{"value":"4"},{"value":"5"},{"value":"6"},{"value":"7"},{"value":"8"},{"value":"9"},{"value":"10"}]}), "[body.phoneNumbers.0.value] Invalid input: expected string, received null; [body.phoneNumbers] Too big: expected array to have <=10 items".into()),
+        (json!({"schemas":["urn:ietf:params:scim:schemas:core:2.0:User",1,"bad"],"userName":"owner@example.com"}), "[body.schemas.1] Invalid input: expected string, received number; [body.schemas] Too big: expected array to have <=2 items".into()),
+    ]);
     for (input, detail) in cases {
         for replace in [false, true] {
             let endpoint = if replace {
@@ -66,7 +112,7 @@ async fn scim_user_input_reports_reference_field_errors_before_authentication<B:
                     response.to_response()?
                 }
             };
-            assert_eq!(response.status, 400);
+            assert_eq!(response.status, 400, "input: {input}");
             assert_eq!(
                 body(&response),
                 json!({"schemas":["urn:ietf:params:scim:api:messages:2.0:Error"],"status":"400","detail":detail,"scimType":"invalidValue"})
@@ -98,6 +144,36 @@ async fn scim_user_input_reports_reference_field_errors_before_authentication<B:
             serde_json::from_str::<Value>(&db.table(table).await?)?,
             json!([])
         );
+    }
+    let enterprise = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User";
+    let mut invalid_manager =
+        json!({"schemas":[schema,enterprise],"userName":"invalid-manager@example.com"});
+    invalid_manager[enterprise] = json!({"manager":42});
+    let rejected =
+        super::scim_user_create::create(&auth, &invalid_manager, Some("group-reader")).await?;
+    assert_eq!(rejected.status, 400);
+    assert_eq!(body(&rejected)["scimType"], "invalidValue");
+    assert_eq!(db.count("user").await?, 0);
+    assert_eq!(db.count("scimUser").await?, 0);
+    for (index, (manager, normalized)) in [
+        (json!("manager-a"), json!({"value":"manager-a"})),
+        (
+            json!({"$ref":"https://directory.example/Users/manager-b"}),
+            json!({"$ref":"https://directory.example/Users/manager-b"}),
+        ),
+        (
+            json!([{"value":"manager-c","displayName":"Ignored"}]),
+            json!({"value":"manager-c"}),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut input = json!({"schemas":[schema,enterprise],"userName":format!("valid-manager-{index}@example.com")});
+        input[enterprise] = json!({"manager":manager});
+        let created = super::scim_user_create::create(&auth, &input, Some("group-reader")).await?;
+        assert_eq!(created.status, 201);
+        assert_eq!(body(&created)[enterprise]["manager"], normalized);
     }
     Ok(())
 }

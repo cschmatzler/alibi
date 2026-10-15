@@ -56,6 +56,207 @@ impl Issues {
             self.wrong_type(path, "boolean", Some(value));
         }
     }
+    fn scalar(&mut self, path: &str, raw: &Value, max: usize) {
+        let value = match raw.as_array() {
+            Some(values) if values.len() == 1 => values.first().unwrap_or(raw),
+            _ => raw,
+        };
+        self.string(path, Some(value), max);
+        if value.as_array().is_some_and(Vec::is_empty) {
+            self.add(path, "Too small: expected array to have >=1 items");
+        }
+    }
+    fn complex_values(&mut self, name: &str, raw: &Value) {
+        let path = format!("body.{name}");
+        let Some(values) = raw.as_array() else {
+            self.wrong_type(&path, "array", Some(raw));
+            return;
+        };
+        let mut items = Self::default();
+        for (index, value) in values.iter().enumerate() {
+            let path = format!("{path}.{index}");
+            let mut item = Self::default();
+            if !value.is_object() {
+                items.wrong_type(&path, "object", Some(value));
+                continue;
+            }
+            if name == "emails" {
+                let field = format!("{path}.value");
+                if let Some(email) = value.get("value").and_then(Value::as_str) {
+                    if !crate::authentication_helpers::is_valid_email(email) {
+                        item.add(&field, "Invalid email address");
+                    }
+                    if email.encode_utf16().count() > 254 {
+                        item.add(&field, "Too big: expected string to have <=254 characters");
+                    }
+                } else {
+                    item.wrong_type(&field, "string", value.get("value"));
+                }
+                if let Some(primary) = value.get("primary") {
+                    item.boolean(&format!("{path}.primary"), primary);
+                }
+                item.optional_strings(value, &path, &[("type", 256)]);
+            } else {
+                if name == "addresses" {
+                    item.optional_strings(
+                        value,
+                        &path,
+                        &[
+                            ("formatted", 1024),
+                            ("streetAddress", 1024),
+                            ("locality", 256),
+                            ("region", 256),
+                            ("postalCode", 256),
+                            ("country", 256),
+                        ],
+                    );
+                } else {
+                    item.string(&format!("{path}.value"), value.get("value"), 1024);
+                    if name != "phoneNumbers" {
+                        item.optional_strings(value, &path, &[("display", 1024)]);
+                    }
+                }
+                item.optional_strings(value, &path, &[("type", 256)]);
+                if let Some(primary) = value.get("primary") {
+                    item.boolean(&format!("{path}.primary"), primary);
+                }
+                if name == "addresses"
+                    && !item.fatal
+                    && ![
+                        "formatted",
+                        "streetAddress",
+                        "locality",
+                        "region",
+                        "postalCode",
+                        "country",
+                    ]
+                    .iter()
+                    .any(|key| value.get(*key).is_some())
+                {
+                    item.add(&path, "addresses must contain at least one address value");
+                }
+            }
+            items.fatal |= item.fatal;
+            items.messages.extend(item.messages);
+        }
+        let max = if name == "emails" { 20 } else { 10 };
+        if values.len() > max {
+            items.add(
+                &path,
+                format_args!("Too big: expected array to have <={max} items"),
+            );
+        }
+        if !items.fatal {
+            if values
+                .iter()
+                .filter(|value| value.get("primary").and_then(Value::as_bool) == Some(true))
+                .count()
+                > 1
+            {
+                items.add(
+                    &path,
+                    format_args!("{name} cannot contain multiple primary values"),
+                );
+            }
+            if name == "emails" {
+                let mut pairs = std::collections::HashSet::new();
+                if values.iter().any(|value| {
+                    !pairs.insert((
+                        value
+                            .get("type")
+                            .and_then(Value::as_str)
+                            .map(|value| trim(value).to_lowercase()),
+                        value
+                            .get("value")
+                            .and_then(Value::as_str)
+                            .map(|value| trim(value).to_lowercase()),
+                    ))
+                }) {
+                    items.add(
+                        &path,
+                        "emails cannot contain duplicate type and value pairs",
+                    );
+                }
+            }
+            let mut types = std::collections::HashSet::new();
+            if values
+                .iter()
+                .filter_map(|value| value.get("type").and_then(Value::as_str))
+                .any(|value| !types.insert(trim(value).to_lowercase()))
+            {
+                items.add(
+                    &path,
+                    format_args!("{name} cannot contain duplicate defined types"),
+                );
+            }
+        }
+        self.fatal |= items.fatal;
+        self.messages.extend(items.messages);
+    }
+    fn manager(&mut self, path: &str, raw: &Value) {
+        let mut branch = Self::default();
+        if raw.is_string() {
+            branch.string(path, Some(raw), 256);
+        } else if let Some(values) = raw.as_array() {
+            for (index, value) in values.iter().enumerate() {
+                let path = format!("{path}.{index}");
+                if value.is_object() {
+                    branch.optional_strings(
+                        value,
+                        &path,
+                        &[("value", 256), ("$ref", 2048), ("displayName", 1024)],
+                    );
+                } else {
+                    branch.wrong_type(&path, "object", Some(value));
+                }
+            }
+            if values.len() != 1 {
+                branch.add(
+                    path,
+                    if values.is_empty() {
+                        "Too small: expected array to have exactly 1 items"
+                    } else {
+                        "Too big: expected array to have exactly 1 items"
+                    },
+                );
+            }
+        } else if raw.is_object() {
+            branch.optional_strings(
+                raw,
+                path,
+                &[("value", 256), ("$ref", 2048), ("displayName", 1024)],
+            );
+        } else {
+            branch.fatal = true;
+        }
+        if branch.fatal {
+            self.add(path, "Invalid input");
+            self.fatal = true;
+        } else {
+            self.messages.extend(branch.messages);
+        }
+    }
+    fn enterprise(&mut self, raw: &Value) {
+        let path = format!("body.{ENTERPRISE_SCHEMA}");
+        if !raw.is_object() {
+            self.wrong_type(&path, "object", Some(raw));
+            return;
+        }
+        for (key, max) in [
+            ("employeeNumber", 256),
+            ("costCenter", 256),
+            ("organization", 1024),
+            ("division", 1024),
+            ("department", 1024),
+        ] {
+            if let Some(value) = raw.get(key) {
+                self.scalar(&format!("{path}.{key}"), value, max);
+            }
+        }
+        if let Some(manager) = raw.get("manager") {
+            self.manager(&format!("{path}.manager"), manager);
+        }
+    }
 }
 
 /// Preserve field order and repeated schema issues from the pinned input schema.
@@ -67,6 +268,11 @@ pub(super) fn detail(raw: &Value) -> String {
         return issues.messages.join("; ");
     }
     if let Some(schemas) = raw.get("schemas").and_then(Value::as_array) {
+        for (index, schema) in schemas.iter().enumerate() {
+            if !schema.is_string() {
+                issues.wrong_type(&format!("body.schemas.{index}"), "string", Some(schema));
+            }
+        }
         if schemas.is_empty() {
             issues.add(
                 "body.schemas",
@@ -75,11 +281,6 @@ pub(super) fn detail(raw: &Value) -> String {
         }
         if schemas.len() > 2 {
             issues.add("body.schemas", "Too big: expected array to have <=2 items");
-        }
-        for (index, schema) in schemas.iter().enumerate() {
-            if !schema.is_string() {
-                issues.wrong_type(&format!("body.schemas.{index}"), "string", Some(schema));
-            }
         }
         if schemas.iter().all(Value::is_string) {
             for schema in schemas.iter().filter_map(Value::as_str) {
@@ -135,38 +336,7 @@ pub(super) fn detail(raw: &Value) -> String {
         }
     }
     if let Some(emails) = raw.get("emails") {
-        if let Some(emails) = emails.as_array() {
-            if emails.len() > 20 {
-                issues.add("body.emails", "Too big: expected array to have <=20 items");
-            }
-            for (index, email) in emails.iter().enumerate() {
-                let path = format!("body.emails.{index}");
-                if !email.is_object() {
-                    issues.wrong_type(&path, "object", Some(email));
-                    continue;
-                }
-                let path_value = format!("{path}.value");
-                if let Some(value) = email.get("value").and_then(Value::as_str) {
-                    if !crate::authentication_helpers::is_valid_email(value) {
-                        issues.add(&path_value, "Invalid email address");
-                    }
-                    if value.encode_utf16().count() > 254 {
-                        issues.add(
-                            &path_value,
-                            "Too big: expected string to have <=254 characters",
-                        );
-                    }
-                } else {
-                    issues.wrong_type(&path_value, "string", email.get("value"));
-                }
-                if let Some(primary) = email.get("primary") {
-                    issues.boolean(&format!("{path}.primary"), primary);
-                }
-                issues.optional_strings(email, &path, &[("type", 256)]);
-            }
-        } else {
-            issues.wrong_type("body.emails", "array", Some(emails));
-        }
+        issues.complex_values("emails", emails);
     }
     for (key, max) in [
         ("title", 1024),
@@ -176,21 +346,19 @@ pub(super) fn detail(raw: &Value) -> String {
         ("timezone", 256),
     ] {
         if let Some(value) = raw.get(key) {
-            let value = match value.as_array() {
-                Some(values) if values.len() == 1 => values.first().unwrap_or(value),
-                _ => value,
-            };
-            issues.string(&format!("body.{key}"), Some(value), max);
-            if value.as_array().is_some_and(Vec::is_empty) {
-                issues.add(
-                    &format!("body.{key}"),
-                    "Too small: expected array to have >=1 items",
-                );
-            }
+            issues.scalar(&format!("body.{key}"), value, max);
+        }
+    }
+    for name in ["phoneNumbers", "addresses", "roles", "entitlements"] {
+        if let Some(values) = raw.get(name) {
+            issues.complex_values(name, values);
         }
     }
     if let Some(active) = raw.get("active") {
         issues.boolean("body.active", active);
+    }
+    if let Some(enterprise) = raw.get(ENTERPRISE_SCHEMA) {
+        issues.enterprise(enterprise);
     }
     if !issues.fatal
         && raw
@@ -208,6 +376,22 @@ pub(super) fn detail(raw: &Value) -> String {
         issues.add(
             "body.emails",
             "emails must contain an email when userName is not an email address",
+        );
+    }
+    if !issues.fatal
+        && raw.get(ENTERPRISE_SCHEMA).is_some()
+        && !raw
+            .get("schemas")
+            .and_then(Value::as_array)
+            .is_some_and(|schemas| {
+                schemas
+                    .iter()
+                    .any(|schema| schema.as_str() == Some(ENTERPRISE_SCHEMA))
+            })
+    {
+        issues.add(
+            "body.schemas",
+            format_args!("The Enterprise User extension requires {ENTERPRISE_SCHEMA} in schemas"),
         );
     }
     if issues.messages.is_empty() {
