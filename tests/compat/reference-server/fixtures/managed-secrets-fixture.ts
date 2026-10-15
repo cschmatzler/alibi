@@ -73,6 +73,11 @@ export function createManagedSecretsFixture(base: BetterAuthOptions) {
     profiles,
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/server-api/managed-profile-update" && request.method === "POST") {
+        const input = await request.json() as {profile:string;body:any;headers:Record<string,string>};
+        const auth = profiles.get(`/__test/profiles/${input.profile}/api/auth`)!;
+        return auth.api.updateUser({body:input.body,headers:new Headers(input.headers),asResponse:true});
+      }
       if (url.pathname === "/__test/managed-secrets/jwk" && request.method === "POST") {
         const body = (await request.json()) as { profile: string };
         const auth = profiles.get(`/__test/profiles/${body.profile}/api/auth`);

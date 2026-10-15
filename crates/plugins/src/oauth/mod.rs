@@ -130,6 +130,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         self.call_account_endpoint(call, ctx).await
     }
 
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::post("/sign-in/social", "social_sign_in"),
@@ -194,52 +197,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         ctx: &AuthContext<S>,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        // Source renews an existing account JWE whenever setCookieCache emits
-        // a session cache, unless this endpoint already owns account issuance.
-        let account_name =
-            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
-        let cache_name =
-            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
-        let account_chunks = format!("{account_name}.");
-        let cache_chunks = format!("{cache_name}.");
-        let pending: Vec<_> = response
-            .headers
-            .get_all("set-cookie")
-            .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
-            .collect();
-        if !ctx.config.account.store_account_cookie
-            || pending.iter().any(|cookie| {
-                cookie.name() == account_name || cookie.name().starts_with(&account_chunks)
-            })
-            || !pending.iter().any(|cookie| {
-                (cookie.name() == cache_name || cookie.name().starts_with(&cache_chunks))
-                    && !cookie.value().is_empty()
-                    && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
-            })
-        {
-            return Ok(response);
-        }
-        let Some((user, _)) = alibi_core::session::cookie_cache::runtime::published_session(req)
-            .or_else(|| req.session_hook_snapshot())
-        else {
-            return Ok(response);
-        };
-        let Ok(Some(account)) = handlers::decode_account_cookie(req, &ctx.config) else {
-            return Ok(response);
-        };
-        let headers = if account.user_id == user.id {
-            handlers::create_account_cookie_headers(&ctx.config, &account, req)?
-        } else {
-            alibi_core::session::cookie_cache::runtime::chunked_cookie_headers(
-                &account_name,
-                "",
-                Some(0.0),
-                &ctx.config,
-                &req.headers,
-                true,
-            )?
-        };
-        for header in headers {
+        for header in Self::cache_account_headers(req, ctx, &response.headers)? {
             response.headers.append("set-cookie", header);
         }
         Ok(response)
@@ -267,4 +225,80 @@ fn extract_provider_from_callback(path: &str) -> String {
         .strip_prefix("/callback/")
         .unwrap_or_default()
         .to_owned()
+}
+
+impl OAuthPlugin {
+    fn cache_account_headers<S: alibi_core::AuthSchema>(
+        req: &impl alibi_core::session::SessionRequest,
+        ctx: &AuthContext<S>,
+        headers: &alibi_core::Headers,
+    ) -> AuthResult<Vec<String>> {
+        // Source renews an existing account JWE whenever setCookieCache emits
+        // a session cache, unless this endpoint already owns account issuance.
+        let account_name =
+            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
+        let cache_name =
+            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
+        let account_chunks = format!("{account_name}.");
+        let cache_chunks = format!("{cache_name}.");
+        let pending: Vec<_> = headers
+            .get_all("set-cookie")
+            .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
+            .collect();
+        if !ctx.config.account.store_account_cookie
+            || pending.iter().any(|cookie| {
+                cookie.name() == account_name || cookie.name().starts_with(&account_chunks)
+            })
+            || !pending.iter().any(|cookie| {
+                (cookie.name() == cache_name || cookie.name().starts_with(&cache_chunks))
+                    && !cookie.value().is_empty()
+                    && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
+            })
+        {
+            return Ok(Vec::new());
+        }
+        let Some((user, _)) = alibi_core::session::cookie_cache::runtime::published_session(req)
+            .or_else(|| {
+                req.endpoint_call()
+                    .and_then(alibi_core::endpoint::EndpointCall::session_hook_snapshot)
+            })
+            .or_else(|| {
+                req.physical_request()
+                    .and_then(AuthRequest::session_hook_snapshot)
+            })
+        else {
+            return Ok(Vec::new());
+        };
+        let Ok(Some(account)) = handlers::decode_account_cookie(req, &ctx.config) else {
+            return Ok(Vec::new());
+        };
+        let headers = if account.user_id == user.id {
+            handlers::create_account_cookie_headers(&ctx.config, &account, req)?
+        } else {
+            alibi_core::session::cookie_cache::runtime::chunked_cookie_headers(
+                &account_name,
+                "",
+                Some(0.0),
+                &ctx.config,
+                req.session_headers(),
+                true,
+            )?
+        };
+        Ok(headers)
+    }
+}
+
+#[async_trait]
+impl<S: alibi_core::AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthPlugin {
+    async fn after(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+        mut response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
+        for header in Self::cache_account_headers(call, ctx, response.headers())? {
+            response = response.with_header("set-cookie", header);
+        }
+        Ok(response)
+    }
 }
