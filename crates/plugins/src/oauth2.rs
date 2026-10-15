@@ -388,6 +388,16 @@ fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool)
     }
     Ok((Value::Object(public), can_verify))
 }
+fn mldsa_key_bytes(jwk: &Value, field: &str) -> Result<Vec<u8>, DpopError> {
+    let value = jwk
+        .get(field)
+        .ok_or_else(|| DpopError::proof("Invalid keyData"))?;
+    let encoded = JsValue::from(value.clone())
+        .coerce_string()
+        .map_err(DpopError::proof)?;
+    crate::jwt::decode_compact_part(&encoded, false)
+        .map_err(|_| DpopError::proof("Invalid keyData"))
+}
 fn mldsa_private_key_matches<P: ml_dsa::MlDsaParams>(seed: &[u8], public: &[u8]) -> bool {
     use ml_dsa::Keypair as _;
     let Ok(seed) = ml_dsa::Seed::try_from(seed) else {
@@ -420,8 +430,7 @@ fn prepare_dpop_mldsa_key(
         )));
     }
     let invalid = || DpopError::proof("Invalid keyData");
-    let public = jwk.get("pub").and_then(Value::as_str).ok_or_else(invalid)?;
-    let public = crate::jwt::decode_compact_part(public, false).map_err(|_| invalid())?;
+    let public = mldsa_key_bytes(jwk, "pub")?;
     let expected = match algorithm {
         "ML-DSA-44" => 1312,
         "ML-DSA-65" => 1952,
@@ -430,9 +439,8 @@ fn prepare_dpop_mldsa_key(
     if public.len() != expected {
         return Err(invalid());
     }
-    if let Some(seed) = private {
-        let seed = seed.as_str().ok_or_else(invalid)?;
-        let seed = crate::jwt::decode_compact_part(seed, false).map_err(|_| invalid())?;
+    if private.is_some() {
+        let seed = mldsa_key_bytes(jwk, "priv")?;
         let matches = match algorithm {
             "ML-DSA-44" => mldsa_private_key_matches::<ml_dsa::MlDsa44>(&seed, &public),
             "ML-DSA-65" => mldsa_private_key_matches::<ml_dsa::MlDsa65>(&seed, &public),
@@ -449,10 +457,7 @@ fn prepare_dpop_mldsa_key(
 }
 fn verify_dpop_mldsa<P: ml_dsa::MlDsaParams>(jwk: &Value, input: &[u8], signature: &[u8]) -> bool {
     use ml_dsa::{KeyInit as _, Verifier as _};
-    let Some(encoded) = jwk.get("pub").and_then(Value::as_str) else {
-        return false;
-    };
-    let Ok(bytes) = crate::jwt::decode_compact_part(encoded, false) else {
+    let Ok(bytes) = mldsa_key_bytes(jwk, "pub") else {
         return false;
     };
     let Ok(key) = ml_dsa::VerifyingKey::<P>::new_from_slice(&bytes) else {

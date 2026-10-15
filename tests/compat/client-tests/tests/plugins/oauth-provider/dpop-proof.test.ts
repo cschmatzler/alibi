@@ -117,9 +117,26 @@ compatScenario(
         }),
       ).toEqual({ error: "invalid_dpop_proof", message: "signature verification failed" });
       const header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
+      const arrayHeader = { ...header, jwk: { ...header.jwk, pub: [header.jwk.pub] } };
+      const coercionId = "pq-coercion-" + vector.algorithm;
+      if (!signed.has(coercionId)) {
+        const claims = JSON.parse(Buffer.from(parts[1]!, "base64url").toString());
+        signed.set(
+          coercionId,
+          await new SignJWT(claims)
+            .setProtectedHeader(arrayHeader)
+            .sign(await importJWK({ ...header.jwk, priv: vector.privateSeed }, vector.algorithm)),
+        );
+      }
+      // WebCrypto coerces the public-key bytes, but RFC thumbprints still require a string.
+      expect(await control({ ...configured, proofJwt: signed.get(coercionId)! })).toEqual({
+        ordinary_error: true,
+      });
       for (const [extra, message] of [
         [{ alg: "other" }, "JWK alg and alg option value mismatch"],
         [{ pub: "AA" }, "Invalid keyData"],
+        [{ pub: [header.jwk.pub] }, "signature verification failed"],
+        [{ priv: Buffer.alloc(32, 7).toString("base64url") }, "Invalid keyData"],
         [{ priv: "extra" }, "Invalid keyData"],
         [{ priv: null }, `Unsupported key usage for a ${vector.algorithm} key`],
         [
