@@ -181,6 +181,25 @@ compatScenario(
       await control({ action: "token-row", kind: "refresh", token: redeemed.refresh_token })
     ).json()) as any;
     expect(rotated.scopes).toEqual(["email"]);
+    expect(rotated.resources).toEqual([uri("allow-a"), uri("allow-b")]);
+    const verified = await jwtVerify(redeemed.access_token, keys, { issuer });
+    expect(verified.payload.scope).toBe("email");
+    const beforeCeiling = await count();
+    const outside = await control({
+      action: "token",
+      body: {
+        grant_type: "refresh_token",
+        client_id: client.client_id,
+        refresh_token: redeemed.refresh_token,
+        resource: [uri("unlinked")],
+      },
+    });
+    expect(outside.status).toBe(400);
+    expect(await outside.json()).toEqual({
+      error: "invalid_target",
+      error_description: "requested resource invalid",
+    });
+    expect(await count()).toEqual(beforeCeiling);
     return ctx.snapshot({ owner: owner.user, results, scope: issued.scope });
   },
 );

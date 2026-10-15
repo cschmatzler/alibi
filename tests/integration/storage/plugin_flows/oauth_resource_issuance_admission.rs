@@ -130,7 +130,20 @@ async fn oauth_resource_issuance_admission_rejects_without_changing_authority<B:
         .await?
         .unwrap();
     assert_eq!(refresh.metadata["scopes"], json!(["email"]));
-    let claims = JwtPlugin::new()
+    let issuer = format!(
+        "{}{}",
+        auth.config().base_url.trim_end_matches('/'),
+        auth.config().base_path
+    );
+    let verifier = JwtPlugin::with_config(alibi::plugins::jwt::JwtPluginConfig {
+        claims: alibi::plugins::jwt::JwtClaimsConfig {
+            issuer: Some(issuer),
+            audience: Some(alibi::plugins::jwt::JwtAudience::One(uri("allow-a"))),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let claims = verifier
         .verify_jwt(
             issued["access_token"].as_str().unwrap(),
             None,
@@ -156,5 +169,32 @@ async fn oauth_resource_issuance_admission_rejects_without_changing_authority<B:
         .await?
         .unwrap();
     assert_eq!(refresh.metadata["scopes"], json!(["email"]));
+    assert_eq!(
+        refresh.metadata["resources"],
+        json!([uri("allow-a"), uri("allow-b")])
+    );
+    let claims = verifier
+        .verify_jwt(
+            rotated["access_token"].as_str().unwrap(),
+            None,
+            None,
+            auth.context(),
+        )
+        .await?
+        .unwrap();
+    assert_eq!(claims["scope"], "email");
+    let before = db
+        .tables(&["oauthAccessToken", "oauthRefreshToken"])
+        .await?;
+    let denied=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_token_endpoint(&json!({"grant_type":"refresh_token","client_id":id,"refresh_token":rotated["refresh_token"],"resource":[uri("unlinked")]}))?,EndpointOptions::default())).await.unwrap_err();
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_target","error_description":"requested resource invalid"})
+    );
+    assert_eq!(
+        db.tables(&["oauthAccessToken", "oauthRefreshToken"])
+            .await?,
+        before
+    );
     Ok(())
 }
