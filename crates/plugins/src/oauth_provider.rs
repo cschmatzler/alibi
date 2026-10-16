@@ -931,16 +931,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
         {
             let value = if *req.method() == HttpMethod::Post {
-                let mut fields = indexmap::IndexMap::new();
-                for (name, value) in
-                    url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
-                {
-                    _ = fields.insert(
-                        name.into_owned(),
-                        alibi_core::utils::json::JsValue::String(value.into_owned()),
-                    );
-                }
-                alibi_core::utils::json::JsValue::Object(fields)
+                req.body_as_json::<alibi_core::utils::json::JsValue>()?
             } else {
                 req.query_as_js_value()
             };

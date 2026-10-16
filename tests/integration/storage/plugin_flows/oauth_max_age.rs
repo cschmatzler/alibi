@@ -92,6 +92,10 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
     for (content_type, age) in [
         ("application/json", json!(0)),
         ("application/x-www-form-urlencoded", json!("0")),
+        (
+            "application/jsonapplication/x-www-form-urlencoded",
+            json!(0),
+        ),
     ] {
         let before = db
             .tables(&["user", "account", "session", "verification", "oauthClient"])
@@ -119,10 +123,10 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
                     .finish()
                     .into_bytes(),
             );
-            _ = post
-                .headers
-                .insert("content-type".into(), content_type.into());
         }
+        _ = post
+            .headers
+            .insert("content-type".into(), content_type.into());
         let response = Box::pin(auth.handle_request(post))
             .await
             .unwrap_or_else(|error| error.to_auth_response());

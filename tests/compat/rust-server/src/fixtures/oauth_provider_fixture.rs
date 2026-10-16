@@ -628,7 +628,7 @@ pub(crate) async fn router(
                 request.headers=input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()).unwrap_or_default();
                 _=request.headers.insert("origin".into(),logout_origin);
                 _=request.headers.insert("content-type".into(),input["contentType"].as_str().unwrap_or("application/x-www-form-urlencoded; charset=UTF-8").into());
-                if input["method"]=="POST" && input["contentType"]=="application/json" {request.body=Some(serde_json::to_vec(&input["body"]).unwrap());}else if input["method"]=="POST"{request.body=Some(url::form_urlencoded::Serializer::new(String::new()).extend_pairs(input["body"].as_object().unwrap().iter().map(|(key,value)|(key.as_str(),value.as_str().unwrap()))).finish().into_bytes());}
+                if input["method"]=="POST" && input["rawBody"].is_string() {request.body=Some(input["rawBody"].as_str().unwrap().as_bytes().to_vec());}else if input["method"]=="POST" && input["contentType"]=="application/json" {request.body=Some(serde_json::to_vec(&input["body"]).unwrap());}else if input["method"]=="POST"{request.body=Some(url::form_urlencoded::Serializer::new(String::new()).extend_pairs(input["body"].as_object().unwrap().iter().map(|(key,value)|(key.as_str(),value.as_str().unwrap()))).finish().into_bytes());}
                 return match auth.handle_request(request).await {
                     Ok(response)=>response.into_response(),
                     Err(error)=>error.to_auth_response().into_response(),

@@ -302,7 +302,9 @@ compatScenario(
     for (const [contentType, age] of [
       ["application/json", 86400],
       ["application/x-www-form-urlencoded", "86400"],
+      ["application/jsonapplication/x-www-form-urlencoded", 86400],
     ] as const) {
+      const body = { ...publicQuery, max_age: age };
       const response = await control({
         action: "protocol-http",
         path: "/oauth2/authorize",
@@ -310,7 +312,10 @@ compatScenario(
         contentType,
         headers: { accept: "application/json", cookie },
         query: { client_id: "not-the-body-client", response_type: "token" },
-        body: { ...publicQuery, max_age: age },
+        body,
+        ...(contentType !== "application/x-www-form-urlencoded"
+          ? { rawBody: JSON.stringify(body) }
+          : {}),
       });
       if (contentType === "application/json") {
         expect(response.status).toBe(415);

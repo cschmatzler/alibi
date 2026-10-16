@@ -1313,9 +1313,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           ...(input.method === "POST"
             ? {
                 body:
-                  input.contentType === "application/json"
-                    ? JSON.stringify(input.body)
-                    : new URLSearchParams(input.formEntries ?? input.body),
+                  typeof input.rawBody === "string"
+                    ? input.rawBody
+                    : input.contentType === "application/json"
+                      ? JSON.stringify(input.body)
+                      : new URLSearchParams(input.formEntries ?? input.body),
               }
             : {}),
         }),
