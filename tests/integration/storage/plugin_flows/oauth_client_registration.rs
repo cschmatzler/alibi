@@ -36,6 +36,12 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
         .await?;
     for (mode, input, cookie, status) in [
         (
+            2,
+            json!({"redirect_uris":["https://app.fixture.test/callback"],"client_name":" \u{feff} "}),
+            String::new(),
+            400,
+        ),
+        (
             0,
             json!({"redirect_uris":["https://app.fixture.test/callback"]}),
             String::new(),
@@ -160,13 +166,21 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
     }
     for (mode, public, cookie) in [(1, false, cookies(&owner)), (2, true, String::new())] {
         let start = chrono::Utc::now().timestamp();
-        let output=auths[mode].dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","registerOAuthClient").with_body(&json!({"client_name":if public{"Anonymous client"}else{"Owned dynamic client"},"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":if public{"none"}else{"client_secret_basic"},"user_id":"forged","client_id":"forged"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie),("authorization".into(),if public{"Basic ignored"}else{"Bearer unconfigured"}.into())].into_iter().collect()),..Default::default()}).await?.into_response()?;
+        let output=auths[mode].dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","registerOAuthClient").with_body(&json!({"client_name":if public{"\u{85}"}else{"Owned dynamic client"},"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":if public{"none"}else{"client_secret_basic"},"user_id":"forged","client_id":"forged"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie),("authorization".into(),if public{"Basic ignored"}else{"Bearer unconfigured"}.into())].into_iter().collect()),..Default::default()}).await?.into_response()?;
         assert_eq!(output.status, 201);
         assert_eq!(
             output.headers.get("cache-control").map(String::as_str),
             Some("no-store")
         );
         let value = body(&output);
+        assert_eq!(
+            value["client_name"],
+            if public {
+                "\u{85}"
+            } else {
+                "Owned dynamic client"
+            }
+        );
         assert_eq!(value["scope"], "openid profile email offline_access");
         assert!(value["client_id_issued_at"].as_i64().unwrap() >= start);
         assert!(value["client_id_issued_at"].as_i64().unwrap() <= chrono::Utc::now().timestamp());

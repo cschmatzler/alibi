@@ -337,14 +337,14 @@ fn validate_metadata(
                     })
                     .collect(),
             ),
-            (FieldKind::Method, JsValue::String(value)) => JsValue::String(value.trim().into()),
+            (FieldKind::Method, JsValue::String(value)) => JsValue::String(js_trim(value).into()),
             (FieldKind::Grants | FieldKind::Scopes, JsValue::Array(values)) => JsValue::Array(
                 values
                     .iter()
                     .map(|value| {
                         value.as_str().map_or_else(
                             || value.clone(),
-                            |text| JsValue::String(text.trim().into()),
+                            |text| JsValue::String(js_trim(text).into()),
                         )
                     })
                     .collect(),
@@ -378,7 +378,7 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 return;
             }
             if let Some(text) = value.as_str() {
-                if matches!(kind, FieldKind::Method) && text.trim().is_empty() {
+                if matches!(kind, FieldKind::Method) && js_trim(text).is_empty() {
                     add("Too small: expected string to have >=1 characters".into());
                 }
                 if matches!(kind, FieldKind::Uri) {
@@ -432,7 +432,7 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 if let Some(text) = value.as_str() {
                     if matches!(kind, FieldKind::Contacts) && text.is_empty()
                         || matches!(kind, FieldKind::Grants | FieldKind::Scopes)
-                            && text.trim().is_empty()
+                            && js_trim(text).is_empty()
                     {
                         issues.push(format!(
                             "[{item_path}] Too small: expected string to have >=1 characters"
@@ -1368,7 +1368,7 @@ fn registration_metadata(
     if metadata
         .get("client_name")
         .and_then(Value::as_str)
-        .is_some_and(|name| name.trim().is_empty())
+        .is_some_and(|name| js_trim(name).is_empty())
     {
         return status_protocol_error(
             400,

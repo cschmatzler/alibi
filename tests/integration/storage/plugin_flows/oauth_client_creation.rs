@@ -50,6 +50,18 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         .await?;
     for (input, cookie, status, code) in [
         (
+            json!({"redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"\u{85}"}),
+            cookies(&owner),
+            400,
+            "invalid_client_metadata",
+        ),
+        (
+            json!({"redirect_uris":["https://app.fixture.test/callback"],"grant_types":["\u{85}"]}),
+            cookies(&owner),
+            400,
+            "invalid_client_metadata",
+        ),
+        (
             json!({"client_name":42}),
             cookies(&owner),
             400,
@@ -144,7 +156,7 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         OAuthProviderPlugin::create_oauth_client_endpoint(&alibi::plugins::oauth_provider::CreateOAuthClientInput{
             client_name:Some("Actual client".into()),redirect_uris:Some(vec!["https://app.fixture.test/callback".into()]),scope:Some("openid email".into()),..Default::default()
         })?
-            .with_body(&json!({"client_name":"Actual client","redirect_uris":["\u{feff} \tHTTPS://APP.fixture.test:443/a/../callback \u{a0}"],"post_logout_redirect_uris":[" \u{feff}https://app.fixture.test/logout\u{2029}"],"backchannel_logout_uri":"\u{feff}https://app.fixture.test/backchannel \u{feff}","client_uri":" https://app.fixture.test/about ","scope":"openid email","user_id":"forged-owner","client_id":"forged-client","client_secret":"forged-secret"}))?,
+            .with_body(&json!({"client_name":"Actual client","token_endpoint_auth_method":"\u{feff} client_secret_basic \u{a0}","grant_types":["\u{feff} authorization_code \u{a0}"],"redirect_uris":["\u{feff} \tHTTPS://APP.fixture.test:443/a/../callback \u{a0}"],"post_logout_redirect_uris":[" \u{feff}https://app.fixture.test/logout\u{2029}"],"backchannel_logout_uri":"\u{feff}https://app.fixture.test/backchannel \u{feff}","client_uri":" https://app.fixture.test/about ","scope":"openid email","user_id":"forged-owner","client_id":"forged-client","client_secret":"forged-secret"}))?,
         alibi::endpoint::EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()},
     ).await?.into_response()?;
     assert_eq!(output.status, 201);

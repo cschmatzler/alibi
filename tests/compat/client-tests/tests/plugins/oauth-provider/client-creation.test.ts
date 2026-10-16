@@ -27,6 +27,21 @@ compatScenario(
       .join("; ");
     const rejected = [];
     for (const [body, headers, status, code] of [
+      [
+        {
+          redirect_uris: ["https://app.fixture.test/callback"],
+          token_endpoint_auth_method: "\u0085",
+        },
+        { cookie },
+        400,
+        "invalid_client_metadata",
+      ],
+      [
+        { redirect_uris: ["https://app.fixture.test/callback"], grant_types: ["\u0085"] },
+        { cookie },
+        400,
+        "invalid_client_metadata",
+      ],
       [{ client_name: 42 }, { cookie }, 400, "VALIDATION_ERROR"],
       [
         { redirect_uris: ["https://app.fixture.test/callback"] },
@@ -85,6 +100,8 @@ compatScenario(
       headers: { cookie },
       body: {
         client_name: "Actual client",
+        token_endpoint_auth_method: "\uFEFF client_secret_basic \u00A0",
+        grant_types: ["\uFEFF authorization_code \u00A0"],
         redirect_uris: ["\uFEFF \tHTTPS://APP.fixture.test:443/a/../callback \u00a0"],
         post_logout_redirect_uris: [" \uFEFFhttps://app.fixture.test/logout\u2029"],
         backchannel_logout_uri: "\uFEFFhttps://app.fixture.test/backchannel \uFEFF",

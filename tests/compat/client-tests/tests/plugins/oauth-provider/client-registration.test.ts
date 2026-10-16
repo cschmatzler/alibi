@@ -31,6 +31,12 @@ compatScenario(
       .join("; ");
     const rejected = [];
     for (const [mode, body, headers, status] of [
+      [
+        "public",
+        { redirect_uris: ["https://app.fixture.test/callback"], client_name: " \uFEFF " },
+        {},
+        400,
+      ],
       ["default", { redirect_uris: ["https://app.fixture.test/callback"] }, {}, 403],
       ["dynamic", { redirect_uris: ["https://app.fixture.test/callback"] }, {}, 401],
       ["public", { grant_types: ["client_credentials"] }, {}, 400],
@@ -118,7 +124,7 @@ compatScenario(
           authorization: publicClient ? "Basic ignored" : "Bearer unconfigured",
         },
         body: {
-          client_name: publicClient ? "Anonymous client" : "Owned dynamic client",
+          client_name: publicClient ? "\u0085" : "Owned dynamic client",
           redirect_uris: ["https://app.fixture.test/callback"],
           scope: "email",
           token_endpoint_auth_method: publicClient ? "none" : "client_secret_basic",
@@ -129,6 +135,7 @@ compatScenario(
       expect(r.status).toBe(201);
       expect(r.headers.get("cache-control")).toBe("no-store");
       const value = (await r.json()) as any;
+      expect(value.client_name).toBe(publicClient ? "\u0085" : "Owned dynamic client");
       expect(value.scope).toBe("openid profile email offline_access");
       expect(value.client_id_issued_at).toBeGreaterThanOrEqual(start);
       expect(value.client_id_issued_at).toBeLessThanOrEqual(Math.floor(Date.now() / 1000));
@@ -136,6 +143,7 @@ compatScenario(
       const row = (await (
         await control({ action: "row", clientId: value.client_id })
       ).json()) as any;
+      expect(row.clientName).toBe(value.client_name);
       if (publicClient) {
         expect(value).not.toHaveProperty("user_id");
         expect(value).not.toHaveProperty("client_secret");
