@@ -242,7 +242,15 @@ impl CsrfMiddleware {
 
     fn request_body_map(req: &AuthRequest) -> Option<serde_json::Map<String, serde_json::Value>> {
         let content_type = Self::header(req, "content-type").unwrap_or_default();
-        if content_type.contains("application/x-www-form-urlencoded") {
+        // Dispatch already decoded the entity. MIME parameters must not select a
+        // different body for security checks. Retain raw-form support only for
+        // callers using this middleware without the HTTP decoding pipeline.
+        if req
+            .extensions()
+            .get::<crate::types::ParsedRequestBody>()
+            .is_none()
+            && content_type.contains("application/x-www-form-urlencoded")
+        {
             let body = req.body.as_ref()?;
             return Some(
                 url::form_urlencoded::parse(body)

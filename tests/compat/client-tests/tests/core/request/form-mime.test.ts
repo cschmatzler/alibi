@@ -58,6 +58,48 @@ compatScenario(
     expect(mixed.status).toBe(200);
     const coerced = await mixed.json();
     expect(coerced).toEqual({ payload: { literal: "form-text", file: "[object File]" } });
-    return ctx.snapshot({ issued, before, results, valid, coerced });
+    const callbackURL = "https://foreign.fixture.test/untrusted";
+    const callbackForm = raw.replace(
+      "--fixture-boundary--",
+      `--fixture-boundary\r\nContent-Disposition: form-data; name="callbackURL"\r\n\r\n${callbackURL}\r\n--fixture-boundary--`,
+    );
+    const beforeCallbacks = await ctx.readUserState({ userId: issued.data!.user.id });
+    const deniedCallbacks = [];
+    for (const [path, contentType, body] of [
+      [
+        "/api/auth/sign-in/email",
+        'application/json; mode="application/x-www-form-urlencoded"',
+        JSON.stringify({ email, password: "password123", callbackURL }),
+      ],
+      [
+        "/api/auth/form-probe",
+        'multipart/form-data; boundary=fixture-boundary; mode="application/x-www-form-urlencoded"',
+        callbackForm,
+      ],
+    ] as const) {
+      await actor.fetch(`${ctx.baseURL}/__test/dispatch-events`);
+      const response = await actor.fetch(path, {
+        method: "POST",
+        headers: { "content-type": contentType },
+        body,
+      });
+      expect(response.status).toBe(403);
+      const error = await response.json();
+      expect(error).toEqual({ code: "INVALID_CALLBACK_URL", message: "Invalid callbackURL" });
+      expect(response.headers.getSetCookie()).toEqual([]);
+      const hooks = await actor.fetch(`${ctx.baseURL}/__test/dispatch-events`);
+      expect(await hooks.json()).toEqual([]);
+      expect(await ctx.readUserState({ userId: issued.data!.user.id })).toEqual(beforeCallbacks);
+      deniedCallbacks.push({ contentType, status: response.status, error });
+    }
+    return ctx.snapshot({
+      issued,
+      before,
+      results,
+      valid,
+      coerced,
+      beforeCallbacks,
+      deniedCallbacks,
+    });
   },
 );

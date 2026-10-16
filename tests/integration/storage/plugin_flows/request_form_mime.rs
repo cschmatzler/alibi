@@ -83,5 +83,43 @@ async fn malformed_form_mime_cannot_repair_itself_into_credentials<B: Backend>(
         body(&mixed),
         json!({"payload":{"literal":"form-text","file":"[object File]"}})
     );
+    let callback_url = "https://foreign.fixture.test/untrusted";
+    let callback_json = json!({
+        "email":"multipart-owner@example.test", "password":PASSWORD, "callbackURL":callback_url,
+    })
+    .to_string();
+    let callback_form = raw.replace(
+        "--fixture-boundary--",
+        &format!("--fixture-boundary\r\nContent-Disposition: form-data; name=\"callbackURL\"\r\n\r\n{callback_url}\r\n--fixture-boundary--"),
+    );
+    let before_callbacks = db.tables(&["user", "account", "session"]).await?;
+    for (path, content_type, bytes) in [
+        (
+            "/sign-in/email",
+            r#"application/json; mode="application/x-www-form-urlencoded""#,
+            callback_json.as_bytes(),
+        ),
+        (
+            "/form-probe",
+            r#"multipart/form-data; boundary=fixture-boundary; mode="application/x-www-form-urlencoded""#,
+            callback_form.as_bytes(),
+        ),
+    ] {
+        let mut input = request(path, Some(json!({})), &cookies(&owner));
+        _ = input
+            .headers
+            .insert("content-type".into(), content_type.into());
+        input.body = Some(bytes.to_vec());
+        let response = call(&auth, input, 403).await;
+        assert_eq!(
+            body(&response),
+            json!({"code":"INVALID_CALLBACK_URL","message":"Invalid callbackURL"})
+        );
+        assert!(!response.headers.contains_key("set-cookie"));
+        assert_eq!(
+            db.tables(&["user", "account", "session"]).await?,
+            before_callbacks
+        );
+    }
     Ok(())
 }
