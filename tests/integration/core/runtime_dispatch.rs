@@ -300,6 +300,31 @@ async fn query_values_reach_handlers_and_replacement_requests_keep_repeated_pair
     let (status, body) = body_of(&auth, request).await;
     assert_eq!((status, &body["query"]), (200, &json!(["a", "b"])));
 
+    for values in [["/first", "/second"], ["/first", ""], ["", ""]] {
+        let mut request = post("/api/auth/echo", Some("application/json"), b"{}");
+        request.set_query_pairs(values.map(|value| ("callbackURL", value)));
+        assert_eq!(
+            body_of(&auth, request).await,
+            (
+                400,
+                json!({"message":"Invalid callbackURL: expected a string"})
+            ),
+            "{values:?}"
+        );
+    }
+    // A truthy body target takes precedence over even a repeated query target.
+    let mut request = post(
+        "/api/auth/echo",
+        Some("application/json"),
+        br#"{"callbackURL":"/owned"}"#,
+    );
+    request.set_query_pairs([("callbackURL", "/first"), ("callbackURL", "/second")]);
+    let (status, body) = body_of(&auth, request).await;
+    assert_eq!(
+        (status, &body["body"]),
+        (200, &json!({"callbackURL":"/owned"}))
+    );
+
     let mut replace = get("/api/auth/ok");
     drop(replace.headers.insert("x-mode".into(), "replace".into()));
     let (status, body) = body_of(&auth, replace).await;

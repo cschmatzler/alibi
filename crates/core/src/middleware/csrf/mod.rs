@@ -203,12 +203,19 @@ impl CsrfMiddleware {
                 .filter(|value| Self::is_truthy(value))
                 .cloned()
                 .or_else(|| {
-                    (key == "callbackURL")
-                        .then(|| req.query.get(key))
-                        .flatten()
-                        .filter(|value| !value.is_empty())
-                        .cloned()
-                        .map(serde_json::Value::String)
+                    req.query_values(key)
+                        .filter(|_| key == "callbackURL")
+                        .map(|values| match values {
+                            [value] => serde_json::Value::String(value.clone()),
+                            values => serde_json::Value::Array(
+                                values
+                                    .iter()
+                                    .cloned()
+                                    .map(serde_json::Value::String)
+                                    .collect(),
+                            ),
+                        })
+                        .filter(Self::is_truthy)
                 });
             let Some(value) = value else {
                 continue;
