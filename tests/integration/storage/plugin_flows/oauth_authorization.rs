@@ -317,7 +317,7 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         600
     );
     assert_eq!(db.count("verification").await?, 1);
-    Box::pin(assert_prompt_admission(
+    Box::pin(assert_authorization_admission(
         &auth,
         &db,
         &cookies(&owner),
@@ -437,22 +437,36 @@ async fn assert_signed_login_resumes<S: AuthSchema>(
     Ok(())
 }
 
-async fn assert_prompt_admission<S: AuthSchema>(
+async fn assert_authorization_admission<S: AuthSchema>(
     auth: &alibi::Alibi<S>,
     db: &Db,
     cookie: &str,
     client: &str,
 ) -> TestResult {
     for http in [false, true] {
-        for (prompt, description) in [
-            ("", Some("prompt must include at least one value")),
-            ("surprise", Some("unsupported prompt value: surprise")),
-            ("\u{feff}login\u{a0}", None),
+        for (name, value, description) in [
+            (
+                "prompt",
+                "",
+                Some("prompt: prompt must include at least one value"),
+            ),
+            (
+                "prompt",
+                "surprise",
+                Some("prompt: unsupported prompt value: surprise"),
+            ),
+            ("prompt", "\u{feff}login\u{a0}", None),
+            (
+                "dpop_jkt",
+                "bad-value",
+                Some("dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint"),
+            ),
         ] {
             let before = db
                 .tables(&["user", "account", "session", "verification", "oauthClient"])
                 .await?;
-            let input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"prompt-state","prompt":prompt});
+            let mut input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"prompt-state"});
+            input[name] = json!(value);
             let mut physical = request("/oauth2/authorize", None, cookie);
             _ = physical
                 .headers
@@ -488,7 +502,7 @@ async fn assert_prompt_admission<S: AuthSchema>(
                 db.tables(&["user", "account", "session", "verification", "oauthClient"])
                     .await?,
                 before,
-                "http={http}, prompt={prompt:?}"
+                "http={http}, {name}={value:?}"
             );
             assert_eq!(response.status, 200);
             assert!(!response.headers.contains_key("set-cookie"));
@@ -505,7 +519,7 @@ async fn assert_prompt_admission<S: AuthSchema>(
                 );
                 assert_eq!(
                     fields.get("error_description").map(|value| value.as_ref()),
-                    Some(format!("prompt: {description}").as_str())
+                    Some(description)
                 );
                 assert_eq!(
                     fields.get("state").map(|value| value.as_ref()),
@@ -513,10 +527,7 @@ async fn assert_prompt_admission<S: AuthSchema>(
                 );
             } else {
                 assert_eq!(target.path(), "/login");
-                assert_eq!(
-                    fields.get("prompt").map(|value| value.as_ref()),
-                    Some(prompt)
-                );
+                assert_eq!(fields.get(name).map(|value| value.as_ref()), Some(value));
             }
         }
     }

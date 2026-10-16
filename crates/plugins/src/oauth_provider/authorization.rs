@@ -56,6 +56,14 @@ impl OAuthProviderPlugin {
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
         let validated_prompts = authorization_prompts(query.get("prompt").and_then(Value::as_str));
+        let valid_dpop_jkt = query.get("dpop_jkt").is_none_or(|value| {
+            value.as_str().is_some_and(|jkt| {
+                jkt.len() == 43
+                    && jkt
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+            })
+        });
         let text = |name: &str| {
             query
                 .get(name)
@@ -73,6 +81,7 @@ impl OAuthProviderPlugin {
             ctx.config.base_path
         );
         if validated_max_age.is_ok()
+            && valid_dpop_jkt
             && validated_prompts
                 .as_ref()
                 .is_ok_and(|prompts| prompts.contains(&AuthorizationPrompt::SelectAccount))
@@ -177,6 +186,12 @@ impl OAuthProviderPlugin {
             Ok(value) => value,
             Err(description) => return admission_error("invalid_request", description),
         };
+        if !valid_dpop_jkt {
+            return admission_error(
+                "invalid_request",
+                "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
+            );
+        }
         let Some(client) = client else {
             return browser_redirect(
                 req,

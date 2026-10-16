@@ -257,6 +257,53 @@ compatScenario(
       scope: "email",
       state: "code-state",
     };
+    const confirmationHints = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const [hint, prompt] of [
+        ["", undefined],
+        ["bad-value", undefined],
+        ["A".repeat(42) + "+", undefined],
+        ["A".repeat(43) + "\n", undefined],
+        ["bad-value", "select_account"],
+      ] as const) {
+        const response = await control({
+          ...(transport === "http"
+            ? { action: "protocol-http", path: "/oauth2/authorize" }
+            : { action: "authorize" }),
+          headers: { accept: "application/json", cookie },
+          query: { ...publicQuery, dpop_jkt: hint, ...(prompt ? { prompt } : {}) },
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.getSetCookie()).toEqual([]);
+        const result = await response.json();
+        const target = new URL(result.url, ctx.baseURL);
+        expect(target.searchParams.has("code")).toBe(false);
+        expect(target.hostname).toBe("app.fixture.test");
+        expect(target.searchParams.get("error")).toBe("invalid_request");
+        expect(target.searchParams.get("error_description")).toBe(
+          "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
+        );
+        confirmationHints.push({ transport, hint, prompt, result });
+      }
+      const hint = "A".repeat(42) + "B";
+      const response = await control({
+        ...(transport === "http"
+          ? { action: "protocol-http", path: "/oauth2/authorize" }
+          : { action: "authorize" }),
+        headers: { accept: "application/json", cookie },
+        query: { ...publicQuery, dpop_jkt: hint },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url, ctx.baseURL);
+      const token = target.searchParams.get("code");
+      expect(token).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const proof = await (await control({ action: "grant-row", token })).json();
+      expect(proof.value.query.dpop_jkt).toBe(hint);
+      expect(proof.value.userId).toBe(actualSession.user.id);
+      expect(proof.value.sessionId).toBe(actualSession.session.id);
+      confirmationHints.push({ transport, hint, result, proof });
+    }
     const promptAuthorizations = [];
     for (const transport of ["private", "http"] as const) {
       for (const [prompt, description] of [
@@ -397,6 +444,7 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      confirmationHints: ctx.snapshot(confirmationHints),
       promptAuthorizations: ctx.snapshot(promptAuthorizations),
       postAuthorizations: ctx.snapshot(postAuthorizations),
       publicRejected: ctx.snapshot(publicRejected),
