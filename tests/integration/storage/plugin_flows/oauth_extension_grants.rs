@@ -61,6 +61,18 @@ async fn oauth_extension_grants_dispatch_bound_authority<B: Backend>(db: Db) -> 
     assert_eq!(output["boundGrant"], GRANT);
     assert_eq!(output["observedGrant"], GRANT);
     assert_eq!(output["custom"], "delivered");
+    let updated=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminUpdateOAuthClient").with_body(&json!({"client_id":client["client_id"],"update":{"grant_types":["authorization_code"]}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    assert_eq!(updated.status, 200);
+    assert!(body(&updated).get("response_types").is_none());
+    assert!(
+        auth.store()
+            .get_oauth_client(client["client_id"].as_str().unwrap())
+            .await?
+            .unwrap()
+            .metadata
+            .get("response_types")
+            .is_none()
+    );
     let call = alibi::endpoint::EndpointCall::new(
         &alibi::endpoint::EndpointDefinition {
             name: "validateFixture",

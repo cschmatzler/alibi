@@ -1305,8 +1305,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       });
     }
     if(input.action==="extension-validation"){
-      try{await betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:input.keys.map((key:string)=>({grants:{[key]:async()=>{throw new Error("unused setup handler");}}}))})]}).$context;return Response.json({valid:true});}
-      catch(error){return Response.json({valid:false,message:(error as Error).message});}
+      try{await betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:input.keys.map((key:string)=>({grants:{[key]:async()=>{throw new Error("unused setup handler");}}}))})]}).$context;return Response.json({valid:true},{headers:{"content-type":"application/json"}});}
+      catch(error){return Response.json({valid:false,message:(error as Error).message},{headers:{"content-type":"application/json"}});}
     }
     if(input.action==="grant-metadata")return auth.api.getOAuthServerConfig({asResponse:true});
     if (input.action === "token") {

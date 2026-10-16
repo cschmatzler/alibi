@@ -1,6 +1,6 @@
 //! A companion grant fixture uses only live, grant-bound provider capabilities.
 #[derive(Debug)]
-pub struct ExtensionGrant;
+pub(super) struct ExtensionGrant;
 #[async_trait::async_trait]
 impl alibi::plugins::OAuthExtensionGrantHandler for ExtensionGrant {
     async fn handle(

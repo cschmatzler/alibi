@@ -183,7 +183,6 @@ impl OAuthProviderPlugin {
                     method: Some(request.session_method().clone()),
                     headers: Some(request.session_headers().clone()),
                     request: request.physical_request().cloned(),
-                    ..Default::default()
                 },
             )
         });

@@ -1125,8 +1125,9 @@ impl OAuthProviderPlugin {
         {
             _ = merged.insert("client_credentials_scopes".into(), json!([]));
         }
-        let metadata = match self.admit_metadata(merged, ctx)? {
-            Ok(metadata) => Value::Object(metadata),
+        // Update admission may infer defaults, but the reference persists only the requested patch.
+        let metadata = match self.admit_metadata(merged.clone(), ctx)? {
+            Ok(_) => Value::Object(merged),
             Err(response) => return Ok(response),
         };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)

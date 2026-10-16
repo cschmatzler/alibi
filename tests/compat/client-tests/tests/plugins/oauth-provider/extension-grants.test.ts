@@ -128,6 +128,7 @@ compatScenario(
       body: { client_id: client.client_id, update: { grant_types: ["authorization_code"] } },
     });
     expect(update.status).toBe(200);
+    expect(((await update.json()) as any).response_types).toBeUndefined();
     const denied = await token({});
     expect(denied.status).toBe(400);
     expect(await denied.json()).toEqual({
