@@ -129,7 +129,7 @@ impl OAuthProviderPlugin {
         else {
             return Err(invalid_access_token());
         };
-        let Some(row) = super::userinfo::live_access_row(row, ctx, self).await? else {
+        let Some((row, client)) = super::userinfo::live_access_row(row, ctx, self).await? else {
             return Ok(json!({"active":false}).into());
         };
         let resources = row
@@ -157,22 +157,61 @@ impl OAuthProviderPlugin {
                 values
                     .iter()
                     .filter_map(Value::as_str)
+                    .map(str::to_owned)
                     .collect::<Vec<_>>()
-                    .join(" ")
             });
-        let payload = json!({"active":true,"iss":issuer(ctx,self.config.disable_jwt_plugin),"client_id":row.client_id,"azp":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp()});
-        let mut payload = payload
-            .as_object()
-            .cloned()
-            .ok_or_else(|| AuthError::internal("Invalid access-token payload"))?;
-        payload.extend(confirmation_claims(row.metadata.get("confirmation")));
-        if let Some(scope) = scopes {
-            _ = payload.insert("scope".into(), json!(scope));
-        }
+        let mut params =
+            super::OAuthTokenIssueParams::new(client, scopes.clone().unwrap_or_default());
         if let Some(user_id) = row.user_id.as_deref()
             && let Some(user) = ctx.database.get_user_by_id(user_id).await?
         {
-            _ = payload.insert("sub".into(), json!(ctx.user_view(&user).id));
+            params.user = Some(ctx.trusted_user_view(&user));
+        }
+        params.reference_id = row
+            .metadata
+            .get("referenceId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        params.resources = row
+            .metadata
+            .get("resources")
+            .and_then(Value::as_array)
+            .map(|_| resources.clone());
+        // Validation has no issuance grant, session context or per-request
+        // claims. Re-read both application and resource claims only after all
+        // authority/liveness gates; do not re-apply new-issuance admission.
+        let mut resource_claims = serde_json::Map::new();
+        for resource in &resources {
+            if let Some(resource) = ctx.database.get_oauth_resource(resource).await?
+                && let Some(claims) = resource
+                    .metadata
+                    .get("customClaims")
+                    .and_then(Value::as_object)
+            {
+                resource_claims.extend(claims.clone());
+            }
+        }
+        let claims = self
+            .collect_token_claims(
+                alibi_core::CallbackContext::new(ctx, None),
+                &params,
+                None,
+                super::extension_claims::TokenClaimKind::Access,
+            )
+            .await?;
+        let payload = json!({"active":true,"iss":issuer(ctx,self.config.disable_jwt_plugin),"client_id":row.client_id,"azp":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp()});
+        let core = payload
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::internal("Invalid access-token payload"))?;
+        let mut payload = super::extension_claims::compose_access_claims(claims, resource_claims);
+        payload.extend(core);
+        payload.extend(confirmation_claims(row.metadata.get("confirmation")));
+        if let Some(scope) = scopes {
+            _ = payload.insert("scope".into(), json!(scope.join(" ")));
+        }
+        if let Some(user) = params.user.as_ref() {
+            _ = payload.insert("sub".into(), json!(user.id));
         }
         if let Some(sid) = row.session_id {
             _ = payload.insert("sid".into(), json!(sid));

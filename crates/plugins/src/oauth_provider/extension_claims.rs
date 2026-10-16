@@ -18,7 +18,8 @@ pub struct OAuthTokenClaimsInput<'a> {
     pub context: CallbackContext,
     pub options: &'a OAuthProviderConfig,
     pub params: &'a OAuthTokenIssueParams,
-    pub grant_type: &'a str,
+    /// The issuance grant, or `None` when re-deriving opaque access claims.
+    pub grant_type: Option<&'a str>,
     pub metadata: Option<Value>,
 }
 
@@ -73,6 +74,35 @@ pub(super) fn merge_additive(base: &mut Map<String, Value>, claims: Map<String, 
     }
 }
 
+/// Resource policy wins over extension/per-issuance claims, but no source may
+/// supply authority owned by the authorization server. Shared by JWT minting
+/// and live opaque validation (including reserved claims absent from the token).
+pub(super) fn compose_access_claims(
+    mut claims: Map<String, Value>,
+    resource_claims: Map<String, Value>,
+) -> Map<String, Value> {
+    claims.extend(resource_claims);
+    for key in [
+        "sub",
+        "aud",
+        "client_id",
+        "azp",
+        "scope",
+        "sid",
+        "iss",
+        "iat",
+        "exp",
+        "jti",
+        "cnf",
+        "auth_time",
+        "acr",
+        "amr",
+    ] {
+        _ = claims.remove(key);
+    }
+    claims
+}
+
 pub(super) fn callback_context<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &impl SessionRequest,
@@ -83,12 +113,11 @@ pub(super) fn callback_context<S: AuthSchema>(
 }
 
 impl OAuthProviderPlugin {
-    pub(super) async fn collect_token_claims<S: AuthSchema>(
+    pub(super) async fn collect_token_claims(
         &self,
-        ctx: &AuthContext<S>,
-        req: &impl SessionRequest,
+        context: CallbackContext,
         params: &OAuthTokenIssueParams,
-        grant_type: &str,
+        grant_type: Option<&str>,
         kind: TokenClaimKind,
     ) -> AuthResult<Map<String, Value>> {
         let mut claims = Map::new();
@@ -100,7 +129,7 @@ impl OAuthProviderPlugin {
             if let Some(contributor) = contributor {
                 let contribution = contributor
                     .contribute(OAuthTokenClaimsInput {
-                        context: callback_context(ctx, req),
+                        context: context.clone(),
                         options: &self.config,
                         params,
                         grant_type,
@@ -126,7 +155,12 @@ impl OAuthProviderPlugin {
         grant_type: &str,
     ) -> AuthResult<()> {
         let mut claims = self
-            .collect_token_claims(ctx, req, params, grant_type, TokenClaimKind::Access)
+            .collect_token_claims(
+                callback_context(ctx, req),
+                params,
+                Some(grant_type),
+                TokenClaimKind::Access,
+            )
             .await?;
         if let Some(per_request) = params
             .access_token_claims
@@ -148,7 +182,12 @@ impl OAuthProviderPlugin {
     ) -> AuthResult<()> {
         if params.user.is_some() && params.scopes.iter().any(|scope| scope == "openid") {
             let mut claims = self
-                .collect_token_claims(ctx, req, params, grant_type, TokenClaimKind::Id)
+                .collect_token_claims(
+                    callback_context(ctx, req),
+                    params,
+                    Some(grant_type),
+                    TokenClaimKind::Id,
+                )
                 .await?;
             if let Some(per_request) = params.id_token_claims.as_ref().and_then(Value::as_object) {
                 claims.extend(per_request.clone());

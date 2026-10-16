@@ -5,6 +5,193 @@ import { expect } from "vitest";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
+  "Opaque introspection re-derives live extension and resource claims",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: object) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "claims-opaque", ...input }),
+      });
+    const signup = await control({
+      action: "signup",
+      body: {
+        email: ctx.uniqueEmail("opaque-claims"),
+        name: "Live claim owner",
+        password: "password123",
+      },
+    });
+    expect(signup.status).toBe(200);
+    const owner = (await signup.json()) as any;
+    const cookie = signup.headers
+      .getSetCookie()
+      .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const headers = { cookie };
+    const created = await control({
+      action: "admin-create",
+      headers,
+      body: {
+        client_name: "Opaque claims",
+        redirect_uris: ["https://app.fixture.test/callback"],
+        scope: "email profile",
+        token_endpoint_auth_method: "client_secret_post",
+      },
+    });
+    expect(created.status).toBe(201);
+    const client = (await created.json()) as any;
+    const session = (await (await control({ action: "session", headers })).json()) as any;
+    const resource = "https://api.fixture.test/live-claims";
+    const resourceResponse = await control({
+      action: "resource-create",
+      headers,
+      body: {
+        identifier: resource,
+        customClaims: { resource_wins: "resource-before", cnf: { jkt: "forged" } },
+      },
+    });
+    expect(resourceResponse.status).toBe(200);
+    expect(
+      (
+        await control({
+          action: "resource-link",
+          headers,
+          params: {
+            identifier: resource,
+            client_id: client.client_id,
+          },
+        })
+      ).status,
+    ).toBe(200);
+    const issued = await control({
+      action: "issue-tokens",
+      body: {
+        disableJwtPlugin: true,
+        claimsProfile: true,
+        clientId: client.client_id,
+        userId: owner.user.id,
+        grantType: "urn:fixture:claims",
+        params: {
+          scopes: ["email", "profile"],
+          resources: [resource],
+          sessionId: session.session.id,
+          referenceId: "live-reference",
+          accessTokenClaims: { per_request: "issuance-only" },
+        },
+      },
+    });
+    expect(issued.status).toBe(200);
+    const token = ((await issued.json()) as any).access_token;
+    expect(token).toMatch(/^[A-Za-z]{32}$/);
+    const state = async (value?: string) => {
+      const response = await control({ action: "claims-state", value });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    expect((await state("before")).calls).toEqual([]);
+    const introspect = async () => {
+      const response = await control({
+        action: "introspect",
+        body: {
+          token,
+          token_type_hint: "access_token",
+          client_id: client.client_id,
+          client_secret: client.client_secret,
+        },
+      });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    const receipts = [];
+    for (const value of ["before", "after"]) {
+      if (value === "after") {
+        await state(value);
+        expect(
+          (
+            await control({
+              action: "resource-update",
+              headers,
+              params: { identifier: resource },
+              body: {
+                disabled: true,
+                allowedScopes: ["openid"],
+                customClaims: {
+                  resource_wins: "resource-after",
+                  cnf: { jkt: "forged" },
+                  jti: "forged",
+                  auth_time: 1,
+                },
+              },
+            })
+          ).status,
+        ).toBe(200);
+      }
+      const payload = await introspect();
+      expect(payload.live_value).toBe(value);
+      expect(payload.extension_owner).toBe("first");
+      expect(payload.resource_wins).toBe(`resource-${value}`);
+      expect(payload.per_request).toBe("first");
+      expect(payload).toMatchObject({
+        active: true,
+        sub: owner.user.id,
+        client_id: client.client_id,
+        azp: client.client_id,
+        sid: session.session.id,
+        scope: "email profile",
+        aud: resource,
+        iss: `${ctx.baseURL}/api/auth`,
+        token_type: "Bearer",
+      });
+      expect(payload.exp - payload.iat).toBe(3600);
+      for (const key of ["cnf", "jti", "auth_time", "acr", "amr", "constructor"]) {
+        expect(payload).not.toHaveProperty(key);
+      }
+      // The actual random client/session IDs are asserted above on each server;
+      // retain the application-owned claim changes as the differential receipt.
+      receipts.push({
+        live: payload.live_value,
+        resource: payload.resource_wins,
+        extension: payload.extension_owner,
+        perRequest: payload.per_request,
+        tokenType: payload.token_type,
+      });
+    }
+    const calls = (await state()).calls;
+    expect(calls).toEqual(
+      ["first", "second", "first", "second"].map((extension) => ({
+        extension,
+        grant: null,
+        sessionId: null,
+        userId: owner.user.id,
+        clientId: client.client_id,
+        referenceId: "live-reference",
+        scopes: ["email", "profile"],
+        resources: [resource],
+        metadata: null,
+      })),
+    );
+    expect(
+      (
+        await control({
+          action: "revoke",
+          body: {
+            token,
+            token_type_hint: "access_token",
+            client_id: client.client_id,
+            client_secret: client.client_secret,
+          },
+        })
+      ).status,
+    ).toBe(200);
+    expect(await introspect()).toEqual({ active: false });
+    expect((await state("must-not-leak")).calls).toEqual(calls);
+    return ctx.snapshot({ owner: owner.user, receipts, calls });
+  },
+);
+
+compatScenario(
   "Extension claims enrich signed issuance and UserInfo with ordered ownership",
   async (ctx) => {
     const actor = ctx.actor();

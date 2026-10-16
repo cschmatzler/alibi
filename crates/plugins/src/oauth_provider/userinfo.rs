@@ -2,7 +2,7 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
-use alibi_core::store::OAuthToken;
+use alibi_core::store::{OAuthClient, OAuthToken};
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession, HttpMethod};
 use serde_json::{Value, json};
@@ -11,7 +11,7 @@ pub(super) async fn live_access_row<S: AuthSchema>(
     row: OAuthToken,
     ctx: &AuthContext<S>,
     provider: &OAuthProviderPlugin,
-) -> AuthResult<Option<OAuthToken>> {
+) -> AuthResult<Option<(OAuthToken, OAuthClient)>> {
     if row.expires_at < chrono::Utc::now()
         || row.metadata.get("revoked").is_some_and(|v| !v.is_null())
     {
@@ -36,7 +36,7 @@ pub(super) async fn live_access_row<S: AuthSchema>(
             return Ok(None);
         }
     }
-    Ok(Some(row))
+    Ok(Some((row, client)))
 }
 impl OAuthProviderPlugin {
     /// Read the current user claims authorized by an OAuth access token.

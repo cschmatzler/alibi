@@ -235,10 +235,12 @@ pub(crate) async fn router(
     let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
 
     let mut client_instances = HashMap::new();
+    let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     for mode in [
         "extension-grant",
         "pairwise",
         "claims",
+        "claims-opaque",
         "extension-auth",
         "interaction",
         "default",
@@ -290,7 +292,7 @@ pub(crate) async fn router(
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
-            disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed"),
+            disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed"|"claims-opaque"),
             client_secret_prefix: mode.contains("prefixed").then(|| "client_prefix_".into()),
             client_secret_cipher:(mode=="custom-encrypted-prefixed").then(||Arc::new(CustomSecretCipher) as Arc<dyn alibi::plugins::OAuthClientSecretCipher>),
             client_secret_hasher:match mode {"custom-hash"=>Some(Arc::new(CustomSecretHash)),"custom-prefixed-verify"=>Some(Arc::new(CustomSecretVerify)),_=>None},
@@ -323,6 +325,7 @@ pub(crate) async fn router(
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
         if mode=="claims" {provider.extensions=extension_claims::extensions();}
+        if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
@@ -347,6 +350,7 @@ pub(crate) async fn router(
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
+        let live_claims=live_claims.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -357,6 +361,10 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="claims-state" {
+                if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
+                return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap()})).into_response();
+            }
             if input["action"]=="extension-auth-validation" {
                 let extensions=input["entries"].as_array().unwrap().iter().map(|entry|extension_authentication::extension(entry["method"].as_str().unwrap(),entry.get("types").filter(|value|!value.is_null()).map(|value|serde_json::from_value(value.clone()).unwrap()))).collect();
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{extensions,..Default::default()})).build().await;
@@ -401,6 +409,7 @@ pub(crate) async fn router(
             if input["action"]=="issue-tokens" {
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
                 if body["claimsProfile"]==true {config.extensions=extension_claims::extensions();}
+                config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());

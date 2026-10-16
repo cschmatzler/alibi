@@ -223,31 +223,14 @@ impl OAuthProviderPlugin {
                 .get::<crate::jwt::JwtDiscoveryOptions>()
                 .and_then(|o| o.issuer.clone())
                 .unwrap_or(base);
-            let mut payload = p
+            let claims = p
                 .access_token_claims
                 .as_ref()
                 .and_then(Value::as_object)
                 .cloned()
                 .unwrap_or_default();
-            payload.extend(policy.claims.clone());
-            for key in [
-                "sub",
-                "aud",
-                "client_id",
-                "azp",
-                "scope",
-                "sid",
-                "iss",
-                "iat",
-                "exp",
-                "jti",
-                "cnf",
-                "auth_time",
-                "acr",
-                "amr",
-            ] {
-                _ = payload.remove(key);
-            }
+            let mut payload =
+                super::extension_claims::compose_access_claims(claims, policy.claims.clone());
             for (key, value) in [
                 (
                     "sub",
