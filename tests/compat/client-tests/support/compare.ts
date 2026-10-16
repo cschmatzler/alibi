@@ -5300,6 +5300,36 @@ export function compareValues(
         return;
       }
 
+      if (key === "hash" && urlQueryContext === "url" && a.startsWith("#") && b.startsWith("#")) {
+        const left = new URLSearchParams(a.slice(1));
+        const right = new URLSearchParams(b.slice(1));
+        if (
+          left.has("error") &&
+          left.has("error_description") &&
+          right.has("error") &&
+          right.has("error_description")
+        ) {
+          const aa = [...left];
+          const bb = [...right];
+          if (aa.length !== bb.length) {
+            fail(path, "OAuth error fragment parameter count differs");
+            return;
+          }
+          for (const [index, [name, value]] of aa.entries()) {
+            const [otherName, otherValue] = bb[index]!;
+            const parameterPath = `${path}.${name}.${index}`;
+            if (name !== otherName) {
+              fail(parameterPath, "OAuth error fragment parameter name or order differs");
+            } else if (name === "iss") {
+              visit(value, otherValue, parameterPath, "issuer");
+            } else if (value !== otherValue) {
+              fail(parameterPath, "literal OAuth error fragment parameter differs");
+            }
+          }
+          return;
+        }
+      }
+
       if (
         urlKeys.has(key) ||
         (key === "content-location" &&
@@ -6082,7 +6112,9 @@ export function compareValues(
             false,
             urlQueryContext === "query" || (urlQueryContext === "url" && childKey === "query")
               ? "query"
-              : undefined,
+              : urlQueryContext === "url" && childKey === "hash"
+                ? "url"
+                : undefined,
             adminFilterUrl,
             compactCache,
             proxyProviders,

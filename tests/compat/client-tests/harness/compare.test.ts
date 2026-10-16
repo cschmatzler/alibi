@@ -21,6 +21,80 @@ const context = {
   rightStartedAt: 0,
 };
 
+test("OAuth error fragments normalize observed issuers but retain channels and all literal parameters", () => {
+  const payload = (base: string) =>
+    new URLSearchParams([
+      ["error", "invalid_request"],
+      ["error_description", "invalid prompt"],
+      ["state", "caller-state"],
+      ["iss", `${base}/api/auth`],
+      ["id", "literal-id"],
+      ["token", "literal-token"],
+      ["extension_hint", "first"],
+      ["extension_hint", "second"],
+    ]);
+  const redirect = (params: URLSearchParams) => ({
+    url: `https://app.example.test/callback#${params}`,
+  });
+  const left = redirect(payload(context.leftBaseURL));
+  const right = redirect(payload(context.rightBaseURL));
+  expect(compareValues(left, right, context)).toEqual([]);
+
+  for (const [key, value] of [
+    ["error", "access_denied"],
+    ["error_description", "different reason"],
+    ["state", "unrelated-state"],
+    ["id", "unrelated-id"],
+    ["token", "unrelated-token"],
+    ["iss", "https://foreign.example.test/api/auth"],
+    ["iss", `${context.leftBaseURL}/api/auth`],
+    ["iss", `${context.rightBaseURL}/other-issuer`],
+    ["iss", "<server>/api/auth"],
+  ]) {
+    const changed = payload(context.rightBaseURL);
+    changed.set(key!, value!);
+    expect(compareValues(left, redirect(changed), context).length, key).toBeGreaterThan(0);
+  }
+  for (const changed of [
+    new URLSearchParams([
+      ...payload(context.rightBaseURL),
+      ["iss", `${context.rightBaseURL}/api/auth`],
+    ]),
+    new URLSearchParams(
+      [...payload(context.rightBaseURL)].filter(([name]) => name !== "error_description"),
+    ),
+    new URLSearchParams(
+      [...payload(context.rightBaseURL)].map(([name, value]) => [
+        name,
+        name === "extension_hint" ? (value === "first" ? "second" : "first") : value,
+      ]),
+    ),
+  ]) {
+    expect(compareValues(left, redirect(changed), context).length).toBeGreaterThan(0);
+  }
+  expect(
+    compareValues(
+      left,
+      { url: `https://app.example.test/callback?${payload(context.rightBaseURL)}` },
+      context,
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(
+    compareValues(
+      { url: "https://app.example.test/callback#section" },
+      { url: "https://app.example.test/callback#changed" },
+      context,
+    ).length,
+  ).toBeGreaterThan(0);
+  expect(
+    compareValues(
+      { url: `https://app.example.test/callback#iss=${encodeURIComponent(context.leftBaseURL)}` },
+      { url: `https://app.example.test/callback#iss=${encodeURIComponent(context.rightBaseURL)}` },
+      context,
+    ).length,
+  ).toBeGreaterThan(0);
+});
+
 test("identity bijection preserves cross-object relationships and token rotation", () => {
   const a = {
     user: { id: "alice" },
