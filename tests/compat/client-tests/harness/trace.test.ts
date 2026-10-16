@@ -6,6 +6,55 @@ import { serveFixture } from "../../reference-server/http.ts";
 import { compareValues } from "../support/compare";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
+test("explicit transport headers reach the server unchanged and retain traced cookie ownership", async () => {
+  const server = await serveFixture({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      return Response.json(
+        {
+          host: request.headers.get("host"),
+          mode: request.headers.get("sec-fetch-mode"),
+          body: await request.text(),
+          cookie: request.headers.get("cookie"),
+        },
+        { headers: { "set-cookie": "probe=kept; Path=/; HttpOnly" } },
+      );
+    },
+  });
+  try {
+    const traces: TraceEntry[] = [];
+    const traced = createTracingFetch(server.url.origin, "explicit", traces);
+    const host = await traced("/api/auth/echo", {
+      method: "POST",
+      headers: { host: "foreign.fixture.test", "content-type": "application/json" },
+      body: '{"value":"literal"}',
+    });
+    expect(host.headers.getSetCookie()).toEqual(["probe=kept; Path=/; HttpOnly"]);
+    expect(await host.json()).toMatchObject({
+      host: "foreign.fixture.test",
+      body: '{"value":"literal"}',
+      cookie: null,
+    });
+    const navigation = await traced("/api/auth/echo", {
+      headers: { "sec-fetch-mode": "navigate" },
+    });
+    expect(await navigation.json()).toMatchObject({
+      mode: "navigate",
+      cookie: "probe=kept",
+      body: "",
+    });
+    expect(traces).toHaveLength(2);
+    expect(traces[0]!.responseBody).toMatchObject({
+      host: "foreign.fixture.test",
+      body: '{"value":"literal"}',
+    });
+    expect(traces[1]!.responseBody).toMatchObject({ mode: "navigate", cookie: "probe=kept" });
+  } finally {
+    await server.stop(true);
+  }
+});
+
 test("expired, cleared, wrong-domain and wrong-path cookies are never sent", async () => {
   const server = await serveFixture({
     hostname: "127.0.0.1",

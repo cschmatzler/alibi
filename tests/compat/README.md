@@ -118,6 +118,11 @@ Outside devenv, run `nubx playwright install --with-deps chromium` in
   errors, and recovery through an explicit refresh. A custom fetch implementation
   sends requests through the traced HTTP actor and its cookie jar. The separate
   browser scenarios own browser cookie acceptance.
+- Explicit `Host` and `Sec-Fetch-Mode` probes use Node's HTTP socket transport
+  because Fetch can rewrite those headers. They retain the same actor cookie jar,
+  redirects, response tracing and strict comparator. Live HTTP echo regressions
+  verify the received headers, rather than inferring them from a Request object.
+  Stream probes use Node's required half-duplex request option.
 - Password scenarios import actual hashes produced by each runtime into both
   fixture stores, then exercise official-client sign-in, Unicode normalization,
   incorrect passwords, credential replacement, and persisted account ownership.

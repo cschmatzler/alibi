@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { Cookie, CookieJar } from "tough-cookie";
 
 import { mutateTransport } from "./assurance/wire";
+import { exactHttpFetch } from "./exact-http";
 import { jsonShape } from "./normalize";
 import { requestWindow, type RequestWindow } from "./trace-window";
 export { requestWindow, type RequestWindow } from "./trace-window";
@@ -150,8 +151,9 @@ export function createTracingFetch(
       target.pathname = `${authPath}${target.pathname.slice("/api/auth".length)}`;
     }
 
-    const supplied = input instanceof Request ? new Request(input, init) : undefined;
-    let request = supplied ? new Request(target, supplied) : new Request(target, init);
+    const requestInit = init?.body instanceof ReadableStream ? { ...init, duplex: "half" } : init;
+    const supplied = input instanceof Request ? new Request(input, requestInit) : undefined;
+    let request = supplied ? new Request(target, supplied) : new Request(target, requestInit);
     const redirectMode = init?.redirect ?? request.redirect;
     const requestCredentials =
       init?.credentials ??
@@ -183,7 +185,9 @@ export function createTracingFetch(
       const requestText = await request.clone().text();
       const outbound = new Request(request.clone(), { headers, redirect: "manual" });
       const startedAt = Date.now();
-      const response = await mutateTransport(outbound, await fetch(outbound));
+      const transport =
+        headers.has("host") || headers.has("sec-fetch-mode") ? exactHttpFetch : fetch;
+      const response = await mutateTransport(outbound, await transport(outbound));
 
       if (credentials) {
         for (const cookie of response.headers.getSetCookie()) {

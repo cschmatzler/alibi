@@ -350,18 +350,18 @@ compatScenario(
       ],
       ["multipart-missing-boundary", "multipart/form-dataapplication/json", "invalid", 500, null],
       [
-        "multipart",
+        "multipart-malformed-subtype",
         "multipart/form-dataapplication/json; boundary=dispatch-boundary",
         `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`,
-        200,
+        500,
         null,
       ],
       [
-        "multipart-file-allowed",
+        "multipart-file-malformed-subtype",
         "multipart/form-dataapplication/json; boundary=dispatch-boundary",
         `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"; filename="email.txt"\r\nContent-Type: text/plain\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`,
-        400,
-        "VALIDATION_ERROR",
+        500,
+        null,
       ],
       [
         "text",
