@@ -8,6 +8,23 @@ import { jsonShape } from "./normalize";
 import { requestWindow, type RequestWindow } from "./trace-window";
 export { requestWindow, type RequestWindow } from "./trace-window";
 
+/** Retain application headers and cookies, not HTTP-engine framing or clocks. */
+export function applicationHeaders(headers: Headers): Record<string, string> {
+  return Object.fromEntries(
+    [...headers].filter(
+      ([name]) =>
+        ![
+          "date",
+          "server",
+          "connection",
+          "keep-alive",
+          "content-length",
+          "transfer-encoding",
+        ].includes(name),
+    ),
+  );
+}
+
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
 export type TraceEntry = {
   [requestWindow]?: RequestWindow;
@@ -195,26 +212,9 @@ export function createTracingFetch(
         }
       }
 
-      const selectedHeaders: Record<string, string> = {};
-
-      for (const [header, value] of response.headers) {
-        // Transport framing, server identity and wall-clock Date are supplied by
-        // different HTTP engines. Cookies have their own structured observation.
-        if (
-          [
-            "date",
-            "server",
-            "connection",
-            "keep-alive",
-            "content-length",
-            "transfer-encoding",
-            "set-cookie",
-          ].includes(header)
-        ) {
-          continue;
-        }
-        selectedHeaders[header] = value;
-      }
+      const selectedHeaders = applicationHeaders(response.headers);
+      // Cookies have their own structured observation in a canonical trace.
+      delete selectedHeaders["set-cookie"];
 
       const responseText = await response.clone().text();
       const inputDates: Record<string, string> = {};

@@ -5,6 +5,7 @@ import { expect } from "vitest";
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
+import { applicationHeaders } from "../../../support/trace";
 
 function object(value: unknown): Record<string, any> {
   expect(value).not.toBeNull();
@@ -63,9 +64,7 @@ for (const compact of [false, true]) {
       const signup = object(await accepted.json());
       const publication = {
         status: accepted.status,
-        headers: Object.fromEntries(
-          [...accepted.headers].filter(([name]) => !["date", "content-length"].includes(name)),
-        ),
+        headers: applicationHeaders(accepted.headers),
         body: signup,
         ...(compact ? await cacheReceipt(accepted.headers) : {}),
       };

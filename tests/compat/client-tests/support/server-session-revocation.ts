@@ -2,6 +2,7 @@ import { expect } from "vitest";
 import { z } from "zod";
 
 import { cacheReceipt } from "./compact-cache-receipt";
+import { applicationHeaders } from "./trace";
 import type { ScenarioContext } from "./verification";
 
 export const revocationObservation = z.object({
@@ -71,9 +72,7 @@ export async function issueSession(
     headers: { cookie },
     publication: {
       body: result.data,
-      headers: Object.fromEntries(
-        [...headers].filter(([name]) => !["date", "content-length"].includes(name)),
-      ),
+      headers: applicationHeaders(headers),
       ...(await cacheReceipt(headers)),
     },
   };

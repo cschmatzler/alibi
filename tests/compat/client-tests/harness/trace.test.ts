@@ -4,7 +4,12 @@ import { expect, test } from "vitest";
 
 import { serveFixture } from "../../reference-server/http.ts";
 import { compareValues } from "../support/compare";
-import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
+import {
+  applicationHeaders,
+  createTracingFetch,
+  requestWindow,
+  type TraceEntry,
+} from "../support/trace";
 
 test("explicit transport headers reach the server unchanged and retain traced cookie ownership", async () => {
   const server = await serveFixture({
@@ -18,7 +23,14 @@ test("explicit transport headers reach the server unchanged and retain traced co
           body: await request.text(),
           cookie: request.headers.get("cookie"),
         },
-        { headers: { "set-cookie": "probe=kept; Path=/; HttpOnly" } },
+        {
+          headers: {
+            "set-cookie": "probe=kept; Path=/; HttpOnly",
+            "cache-control": "no-store",
+            "x-owner": "literal-owner",
+            "access-control-expose-headers": "x-owner",
+          },
+        },
       );
     },
   });
@@ -31,6 +43,13 @@ test("explicit transport headers reach the server unchanged and retain traced co
       body: '{"value":"literal"}',
     });
     expect(host.headers.getSetCookie()).toEqual(["probe=kept; Path=/; HttpOnly"]);
+    expect(applicationHeaders(host.headers)).toEqual({
+      "content-type": "application/json",
+      "set-cookie": "probe=kept; Path=/; HttpOnly",
+      "cache-control": "no-store",
+      "x-owner": "literal-owner",
+      "access-control-expose-headers": "x-owner",
+    });
     expect(await host.json()).toMatchObject({
       host: "foreign.fixture.test",
       body: '{"value":"literal"}',
@@ -45,6 +64,12 @@ test("explicit transport headers reach the server unchanged and retain traced co
       body: "",
     });
     expect(traces).toHaveLength(2);
+    expect(traces[0]!.responseHeaders).toEqual({
+      "content-type": "application/json",
+      "cache-control": "no-store",
+      "x-owner": "literal-owner",
+      "access-control-expose-headers": "x-owner",
+    });
     expect(traces[0]!.responseBody).toMatchObject({
       host: "foreign.fixture.test",
       body: '{"value":"literal"}',
