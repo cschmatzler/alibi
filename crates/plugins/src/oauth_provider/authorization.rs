@@ -756,13 +756,13 @@ fn browser_redirect(req: &impl SessionRequest, target: &str) -> AuthResult<Endpo
     });
     let fetch = req.physical_request().is_some_and(|request| {
         request
-            .header("sec-fetch-dest")
-            .is_some_and(|value| value == "empty")
+            .header("sec-fetch-mode")
+            .is_some_and(|value| value == "cors")
     });
     if json || fetch {
         EndpointResponse::json(&json!({"redirect":true,"url":target}))
     } else {
-        Ok(EndpointResponse::redirect(target))
+        Ok(EndpointResponse::redirect(target).with_header("Content-Type", "application/json"))
     }
 }
 

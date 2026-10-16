@@ -12,6 +12,7 @@ compatScenario(
     const control = (input: Record<string, unknown>) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
+        redirect: "manual",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "interaction", ...input }),
       });
@@ -257,6 +258,38 @@ compatScenario(
       scope: "email",
       state: "code-state",
     };
+    const fetchRedirects = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const [mode, destination, status] of [
+        ["cors", undefined, 200],
+        ["cors", "document", 200],
+        ["same-origin", "empty", 302],
+        ["navigate", "empty", 302],
+      ] as const) {
+        const response = await control({
+          ...(transport === "http"
+            ? { action: "protocol-http", path: "/oauth2/authorize" }
+            : { action: "authorize" }),
+          headers: {
+            accept: "text/html",
+            "sec-fetch-mode": mode,
+            ...(destination ? { "sec-fetch-dest": destination } : {}),
+          },
+          query: publicQuery,
+        });
+        expect(response.status, `${ctx.baseURL}:${transport}:${mode}:${destination}`).toBe(status);
+        expect(response.headers.get("content-type")).toBe("application/json");
+        expect(response.headers.getSetCookie()).toEqual([]);
+        const result = status === 200 ? await response.json() : await response.text();
+        if (status === 200) expect(result.redirect).toBe(true);
+        else expect(result).toBe("");
+        const location = status === 200 ? result.url : response.headers.get("location");
+        const target = new URL(location, ctx.baseURL);
+        expect(target.pathname).toBe("/login");
+        expect(target.searchParams.get("client_id")).toBe(managed.client_id);
+        fetchRedirects.push({ transport, mode, destination, status, result, location });
+      }
+    }
     const errorChannels = [];
     for (const transport of ["private", "http"] as const) {
       for (const [query, fragment, error, description, trusted] of [
@@ -571,6 +604,7 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      fetchRedirects: ctx.snapshot(fetchRedirects),
       errorChannels: ctx.snapshot(errorChannels),
       confirmationHints: ctx.snapshot(confirmationHints),
       promptAuthorizations: ctx.snapshot(promptAuthorizations),

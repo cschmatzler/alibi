@@ -519,41 +519,7 @@ async fn assert_authorization_admission<S: AuthSchema>(
             _ = physical
                 .headers
                 .insert("accept".into(), "application/json".into());
-            let response = if http {
-                let pairs = input
-                    .as_object()
-                    .unwrap()
-                    .iter()
-                    .flat_map(|(key, value)| {
-                        let values = value
-                            .as_array()
-                            .cloned()
-                            .unwrap_or_else(|| vec![value.clone()]);
-                        values
-                            .into_iter()
-                            .map(|value| (key.clone(), value.as_str().unwrap().to_owned()))
-                    })
-                    .collect::<Vec<_>>();
-                let mut url = url::Url::parse(&format!("{ORIGIN}/api/auth/oauth2/authorize"))?;
-                _ = url.query_pairs_mut().extend_pairs(pairs.clone());
-                physical = physical.with_url(url);
-                physical.set_query_pairs(pairs);
-                Box::pin(auth.handle_request(physical)).await?
-            } else {
-                Box::pin(
-                    auth.dispatch_endpoint(
-                        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
-                            .with_query(&input)?,
-                        EndpointOptions {
-                            headers: Some(physical.headers.clone()),
-                            request: Some(physical),
-                            ..Default::default()
-                        },
-                    ),
-                )
-                .await?
-                .into_response()?
-            };
+            let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
             assert_eq!(
                 db.tables(&["user", "account", "session", "verification", "oauthClient"])
                     .await?,
@@ -590,6 +556,101 @@ async fn assert_authorization_admission<S: AuthSchema>(
                 assert_eq!(fields.get(name).map(|value| value.as_ref()), value.as_str());
             }
         }
+        for (mode, destination, status) in [
+            ("cors", None, 200),
+            ("cors", Some("document"), 200),
+            ("same-origin", Some("empty"), 302),
+            ("navigate", Some("empty"), 302),
+        ] {
+            let before = db
+                .tables(&["session", "verification", "oauthClient"])
+                .await?;
+            let input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email"});
+            let mut physical = request("/oauth2/authorize", None, "");
+            _ = physical.headers.insert("accept".into(), "text/html".into());
+            _ = physical
+                .headers
+                .insert("sec-fetch-mode".into(), mode.into());
+            if let Some(destination) = destination {
+                _ = physical
+                    .headers
+                    .insert("sec-fetch-dest".into(), destination.into());
+            }
+            let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
+            assert_eq!(
+                response.status, status,
+                "http={http}, mode={mode}, destination={destination:?}"
+            );
+            assert!(!response.headers.contains_key("set-cookie"));
+            assert_eq!(
+                response.headers.get("content-type").map(String::as_str),
+                Some("application/json")
+            );
+            let location = if status == 200 {
+                body(&response)["url"].as_str().unwrap().to_owned()
+            } else {
+                response.headers["location"].clone()
+            };
+            assert_eq!(url::Url::parse(ORIGIN)?.join(&location)?.path(), "/login");
+            assert_eq!(
+                db.tables(&["session", "verification", "oauthClient"])
+                    .await?,
+                before
+            );
+        }
     }
     Ok(())
+}
+
+async fn authorization_response<S: AuthSchema>(
+    auth: &Alibi<S>,
+    input: &Value,
+    mut physical: AuthRequest,
+    http: bool,
+) -> TestResult<AuthResponse> {
+    if http {
+        let pairs = input
+            .as_object()
+            .unwrap()
+            .iter()
+            .flat_map(|(key, value)| {
+                let values = value
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_else(|| vec![value.clone()]);
+                values
+                    .into_iter()
+                    .map(|value| (key.clone(), value.as_str().unwrap().to_owned()))
+            })
+            .collect::<Vec<_>>();
+        let mut url = url::Url::parse(&format!("{ORIGIN}/api/auth/oauth2/authorize"))?;
+        _ = url.query_pairs_mut().extend_pairs(pairs.clone());
+        physical = physical.with_url(url);
+        physical.set_query_pairs(pairs);
+        return Ok(Box::pin(auth.handle_request(physical)).await?);
+    }
+    let output = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_authorize_endpoint(input)?,
+        EndpointOptions {
+            headers: Some(physical.headers.clone()),
+            request: Some(physical),
+            ..Default::default()
+        },
+    ))
+    .await;
+    Ok(match output {
+        Ok(output) => output.into_response()?,
+        Err(error) => {
+            let mut response = alibi::endpoint::EndpointResponse::error(error.error);
+            if error.body_absent {
+                response = response.without_error_body();
+            } else if let Some(body) = error.body {
+                response = response.with_error_body(*body);
+            }
+            if let Some(headers) = error.headers {
+                response.merge_headers(headers);
+            }
+            response.to_response()?
+        }
+    })
 }
