@@ -143,14 +143,14 @@ impl OAuthProviderPlugin {
         } else {
             OAuthMetadataType::OAuthAuthorizationServer
         };
-        let mut input = OAuthMetadataExtensionInput {
-            context: &callback,
-            options: &self.config,
-            metadata_type,
-            document: &mut document,
-        };
         for extension in &self.config.extensions {
             if let Some(contributor) = &extension.metadata {
+                let mut input = OAuthMetadataExtensionInput {
+                    context: &callback,
+                    options: &self.config,
+                    metadata_type,
+                    document: &mut document,
+                };
                 for (key, value) in contributor.contribute(&mut input)? {
                     // Reference `key in next` also protects inherited Object.prototype keys.
                     if !next.contains_key(&key)

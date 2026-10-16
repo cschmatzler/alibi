@@ -30,6 +30,7 @@ impl alibi::plugins::OAuthMetadataContributor for ExtensionMetadata {
                 serde_json::json!(input.document.get("shared_mutation").is_some()),
             );
             if self.id == "first" {
+                input.metadata_type = alibi::plugins::OAuthMetadataType::OAuthAuthorizationServer;
                 input.document["shared_mutation"] = serde_json::json!("visible");
                 input.document["issuer"] = serde_json::json!("https://mutated.fixture.test");
             }

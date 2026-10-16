@@ -38,7 +38,8 @@ export function oauthProviderDiscovery(baseURL: string) {
                 ...(mode.startsWith("extensions")
                   ? {
                       extensions: ["first", "second"].map((id) => ({
-                        metadata: ({ document, type, ctx }: any) => {
+                        metadata: (input: any) => {
+                          const { document, type, ctx } = input;
                           const result: Record<string, unknown> = {
                             extension_stage: id,
                             [`extension_${id}_base_clean`]: !("extension_stage" in document),
@@ -55,6 +56,7 @@ export function oauthProviderDiscovery(baseURL: string) {
                           if (mode === "extensions-mutation") {
                             result[`extension_${id}_saw_mutation`] = "shared_mutation" in document;
                             if (id === "first") {
+                              input.type = "oauth-authorization-server";
                               document.shared_mutation = "visible";
                               document.issuer = "https://mutated.fixture.test";
                             }
