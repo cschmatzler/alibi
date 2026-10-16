@@ -163,6 +163,59 @@ compatScenario(
         );
       }, organizationId);
       const afterCreate = await organizations();
+      const roleRefreshes = [];
+      for (const [query, role] of [
+        [{ organizationId: "" }, "owner,admin"],
+        [{ organizationSlug: "" }, "owner,member"],
+        [{ userId: "" }, "owner"],
+      ] as const) {
+        // A suppressed signal models a mutation the mounted hooks have not seen.
+        // The subsequent React endpoint call must succeed before its real
+        // organization listener can refresh all three mounted subscriptions.
+        const previous = await organizations();
+        const changed = await page.evaluate(
+          ({ memberId, organizationId, role }) =>
+            window.reactClient.organization.updateMemberRole({
+              memberId,
+              organizationId,
+              role,
+              fetchOptions: { disableSignal: true },
+            }),
+          { memberId: afterCreate.member.data.id, organizationId, role },
+        );
+        expect(changed.error).toBeNull();
+        expect(changed.data?.role).toBe(role);
+        expect(await organizations()).toEqual(previous);
+        const read = await page.evaluate(
+          (query) => window.reactClient.organization.getActiveMemberRole({ query }),
+          query,
+        );
+        expect(read.error, JSON.stringify(query)).toBeNull();
+        expect(read.data).toEqual({ role });
+        await page.waitForFunction(
+          ({ userId, role }) => {
+            const state = JSON.parse(document.querySelector("#organizations")!.textContent!);
+            return (
+              state.member.data?.role === role &&
+              state.role.data?.role === role &&
+              state.active.data?.members.some(
+                (member: { userId: string; role: string }) =>
+                  member.userId === userId && member.role === role,
+              ) &&
+              Object.values(state).every(
+                (entry: any) => !entry.isPending && !entry.isRefetching && entry.error === null,
+              )
+            );
+          },
+          { userId, role },
+        );
+        roleRefreshes.push({
+          selector: Object.keys(query)[0],
+          changed,
+          read,
+          rendered: await organizations(),
+        });
+      }
       const renamedOrganization = await page.evaluate(
         (organizationId) =>
           window.reactClient.organization.update({
@@ -231,6 +284,7 @@ compatScenario(
         afterUpdate,
         organization,
         afterCreate,
+        roleRefreshes,
         renamedOrganization,
         afterOrganizationUpdate,
         deleted,

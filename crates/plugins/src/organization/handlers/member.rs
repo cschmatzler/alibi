@@ -146,7 +146,11 @@ pub(crate) async fn get_active_member_role_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<GetActiveMemberRoleResponse> {
-    let org_id = if let Some(slug) = query.organization_slug.as_deref() {
+    let org_id = if let Some(slug) = query
+        .organization_slug
+        .as_deref()
+        .filter(|slug| !slug.is_empty())
+    {
         let organization = ctx
             .database
             .get_organization_by_slug(slug)
@@ -154,7 +158,13 @@ pub(crate) async fn get_active_member_role_core(
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         organization.id().to_string()
     } else {
-        resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?
+        resolve_organization_id(
+            query.organization_id.as_deref().filter(|id| !id.is_empty()),
+            None,
+            session,
+            ctx,
+        )
+        .await?
     };
 
     let requester_member = ctx
@@ -163,7 +173,7 @@ pub(crate) async fn get_active_member_role_core(
         .await?
         .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
 
-    if let Some(user_id) = query.user_id.as_deref() {
+    if let Some(user_id) = query.user_id.as_deref().filter(|id| !id.is_empty()) {
         let target_member = ctx
             .database
             .get_member(&org_id, user_id)

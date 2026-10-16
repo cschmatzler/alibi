@@ -327,6 +327,49 @@ async fn native_organization_workflow_preserves_typed_state_and_cookie_publicati
     .unwrap();
     assert_eq!(promoted.organization_id, id);
     assert_eq!(promoted.role, "admin");
+    // Logical query binding must retain empty selectors for the handler's
+    // fallback rules, rather than treating them as explicit foreign lookups.
+    for (query, expected_role) in [
+        (
+            GetActiveMemberRoleQuery {
+                organization_id: Some(String::new()),
+                ..Default::default()
+            },
+            "owner",
+        ),
+        (
+            GetActiveMemberRoleQuery {
+                organization_slug: Some(String::new()),
+                ..Default::default()
+            },
+            "owner",
+        ),
+        (
+            GetActiveMemberRoleQuery {
+                user_id: Some(String::new()),
+                ..Default::default()
+            },
+            "owner",
+        ),
+        (
+            GetActiveMemberRoleQuery {
+                organization_id: Some(String::new()),
+                organization_slug: Some("native".into()),
+                user_id: Some(recipient_id.clone()),
+            },
+            "admin",
+        ),
+    ] {
+        let role = Box::pin(auth.dispatch_endpoint(
+            OrganizationPlugin::get_active_member_role_endpoint(&query).unwrap(),
+            credentials(&active_owner),
+        ))
+        .await
+        .unwrap()
+        .decode()
+        .unwrap();
+        assert_eq!(role.role, expected_role, "query={query:?}");
+    }
     let removed = Box::pin(
         auth.dispatch_endpoint(
             OrganizationPlugin::remove_member_endpoint(&RemoveMemberRequest {
