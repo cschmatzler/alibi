@@ -298,7 +298,48 @@ compatScenario(
       "first",
       "second",
     ]);
+    const postAuthorizations = [];
+    for (const [contentType, age] of [
+      ["application/json", 86400],
+      ["application/x-www-form-urlencoded", "86400"],
+    ] as const) {
+      const response = await control({
+        action: "protocol-http",
+        path: "/oauth2/authorize",
+        method: "POST",
+        contentType,
+        headers: { accept: "application/json", cookie },
+        query: { client_id: "not-the-body-client", response_type: "token" },
+        body: { ...publicQuery, max_age: age },
+      });
+      if (contentType === "application/json") {
+        expect(response.status).toBe(415);
+        const result = await response.json();
+        expect(result).toEqual({
+          code: "UNSUPPORTED_MEDIA_TYPE",
+          message:
+            'Content-Type "application/json" is not allowed. Allowed types: application/x-www-form-urlencoded',
+        });
+        expect(response.headers.getSetCookie()).toEqual([]);
+        postAuthorizations.push({ contentType, result });
+        continue;
+      }
+      expect(response.status, `${ctx.baseURL}:${contentType}`).toBe(200);
+      const result = await response.json();
+      const callback = new URL(result.url, ctx.baseURL);
+      expect(callback.hostname, `${ctx.baseURL}:${contentType}`).toBe("app.fixture.test");
+      const code = callback.searchParams.get("code");
+      expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const proof = await (await control({ action: "grant-row", token: code })).json();
+      expect(proof.value.userId).toBe(actualSession.user.id);
+      expect(proof.value.sessionId).toBe(actualSession.session.id);
+      expect(proof.value.query.client_id).toBe(managed.client_id);
+      expect(proof.value.query.response_type).toBe("code");
+      expect(proof.value.query).not.toHaveProperty("max_age");
+      postAuthorizations.push({ contentType, result, proof });
+    }
     return {
+      postAuthorizations: ctx.snapshot(postAuthorizations),
       publicRejected: ctx.snapshot(publicRejected),
       publicLogin: ctx.snapshot(publicLoginValue),
       authorizationSession: ctx.snapshot(actualSession),

@@ -89,6 +89,72 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
             before
         );
     }
+    for (content_type, age) in [
+        ("application/json", json!(0)),
+        ("application/x-www-form-urlencoded", json!("0")),
+    ] {
+        let before = db
+            .tables(&["user", "account", "session", "verification", "oauthClient"])
+            .await?;
+        let mut input = base.clone();
+        input["max_age"] = age;
+        let mut post = request("/oauth2/authorize", Some(input.clone()), &cookie);
+        _ = post
+            .headers
+            .insert("accept".into(), "application/json".into());
+        post.set_query_pairs([
+            ("client_id", "not-the-body-client"),
+            ("response_type", "token"),
+        ]);
+        if content_type == "application/x-www-form-urlencoded" {
+            post.body = Some(
+                url::form_urlencoded::Serializer::new(String::new())
+                    .extend_pairs(
+                        input
+                            .as_object()
+                            .unwrap()
+                            .iter()
+                            .map(|(name, value)| (name.as_str(), value.as_str().unwrap())),
+                    )
+                    .finish()
+                    .into_bytes(),
+            );
+            _ = post
+                .headers
+                .insert("content-type".into(), content_type.into());
+        }
+        let response = Box::pin(auth.handle_request(post))
+            .await
+            .unwrap_or_else(|error| error.to_auth_response());
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?,
+            before
+        );
+        if content_type == "application/json" {
+            assert_eq!(response.status, 415);
+            assert_eq!(
+                body(&response),
+                json!({"code":"UNSUPPORTED_MEDIA_TYPE",
+                "message":"Content-Type \"application/json\" is not allowed. Allowed types: application/x-www-form-urlencoded"})
+            );
+            assert!(response.headers.get_all("set-cookie").next().is_none());
+            continue;
+        }
+        assert_eq!(response.status, 200);
+        let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+        assert_eq!(target.path(), "/login", "{content_type}");
+        assert_eq!(
+            target
+                .query_pairs()
+                .find(|(name, _)| name == "max_age")
+                .unwrap()
+                .1,
+            "0"
+        );
+        assert!(!target.query_pairs().any(|(name, _)| name == "code"));
+        assert!(response.headers.get_all("set-cookie").next().is_none());
+    }
     for (http, age) in [
         (true, json!("86400")),
         (false, json!(86400)),

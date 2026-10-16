@@ -381,7 +381,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         match route.path.as_str() {
-            "/oauth2/end-session/confirm"
+            "/oauth2/authorize"
+            | "/oauth2/end-session/confirm"
             | "/oauth2/token"
             | "/oauth2/introspect"
             | "/oauth2/revoke"
