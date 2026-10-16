@@ -285,6 +285,69 @@ compatScenario(
       expect(stored.value.sessionId).toBe(actualSession.session.id);
       callbackQueries.push({ transport, result, stored });
     }
+    const nativeClientResponse = await control({
+      action: "admin-create",
+      headers: { cookie },
+      body: {
+        client_name: "Loopback client",
+        redirect_uris: [
+          "http://localhost:1234/callback",
+          "http://127.0.0.1:1234/callback",
+          "http://[::1]:1234/callback",
+        ],
+        application_type: "native",
+        scope: "email",
+        skip_consent: true,
+        require_pkce: false,
+      },
+    });
+    expect(nativeClientResponse.status).toBe(201);
+    const nativeClient = await nativeClientResponse.json();
+    const loopbackRedirects = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const [redirect_uri, allowed] of [
+        ["http://localhost:5678/callback", true],
+        ["http://127.0.0.1:5678/callback", true],
+        ["http://[::1]:5678/callback", true],
+        ["http://LOCALHOST:5678/callback", false],
+        ["http://127.1:5678/callback", false],
+        ["http://127.0.0.1:5678/other/../callback", false],
+      ] as const) {
+        const response = await control({
+          ...(transport === "http"
+            ? { action: "protocol-http", path: "/oauth2/authorize" }
+            : { action: "authorize" }),
+          headers: { accept: "application/json", cookie },
+          query: { ...publicQuery, client_id: nativeClient.client_id, redirect_uri },
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.getSetCookie()).toEqual([]);
+        const result = await response.json();
+        const target = new URL(result.url, ctx.baseURL);
+        let stored = null;
+        if (allowed) {
+          expect(target.origin).toBe(new URL(redirect_uri).origin);
+          expect(target.pathname).toBe("/callback");
+          expect(target.searchParams.get("code")).toMatch(/^[a-zA-Z0-9]{32}$/);
+          expect(target.searchParams.get("state")).toBe("code-state");
+          stored = await (
+            await control({ action: "grant-row", token: target.searchParams.get("code") })
+          ).json();
+          expect(stored.value.query.client_id).toBe(nativeClient.client_id);
+          expect(stored.value.query.redirect_uri).toBe(redirect_uri);
+          expect(stored.value.userId).toBe(actualSession.user.id);
+          expect(stored.value.sessionId).toBe(actualSession.session.id);
+        } else {
+          expect(target.origin).toBe(new URL(ctx.baseURL).origin);
+          expect(target.pathname).toBe("/api/auth/error");
+          expect(target.searchParams.get("error")).toBe("invalid_redirect");
+          expect(target.searchParams.has("code")).toBe(false);
+          expect(target.searchParams.has("state")).toBe(false);
+          expect(target.searchParams.has("iss")).toBe(false);
+        }
+        loopbackRedirects.push({ transport, redirect_uri, allowed, result, stored });
+      }
+    }
     const fetchRedirects = [];
     for (const transport of ["private", "http"] as const) {
       for (const [mode, destination, status] of [
@@ -632,6 +695,7 @@ compatScenario(
     }
     return {
       callbackQueries: ctx.snapshot(callbackQueries),
+      loopbackRedirects: ctx.snapshot(loopbackRedirects),
       fetchRedirects: ctx.snapshot(fetchRedirects),
       errorChannels: ctx.snapshot(errorChannels),
       confirmationHints: ctx.snapshot(confirmationHints),

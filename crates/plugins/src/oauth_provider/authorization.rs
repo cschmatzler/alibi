@@ -717,35 +717,75 @@ fn encode_pairs(pairs: &[(String, String)]) -> String {
     encoded.finish()
 }
 fn registered_redirect(metadata: &Value, requested: &str) -> bool {
-    if requested.contains('#') {
+    let Ok(parsed) = url::Url::parse(requested) else {
+        return false;
+    };
+    if requested.contains('#')
+        || !parsed.username().is_empty()
+        || parsed
+            .password()
+            .is_some_and(|password| !password.is_empty())
+    {
         return false;
     }
+    let requested_without_port = loopback_without_port(requested);
     metadata
         .get("redirect_uris")
         .and_then(Value::as_array)
         .is_some_and(|uris| {
             uris.iter().filter_map(Value::as_str).any(|uri| {
-                uri == requested || {
-                    let parsed = url::Url::parse(uri)
-                        .ok()
-                        .zip(url::Url::parse(requested).ok());
-                    parsed.is_some_and(|(mut registered, mut requested)| {
-                        let loopback = registered.host_str().is_some_and(|host| {
-                            ["localhost", "127.0.0.1", "[::1]"].contains(&host)
-                        });
-                        if registered.scheme() != "http"
-                            || requested.scheme() != "http"
-                            || !loopback
-                        {
-                            return false;
-                        }
-                        _ = registered.set_port(None);
-                        _ = requested.set_port(None);
-                        registered == requested
+                uri == requested
+                    || requested_without_port.as_ref().is_some_and(|requested| {
+                        loopback_without_port(uri).as_ref() == Some(requested)
                     })
-                }
             })
         })
+}
+
+/// Native HTTP callbacks may change their port, not any other raw URI byte.
+fn loopback_without_port(uri: &str) -> Option<String> {
+    let parsed = url::Url::parse(uri).ok()?;
+    let host = parsed.host_str()?.trim_matches(['[', ']']);
+    let loopback = host == "localhost"
+        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| match ip {
+            std::net::IpAddr::V4(ip) => ip.is_loopback(),
+            std::net::IpAddr::V6(ip) => {
+                ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+            }
+        });
+    if parsed.scheme() != "http" || !loopback {
+        return None;
+    }
+    let start = uri.find("://")? + 3;
+    let end = start
+        + uri
+            .get(start..)?
+            .find(['/', '?', '#'])
+            .unwrap_or(uri.len() - start);
+    let authority = uri.get(start..end)?;
+    let port_start = if authority.starts_with('[') {
+        let bracket = authority.find(']')?;
+        if authority.as_bytes().get(bracket + 1) != Some(&b':') {
+            return Some(uri.into());
+        }
+        bracket + 1
+    } else if let Some(colon) = authority.rfind(':') {
+        colon
+    } else {
+        return Some(uri.into());
+    };
+    if !authority
+        .get(port_start + 1..)?
+        .bytes()
+        .all(|byte| byte.is_ascii_digit())
+    {
+        return None;
+    }
+    Some(format!(
+        "{}{}",
+        uri.get(..start + port_start)?,
+        uri.get(end..)?
+    ))
 }
 fn fragment_error_url(
     target: &str,

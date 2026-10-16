@@ -11,12 +11,14 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(JwtPlugin::new())
-        .plugin(OAuthProviderPlugin::new())
-        .build()
-        .await?;
-    let owner = signup(&auth, "oauth-authorization-owner@example.test").await;
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::new())
+            .build(),
+    )
+    .await?;
+    let owner = Box::pin(signup(&auth, "oauth-authorization-owner@example.test")).await;
     let created = auth
         .dispatch_endpoint(
             OAuthProviderPlugin::create_oauth_client_endpoint(
@@ -325,6 +327,7 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         body(&managed)["client_id"].as_str().unwrap(),
     ))
     .await?;
+    Box::pin(assert_loopback_authorization(&auth, &db, &cookies(&owner))).await?;
     Box::pin(assert_signed_login_resumes(
         &auth, &owner, &managed, &signed, &id,
     ))
@@ -633,6 +636,73 @@ async fn assert_authorization_admission<S: AuthSchema>(
         let grant: Value = serde_json::from_str(stored.value())?;
         assert_eq!(grant["query"]["redirect_uri"], RESERVED_CALLBACK);
         assert_eq!(grant["query"]["state"], "code-state");
+    }
+    Ok(())
+}
+
+async fn assert_loopback_authorization<S: AuthSchema>(
+    auth: &Alibi<S>,
+    db: &Db,
+    cookie: &str,
+) -> TestResult {
+    let created=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Loopback client","redirect_uris":["http://localhost:1234/callback","http://127.0.0.1:1234/callback","http://[::1]:1234/callback"],"application_type":"native","scope":"email","skip_consent":true,"require_pkce":false}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.into())].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    for http in [false, true] {
+        for (redirect, allowed) in [
+            ("http://localhost:5678/callback", true),
+            ("http://127.0.0.1:5678/callback", true),
+            ("http://[::1]:5678/callback", true),
+            ("http://LOCALHOST:5678/callback", false),
+            ("http://127.1:5678/callback", false),
+            ("http://127.0.0.1:5678/other/../callback", false),
+        ] {
+            let before = db
+                .tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?;
+            let input = json!({"client_id":id,"response_type":"code","redirect_uri":redirect,"scope":"email","state":"loopback-state"});
+            let mut physical = request("/oauth2/authorize", None, cookie);
+            _ = physical
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
+            assert_eq!(response.status, 200);
+            assert!(!response.headers.contains_key("set-cookie"));
+            let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+            let fields = target
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            if allowed {
+                assert_eq!(target.origin(), url::Url::parse(redirect)?.origin());
+                assert_eq!(target.path(), "/callback");
+                assert_eq!(fields["code"].len(), 32);
+                assert_eq!(fields["state"], "loopback-state");
+                let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(fields["code"].as_bytes()));
+                let stored = auth
+                    .store()
+                    .get_verification_by_identifier(&hash)
+                    .await?
+                    .unwrap();
+                let grant: Value = serde_json::from_str(stored.value())?;
+                assert_eq!(grant["query"]["client_id"], id);
+                assert_eq!(grant["query"]["redirect_uri"], redirect);
+            } else {
+                assert_eq!(
+                    target.path(),
+                    "/api/auth/error",
+                    "http={http}, redirect={redirect}"
+                );
+                assert_eq!(fields["error"], "invalid_redirect");
+                assert!(!fields.contains_key("code"));
+                assert!(!fields.contains_key("state"));
+                assert!(!fields.contains_key("iss"));
+                assert_eq!(
+                    db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                        .await?,
+                    before
+                );
+            }
+        }
     }
     Ok(())
 }
