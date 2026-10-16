@@ -6,55 +6,9 @@ use std::sync::Arc;
 backend_tests!(oauth_extension_grants_dispatch_bound_authority);
 postgres_tests!(oauth_extension_grants_dispatch_bound_authority);
 const GRANT: &str = "urn:fixture:extension";
-#[derive(Debug)]
-struct ExtensionGrant;
-#[async_trait::async_trait]
-impl alibi::plugins::OAuthExtensionGrantHandler for ExtensionGrant {
-    async fn handle(
-        &self,
-        input: alibi::plugins::OAuthExtensionGrantInput<'_>,
-    ) -> Result<serde_json::Value, alibi::endpoint::EndpointError> {
-        let body = input.call.body().unwrap().to_json_value()?;
-        if body["marker"] == "deny" {
-            return Err(alibi::endpoint::EndpointError {
-                error: alibi::AuthError::bad_request("extension rejected request"),
-                headers: None,
-                body: Some(Box::new(alibi::utils::json::JsValue::from(
-                    serde_json::json!({"error":"invalid_grant","error_description":"extension rejected request"}),
-                ))),
-                body_absent: false,
-            });
-        }
-        let scopes = body["scope"]
-            .as_str()
-            .unwrap_or("email")
-            .split(' ')
-            .map(str::to_owned)
-            .collect();
-        let authenticated = input
-            .provider
-            .authenticate_client(&alibi::plugins::OAuthClientAuthenticationOptions {
-                require_credentials: true,
-                scopes: Some(scopes),
-            })
-            .await?;
-        let mut params = alibi::plugins::OAuthTokenIssueParams::new(
-            authenticated.client,
-            body["scope"]
-                .as_str()
-                .unwrap_or("email")
-                .split(' ')
-                .map(str::to_owned)
-                .collect(),
-        );
-        params.reference_id = Some("grant-reference".into());
-        params.token_response = Some(
-            serde_json::json!({"custom":body["marker"],"boundGrant":input.grant_type,"observedGrant":body["grant_type"]}),
-        );
-        input.provider.issue_tokens(&params).await
-    }
-}
-
+#[path = "../../../fixtures/oauth/extension-grant.rs"]
+mod extension_grant;
+use extension_grant::ExtensionGrant;
 async fn oauth_extension_grants_dispatch_bound_authority<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let mut config = OAuthProviderConfig::default();
@@ -151,5 +105,30 @@ async fn oauth_extension_grants_dispatch_bound_authority<B: Backend>(db: Db) -> 
         missing.body.unwrap().to_json_value()?["error"],
         "server_error"
     );
+    for keys in [vec!["relative"], vec![" "], vec![GRANT, GRANT]] {
+        let extensions = keys
+            .into_iter()
+            .map(|key| {
+                Arc::new(alibi::plugins::OAuthProviderExtension {
+                    grants: [(
+                        key.into(),
+                        Arc::new(ExtensionGrant)
+                            as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>,
+                    )]
+                    .into_iter()
+                    .collect(),
+                })
+            })
+            .collect();
+        let invalid = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                extensions,
+                ..Default::default()
+            }))
+            .build()
+            .await;
+        assert!(matches!(invalid, Err(alibi::AuthError::Config(_))));
+    }
     Ok(())
 }

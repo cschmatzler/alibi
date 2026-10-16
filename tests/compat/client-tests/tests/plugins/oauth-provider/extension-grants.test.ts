@@ -23,6 +23,18 @@ compatScenario(
       "urn:fixture:orphan",
       grant,
     ]);
+    for (const [keys, message] of [
+      [["relative"], "OAuth Provider extension grant type must be an absolute URI: relative"],
+      [[" "], "OAuth Provider extension grant type cannot be empty"],
+      [
+        [grant, grant],
+        `OAuth Provider extensions register grant type "${grant}" more than once. Extension contributions must be disjoint.`,
+      ],
+    ] as const) {
+      const invalid = await control({ action: "extension-validation", keys });
+      expect(invalid.status).toBe(200);
+      expect(await invalid.json()).toEqual({ valid: false, message });
+    }
     const signup = await control({
       action: "signup",
       body: {

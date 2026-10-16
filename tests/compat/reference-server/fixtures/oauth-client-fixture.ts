@@ -1304,6 +1304,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if(input.action==="extension-validation"){
+      try{await betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",extensions:input.keys.map((key:string)=>({grants:{[key]:async()=>{throw new Error("unused setup handler");}}}))})]}).$context;return Response.json({valid:true});}
+      catch(error){return Response.json({valid:false,message:(error as Error).message});}
+    }
     if(input.action==="grant-metadata")return auth.api.getOAuthServerConfig({asResponse:true});
     if (input.action === "token") {
       return auth.api.oauth2Token({
