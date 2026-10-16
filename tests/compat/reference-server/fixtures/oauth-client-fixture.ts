@@ -7,7 +7,7 @@ import {
   oauthProvider,
 } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
-import { createAuthEndpoint } from "better-auth/api";
+import { APIError, createAuthEndpoint } from "better-auth/api";
 import { symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import {
@@ -551,7 +551,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     },
   };
   const trustedPlugins = [username(), jwt(), trustedProvider, trustedHelper];
+  const extensionGrant={grants:{"urn:fixture:extension":async({ctx,provider,grantType}:any)=>{
+    if(ctx.body.marker==="deny")throw new APIError("BAD_REQUEST",{error:"invalid_grant",error_description:"extension rejected request"});
+    const scopes=(ctx.body.scope??"email").split(" ");
+    const authenticated=await provider.authenticateClient({scopes});
+    return provider.issueTokens({client:authenticated.client,scopes,referenceId:"grant-reference",tokenResponse:{custom:ctx.body.marker,boundGrant:grantType,observedGrant:ctx.body.grant_type}});
+  }}};
   const auths = {
+    "extension-grant":betterAuth({...options,plugins:[username(),jwt(),oauthProvider({loginPage:"/login",consentPage:"/consent",grantTypes:["authorization_code","client_credentials","refresh_token","urn:fixture:orphan"],extensions:[extensionGrant]})]}),
     trusted: betterAuth({ ...options, plugins: trustedPlugins }),
     "trusted-peer": betterAuth({ ...options, plugins: trustedPlugins }),
     "custom-encrypted-prefixed": customCipherProfile(),
@@ -1297,6 +1304,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }),
       });
     }
+    if(input.action==="grant-metadata")return auth.api.getOAuthServerConfig({asResponse:true});
     if (input.action === "token") {
       return auth.api.oauth2Token({
         body: input.body,

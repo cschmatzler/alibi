@@ -14,6 +14,10 @@ mod continuation;
 mod credentials;
 mod discovery;
 mod dpop;
+mod extensions;
+pub use extensions::{
+    OAuthExtensionGrantHandler, OAuthExtensionGrantInput, OAuthProviderApi, OAuthProviderExtension,
+};
 mod id_token;
 mod issuance;
 pub use issuance::OAuthTokenIssueParams;
@@ -70,6 +74,7 @@ pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
+    pub extensions: Vec<std::sync::Arc<OAuthProviderExtension>>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Managed identities cached by provider instance and protected from API mutations.
     pub cached_trusted_clients: std::collections::HashSet<String>,
@@ -114,6 +119,7 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            extensions: Vec::new(),
             client_discoveries: Vec::new(),
             cached_trusted_clients: std::collections::HashSet::new(),
             client_credentials_scope_privileges: None,
@@ -208,7 +214,7 @@ impl OAuthProviderPlugin {
             .and_then(|jwt| jwt.issuer.as_deref())
             .unwrap_or(&base);
         let issuer = normalize_issuer(issuer);
-        let grants = unique(self.config.grant_types.clone());
+        let grants = self.supported_grant_types();
         let mut token_auth = vec![
             "client_secret_basic",
             "client_secret_post",
@@ -1038,6 +1044,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         Ok(None)
     }
     async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        self.validate_extensions()?;
         if self
             .config
             .advertised_scopes

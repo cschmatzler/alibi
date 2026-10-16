@@ -827,8 +827,7 @@ impl OAuthProviderPlugin {
             .unwrap_or_else(|| vec![json!("authorization_code")]);
         for grant in &grants {
             if !grant.as_str().is_some_and(|grant| {
-                self.config
-                    .grant_types
+                self.supported_grant_types()
                     .iter()
                     .any(|supported| supported == grant)
             }) {
