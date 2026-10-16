@@ -16,7 +16,8 @@ mod discovery;
 mod dpop;
 mod extensions;
 pub use extensions::{
-    OAuthExtensionGrantHandler, OAuthExtensionGrantInput, OAuthProviderApi, OAuthProviderExtension,
+    OAuthExtensionGrantHandler, OAuthExtensionGrantInput, OAuthMetadataContributor,
+    OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi, OAuthProviderExtension,
 };
 mod id_token;
 mod issuance;
@@ -304,7 +305,7 @@ impl OAuthProviderPlugin {
             contributed.extend(discovery.discovery_metadata());
         }
         contributed.extend(output);
-        Ok(Value::Object(contributed))
+        self.apply_metadata_extensions(ctx, Value::Object(contributed))
     }
 }
 fn unique(values: Vec<String>) -> Vec<String> {

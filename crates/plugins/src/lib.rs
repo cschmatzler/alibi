@@ -293,7 +293,8 @@ pub use oauth_provider::{
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
     OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthClientSecretCipher,
     OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionGrantHandler,
-    OAuthExtensionGrantInput, OAuthProviderApi, OAuthProviderConfig, OAuthProviderExtension,
+    OAuthExtensionGrantInput, OAuthMetadataContributor, OAuthMetadataExtensionInput,
+    OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig, OAuthProviderExtension,
     OAuthProviderPlugin, OAuthTokenHasher, OAuthTokenIssueParams, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};

@@ -592,4 +592,5 @@ mod oauth_server_refresh_issuance;
 
 mod oauth_claims_request;
 mod oauth_extension_grants;
+mod oauth_extension_metadata;
 mod oauth_dpop_proof;
