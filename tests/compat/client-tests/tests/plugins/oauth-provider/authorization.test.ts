@@ -202,12 +202,14 @@ compatScenario(
       attachRequest: false,
     });
     expect(missing.status).toBe(401);
+    const reservedCallback =
+      "https://app.fixture.test/callback?code=stale&keep=first&code=duplicate&state=stale&iss=stale&keep=second";
     const managedResponse = await control({
       action: "admin-create",
       headers: { cookie },
       body: {
         client_name: "Code client",
-        redirect_uris: ["https://app.fixture.test/callback"],
+        redirect_uris: ["https://app.fixture.test/callback", reservedCallback],
         scope: "email",
         skip_consent: true,
         require_pkce: false,
@@ -258,6 +260,31 @@ compatScenario(
       scope: "email",
       state: "code-state",
     };
+    const callbackQueries = [];
+    for (const transport of ["private", "http"] as const) {
+      const response = await control({
+        ...(transport === "http"
+          ? { action: "protocol-http", path: "/oauth2/authorize" }
+          : { action: "authorize" }),
+        headers: { accept: "application/json", cookie },
+        query: { ...publicQuery, redirect_uri: reservedCallback },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url);
+      expect(target.searchParams.getAll("code")).toHaveLength(1);
+      const code = target.searchParams.get("code");
+      expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+      expect(target.searchParams.getAll("state")).toEqual(["code-state"]);
+      expect(target.searchParams.getAll("iss")).toEqual([`${ctx.baseURL}/api/auth`]);
+      expect(target.searchParams.getAll("keep")).toEqual(["first", "second"]);
+      const stored = await (await control({ action: "grant-row", token: code })).json();
+      expect(stored.value.query.redirect_uri).toBe(reservedCallback);
+      expect(stored.value.query.state).toBe("code-state");
+      expect(stored.value.userId).toBe(actualSession.user.id);
+      expect(stored.value.sessionId).toBe(actualSession.session.id);
+      callbackQueries.push({ transport, result, stored });
+    }
     const fetchRedirects = [];
     for (const transport of ["private", "http"] as const) {
       for (const [mode, destination, status] of [
@@ -604,6 +631,7 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      callbackQueries: ctx.snapshot(callbackQueries),
       fetchRedirects: ctx.snapshot(fetchRedirects),
       errorChannels: ctx.snapshot(errorChannels),
       confirmationHints: ctx.snapshot(confirmationHints),

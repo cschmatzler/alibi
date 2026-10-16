@@ -504,11 +504,37 @@ impl OAuthProviderPlugin {
                 .await?;
             let mut target = url::Url::parse(&redirect_uri)
                 .map_err(|error| AuthError::internal(error.to_string()))?;
-            _ = target.query_pairs_mut().append_pair("code", &code);
-            if !state.is_empty() {
-                _ = target.query_pairs_mut().append_pair("state", &state);
+            let mut pairs = target
+                .query_pairs()
+                .map(|(name, value)| (name.into_owned(), value.into_owned()))
+                .collect::<Vec<_>>();
+            for (name, value) in [
+                ("code", code.as_str()),
+                ("state", state.as_str()),
+                ("iss", issuer.as_str()),
+            ] {
+                if name == "state" && value.is_empty() {
+                    continue;
+                }
+                // URLSearchParams.set replaces the first occurrence in place
+                // and removes later duplicates, retaining unrelated entries.
+                let mut replaced = false;
+                pairs.retain_mut(|(key, previous)| {
+                    if key.as_str() != name {
+                        return true;
+                    }
+                    if replaced {
+                        return false;
+                    }
+                    *previous = value.into();
+                    replaced = true;
+                    true
+                });
+                if !replaced {
+                    pairs.push((name.into(), value.into()));
+                }
             }
-            _ = target.query_pairs_mut().append_pair("iss", &issuer);
+            _ = target.query_pairs_mut().clear().extend_pairs(pairs);
             return browser_redirect(req, target.as_str());
         }
         if prompts.contains(&AuthorizationPrompt::None) {

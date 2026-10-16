@@ -5,6 +5,7 @@ use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use alibi::{AuthSession as _, AuthVerification as _};
 use base64::Engine;
 use sha2::Digest;
+const RESERVED_CALLBACK: &str = "https://app.fixture.test/callback?code=stale&keep=first&code=duplicate&state=stale&iss=stale&keep=second";
 backend_tests!(oauth_authorization_admits_client_and_produces_signed_login_redirect);
 async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B: Backend>(
     db: Db,
@@ -269,7 +270,7 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         );
     }
 
-    let managed=auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Code client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","skip_consent":true,"require_pkce":false}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    let managed=auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Code client","redirect_uris":["https://app.fixture.test/callback",RESERVED_CALLBACK],"scope":"email","skip_consent":true,"require_pkce":false}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
     let code_start = chrono::Utc::now().timestamp();
     let code_output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Authorize").with_query(&json!({"client_id":body(&managed)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"code-state"}))?,EndpointOptions{headers:Some([("accept".into(),"application/json".into()),("cookie".into(),cookies(&owner))].into_iter().collect()),request:Some(request("/oauth2/authorize",None,&cookies(&owner))),..Default::default()}).await?.into_response()?;
     let callback = url::Url::parse(ORIGIN)?.join(body(&code_output)["url"].as_str().unwrap())?;
@@ -598,6 +599,40 @@ async fn assert_authorization_admission<S: AuthSchema>(
                 before
             );
         }
+        let input = json!({"client_id":client,"response_type":"code","redirect_uri":RESERVED_CALLBACK,"scope":"email","state":"code-state"});
+        let mut physical = request("/oauth2/authorize", None, cookie);
+        _ = physical
+            .headers
+            .insert("accept".into(), "application/json".into());
+        let before = db.count("verification").await?;
+        let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
+        assert_eq!(response.status, 200);
+        let target = url::Url::parse(body(&response)["url"].as_str().unwrap())?;
+        let fields = |name: &str| {
+            target
+                .query_pairs()
+                .filter(|(key, _)| key == name)
+                .map(|(_, value)| value.into_owned())
+                .collect::<Vec<_>>()
+        };
+        let codes = fields("code");
+        assert_eq!(codes.len(), 1, "http={http}");
+        assert_eq!(codes[0].len(), 32);
+        assert!(codes[0].bytes().all(|byte| byte.is_ascii_alphanumeric()));
+        assert_eq!(fields("state"), ["code-state"]);
+        assert_eq!(fields("iss"), [format!("{ORIGIN}/api/auth")]);
+        assert_eq!(fields("keep"), ["first", "second"]);
+        assert_eq!(db.count("verification").await?, before + 1);
+        let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(codes[0].as_bytes()));
+        let stored = auth
+            .store()
+            .get_verification_by_identifier(&hash)
+            .await?
+            .unwrap();
+        let grant: Value = serde_json::from_str(stored.value())?;
+        assert_eq!(grant["query"]["redirect_uri"], RESERVED_CALLBACK);
+        assert_eq!(grant["query"]["state"], "code-state");
     }
     Ok(())
 }
