@@ -122,7 +122,8 @@ async fn session_layer_clears_ended_sessions() {
         .uri("/auth/sign-out")
         .header(header::COOKIE, &cookie)
         .header(header::ORIGIN, "http://localhost:3000")
-        .body(Body::empty())
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from("{}"))
         .unwrap();
     assert_eq!(
         router.clone().oneshot(sign_out).await.unwrap().status(),

@@ -112,6 +112,12 @@ Outside devenv, run `nubx playwright install --with-deps chromium` in
 - `tough-cookie` handles expiry, deletion, domains and paths. Cookie security
   attributes are compared without exceptions. Chromium separately
   checks real browser session persistence, HttpOnly behavior and logout.
+- React scenarios in `client-tests/tests/core/react/` render the official
+  `better-auth/react` session and organization hooks in Chromium. They observe
+  subscriptions after authentication and organization mutations, deferred refresh
+  errors, and recovery through an explicit refresh. A custom fetch implementation
+  sends requests through the traced HTTP actor and its cookie jar. The separate
+  browser scenarios own browser cookie acceptance.
 - Password scenarios import actual hashes produced by each runtime into both
   fixture stores, then exercise official-client sign-in, Unicode normalization,
   incorrect passwords, credential replacement, and persisted account ownership.

@@ -596,4 +596,6 @@ mod oauth_extension_metadata;
 mod oauth_pairwise_subject;
 mod oauth_extension_claims;
 mod oauth_extension_authentication;
+#[cfg(feature="axum")]
+mod session_post_media;
 mod oauth_dpop_proof;

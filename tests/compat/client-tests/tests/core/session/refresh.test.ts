@@ -113,7 +113,8 @@ compatScenario(
     const signedCookie = z.string().min(1).parse(issuedCookie);
     const cleanup = await cleaner.fetch("/__test/profiles/session-deferred/api/auth/get-session", {
       method: "POST",
-      headers: { cookie: signedCookie },
+      headers: { cookie: signedCookie, "content-type": "application/json" },
+      body: "{}",
     });
     expect(cleanup.status).toBe(200);
 

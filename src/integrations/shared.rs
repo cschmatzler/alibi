@@ -160,7 +160,8 @@ pub(super) fn auth_request(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let body = (!body.is_empty()).then_some(body);
+    let body =
+        (!body.is_empty() || !matches!(method, HttpMethod::Get | HttpMethod::Head)).then_some(body);
     let mut request =
         AuthRequest::from_parts(method, uri.path().to_owned(), headers, body, HashMap::new());
     request.set_query_pairs(query);
