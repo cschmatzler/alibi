@@ -102,7 +102,7 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
         assert_eq!(target.host_str(), Some("app.fixture.test"));
         assert!(target.query_pairs().any(|(key, _)| key == "code"));
     }
-    for age in [
+    let invalid = [
         json!(-1),
         json!(0.5),
         json!(""),
@@ -114,14 +114,25 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
         Value::Null,
         json!(["0", "1"]),
         json!({}),
-    ] {
+    ];
+    for (http, age) in invalid
+        .into_iter()
+        .map(|age| (false, age))
+        .chain([(true, json!(["0", "86400"]))])
+    {
         let before = db
             .tables(&["user", "account", "session", "verification", "oauthClient"])
             .await?;
         let mut query = base.clone();
         query["max_age"] = age;
-        let response = Box::pin(authorize(&auth, &query, &cookie, false)).await?;
+        let response = Box::pin(authorize(&auth, &query, &cookie, http)).await?;
         assert_eq!(response.status, 200);
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?,
+            before,
+            "invalid authorization parameters must not create authority; http={http}"
+        );
         let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
         assert_eq!(
             target
@@ -133,11 +144,6 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
         );
         assert!(!target.query_pairs().any(|(key, _)| key == "code"));
         assert!(response.headers.get_all("set-cookie").next().is_none());
-        assert_eq!(
-            db.tables(&["user", "account", "session", "verification", "oauthClient"])
-                .await?,
-            before
-        );
     }
     Ok(())
 }
@@ -152,13 +158,15 @@ async fn authorize<S: AuthSchema>(
         .headers
         .insert("accept".into(), "application/json".into());
     if http {
-        request.set_query_pairs(
-            query
-                .as_object()
-                .unwrap()
-                .iter()
-                .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned())),
-        );
+        request.set_query_pairs(query.as_object().unwrap().iter().flat_map(|(key, value)| {
+            let values = match value {
+                Value::Array(values) => values.iter().collect::<Vec<_>>(),
+                _ => vec![value],
+            };
+            values
+                .into_iter()
+                .map(move |value| (key.clone(), value.as_str().unwrap().to_owned()))
+        }));
         Box::pin(auth.handle_request(request)).await
     } else {
         Box::pin(auth.dispatch_endpoint(

@@ -204,21 +204,7 @@ impl EndpointCall {
                 crate::types::ParsedRequestBody::Value(value) => Some(value.clone()),
                 crate::types::ParsedRequestBody::Opaque(_) => None,
             });
-        let query = JsValue::Object(
-            request
-                .query
-                .keys()
-                .map(|name| {
-                    let values = request.query_values(name).unwrap_or_default();
-                    let value = if values.len() > 1 {
-                        JsValue::Array(values.iter().cloned().map(JsValue::String).collect())
-                    } else {
-                        JsValue::String(request.query.get(name).cloned().unwrap_or_default())
-                    };
-                    (name.clone(), value)
-                })
-                .collect(),
-        );
+        let query = request.query_as_js_value();
         let definition = EndpointDefinition {
             name: "http",
             operation_id: "http",

@@ -250,7 +250,57 @@ compatScenario(
     );
     expect(new Date(proof.createdAt).getTime()).toBeLessThanOrEqual(Date.now());
     expect(new Date(proof.expiresAt).getTime() - new Date(proof.createdAt).getTime()).toBe(600000);
+    const publicQuery = {
+      client_id: managed.client_id,
+      response_type: "code",
+      redirect_uri: "https://app.fixture.test/callback",
+      scope: "email",
+      state: "code-state",
+    };
+    const publicRejected = [];
+    for (const [name, values] of [
+      ["max_age", ["0", "86400"]],
+      ["scope", ["email", "email"]],
+      ["client_id", [managed.client_id, managed.client_id]],
+      ["state", ["code-state", "code-state"]],
+    ] as const) {
+      const response = await control({
+        action: "protocol-http",
+        path: "/oauth2/authorize",
+        headers: { accept: "application/json", cookie },
+        query: { ...publicQuery, [name]: values },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url, ctx.baseURL);
+      expect(target.searchParams.get("error"), `${ctx.baseURL}:repeated ${name}`).toBe(
+        "invalid_request",
+      );
+      expect(target.searchParams.get("error_description")).toBe(
+        name === "max_age" ? "max_age: Invalid input" : `${name} must not appear more than once`,
+      );
+      expect(target.searchParams.has("code")).toBe(false);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      publicRejected.push({ name, result });
+    }
+    const publicLogin = await control({
+      action: "protocol-http",
+      path: "/oauth2/authorize",
+      headers: { accept: "application/json" },
+      query: { ...publicQuery, extension_hint: ["second", "first", "second"] },
+    });
+    expect(publicLogin.status).toBe(200);
+    const publicLoginValue = await publicLogin.json();
+    const publicLoginTarget = new URL(publicLoginValue.url, ctx.baseURL);
+    expect(publicLoginTarget.pathname).toBe("/login");
+    expect(publicLoginTarget.searchParams.getAll("extension_hint")).toEqual([
+      "second",
+      "first",
+      "second",
+    ]);
     return {
+      publicRejected: ctx.snapshot(publicRejected),
+      publicLogin: ctx.snapshot(publicLoginValue),
       authorizationSession: ctx.snapshot(actualSession),
       code: ctx.snapshot(codeValue),
       proof: ctx.snapshot(proof),

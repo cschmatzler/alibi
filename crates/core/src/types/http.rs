@@ -1,4 +1,5 @@
 use crate::utils::LockUnpoisoned;
+use crate::utils::json::JsValue;
 use crate::wire::{SessionView, UserView};
 use serde::{Deserialize, Serialize};
 use std::any::Any;
@@ -313,6 +314,25 @@ impl AuthRequest {
             Some(values) if values.last() == Some(current) => Some(values),
             _ => Some(std::slice::from_ref(current)),
         }
+    }
+
+    /// Project decoded query arguments, retaining repeated values as arrays.
+    #[must_use]
+    pub fn query_as_js_value(&self) -> JsValue {
+        JsValue::Object(
+            self.query
+                .keys()
+                .map(|name| {
+                    let values = self.query_values(name).unwrap_or_default();
+                    let value = if values.len() > 1 {
+                        JsValue::Array(values.iter().cloned().map(JsValue::String).collect())
+                    } else {
+                        JsValue::String(self.query.get(name).cloned().unwrap_or_default())
+                    };
+                    (name.clone(), value)
+                })
+                .collect(),
+        )
     }
 
     #[must_use]

@@ -941,7 +941,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 }
                 alibi_core::utils::json::JsValue::Object(fields)
             } else {
-                alibi_core::utils::json::parse_value(&serde_json::to_string(&req.query)?)?
+                req.query_as_js_value()
             };
             return Ok(Some(
                 Box::pin(self.authorize(Some(value), req, ctx))
