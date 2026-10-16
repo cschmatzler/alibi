@@ -444,22 +444,43 @@ async fn assert_authorization_admission<S: AuthSchema>(
     client: &str,
 ) -> TestResult {
     for http in [false, true] {
-        for (name, value, description) in [
+        for (name, value, expected) in [
             (
                 "prompt",
                 "",
-                Some("prompt: prompt must include at least one value"),
+                Some((
+                    "invalid_request",
+                    "prompt: prompt must include at least one value",
+                    false,
+                )),
             ),
             (
                 "prompt",
                 "surprise",
-                Some("prompt: unsupported prompt value: surprise"),
+                Some((
+                    "invalid_request",
+                    "prompt: unsupported prompt value: surprise",
+                    false,
+                )),
             ),
             ("prompt", "\u{feff}login\u{a0}", None),
             (
                 "dpop_jkt",
                 "bad-value",
-                Some("dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint"),
+                Some((
+                    "invalid_request",
+                    "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
+                    false,
+                )),
+            ),
+            (
+                "response_type",
+                "token",
+                Some((
+                    "unsupported_response_type",
+                    "response_type must be one of: code",
+                    true,
+                )),
             ),
         ] {
             let before = db
@@ -507,16 +528,20 @@ async fn assert_authorization_admission<S: AuthSchema>(
             assert_eq!(response.status, 200);
             assert!(!response.headers.contains_key("set-cookie"));
             let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
-            let fields = target
-                .query_pairs()
+            let fragment = expected.is_some_and(|(_, _, fragment)| fragment);
+            let parameters = if fragment {
+                assert!(target.query().is_none());
+                target.fragment().expect("fragment error parameters")
+            } else {
+                assert!(target.fragment().is_none());
+                target.query().unwrap_or_default()
+            };
+            let fields = url::form_urlencoded::parse(parameters.as_bytes())
                 .collect::<std::collections::HashMap<_, _>>();
             assert!(!fields.contains_key("code"));
-            if let Some(description) = description {
+            if let Some((error, description, _)) = expected {
                 assert_eq!(target.host_str(), Some("app.fixture.test"));
-                assert_eq!(
-                    fields.get("error").map(|value| value.as_ref()),
-                    Some("invalid_request")
-                );
+                assert_eq!(fields.get("error").map(|value| value.as_ref()), Some(error));
                 assert_eq!(
                     fields.get("error_description").map(|value| value.as_ref()),
                     Some(description)

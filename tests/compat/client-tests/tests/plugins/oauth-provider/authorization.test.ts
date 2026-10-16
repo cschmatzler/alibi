@@ -257,6 +257,96 @@ compatScenario(
       scope: "email",
       state: "code-state",
     };
+    const errorChannels = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const [query, fragment, error, description, trusted] of [
+        [
+          { response_type: "token" },
+          true,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_type: "token", response_mode: "query" },
+          false,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_type: "code id_token" },
+          true,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_type: "code_token" },
+          false,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_type: "étokené" },
+          true,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_mode: "fragment", prompt: "surprise" },
+          true,
+          "invalid_request",
+          "prompt: unsupported prompt value: surprise",
+          true,
+        ],
+        [
+          { response_mode: "fragment", scope: "forbidden" },
+          false,
+          "invalid_scope",
+          "The following scopes are invalid: forbidden",
+          true,
+        ],
+        [
+          { response_type: "token", redirect_uri: "https://untrusted.fixture.test/callback" },
+          false,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          false,
+        ],
+      ] as const) {
+        const response = await control({
+          ...(transport === "http"
+            ? { action: "protocol-http", path: "/oauth2/authorize" }
+            : { action: "authorize" }),
+          headers: { accept: "application/json", cookie },
+          query: { ...publicQuery, ...query },
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.getSetCookie()).toEqual([]);
+        const result = await response.json();
+        const target = new URL(result.url, ctx.baseURL);
+        expect(target.hash.length > 0).toBe(fragment);
+        expect(target.searchParams.has("error")).toBe(!fragment);
+        const fields = fragment ? new URLSearchParams(target.hash.slice(1)) : target.searchParams;
+        expect(fields.has("code")).toBe(false);
+        expect(fields.get("error")).toBe(error);
+        expect(fields.get("error_description")).toBe(description);
+        if (trusted) {
+          expect(target.hostname).toBe("app.fixture.test");
+          expect(fields.get("state")).toBe(publicQuery.state);
+          expect(fields.get("iss")).toBe(`${ctx.baseURL}/api/auth`);
+        } else {
+          expect(target.origin).toBe(new URL(ctx.baseURL).origin);
+          expect(target.pathname).toBe("/api/auth/error");
+          expect(fields.has("state")).toBe(false);
+          expect(fields.has("iss")).toBe(false);
+        }
+        errorChannels.push({ transport, query, result });
+      }
+    }
     const confirmationHints = [];
     for (const transport of ["private", "http"] as const) {
       for (const [hint, prompt] of [
@@ -444,6 +534,7 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      errorChannels: ctx.snapshot(errorChannels),
       confirmationHints: ctx.snapshot(confirmationHints),
       promptAuthorizations: ctx.snapshot(promptAuthorizations),
       postAuthorizations: ctx.snapshot(postAuthorizations),

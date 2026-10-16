@@ -64,6 +64,7 @@ impl OAuthProviderPlugin {
                         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
             })
         });
+        let error_mode = authorization_error_mode(&query);
         let text = |name: &str| {
             query
                 .get(name)
@@ -124,17 +125,33 @@ impl OAuthProviderPlugin {
             )?;
             browser_redirect(req, &url)
         };
+        let request_error = |error: &str, description: &str| {
+            if trusted && error_mode == AuthorizationErrorMode::Fragment {
+                browser_redirect(
+                    req,
+                    &fragment_error_url(
+                        &redirect_uri,
+                        error,
+                        description,
+                        Some(&state),
+                        Some(&issuer),
+                    ),
+                )
+            } else {
+                admission_error(error, description)
+            }
+        };
         if query.contains_key("request") && query.contains_key("request_uri") {
-            return admission_error(
+            return request_error(
                 "invalid_request",
                 "request and request_uri cannot be used together",
             );
         }
         if query.contains_key("request") {
-            return admission_error("request_not_supported", "request object not supported");
+            return request_error("request_not_supported", "request object not supported");
         }
         if query.contains_key("request_uri") {
-            return admission_error("request_uri_not_supported", "request_uri not supported");
+            return request_error("request_uri_not_supported", "request_uri not supported");
         }
         for name in [
             "response_type",
@@ -163,31 +180,31 @@ impl OAuthProviderPlugin {
                 } else {
                     format!("{name} must be a string")
                 };
-                return admission_error("invalid_request", &message);
+                return request_error("invalid_request", &message);
             }
         }
         if client_id.is_empty() {
-            return admission_error("invalid_request", "client_id is required");
+            return request_error("invalid_request", "client_id is required");
         }
         if response_type.is_empty() {
-            return admission_error("invalid_request", "response_type is required");
+            return request_error("invalid_request", "response_type is required");
         }
         if response_type != "code" {
-            return admission_error(
+            return request_error(
                 "unsupported_response_type",
                 "response_type must be one of: code",
             );
         }
         let prompts = match validated_prompts {
             Ok(prompts) => prompts,
-            Err(description) => return admission_error("invalid_request", &description),
+            Err(description) => return request_error("invalid_request", &description),
         };
         let max_age = match validated_max_age {
             Ok(value) => value,
-            Err(description) => return admission_error("invalid_request", description),
+            Err(description) => return request_error("invalid_request", description),
         };
         if !valid_dpop_jkt {
-            return admission_error(
+            return request_error(
                 "invalid_request",
                 "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
             );
@@ -351,7 +368,7 @@ impl OAuthProviderPlugin {
             );
         }
         if !method.is_empty() && method != "S256" {
-            return admission_error(
+            return request_error(
                 "invalid_request",
                 "code_challenge_method must be one of: S256",
             );
@@ -558,6 +575,36 @@ fn parameter_text(value: &Value) -> AuthResult<String> {
         .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
 }
 #[derive(PartialEq, Eq)]
+enum AuthorizationErrorMode {
+    Query,
+    Fragment,
+}
+
+fn authorization_error_mode(query: &serde_json::Map<String, Value>) -> AuthorizationErrorMode {
+    match query.get("response_mode").and_then(Value::as_str) {
+        Some("fragment") => AuthorizationErrorMode::Fragment,
+        Some("query") => AuthorizationErrorMode::Query,
+        _ => {
+            let implicit = query
+                .get("response_type")
+                .and_then(Value::as_str)
+                .is_some_and(|response_type| {
+                    response_type
+                        .split(|character: char| {
+                            !character.is_ascii_alphanumeric() && character != '_'
+                        })
+                        .any(|word| matches!(word, "token" | "id_token"))
+                });
+            if implicit {
+                AuthorizationErrorMode::Fragment
+            } else {
+                AuthorizationErrorMode::Query
+            }
+        }
+    }
+}
+
+#[derive(PartialEq, Eq)]
 enum AuthorizationPrompt {
     None,
     Consent,
@@ -653,6 +700,25 @@ fn registered_redirect(metadata: &Value, requested: &str) -> bool {
             })
         })
 }
+fn fragment_error_url(
+    target: &str,
+    error: &str,
+    description: &str,
+    state: Option<&str>,
+    issuer: Option<&str>,
+) -> String {
+    let mut params = url::form_urlencoded::Serializer::new(String::new());
+    _ = params.append_pair("error", error);
+    _ = params.append_pair("error_description", description);
+    if let Some(state) = state.filter(|state| !state.is_empty()) {
+        _ = params.append_pair("state", state);
+    }
+    if let Some(issuer) = issuer.filter(|issuer| !issuer.is_empty()) {
+        _ = params.append_pair("iss", issuer);
+    }
+    format!("{target}#{}", params.finish())
+}
+
 fn error_url(
     target: &str,
     error: &str,
