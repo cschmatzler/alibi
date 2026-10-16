@@ -210,7 +210,7 @@ impl<S: AuthSchema> Alibi<S> {
         let disabled_path = requested_path.trim_end_matches('/');
         if self.config.is_path_disabled(disabled_path) {
             let mut response =
-                AuthResponse::new(404).with_header("content-type", "text/plain;charset=utf-8");
+                AuthResponse::new(404).with_header("content-type", "text/plain; charset=UTF-8");
             response.body = b"Not Found".to_vec();
             return Ok(Some(response));
         }

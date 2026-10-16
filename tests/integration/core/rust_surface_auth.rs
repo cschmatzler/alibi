@@ -120,6 +120,11 @@ mod tests {
             .expect("request should return a response");
 
         assert_eq!(response.status, 404);
+        assert_eq!(
+            response.headers.get("content-type").map(String::as_str),
+            Some("text/plain; charset=UTF-8")
+        );
+        assert_eq!(response.body, b"Not Found");
     }
 
     // Rust-specific surface: `Alibi::openapi_spec` is a Rust API for embedded
