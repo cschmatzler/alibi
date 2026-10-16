@@ -2,6 +2,7 @@ import { build } from "esbuild";
 import { chromium, type Page } from "playwright";
 import { expect } from "vitest";
 
+import { Authenticator } from "../../../support/authenticator";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import { generateCurrentTotp, redactTwoFactorPayload } from "../../../support/totp";
 import type { FetchInput } from "./browser-client";
@@ -15,7 +16,7 @@ const bundle = await build({
   define: { "process.env.NODE_ENV": JSON.stringify("production") },
 });
 const script = bundle.outputFiles[0]!.text;
-type ProbeOptions = { organizations?: boolean; jsonContentType?: boolean };
+type ProbeOptions = { organizations?: boolean; jsonContentType?: boolean; passkeys?: boolean };
 async function openProbe(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
@@ -42,6 +43,7 @@ async function openProbe(
     });
     const query = new URLSearchParams({ organizations: String(options.organizations ?? true) });
     if (options.jsonContentType) query.set("jsonContentType", "true");
+    if (options.passkeys) query.set("passkeys", "true");
     await page.goto(`${ctx.baseURL}/__health?${query}`);
     await page.addScriptTag({ content: script });
     return { browser, page, methods };
@@ -611,6 +613,96 @@ compatScenario(
         afterProof,
         disabled,
         afterDisable,
+      });
+    } finally {
+      await browser.close();
+    }
+  },
+  [],
+  60_000,
+);
+
+compatScenario(
+  "React passkey-list hook observes signed registration rename rejection and deletion",
+  async (ctx) => {
+    const actor = ctx.actor("react-passkey");
+    const { browser, page } = await openProbe(ctx, actor, { organizations: false, passkeys: true });
+    async function list(count: number, name?: string) {
+      await page.waitForFunction(
+        ({ count, name }) => {
+          const node = document.querySelector("#passkeys");
+          if (!node) return false;
+          const state = JSON.parse(node.textContent!);
+          return (
+            state.error === null &&
+            !state.isPending &&
+            !state.isRefetching &&
+            state.data?.length === count &&
+            (name === undefined || state.data[0]?.name === name)
+          );
+        },
+        { count, name },
+      );
+      return JSON.parse((await page.locator("#passkeys").textContent())!);
+    }
+    try {
+      await settledSession(page, { userId: null });
+      const owner = await page.evaluate(
+        (email) =>
+          window.reactClient.signUp.email({
+            email,
+            name: "React Passkey",
+            password: "password123",
+          }),
+        ctx.uniqueEmail("react-passkey"),
+      );
+      expect(owner.error).toBeNull();
+      await settledSession(page, { userId: owner.data!.user.id });
+      const empty = await list(0);
+      const options = await page.evaluate(() =>
+        window.reactClient.passkey.generateRegisterOptions({ query: { name: "React credential" } }),
+      );
+      expect(options.error).toBeNull();
+      const response = new Authenticator().register(options.data, ctx.baseURL);
+      const registered = await page.evaluate(
+        (response) =>
+          window.reactClient.passkey.verifyRegistration({ response, name: "React credential" }),
+        response,
+      );
+      expect(registered.error).toBeNull();
+      expect(registered.data!.userId).toBe(owner.data!.user.id);
+      const added = await list(1, "React credential");
+      expect(added.data[0].id).toBe(registered.data!.id);
+      expect(added.data[0].credentialID).toBe(response.id);
+      const renamed = await page.evaluate(
+        (id) => window.reactClient.passkey.updatePasskey({ id, name: "Renamed React credential" }),
+        registered.data!.id,
+      );
+      expect(renamed.error).toBeNull();
+      const updated = await list(1, "Renamed React credential");
+      const rejected = await page.evaluate(() =>
+        window.reactClient.passkey.deletePasskey({ id: "missing-react-credential" }),
+      );
+      expect(rejected.error?.status).toBe(404);
+      expect(rejected.error?.code).toBe("PASSKEY_NOT_FOUND");
+      expect(await list(1, "Renamed React credential")).toEqual(updated);
+      const deleted = await page.evaluate(
+        (id) => window.reactClient.passkey.deletePasskey({ id }),
+        registered.data!.id,
+      );
+      expect(deleted.error).toBeNull();
+      const afterDelete = await list(0);
+      return ctx.snapshot({
+        owner,
+        empty,
+        options,
+        registered,
+        added,
+        renamed,
+        updated,
+        rejected,
+        deleted,
+        afterDelete,
       });
     } finally {
       await browser.close();

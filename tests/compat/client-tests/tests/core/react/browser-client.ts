@@ -1,3 +1,4 @@
+import { passkeyClient } from "@better-auth/passkey/client";
 import {
   adminClient,
   multiSessionClient,
@@ -23,6 +24,7 @@ const client = createAuthClient({
   plugins: [
     usernameClient(),
     organizationClient(),
+    passkeyClient(),
     multiSessionClient(),
     adminClient(),
     twoFactorClient({
@@ -86,6 +88,11 @@ function Organizations() {
     }),
   );
 }
+function Passkeys() {
+  const list = client.useListPasskeys();
+  return createElement("pre", { id: "passkeys" }, JSON.stringify(value(list)));
+}
+const showPasskeys = new URLSearchParams(location.search).has("passkeys");
 const showOrganizations = new URLSearchParams(location.search).get("organizations") !== "false";
 function App() {
   const session = client.useSession();
@@ -95,6 +102,7 @@ function App() {
     createElement("pre", { id: "session" }, JSON.stringify(value(session))),
     createElement("button", { id: "refetch", onClick: () => session.refetch() }, "Refetch session"),
     session.data && showOrganizations ? createElement(Organizations) : null,
+    session.data && showPasskeys ? createElement(Passkeys) : null,
   );
 }
 window.reactClient = client;

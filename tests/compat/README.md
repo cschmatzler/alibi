@@ -117,6 +117,9 @@ Outside devenv, run `nubx playwright install --with-deps chromium` in
   subscriptions after authentication and organization mutations, multi-session
   selection and revoked-session fallback, admin impersonation/restoration, and
   two-factor enrollment, redirect delivery, proof completion and disablement.
+  The mounted passkey-list hook observes genuine software-signed registration
+  through the React endpoint client, rename, rejected deletion and deletion.
+  This does not substitute for browser WebAuthn enrollment UI coverage.
   Deferred-refresh errors recover through an explicit refresh. Unchanged session
   values synchronize on completed HTTP reads rather than fixed timer delays.
   A custom fetch implementation
