@@ -305,5 +305,115 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         600
     );
     assert_eq!(db.count("verification").await?, 1);
+    Box::pin(assert_signed_login_resumes(
+        &auth, &owner, &managed, &signed, &id,
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn assert_signed_login_resumes<S: AuthSchema>(
+    auth: &Alibi<S>,
+    owner: &AuthResponse,
+    managed: &AuthResponse,
+    signed: &str,
+    id: &str,
+) -> TestResult {
+    let mut login_request = request(
+        "/sign-in/email",
+        Some(json!({
+            "email":"oauth-authorization-owner@example.test","password":PASSWORD,"oauth_query":signed,
+        })),
+        "",
+    );
+    _ = login_request
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let resumed = Box::pin(call(auth, login_request, 200)).await;
+    assert_eq!(body(&resumed)["redirect"], true);
+    let consent = url::Url::parse(ORIGIN)?.join(body(&resumed)["url"].as_str().unwrap())?;
+    assert_eq!(consent.path(), "/consent");
+    assert_eq!(
+        consent
+            .query_pairs()
+            .find(|(key, _)| key == "client_id")
+            .unwrap()
+            .1,
+        id
+    );
+    let authenticated = Box::pin(call(
+        auth,
+        request("/get-session", None, &cookies(&resumed)),
+        200,
+    ))
+    .await;
+    assert_eq!(
+        body(&authenticated)["user"]["id"],
+        body(&owner)["user"]["id"]
+    );
+    assert_ne!(
+        body(&authenticated)["session"]["token"],
+        body(&owner)["token"]
+    );
+    let other = Box::pin(signup(auth, "oauth-authorization-other@example.test")).await;
+    let managed_login = Box::pin(
+        auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_authorize_endpoint(&json!({
+                "client_id":body(&managed)["client_id"],"response_type":"code",
+                "redirect_uri":"https://app.fixture.test/callback","scope":"email","prompt":"login",
+            }))?,
+            EndpointOptions {
+                headers: Some(
+                    [("accept".into(), "application/json".into())]
+                        .into_iter()
+                        .collect(),
+                ),
+                request: Some(request("/oauth2/authorize", None, "")),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    let managed_query = url::Url::parse(ORIGIN)?
+        .join(body(&managed_login)["url"].as_str().unwrap())?
+        .query()
+        .unwrap()
+        .to_owned();
+    let issued=Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("email-password","signInEmail").with_body(&json!({
+            "email":"oauth-authorization-owner@example.test","password":PASSWORD,"oauth_query":managed_query,
+        }))?,
+        EndpointOptions{headers:Some([
+            ("accept".into(),"application/json".into()),("cookie".into(),cookies(&other)),
+            ("origin".into(),ORIGIN.into()),
+        ].into_iter().collect()),request:Some(request("/sign-in/email",None,&cookies(&other))),..Default::default()},
+    )).await?.into_response()?;
+    let callback = url::Url::parse(ORIGIN)?.join(body(&issued)["url"].as_str().unwrap())?;
+    assert_eq!(callback.host_str(), Some("app.fixture.test"));
+    let code = callback
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned();
+    let identifier = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .encode(sha2::Sha256::digest(code.as_bytes()));
+    let proof = auth
+        .store()
+        .get_verification_by_identifier(&identifier)
+        .await?
+        .unwrap();
+    let payload: Value = serde_json::from_str(proof.value())?;
+    let current = Box::pin(call(
+        auth,
+        request("/get-session", None, &cookies(&issued)),
+        200,
+    ))
+    .await;
+    assert_eq!(payload["userId"], body(&owner)["user"]["id"]);
+    assert_ne!(payload["userId"], body(&other)["user"]["id"]);
+    assert_eq!(payload["sessionId"], body(&current)["session"]["id"]);
+    assert_ne!(payload["sessionId"], body(&authenticated)["session"]["id"]);
     Ok(())
 }

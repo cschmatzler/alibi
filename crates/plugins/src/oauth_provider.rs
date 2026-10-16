@@ -357,6 +357,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         interaction::admit(
             body.as_ref().and_then(|body| body.get("oauth_query")),
             ctx.config.current_secret(),
+            req.extensions(),
         )?
         .map(|response| {
             response
@@ -364,6 +365,19 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 .map(alibi_core::BeforeRequestAction::Respond)
         })
         .transpose()
+    }
+    async fn after_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+        response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        let Some(mut resumed) = interaction::resume(self, req, &response.headers, ctx).await?
+        else {
+            return Ok(response);
+        };
+        resumed.merge_headers(response.headers);
+        resumed.to_response()
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         match route.path.as_str() {

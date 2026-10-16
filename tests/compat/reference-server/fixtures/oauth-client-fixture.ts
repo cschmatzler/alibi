@@ -26,6 +26,7 @@ import {
   deriveDpopJkt,
 } from "better-auth/oauth2";
 import { jwt, username } from "better-auth/plugins";
+import { APIError as EndpointAPIError, kAPIErrorHeaderSymbol } from "better-call";
 import { SignJWT, importJWK, decodeProtectedHeader } from "jose";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
@@ -791,7 +792,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     default: betterAuth(options),
-    interaction: betterAuth({ ...options, rateLimit: { enabled: false } }),
+    interaction: betterAuth({
+      ...options,
+      rateLimit: { enabled: false },
+      plugins: options.plugins.map((plugin) =>
+        plugin.id === "jwt" ? jwt({ disableSettingJwtHeader: true }) : plugin,
+      ),
+    }),
     "remote-jwks": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "remote-jwks-peer": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "uri-host": betterAuth({ ...options, trustedOrigins: ["https://*"] }),
@@ -1311,13 +1318,39 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "signup" || input.action === "signin") {
       try {
-        const endpoint = input.action === "signup" ? auth.api.signUpEmail : auth.api.signInEmail;
-        return await endpoint({ body: input.body, asResponse: true });
+        if (input.action === "signup") {
+          return await auth.api.signUpEmail({ body: input.body, asResponse: true });
+        }
+        const output = await auth.api.signInEmail({
+          body: input.body,
+          asResponse: false,
+          returnHeaders: true,
+          returnStatus: true,
+          headers: new Headers(input.headers ?? {}),
+          ...(input.attachRequest
+            ? {
+                request: new Request(
+                  `${base.baseURL}${base.basePath ?? "/api/auth"}/sign-in/email`,
+                  { method: "POST", headers: input.headers },
+                ),
+              }
+            : {}),
+        });
+        const headers = new Headers(output.headers);
+        headers.set("content-type", "application/json");
+        return new Response(JSON.stringify(output.response), {
+          status: output.status ?? 200,
+          headers,
+        });
       } catch (error) {
-        if (!(error instanceof APIError)) {
+        if (!(error instanceof EndpointAPIError)) {
           throw error;
         }
-        const headers = new Headers(error.headers);
+        const headers = new Headers(
+          (error as EndpointAPIError & { [kAPIErrorHeaderSymbol]?: Headers })[
+            kAPIErrorHeaderSymbol
+          ] ?? error.headers,
+        );
         headers.set("content-type", "application/json");
         return new Response(error.body ? JSON.stringify(error.body) : null, {
           status: error.statusCode,
