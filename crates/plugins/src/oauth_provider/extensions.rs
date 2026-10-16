@@ -21,6 +21,8 @@ pub struct OAuthProviderExtension {
     pub grants: indexmap::IndexMap<String, Arc<dyn OAuthExtensionGrantHandler>>,
     pub metadata: Option<Arc<dyn OAuthMetadataContributor>>,
     pub claims: super::OAuthExtensionClaims,
+    pub client_authentication:
+        indexmap::IndexMap<String, super::OAuthExtensionClientAuthentication>,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OAuthMetadataType {
@@ -209,7 +211,9 @@ impl OAuthProviderPlugin {
         )
     }
     pub(super) fn validate_extensions(&self) -> AuthResult<()> {
-        let mut seen = std::collections::HashSet::new();
+        let mut grants = Vec::new();
+        let mut auth_methods = Vec::new();
+        let mut assertion_types = Vec::new();
         for extension in &self.config.extensions {
             for grant in extension.grants.keys() {
                 if alibi_core::utils::javascript::trim(grant).is_empty() {
@@ -222,9 +226,66 @@ impl OAuthProviderPlugin {
                         "OAuth Provider extension grant type must be an absolute URI: {grant}"
                     )));
                 }
-                if !seen.insert(grant) {
+                grants.push(grant);
+            }
+            for (method, strategy) in &extension.client_authentication {
+                if alibi_core::utils::javascript::trim(method).is_empty() {
+                    return Err(AuthError::config(
+                        "OAuth Provider extension token_endpoint_auth_method cannot be empty",
+                    ));
+                }
+                if [
+                    "none",
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "private_key_jwt",
+                ]
+                .contains(&method.as_str())
+                {
                     return Err(AuthError::config(format!(
-                        "OAuth Provider extensions register grant type \"{grant}\" more than once. Extension contributions must be disjoint."
+                        "OAuth Provider extension token_endpoint_auth_method is reserved: {method}"
+                    )));
+                }
+                auth_methods.push(method);
+                let types = strategy
+                    .assertion_types
+                    .as_deref()
+                    .unwrap_or_else(|| std::slice::from_ref(method));
+                if types.is_empty() {
+                    return Err(AuthError::config(format!(
+                        "OAuth Provider extension client_assertion_type list cannot be empty for {method}"
+                    )));
+                }
+                for assertion_type in types {
+                    if alibi_core::utils::javascript::trim(assertion_type).is_empty() {
+                        return Err(AuthError::config(
+                            "OAuth Provider extension client_assertion_type cannot be empty",
+                        ));
+                    }
+                    if url::Url::parse(assertion_type).is_err() {
+                        return Err(AuthError::config(format!(
+                            "OAuth Provider extension client_assertion_type must be an absolute URI: {assertion_type}"
+                        )));
+                    }
+                    if assertion_type == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+                        return Err(AuthError::config(format!(
+                            "OAuth Provider extension client_assertion_type is reserved: {assertion_type}"
+                        )));
+                    }
+                    assertion_types.push(assertion_type);
+                }
+            }
+        }
+        for (label, values) in [
+            ("grant type", grants),
+            ("token_endpoint_auth_method", auth_methods),
+            ("client_assertion_type", assertion_types),
+        ] {
+            let mut seen = std::collections::HashSet::new();
+            for value in values {
+                if !seen.insert(value) {
+                    return Err(AuthError::config(format!(
+                        "OAuth Provider extensions register {label} \"{value}\" more than once. Extension contributions must be disjoint."
                     )));
                 }
             }

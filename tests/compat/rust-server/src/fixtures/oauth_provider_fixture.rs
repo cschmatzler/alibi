@@ -12,6 +12,8 @@ mod access_jwt;
 mod extension_grant;
 #[path = "../../../../fixtures/oauth/extension-claims.rs"]
 mod extension_claims;
+#[path = "../../../../fixtures/oauth/extension-authentication.rs"]
+mod extension_authentication;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -237,6 +239,7 @@ pub(crate) async fn router(
         "extension-grant",
         "pairwise",
         "claims",
+        "extension-auth",
         "default",
         "dynamic",
         "public",
@@ -317,6 +320,7 @@ pub(crate) async fn router(
             ..Default::default()
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
+        if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
         if mode=="claims" {provider.extensions=extension_claims::extensions();}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
@@ -351,6 +355,11 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="extension-auth-validation" {
+                let extensions=input["entries"].as_array().unwrap().iter().map(|entry|extension_authentication::extension(entry["method"].as_str().unwrap(),entry.get("types").filter(|value|!value.is_null()).map(|value|serde_json::from_value(value.clone()).unwrap()))).collect();
+                let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{extensions,..Default::default()})).build().await;
+                return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();
+            }
             if input["action"]=="extension-validation"{
                 let extensions=input["keys"].as_array().unwrap().iter().map(|key|Arc::new(alibi::plugins::OAuthProviderExtension{grants:[(key.as_str().unwrap().into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()})).collect();
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{extensions,..Default::default()})).build().await;
@@ -433,7 +442,7 @@ pub(crate) async fn router(
                 _=request.headers.insert("content-type".into(),"application/json".into());request.body=Some(serde_json::to_vec(&body).unwrap());
                 let call=alibi::endpoint::EndpointCall::new(&alibi::endpoint::EndpointDefinition{name:"authenticateClientFixture",operation_id:"authenticateClientFixture",path:Some("/fixture/authenticate-client".into()),method:alibi::HttpMethod::Post},Some(alibi::utils::json::JsValue::from(body.clone())),None,alibi::endpoint::EndpointOptions{headers:Some(request.headers.clone()),request:Some(request),..Default::default()});
                 let options=alibi::plugins::OAuthClientAuthenticationOptions{require_credentials:body["requireCredentials"].as_bool().unwrap_or(true),scopes:body.get("requestedScopes").map(|value|serde_json::from_value(value.clone()).unwrap())};
-                let provider=OAuthProviderPlugin::new();
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig {extensions:if body["extensionAuth"]==true{extension_authentication::extensions()}else{Vec::new()},..Default::default()});
                 return match provider.authenticate_client(auth.context(),&call,body["boundGrant"].as_str(),&options).await {
                     Ok(authenticated)=>axum::Json(serde_json::json!({"clientId":authenticated.client_id,"method":authenticated.method,"confirmation":authenticated.confirmation,"client":{"clientId":authenticated.client.client_id,"clientName":authenticated.client.metadata.get("client_name"),"userId":authenticated.client.user_id}})).into_response(),
                     Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()},

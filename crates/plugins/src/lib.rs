@@ -288,15 +288,17 @@ pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
 pub use oauth::OAuthPlugin;
 pub use oauth_popup::OAuthPopupPlugin;
 pub use oauth_provider::{
-    OAuthAuthenticatedClient, OAuthClientAuthenticationOptions, OAuthClientDiscovery,
-    OAuthClientIdGenerator, OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
+    OAuthAuthenticatedClient, OAuthClientAssertionInput, OAuthClientAuthenticationOptions,
+    OAuthClientAuthenticationStrategy, OAuthClientDiscovery, OAuthClientIdGenerator,
+    OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
     OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthClientSecretCipher,
-    OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionClaims, OAuthExtensionGrantHandler,
-    OAuthExtensionGrantInput, OAuthMetadataContributor, OAuthMetadataExtensionInput,
-    OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig, OAuthProviderExtension,
-    OAuthProviderPlugin, OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenHasher, OAuthTokenIssueParams,
-    OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput, consume_client_assertion,
+    OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionClaims,
+    OAuthExtensionClientAuthentication, OAuthExtensionGrantHandler, OAuthExtensionGrantInput,
+    OAuthMetadataContributor, OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi,
+    OAuthProviderConfig, OAuthProviderExtension, OAuthProviderPlugin, OAuthTokenClaimsContributor,
+    OAuthTokenClaimsInput, OAuthTokenHasher, OAuthTokenIssueParams, OAuthUserInfoClaimsContributor,
+    OAuthUserInfoClaimsInput, OAuthVerifiedClientAssertion, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};

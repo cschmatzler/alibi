@@ -806,14 +806,7 @@ impl OAuthProviderPlugin {
             .and_then(Value::as_str)
             .unwrap_or("client_secret_basic")
             .to_owned();
-        if ![
-            "none",
-            "client_secret_basic",
-            "client_secret_post",
-            "private_key_jwt",
-        ]
-        .contains(&auth.as_str())
-        {
+        if !self.supported_auth_methods(true).contains(&auth) {
             return protocol_error(
                 "invalid_client_metadata",
                 format!("unsupported token_endpoint_auth_method {auth}"),
@@ -1175,11 +1168,12 @@ impl OAuthProviderPlugin {
             Some(generator) => generator.generate()?,
             None => random_credential(),
         };
-        let plaintext = if ["none", "private_key_jwt"].contains(&auth) {
-            None
-        } else {
-            Some(self.generate_client_secret()?)
-        };
+        let plaintext =
+            if ["none", "private_key_jwt"].contains(&auth) || self.is_extension_auth_method(auth) {
+                None
+            } else {
+                Some(self.generate_client_secret()?)
+            };
         let stored = if let Some(secret) = plaintext.as_deref() {
             Some(super::client_secret::store(ctx, &self.config, secret).await?)
         } else {

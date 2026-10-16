@@ -8,7 +8,8 @@ pub(super) struct Credentials {
     pub(super) client_id: String,
     pub(super) secret: String,
     pub(super) pre_verified: bool,
-    pub(super) method: &'static str,
+    pub(super) method: String,
+    pub(super) confirmation: Option<Value>,
 }
 const AUTH_FIELDS: [&str; 3] = ["client_secret", "client_assertion", "client_assertion_type"];
 
@@ -45,6 +46,52 @@ pub(super) async fn extract_for_audience<S: AuthSchema>(
         }
     };
     if body.get("client_assertion").is_some() || body.get("client_assertion_type").is_some() {
+        let assertion = body
+            .get("client_assertion")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let assertion_type = body
+            .get("client_assertion_type")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if !assertion.is_empty()
+            && !assertion_type.is_empty()
+            && let Some((method, strategy)) =
+                provider.client_authentication_strategy(assertion_type)
+        {
+            let result = strategy
+                .strategy
+                .authenticate(super::OAuthClientAssertionInput {
+                    context: super::extension_claims::callback_context(ctx, req),
+                    options: &provider.config,
+                    assertion,
+                    assertion_type,
+                    client_id: body.get("client_id").and_then(Value::as_str),
+                    expected_audience: audience,
+                })
+                .await;
+            return Ok(match result {
+                Ok(verified) => Ok(Credentials {
+                    client_id: verified.client_id,
+                    secret: String::new(),
+                    pre_verified: true,
+                    method: method.into(),
+                    confirmation: verified.confirmation,
+                }),
+                Err(error) => {
+                    let mut response = EndpointResponse::error(error.error);
+                    if error.body_absent {
+                        response = response.without_error_body();
+                    } else if let Some(body) = error.body {
+                        response = response.with_error_body(*body);
+                    }
+                    if let Some(headers) = error.headers {
+                        response.merge_headers(headers);
+                    }
+                    Err(response)
+                }
+            });
+        }
         return super::assertion::verify(&body, ctx, provider, audience).await;
     }
     from_normalized(&body, req)
@@ -170,7 +217,8 @@ fn from_normalized(
         client_id,
         secret,
         pre_verified: false,
-        method,
+        method: method.into(),
+        confirmation: None,
     }))
 }
 fn header_denial(

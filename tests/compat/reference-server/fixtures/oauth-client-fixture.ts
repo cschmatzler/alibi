@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { readFile as readFixtureFile } from "node:fs/promises";
 
 import {
@@ -209,6 +209,33 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ),
     },
   };
+  const authenticationExtensions = () => [
+    {
+      clientAuthentication: {
+        application_assertion: {
+          assertionTypes: ["urn:fixture:client-assertion", "urn:fixture:client-alias"],
+          authenticate: async ({ assertion, clientId, expectedAudience }: any) => {
+            const [payload, signature] = assertion.split(".");
+            const expected = createHmac("sha256", "fixture-application-assertion-key")
+              .update(payload)
+              .digest("base64url");
+            const value = JSON.parse(Buffer.from(payload, "base64url").toString());
+            if (
+              signature !== expected ||
+              value.audience !== expectedAudience ||
+              (value.suppliedClientId ?? undefined) !== clientId
+            ) {
+              throw new APIError("BAD_REQUEST", {
+                error: "invalid_client",
+                error_description: "application assertion rejected",
+              });
+            }
+            return { clientId: value.clientId, confirmation: value.confirmation };
+          },
+        },
+      },
+    },
+  ];
   const authenticationHelper = {
     id: "client-authentication-helper",
     endpoints: {
@@ -227,7 +254,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         async (ctx) => {
           const authenticated = await getOAuthProviderApi(
             ctx,
-            { loginPage: "/login", consentPage: "/consent" },
+            {
+              loginPage: "/login",
+              consentPage: "/consent",
+              ...(ctx.body.extensionAuth ? { extensions: authenticationExtensions() } : {}),
+            },
             ctx.body.boundGrant,
           ).authenticateClient({
             requireCredentials: ctx.body.requireCredentials,
@@ -714,6 +745,19 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         jwt({ jwks: { keyPairConfigs: [{ alg: "ES256", crv: "P-256" }] } }),
         oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
         issuanceHelper,
+      ],
+    }),
+    "extension-auth": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          extensions: authenticationExtensions(),
+        }),
+        authenticationHelper,
       ],
     }),
     claims: betterAuth({
@@ -1440,6 +1484,32 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               ),
             }),
       });
+    }
+    if (input.action === "extension-auth-validation") {
+      try {
+        const candidate = betterAuth({
+          ...options,
+          plugins: [
+            jwt(),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              extensions: input.entries.map((entry: any) => ({
+                clientAuthentication: {
+                  [entry.method]: {
+                    ...(entry.types === null ? {} : { assertionTypes: entry.types }),
+                    authenticate: async () => ({ clientId: "unused" }),
+                  },
+                },
+              })),
+            }),
+          ],
+        });
+        await candidate.$context;
+        return Response.json({ valid: true });
+      } catch (error) {
+        return Response.json({ valid: false, message: (error as Error).message });
+      }
     }
     if (input.action === "extension-validation") {
       try {

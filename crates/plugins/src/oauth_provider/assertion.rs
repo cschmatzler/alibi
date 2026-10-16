@@ -159,8 +159,9 @@ pub(super) async fn verify<S: AuthSchema>(
     Ok(Ok(Credentials {
         client_id: client_id.into(),
         secret: String::new(),
-        method: "private_key_jwt",
+        method: "private_key_jwt".into(),
         pre_verified: true,
+        confirmation: None,
     }))
 }
 /// Check assertion hygiene and atomically consume its durable replay identifier.

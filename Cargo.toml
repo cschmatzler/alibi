@@ -157,6 +157,7 @@ axum = { workspace = true }
 aes-gcm = { workspace = true }
 chacha20poly1305 = { workspace = true }
 hkdf = { workspace = true }
+hmac = { workspace = true }
 sha2 = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "postgres", "chrono", "json", "derive"] }
 tokio = { workspace = true, features = ["full", "test-util"] }

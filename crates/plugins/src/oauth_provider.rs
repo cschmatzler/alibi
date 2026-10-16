@@ -14,6 +14,11 @@ mod continuation;
 mod credentials;
 mod discovery;
 mod dpop;
+mod extension_authentication;
+pub use extension_authentication::{
+    OAuthClientAssertionInput, OAuthClientAuthenticationStrategy,
+    OAuthExtensionClientAuthentication, OAuthVerifiedClientAssertion,
+};
 mod extension_claims;
 pub use extension_claims::{
     OAuthExtensionClaims, OAuthTokenClaimsContributor, OAuthTokenClaimsInput,
@@ -222,15 +227,12 @@ impl OAuthProviderPlugin {
             .unwrap_or(&base);
         let issuer = normalize_issuer(issuer);
         let grants = self.supported_grant_types();
-        let mut token_auth = vec![
-            "client_secret_basic",
-            "client_secret_post",
-            "private_key_jwt",
-        ];
+        let endpoint_auth = self.supported_auth_methods(false);
+        let mut token_auth = endpoint_auth.clone();
         if self.config.allow_unauthenticated_client_registration
             || !self.config.client_discoveries.is_empty()
         {
-            token_auth.insert(0, "none");
+            token_auth.insert(0, "none".into());
         }
         let signing = [
             "RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512",
@@ -243,9 +245,9 @@ impl OAuthProviderPlugin {
             "response_types_supported":if grants.iter().any(|grant|grant=="authorization_code"){vec!["code"]}else{vec![]},
             "response_modes_supported":["query"],"grant_types_supported":grants,
             "token_endpoint_auth_methods_supported":token_auth,"token_endpoint_auth_signing_alg_values_supported":signing,
-            "introspection_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post","private_key_jwt"],
+            "introspection_endpoint_auth_methods_supported":endpoint_auth,
             "introspection_endpoint_auth_signing_alg_values_supported":signing,
-            "revocation_endpoint_auth_methods_supported":["client_secret_basic","client_secret_post","private_key_jwt"],
+            "revocation_endpoint_auth_methods_supported":endpoint_auth,
             "revocation_endpoint_auth_signing_alg_values_supported":signing,
             "code_challenge_methods_supported":["S256"],"authorization_response_iss_parameter_supported":true,
             "dpop_signing_alg_values_supported":self.config.dpop_signing_algorithms.clone().unwrap_or_else(||["EdDSA","ES256","ES512","PS256","RS256"].map(str::to_owned).into()),

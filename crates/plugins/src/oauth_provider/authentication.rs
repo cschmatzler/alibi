@@ -139,8 +139,8 @@ impl OAuthProviderPlugin {
         Ok(OAuthAuthenticatedClient {
             client_id: credentials.client_id,
             client,
-            method: Some(credentials.method.into()),
-            confirmation: None,
+            method: Some(credentials.method),
+            confirmation: credentials.confirmation,
         })
     }
 }
