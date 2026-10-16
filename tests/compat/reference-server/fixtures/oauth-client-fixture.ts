@@ -791,6 +791,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     default: betterAuth(options),
+    interaction: betterAuth({ ...options, rateLimit: { enabled: false } }),
     "remote-jwks": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "remote-jwks-peer": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "uri-host": betterAuth({ ...options, trustedOrigins: ["https://*"] }),
@@ -1308,8 +1309,21 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       );
     }
-    if (input.action === "signup") {
-      return auth.api.signUpEmail({ body: input.body, asResponse: true });
+    if (input.action === "signup" || input.action === "signin") {
+      try {
+        const endpoint = input.action === "signup" ? auth.api.signUpEmail : auth.api.signInEmail;
+        return await endpoint({ body: input.body, asResponse: true });
+      } catch (error) {
+        if (!(error instanceof APIError)) {
+          throw error;
+        }
+        const headers = new Headers(error.headers);
+        headers.set("content-type", "application/json");
+        return new Response(error.body ? JSON.stringify(error.body) : null, {
+          status: error.statusCode,
+          headers,
+        });
+      }
     }
     if (input.action === "row") {
       const context = await auth.$context;

@@ -15,6 +15,7 @@ mod credentials;
 mod discovery;
 mod dpop;
 mod extension_authentication;
+mod interaction;
 pub use extension_authentication::{
     OAuthClientAssertionInput, OAuthClientAuthenticationStrategy,
     OAuthExtensionClientAuthentication, OAuthVerifiedClientAssertion,
@@ -343,6 +344,26 @@ fn normalize_issuer(value: &str) -> String {
 impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn name(&self) -> &'static str {
         "oauth-provider"
+    }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
+        vec![self]
+    }
+    async fn before_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::BeforeRequestAction>> {
+        let body = req.body_as_json::<alibi_core::utils::json::JsValue>().ok();
+        interaction::admit(
+            body.as_ref().and_then(|body| body.get("oauth_query")),
+            ctx.config.current_secret(),
+        )?
+        .map(|response| {
+            response
+                .to_response()
+                .map(alibi_core::BeforeRequestAction::Respond)
+        })
+        .transpose()
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
         match route.path.as_str() {

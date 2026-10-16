@@ -189,6 +189,74 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         before
     );
 
+    let signed = url.query().unwrap();
+    let protected = db
+        .tables(&["user", "account", "session", "verification", "oauthClient"])
+        .await?;
+    for (path, operation, email) in [
+        (
+            "/sign-in/email",
+            "signInEmail",
+            "oauth-authorization-owner@example.test",
+        ),
+        (
+            "/sign-up/email",
+            "signUpEmail",
+            "forged-interaction-signup@example.test",
+        ),
+    ] {
+        let input = json!({"email":email,"name":"Forged interaction","password":PASSWORD,"oauth_query":format!("{signed}&sig=duplicate")});
+        let rejected = call(&auth, request(path, Some(input.clone()), ""), 400).await;
+        assert_eq!(body(&rejected), json!({"error":"invalid_signature"}));
+        assert!(!rejected.headers.contains_key("set-cookie"));
+        let rejected = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("email-password", operation).with_body(&input)?,
+                EndpointOptions::default(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.error.status_code(), 400);
+        assert_eq!(
+            rejected.body.as_deref(),
+            Some(&alibi::utils::json::JsValue::from(
+                json!({"error":"invalid_signature"})
+            ))
+        );
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?,
+            protected
+        );
+    }
+    let pairs = url
+        .query_pairs()
+        .map(|(key, value)| json!([key, value]))
+        .collect::<Vec<_>>();
+    for query in [json!(signed), json!(pairs)] {
+        let input = json!({"email":"oauth-authorization-owner@example.test","password":"wrong-password","oauth_query":query});
+        let rejected = call(
+            &auth,
+            request("/sign-in/email", Some(input.clone()), ""),
+            401,
+        )
+        .await;
+        assert_eq!(body(&rejected)["code"], "INVALID_EMAIL_OR_PASSWORD");
+        let rejected = auth
+            .dispatch_endpoint(
+                ServerEndpoint::<Value>::new("email-password", "signInEmail").with_body(&input)?,
+                EndpointOptions::default(),
+            )
+            .await
+            .unwrap_err();
+        assert_eq!(rejected.error.status_code(), 401);
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?,
+            protected
+        );
+    }
+
     let managed=auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Code client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","skip_consent":true,"require_pkce":false}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
     let code_start = chrono::Utc::now().timestamp();
     let code_output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","oauth2Authorize").with_query(&json!({"client_id":body(&managed)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"code-state"}))?,EndpointOptions{headers:Some([("accept".into(),"application/json".into()),("cookie".into(),cookies(&owner))].into_iter().collect()),request:Some(request("/oauth2/authorize",None,&cookies(&owner))),..Default::default()}).await?.into_response()?;
