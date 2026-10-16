@@ -51,14 +51,16 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             })
     });
     let parsed = if json_media {
+        // Fetch decodes JSON as UTF-8, replacing malformed sequences and removing
+        // only an initial BOM before applying the JSON grammar.
+        let text = String::from_utf8_lossy(body);
         Some(
-            alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(body).map_err(
-                |_| AuthError::Upstream {
+            alibi_core::utils::json::parse_value(text.strip_prefix('\u{feff}').unwrap_or(&text))
+                .map_err(|_| AuthError::Upstream {
                     status: 400,
                     code: "BAD_REQUEST",
                     message: "Invalid JSON in request body",
-                },
-            )?,
+                })?,
         )
     } else if base == "application/x-www-form-urlencoded" {
         Some(alibi_core::utils::json::JsValue::Object(

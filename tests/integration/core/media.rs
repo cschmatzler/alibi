@@ -72,6 +72,8 @@ async fn public_media_admission_decodes_fields_and_uploads_before_invoking_plugi
     let cases=[
         ("application/x-www-form-urlencoded",b"name=Ada+Lovelace&tag=first&tag=second&literal=%2B".to_vec(),json!({"name":"Ada Lovelace","tag":"second","literal":"+"}),Value::Null),
         ("application/json; charset=utf-8",br#"{"name":"Ada","nested":[1,true]}"#.to_vec(),json!({"name":"Ada","nested":[1,true]}),Value::Null),
+        ("application/json; charset=iso-8859-1",b"\xef\xbb\xbf{\"name\":\"Ada\"}".to_vec(),json!({"name":"Ada"}),Value::Null),
+        ("application/json",b"{\"name\":\"A\xffB\",\"bom\":\"\xef\xbb\xbf\"}".to_vec(),json!({"name":"A\u{fffd}B","bom":"\u{feff}"}),Value::Null),
         ("text/plain",b"\xef\xbb\xbfhello text".to_vec(),json!("hello text"),Value::Null),
         ("application/octet-stream",vec![0,255,1,254],json!({"kind":"ArrayBuffer"}),Value::Null),
         ("multipart/form-data; boundary=native-boundary",b"--native-boundary\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nAda\r\n--native-boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"proof.bin\"\r\nContent-Type: application/octet-stream\r\n\r\n\0\xffbytes\r\n--native-boundary--\r\n".to_vec(),json!({"name":"Ada","file":{}}),json!({"name":"proof.bin","type":"application/octet-stream","bytes":[0,255,98,121,116,101,115]})),

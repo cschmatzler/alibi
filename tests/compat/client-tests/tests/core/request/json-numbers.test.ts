@@ -66,6 +66,45 @@ compatScenario(
 );
 
 compatScenario(
+  "JSON transport decodes a leading BOM and malformed UTF-8 before delivery",
+  async (ctx) => {
+    const results = [];
+    for (const encoding of ["bom", "invalid-utf8"] as const) {
+      const actor = ctx.actor(encoding);
+      const email = ctx.uniqueEmail(`json-${encoding}`);
+      const prefix = new TextEncoder().encode(
+        `{"email":${JSON.stringify(email)},"metadata":{"text":"`,
+      );
+      const suffix = new TextEncoder().encode('"}}');
+      const body = new Uint8Array([
+        ...(encoding === "bom" ? [0xef, 0xbb, 0xbf] : []),
+        ...prefix,
+        ...(encoding === "bom" ? [0x41] : [0x41, 0xff, 0x42]),
+        ...suffix,
+      ]);
+      const response = await actor.fetch("/api/auth/sign-in/magic-link", {
+        method: "POST",
+        headers: { "content-type": "application/json; charset=iso-8859-1" },
+        body,
+      });
+      expect(response.status).toBe(200);
+      const deliveryResponse = await fetch(
+        new URL(`/__test/magic-link?email=${encodeURIComponent(email)}`, ctx.baseURL),
+      );
+      expect(deliveryResponse.status).toBe(200);
+      const delivery = await deliveryResponse.json();
+      expect(delivery.metadata).toEqual({ text: encoding === "bom" ? "A" : "A\ufffdB" });
+      const verified = await actor.client.magicLink.verify({ query: { token: delivery.token } });
+      expect(verified.error).toBeNull();
+      expect(verified.data?.user.email).toBe(email);
+      expect((await actor.client.getSession()).data?.session.token).toBe(verified.data?.token);
+      results.push({ encoding, status: response.status, delivery, verified });
+    }
+    return ctx.snapshot(results);
+  },
+);
+
+compatScenario(
   "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
   async (ctx) => {
     const actor = ctx.actor();
