@@ -1,6 +1,7 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
+use alibi_core::utils::javascript::trim as js_trim;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
 use rand::{RngExt as _, distr::Alphanumeric};
@@ -322,8 +323,20 @@ fn validate_metadata(
             continue;
         };
         let path = format!("{location}.{name}");
-        validate_field(*kind, value, &path, &mut issues);
         let normalized = match (kind, value) {
+            // SafeUrlSchema's z.url() trims JS whitespace without reserializing the URL.
+            (FieldKind::Uri, JsValue::String(value)) => JsValue::String(js_trim(value).into()),
+            (FieldKind::Uris, JsValue::Array(values)) => JsValue::Array(
+                values
+                    .iter()
+                    .map(|value| {
+                        value.as_str().map_or_else(
+                            || value.clone(),
+                            |text| JsValue::String(js_trim(text).into()),
+                        )
+                    })
+                    .collect(),
+            ),
             (FieldKind::Method, JsValue::String(value)) => JsValue::String(value.trim().into()),
             (FieldKind::Grants | FieldKind::Scopes, JsValue::Array(values)) => JsValue::Array(
                 values
@@ -345,6 +358,7 @@ fn validate_metadata(
             ),
             _ => value.clone(),
         };
+        validate_field(*kind, &normalized, &path, &mut issues);
         _ = output.insert((*name).into(), normalized);
     }
     if !issues.is_empty() {

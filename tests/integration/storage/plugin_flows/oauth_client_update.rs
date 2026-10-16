@@ -111,11 +111,14 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
         .tables(&["user", "account", "session", "verification", "jwks"])
         .await?;
     let start = chrono::Utc::now().timestamp();
-    let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","updateOAuthClient").with_body(&json!({"client_id":id,"update":{"client_name":"After update","scope":"email","redirect_uris":["https://new.fixture.test/callback"],"contacts":["support@fixture.test"],"client_secret":"forged","user_id":"forged"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    let output=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","updateOAuthClient").with_body(&json!({"client_id":id,"update":{"client_name":"After update","scope":"email","redirect_uris":["\u{feff} HTTPS://NEW.fixture.test:443/a/../callback \u{a0}"],"post_logout_redirect_uris":["\u{2028}https://new.fixture.test/logout\u{feff}"],"backchannel_logout_uri":" \u{feff}https://new.fixture.test/backchannel\t ","client_uri":" https://new.fixture.test/about ","contacts":["support@fixture.test"],"client_secret":"forged","user_id":"forged"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
     assert_eq!(output.status, 200);
     expected["client_name"] = json!("After update");
     expected["scope"] = json!("email");
-    expected["redirect_uris"] = json!(["https://new.fixture.test/callback"]);
+    expected["redirect_uris"] = json!(["HTTPS://NEW.fixture.test:443/a/../callback"]);
+    expected["post_logout_redirect_uris"] = json!(["https://new.fixture.test/logout"]);
+    expected["backchannel_logout_uri"] = json!("https://new.fixture.test/backchannel");
+    expected["client_uri"] = json!(" https://new.fixture.test/about ");
     expected["contacts"] = json!(["support@fixture.test"]);
     assert_eq!(body(&output), expected);
     let stored = auth.store().get_oauth_client(id).await?.unwrap();
@@ -131,8 +134,15 @@ async fn oauth_client_update_persists_owned_metadata_and_preserves_credentials<B
     assert_eq!(stored.metadata["scope"], "email");
     assert_eq!(
         stored.metadata["redirect_uris"],
-        json!(["https://new.fixture.test/callback"])
+        json!(["HTTPS://NEW.fixture.test:443/a/../callback"])
     );
+    for field in [
+        "post_logout_redirect_uris",
+        "backchannel_logout_uri",
+        "client_uri",
+    ] {
+        assert_eq!(stored.metadata[field], expected[field]);
+    }
     assert_eq!(db.count("oauthClient").await?, 1);
     assert_eq!(
         db.tables(&["user", "account", "session", "verification", "jwks"])

@@ -85,7 +85,10 @@ compatScenario(
       headers: { cookie },
       body: {
         client_name: "Actual client",
-        redirect_uris: ["https://app.fixture.test/callback"],
+        redirect_uris: ["\uFEFF \tHTTPS://APP.fixture.test:443/a/../callback \u00a0"],
+        post_logout_redirect_uris: [" \uFEFFhttps://app.fixture.test/logout\u2029"],
+        backchannel_logout_uri: "\uFEFFhttps://app.fixture.test/backchannel \uFEFF",
+        client_uri: " https://app.fixture.test/about ",
         scope: "openid email",
         user_id: "forged-owner",
         client_id: "forged-client",
@@ -104,12 +107,27 @@ compatScenario(
     expect(client.client_name).toBe("Actual client");
     expect(client.token_endpoint_auth_method).toBe("client_secret_basic");
     expect(client.grant_types).toEqual(["authorization_code"]);
+    const urls = {
+      redirect_uris: ["HTTPS://APP.fixture.test:443/a/../callback"],
+      post_logout_redirect_uris: ["https://app.fixture.test/logout"],
+      backchannel_logout_uri: "https://app.fixture.test/backchannel",
+      client_uri: " https://app.fixture.test/about ",
+    };
+    expect(client).toMatchObject(urls);
+    const read = await control({
+      action: "get",
+      query: { client_id: client.client_id },
+      headers: { cookie },
+    });
+    expect(read.status).toBe(200);
+    const persisted = await read.json();
+    expect(persisted).toMatchObject(urls);
     const rowResponse = await control({ action: "row", clientId: client.client_id });
     expect(rowResponse.status).toBe(200);
     const row = (await rowResponse.json()) as any;
     expect(row.userId).toBe(owner.user.id);
     expect(row.clientName).toBe("Actual client");
-    expect(row.redirectUris).toEqual(["https://app.fixture.test/callback"]);
+    expect(row.redirectUris).toEqual(urls.redirect_uris);
     expect(row.client_secret).toBe(
       createHash("sha256").update(client.client_secret).digest("base64url"),
     );
@@ -118,7 +136,7 @@ compatScenario(
       headers: { cookie },
       body: {
         client_name: "Native public client",
-        redirect_uris: ["com.fixture.app:/callback"],
+        redirect_uris: [" \tcom.fixture.app:/callback\r\n "],
         token_endpoint_auth_method: "none",
         application_type: "native",
       },
@@ -134,9 +152,29 @@ compatScenario(
     expect(publicRow.client_secret).toBeNull();
     expect(publicRow.userId).toBe(owner.user.id);
     expect(publicRow.redirectUris).toEqual(["com.fixture.app:/callback"]);
+    const authorization = await control({
+      mode: "interaction",
+      action: "authorize",
+      headers: { accept: "application/json" },
+      query: {
+        client_id: publicClient.client_id,
+        response_type: "code",
+        redirect_uri: "com.fixture.app:/callback",
+        scope: "email",
+        code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+        code_challenge_method: "S256",
+      },
+    });
+    expect(authorization.status).toBe(200);
+    const login = (await authorization.json()) as any;
+    const loginURL = new URL(login.url, ctx.baseURL);
+    expect(loginURL.pathname).toBe("/login");
+    expect(loginURL.searchParams.get("redirect_uri")).toBe("com.fixture.app:/callback");
     return {
       rejected,
       client: ctx.snapshot(client),
+      persisted: ctx.snapshot(persisted),
+      login: ctx.snapshot(login),
       row: ctx.snapshot(row),
       publicClient: ctx.snapshot(publicClient),
       publicRow: ctx.snapshot(publicRow),

@@ -92,6 +92,12 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
             "VALIDATION_ERROR",
         ),
         (
+            json!({"redirect_uris":["\u{85}https://app.fixture.test/callback\u{85}"]}),
+            cookies(&owner),
+            400,
+            "VALIDATION_ERROR",
+        ),
+        (
             json!({"redirect_uris":["http://127.1:3000/callback"],"application_type":"native","token_endpoint_auth_method":"none"}),
             cookies(&owner),
             400,
@@ -138,7 +144,7 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         OAuthProviderPlugin::create_oauth_client_endpoint(&alibi::plugins::oauth_provider::CreateOAuthClientInput{
             client_name:Some("Actual client".into()),redirect_uris:Some(vec!["https://app.fixture.test/callback".into()]),scope:Some("openid email".into()),..Default::default()
         })?
-            .with_body(&json!({"client_name":"Actual client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email","user_id":"forged-owner","client_id":"forged-client","client_secret":"forged-secret"}))?,
+            .with_body(&json!({"client_name":"Actual client","redirect_uris":["\u{feff} \tHTTPS://APP.fixture.test:443/a/../callback \u{a0}"],"post_logout_redirect_uris":[" \u{feff}https://app.fixture.test/logout\u{2029}"],"backchannel_logout_uri":"\u{feff}https://app.fixture.test/backchannel \u{feff}","client_uri":" https://app.fixture.test/about ","scope":"openid email","user_id":"forged-owner","client_id":"forged-client","client_secret":"forged-secret"}))?,
         alibi::endpoint::EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()},
     ).await?.into_response()?;
     assert_eq!(output.status, 201);
@@ -166,6 +172,24 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
     );
     assert_eq!(response["grant_types"], json!(["authorization_code"]));
     let stored = auth.store().get_oauth_client(client_id).await?.unwrap();
+    for (field, expected) in [
+        (
+            "redirect_uris",
+            json!(["HTTPS://APP.fixture.test:443/a/../callback"]),
+        ),
+        (
+            "post_logout_redirect_uris",
+            json!(["https://app.fixture.test/logout"]),
+        ),
+        (
+            "backchannel_logout_uri",
+            json!("https://app.fixture.test/backchannel"),
+        ),
+        ("client_uri", json!(" https://app.fixture.test/about ")),
+    ] {
+        assert_eq!(response[field], expected);
+        assert_eq!(stored.metadata[field], expected);
+    }
     assert_eq!(stored.user_id.as_deref(), Some(owner_id.as_str()));
     assert_eq!(stored.metadata["client_name"], "Actual client");
     assert!(stored.metadata.get("client_secret").is_none());
@@ -180,7 +204,7 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
             OAuthProviderPlugin::create_oauth_client_endpoint(
                 &alibi::plugins::oauth_provider::CreateOAuthClientInput {
                     client_name: Some("Native public client".into()),
-                    redirect_uris: Some(vec!["com.fixture.app:/callback".into()]),
+                    redirect_uris: Some(vec![" \tcom.fixture.app:/callback\r\n ".into()]),
                     token_endpoint_auth_method: Some("none".into()),
                     application_type: Some("native".into()),
                     ..Default::default()
@@ -211,6 +235,24 @@ async fn oauth_client_creation_persists_owned_metadata_and_protected_secret<B: B
         json!(["com.fixture.app:/callback"])
     );
     assert_eq!(db.count("oauthClient").await?, 2);
+    let authorization = auth.dispatch_endpoint(
+        alibi::endpoint::ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+            .with_query(&json!({"client_id":public["client_id"],"response_type":"code","redirect_uri":"com.fixture.app:/callback","scope":"email","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"}))?,
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("accept".into(), "application/json".into())].into_iter().collect()),
+            request: Some(request("/oauth2/authorize", None, "")),
+            ..Default::default()
+        },
+    ).await?.into_response()?;
+    assert_eq!(authorization.status, 200);
+    let login = body(&authorization);
+    let login = url::Url::parse(ORIGIN)?.join(login["url"].as_str().unwrap())?;
+    assert_eq!(login.path(), "/login");
+    assert!(
+        login
+            .query_pairs()
+            .any(|(name, value)| name == "redirect_uri" && value == "com.fixture.app:/callback")
+    );
     B::close(connection).await
 }
 

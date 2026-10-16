@@ -84,7 +84,10 @@ compatScenario(
         update: {
           client_name: "After update",
           scope: "email",
-          redirect_uris: ["https://new.fixture.test/callback"],
+          redirect_uris: ["\uFEFF HTTPS://NEW.fixture.test:443/a/../callback \u00a0"],
+          post_logout_redirect_uris: ["\u2028https://new.fixture.test/logout\uFEFF"],
+          backchannel_logout_uri: " \uFEFFhttps://new.fixture.test/backchannel\t ",
+          client_uri: " https://new.fixture.test/about ",
           contacts: ["support@fixture.test"],
           client_secret: "forged",
           user_id: "forged",
@@ -98,7 +101,10 @@ compatScenario(
       ...expected,
       client_name: "After update",
       scope: "email",
-      redirect_uris: ["https://new.fixture.test/callback"],
+      redirect_uris: ["HTTPS://NEW.fixture.test:443/a/../callback"],
+      post_logout_redirect_uris: ["https://new.fixture.test/logout"],
+      backchannel_logout_uri: "https://new.fixture.test/backchannel",
+      client_uri: " https://new.fixture.test/about ",
       contacts: ["support@fixture.test"],
     });
     const row = (await (
@@ -107,8 +113,21 @@ compatScenario(
     expect(row).toEqual({
       ...old,
       clientName: "After update",
-      redirectUris: ["https://new.fixture.test/callback"],
+      redirectUris: ["HTTPS://NEW.fixture.test:443/a/../callback"],
     });
-    return { rejected, updated: ctx.snapshot(updated), row: ctx.snapshot(row) };
+    const read = await control({
+      action: "get",
+      query: { client_id: original.client_id },
+      headers: { cookie: owner },
+    });
+    expect(read.status).toBe(200);
+    const persisted = await read.json();
+    expect(persisted).toEqual(updated);
+    return {
+      rejected,
+      updated: ctx.snapshot(updated),
+      persisted: ctx.snapshot(persisted),
+      row: ctx.snapshot(row),
+    };
   },
 );
