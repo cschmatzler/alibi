@@ -1,13 +1,98 @@
 //! Session deletion retires issued authority and notifies real relying parties.
 use super::*;
+use alibi::AuthSession as _;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
 use sha2::Digest as _;
-backend_tests!(oauth_signout_retires_bound_access_while_offline_refresh_survives);
+backend_tests!(
+    oauth_signout_retires_bound_access_while_offline_refresh_survives,
+    oauth_bulk_revocation_notifies_each_deleted_session
+);
 async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Backend>(
     db: Db,
 ) -> TestResult {
+    retirement_case::<B>(db, false).await
+}
+async fn oauth_bulk_revocation_notifies_each_deleted_session<B: Backend>(db: Db) -> TestResult {
+    retirement_case::<B>(db, true).await
+}
+
+async fn issue_for_session<S: AuthSchema>(
+    auth: &Alibi<S>,
+    session: &AuthResponse,
+    query: &Value,
+    mut input: Value,
+) -> TestResult<Value> {
+    let grant = Box::pin(
+        auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_authorize_endpoint(query)?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(session)),
+                        ("accept".into(), "application/json".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                request: Some(request("/oauth2/authorize", None, "")),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    assert_eq!(grant.status, 200);
+    let callback = url::Url::parse(body(&grant)["url"].as_str().unwrap())?;
+    assert_eq!(callback.path(), "/callback");
+    input["code"] = json!(
+        callback
+            .query_pairs()
+            .find(|(key, _)| key == "code")
+            .unwrap()
+            .1
+            .into_owned()
+    );
+    let issued = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?,
+        EndpointOptions {
+            request: Some(request("/oauth2/token", Some(input), "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(issued.status, 200);
+    Ok(body(&issued))
+}
+
+async fn revoke_all<S: AuthSchema>(
+    auth: &Alibi<S>,
+    session: &AuthResponse,
+) -> alibi::AuthResult<AuthResponse> {
+    Box::pin(
+        auth.dispatch_endpoint(
+            SessionManagementPlugin::revoke_sessions_endpoint(),
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(session)),
+                        ("origin".into(), ORIGIN.into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .map_err(|error| error.error)?
+    .into_response()
+}
+
+async fn retirement_case<B: Backend>(db: Db, bulk: bool) -> TestResult {
     use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
     struct DeleteGate(Arc<std::sync::atomic::AtomicU8>);
     #[async_trait::async_trait]
@@ -86,48 +171,8 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
     let challenge =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
     let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"openid email offline_access","state":"token-state","nonce":"oidc-nonce","code_challenge":challenge,"code_challenge_method":"S256"});
-    let grant = Box::pin(
-        auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
-            EndpointOptions {
-                headers: Some(
-                    [
-                        ("cookie".into(), cookies(&owner)),
-                        ("accept".into(), "application/json".into()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-                request: Some(request("/oauth2/authorize", None, "")),
-                ..Default::default()
-            },
-        ),
-    )
-    .await?
-    .into_response()?;
-    assert_eq!(grant.status, 200);
-    let callback = url::Url::parse(body(&grant)["url"].as_str().unwrap())?;
-    assert_eq!(callback.path(), "/callback");
-    let code = callback
-        .query_pairs()
-        .find(|(k, _)| k == "code")
-        .unwrap()
-        .1
-        .into_owned();
-    let input = json!({"grant_type":"authorization_code","client_id":id,"client_secret":client_secret,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
-    let endpoint =
-        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?;
-    let output = Box::pin(auth.dispatch_endpoint(
-        endpoint,
-        EndpointOptions {
-            request: Some(request("/oauth2/token", Some(input.clone()), "")),
-            ..Default::default()
-        },
-    ))
-    .await?
-    .into_response()?;
-    assert_eq!(output.status, 200);
-    let token = body(&output);
+    let input = json!({"grant_type":"authorization_code","client_id":id,"client_secret":client_secret,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
+    let token = issue_for_session(&auth, &owner, &query, input.clone()).await?;
     assert_eq!(token["scope"], "openid email offline_access");
     assert_eq!(token["token_type"], "Bearer");
     assert_eq!(token["expires_in"], 3600);
@@ -182,46 +227,10 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
         );
         let mut next_query = query.clone();
         next_query["client_id"] = client["client_id"].clone();
-        let granted = Box::pin(
-            auth.dispatch_endpoint(
-                OAuthProviderPlugin::oauth2_authorize_endpoint(&next_query)?,
-                EndpointOptions {
-                    headers: Some(
-                        [
-                            ("cookie".into(), cookies(&owner)),
-                            ("accept".into(), "application/json".into()),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
-                    request: Some(request("/oauth2/authorize", None, "")),
-                    ..Default::default()
-                },
-            ),
-        )
-        .await?
-        .into_response()?;
-        let url = url::Url::parse(body(&granted)["url"].as_str().unwrap())?;
-        let code = url
-            .query_pairs()
-            .find(|(key, _)| key == "code")
-            .unwrap()
-            .1
-            .into_owned();
         let mut next_input = input.clone();
         next_input["client_id"] = client["client_id"].clone();
         next_input["client_secret"] = client["client_secret"].clone();
-        next_input["code"] = json!(code);
-        let issued = Box::pin(auth.dispatch_endpoint(
-            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&next_input)?,
-            EndpointOptions {
-                request: Some(request("/oauth2/token", Some(next_input), "")),
-                ..Default::default()
-            },
-        ))
-        .await?
-        .into_response()?;
-        assert_eq!(issued.status, 200);
+        _ = issue_for_session(&auth, &owner, &next_query, next_input).await?;
         if target != "no-uri" {
             let client_id = client["client_id"].as_str().unwrap();
             let mut row = auth.store().get_oauth_client(client_id).await?.unwrap();
@@ -234,46 +243,38 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
         }
     }
 
+    let sibling = if bulk {
+        let session = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"retirement-owner@example.test","password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let issued = issue_for_session(&auth, &session, &query, input.clone()).await?;
+        Some((session, issued))
+    } else {
+        None
+    };
+    let sibling_sid = if let Some((session, _)) = &sibling {
+        Some(
+            auth.store()
+                .get_session(body(session)["token"].as_str().unwrap())
+                .await?
+                .unwrap()
+                .id()
+                .as_ref()
+                .to_owned(),
+        )
+    } else {
+        None
+    };
     let other = signup(&auth, "retirement-other@example.test").await;
-    let grant = Box::pin(
-        auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
-            EndpointOptions {
-                headers: Some(
-                    [
-                        ("cookie".into(), cookies(&other)),
-                        ("accept".into(), "application/json".into()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-                request: Some(request("/oauth2/authorize", None, "")),
-                ..Default::default()
-            },
-        ),
-    )
-    .await?
-    .into_response()?;
-    let url = url::Url::parse(body(&grant)["url"].as_str().unwrap())?;
-    let code = url
-        .query_pairs()
-        .find(|(key, _)| key == "code")
-        .unwrap()
-        .1
-        .into_owned();
-    let mut other_input = input.clone();
-    other_input["code"] = json!(code);
-    let issued = Box::pin(auth.dispatch_endpoint(
-        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&other_input)?,
-        EndpointOptions {
-            request: Some(request("/oauth2/token", Some(other_input), "")),
-            ..Default::default()
-        },
-    ))
-    .await?
-    .into_response()?;
-    assert_eq!(issued.status, 200);
-    let other_access = body(&issued)["access_token"].as_str().unwrap().to_owned();
+    let other_token = issue_for_session(&auth, &other, &query, input.clone()).await?;
+    let other_access = other_token["access_token"].as_str().unwrap().to_owned();
     assert_ne!(other_access, plaintext);
     use alibi::store::OAuthTokenKind;
     let protected =
@@ -292,10 +293,13 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
     // Preparation must not send or retire anything when the adapter vetoes/fails.
     for mode in [1, 2] {
         gate.store(mode, std::sync::atomic::Ordering::SeqCst);
-        let result = auth
-            .store()
-            .delete_session(body(&owner)["token"].as_str().unwrap())
-            .await;
+        let result = if bulk {
+            revoke_all(&auth, &owner).await.map(|_| ())
+        } else {
+            auth.store()
+                .delete_session(body(&owner)["token"].as_str().unwrap())
+                .await
+        };
         assert_eq!(result.is_err(), mode == 2);
         assert!(
             auth.store()
@@ -310,28 +314,69 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
             .await?
             .unwrap();
         assert!(row.metadata.get("revoked").is_none_or(Value::is_null));
+        if let Some((session, token)) = &sibling {
+            assert!(
+                auth.store()
+                    .get_session(body(session)["token"].as_str().unwrap())
+                    .await?
+                    .is_some()
+            );
+            let protected = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                sha2::Sha256::digest(token["access_token"].as_str().unwrap()),
+            );
+            let row = auth
+                .store()
+                .get_oauth_token(OAuthTokenKind::Access, &protected)
+                .await?
+                .unwrap();
+            assert!(row.metadata.get("revoked").is_none_or(Value::is_null));
+        }
     }
     gate.store(0, std::sync::atomic::Ordering::SeqCst);
     let started = chrono::Utc::now().timestamp_millis();
-    let ended = Box::pin(
-        auth.dispatch_endpoint(
-            ServerEndpoint::<Value>::new("session-management", "signOut"),
-            EndpointOptions {
-                headers: Some(
-                    [
-                        ("cookie".into(), cookies(&owner)),
-                        ("origin".into(), ORIGIN.into()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-                ..Default::default()
-            },
-        ),
-    )
-    .await?
-    .into_response()?;
+    let ended = if bulk {
+        revoke_all(&auth, &owner).await?
+    } else {
+        Box::pin(
+            auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("session-management", "signOut"),
+                EndpointOptions {
+                    headers: Some(
+                        [
+                            ("cookie".into(), cookies(&owner)),
+                            ("origin".into(), ORIGIN.into()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await?
+        .into_response()?
+    };
     assert_eq!(ended.status, 200);
+    assert!(
+        auth.store()
+            .get_session(body(&owner)["token"].as_str().unwrap())
+            .await?
+            .is_none()
+    );
+    if let Some((session, _)) = &sibling {
+        assert!(
+            auth.store()
+                .get_session(body(session)["token"].as_str().unwrap())
+                .await?
+                .is_none()
+        );
+    }
+    assert!(
+        auth.store()
+            .get_session(body(&other)["token"].as_str().unwrap())
+            .await?
+            .is_some()
+    );
     let jwks = Box::pin(auth.dispatch_endpoint(
         ServerEndpoint::<Value>::new("jwt", "getJwks"),
         EndpointOptions::default(),
@@ -339,9 +384,9 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
     .await?
     .into_response()?;
     let keys: jsonwebtoken::jwk::JwkSet = serde_json::from_value(body(&jwks))?;
-    let mut targets = Vec::new();
     let mut identifiers = std::collections::HashSet::new();
-    for _ in 0..2 {
+    let mut notified_sessions = Vec::new();
+    for _ in 0..if bulk { 3 } else { 2 } {
         let (target, headers, form) =
             tokio::time::timeout(std::time::Duration::from_secs(2), receipts.recv())
                 .await?
@@ -366,7 +411,7 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
         )?
         .claims;
         assert_eq!(claims["sub"], id_claims["sub"]);
-        assert_eq!(claims["sid"], id_claims["sid"]);
+        notified_sessions.push((target.clone(), claims["sid"].as_str().unwrap().to_owned()));
         assert_eq!(claims["aud"], recipient_ids[&target]);
         assert_eq!(
             claims["exp"].as_i64().unwrap() - claims["iat"].as_i64().unwrap(),
@@ -384,10 +429,23 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
         let jti = claims["jti"].as_str().unwrap();
         assert_eq!(jti.len(), 32);
         assert!(identifiers.insert(jti.to_owned()));
-        targets.push(target);
     }
-    targets.sort();
-    assert_eq!(targets, ["failure", "success"]);
+    let mut expected_sessions = vec![
+        (
+            "failure".to_owned(),
+            id_claims["sid"].as_str().unwrap().to_owned(),
+        ),
+        (
+            "success".to_owned(),
+            id_claims["sid"].as_str().unwrap().to_owned(),
+        ),
+    ];
+    if let Some(sid) = sibling_sid {
+        expected_sessions.push(("success".to_owned(), sid));
+    }
+    expected_sessions.sort();
+    notified_sessions.sort();
+    assert_eq!(notified_sessions, expected_sessions);
     assert!(
         receipts.try_recv().is_err(),
         "no retries or ineligible recipients"
@@ -460,6 +518,26 @@ async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Ba
             .get("revoked")
             .is_some_and(|value| !value.is_null())
     );
+    if let Some((_, token)) = &sibling {
+        for (kind, value, revoked) in [
+            (OAuthTokenKind::Access, "access_token", true),
+            (OAuthTokenKind::Refresh, "refresh_token", false),
+        ] {
+            let protected = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(token[value].as_str().unwrap()));
+            let row = auth
+                .store()
+                .get_oauth_token(kind, &protected)
+                .await?
+                .unwrap();
+            assert_eq!(
+                row.metadata
+                    .get("revoked")
+                    .is_some_and(|value| !value.is_null()),
+                revoked
+            );
+        }
+    }
     let unaffected = Box::pin(
         auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_user_info_endpoint(),

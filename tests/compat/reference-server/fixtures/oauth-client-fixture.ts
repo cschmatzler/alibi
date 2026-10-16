@@ -1321,9 +1321,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         headers: { "content-type": "application/json" },
       });
     }
-    if (input.action === "signout") {
+    if (input.action === "signout" || input.action === "revoke-sessions") {
       const call = () =>
-        auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });
+        input.action === "revoke-sessions"
+          ? auth.api.revokeSessions({ headers: new Headers(input.headers ?? {}), asResponse: true })
+          : auth.api.signOut({ headers: new Headers(input.headers ?? {}), asResponse: true });
       if (input.foreignKeys === true) {
         const database = base.database as import("better-sqlite3").Database;
         const prior = database

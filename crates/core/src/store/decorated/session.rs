@@ -311,7 +311,25 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             if self.secondary().is_some() && self.config.session.preserve_in_database {
                 self.inner.end_user_sessions_preserving(user_id).await?;
             } else {
+                // Capture dependants while every physical session FK still exists.
+                // Adapter hooks may veto individual rows, so completion below must
+                // check each selected token rather than assume the bulk consumed it.
+                let mut pending = Vec::new();
+                if self
+                    .projection_context
+                    .extensions
+                    .get::<crate::store::SessionDeletionHooks<S>>()
+                    .is_some_and(|hooks| !hooks.0.is_empty())
+                {
+                    for session in self.inner.get_user_sessions(user_id).await? {
+                        let works = self.prepare_session_deletion(&session).await?;
+                        pending.push((session.token().to_owned(), works));
+                    }
+                }
                 self.inner.delete_user_sessions(user_id).await?;
+                for (token, works) in pending {
+                    self.complete_session_deletion(&token, works).await?;
+                }
             }
         }
         self.remove_cached_user_sessions(user_id, tokens).await

@@ -618,11 +618,12 @@ pub(crate) async fn router(
                 let (first,second)=tokio::join!(call(),call());let mut statuses=vec![first,second];statuses.sort_unstable();
                 return axum::Json(statuses).into_response();
             }
-            if input["action"]=="signout" && input["foreignKeys"]==true {
+            if (input["action"]=="signout" || input["action"]=="revoke-sessions") && input["foreignKeys"]==true {
                 use alibi::seaorm::sea_orm::{ConnectionTrait,DbBackend,Statement};
                 let prior=logout_database.query_one_raw(Statement::from_string(DbBackend::Sqlite,"PRAGMA foreign_keys")).await.unwrap().unwrap().try_get::<i64>("","foreign_keys").unwrap();
                 _=logout_database.execute_unprepared("PRAGMA foreign_keys=ON").await.unwrap();
-                let outcome=auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("session-management","signOut"),alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()),..Default::default()}).await;
+                let operation=if input["action"]=="revoke-sessions" {"revokeSessions"} else {"signOut"};
+                let outcome=auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("session-management",operation),alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()),..Default::default()}).await;
                 _=logout_database.execute_unprepared(&format!("PRAGMA foreign_keys={prior}")).await.unwrap();
                 return outcome.unwrap().into_response().unwrap().into_response();
             }
