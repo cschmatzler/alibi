@@ -598,4 +598,5 @@ mod oauth_extension_claims;
 mod oauth_extension_authentication;
 #[cfg(feature="axum")]
 mod session_post_media;
+mod request_multipart_mime;
 mod oauth_dpop_proof;

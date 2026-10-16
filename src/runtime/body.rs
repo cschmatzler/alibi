@@ -71,13 +71,9 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 .collect(),
         ))
     } else if lower.contains("multipart/form-data") {
-        // Fetch parses form-data even when additional media text follows its subtype.
-        // Keep the original header; normalize only the parser's MIME prefix.
-        let parameters = content_type.split_once(';').map_or("", |(_, value)| value);
-        let boundary = multer::parse_boundary(format!("multipart/form-data;{parameters}"))
-            .map_err(|error| {
-                AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
-            })?;
+        let boundary = multer::parse_boundary(content_type).map_err(|error| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+        })?;
         let mut multipart = multer::Multipart::with_reader(body.as_slice(), boundary);
         let mut fields = empty_object();
         let mut files = alibi_core::types::MultipartFiles::default();
