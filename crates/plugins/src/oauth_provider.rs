@@ -1152,7 +1152,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             self.config.client_discoveries.clone(),
         ));
         ctx.register_session_deletion_hook(std::sync::Arc::new(
-            session_retirement::TokenRetirementHook,
+            session_retirement::TokenRetirementHook(self.clone()),
         ));
         Ok(())
     }

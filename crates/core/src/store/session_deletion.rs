@@ -1,20 +1,22 @@
 //! Instance-local work prepared while session foreign keys still identify dependants.
-use crate::{AuthResult, AuthSchema, AuthStore};
+use crate::{AuthContext, AuthResult, AuthSchema};
 use async_trait::async_trait;
 use std::sync::Arc;
 /// Prepare read-only work before a session mutation. A vetoed deletion never completes it.
+/// The instance context provides the undecorated store and installed plugin policy.
 #[async_trait]
 pub trait SessionDeletionHook<S: AuthSchema>: Send + Sync {
     async fn prepare(
         &self,
         session: &S::Session,
-        database: &dyn AuthStore<S>,
+        context: &AuthContext<S>,
     ) -> AuthResult<Option<Box<dyn SessionDeletionWork<S>>>>;
 }
 /// Work performed after the selected physical session has actually disappeared.
+/// Implementations may hand owned work to the instance's background-task policy.
 #[async_trait]
 pub trait SessionDeletionWork<S: AuthSchema>: Send + Sync {
-    async fn complete(&self, database: &dyn AuthStore<S>) -> AuthResult<()>;
+    async fn complete(&self, context: &AuthContext<S>) -> AuthResult<()>;
 }
 pub(crate) struct SessionDeletionHooks<S: AuthSchema>(
     pub(crate) Vec<Arc<dyn SessionDeletionHook<S>>>,

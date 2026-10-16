@@ -371,7 +371,7 @@ impl<S: AuthSchema> PluginStore<S> {
             .get::<crate::store::SessionDeletionHooks<S>>()
         {
             for hook in &hooks.0 {
-                if let Some(work) = hook.prepare(session, self.inner.as_ref()).await? {
+                if let Some(work) = hook.prepare(session, &self.projection_context).await? {
                     works.push(work);
                 }
             }
@@ -385,7 +385,7 @@ impl<S: AuthSchema> PluginStore<S> {
     ) -> AuthResult<()> {
         if !works.is_empty() && self.inner.get_session(token).await?.is_none() {
             for work in works {
-                work.complete(self.inner.as_ref()).await?;
+                work.complete(&self.projection_context).await?;
             }
         }
         Ok(())

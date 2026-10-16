@@ -365,6 +365,14 @@ pub(crate) async fn router(
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
                 return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap()})).into_response();
             }
+            if input["action"]=="backchannel-uri" {
+                let id=input["clientId"].as_str().unwrap();
+                let mut client=auth.store().get_oauth_client(id).await.unwrap().unwrap();
+                client.metadata["backchannel_logout_uri"]=input["uri"].clone();
+                client.metadata["disabled"]=serde_json::json!(input["disabled"].as_bool().unwrap_or(false));
+                auth.store().update_oauth_client_metadata(id,client.metadata,chrono::Utc::now()).await.unwrap();
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
             if input["action"]=="extension-auth-validation" {
                 let extensions=input["entries"].as_array().unwrap().iter().map(|entry|extension_authentication::extension(entry["method"].as_str().unwrap(),entry.get("types").filter(|value|!value.is_null()).map(|value|serde_json::from_value(value.clone()).unwrap()))).collect();
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{extensions,..Default::default()})).build().await;

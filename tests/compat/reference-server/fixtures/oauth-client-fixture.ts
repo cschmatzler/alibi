@@ -1147,6 +1147,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       if (typeof input.value === "string") liveClaims.value = input.value;
       return Response.json(liveClaims);
     }
+    if (input.action === "backchannel-uri") {
+      // Install a local RP on a persisted client. Public-host admission belongs
+      // to registration coverage; notification still uses the real fetch.
+      const context = await auth.$context;
+      await context.adapter.update({
+        model: "oauthClient",
+        where: [{ field: "clientId", value: input.clientId }],
+        update: { backchannelLogoutUri: input.uri, disabled: input.disabled ?? false },
+      });
+      return Response.json({ updated: true });
+    }
     if (input.action === "authenticate-client") {
       const headers = new Headers(input.headers ?? {});
       headers.set("content-type", "application/json");
