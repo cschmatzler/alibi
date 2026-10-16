@@ -342,6 +342,77 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     idTokenExpiresIn: 600,
     refreshTokenExpiresIn: 900,
   };
+  const claimExtensions = () =>
+    ["first", "second"].map((id) => {
+      const tokenClaims = async ({
+        ctx,
+        user,
+        client,
+        scopes,
+        grantType,
+        referenceId,
+        sessionId,
+        metadata,
+      }: any) => ({
+        extension_owner: id,
+        [`extension_${id}`]: {
+          grant: grantType,
+          scopes,
+          userId: user?.id ?? null,
+          clientId: client.clientId,
+          referenceId: referenceId ?? null,
+          sessionId: sessionId ?? null,
+          metadata: metadata ?? null,
+          caller: ctx.headers?.get("x-claims-caller") ?? null,
+        },
+        per_request: id,
+        resource_wins: id,
+        sub: "forged",
+        iss: "https://forged.fixture.test",
+        aud: "forged",
+        email: "forged@example.test",
+        scope: "forged",
+        exp: 1,
+        sid: "forged",
+        constructor: "forged",
+        nullable_claim: null,
+      });
+      return {
+        claims: {
+          accessToken: async (input: any) => {
+            if (input.ctx.headers?.get("x-claims-error") === "access") {
+              throw new APIError("BAD_REQUEST", {
+                code: "CLAIM_REJECTED",
+                message: "rejected access",
+              });
+            }
+            return tokenClaims(input);
+          },
+          idToken: async (input: any) => {
+            if (input.ctx.headers?.get("x-claims-error") === "id") {
+              throw new APIError("BAD_REQUEST", { code: "CLAIM_REJECTED", message: "rejected id" });
+            }
+            return tokenClaims(input);
+          },
+          userInfo: async ({ ctx, user, client, scopes, jwt, requestedClaims }: any) => ({
+            extension_owner: id,
+            [`extension_${id}`]: {
+              scopes,
+              userId: user.id,
+              clientId: client?.clientId ?? null,
+              requestedClaims,
+              payloadSub: jwt.sub,
+              caller: ctx.headers?.get("x-claims-caller") ?? null,
+            },
+            sub: "forged",
+            name: "Forged name",
+            email_verified: true,
+            constructor: "forged",
+            nullable_claim: null,
+          }),
+        },
+      };
+    });
   const issuanceHelper = {
     id: "issuance-helper",
     endpoints: {
@@ -355,6 +426,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               loginPage: "/login",
               consentPage: "/consent",
               ...(ctx.body.expiryProfile ? expiryPolicy : {}),
+              ...(ctx.body.claimsProfile ? { extensions: claimExtensions() } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
                 : {}),
@@ -641,6 +713,19 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         username(),
         jwt({ jwks: { keyPairConfigs: [{ alg: "ES256", crv: "P-256" }] } }),
         oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        issuanceHelper,
+      ],
+    }),
+    claims: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          extensions: claimExtensions(),
+        }),
         issuanceHelper,
       ],
     }),

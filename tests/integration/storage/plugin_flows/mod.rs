@@ -594,4 +594,5 @@ mod oauth_claims_request;
 mod oauth_extension_grants;
 mod oauth_extension_metadata;
 mod oauth_pairwise_subject;
+mod oauth_extension_claims;
 mod oauth_dpop_proof;

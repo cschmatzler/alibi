@@ -183,7 +183,8 @@ impl OAuthProviderPlugin {
                 body_absent: false,
             });
         }
-        self.mint_tokens(ctx, call, params).await
+        self.mint_tokens(ctx, call, params, grant_type.unwrap_or_default())
+            .await
     }
     pub(super) async fn create_access_token<S: AuthSchema>(
         &self,
@@ -375,6 +376,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
         req: &impl alibi_core::session::SessionRequest,
         p: &OAuthTokenIssueParams,
+        grant_type: &str,
     ) -> Result<Value, EndpointError> {
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid token issue time"))?;
@@ -393,6 +395,8 @@ impl OAuthProviderPlugin {
                 .is_some_and(|scopes| scopes.iter().any(|scope| scope == "offline_access"));
         let mut resolved = p.clone();
         resolved.scopes = admission.scopes.clone();
+        self.extend_id_token_claims(ctx, req, &mut resolved, grant_type)
+            .await?;
         resolved.confirmation = match p.confirmation.as_ref().filter(|value| !value.is_null()) {
             Some(confirmation) => Some(confirmation.clone()),
             None => self.resolve_dpop_binding(ctx, req, p, &admission).await?,
@@ -410,6 +414,10 @@ impl OAuthProviderPlugin {
                         .map(str::to_owned)
                         .collect()
                 });
+        }
+        if !self.config.disable_jwt_plugin && !admission.audiences.is_empty() {
+            self.extend_access_token_claims(ctx, req, &mut resolved, grant_type)
+                .await?;
         }
         let p = &resolved;
         let refresh = self

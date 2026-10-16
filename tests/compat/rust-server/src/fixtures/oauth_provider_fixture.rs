@@ -10,6 +10,8 @@ use std::{collections::HashMap, sync::Arc};
 mod access_jwt;
 #[path = "../../../../fixtures/oauth/extension-grant.rs"]
 mod extension_grant;
+#[path = "../../../../fixtures/oauth/extension-claims.rs"]
+mod extension_claims;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -234,6 +236,7 @@ pub(crate) async fn router(
     for mode in [
         "extension-grant",
         "pairwise",
+        "claims",
         "default",
         "dynamic",
         "public",
@@ -314,6 +317,7 @@ pub(crate) async fn router(
             ..Default::default()
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
+        if mode=="claims" {provider.extensions=extension_claims::extensions();}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
@@ -385,6 +389,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="issue-tokens" {
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
+                if body["claimsProfile"]==true {config.extensions=extension_claims::extensions();}
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());

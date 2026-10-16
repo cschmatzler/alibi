@@ -292,10 +292,11 @@ pub use oauth_provider::{
     OAuthClientIdGenerator, OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
     OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthClientSecretCipher,
-    OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionGrantHandler,
+    OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionClaims, OAuthExtensionGrantHandler,
     OAuthExtensionGrantInput, OAuthMetadataContributor, OAuthMetadataExtensionInput,
     OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig, OAuthProviderExtension,
-    OAuthProviderPlugin, OAuthTokenHasher, OAuthTokenIssueParams, consume_client_assertion,
+    OAuthProviderPlugin, OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenHasher, OAuthTokenIssueParams,
+    OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};

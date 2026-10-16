@@ -20,6 +20,7 @@ use std::sync::Arc;
 pub struct OAuthProviderExtension {
     pub grants: indexmap::IndexMap<String, Arc<dyn OAuthExtensionGrantHandler>>,
     pub metadata: Option<Arc<dyn OAuthMetadataContributor>>,
+    pub claims: super::OAuthExtensionClaims,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OAuthMetadataType {

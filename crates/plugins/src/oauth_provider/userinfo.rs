@@ -162,23 +162,34 @@ impl OAuthProviderPlugin {
             .get("client_id")
             .or_else(|| payload.get("azp"))
             .and_then(Value::as_str);
-        let subject = if self
+        let client = if self
             .config
             .pairwise_secret
             .as_ref()
             .is_some_and(|secret| !secret.is_empty())
-            && let Some(client_id) = client_id
-            && let Some(client) = self.get_client(ctx, client_id).await?
+            || self
+                .config
+                .extensions
+                .iter()
+                .any(|extension| extension.claims.user_info.is_some())
         {
-            self.resolve_subject(&user.id, &client)?
+            if let Some(client_id) = client_id {
+                self.get_client(ctx, client_id).await?
+            } else {
+                None
+            }
         } else {
-            user.id.clone()
+            None
         };
+        let subject = client.as_ref().map_or_else(
+            || Ok(user.id.clone()),
+            |client| self.resolve_subject(&user.id, client),
+        )?;
         let mut claims = serde_json::Map::from_iter([("sub".into(), json!(subject))]);
         let wanted = |name: &str, scope: &str| {
             scopes.contains(&scope) || requested.iter().any(|claim| claim == name)
         };
-        if let Some(name) = user.name {
+        if let Some(name) = user.name.as_deref() {
             if wanted("name", "profile") {
                 _ = claims.insert("name".into(), json!(name));
             }
@@ -200,18 +211,31 @@ impl OAuthProviderPlugin {
             }
         }
         if wanted("picture", "profile")
-            && let Some(image) = user.image
+            && let Some(image) = user.image.as_ref()
         {
             _ = claims.insert("picture".into(), json!(image));
         }
         if wanted("email", "email")
-            && let Some(email) = user.email
+            && let Some(email) = user.email.as_ref()
         {
             _ = claims.insert("email".into(), json!(email));
         }
         if wanted("email_verified", "email") {
             _ = claims.insert("email_verified".into(), json!(user.email_verified));
         }
+        let scopes = scopes.into_iter().map(str::to_owned).collect::<Vec<_>>();
+        let extensions = self
+            .collect_user_info_claims(super::OAuthUserInfoClaimsInput {
+                context: super::extension_claims::callback_context(ctx, req),
+                options: &self.config,
+                user: &user,
+                client: client.as_ref(),
+                scopes: &scopes,
+                payload: &payload,
+                requested_claims: &requested,
+            })
+            .await?;
+        super::extension_claims::merge_additive(&mut claims, extensions);
         Ok(no_store(EndpointResponse::json(&claims)?))
     }
 }

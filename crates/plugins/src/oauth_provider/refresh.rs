@@ -254,6 +254,8 @@ impl OAuthProviderPlugin {
             });
         let resources = super::resource_policy::resource_list(resource);
         params.resources = (!resources.is_empty()).then_some(resources);
+        self.extend_id_token_claims(ctx, req, &mut params, "refresh_token")
+            .await?;
         params.confirmation = match self
             .resolve_dpop_binding(ctx, req, &params, &admission)
             .await
@@ -267,6 +269,10 @@ impl OAuthProviderPlugin {
                 return Ok(no_store(response));
             }
         };
+        if !self.config.disable_jwt_plugin && !admission.audiences.is_empty() {
+            self.extend_access_token_claims(ctx, req, &mut params, "refresh_token")
+                .await?;
+        }
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issuance time"))?;
         let rotate =
@@ -342,7 +348,7 @@ impl OAuthProviderPlugin {
                 .and_then(Value::as_str)
                 .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
                 .map(|value| value.timestamp_millis());
-            let proof = json!({"userId":user_id,"sessionId":original.session_id,"authTime":auth_time,"query":{}});
+            let proof = json!({"userId":user_id,"sessionId":original.session_id,"authTime":auth_time,"query":{},"idTokenClaims":params.id_token_claims});
             match Box::pin(self.issue_id_token(&client, &proof, &access, req, ctx)).await? {
                 Ok(Some(token)) => {
                     _ = response.insert("id_token".into(), json!(token));

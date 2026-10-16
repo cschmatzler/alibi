@@ -14,6 +14,11 @@ mod continuation;
 mod credentials;
 mod discovery;
 mod dpop;
+mod extension_claims;
+pub use extension_claims::{
+    OAuthExtensionClaims, OAuthTokenClaimsContributor, OAuthTokenClaimsInput,
+    OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput,
+};
 mod extensions;
 pub use extensions::{
     OAuthExtensionGrantHandler, OAuthExtensionGrantInput, OAuthMetadataContributor,
