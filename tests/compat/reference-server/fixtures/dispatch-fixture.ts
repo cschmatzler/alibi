@@ -59,6 +59,16 @@ export function createDispatchFixture(base: BetterAuthOptions) {
               ],
             },
             endpoints: {
+              formProbe: createAuthEndpoint(
+                "/form-probe",
+                {
+                  method: "POST",
+                  metadata: {
+                    allowedMediaTypes: ["multipart/form-data", "application/x-www-form-urlencoded"],
+                  },
+                },
+                async (ctx) => ctx.json({ payload: ctx.body }),
+              ),
               owned: createAuthEndpoint("/owned/:id", { method: "GET" }, async (ctx) =>
                 ctx.json({ id: ctx.params.id }),
               ),

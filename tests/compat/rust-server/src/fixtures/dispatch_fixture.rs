@@ -23,12 +23,15 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
             AuthRoute::get("/owned/{id}", "owned"),
+            AuthRoute::post("/form-probe", "formProbe"),
             AuthRoute::post("/sign-in/child", "child"),
             AuthRoute::post("/sign-in-peer", "peer"),
         ]
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
-        if route.method == alibi::HttpMethod::Post {
+        if route.path == "/form-probe" {
+            vec!["multipart/form-data", "application/x-www-form-urlencoded"]
+        } else if route.method == alibi::HttpMethod::Post {
             vec![" Application/JSON "]
         } else {
             vec!["application/json"]
@@ -55,7 +58,10 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         req: &AuthRequest,
         _: &AuthContext<TestSchema>,
     ) -> AuthResult<Option<AuthResponse>> {
-        if matches!(req.path(), "/sign-in/child" | "/sign-in-peer") {
+        if matches!(
+            req.path(),
+            "/sign-in/child" | "/sign-in-peer" | "/form-probe"
+        ) {
             return Ok(Some(AuthResponse::json(
                 200,
                 &json!({"payload": req.body_as_json::<Value>()?}),

@@ -39,6 +39,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             message,
         });
     }
+    let string_form_values = lower.contains("application/x-www-form-urlencoded");
     let json_media = lower.strip_prefix("application/").is_some_and(|suffix| {
         suffix.starts_with("json")
             || suffix.match_indices("+json").any(|(index, _)| {
@@ -59,7 +60,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 },
             )?,
         )
-    } else if lower.contains("application/x-www-form-urlencoded") {
+    } else if base == "application/x-www-form-urlencoded" {
         Some(alibi_core::utils::json::JsValue::Object(
             url::form_urlencoded::parse(body)
                 .map(|(key, value)| {
@@ -70,7 +71,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 })
                 .collect(),
         ))
-    } else if lower.contains("multipart/form-data") {
+    } else if string_form_values || lower.contains("multipart/form-data") {
         let boundary = multer::parse_boundary(content_type).map_err(|error| {
             AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
         })?;
@@ -88,7 +89,9 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             let bytes = field.bytes().await.map_err(|error| {
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
-            let value = if let Some(filename) = filename {
+            let value = if string_form_values && filename.is_some() {
+                alibi_core::utils::json::JsValue::String("[object File]".to_owned())
+            } else if let Some(filename) = filename {
                 _ = files.0.insert(
                     name.clone(),
                     alibi_core::types::MultipartFile {
