@@ -257,6 +257,59 @@ compatScenario(
       scope: "email",
       state: "code-state",
     };
+    const promptAuthorizations = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const [prompt, description] of [
+        ["", "prompt must include at least one value"],
+        ["surprise", "unsupported prompt value: surprise"],
+        ["login\tconsent", "unsupported prompt value: login\tconsent"],
+        ["none login", "prompt=none cannot be combined with other prompt values"],
+        ["none select_account", "prompt=none cannot be combined with other prompt values"],
+        ["none login surprise", "unsupported prompt value: surprise"],
+        ["\uFEFFlogin\u00A0", null],
+      ] as const) {
+        const response = await control({
+          ...(transport === "http"
+            ? { action: "protocol-http", path: "/oauth2/authorize" }
+            : { action: "authorize" }),
+          headers: { accept: "application/json", cookie },
+          query: { ...publicQuery, prompt },
+        });
+        expect(response.status).toBe(200);
+        expect(response.headers.getSetCookie()).toEqual([]);
+        const result = await response.json();
+        const target = new URL(result.url, ctx.baseURL);
+        expect(target.searchParams.has("code")).toBe(false);
+        if (description === null) {
+          expect(target.pathname).toBe("/login");
+          expect(target.searchParams.get("prompt")).toBe(prompt);
+        } else {
+          expect(target.hostname, `${ctx.baseURL}:${transport}:${prompt}`).toBe("app.fixture.test");
+          expect(target.searchParams.get("error")).toBe("invalid_request");
+          expect(target.searchParams.get("error_description")).toBe(`prompt: ${description}`);
+          expect(target.searchParams.get("state")).toBe(publicQuery.state);
+        }
+        promptAuthorizations.push({ transport, prompt, result });
+      }
+      const response = await control({
+        ...(transport === "http"
+          ? { action: "protocol-http", path: "/oauth2/authorize" }
+          : { action: "authorize" }),
+        headers: { accept: "application/json", cookie },
+        query: { ...publicQuery, prompt: "none none" },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url, ctx.baseURL);
+      const token = target.searchParams.get("code");
+      expect(target.hostname).toBe("app.fixture.test");
+      expect(token).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const proof = await (await control({ action: "grant-row", token })).json();
+      expect(proof.value.userId).toBe(actualSession.user.id);
+      expect(proof.value.sessionId).toBe(actualSession.session.id);
+      expect(proof.value.query.prompt).toBe("none none");
+      promptAuthorizations.push({ transport, prompt: "none none", result, proof });
+    }
     const publicRejected = [];
     for (const [name, values] of [
       ["max_age", ["0", "86400"]],
@@ -344,6 +397,7 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      promptAuthorizations: ctx.snapshot(promptAuthorizations),
       postAuthorizations: ctx.snapshot(postAuthorizations),
       publicRejected: ctx.snapshot(publicRejected),
       publicLogin: ctx.snapshot(publicLoginValue),

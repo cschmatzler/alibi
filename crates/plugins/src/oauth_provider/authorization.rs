@@ -55,6 +55,7 @@ impl OAuthProviderPlugin {
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
+        let validated_prompts = authorization_prompts(query.get("prompt").and_then(Value::as_str));
         let text = |name: &str| {
             query
                 .get(name)
@@ -72,9 +73,9 @@ impl OAuthProviderPlugin {
             ctx.config.base_path
         );
         if validated_max_age.is_ok()
-            && text("prompt")
-                .split(' ')
-                .any(|prompt| prompt == "select_account")
+            && validated_prompts
+                .as_ref()
+                .is_ok_and(|prompts| prompts.contains(&AuthorizationPrompt::SelectAccount))
             && self.config.select_account_page.is_none()
         {
             return browser_redirect(
@@ -168,6 +169,10 @@ impl OAuthProviderPlugin {
                 "response_type must be one of: code",
             );
         }
+        let prompts = match validated_prompts {
+            Ok(prompts) => prompts,
+            Err(description) => return admission_error("invalid_request", &description),
+        };
         let max_age = match validated_max_age {
             Ok(value) => value,
             Err(description) => return admission_error("invalid_request", description),
@@ -336,8 +341,6 @@ impl OAuthProviderPlugin {
                 "code_challenge_method must be one of: S256",
             );
         }
-        let prompt = text("prompt");
-        let prompts = prompt.split(' ').collect::<Vec<_>>();
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
 
         let within_max_age = if let (Some((_, session)), Some(age)) = (&session, max_age) {
@@ -352,8 +355,8 @@ impl OAuthProviderPlugin {
         };
         let force_login = session.is_none()
             || max_age.is_some() && !within_max_age
-            || prompts.contains(&"login")
-            || prompts.contains(&"create");
+            || prompts.contains(&AuthorizationPrompt::Login)
+            || prompts.contains(&AuthorizationPrompt::Create);
         if let Some(age) = max_age {
             if !force_login && within_max_age {
                 _ = query.remove("max_age");
@@ -364,14 +367,14 @@ impl OAuthProviderPlugin {
         _ = query.insert("scope".into(), json!(scope));
         if !force_login
             && initial
-            && prompts.contains(&"select_account")
+            && prompts.contains(&AuthorizationPrompt::SelectAccount)
             && let Some(page) = &self.config.select_account_page
         {
             let params = self.sign_authorization_query(query, ctx)?;
             return browser_redirect(req, &format!("{page}?{params}"));
         }
         let remembered = if !force_login
-            && !prompts.contains(&"consent")
+            && !prompts.contains(&AuthorizationPrompt::Consent)
             && client.metadata.get("skip_consent") != Some(&json!(true))
             && let Some((user, _)) = &session
         {
@@ -404,7 +407,7 @@ impl OAuthProviderPlugin {
             false
         };
         if !force_login
-            && !prompts.contains(&"consent")
+            && !prompts.contains(&AuthorizationPrompt::Consent)
             && (client.metadata.get("skip_consent") == Some(&json!(true)) || remembered)
             && let Some((user, session)) = &session
         {
@@ -455,7 +458,7 @@ impl OAuthProviderPlugin {
             _ = target.query_pairs_mut().append_pair("iss", &issuer);
             return browser_redirect(req, target.as_str());
         }
-        if prompts.contains(&"none") {
+        if prompts.contains(&AuthorizationPrompt::None) {
             return admission_error(
                 if force_login {
                     "login_required"
@@ -539,6 +542,46 @@ fn parameter_text(value: &Value) -> AuthResult<String> {
         .coerce_string()
         .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
 }
+#[derive(PartialEq, Eq)]
+enum AuthorizationPrompt {
+    None,
+    Consent,
+    Login,
+    Create,
+    SelectAccount,
+}
+
+fn authorization_prompts(input: Option<&str>) -> Result<Vec<AuthorizationPrompt>, String> {
+    let Some(input) = input else {
+        return Ok(Vec::new());
+    };
+    let mut prompts = Vec::new();
+    for token in input
+        .split(' ')
+        .map(alibi_core::utils::javascript::trim)
+        .filter(|token| !token.is_empty())
+    {
+        let prompt = match token {
+            "none" => AuthorizationPrompt::None,
+            "consent" => AuthorizationPrompt::Consent,
+            "login" => AuthorizationPrompt::Login,
+            "create" => AuthorizationPrompt::Create,
+            "select_account" => AuthorizationPrompt::SelectAccount,
+            _ => return Err(format!("prompt: unsupported prompt value: {token}")),
+        };
+        if !prompts.contains(&prompt) {
+            prompts.push(prompt);
+        }
+    }
+    if prompts.is_empty() {
+        return Err("prompt: prompt must include at least one value".into());
+    }
+    if prompts.contains(&AuthorizationPrompt::None) && prompts.len() > 1 {
+        return Err("prompt: prompt=none cannot be combined with other prompt values".into());
+    }
+    Ok(prompts)
+}
+
 fn maximum_age(input: Option<&JsValue>) -> Result<Option<f64>, &'static str> {
     let Some(input) = input else { return Ok(None) };
     let value = match input {

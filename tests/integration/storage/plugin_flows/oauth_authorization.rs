@@ -317,6 +317,13 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         600
     );
     assert_eq!(db.count("verification").await?, 1);
+    Box::pin(assert_prompt_admission(
+        &auth,
+        &db,
+        &cookies(&owner),
+        body(&managed)["client_id"].as_str().unwrap(),
+    ))
+    .await?;
     Box::pin(assert_signed_login_resumes(
         &auth, &owner, &managed, &signed, &id,
     ))
@@ -427,5 +434,91 @@ async fn assert_signed_login_resumes<S: AuthSchema>(
     assert_ne!(payload["userId"], body(&other)["user"]["id"]);
     assert_eq!(payload["sessionId"], body(&current)["session"]["id"]);
     assert_ne!(payload["sessionId"], body(&authenticated)["session"]["id"]);
+    Ok(())
+}
+
+async fn assert_prompt_admission<S: AuthSchema>(
+    auth: &alibi::Alibi<S>,
+    db: &Db,
+    cookie: &str,
+    client: &str,
+) -> TestResult {
+    for http in [false, true] {
+        for (prompt, description) in [
+            ("", Some("prompt must include at least one value")),
+            ("surprise", Some("unsupported prompt value: surprise")),
+            ("\u{feff}login\u{a0}", None),
+        ] {
+            let before = db
+                .tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?;
+            let input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"prompt-state","prompt":prompt});
+            let mut physical = request("/oauth2/authorize", None, cookie);
+            _ = physical
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let response = if http {
+                let pairs = input
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .collect::<Vec<_>>();
+                let mut url = url::Url::parse(&format!("{ORIGIN}/api/auth/oauth2/authorize"))?;
+                _ = url.query_pairs_mut().extend_pairs(pairs.clone());
+                physical = physical.with_url(url);
+                physical.set_query_pairs(pairs);
+                Box::pin(auth.handle_request(physical)).await?
+            } else {
+                Box::pin(
+                    auth.dispatch_endpoint(
+                        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+                            .with_query(&input)?,
+                        EndpointOptions {
+                            headers: Some(physical.headers.clone()),
+                            request: Some(physical),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await?
+                .into_response()?
+            };
+            assert_eq!(
+                db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                    .await?,
+                before,
+                "http={http}, prompt={prompt:?}"
+            );
+            assert_eq!(response.status, 200);
+            assert!(!response.headers.contains_key("set-cookie"));
+            let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+            let fields = target
+                .query_pairs()
+                .collect::<std::collections::HashMap<_, _>>();
+            assert!(!fields.contains_key("code"));
+            if let Some(description) = description {
+                assert_eq!(target.host_str(), Some("app.fixture.test"));
+                assert_eq!(
+                    fields.get("error").map(|value| value.as_ref()),
+                    Some("invalid_request")
+                );
+                assert_eq!(
+                    fields.get("error_description").map(|value| value.as_ref()),
+                    Some(format!("prompt: {description}").as_str())
+                );
+                assert_eq!(
+                    fields.get("state").map(|value| value.as_ref()),
+                    Some("prompt-state")
+                );
+            } else {
+                assert_eq!(target.path(), "/login");
+                assert_eq!(
+                    fields.get("prompt").map(|value| value.as_ref()),
+                    Some(prompt)
+                );
+            }
+        }
+    }
     Ok(())
 }
