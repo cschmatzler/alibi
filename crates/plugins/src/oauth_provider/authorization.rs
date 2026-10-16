@@ -470,10 +470,13 @@ impl OAuthProviderPlugin {
                 Value::Null => {}
                 Value::Array(values) => {
                     for value in values {
-                        pairs.push((name.clone(), parameter_text(&value)));
+                        pairs.push((name.clone(), parameter_text(&value)?));
                     }
                 }
-                value => pairs.push((name, parameter_text(&value))),
+                value if name == "claims" && value.is_object() => {
+                    pairs.push((name, alibi_core::utils::json::to_string(&value)?));
+                }
+                value => pairs.push((name, parameter_text(&value)?)),
             }
         }
         pairs.push((
@@ -506,10 +509,10 @@ impl OAuthProviderPlugin {
         Ok(encode_pairs(&pairs))
     }
 }
-fn parameter_text(value: &Value) -> String {
-    value
-        .as_str()
-        .map_or_else(|| value.to_string(), str::to_owned)
+fn parameter_text(value: &Value) -> AuthResult<String> {
+    JsValue::from(value.clone())
+        .coerce_string()
+        .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
 }
 fn encode_pairs(pairs: &[(String, String)]) -> String {
     let mut encoded = url::form_urlencoded::Serializer::new(String::new());

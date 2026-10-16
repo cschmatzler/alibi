@@ -46,6 +46,11 @@ compatScenario(
       redirect_uri: "https://app.fixture.test/callback",
       scope: "email",
       state: "caller-state",
+      extension_zero: 0,
+      extension_large: 1e21,
+      extension_object: { label: "value" },
+      extension_list: ["literal", false, null, { nested: 1 }, ["a", "b"]],
+      extension_null: null,
       code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
       code_challenge_method: "S256",
     };
@@ -64,6 +69,17 @@ compatScenario(
     expect(url.searchParams.get("redirect_uri")).toBe(query.redirect_uri);
     expect(url.searchParams.get("scope")).toBe("email");
     expect(url.searchParams.get("state")).toBe("caller-state");
+    expect(url.searchParams.get("extension_zero")).toBe("0");
+    expect(url.searchParams.get("extension_large")).toBe("1e+21");
+    expect(url.searchParams.get("extension_object")).toBe("[object Object]");
+    expect(url.searchParams.getAll("extension_list")).toEqual([
+      "literal",
+      "false",
+      "null",
+      "[object Object]",
+      "a,b",
+    ]);
+    expect(url.searchParams.has("extension_null")).toBe(false);
     const iat = Number(url.searchParams.get("ba_iat"));
     expect(iat).toBeGreaterThanOrEqual(start);
     expect(iat).toBeLessThanOrEqual(Date.now());
@@ -96,6 +112,17 @@ compatScenario(
         },
       ).length,
     ).toBeGreaterThan(0);
+    const coercionFailure = await control({
+      action: "authorize",
+      headers: { accept: "application/json" },
+      query: {
+        ...query,
+        extension_object: { toString: 42 },
+      },
+    });
+    expect(coercionFailure.status).toBe(500);
+    expect(await coercionFailure.text()).toBe("");
+    expect(coercionFailure.headers.getSetCookie()).toEqual([]);
     const rejected = [];
     for (const [query, error] of [
       [

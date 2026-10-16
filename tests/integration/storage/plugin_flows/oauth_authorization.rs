@@ -35,7 +35,7 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         .await?
         .into_response()?;
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
-    let input = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"caller-state","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
+    let input = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"caller-state","extension_zero":0,"extension_large":1e21,"extension_object":{"label":"value"},"extension_list":["literal",false,null,{"nested":1},["a","b"]],"extension_null":null,"code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
     let before = db
         .tables(&[
             "user",
@@ -82,6 +82,18 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     assert_eq!(field("redirect_uri"), "https://app.fixture.test/callback");
     assert_eq!(field("scope"), "email");
     assert_eq!(field("state"), "caller-state");
+    assert_eq!(field("extension_zero"), "0");
+    assert_eq!(field("extension_large"), "1e+21");
+    assert_eq!(field("extension_object"), "[object Object]");
+    assert_eq!(
+        pairs
+            .iter()
+            .filter(|(key, _)| key == "extension_list")
+            .map(|(_, value)| value.as_str())
+            .collect::<Vec<_>>(),
+        ["literal", "false", "null", "[object Object]", "a,b"]
+    );
+    assert!(!pairs.iter().any(|(key, _)| key == "extension_null"));
     let issued: i64 = field("ba_iat").parse()?;
     assert!(issued >= start);
     assert!(issued <= chrono::Utc::now().timestamp_millis());
