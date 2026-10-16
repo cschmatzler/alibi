@@ -9,11 +9,11 @@ compatScenario(
   "OAuth authorization admits the real client and produces a signed login redirect",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: unknown) =>
+    const control = (input: Record<string, unknown>) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ mode: "interaction", ...input }),
       });
     const signup = await control({
       action: "signup",
@@ -302,6 +302,21 @@ compatScenario(
           "prompt: unsupported prompt value: surprise",
           true,
         ],
+        ...[
+          { code_challenge_method: "" },
+          { code_challenge_method: "plain" },
+          { code_challenge_method: "plain", scope: "forbidden" },
+          { code_challenge_method: "plain", prompt: "select_account" },
+        ].map(
+          (query) =>
+            [
+              { ...query, response_mode: "fragment" },
+              true,
+              "invalid_request",
+              "code_challenge_method must be one of: S256",
+              true,
+            ] as const,
+        ),
         [
           { response_mode: "fragment", scope: "forbidden" },
           false,

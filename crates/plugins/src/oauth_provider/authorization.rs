@@ -64,6 +64,9 @@ impl OAuthProviderPlugin {
                         .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
             })
         });
+        let valid_challenge_method = query
+            .get("code_challenge_method")
+            .is_none_or(|method| method.as_str() == Some("S256"));
         let error_mode = authorization_error_mode(&query);
         let text = |name: &str| {
             query
@@ -83,6 +86,7 @@ impl OAuthProviderPlugin {
         );
         if validated_max_age.is_ok()
             && valid_dpop_jkt
+            && valid_challenge_method
             && validated_prompts
                 .as_ref()
                 .is_ok_and(|prompts| prompts.contains(&AuthorizationPrompt::SelectAccount))
@@ -207,6 +211,12 @@ impl OAuthProviderPlugin {
             return request_error(
                 "invalid_request",
                 "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
+            );
+        }
+        if !valid_challenge_method {
+            return request_error(
+                "invalid_request",
+                "code_challenge_method must be one of: S256",
             );
         }
         let Some(client) = client else {
@@ -365,12 +375,6 @@ impl OAuthProviderPlugin {
             return admission_error(
                 "invalid_request",
                 "code_challenge and code_challenge_method must both be provided",
-            );
-        }
-        if !method.is_empty() && method != "S256" {
-            return request_error(
-                "invalid_request",
-                "code_challenge_method must be one of: S256",
             );
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();

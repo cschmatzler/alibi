@@ -465,6 +465,15 @@ async fn assert_authorization_admission<S: AuthSchema>(
             ),
             ("prompt", "\u{feff}login\u{a0}", None),
             (
+                "code_challenge_method",
+                "",
+                Some((
+                    "invalid_request",
+                    "code_challenge_method must be one of: S256",
+                    false,
+                )),
+            ),
+            (
                 "dpop_jkt",
                 "bad-value",
                 Some((
