@@ -419,6 +419,7 @@ impl OAuthProviderPlugin {
             && client.metadata.get("skip_consent") != Some(&json!(true))
             && let Some((user, _)) = &session
         {
+            let requested_resources = super::resource_policy::resource_list(query.get("resource"));
             ctx.database
                 .list_oauth_consents_by_user(user.id().as_ref())
                 .await?
@@ -441,6 +442,17 @@ impl OAuthProviderPlugin {
                                 .and_then(Value::as_array)
                                 .is_some_and(|scopes| {
                                     scopes.iter().any(|value| value.as_str() == Some(scope))
+                                })
+                        })
+                        && requested_resources.iter().all(|resource| {
+                            consent
+                                .metadata
+                                .get("resources")
+                                .and_then(Value::as_array)
+                                .is_some_and(|resources| {
+                                    resources
+                                        .iter()
+                                        .any(|value| value.as_str() == Some(resource))
                                 })
                         })
                 })
