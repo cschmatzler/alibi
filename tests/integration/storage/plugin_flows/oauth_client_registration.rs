@@ -104,9 +104,63 @@ async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Back
             before
         );
     }
+    for mode in [2, 1] {
+        for (authorization, status, error, description) in [
+            (
+                "bEaReR unconfigured",
+                401,
+                "invalid_token",
+                "Invalid initial access token",
+            ),
+            (
+                "Bearer",
+                400,
+                "invalid_request",
+                "Malformed initial access token Authorization header",
+            ),
+            (
+                "Bearer first second",
+                400,
+                "invalid_request",
+                "Malformed initial access token Authorization header",
+            ),
+        ] {
+            let denied = auths[mode].dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","registerOAuthClient").with_body(&json!({"redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("authorization".into(),authorization.into())].into_iter().collect()),..Default::default()}).await.unwrap_err();
+            assert_eq!(denied.error.status_code(), status);
+            assert_eq!(
+                denied.body.as_deref(),
+                Some(&alibi::utils::json::JsValue::from(
+                    json!({"error":error,"error_description":description})
+                ))
+            );
+            let headers = denied.headers.as_ref().unwrap();
+            assert_eq!(
+                headers.get("www-authenticate"),
+                Some(&format!("Bearer error=\"{error}\""))
+            );
+            assert_eq!(
+                headers.get("cache-control").map(String::as_str),
+                Some("no-store")
+            );
+            assert_eq!(headers.get("pragma").map(String::as_str), Some("no-cache"));
+            assert!(!headers.contains_key("set-cookie"));
+            assert_eq!(
+                db.tables(&[
+                    "user",
+                    "account",
+                    "session",
+                    "verification",
+                    "jwks",
+                    "oauthClient"
+                ])
+                .await?,
+                before
+            );
+        }
+    }
     for (mode, public, cookie) in [(1, false, cookies(&owner)), (2, true, String::new())] {
         let start = chrono::Utc::now().timestamp();
-        let output=auths[mode].dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","registerOAuthClient").with_body(&json!({"client_name":if public{"Anonymous client"}else{"Owned dynamic client"},"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":if public{"none"}else{"client_secret_basic"},"user_id":"forged","client_id":"forged"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie)].into_iter().collect()),..Default::default()}).await?.into_response()?;
+        let output=auths[mode].dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","registerOAuthClient").with_body(&json!({"client_name":if public{"Anonymous client"}else{"Owned dynamic client"},"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":if public{"none"}else{"client_secret_basic"},"user_id":"forged","client_id":"forged"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie),("authorization".into(),if public{"Basic ignored"}else{"Bearer unconfigured"}.into())].into_iter().collect()),..Default::default()}).await?.into_response()?;
         assert_eq!(output.status, 201);
         assert_eq!(
             output.headers.get("cache-control").map(String::as_str),

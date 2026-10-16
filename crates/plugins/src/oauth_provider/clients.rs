@@ -1245,6 +1245,33 @@ impl OAuthProviderPlugin {
             return status_protocol_error(403, "access_denied", "Client registration is disabled");
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
+        if session.is_none()
+            && let Some(authorization) = req.session_headers().get("authorization")
+        {
+            let mut parts = authorization
+                .split(alibi_core::utils::javascript::is_whitespace)
+                .filter(|part| !part.is_empty());
+            if parts
+                .next()
+                .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bearer"))
+            {
+                // Without an initial-access-token validator, a presented Bearer
+                // credential must fail closed instead of using open registration.
+                let malformed = parts.next().is_none() || parts.next().is_some();
+                let (status, error, description) = if malformed {
+                    (
+                        400,
+                        "invalid_request",
+                        "Malformed initial access token Authorization header",
+                    )
+                } else {
+                    (401, "invalid_token", "Invalid initial access token")
+                };
+                return status_protocol_error(status, error, description).map(|response| {
+                    response.with_header("WWW-Authenticate", format!("Bearer error=\"{error}\""))
+                });
+            }
+        }
         if session.is_none() && !self.config.allow_unauthenticated_client_registration {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 401,

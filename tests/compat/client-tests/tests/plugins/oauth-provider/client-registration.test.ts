@@ -59,6 +59,50 @@ compatScenario(
       expect(r.status).toBe(status);
       rejected.push({ status, body: await r.json() });
     }
+    const bearerRejections = [];
+    for (const transport of ["private", "http"] as const) {
+      for (const mode of transport === "http"
+        ? (["public"] as const)
+        : (["public", "dynamic"] as const)) {
+        for (const [authorization, status, error, description] of [
+          ["bEaReR unconfigured", 401, "invalid_token", "Invalid initial access token"],
+          ["Bearer", 400, "invalid_request", "Malformed initial access token Authorization header"],
+          [
+            "Bearer first second",
+            400,
+            "invalid_request",
+            "Malformed initial access token Authorization header",
+          ],
+        ] as const) {
+          const response = await control({
+            ...(transport === "http"
+              ? {
+                  action: "protocol-http",
+                  path: "/oauth2/register",
+                  method: "POST",
+                  contentType: "application/json",
+                }
+              : { action: "register" }),
+            mode,
+            headers: { authorization },
+            body: {
+              redirect_uris: ["https://app.fixture.test/callback"],
+              token_endpoint_auth_method: "none",
+            },
+          });
+          expect(response.status, `${ctx.baseURL}:${transport}:${mode}:${authorization}`).toBe(
+            status,
+          );
+          expect(response.headers.get("www-authenticate")).toBe(`Bearer error="${error}"`);
+          expect(response.headers.get("cache-control")).toBe("no-store");
+          expect(response.headers.get("pragma")).toBe("no-cache");
+          expect(response.headers.getSetCookie()).toEqual([]);
+          const body = await response.json();
+          expect(body).toEqual({ error, error_description: description });
+          bearerRejections.push({ transport, mode, authorization, status, body });
+        }
+      }
+    }
     const clients = [];
     const rows = [];
     for (const [mode, publicClient, headers] of [
@@ -69,7 +113,10 @@ compatScenario(
       const r = await control({
         action: "register",
         mode,
-        headers,
+        headers: {
+          ...headers,
+          authorization: publicClient ? "Basic ignored" : "Bearer unconfigured",
+        },
         body: {
           client_name: publicClient ? "Anonymous client" : "Owned dynamic client",
           redirect_uris: ["https://app.fixture.test/callback"],
@@ -105,6 +152,6 @@ compatScenario(
       clients.push(value);
       rows.push(row);
     }
-    return { rejected, clients: ctx.snapshot(clients), rows: ctx.snapshot(rows) };
+    return { rejected, bearerRejections, clients: ctx.snapshot(clients), rows: ctx.snapshot(rows) };
   },
 );
