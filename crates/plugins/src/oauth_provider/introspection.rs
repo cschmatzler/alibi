@@ -93,7 +93,12 @@ impl OAuthProviderPlugin {
                     .validate_access_token(ctx, token, Some(&credentials.client_id))
                     .await
                 {
-                    Ok(payload) => return Ok(no_store(EndpointResponse::json(&payload)?)),
+                    Ok(payload) => {
+                        let payload = self
+                            .resolve_introspection_subject(ctx, payload, &introspecting_client)
+                            .await?;
+                        return Ok(no_store(EndpointResponse::json(&payload)?));
+                    }
                     Err(failure) if matches!(&failure.error, AuthError::Api { .. }) => {
                         if hint != "access_token" {
                             continue;
@@ -214,6 +219,9 @@ impl OAuthProviderPlugin {
             if let Some(id) = session_id {
                 _ = fields.insert("sid".into(), json!(id));
             }
+            let payload = self
+                .resolve_introspection_subject(ctx, payload, &introspecting_client)
+                .await?;
             return Ok(no_store(EndpointResponse::json(&payload)?));
         }
         inactive()

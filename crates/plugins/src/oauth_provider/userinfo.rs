@@ -158,7 +158,23 @@ impl OAuthProviderPlugin {
             return error(400, "invalid_request", "user not found");
         };
         let user = ctx.user_view(&user);
-        let mut claims = serde_json::Map::from_iter([("sub".into(), json!(user.id))]);
+        let client_id = payload
+            .get("client_id")
+            .or_else(|| payload.get("azp"))
+            .and_then(Value::as_str);
+        let subject = if self
+            .config
+            .pairwise_secret
+            .as_ref()
+            .is_some_and(|secret| !secret.is_empty())
+            && let Some(client_id) = client_id
+            && let Some(client) = self.get_client(ctx, client_id).await?
+        {
+            self.resolve_subject(&user.id, &client)?
+        } else {
+            user.id.clone()
+        };
+        let mut claims = serde_json::Map::from_iter([("sub".into(), json!(subject))]);
         let wanted = |name: &str, scope: &str| {
             scopes.contains(&scope) || requested.iter().any(|claim| claim == name)
         };

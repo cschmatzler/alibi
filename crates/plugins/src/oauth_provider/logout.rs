@@ -158,10 +158,7 @@ impl OAuthProviderPlugin {
             }
             return protocol_error(req, 401, "invalid_token", "The id_token_hint is invalid");
         };
-        let (Some(sid), Some(subject)) = (
-            claims.get("sid").and_then(Value::as_str),
-            claims.get("sub").and_then(Value::as_str),
-        ) else {
+        let Some(sid) = claims.get("sid").and_then(Value::as_str) else {
             return protocol_error(req, 401, "invalid_token", "The id_token_hint is invalid");
         };
         let matches = current
@@ -170,8 +167,7 @@ impl OAuthProviderPlugin {
         if current.is_some() && !matches {
             return confirmation(req, current.as_ref(), Some(&client), &input, ctx);
         }
-        let sessions = ctx.database.get_user_sessions(subject).await?;
-        if let Some(session) = sessions.iter().find(|session| session.id().as_ref() == sid) {
+        if let Some(session) = ctx.database.get_session_by_id(sid).await? {
             ctx.database.delete_session(session.token()).await?;
         }
         let mut response = if let Some(uri) = input

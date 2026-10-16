@@ -30,6 +30,7 @@ mod resource_policy;
 mod resources;
 mod revocation;
 mod session_retirement;
+mod subject;
 mod token;
 mod token_storage;
 pub use token_storage::OAuthTokenHasher;

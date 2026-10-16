@@ -233,6 +233,7 @@ pub(crate) async fn router(
     let mut client_instances = HashMap::new();
     for mode in [
         "extension-grant",
+        "pairwise",
         "default",
         "dynamic",
         "public",
@@ -277,6 +278,7 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let mut provider = OAuthProviderConfig {
+            pairwise_secret: (mode=="pairwise").then(|| "fixture-pairwise-secret-at-least-32-characters".into()),
             token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
@@ -314,7 +316,10 @@ pub(crate) async fn router(
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
-        let client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
+        let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
+        if mode=="pairwise" {
+            client_config.advanced.database.generate_id=Some(alibi::config::DatabaseIdStrategy::Custom(Arc::new(|model:&str,_size:Option<usize>|Ok(Some(if model=="user" {"pairwise-owner".into()} else {uuid::Uuid::new_v4().to_string()})))));
+        }
         let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())

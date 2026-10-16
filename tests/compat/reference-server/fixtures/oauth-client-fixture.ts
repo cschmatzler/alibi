@@ -644,6 +644,23 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         issuanceHelper,
       ],
     }),
+    pairwise: betterAuth({
+      ...options,
+      advanced: {
+        database: {
+          generateId: ({ model }) => (model === "user" ? "pairwise-owner" : crypto.randomUUID()),
+        },
+      },
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          pairwiseSecret: "fixture-pairwise-secret-at-least-32-characters",
+        }),
+      ],
+    }),
     default: betterAuth(options),
     "remote-jwks": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "remote-jwks-peer": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
