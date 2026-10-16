@@ -617,6 +617,14 @@ pub(crate) async fn router(
             if input["action"]=="logout-http" || input["action"]=="protocol-http" {
                 let prefix=authorization_path.strip_suffix("/oauth2/authorize").unwrap();
                 let mut request=alibi::AuthRequest::new(if input["method"]=="POST"{alibi::HttpMethod::Post}else{alibi::HttpMethod::Get},format!("{prefix}{}",input["path"].as_str().unwrap()));
+                let pairs:Vec<(String,String)>=input["query"].as_object().into_iter().flat_map(|query|query.iter()).flat_map(|(name,value)|{
+                    let values=value.as_array().cloned().unwrap_or_else(||vec![value.clone()]);
+                    values.into_iter().map(move |value|(name.clone(),alibi::utils::json::JsValue::from(value).coerce_string().unwrap()))
+                }).collect();
+                let mut physical=url::Url::parse(&format!("{}{}",logout_origin,request.path)).unwrap();
+                if !pairs.is_empty(){physical.query_pairs_mut().extend_pairs(&pairs);}
+                request.set_query_pairs(pairs);
+                request=request.with_url(physical);
                 request.headers=input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()).unwrap_or_default();
                 _=request.headers.insert("origin".into(),logout_origin);
                 _=request.headers.insert("content-type".into(),input["contentType"].as_str().unwrap_or("application/x-www-form-urlencoded; charset=UTF-8").into());

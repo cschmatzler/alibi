@@ -1301,8 +1301,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         "content-type",
         input.contentType ?? "application/x-www-form-urlencoded; charset=UTF-8",
       );
+      const url = new URL(`${base.baseURL}${base.basePath ?? "/api/auth"}${input.path}`);
+      for (const [name, value] of Object.entries(input.query ?? {})) {
+        for (const item of Array.isArray(value) ? value : [value])
+          url.searchParams.append(name, String(item));
+      }
       return auth.handler(
-        new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}${input.path}`, {
+        new Request(url, {
           method: input.method,
           headers,
           ...(input.method === "POST"

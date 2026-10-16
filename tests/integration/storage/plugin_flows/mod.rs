@@ -366,6 +366,7 @@ mod oauth_admin_client_creation;
 mod oauth_admin_client_update;
 
 mod oauth_authorization;
+mod oauth_max_age;
 
 mod oauth_prelogin_client;
 

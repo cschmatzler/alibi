@@ -51,6 +51,7 @@ impl OAuthProviderPlugin {
                 "request not found",
             );
         }
+        let validated_max_age = maximum_age(input.as_ref().and_then(|input| input.get("max_age")));
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
@@ -70,9 +71,10 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
-        if text("prompt")
-            .split(' ')
-            .any(|prompt| prompt == "select_account")
+        if validated_max_age.is_ok()
+            && text("prompt")
+                .split(' ')
+                .any(|prompt| prompt == "select_account")
             && self.config.select_account_page.is_none()
         {
             return browser_redirect(
@@ -166,6 +168,10 @@ impl OAuthProviderPlugin {
                 "response_type must be one of: code",
             );
         }
+        let max_age = match validated_max_age {
+            Ok(value) => value,
+            Err(description) => return admission_error("invalid_request", description),
+        };
         let Some(client) = client else {
             return browser_redirect(
                 req,
@@ -334,8 +340,27 @@ impl OAuthProviderPlugin {
         let prompts = prompt.split(' ').collect::<Vec<_>>();
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
 
-        let force_login =
-            session.is_none() || prompts.contains(&"login") || prompts.contains(&"create");
+        let within_max_age = if let (Some((_, session)), Some(age)) = (&session, max_age) {
+            let elapsed = json!(
+                chrono::Utc::now().timestamp_millis() - session.created_at.timestamp_millis()
+            )
+            .as_f64()
+            .ok_or_else(|| AuthError::internal("Invalid session authentication time"))?;
+            age > 0.0 && elapsed <= age * 1000.0
+        } else {
+            false
+        };
+        let force_login = session.is_none()
+            || max_age.is_some() && !within_max_age
+            || prompts.contains(&"login")
+            || prompts.contains(&"create");
+        if let Some(age) = max_age {
+            if !force_login && within_max_age {
+                _ = query.remove("max_age");
+            } else {
+                _ = query.insert("max_age".into(), json!(age));
+            }
+        }
         _ = query.insert("scope".into(), json!(scope));
         if !force_login
             && initial
@@ -513,6 +538,24 @@ fn parameter_text(value: &Value) -> AuthResult<String> {
     JsValue::from(value.clone())
         .coerce_string()
         .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
+}
+fn maximum_age(input: Option<&JsValue>) -> Result<Option<f64>, &'static str> {
+    let Some(input) = input else { return Ok(None) };
+    let value = match input {
+        JsValue::Number(value) if value.is_finite() => *value,
+        JsValue::String(value) => {
+            let value = alibi_core::utils::javascript::trim(value);
+            if value.is_empty() {
+                return Err("max_age: Too small: expected string to have >=1 characters");
+            }
+            alibi_core::utils::javascript::string_to_number(value).unwrap_or(f64::NAN)
+        }
+        _ => return Err("max_age: Invalid input"),
+    };
+    if !value.is_finite() || value < 0.0 || value.fract() > 0.0 {
+        return Err("max_age: max_age must be a non-negative integer");
+    }
+    Ok(Some(value))
 }
 fn encode_pairs(pairs: &[(String, String)]) -> String {
     let mut encoded = url::form_urlencoded::Serializer::new(String::new());
