@@ -33,7 +33,12 @@ pub use extensions::{
 mod id_token;
 mod issuance;
 pub use issuance::OAuthTokenIssueParams;
+mod initial_access_token;
 mod introspection;
+pub use initial_access_token::{
+    OAuthInitialAccessTokenAuthorization, OAuthInitialAccessTokenError,
+    OAuthInitialAccessTokenInput, OAuthInitialAccessTokenValidator,
+};
 mod logout;
 mod machine;
 mod refresh;
@@ -123,6 +128,9 @@ pub struct OAuthProviderConfig {
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
     pub allow_dynamic_client_registration: bool,
+    /// Operator authorization for Bearer credentials presented without a genuine user session.
+    pub initial_access_token_validator:
+        Option<std::sync::Arc<dyn OAuthInitialAccessTokenValidator>>,
     pub allow_unauthenticated_client_registration: bool,
     pub disable_jwt_plugin: bool,
     pub pairwise_secret: Option<String>,
@@ -164,6 +172,7 @@ impl Default for OAuthProviderConfig {
                 .map(str::to_owned)
                 .into(),
             allow_dynamic_client_registration: false,
+            initial_access_token_validator: None,
             allow_unauthenticated_client_registration: false,
             disable_jwt_plugin: false,
             pairwise_secret: None,

@@ -11,6 +11,7 @@ compatScenario(
     const control = (input: unknown) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
+        redirect: "manual",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       });
@@ -160,6 +161,213 @@ compatScenario(
       clients.push(value);
       rows.push(row);
     }
-    return { rejected, bearerRejections, clients: ctx.snapshot(clients), rows: ctx.snapshot(rows) };
+    const registrationState = async () =>
+      (await (await control({ action: "registration-state" })).json()) as any;
+    const tokenBody = {
+      client_name: "Token client",
+      redirect_uris: [" https://app.fixture.test/callback "],
+      grant_types: [" client_credentials "],
+      token_endpoint_auth_method: " client_secret_basic ",
+      subject_type: "public",
+      resources: [],
+      user_id: "forged",
+      reference_id: "forged",
+      client_id: "forged",
+    };
+    const parsedMetadata = {
+      client_name: "Token client",
+      redirect_uris: ["https://app.fixture.test/callback"],
+      grant_types: ["client_credentials"],
+      token_endpoint_auth_method: "client_secret_basic",
+      subject_type: "public",
+      resources: [],
+    };
+    const tokenResults = [];
+    for (const transport of ["private", "http"] as const) {
+      const register = (mode: string, body: object, headers: object) =>
+        control({
+          ...(transport === "http"
+            ? {
+                action: "protocol-http",
+                path: "/oauth2/register",
+                method: "POST",
+                contentType: "application/json",
+              }
+            : { action: "register" }),
+          mode,
+          body,
+          headers,
+        });
+      const before = await registrationState();
+      for (const mode of ["token-dynamic", "token-public"]) {
+        for (const [authorization, status, expectedBody, invoked] of [
+          [
+            "Bearer rejected",
+            401,
+            { error: "invalid_token", error_description: "Invalid initial access token" },
+            true,
+          ],
+          [
+            "Bearer",
+            400,
+            {
+              error: "invalid_request",
+              error_description: "Malformed initial access token Authorization header",
+            },
+            false,
+          ],
+          [
+            "Bearer first second",
+            400,
+            {
+              error: "invalid_request",
+              error_description: "Malformed initial access token Authorization header",
+            },
+            false,
+          ],
+          [
+            "Bearer ordinary-error",
+            500,
+            { error: "server_error", error_description: "Initial access token validation failed" },
+            true,
+          ],
+          [
+            "Bearer api-error",
+            429,
+            { error: "slow_down", error_description: "Operator registration limit" },
+            true,
+          ],
+          ["Bearer api-empty", 307, null, true],
+          ["Bearer forbidden", 403, { message: "Operator forbids registration" }, true],
+        ] as const) {
+          const callsBefore = (await registrationState()).calls.length;
+          const response = await register(mode, tokenBody, {
+            authorization,
+            "x-registration-caller": "fixture",
+          });
+          expect(response.status, `${ctx.baseURL}:${transport}:${mode}:${authorization}`).toBe(
+            status,
+          );
+          expect(response.headers.get("cache-control")).toBe("no-store");
+          expect(response.headers.get("pragma")).toBe("no-cache");
+          expect(response.headers.getSetCookie()).toEqual([]);
+          expect(response.headers.get("www-authenticate")).toBe(
+            status === 400 || status === 401
+              ? `Bearer error="${status === 400 ? "invalid_request" : "invalid_token"}"`
+              : null,
+          );
+          if (status === 429) {
+            expect(response.headers.get("retry-after")).toBe("17");
+            expect(response.headers.get("x-registration-policy")).toBe("limited");
+          }
+          if (status === 307) {
+            expect(response.headers.get("location")).toBe("https://operator.fixture.test/register");
+            expect(response.headers.get("content-type")).toBe("application/json");
+          }
+          const text = await response.text();
+          const responseBody = text ? JSON.parse(text) : null;
+          expect(responseBody).toEqual(expectedBody);
+          const state = await registrationState();
+          expect(state.counts).toEqual(before.counts);
+          expect(state.calls).toHaveLength(callsBefore + Number(invoked));
+          if (invoked) {
+            expect(state.calls.at(-1)).toEqual({
+              token: authorization.slice("Bearer ".length),
+              authorization,
+              caller: "fixture",
+              clientMetadata: parsedMetadata,
+            });
+          }
+          tokenResults.push({
+            transport,
+            mode,
+            authorization,
+            status: response.status,
+            body: responseBody,
+          });
+        }
+      }
+      for (const [body, headers, status] of [
+        [{ client_name: 42 }, { authorization: "Bearer accepted" }, 400],
+        [tokenBody, {}, 401],
+        [tokenBody, { authorization: "Basic ignored" }, 401],
+      ] as const) {
+        const callsBefore = (await registrationState()).calls.length;
+        const response = await register("token-dynamic", body, headers);
+        expect(response.status).toBe(status);
+        const state = await registrationState();
+        expect(state.calls).toHaveLength(callsBefore);
+        expect(state.counts).toEqual(before.counts);
+      }
+      for (const [mode, token, reference] of [
+        ["token-dynamic", "accepted", null],
+        ["token-public", "reference", "registration-reference"],
+      ] as const) {
+        const authorization = `bEaReR ${token}`;
+        const callsBefore = (await registrationState()).calls.length;
+        const response = await register(mode, tokenBody, {
+          authorization,
+          "x-registration-caller": "fixture",
+        });
+        expect(response.status).toBe(201);
+        const value = (await response.json()) as any;
+        expect(value).not.toHaveProperty("user_id");
+        expect(value.reference_id ?? null).toBe(reference);
+        expect(value.client_secret).toMatch(/^[a-zA-Z]{32}$/);
+        const state = await registrationState();
+        expect(state.calls).toHaveLength(callsBefore + 1);
+        expect(state.calls.at(-1)).toEqual({
+          token,
+          authorization,
+          caller: "fixture",
+          clientMetadata: parsedMetadata,
+        });
+        const row = (await (
+          await control({ action: "row", clientId: value.client_id })
+        ).json()) as any;
+        expect(row.userId).toBeNull();
+        expect(row.referenceId).toBe(reference);
+        expect(row.client_secret).toBe(
+          createHash("sha256").update(value.client_secret).digest("base64url"),
+        );
+        const authenticated = await control({
+          action: "authenticate-client",
+          body: { client_id: value.client_id, boundGrant: "client_credentials" },
+          headers: {
+            authorization: `Basic ${Buffer.from(`${value.client_id}:${value.client_secret}`).toString("base64")}`,
+          },
+        });
+        expect(authenticated.status).toBe(200);
+        expect(((await authenticated.json()) as any).clientId).toBe(value.client_id);
+        tokenResults.push({ transport, mode, value: ctx.snapshot(value), row: ctx.snapshot(row) });
+      }
+      for (const [mode, headers, userId] of [
+        ["token-dynamic", { cookie, authorization: "Bearer ordinary-error" }, owner.user.id],
+        ["token-public", { authorization: "Basic ignored" }, null],
+      ] as const) {
+        const callsBefore = (await registrationState()).calls.length;
+        const response = await register(
+          mode,
+          {
+            redirect_uris: ["https://app.fixture.test/callback"],
+            token_endpoint_auth_method: "none",
+          },
+          headers,
+        );
+        expect(response.status).toBe(201);
+        const value = (await response.json()) as any;
+        expect(value.user_id ?? null).toBe(userId);
+        expect(value).not.toHaveProperty("reference_id");
+        expect((await registrationState()).calls).toHaveLength(callsBefore);
+        tokenResults.push({ transport, mode, bypass: ctx.snapshot(value) });
+      }
+    }
+    return {
+      rejected,
+      bearerRejections,
+      clients: ctx.snapshot(clients),
+      rows: ctx.snapshot(rows),
+      tokenResults,
+    };
   },
 );

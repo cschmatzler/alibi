@@ -5,6 +5,7 @@ import {
   consumeClientAssertion,
   getOAuthProviderApi,
   oauthProvider,
+  type OAuthOptions,
 } from "@better-auth/oauth-provider";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthEndpoint } from "better-auth/api";
@@ -30,6 +31,46 @@ import { APIError as EndpointAPIError, kAPIErrorHeaderSymbol } from "better-call
 import { SignJWT, importJWK, decodeProtectedHeader } from "jose";
 import { z } from "zod";
 export async function oauthClientFixture(base: BetterAuthOptions) {
+  const registrationCalls: unknown[] = [];
+  const validateInitialAccessToken: NonNullable<
+    OAuthOptions["validateInitialAccessToken"]
+  > = async ({ initialAccessToken, headers, clientMetadata }) => {
+    registrationCalls.push({
+      token: initialAccessToken,
+      authorization: headers.get("authorization"),
+      caller: headers.get("x-registration-caller"),
+      clientMetadata,
+    });
+    await Promise.resolve();
+    if (initialAccessToken === "forbidden") {
+      throw new APIError("FORBIDDEN", { message: "Operator forbids registration" });
+    }
+    if (initialAccessToken === "ordinary-error") throw new Error("private validator failure");
+    if (initialAccessToken === "api-error") {
+      throw new APIError(
+        "TOO_MANY_REQUESTS",
+        {
+          error: "slow_down",
+          error_description: "Operator registration limit",
+        },
+        { "retry-after": "17", "x-registration-policy": "limited" },
+      );
+    }
+    if (initialAccessToken === "api-empty") {
+      throw new APIError("TEMPORARY_REDIRECT", undefined, {
+        location: "https://operator.fixture.test/register",
+        "content-type": "application/json",
+      });
+    }
+    if (
+      ["accepted", "reference"].includes(initialAccessToken) &&
+      headers.get("x-registration-caller") === "fixture" &&
+      clientMetadata.client_name === "Token client"
+    ) {
+      return initialAccessToken === "reference" ? { referenceId: "registration-reference" } : {};
+    }
+    return false;
+  };
   const remoteKeys = JSON.parse(
     await readFixtureFile(
       new URL("../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
@@ -1108,31 +1149,26 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
-    dynamic: betterAuth({
-      ...options,
-      plugins: [
-        username(),
-        jwt(),
-        oauthProvider({
-          loginPage: "/login",
-          consentPage: "/consent",
-          allowDynamicClientRegistration: true,
+    ...Object.fromEntries(
+      ["dynamic", "public", "token-dynamic", "token-public"].map((mode) => [
+        mode,
+        betterAuth({
+          ...options,
+          ...(mode.startsWith("token-") ? { rateLimit: { enabled: false } } : {}),
+          plugins: [
+            username(),
+            jwt(),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              allowDynamicClientRegistration: true,
+              allowUnauthenticatedClientRegistration: mode.endsWith("public"),
+              ...(mode.startsWith("token-") ? { validateInitialAccessToken } : {}),
+            }),
+          ],
         }),
-      ],
-    }),
-    public: betterAuth({
-      ...options,
-      plugins: [
-        username(),
-        jwt(),
-        oauthProvider({
-          loginPage: "/login",
-          consentPage: "/consent",
-          allowDynamicClientRegistration: true,
-          allowUnauthenticatedClientRegistration: true,
-        }),
-      ],
-    }),
+      ]),
+    ),
   };
   return async (request: Request) => {
     if (
@@ -1143,6 +1179,20 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "registration-state") {
+      const context = await auth.$context;
+      const counts = Object.fromEntries(
+        await Promise.all(
+          ["user", "account", "session", "verification", "jwks", "oauthClient"].map(
+            async (model) => [
+              model,
+              (await context.adapter.findMany({ model, limit: 10000 })).length,
+            ],
+          ),
+        ),
+      );
+      return Response.json({ calls: registrationCalls, counts });
+    }
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       return Response.json(liveClaims);
@@ -1444,6 +1494,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 clientName: row.name,
                 redirectUris: row.redirectUris,
                 client_secret: row.clientSecret ?? null,
+                referenceId: row.referenceId ?? null,
               }
             : null,
         ),

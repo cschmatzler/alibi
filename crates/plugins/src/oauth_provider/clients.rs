@@ -1252,6 +1252,7 @@ impl OAuthProviderPlugin {
             return status_protocol_error(403, "access_denied", "Client registration is disabled");
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
+        let mut token_authorization = None;
         if session.is_none()
             && let Some(authorization) = req.session_headers().get("authorization")
         {
@@ -1262,24 +1263,47 @@ impl OAuthProviderPlugin {
                 .next()
                 .is_some_and(|scheme| scheme.eq_ignore_ascii_case("bearer"))
             {
-                // Without an initial-access-token validator, a presented Bearer
-                // credential must fail closed instead of using open registration.
-                let malformed = parts.next().is_none() || parts.next().is_some();
-                let (status, error, description) = if malformed {
-                    (
+                let token = parts.next();
+                if token.is_none() || parts.next().is_some() {
+                    return status_protocol_error(
                         400,
                         "invalid_request",
                         "Malformed initial access token Authorization header",
                     )
-                } else {
-                    (401, "invalid_token", "Invalid initial access token")
-                };
-                return status_protocol_error(status, error, description).map(|response| {
-                    response.with_header("WWW-Authenticate", format!("Bearer error=\"{error}\""))
-                });
+                    .map(|response| {
+                        response.with_header("WWW-Authenticate", "Bearer error=\"invalid_request\"")
+                    });
+                }
+                let mut client_metadata = metadata.clone();
+                if let Some(resources) = body.and_then(|body| body.get("resources")) {
+                    _ = client_metadata.insert(
+                        "resources".into(),
+                        alibi_core::utils::json::from_value(resources.clone())?,
+                    );
+                }
+                let mut headers = alibi_core::Headers::new();
+                for (name, value) in req.session_headers() {
+                    _ = headers.insert(name.clone(), value.clone());
+                }
+                token_authorization = Some(
+                    match self
+                        .authorize_initial_access_token(super::OAuthInitialAccessTokenInput {
+                            initial_access_token: token.unwrap_or_default(),
+                            headers: &headers,
+                            client_metadata: &client_metadata,
+                        })
+                        .await?
+                    {
+                        Ok(authorization) => authorization,
+                        Err(response) => return Ok(response),
+                    },
+                );
             }
         }
-        if session.is_none() && !self.config.allow_unauthenticated_client_registration {
+        if session.is_none()
+            && token_authorization.is_none()
+            && !self.config.allow_unauthenticated_client_registration
+        {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 401,
                 code: None,
@@ -1291,6 +1315,7 @@ impl OAuthProviderPlugin {
             .with_header("WWW-Authenticate", "Bearer"));
         }
         if session.is_none()
+            && token_authorization.is_none()
             && metadata
                 .get("grant_types")
                 .and_then(Value::as_array)
@@ -1325,6 +1350,11 @@ impl OAuthProviderPlugin {
             );
         }
         _ = metadata.insert("scope".into(), json!(self.config.scopes.join(" ")));
+        if let Some(reference) =
+            token_authorization.and_then(|authorization| authorization.reference_id)
+        {
+            _ = metadata.insert("reference_id".into(), json!(reference));
+        }
         let user_id = session.map(|(user, _)| user.id().as_ref().to_owned());
         self.persist_client(metadata, user_id, ctx).await
     }

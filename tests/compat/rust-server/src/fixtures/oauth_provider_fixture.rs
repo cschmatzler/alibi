@@ -12,6 +12,8 @@ mod access_jwt;
 mod extension_grant;
 #[path = "../../../../fixtures/oauth/extension-claims.rs"]
 mod extension_claims;
+#[path = "../../../../fixtures/oauth/initial-access-token.rs"]
+mod initial_access_token;
 #[path = "../../../../fixtures/oauth/extension-authentication.rs"]
 mod extension_authentication;
 use extension_grant::ExtensionGrant;
@@ -235,6 +237,7 @@ pub(crate) async fn router(
     let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
 
     let mut client_instances = HashMap::new();
+    let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     for mode in [
         "extension-grant",
@@ -246,6 +249,8 @@ pub(crate) async fn router(
         "default",
         "dynamic",
         "public",
+        "token-dynamic",
+        "token-public",
         "prelogin",
         "expired",
         "resources-open",
@@ -318,8 +323,9 @@ pub(crate) async fn router(
             enforce_per_client_resources: mode != "resources-open",
             allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
             code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
-            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public"),
-            allow_unauthenticated_client_registration: mode == "public",
+            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public"),
+            allow_unauthenticated_client_registration: matches!(mode, "public" | "token-public"),
+            initial_access_token_validator: mode.starts_with("token-").then(||registration_policy.clone() as Arc<dyn alibi::plugins::OAuthInitialAccessTokenValidator>),
             ..Default::default()
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
@@ -336,7 +342,7 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder=if mode=="interaction"{builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+         let builder=if mode=="interaction" || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:mode=="interaction",..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
@@ -351,6 +357,7 @@ pub(crate) async fn router(
     Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
         let live_claims=live_claims.clone();
+        let registration_policy=registration_policy.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -361,6 +368,15 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="registration-state" {
+                use alibi::seaorm::sea_orm::{ConnectionTrait as _,DbBackend,Statement};
+                let mut counts=serde_json::Map::new();
+                for table in ["user","account","session","verification","jwks","oauthClient"] {
+                    let row=logout_database.query_one_raw(Statement::from_string(DbBackend::Sqlite,format!("SELECT COUNT(*) AS count FROM \"{table}\""))).await.unwrap().unwrap();
+                    counts.insert(table.into(),serde_json::json!(row.try_get::<i64>("","count").unwrap()));
+                }
+                return axum::Json(serde_json::json!({"calls":*registration_policy.calls.lock().unwrap(),"counts":counts})).into_response();
+            }
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
                 return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap()})).into_response();
@@ -571,7 +587,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="row" {
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
-                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret}))).into_response();
+                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret,"referenceId":row.metadata.get("reference_id")}))).into_response();
             }
             if input["action"]=="authority-counts" {
                 let session=input["sessionId"].as_str().unwrap();

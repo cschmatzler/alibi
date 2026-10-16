@@ -295,8 +295,10 @@ pub use oauth_provider::{
     OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthClientSecretCipher,
     OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionClaims,
     OAuthExtensionClientAuthentication, OAuthExtensionGrantHandler, OAuthExtensionGrantInput,
-    OAuthMetadataContributor, OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi,
-    OAuthProviderConfig, OAuthProviderExtension, OAuthProviderPlugin, OAuthTokenClaimsContributor,
+    OAuthInitialAccessTokenAuthorization, OAuthInitialAccessTokenError,
+    OAuthInitialAccessTokenInput, OAuthInitialAccessTokenValidator, OAuthMetadataContributor,
+    OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig,
+    OAuthProviderExtension, OAuthProviderPlugin, OAuthTokenClaimsContributor,
     OAuthTokenClaimsInput, OAuthTokenHasher, OAuthTokenIssueParams, OAuthUserInfoClaimsContributor,
     OAuthUserInfoClaimsInput, OAuthVerifiedClientAssertion, consume_client_assertion,
 };
