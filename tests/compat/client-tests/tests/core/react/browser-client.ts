@@ -1,5 +1,11 @@
+import {
+  adminClient,
+  multiSessionClient,
+  organizationClient,
+  twoFactorClient,
+  usernameClient,
+} from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
-import { organizationClient, usernameClient } from "better-auth/client/plugins";
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -11,9 +17,20 @@ export type FetchInput = {
 };
 type FetchOutput = { status: number; headers: [string, string][]; body: string };
 
+const redirects: { twoFactorMethods?: string[] }[] = [];
 const client = createAuthClient({
   baseURL: location.origin,
-  plugins: [usernameClient(), organizationClient()],
+  plugins: [
+    usernameClient(),
+    organizationClient(),
+    multiSessionClient(),
+    adminClient(),
+    twoFactorClient({
+      onTwoFactorRedirect: async (context) => {
+        redirects.push(context);
+      },
+    }),
+  ],
   sessionOptions: { refetchOnWindowFocus: false },
   fetchOptions: {
     ...(new URLSearchParams(location.search).has("jsonContentType")
@@ -27,6 +44,7 @@ const client = createAuthClient({
         headers: [...request.headers],
         ...(request.body === null ? {} : { body: await request.text() }),
       });
+      if (new URL(request.url).pathname.endsWith("/get-session")) window.reactSessionReads += 1;
       return new Response(result.body, { status: result.status, headers: result.headers });
     },
   },
@@ -35,6 +53,8 @@ declare global {
   interface Window {
     reactFetch(input: FetchInput): Promise<FetchOutput>;
     reactClient: typeof client;
+    reactRedirects: typeof redirects;
+    reactSessionReads: number;
   }
 }
 function value(store: {
@@ -78,6 +98,8 @@ function App() {
   );
 }
 window.reactClient = client;
+window.reactRedirects = redirects;
+window.reactSessionReads = 0;
 const root = document.createElement("div");
 document.body.append(root);
 createRoot(root).render(createElement(App));

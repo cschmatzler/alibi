@@ -114,8 +114,12 @@ Outside devenv, run `nubx playwright install --with-deps chromium` in
   checks real browser session persistence, HttpOnly behavior and logout.
 - React scenarios in `client-tests/tests/core/react/` render the official
   `better-auth/react` session and organization hooks in Chromium. They observe
-  subscriptions after authentication and organization mutations, deferred refresh
-  errors, and recovery through an explicit refresh. A custom fetch implementation
+  subscriptions after authentication and organization mutations, multi-session
+  selection and revoked-session fallback, admin impersonation/restoration, and
+  two-factor enrollment, redirect delivery, proof completion and disablement.
+  Deferred-refresh errors recover through an explicit refresh. Unchanged session
+  values synchronize on completed HTTP reads rather than fixed timer delays.
+  A custom fetch implementation
   sends requests through the traced HTTP actor and its cookie jar. The separate
   browser scenarios own browser cookie acceptance.
 - Explicit `Host` and `Sec-Fetch-Mode` probes use Node's HTTP socket transport
