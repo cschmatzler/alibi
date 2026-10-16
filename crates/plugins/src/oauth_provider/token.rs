@@ -27,8 +27,7 @@ impl OAuthProviderPlugin {
         let text = |key: &str| body.get(key).and_then(Value::as_str).unwrap_or_default();
         let grant = text("grant_type").trim();
         if !self
-            .config
-            .grant_types
+            .supported_grant_types()
             .iter()
             .any(|supported| supported == grant)
         {
@@ -44,18 +43,14 @@ impl OAuthProviderPlugin {
         if grant == "client_credentials" {
             return Box::pin(self.machine_grant(&body, req, ctx)).await;
         }
-        // Each remaining grant receives its own issuance and lifecycle finding.
         if grant != "authorization_code" {
+            if let Some(response) = self.extension_grant(grant, input, req, ctx).await? {
+                return Ok(response);
+            }
             return error(
                 400,
-                "invalid_request",
-                if text("client_id").is_empty() {
-                    "Missing required client_id"
-                } else if grant == "refresh_token" {
-                    "Missing a required refresh_token for refresh_token grant"
-                } else {
-                    "Missing required client credentials"
-                },
+                "unsupported_grant_type",
+                &format!("unsupported grant_type {grant}"),
             );
         }
         let credentials = match super::credentials::extract(&body, req, ctx, self, "token").await? {

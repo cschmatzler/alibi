@@ -94,9 +94,12 @@ compatScenario(
       expect(Date.parse(result.expiresAt)).toBe(2000000300000);
       results.push({ alg, htu: result.htu });
     }
-    const pq = (await Bun.file(
-      new URL("../../../../../fixtures/oauth/dpop-pq-proofs.json", import.meta.url),
-    ).json()) as { algorithm: string; proofJwt: string; jkt: string; privateSeed: string }[];
+    const pq = JSON.parse(
+      await readFixtureFile(
+        new URL("../../../../../fixtures/oauth/dpop-pq-proofs.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { algorithm: string; proofJwt: string; jkt: string; privateSeed: string }[];
     for (const vector of pq) {
       const configured = {
         ...options,

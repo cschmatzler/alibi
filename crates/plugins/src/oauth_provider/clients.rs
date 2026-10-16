@@ -827,8 +827,7 @@ impl OAuthProviderPlugin {
             .unwrap_or_else(|| vec![json!("authorization_code")]);
         for grant in &grants {
             if !grant.as_str().is_some_and(|grant| {
-                self.config
-                    .grant_types
+                self.supported_grant_types()
                     .iter()
                     .any(|supported| supported == grant)
             }) {
@@ -1126,8 +1125,9 @@ impl OAuthProviderPlugin {
         {
             _ = merged.insert("client_credentials_scopes".into(), json!([]));
         }
-        let metadata = match self.admit_metadata(merged, ctx)? {
-            Ok(metadata) => Value::Object(metadata),
+        // Update admission may infer defaults, but the reference persists only the requested patch.
+        let metadata = match self.admit_metadata(merged.clone(), ctx)? {
+            Ok(_) => Value::Object(merged),
             Err(response) => return Ok(response),
         };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
