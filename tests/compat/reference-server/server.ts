@@ -1421,6 +1421,14 @@ const serverEndpointVersionFixture = await createServerEndpointFixture(
   "server-dispatch-cache-version",
 );
 verificationProfiles.set(serverEndpointVersionFixture.path, serverEndpointVersionFixture.auth);
+const serverEndpointDynamicFixtures = await Promise.all(
+  ["server-dispatch-dynamic", "server-dispatch-dynamic-fallback"].map((profile) =>
+    createServerEndpointFixture(database, authOptions, profile),
+  ),
+);
+for (const fixture of serverEndpointDynamicFixtures) {
+  verificationProfiles.set(fixture.path, fixture.auth);
+}
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const ottCallbackState = { mode: "success", events: [] as unknown[], serial: 0 };
@@ -4060,6 +4068,10 @@ const server = await serveFixture({
       const serverErrorControl = await serverErrorFixture.control(request);
       if (serverErrorControl) return serverErrorControl;
       const serverEndpointControl = await serverEndpointFixture.control(request);
+      for (const fixture of serverEndpointDynamicFixtures) {
+        const response = await fixture.control(request);
+        if (response) return response;
+      }
       if (serverEndpointControl) {
         return serverEndpointControl;
       }

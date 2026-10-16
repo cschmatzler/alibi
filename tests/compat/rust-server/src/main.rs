@@ -888,6 +888,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         dispatch_verification_sender.clone(),
     )
     .await?;
+    let mut server_endpoint_dynamic_router = Router::new();
+    for profile in [
+        "server-dispatch-dynamic",
+        "server-dispatch-dynamic-fallback",
+    ] {
+        server_endpoint_dynamic_router = server_endpoint_dynamic_router.merge(
+            server_endpoint_fixture::router(
+                &config,
+                database.clone(),
+                profile,
+                false,
+                dispatch_reset_sender.clone(),
+                dispatch_verification_sender.clone(),
+            )
+            .await?,
+        );
+    }
     let server_endpoint_version_router = server_endpoint_fixture::router(
         &config,
         database.clone(),
@@ -2697,6 +2714,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(server_endpoint_router)
         .merge(server_endpoint_cache_router)
         .merge(server_endpoint_version_router)
+        .merge(server_endpoint_dynamic_router)
         .merge(multiple_session_router)
         .merge(custom_session_router)
         .merge(managed_secrets_router)

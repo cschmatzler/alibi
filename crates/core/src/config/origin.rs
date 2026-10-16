@@ -124,7 +124,12 @@ impl AuthConfig {
                 };
                 format!("{protocol}://{host}")
             } else {
-                let fallback = dynamic.fallback.as_ref().ok_or_else(|| AuthError::config("Could not resolve base URL: host is not allowed and no fallback is configured"))?;
+                let fallback = dynamic.fallback.as_ref().filter(|fallback| !fallback.is_empty()).ok_or_else(|| {
+                    AuthError::config(host.as_ref().map_or_else(
+                        || "Could not determine host from request headers. Please provide a fallback URL in your baseURL config.".into(),
+                        |host| format!("Host \"{host}\" is not in the allowed hosts list. Allowed hosts: {}. Add this host to your allowedHosts config or provide a fallback URL.", dynamic.allowed_hosts.join(", ")),
+                    ))
+                })?;
                 let parsed = url::Url::parse(fallback)
                     .map_err(|_| AuthError::config("Invalid base URL fallback"))?;
                 if !matches!(parsed.scheme(), "http" | "https") {

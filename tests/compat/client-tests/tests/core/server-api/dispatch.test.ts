@@ -909,6 +909,86 @@ for (const [mode, physicalRequest] of [
 
 const dispatchSecret = "compat-test-only-key-not-real-minimum-32chars";
 
+for (const fallback of [false, true]) {
+  compatScenario(
+    `server dynamic baseURL fallback=${fallback} resolves authority before hooks and OTP persistence`,
+    async (ctx) => {
+      const profile = `server-dispatch-dynamic${fallback ? "-fallback" : ""}`;
+      const path = `/__test/profiles/${profile}/api/auth`;
+      const read = async () =>
+        (await ctx.rawRequest({ path: `/__test/${profile}/state` })).body as any;
+      const before = await read();
+      const observations = [];
+      const cases = [
+        { input: {}, origin: fallback ? "http://fallback.example.test" : null },
+        { input: { headers: {} }, origin: fallback ? "http://fallback.example.test" : null },
+        {
+          input: { headers: { host: "tenant.example.test" } },
+          origin: "https://tenant.example.test",
+        },
+        {
+          input: { headers: { host: "untrusted.example.test" } },
+          origin: fallback ? "http://fallback.example.test" : null,
+        },
+        {
+          input: {
+            headers: { host: "tenant.example.test", "x-forwarded-host": "untrusted.example.test" },
+          },
+          origin: "https://tenant.example.test",
+        },
+        {
+          input: { physicalRequest: true, headers: { host: "tenant.example.test" } },
+          origin: "http://dispatch-owner.example.test",
+        },
+      ];
+      let writes = 0;
+      for (const [index, test] of cases.entries()) {
+        const response = await ctx.rawRequest({
+          path: `/__test/${profile}/call`,
+          method: "POST",
+          headers: {
+            host: "dispatch-owner.example.test",
+            origin: "http://dispatch-owner.example.test",
+          },
+          json: {
+            operation: "createVerificationOTP",
+            mode: "dynamic-authority",
+            body: { email: ctx.uniqueEmail(`dynamic-${index}`), type: "sign-in" },
+            ...test.input,
+          },
+        });
+        expect(response.status).toBe(200);
+        const observed = response.body as any;
+        if (test.origin) {
+          expect(observed.result.ok).toBe(true);
+          expect(observed.events.find((event: any) => event.stage === "authority")).toEqual({
+            stage: "authority",
+            baseURL: test.origin + path,
+          });
+          expect(observed.result.value.response).toBe("591307");
+          writes++;
+        } else {
+          expect(observed.result.ok).toBe(false);
+          expect(observed.result.status).toBe(500);
+          expect(observed.events).toEqual([]);
+          expect(observed.result.headers).toBeNull();
+          expect(observed.result.body.message).toBe(
+            index === 3
+              ? 'Host "untrusted.example.test" is not in the allowed hosts list. Allowed hosts: dispatch-owner.example.test, tenant.example.test. Add this host to your allowedHosts config or provide a fallback URL.'
+              : "Dynamic baseURL could not be resolved for this direct auth.api call. Pass `headers: request.headers` (or `request`) to the call, or add `fallback` to your baseURL config.",
+          );
+        }
+        expect((await read()).verification.length - before.verification.length).toBe(writes);
+        observations.push(observed);
+      }
+      const after = await read();
+      expect(after.session).toEqual(before.session);
+      expect(after.apikey).toEqual(before.apikey);
+      return { before, observations, after };
+    },
+  );
+}
+
 for (const mode of ["ordinary", "cached", "cached-version"] as const) {
   compatScenario(
     `server endpoint ${mode} signed organization handler keeps session local while actual API key middleware shares principal`,

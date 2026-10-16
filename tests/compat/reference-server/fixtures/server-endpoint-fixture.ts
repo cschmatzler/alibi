@@ -241,6 +241,15 @@ export async function createServerEndpointFixture(
   const auth = betterAuth({
     ...base,
     basePath: path,
+    ...(profile.startsWith("server-dispatch-dynamic")
+      ? {
+          baseURL: {
+            allowedHosts: ["dispatch-owner.example.test", "tenant.example.test"],
+            protocol: "auto" as const,
+            ...(profile.endsWith("fallback") ? { fallback: "http://fallback.example.test" } : {}),
+          },
+        }
+      : {}),
     ...(profile === "server-dispatch-cache-version"
       ? {
           session: {
@@ -287,6 +296,9 @@ export async function createServerEndpointFixture(
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
         events.push({ stage: "user-before", ...snapshot(ctx) });
+        if (mode === "dynamic-authority") {
+          events.push({ stage: "authority", baseURL: ctx.context.baseURL });
+        }
 
         if (mode.startsWith("hash-phase")) {
           hashPhase = "before";

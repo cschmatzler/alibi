@@ -165,6 +165,12 @@ impl EndpointHook<TestSchema> for Observer {
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         self.app.record(format!("{}-before", self.id), call, None);
         let mode = self.app.mode.lock().unwrap().clone();
+        if self.id == "user" && mode == "dynamic-authority" {
+            self.app.events.lock().unwrap().push(value!({
+                "stage": "authority",
+                "baseURL": format!("{}{}", context.config.base_url, context.config.base_path),
+            }));
+        }
         if self.id == "user" && mode.starts_with("hash-phase") {
             self.app.hash_at("before", context).await?;
         }
@@ -463,19 +469,31 @@ pub(crate) async fn router(
     let path = format!("/__test/profiles/{profile}/api/auth");
     let control_path = format!("/__test/{profile}");
     let app = Application::default();
-    let configured = base
-        .clone()
-        .base_path(&path)
-        .session_cookie_cache(alibi::CookieCacheConfig {
-            enabled: compact,
-            max_age: 300.0,
-            version: if profile == "server-dispatch-cache-version" {
-                Some(alibi::CookieCacheVersion::Resolver(Arc::new(app.clone())))
-            } else {
-                None
-            },
-            ..Default::default()
+    let mut configured =
+        base.clone()
+            .base_path(&path)
+            .session_cookie_cache(alibi::CookieCacheConfig {
+                enabled: compact,
+                max_age: 300.0,
+                version: if profile == "server-dispatch-cache-version" {
+                    Some(alibi::CookieCacheVersion::Resolver(Arc::new(app.clone())))
+                } else {
+                    None
+                },
+                ..Default::default()
+            });
+    if profile.starts_with("server-dispatch-dynamic") {
+        configured.dynamic_base_url = Some(alibi::config::DynamicBaseUrl {
+            allowed_hosts: vec![
+                "dispatch-owner.example.test".into(),
+                "tenant.example.test".into(),
+            ],
+            protocol: Some(alibi::config::BaseUrlProtocol::Auto),
+            fallback: profile
+                .ends_with("fallback")
+                .then(|| "http://fallback.example.test".into()),
         });
+    }
     let range_app = app.clone();
     let range=Router::new().fallback(move|request:Request|{
         let app=range_app.clone();async move{

@@ -4,7 +4,8 @@ use alibi_core::endpoint::{
     EndpointOptions, EndpointOutput, EndpointResponse, ServerEndpoint, is_endpoint_api_error,
     with_endpoint_call_context,
 };
-use alibi_core::{AuthError, AuthSchema, Headers};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthSchema, Headers, HttpMethod};
+use std::sync::Arc;
 
 const HOOK_MATCHER_FAILURE: &str =
     "An error occurred during hook matcher execution. Check the logs for more details.";
@@ -53,13 +54,61 @@ impl<S: AuthSchema> Alibi<S> {
                 .extensions()
                 .insert(self.context.config.advanced.ip_address.clone());
         }
-        with_endpoint_call_context(call.clone(), self.dispatch_endpoint_inner(call, plugin)).await
+        let context = self.resolve_endpoint_context(&call).await?;
+        with_endpoint_call_context(
+            call.clone(),
+            self.dispatch_endpoint_inner(call, plugin, context.as_ref().unwrap_or(&self.context)),
+        )
+        .await
+    }
+
+    async fn resolve_endpoint_context(
+        &self,
+        call: &EndpointCall,
+    ) -> Result<Option<AuthContext<S>>, AuthError> {
+        let Some(dynamic) = &self.config.dynamic_base_url else {
+            return Ok(None);
+        };
+        // A real Request owns authority even when logical headers disagree.
+        // Headers alone are a source only when they carry a host; they must not
+        // become the endpoint's optional physical Request or confer credentials.
+        let headers = call.headers().filter(|headers| {
+            headers.contains_key("host") || headers.contains_key("x-forwarded-host")
+        });
+        let mut logical = AuthRequest::new(HttpMethod::Get, self.config.base_path.clone());
+        if let Some(headers) = headers {
+            logical.headers = headers.clone();
+        }
+        let source = call.request().or_else(|| headers.map(|_| &logical));
+        if source.is_none() && dynamic.fallback.as_ref().is_none_or(String::is_empty) {
+            return Err(AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Dynamic baseURL could not be resolved for this direct auth.api call. Pass `headers: request.headers` (or `request`) to the call, or add `fallback` to your baseURL config.".into(),
+            });
+        }
+        let config = self
+            .config
+            .resolve_request(source.unwrap_or(&logical))
+            .await
+            .map_err(|error| match error {
+                AuthError::Config(message) => AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message,
+                },
+                error => error,
+            })?;
+        let mut context = self.context.clone();
+        context.config = Arc::new(config);
+        Ok(Some(context))
     }
 
     async fn dispatch_endpoint_inner<T>(
         &self,
         mut call: EndpointCall,
         plugin: &dyn alibi_core::AuthPlugin<S>,
+        context: &AuthContext<S>,
     ) -> Result<EndpointOutput<T>, EndpointError> {
         let hooks: Vec<&dyn EndpointHook<S>> = self
             .endpoint_hooks
@@ -76,7 +125,7 @@ impl<S: AuthSchema> Alibi<S> {
         let mut outer = call.clone();
         for hook in &hooks {
             let matched = with_endpoint_call_context(call.clone(), async {
-                hook.matches_before(&call, &self.context)
+                hook.matches_before(&call, context)
             })
             .await
             .map_err(|error| {
@@ -92,8 +141,7 @@ impl<S: AuthSchema> Alibi<S> {
             }
             let middleware = call.middleware_context();
             let action =
-                with_endpoint_call_context(call.clone(), hook.before(&middleware, &self.context))
-                    .await;
+                with_endpoint_call_context(call.clone(), hook.before(&middleware, context)).await;
             let headers = call.take_response_headers();
             let action = action.map_err(|error| EndpointError {
                 body: None,
@@ -135,17 +183,14 @@ impl<S: AuthSchema> Alibi<S> {
                 .insert(self.context.config.advanced.ip_address.clone());
         }
         let response = match with_endpoint_call_context(call.clone(), async {
-            plugin.validate_endpoint(&call, &self.context)
+            plugin.validate_endpoint(&call, context)
         })
         .await
         {
             Ok(input) => {
                 let handler = call.handler_context(input.body, input.query);
-                with_endpoint_call_context(
-                    handler.clone(),
-                    plugin.on_endpoint(&handler, &self.context),
-                )
-                .await
+                with_endpoint_call_context(handler.clone(), plugin.on_endpoint(&handler, context))
+                    .await
             }
             Err(error) => Err(error),
         };
@@ -165,7 +210,7 @@ impl<S: AuthSchema> Alibi<S> {
         }
         for hook in hooks {
             if !with_endpoint_call_context(outer.clone(), async {
-                hook.matches_after(&call, &self.context, &response)
+                hook.matches_after(&call, context, &response)
             })
             .await?
             {
@@ -178,7 +223,7 @@ impl<S: AuthSchema> Alibi<S> {
             let previous_status = response.status();
             response = match with_endpoint_call_context(
                 outer.clone(),
-                hook.after(&middleware, &self.context, response),
+                hook.after(&middleware, context, response),
             )
             .await
             {
