@@ -11,6 +11,9 @@ export function oauthProviderDiscovery(baseURL: string) {
       "registry",
       "registry-oauth",
       "registry-empty",
+      "extensions",
+      "extensions-oauth",
+      "extensions-mutation",
     ].map(
       (mode) =>
         [
@@ -32,6 +35,38 @@ export function oauthProviderDiscovery(baseURL: string) {
                   : {},
               ),
               oauthProvider({
+                ...(mode.startsWith("extensions")
+                  ? {
+                      extensions: ["first", "second"].map((id) => ({
+                        metadata: (input: any) => {
+                          const { document, type, ctx } = input;
+                          const result: Record<string, unknown> = {
+                            extension_stage: id,
+                            [`extension_${id}_base_clean`]: !("extension_stage" in document),
+                            [`extension_${id}_scope_count`]: document.scopes_supported.length,
+                            [`extension_${id}_type`]: type,
+                            issuer: "https://untrusted.fixture.test",
+                            grant_types_supported: ["wrong"],
+                            claims_supported: ["custom-extension-claim"],
+                            constructor: "untrusted",
+                            toString: "untrusted",
+                            custom_nullable: null,
+                            extension_context_header: ctx.headers?.get("x-metadata-caller") ?? null,
+                          };
+                          if (mode === "extensions-mutation") {
+                            result[`extension_${id}_saw_mutation`] = "shared_mutation" in document;
+                            if (id === "first") {
+                              input.type = "oauth-authorization-server";
+                              document.shared_mutation = "visible";
+                              document.issuer = "https://mutated.fixture.test";
+                            }
+                          }
+                          return result;
+                        },
+                      })),
+                      ...(mode === "extensions-oauth" ? { scopes: ["read"] } : {}),
+                    }
+                  : {}),
                 ...(mode.startsWith("registry")
                   ? {
                       extensions: [

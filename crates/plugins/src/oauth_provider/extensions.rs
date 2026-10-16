@@ -19,6 +19,34 @@ use std::sync::Arc;
 #[derive(Clone, Debug, Default)]
 pub struct OAuthProviderExtension {
     pub grants: indexmap::IndexMap<String, Arc<dyn OAuthExtensionGrantHandler>>,
+    pub metadata: Option<Arc<dyn OAuthMetadataContributor>>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthMetadataType {
+    OAuthAuthorizationServer,
+    OpenIdConfiguration,
+}
+impl OAuthMetadataType {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::OAuthAuthorizationServer => "oauth-authorization-server",
+            Self::OpenIdConfiguration => "openid-configuration",
+        }
+    }
+}
+pub struct OAuthMetadataExtensionInput<'a> {
+    pub context: &'a CallbackContext,
+    pub options: &'a OAuthProviderConfig,
+    pub metadata_type: OAuthMetadataType,
+    /// Provider and client-discovery document, before any metadata callback contribution.
+    pub document: &'a mut Value,
+}
+pub trait OAuthMetadataContributor: Send + Sync + std::fmt::Debug {
+    fn contribute(
+        &self,
+        input: &mut OAuthMetadataExtensionInput<'_>,
+    ) -> AuthResult<serde_json::Map<String, Value>>;
 }
 pub struct OAuthExtensionGrantInput<'a> {
     pub context: CallbackContext,
@@ -100,6 +128,55 @@ impl<S: AuthSchema> OAuthProviderApi for ProviderApi<'_, S> {
     }
 }
 impl OAuthProviderPlugin {
+    pub(super) fn apply_metadata_extensions<S: AuthSchema>(
+        &self,
+        context: &AuthContext<S>,
+        mut document: Value,
+    ) -> AuthResult<Value> {
+        let mut next = document
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::internal("OAuth metadata must be an object"))?;
+        let callback = CallbackContext::new(context, None);
+        let metadata_type = if self.config.scopes.iter().any(|scope| scope == "openid") {
+            OAuthMetadataType::OpenIdConfiguration
+        } else {
+            OAuthMetadataType::OAuthAuthorizationServer
+        };
+        for extension in &self.config.extensions {
+            if let Some(contributor) = &extension.metadata {
+                let mut input = OAuthMetadataExtensionInput {
+                    context: &callback,
+                    options: &self.config,
+                    metadata_type,
+                    document: &mut document,
+                };
+                for (key, value) in contributor.contribute(&mut input)? {
+                    // Reference `key in next` also protects inherited Object.prototype keys.
+                    if !next.contains_key(&key)
+                        && !matches!(
+                            key.as_str(),
+                            "__proto__"
+                                | "constructor"
+                                | "toString"
+                                | "toLocaleString"
+                                | "valueOf"
+                                | "hasOwnProperty"
+                                | "isPrototypeOf"
+                                | "propertyIsEnumerable"
+                                | "__defineGetter__"
+                                | "__defineSetter__"
+                                | "__lookupGetter__"
+                                | "__lookupSetter__"
+                        )
+                    {
+                        _ = next.insert(key, value);
+                    }
+                }
+            }
+        }
+        Ok(Value::Object(next))
+    }
     /// Obtain live capabilities for an extension or a trusted companion endpoint.
     /// Issuance without a bound grant is rejected by the shared issuance owner.
     pub fn get_oauth_provider_api<'a, S: AuthSchema>(

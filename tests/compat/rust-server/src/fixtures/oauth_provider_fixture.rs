@@ -180,17 +180,21 @@ impl alibi::plugins::OAuthClientDiscovery for MetadataDiscovery {
     async fn resolve(&self,_:&alibi::CallbackContext,_:&str,_:Option<alibi::store::OAuthClient>)->alibi::AuthResult<Option<alibi::store::OAuthClient>>{Ok(None)}
 }
 
+#[path="../../../../fixtures/oauth/extension-metadata.rs"]
+mod extension_metadata;
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router> {
     let mut instances = HashMap::new();
-    for mode in ["default", "oauth", "disabled", "configured", "registry", "registry-oauth", "registry-empty"] {
+    for mode in ["default", "oauth", "disabled", "configured", "registry", "registry-oauth", "registry-empty","extensions","extensions-oauth","extensions-mutation"] {
         let mut provider = OAuthProviderConfig::default();
         if mode.starts_with("registry") {
             provider.client_discoveries=["metadata-first","metadata-second"].into_iter().map(|id|Arc::new(MetadataDiscovery{id,empty:mode=="registry-empty"}) as Arc<dyn alibi::plugins::OAuthClientDiscovery>).collect();
             if mode=="registry-oauth"{provider.scopes=vec!["read".into()];}
         }
+        if mode.starts_with("extensions"){provider.extensions=["first","second"].into_iter().map(|id|Arc::new(alibi::plugins::OAuthProviderExtension{metadata:Some(Arc::new(extension_metadata::ExtensionMetadata{id,mutate:mode=="extensions-mutation"})),..Default::default()})).collect();}
+        if mode=="extensions-oauth"{provider.scopes=vec!["read".into()];}
         let mut jwt = JwtPluginConfig::default();
         if mode == "oauth" || mode == "configured" {
             provider.scopes = vec!["read".into()];
@@ -307,7 +311,7 @@ pub(crate) async fn router(
             allow_unauthenticated_client_registration: mode == "public",
             ..Default::default()
         };
-        if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect()}));}
+        if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
@@ -339,7 +343,7 @@ pub(crate) async fn router(
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
             if input["action"]=="extension-validation"{
-                let extensions=input["keys"].as_array().unwrap().iter().map(|key|Arc::new(alibi::plugins::OAuthProviderExtension{grants:[(key.as_str().unwrap().into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect()})).collect();
+                let extensions=input["keys"].as_array().unwrap().iter().map(|key|Arc::new(alibi::plugins::OAuthProviderExtension{grants:[(key.as_str().unwrap().into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()})).collect();
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig{extensions,..Default::default()})).build().await;
                 return axum::Json(match result{Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected setup failure: {error}")}).into_response();
             }

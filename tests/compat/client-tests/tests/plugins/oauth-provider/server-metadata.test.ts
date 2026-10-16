@@ -78,3 +78,48 @@ for (const mode of ["default", "oauth", "disabled", "configured"] as const) {
     },
   );
 }
+
+for (const mode of ["extensions", "extensions-oauth", "extensions-mutation"]) {
+  compatScenario(
+    `OAuth extension metadata keeps base-document isolation and first-wins ownership ${mode}`,
+    async (ctx) => {
+      const response = await ctx
+        .actor()
+        .fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-metadata?mode=${mode}`);
+      expect(response.status).toBe(200);
+      const document = (await response.json()) as Record<string, any>;
+      expect(document.extension_stage).toBe("first");
+      expect(document.extension_first_base_clean).toBe(true);
+      expect(document.extension_second_base_clean).toBe(true);
+      expect(document.extension_first_type).toBe(
+        mode !== "extensions-oauth" ? "openid-configuration" : "oauth-authorization-server",
+      );
+      expect(document.extension_second_type).toBe(document.extension_first_type);
+      expect(document.extension_first_scope_count).toBe(mode !== "extensions-oauth" ? 4 : 1);
+      expect(document.extension_second_scope_count).toBe(document.extension_first_scope_count);
+      expect(document.issuer).toBe(`${ctx.baseURL}/api/auth`);
+      expect(document.grant_types_supported).toEqual([
+        "authorization_code",
+        "client_credentials",
+        "refresh_token",
+      ]);
+      expect(Object.hasOwn(document, "constructor")).toBe(false);
+      expect(Object.hasOwn(document, "toString")).toBe(false);
+      expect(document.custom_nullable).toBeNull();
+      expect(document.extension_context_header).toBeNull();
+      if (mode === "extensions-mutation") {
+        expect(document.extension_first_saw_mutation).toBe(false);
+        expect(document.extension_second_saw_mutation).toBe(true);
+        expect(document).not.toHaveProperty("shared_mutation");
+      }
+
+      if (mode !== "extensions-oauth") {
+        expect(document.claims_supported).toContain("sub");
+        expect(document.claims_supported).not.toContain("custom-extension-claim");
+      } else {
+        expect(document.claims_supported).toEqual(["custom-extension-claim"]);
+      }
+      return ctx.snapshot(document);
+    },
+  );
+}

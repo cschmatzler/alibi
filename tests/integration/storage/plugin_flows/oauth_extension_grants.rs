@@ -22,6 +22,7 @@ async fn oauth_extension_grants_dispatch_bound_authority<B: Backend>(db: Db) -> 
             )]
             .into_iter()
             .collect(),
+            ..Default::default()
         }));
     let provider = OAuthProviderPlugin::with_config(config);
     let auth = super::auth_probe::fast_builder::<B>(&connection)
@@ -129,6 +130,7 @@ async fn oauth_extension_grants_dispatch_bound_authority<B: Backend>(db: Db) -> 
                     )]
                     .into_iter()
                     .collect(),
+                    ..Default::default()
                 })
             })
             .collect();
