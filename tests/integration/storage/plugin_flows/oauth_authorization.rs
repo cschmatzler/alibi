@@ -450,6 +450,60 @@ async fn assert_authorization_admission<S: AuthSchema>(
     for http in [false, true] {
         for (name, value, expected) in [
             (
+                "resource",
+                json!("relative"),
+                Some(("invalid_request", "resource: Invalid input", true)),
+            ),
+            (
+                "resource",
+                json!("https://api.fixture.test/#"),
+                Some((
+                    "invalid_request",
+                    "resource: resource must not contain a fragment",
+                    true,
+                )),
+            ),
+            (
+                "resource",
+                json!("data:,literal"),
+                Some((
+                    "invalid_request",
+                    "resource: resource cannot use javascript:, data:, or vbscript: scheme",
+                    true,
+                )),
+            ),
+            (
+                "resource",
+                json!([
+                    "https://api.fixture.test/valid",
+                    "https://api.fixture.test/#"
+                ]),
+                Some((
+                    "invalid_request",
+                    "resource[1]: resource must not contain a fragment",
+                    true,
+                )),
+            ),
+            (
+                "resource",
+                json!([]),
+                Some((
+                    "invalid_request",
+                    "resource: Too small: expected array to have >=1 items",
+                    true,
+                )),
+            ),
+            (
+                "resource",
+                json!([42]),
+                Some(("invalid_request", "resource: Invalid input", true)),
+            ),
+            (
+                "resource",
+                json!(42),
+                Some(("invalid_request", "resource: Invalid input", true)),
+            ),
+            (
                 "request",
                 json!(["first", "second"]),
                 Some((
@@ -514,11 +568,25 @@ async fn assert_authorization_admission<S: AuthSchema>(
                 )),
             ),
         ] {
+            if http
+                && !value.is_string()
+                && !value
+                    .as_array()
+                    .is_some_and(|values| values.len() > 1 && values.iter().all(Value::is_string))
+            {
+                continue;
+            }
             let before = db
                 .tables(&["user", "account", "session", "verification", "oauthClient"])
                 .await?;
             let mut input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"prompt-state"});
             input[name] = value.clone();
+            if name == "resource" {
+                input["response_mode"] = json!("fragment");
+                if value == json!("relative") {
+                    input["prompt"] = json!("select_account");
+                }
+            }
             let mut physical = request("/oauth2/authorize", None, cookie);
             _ = physical
                 .headers

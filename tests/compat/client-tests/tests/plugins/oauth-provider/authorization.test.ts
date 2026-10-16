@@ -447,6 +447,40 @@ compatScenario(
           "client_id is required",
           false,
         ],
+        ...(
+          [
+            [{ resource: "relative" }, "resource: Invalid input"],
+            [{ resource: "relative", prompt: "select_account" }, "resource: Invalid input"],
+            [
+              { resource: "https://api.fixture.test/#" },
+              "resource: resource must not contain a fragment",
+            ],
+            [
+              { resource: "data:,literal" },
+              "resource: resource cannot use javascript:, data:, or vbscript: scheme",
+            ],
+            [
+              { resource: ["https://api.fixture.test/valid", "https://api.fixture.test/#"] },
+              "resource[1]: resource must not contain a fragment",
+            ],
+            ...(transport === "private"
+              ? ([
+                  [{ resource: [] }, "resource: Too small: expected array to have >=1 items"],
+                  [{ resource: [42] }, "resource: Invalid input"],
+                  [{ resource: 42 }, "resource: Invalid input"],
+                ] as const)
+              : []),
+          ] as const
+        ).map(
+          ([query, description]) =>
+            [
+              { ...query, response_mode: "fragment" },
+              true,
+              "invalid_request",
+              description,
+              true,
+            ] as const,
+        ),
         ...[
           { code_challenge_method: "" },
           { code_challenge_method: "plain" },

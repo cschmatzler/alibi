@@ -56,6 +56,7 @@ impl OAuthProviderPlugin {
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
         let validated_prompts = authorization_prompts(query.get("prompt").and_then(Value::as_str));
+        let resource_error = authorization_resource_error(query.get("resource"));
         let valid_dpop_jkt = query.get("dpop_jkt").is_none_or(|value| {
             value.as_str().is_some_and(|jkt| {
                 jkt.len() == 43
@@ -85,6 +86,7 @@ impl OAuthProviderPlugin {
             ctx.config.base_path
         );
         if validated_max_age.is_ok()
+            && resource_error.is_none()
             && valid_dpop_jkt
             && valid_challenge_method
             && validated_prompts
@@ -224,6 +226,9 @@ impl OAuthProviderPlugin {
                 "code_challenge_method must be one of: S256",
             );
         }
+        if let Some(description) = resource_error {
+            return request_error("invalid_request", &description);
+        }
         let Some(client) = client else {
             return browser_redirect(
                 req,
@@ -329,12 +334,6 @@ impl OAuthProviderPlugin {
         } else {
             Vec::new()
         };
-        if query
-            .get("resource")
-            .is_some_and(|value| !value.is_string() && !value.is_array())
-        {
-            return admission_error("invalid_request", "resource: Invalid input");
-        }
         if let Err(error) = self
             .admit_resources(ctx, &client_id, &requested, query.get("resource"))
             .await
@@ -708,6 +707,47 @@ fn maximum_age(input: Option<&JsValue>) -> Result<Option<f64>, &'static str> {
         return Err("max_age: max_age must be a non-negative integer");
     }
     Ok(Some(value))
+}
+
+fn authorization_resource_error(value: Option<&Value>) -> Option<String> {
+    let value = value?;
+    let values = match value {
+        Value::String(_) => vec![value],
+        Value::Array(values) if values.is_empty() => {
+            return Some("resource: Too small: expected array to have >=1 items".into());
+        }
+        Value::Array(values) => values.iter().collect(),
+        _ => return Some("resource: Invalid input".into()),
+    };
+    // A type or absolute-URI failure aborts the union branch, even if another
+    // array entry has a non-fatal fragment/scheme issue.
+    let Some(parsed) = values
+        .iter()
+        .map(|value| {
+            value
+                .as_str()
+                .and_then(|text| url::Url::parse(text).ok().map(|uri| (text, uri)))
+        })
+        .collect::<Option<Vec<_>>>()
+    else {
+        return Some("resource: Invalid input".into());
+    };
+    for (index, (text, uri)) in parsed.iter().enumerate() {
+        let description = if text.contains('#') {
+            "resource must not contain a fragment"
+        } else if ["javascript", "data", "vbscript"].contains(&uri.scheme()) {
+            "resource cannot use javascript:, data:, or vbscript: scheme"
+        } else {
+            continue;
+        };
+        let field = if value.is_array() {
+            format!("resource[{index}]")
+        } else {
+            "resource".into()
+        };
+        return Some(format!("{field}: {description}"));
+    }
+    None
 }
 fn encode_pairs(pairs: &[(String, String)]) -> String {
     let mut encoded = url::form_urlencoded::Serializer::new(String::new());
