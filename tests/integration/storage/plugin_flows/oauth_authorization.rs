@@ -446,8 +446,26 @@ async fn assert_authorization_admission<S: AuthSchema>(
     for http in [false, true] {
         for (name, value, expected) in [
             (
+                "request",
+                json!(["first", "second"]),
+                Some((
+                    "invalid_request",
+                    "request must not appear more than once",
+                    false,
+                )),
+            ),
+            (
+                "request_uri",
+                json!(["first", "second"]),
+                Some((
+                    "invalid_request",
+                    "request_uri must not appear more than once",
+                    false,
+                )),
+            ),
+            (
                 "prompt",
-                "",
+                json!(""),
                 Some((
                     "invalid_request",
                     "prompt: prompt must include at least one value",
@@ -456,17 +474,17 @@ async fn assert_authorization_admission<S: AuthSchema>(
             ),
             (
                 "prompt",
-                "surprise",
+                json!("surprise"),
                 Some((
                     "invalid_request",
                     "prompt: unsupported prompt value: surprise",
                     false,
                 )),
             ),
-            ("prompt", "\u{feff}login\u{a0}", None),
+            ("prompt", json!("\u{feff}login\u{a0}"), None),
             (
                 "code_challenge_method",
-                "",
+                json!(""),
                 Some((
                     "invalid_request",
                     "code_challenge_method must be one of: S256",
@@ -475,7 +493,7 @@ async fn assert_authorization_admission<S: AuthSchema>(
             ),
             (
                 "dpop_jkt",
-                "bad-value",
+                json!("bad-value"),
                 Some((
                     "invalid_request",
                     "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
@@ -484,7 +502,7 @@ async fn assert_authorization_admission<S: AuthSchema>(
             ),
             (
                 "response_type",
-                "token",
+                json!("token"),
                 Some((
                     "unsupported_response_type",
                     "response_type must be one of: code",
@@ -496,7 +514,7 @@ async fn assert_authorization_admission<S: AuthSchema>(
                 .tables(&["user", "account", "session", "verification", "oauthClient"])
                 .await?;
             let mut input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"prompt-state"});
-            input[name] = json!(value);
+            input[name] = value.clone();
             let mut physical = request("/oauth2/authorize", None, cookie);
             _ = physical
                 .headers
@@ -506,7 +524,15 @@ async fn assert_authorization_admission<S: AuthSchema>(
                     .as_object()
                     .unwrap()
                     .iter()
-                    .map(|(key, value)| (key.clone(), value.as_str().unwrap().to_owned()))
+                    .flat_map(|(key, value)| {
+                        let values = value
+                            .as_array()
+                            .cloned()
+                            .unwrap_or_else(|| vec![value.clone()]);
+                        values
+                            .into_iter()
+                            .map(|value| (key.clone(), value.as_str().unwrap().to_owned()))
+                    })
                     .collect::<Vec<_>>();
                 let mut url = url::Url::parse(&format!("{ORIGIN}/api/auth/oauth2/authorize"))?;
                 _ = url.query_pairs_mut().extend_pairs(pairs.clone());
@@ -561,7 +587,7 @@ async fn assert_authorization_admission<S: AuthSchema>(
                 );
             } else {
                 assert_eq!(target.path(), "/login");
-                assert_eq!(fields.get(name).map(|value| value.as_ref()), Some(value));
+                assert_eq!(fields.get(name).map(|value| value.as_ref()), value.as_str());
             }
         }
     }

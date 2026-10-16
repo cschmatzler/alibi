@@ -302,6 +302,28 @@ compatScenario(
           "prompt: unsupported prompt value: surprise",
           true,
         ],
+        ...(
+          [
+            [{ request: ["first", "second"] }, "request must not appear more than once"],
+            [{ request_uri: ["first", "second"] }, "request_uri must not appear more than once"],
+            ...(transport === "private"
+              ? ([
+                  [{ request: null }, "request must be a string"],
+                  [{ request_uri: 42 }, "request_uri must be a string"],
+                  [{ request: null, request_uri: null }, "request must be a string"],
+                ] as const)
+              : []),
+          ] as const
+        ).map(
+          ([query, description]) => [query, false, "invalid_request", description, true] as const,
+        ),
+        [
+          { client_id: "", request_uri: "urn:fixture:request" },
+          false,
+          "invalid_request",
+          "client_id is required",
+          false,
+        ],
         ...[
           { code_challenge_method: "" },
           { code_challenge_method: "plain" },

@@ -145,16 +145,21 @@ impl OAuthProviderPlugin {
                 admission_error(error, description)
             }
         };
-        if query.contains_key("request") && query.contains_key("request_uri") {
+        let has_request = query.get("request").is_some_and(Value::is_string);
+        let has_request_uri = query.get("request_uri").is_some_and(Value::is_string);
+        if has_request && has_request_uri {
             return request_error(
                 "invalid_request",
                 "request and request_uri cannot be used together",
             );
         }
-        if query.contains_key("request") {
+        if has_request {
             return request_error("request_not_supported", "request object not supported");
         }
-        if query.contains_key("request_uri") {
+        if has_request_uri {
+            if client_id.is_empty() {
+                return request_error("invalid_request", "client_id is required");
+            }
             return request_error("request_uri_not_supported", "request_uri not supported");
         }
         for name in [
