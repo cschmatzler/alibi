@@ -55,19 +55,18 @@ impl OAuthProviderPlugin {
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
-        let validated_prompts = authorization_prompts(query.get("prompt").and_then(Value::as_str));
-        let resource_error = authorization_resource_error(query.get("resource"));
-        let valid_dpop_jkt = query.get("dpop_jkt").is_none_or(|value| {
-            value.as_str().is_some_and(|jkt| {
-                jkt.len() == 43
-                    && jkt
-                        .bytes()
-                        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-            })
-        });
-        let valid_challenge_method = query
-            .get("code_challenge_method")
-            .is_none_or(|method| method.as_str() == Some("S256"));
+        let has_request = query.get("request").is_some_and(Value::is_string);
+        let has_request_uri = query.get("request_uri").is_some_and(Value::is_string);
+        let validation = authorization_parameters(&query, validated_max_age);
+        // Failed schemas and unsupported request objects redirect using their raw
+        // parameters. Only a fully parsed query publishes URL transformations.
+        if !has_request
+            && !has_request_uri
+            && let Ok(parameters) = &validation
+            && let Some(redirect) = &parameters.redirect_uri
+        {
+            _ = query.insert("redirect_uri".into(), json!(redirect));
+        }
         let error_mode = authorization_error_mode(&query);
         let text = |name: &str| {
             query
@@ -85,13 +84,14 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
-        if validated_max_age.is_ok()
-            && resource_error.is_none()
-            && valid_dpop_jkt
-            && valid_challenge_method
-            && validated_prompts
-                .as_ref()
-                .is_ok_and(|prompts| prompts.contains(&AuthorizationPrompt::SelectAccount))
+        if !has_request
+            && !has_request_uri
+            && response_type == "code"
+            && validation.as_ref().is_ok_and(|parameters| {
+                parameters
+                    .prompts
+                    .contains(&AuthorizationPrompt::SelectAccount)
+            })
             && self.config.select_account_page.is_none()
         {
             return browser_redirect(
@@ -105,7 +105,19 @@ impl OAuthProviderPlugin {
                 )?,
             );
         }
-        let client = super::discovery::resolve(ctx, &client_id).await?;
+        let error_only =
+            has_request || has_request_uri || validation.is_err() || response_type.is_empty();
+        let client = if error_only {
+            if client_id.is_empty() || redirect_uri.is_empty() {
+                None
+            } else {
+                super::discovery::resolve(ctx, &client_id)
+                    .await
+                    .unwrap_or(None)
+            }
+        } else {
+            super::discovery::resolve(ctx, &client_id).await?
+        };
         let trusted = client.as_ref().is_some_and(|client| {
             client.metadata.get("disabled") != Some(&json!(true))
                 && registered_redirect(&client.metadata, &redirect_uri)
@@ -147,8 +159,6 @@ impl OAuthProviderPlugin {
                 admission_error(error, description)
             }
         };
-        let has_request = query.get("request").is_some_and(Value::is_string);
-        let has_request_uri = query.get("request_uri").is_some_and(Value::is_string);
         if has_request && has_request_uri {
             return request_error(
                 "invalid_request",
@@ -164,71 +174,15 @@ impl OAuthProviderPlugin {
             }
             return request_error("request_uri_not_supported", "request_uri not supported");
         }
-        for name in [
-            "response_type",
-            "request",
-            "request_uri",
-            "redirect_uri",
-            "scope",
-            "state",
-            "client_id",
-            "prompt",
-            "display",
-            "ui_locales",
-            "acr_values",
-            "login_hint",
-            "id_token_hint",
-            "code_challenge",
-            "code_challenge_method",
-            "nonce",
-            "dpop_jkt",
-        ] {
-            if let Some(value) = query.get(name)
-                && !value.is_string()
-            {
-                let message = if value.is_array() {
-                    format!("{name} must not appear more than once")
-                } else {
-                    format!("{name} must be a string")
-                };
-                return request_error("invalid_request", &message);
-            }
-        }
-        if client_id.is_empty() {
-            return request_error("invalid_request", "client_id is required");
-        }
+        let parameters = match validation {
+            Ok(parameters) => parameters,
+            Err((error, description)) => return request_error(error, &description),
+        };
         if response_type.is_empty() {
             return request_error("invalid_request", "response_type is required");
         }
-        if response_type != "code" {
-            return request_error(
-                "unsupported_response_type",
-                "response_type must be one of: code",
-            );
-        }
-        let prompts = match validated_prompts {
-            Ok(prompts) => prompts,
-            Err(description) => return request_error("invalid_request", &description),
-        };
-        let max_age = match validated_max_age {
-            Ok(value) => value,
-            Err(description) => return request_error("invalid_request", description),
-        };
-        if !valid_dpop_jkt {
-            return request_error(
-                "invalid_request",
-                "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint",
-            );
-        }
-        if !valid_challenge_method {
-            return request_error(
-                "invalid_request",
-                "code_challenge_method must be one of: S256",
-            );
-        }
-        if let Some(description) = resource_error {
-            return request_error("invalid_request", &description);
-        }
+        let prompts = parameters.prompts;
+        let max_age = parameters.max_age;
         let Some(client) = client else {
             return browser_redirect(
                 req,
@@ -657,6 +611,112 @@ enum AuthorizationPrompt {
     Login,
     Create,
     SelectAccount,
+}
+
+#[derive(Default)]
+struct AuthorizationParameters {
+    prompts: Vec<AuthorizationPrompt>,
+    max_age: Option<f64>,
+    redirect_uri: Option<String>,
+}
+
+fn authorization_parameters(
+    query: &serde_json::Map<String, Value>,
+    max_age: Result<Option<f64>, &'static str>,
+) -> Result<AuthorizationParameters, (&'static str, String)> {
+    let mut parameters = AuthorizationParameters::default();
+    let invalid = |description: String| ("invalid_request", description);
+    // Schema declaration order determines the first published issue, regardless
+    // of caller key order. Optional fields are validated before provider policy.
+    for name in [
+        "response_type",
+        "request",
+        "request_uri",
+        "redirect_uri",
+        "scope",
+        "state",
+        "client_id",
+        "prompt",
+        "display",
+        "ui_locales",
+        "max_age",
+        "acr_values",
+        "login_hint",
+        "id_token_hint",
+        "code_challenge",
+        "code_challenge_method",
+        "nonce",
+        "claims",
+        "dpop_jkt",
+        "resource",
+    ] {
+        let Some(value) = query.get(name) else {
+            if name == "client_id" {
+                return Err(invalid("client_id is required".into()));
+            }
+            continue;
+        };
+        match name {
+            "max_age" => {
+                parameters.max_age = max_age.map_err(|description| invalid(description.into()))?;
+                continue;
+            }
+            "claims" => {
+                if !value.is_string() && !value.is_object() {
+                    return Err(invalid("claims: Invalid input".into()));
+                }
+                continue;
+            }
+            "resource" => {
+                if let Some(description) = authorization_resource_error(Some(value)) {
+                    return Err(invalid(description));
+                }
+                continue;
+            }
+            _ => {}
+        }
+        let Some(text) = value.as_str() else {
+            return Err(invalid(if value.is_array() {
+                format!("{name} must not appear more than once")
+            } else {
+                format!("{name} must be a string")
+            }));
+        };
+        match name {
+            "response_type" if text != "code" => {
+                return Err((
+                    "unsupported_response_type",
+                    "response_type must be one of: code".into(),
+                ));
+            }
+            "redirect_uri" => {
+                let text = alibi_core::utils::javascript::trim(text);
+                if let Some(issue) = super::clients::safe_uri_issues(text).into_iter().next() {
+                    return Err(invalid(format!("redirect_uri: {issue}")));
+                }
+                parameters.redirect_uri = Some(text.into());
+            }
+            "client_id" if text.is_empty() => {
+                return Err(invalid("client_id: client_id is required".into()));
+            }
+            "prompt" => parameters.prompts = authorization_prompts(Some(text)).map_err(invalid)?,
+            "code_challenge_method" if text != "S256" => {
+                return Err(invalid("code_challenge_method must be one of: S256".into()));
+            }
+            "dpop_jkt"
+                if text.len() != 43
+                    || !text.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')
+                    }) =>
+            {
+                return Err(invalid(
+                    "dpop_jkt: dpop_jkt must be a base64url-encoded SHA-256 JWK thumbprint".into(),
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(parameters)
 }
 
 fn authorization_prompts(input: Option<&str>) -> Result<Vec<AuthorizationPrompt>, String> {

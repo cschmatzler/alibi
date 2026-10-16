@@ -328,6 +328,13 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     ))
     .await?;
     Box::pin(assert_loopback_authorization(&auth, &db, &cookies(&owner))).await?;
+    Box::pin(assert_authorization_schema(
+        &auth,
+        &db,
+        &cookies(&owner),
+        body(&managed)["client_id"].as_str().unwrap(),
+    ))
+    .await?;
     Box::pin(assert_signed_login_resumes(
         &auth, &owner, &managed, &signed, &id,
     ))
@@ -704,6 +711,131 @@ async fn assert_authorization_admission<S: AuthSchema>(
         let grant: Value = serde_json::from_str(stored.value())?;
         assert_eq!(grant["query"]["redirect_uri"], RESERVED_CALLBACK);
         assert_eq!(grant["query"]["state"], "code-state");
+    }
+    Ok(())
+}
+
+async fn assert_authorization_schema<S: AuthSchema>(
+    auth: &Alibi<S>,
+    db: &Db,
+    cookie: &str,
+    client: &str,
+) -> TestResult {
+    for http in [false, true] {
+        let mut physical = request("/oauth2/authorize", None, cookie);
+        _ = physical
+            .headers
+            .insert("accept".into(), "application/json".into());
+        let query = json!({"client_id":client,"response_type":"code","redirect_uri":"\u{feff} https://app.fixture.test/callback \u{a0}","scope":"email","state":"schema-state"});
+        let response = Box::pin(authorization_response(auth, &query, physical, http)).await?;
+        assert_eq!(response.status, 200);
+        let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+        assert_eq!(
+            target.host_str(),
+            Some("app.fixture.test"),
+            "parsed redirect http={http}"
+        );
+        let code = target
+            .query_pairs()
+            .find(|(name, _)| name == "code")
+            .unwrap()
+            .1
+            .into_owned();
+        let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(code.as_bytes()));
+        let stored = auth
+            .store()
+            .get_verification_by_identifier(&hash)
+            .await?
+            .unwrap();
+        let grant: Value = serde_json::from_str(stored.value())?;
+        assert_eq!(
+            grant["query"]["redirect_uri"],
+            "https://app.fixture.test/callback"
+        );
+        assert_eq!(grant["query"]["state"], "schema-state");
+        for (patch, error, description, trusted) in [
+            (json!({"redirect_uri":"http://localhost./callback"}),"invalid_redirect","invalid redirect uri",false),
+            (json!({"redirect_uri":"http://[::ffff:127.0.0.1]/callback"}),"invalid_redirect","invalid redirect uri",false),
+            (
+                json!({"response_type":""}),
+                "unsupported_response_type",
+                "response_type must be one of: code",
+                true,
+            ),
+            (
+                json!({"code_challenge_method":"plain","dpop_jkt":"bad-value"}),
+                "invalid_request",
+                "code_challenge_method must be one of: S256",
+                true,
+            ),
+            (
+                json!({"redirect_uri":"relative","prompt":"select_account"}),
+                "invalid_request",
+                "redirect_uri: Invalid URL",
+                false,
+            ),
+            (
+                json!({"client_id":"","prompt":"surprise"}),
+                "invalid_request",
+                "client_id: client_id is required",
+                false,
+            ),
+            (
+                json!({"prompt":"surprise","display":42}),
+                "invalid_request",
+                "prompt: unsupported prompt value: surprise",
+                true,
+            ),
+            (
+                json!({"claims":null}),
+                "invalid_request",
+                "claims: Invalid input",
+                true,
+            ),
+        ] {
+            if http && !patch.as_object().unwrap().values().all(Value::is_string) {
+                continue;
+            }
+            let before = db
+                .tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?;
+            let mut input = json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"schema-state","response_mode":"fragment"});
+            input.as_object_mut().unwrap().extend(
+                patch
+                    .as_object()
+                    .unwrap()
+                    .iter()
+                    .map(|(key, value)| (key.clone(), value.clone())),
+            );
+            let mut physical = request("/oauth2/authorize", None, cookie);
+            _ = physical
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
+            assert_eq!(response.status, 200);
+            assert!(!response.headers.contains_key("set-cookie"));
+            let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+            let parameters = if trusted {
+                target.fragment().unwrap()
+            } else {
+                assert!(target.fragment().is_none());
+                target.query().unwrap()
+            };
+            let fields = url::form_urlencoded::parse(parameters.as_bytes())
+                .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(fields["error"], error, "http={http}, patch={patch}");
+            assert_eq!(
+                fields["error_description"], description,
+                "http={http}, patch={patch}"
+            );
+            assert!(!fields.contains_key("code"));
+            assert_eq!(
+                db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                    .await?,
+                before
+            );
+        }
     }
     Ok(())
 }

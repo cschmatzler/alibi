@@ -496,7 +496,7 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
         }
     }
 }
-fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
+pub(super) fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
     let Ok(url) = url::Url::parse(uri) else {
         return vec!["Invalid URL"];
     };
@@ -507,12 +507,19 @@ fn safe_uri_issues(uri: &str) -> Vec<&'static str> {
     if uri.contains('#') {
         issues.push("Redirect URI must not contain a fragment component");
     }
-    let host = url.host_str().unwrap_or_default().trim_matches(['[', ']']);
+    let host = url
+        .host_str()
+        .unwrap_or_default()
+        .trim_matches(['[', ']'])
+        .trim_end_matches('.');
     let loopback = host == "localhost"
         || host.ends_with(".localhost")
-        || host
-            .parse::<std::net::IpAddr>()
-            .is_ok_and(|ip| ip.is_loopback());
+        || host.parse::<std::net::IpAddr>().is_ok_and(|ip| match ip {
+            std::net::IpAddr::V4(ip) => ip.is_loopback(),
+            std::net::IpAddr::V6(ip) => {
+                ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+            }
+        });
     if url.scheme() == "http" && !loopback {
         issues.push("Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)");
     }

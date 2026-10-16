@@ -380,9 +380,121 @@ compatScenario(
         fetchRedirects.push({ transport, mode, destination, status, result, location });
       }
     }
+    const normalizedRedirects = [];
     const errorChannels = [];
     for (const transport of ["private", "http"] as const) {
       for (const [query, fragment, error, description, trusted] of [
+        [
+          { response_type: "", response_mode: "fragment" },
+          true,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          true,
+        ],
+        [
+          { response_type: undefined, prompt: "select_account", response_mode: "fragment" },
+          true,
+          "invalid_request",
+          "response_type is required",
+          true,
+        ],
+        [
+          { request: "", prompt: "select_account", response_mode: "fragment" },
+          true,
+          "request_not_supported",
+          "request object not supported",
+          true,
+        ],
+        [
+          { client_id: "", prompt: "surprise" },
+          false,
+          "invalid_request",
+          "client_id: client_id is required",
+          false,
+        ],
+        [
+          { code_challenge_method: "plain", dpop_jkt: "bad-value", response_mode: "fragment" },
+          true,
+          "invalid_request",
+          "code_challenge_method must be one of: S256",
+          true,
+        ],
+        [
+          { redirect_uri: "relative" },
+          false,
+          "invalid_request",
+          "redirect_uri: Invalid URL",
+          false,
+        ],
+        [
+          { redirect_uri: "relative", prompt: "select_account" },
+          false,
+          "invalid_request",
+          "redirect_uri: Invalid URL",
+          false,
+        ],
+        [
+          { redirect_uri: "https://app.fixture.test/callback#" },
+          false,
+          "invalid_request",
+          "redirect_uri: Redirect URI must not contain a fragment component",
+          false,
+        ],
+        [
+          { redirect_uri: "http://app.fixture.test/callback" },
+          false,
+          "invalid_request",
+          "redirect_uri: Redirect URI must use HTTPS (HTTP allowed only for loopback hosts)",
+          false,
+        ],
+        [
+          { redirect_uri: "javascript:alert(1)" },
+          false,
+          "invalid_request",
+          "redirect_uri: URL cannot use javascript:, data:, or vbscript: scheme",
+          false,
+        ],
+        [{redirect_uri:"http://localhost./callback"},false,"invalid_redirect","invalid redirect uri",false],
+        [{redirect_uri:"http://[::ffff:127.0.0.1]/callback"},false,"invalid_redirect","invalid redirect uri",false],
+        [
+          { response_type: "token", redirect_uri: " https://app.fixture.test/callback " },
+          false,
+          "unsupported_response_type",
+          "response_type must be one of: code",
+          false,
+        ],
+        ...(transport === "private"
+          ? ([
+              [
+                { response_type: "token", scope: 42 },
+                true,
+                "unsupported_response_type",
+                "response_type must be one of: code",
+                true,
+              ],
+              [
+                { prompt: "surprise", display: 42, response_mode: "fragment" },
+                true,
+                "invalid_request",
+                "prompt: unsupported prompt value: surprise",
+                true,
+              ],
+              [
+                { prompt: "select_account", scope: 42, response_mode: "fragment" },
+                true,
+                "invalid_request",
+                "scope must be a string",
+                true,
+              ],
+              [
+                { claims: null, response_mode: "fragment" },
+                true,
+                "invalid_request",
+                "claims: Invalid input",
+                true,
+              ],
+            ] as const)
+          : []),
         [
           { response_type: "token" },
           true,
@@ -540,6 +652,27 @@ compatScenario(
         }
         errorChannels.push({ transport, query, result });
       }
+    }
+    for (const transport of ["private", "http"] as const) {
+      const response = await control({
+        ...(transport === "http"
+          ? { action: "protocol-http", path: "/oauth2/authorize" }
+          : { action: "authorize" }),
+        headers: { accept: "application/json", cookie },
+        query: { ...publicQuery, redirect_uri: "\uFEFF https://app.fixture.test/callback \u00A0" },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url, ctx.baseURL);
+      expect(target.hostname).toBe("app.fixture.test");
+      const code = target.searchParams.get("code");
+      expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const stored = await (await control({ action: "grant-row", token: code })).json();
+      expect(stored.value.query.redirect_uri).toBe(publicQuery.redirect_uri);
+      expect(stored.value.query.state).toBe(publicQuery.state);
+      expect(stored.value.userId).toBe(actualSession.user.id);
+      expect(stored.value.sessionId).toBe(actualSession.session.id);
+      normalizedRedirects.push({ transport, result, stored });
     }
     const confirmationHints = [];
     for (const transport of ["private", "http"] as const) {
@@ -729,6 +862,7 @@ compatScenario(
     }
     return {
       callbackQueries: ctx.snapshot(callbackQueries),
+      normalizedRedirects: ctx.snapshot(normalizedRedirects),
       loopbackRedirects: ctx.snapshot(loopbackRedirects),
       fetchRedirects: ctx.snapshot(fetchRedirects),
       errorChannels: ctx.snapshot(errorChannels),
