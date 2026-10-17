@@ -558,11 +558,12 @@ impl OAuthProviderPlugin {
                     scopes: &scopes,
                 })
                 .await
-                .map_err(|error| match error {
-                    AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::CallbackFailure(_) => error,
-                    other => AuthError::CallbackFailure(Box::new(other)),
+                .map_err(|error| {
+                    if alibi_core::endpoint::is_endpoint_api_error(&error) {
+                        error
+                    } else {
+                        AuthError::CallbackFailure(Box::new(error))
+                    }
                 })?;
             let page = match decision {
                 super::OAuthSignupRedirect::Continue => None,

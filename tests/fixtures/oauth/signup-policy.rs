@@ -29,6 +29,14 @@ impl OAuthSignupPolicy for SignupPolicy {
             )),
             Some("empty") => Ok(OAuthSignupRedirect::Page(String::new())),
             Some("ordinary-error") => Err(alibi::AuthError::internal("signup policy failed")),
+            Some("native-error") => Err(alibi::AuthError::forbidden(
+                "Signup denied by native policy",
+            )),
+            Some("upstream-error") => Err(alibi::AuthError::Upstream {
+                status: 503,
+                code: "SIGNUP_UNAVAILABLE",
+                message: "Signup policy unavailable",
+            }),
             Some("api-error") => Err(alibi::AuthError::Api {
                 status: 403,
                 code: Some("SIGNUP_DENIED".into()),

@@ -92,11 +92,15 @@ compatScenario(
                 ["true", { code_challenge: "incomplete" }, true, "invalid_request", false],
                 ["ordinary-error", {}, true, "ordinary-error", true],
                 ["api-error", {}, true, "api-error", true],
+                ["native-error", {}, true, "native-error", true],
+                ["upstream-error", {}, true, "upstream-error", true],
               ];
       if (mode === "signup-policy") {
         cases.push(
           ["ordinary-error", {}, true, "ordinary-error", true, "http"],
           ["api-error", {}, true, "api-error", true, "http"],
+          ["native-error", {}, true, "native-error", true, "http"],
+          ["upstream-error", {}, true, "upstream-error", true, "http"],
         );
       }
       for (const [decision, patch, authenticated, expected, called, transport] of cases) {
@@ -119,13 +123,19 @@ compatScenario(
           expect(response.status).toBe(500);
           expect(text).toBe("");
           output = text;
-        } else if (expected === "api-error") {
-          expect(response.status).toBe(403);
+        } else if (expected.endsWith("-error")) {
+          expect(response.status).toBe(expected === "upstream-error" ? 503 : 403);
           output = JSON.parse(text);
-          expect(output).toEqual({
-            code: "SIGNUP_DENIED",
-            message: "Signup denied by application",
-          });
+          expect(output).toEqual(
+            expected === "native-error"
+              ? { message: "Signup denied by native policy" }
+              : expected === "upstream-error"
+                ? { code: "SIGNUP_UNAVAILABLE", message: "Signup policy unavailable" }
+                : {
+                    code: "SIGNUP_DENIED",
+                    message: "Signup denied by application",
+                  },
+          );
         } else {
           expect(response.status).toBe(200);
           output = JSON.parse(text);

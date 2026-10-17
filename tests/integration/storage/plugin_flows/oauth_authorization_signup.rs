@@ -135,6 +135,8 @@ async fn assert_cases<S: AuthSchema>(
             ),
             ("ordinary-error", json!({}), true, "ordinary-error", true),
             ("api-error", json!({}), true, "api-error", true),
+            ("native-error", json!({}), true, "native-error", true),
+            ("upstream-error", json!({}), true, "upstream-error", true),
         ]
     } else if with_policy {
         vec![
@@ -205,10 +207,23 @@ async fn assert_cases<S: AuthSchema>(
                 assert_eq!(error.error.status_code(), 500);
                 assert!(matches!(error.error, alibi::AuthError::CallbackFailure(_)));
             } else {
-                assert_eq!(error.error.status_code(), 403);
+                assert_eq!(
+                    error.error.status_code(),
+                    if expected == "upstream-error" {
+                        503
+                    } else {
+                        403
+                    }
+                );
                 assert_eq!(
                     body(&error.error.to_auth_response()),
-                    json!({"code":"SIGNUP_DENIED","message":"Signup denied by application"})
+                    match expected {
+                        "native-error" => json!({"message":"Signup denied by native policy"}),
+                        "upstream-error" =>
+                            json!({"code":"SIGNUP_UNAVAILABLE","message":"Signup policy unavailable"}),
+                        _ =>
+                            json!({"code":"SIGNUP_DENIED","message":"Signup denied by application"}),
+                    }
                 );
             }
             assert_eq!(policy.calls.lock().unwrap().len(), 1);

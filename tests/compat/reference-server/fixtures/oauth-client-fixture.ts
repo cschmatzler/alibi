@@ -1265,6 +1265,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                           scopes,
                         });
                         if (decision === "ordinary-error") throw new Error("signup policy failed");
+                        if (decision === "native-error") {
+                          throw new APIError("FORBIDDEN", {
+                            message: "Signup denied by native policy",
+                          });
+                        }
+                        if (decision === "upstream-error") {
+                          throw new APIError("SERVICE_UNAVAILABLE", {
+                            code: "SIGNUP_UNAVAILABLE",
+                            message: "Signup policy unavailable",
+                          });
+                        }
                         if (decision === "api-error") {
                           throw new APIError("FORBIDDEN", {
                             code: "SIGNUP_DENIED",
