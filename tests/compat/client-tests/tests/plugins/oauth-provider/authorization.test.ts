@@ -872,10 +872,45 @@ compatScenario(
       expect(proof.value.query).not.toHaveProperty("max_age");
       postAuthorizations.push({ contentType, result, proof });
     }
+    const nonfiniteAuthorizations = [];
+    const nonfiniteBody =
+      JSON.stringify(publicQuery).slice(0, -1) +
+      ',"extension_scalar":1e400,"extension_array":[1e400,[1e400]],"exp":1e400}';
+    for (const authenticated of [false, true]) {
+      const response = await control({
+        action: "protocol-http",
+        path: "/oauth2/authorize",
+        method: "POST",
+        contentType: "application/jsonapplication/x-www-form-urlencoded",
+        rawBody: nonfiniteBody,
+        headers: { accept: "application/json", ...(authenticated ? { cookie } : {}) },
+      });
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      const target = new URL(result.url, ctx.baseURL);
+      let stored = null;
+      if (!authenticated) {
+        expect(target.pathname).toBe("/login");
+        expect(target.searchParams.get("extension_scalar")).toBe("Infinity");
+        expect(target.searchParams.getAll("extension_array")).toEqual(["Infinity", "Infinity"]);
+        expect(Number.isFinite(Number(target.searchParams.get("exp")))).toBe(true);
+      } else {
+        const code = target.searchParams.get("code");
+        expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+        stored = await (await control({ action: "grant-row", token: code })).json();
+        expect(stored.value.query.extension_scalar).toBeNull();
+        expect(stored.value.query.extension_array).toEqual([null, [null]]);
+        expect(stored.value.query.exp).toBeNull();
+        expect(stored.value.userId).toBe(actualSession.user.id);
+        expect(stored.value.sessionId).toBe(actualSession.session.id);
+      }
+      nonfiniteAuthorizations.push({ authenticated, result, stored });
+    }
     return {
       redirectPolicy: ctx.snapshot(
         await assertRedirectPolicy(control, cookie, managed, actualSession, ctx.baseURL),
       ),
+      nonfiniteAuthorizations: ctx.snapshot(nonfiniteAuthorizations),
       callbackQueries: ctx.snapshot(callbackQueries),
       normalizedRedirects: ctx.snapshot(normalizedRedirects),
       loopbackRedirects: ctx.snapshot(loopbackRedirects),

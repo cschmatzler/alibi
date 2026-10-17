@@ -52,6 +52,7 @@ impl OAuthProviderPlugin {
             );
         }
         let validated_max_age = maximum_age(input.as_ref().and_then(|input| input.get("max_age")));
+        let nonfinite_values = nonfinite_query_values(input.as_ref());
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
@@ -374,7 +375,7 @@ impl OAuthProviderPlugin {
             && prompts.contains(&AuthorizationPrompt::SelectAccount)
             && let Some(page) = &self.config.select_account_page
         {
-            let params = self.sign_authorization_query(query, ctx)?;
+            let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
             return browser_redirect(req, &format!("{page}?{params}"));
         }
         let remembered = if !force_login
@@ -519,7 +520,7 @@ impl OAuthProviderPlugin {
         } else {
             &self.config.consent_page
         };
-        let params = self.sign_authorization_query(query, ctx)?;
+        let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
         browser_redirect(req, &format!("{page}?{params}"))
     }
     async fn authorization_redirect_is_trusted(
@@ -566,6 +567,7 @@ impl OAuthProviderPlugin {
     fn sign_authorization_query<S: AuthSchema>(
         &self,
         query: serde_json::Map<String, Value>,
+        nonfinite_values: &std::collections::BTreeMap<String, JsValue>,
         ctx: &AuthContext<S>,
     ) -> AuthResult<String> {
         let now = chrono::Utc::now().timestamp_millis();
@@ -575,6 +577,18 @@ impl OAuthProviderPlugin {
         let mut pairs = Vec::new();
         for (name, value) in query {
             if ["sig", "exp", "ba_iat", "ba_param", "ba_pl"].contains(&name.as_str()) {
+                continue;
+            }
+            // Grant JSON follows JSON.stringify's null projection. Browser
+            // interactions instead preserve String(Infinity/NaN), including arrays.
+            if let Some(value) = nonfinite_values.get(&name) {
+                if let JsValue::Array(values) = value {
+                    for value in values {
+                        pairs.push((name.clone(), js_parameter_text(value)?));
+                    }
+                } else {
+                    pairs.push((name, js_parameter_text(value)?));
+                }
                 continue;
             }
             match value {
@@ -621,9 +635,42 @@ impl OAuthProviderPlugin {
     }
 }
 fn parameter_text(value: &Value) -> AuthResult<String> {
-    JsValue::from(value.clone())
+    js_parameter_text(&JsValue::from(value.clone()))
+}
+
+fn js_parameter_text(value: &JsValue) -> AuthResult<String> {
+    value
         .coerce_string()
         .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
+}
+
+fn nonfinite_query_values(input: Option<&JsValue>) -> std::collections::BTreeMap<String, JsValue> {
+    let Some(values) = input.and_then(JsValue::as_object) else {
+        return Default::default();
+    };
+    values
+        .iter()
+        .filter(|(_, value)| has_nonfinite_array_value(value))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
+}
+
+// String(object) is unaffected by JSON's non-finite number projection; scalar
+// and array coercion is not. Traverse arrays without adding recursive stack use.
+fn has_nonfinite_array_value(value: &JsValue) -> bool {
+    let mut pending = match value {
+        JsValue::Number(number) => return !number.is_finite(),
+        JsValue::Array(values) => values.iter().collect::<Vec<_>>(),
+        _ => return false,
+    };
+    while let Some(value) = pending.pop() {
+        match value {
+            JsValue::Number(number) if !number.is_finite() => return true,
+            JsValue::Array(values) => pending.extend(values.iter()),
+            _ => {}
+        }
+    }
+    false
 }
 #[derive(PartialEq, Eq)]
 enum AuthorizationErrorMode {

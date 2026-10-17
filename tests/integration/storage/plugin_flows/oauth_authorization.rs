@@ -337,6 +337,13 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         body(&managed)["client_id"].as_str().unwrap(),
     ))
     .await?;
+    Box::pin(assert_nonfinite_authorization(
+        &auth,
+        &cookies(&owner),
+        body(&managed)["client_id"].as_str().unwrap(),
+        body(&owner)["user"]["id"].as_str().unwrap(),
+    ))
+    .await?;
     Box::pin(assert_signed_login_resumes(
         &auth, &owner, &managed, &signed, &id,
     ))
@@ -1141,6 +1148,92 @@ async fn assert_authorization_admission<S: AuthSchema>(
         let grant: Value = serde_json::from_str(stored.value())?;
         assert_eq!(grant["query"]["redirect_uri"], RESERVED_CALLBACK);
         assert_eq!(grant["query"]["state"], "code-state");
+    }
+    Ok(())
+}
+
+async fn assert_nonfinite_authorization<S: AuthSchema>(
+    auth: &Alibi<S>,
+    cookie: &str,
+    client: &str,
+    owner: &str,
+) -> TestResult {
+    let base=json!({"client_id":client,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"nonfinite-state"}).to_string();
+    let raw = format!(
+        "{},\"extension_scalar\":1e400,\"extension_array\":[1e400,[1e400]],\"exp\":1e400}}",
+        base.strip_suffix('}').unwrap()
+    );
+    for authenticated in [false, true] {
+        let mut physical = request(
+            "/oauth2/authorize",
+            Some(json!({})),
+            if authenticated { cookie } else { "" },
+        );
+        physical.body = Some(raw.as_bytes().to_vec());
+        _ = physical.headers.insert(
+            "content-type".into(),
+            "application/jsonapplication/x-www-form-urlencoded".into(),
+        );
+        _ = physical
+            .headers
+            .insert("accept".into(), "application/json".into());
+        let response = Box::pin(auth.handle_request(physical)).await?;
+        assert_eq!(response.status, 200);
+        let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+        let target = if !authenticated {
+            assert_eq!(target.path(), "/login");
+            assert!(
+                target
+                    .query_pairs()
+                    .find(|(key, _)| key == "exp")
+                    .unwrap()
+                    .1
+                    .parse::<f64>()?
+                    .is_finite()
+            );
+            let mut signin = request(
+                "/sign-in/email",
+                Some(
+                    json!({"email":"oauth-authorization-owner@example.test","password":PASSWORD,"oauth_query":target.query().unwrap()}),
+                ),
+                "",
+            );
+            _ = signin
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let resumed = Box::pin(call(auth, signin, 200)).await;
+            url::Url::parse(ORIGIN)?.join(body(&resumed)["url"].as_str().unwrap())?
+        } else {
+            target
+        };
+        let code = target
+            .query_pairs()
+            .find(|(key, _)| key == "code")
+            .unwrap()
+            .1
+            .into_owned();
+        let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(code.as_bytes()));
+        let stored = auth
+            .store()
+            .get_verification_by_identifier(&hash)
+            .await?
+            .unwrap();
+        let grant: Value = serde_json::from_str(stored.value())?;
+        assert_eq!(grant["userId"], owner);
+        assert_eq!(grant["query"]["client_id"], client);
+        if authenticated {
+            assert_eq!(grant["query"]["extension_scalar"], Value::Null);
+            assert_eq!(grant["query"]["extension_array"], json!([null, [null]]));
+            assert_eq!(grant["query"]["exp"], Value::Null);
+        } else {
+            assert_eq!(grant["query"]["extension_scalar"], "Infinity");
+            assert_eq!(
+                grant["query"]["extension_array"],
+                json!(["Infinity", "Infinity"])
+            );
+            assert!(grant["query"].get("exp").is_none());
+        }
     }
     Ok(())
 }
