@@ -417,6 +417,34 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     refreshTokenExpiresIn: 900,
   };
   const liveClaims = { value: "", calls: [] as any[] };
+  const userInfoClaims = {
+    value: null as string | null,
+    calls: [] as any[],
+    events: [] as string[],
+  };
+  const customUserInfoClaims = async ({ user, scopes, jwt, requestedClaims }: any) => {
+    if (userInfoClaims.value === null) return {};
+    userInfoClaims.events.push("operator");
+    userInfoClaims.calls.push({
+      userId: user.id,
+      userName: user.name ?? null,
+      userEmail: user.email ?? null,
+      scopes,
+      requestedClaims,
+      payloadSub: jwt.sub ?? null,
+      payloadClientId: jwt.client_id ?? jwt.azp ?? null,
+      payloadScope: jwt.scope ?? null,
+    });
+    return {
+      name: `Operator ${userInfoClaims.value}`,
+      email: `operator-${userInfoClaims.value}@example.test`,
+      extension_owner: `operator-${userInfoClaims.value}`,
+      toString: `operator-toString-${userInfoClaims.value}`,
+      // Computed key supplies an own claim, not an object-literal prototype.
+      ["__proto__"]: { operatorPrototype: userInfoClaims.value },
+      sub: "operator-forged-sub",
+    };
+  };
   const claimExtensions = (live = false) =>
     ["first", "second"].map((id) => {
       const tokenClaims = async ({
@@ -499,22 +527,25 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }
             return tokenClaims(input);
           },
-          userInfo: async ({ ctx, user, client, scopes, jwt, requestedClaims }: any) => ({
-            extension_owner: id,
-            [`extension_${id}`]: {
-              scopes,
-              userId: user.id,
-              clientId: client?.clientId ?? null,
-              requestedClaims,
-              payloadSub: jwt.sub,
-              caller: ctx.headers?.get("x-claims-caller") ?? null,
-            },
-            sub: "forged",
-            name: "Forged name",
-            email_verified: true,
-            constructor: "forged",
-            nullable_claim: null,
-          }),
+          userInfo: async ({ ctx, user, client, scopes, jwt, requestedClaims }: any) => {
+            userInfoClaims.events.push(id);
+            return {
+              extension_owner: id,
+              [`extension_${id}`]: {
+                scopes,
+                userId: user.id,
+                clientId: client?.clientId ?? null,
+                requestedClaims,
+                payloadSub: jwt.sub,
+                caller: ctx.headers?.get("x-claims-caller") ?? null,
+              },
+              sub: "forged",
+              name: "Forged name",
+              email_verified: true,
+              constructor: "forged",
+              nullable_claim: null,
+            };
+          },
         },
       };
     });
@@ -844,6 +875,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           loginPage: "/login",
           consentPage: "/consent",
           extensions: claimExtensions(),
+          customUserInfoClaims,
         }),
         issuanceHelper,
       ],
@@ -876,6 +908,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           loginPage: "/login",
           consentPage: "/consent",
           pairwiseSecret: "fixture-pairwise-secret-at-least-32-characters",
+          customUserInfoClaims,
         }),
       ],
     }),
@@ -1219,6 +1252,16 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       return Response.json(liveClaims);
+    }
+    if (input.action === "userinfo-claims-state") {
+      if (typeof input.value === "string" || input.value === null) {
+        userInfoClaims.value = input.value;
+      }
+      if (input.reset) {
+        userInfoClaims.calls.length = 0;
+        userInfoClaims.events.length = 0;
+      }
+      return Response.json(userInfoClaims);
     }
     if (input.action === "backchannel-uri") {
       // Install a local RP on a persisted client. Public-host admission belongs

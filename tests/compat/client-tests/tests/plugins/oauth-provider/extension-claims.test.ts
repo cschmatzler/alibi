@@ -236,7 +236,14 @@ compatScenario(
     const issuer = `${ctx.baseURL}/api/auth`;
     const resource = `${issuer}/oauth2/userinfo`;
     const receipts = [];
+    const accessTokens: string[] = [];
+    const operatorState = async (input: object = {}) => {
+      const response = await control({ action: "userinfo-claims-state", ...input });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
     for (const resources of [undefined, [resource]]) {
+      await operatorState({ value: null, reset: true });
       const response = await control({
         action: "issue-tokens",
         headers: { "x-claims-caller": "trusted-caller" },
@@ -252,6 +259,7 @@ compatScenario(
             referenceId: "application-reference",
             accessTokenClaims: { per_request: "request" },
             idTokenClaims: { per_request: "request" },
+            requestedUserInfoClaims: ["email", "unsupported"],
           },
         },
       });
@@ -300,6 +308,7 @@ compatScenario(
       const claims = (await userInfo.json()) as any;
       expect(claims.sub).toBe(owner.user.id);
       expect(claims.name).toBe("Claim Owner");
+      expect(claims.email).toBe(owner.user.email);
       expect(claims.email_verified).toBe(false);
       expect(claims.extension_owner).toBe("first");
       expect(claims.nullable_claim).toBeNull();
@@ -309,11 +318,82 @@ compatScenario(
           scopes: ["openid", "profile", "email", "offline_access"],
           userId: owner.user.id,
           clientId: client.client_id,
-          requestedClaims: [],
+          requestedClaims: resources ? [] : ["email", "unsupported"],
           payloadSub: owner.user.id,
           caller: "userinfo-caller",
         });
       }
+      await operatorState({ value: "before", reset: true });
+      const overrides = [];
+      for (const value of ["before", "after"]) {
+        if (value === "after") await operatorState({ value });
+        const info = await control({
+          action: "userinfo",
+          headers: {
+            authorization: `Bearer ${tokens.access_token}`,
+            "x-claims-caller": "userinfo-caller",
+          },
+        });
+        expect(info.status).toBe(200);
+        const overridden = (await info.json()) as any;
+        expect(overridden).toEqual({
+          ...claims,
+          name: `Operator ${value}`,
+          email: `operator-${value}@example.test`,
+          extension_owner: `operator-${value}`,
+          toString: `operator-toString-${value}`,
+          sub: owner.user.id,
+        });
+        expect(Object.hasOwn(overridden, "__proto__")).toBe(false);
+        expect(Object.hasOwn(overridden, "operatorPrototype")).toBe(false);
+        // Preserve every returned value using the harness's identity vocabulary.
+        const { sub, extension_first, extension_second, ...profile } = overridden;
+        const extensionReceipt = ({ payloadSub, ...fields }: any) => ({
+          ...fields,
+          payload: { userId: payloadSub },
+        });
+        overrides.push({
+          userId: sub,
+          ...profile,
+          extension_first: extensionReceipt(extension_first),
+          extension_second: extensionReceipt(extension_second),
+        });
+      }
+      const operator = await operatorState();
+      expect(operator.calls).toEqual(
+        Array.from({ length: 2 }, () => ({
+          userId: owner.user.id,
+          userName: "Claim Owner",
+          userEmail: owner.user.email,
+          scopes: ["openid", "profile", "email", "offline_access"],
+          requestedClaims: resources ? [] : ["email", "unsupported"],
+          payloadSub: owner.user.id,
+          payloadClientId: client.client_id,
+          payloadScope: "openid profile email offline_access",
+        })),
+      );
+      expect(operator.events).toEqual([
+        "first",
+        "second",
+        "operator",
+        "first",
+        "second",
+        "operator",
+      ]);
+      // A real issued ID token is signed but has the wrong access authority.
+      for (const token of ["missing-token", tokens.id_token]) {
+        const denied = await control({
+          action: "userinfo",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        expect(denied.status).toBe(401);
+        expect(await denied.json()).toEqual({
+          error: "invalid_token",
+          error_description: "Invalid access token",
+        });
+      }
+      expect(await operatorState()).toEqual(operator);
+      await operatorState({ value: null });
       const refresh = await control({
         action: "token",
         headers: { "x-claims-caller": "refresh-caller" },
@@ -326,6 +406,8 @@ compatScenario(
       });
       expect(refresh.status).toBe(200);
       const renewed = (await refresh.json()) as any;
+      // Keep the replacement authority, not an access row retired by refresh.
+      accessTokens.push(renewed.access_token);
       const refreshedId = (
         await jwtVerify(renewed.id_token, keys, { issuer, audience: client.client_id })
       ).payload;
@@ -338,6 +420,16 @@ compatScenario(
         owner: claims.extension_owner,
         perRequest: id.per_request,
         refreshedGrant: (refreshedId.extension_first as any).grant,
+        overrides,
+        operator: {
+          ...operator,
+          calls: operator.calls.map(
+            ({ payloadSub, payloadClientId, payloadScope, ...args }: any) => ({
+              ...args,
+              payload: { userId: payloadSub, clientId: payloadClientId, scope: payloadScope },
+            }),
+          ),
+        },
       });
     }
     const beforeResponse = await control({
@@ -383,7 +475,34 @@ compatScenario(
       },
     });
     expect(opaque.status).toBe(200);
-    expect(((await opaque.json()) as any).access_token).toMatch(/^[A-Za-z]{32}$/);
+    const emailOnly = ((await opaque.json()) as any).access_token;
+    expect(emailOnly).toMatch(/^[A-Za-z]{32}$/);
+    const beforeExpiry = await operatorState({ value: "must-not-leak" });
+    const missingScope = await control({
+      action: "userinfo",
+      headers: { authorization: `Bearer ${emailOnly}` },
+    });
+    expect(missingScope.status).toBe(400);
+    expect(await missingScope.json()).toEqual({
+      error: "invalid_scope",
+      error_description: "Missing required scope",
+    });
+    expect(await operatorState()).toEqual(beforeExpiry);
+    const expired = await control({ action: "expire-session", token: session.session.token });
+    expect(expired.status).toBe(200);
+    expect(await expired.json()).toEqual({ expired: true });
+    for (const token of accessTokens) {
+      const denied = await control({
+        action: "userinfo",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(denied.status).toBe(401);
+      expect(await denied.json()).toEqual({
+        error: "invalid_token",
+        error_description: "Invalid access token",
+      });
+    }
+    expect(await operatorState()).toEqual(beforeExpiry);
     return ctx.snapshot({ user: owner.user, receipts, before });
   },
 );

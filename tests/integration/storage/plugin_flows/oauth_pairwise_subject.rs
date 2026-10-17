@@ -1,3 +1,4 @@
+use super::oauth_extension_claims::extension_claims;
 use super::*;
 use alibi::endpoint::{EndpointCall, EndpointDefinition, EndpointOptions, ServerEndpoint};
 use alibi::plugins::{
@@ -23,8 +24,11 @@ async fn oauth_pairwise_presentation_preserves_internal_identity_and_retires_ses
             }))
         }),
     ));
+    let live = Arc::new(extension_claims::LiveUserInfoClaims::default());
+    *live.value.lock().unwrap() = Some("pairwise".into());
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
         pairwise_secret: Some("fixture-pairwise-secret-at-least-32-characters".into()),
+        custom_user_info_claims: Some(live.clone()),
         ..Default::default()
     });
     let auth = AuthBuilder::new(config.clone())
@@ -111,6 +115,7 @@ async fn oauth_pairwise_presentation_preserves_internal_identity_and_retires_ses
                         .into_iter()
                         .collect(),
                 ),
+                request: Some(request("/oauth2/userinfo", None, "")),
                 ..Default::default()
             },
         ),
@@ -119,7 +124,23 @@ async fn oauth_pairwise_presentation_preserves_internal_identity_and_retires_ses
     .into_response()?;
     assert_eq!(info.status, 200);
     assert_eq!(body(&info)["sub"], expected);
-    assert_eq!(body(&info)["name"], "Native owner");
+    assert_eq!(body(&info)["name"], "Operator pairwise");
+    assert_eq!(body(&info)["email"], "operator-pairwise@example.test");
+    assert_eq!(
+        *live.calls.lock().unwrap(),
+        [json!({
+            "userId":"pairwise-owner","userName":"Native owner","userEmail":"pairwise@example.test",
+            "scopes":["openid","profile","offline_access"],"requestedClaims":[],
+            "payloadSub":"pairwise-owner","payloadClientId":client.client_id,"payloadScope":"openid profile offline_access",
+        })]
+    );
+    assert_eq!(*live.events.lock().unwrap(), ["operator"]);
+    assert_eq!(
+        *live.contexts.lock().unwrap(),
+        [json!({
+            "clientId":client.client_id,"caller":null,"configured":true,"path":"/api/auth/oauth2/userinfo",
+        })]
+    );
     for kind in ["access_token", "refresh_token"] {
         let inspected = Box::pin(auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({

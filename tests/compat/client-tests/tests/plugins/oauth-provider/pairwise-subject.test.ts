@@ -55,6 +55,15 @@ compatScenario(
       ],
       ["public", "https://app.fixture.test/callback", "pairwise-owner"],
     ]) {
+      expect(
+        (
+          await control({
+            action: "userinfo-claims-state",
+            value: "pairwise",
+            reset: true,
+          })
+        ).status,
+      ).toBe(200);
       const created = await control({
         action: "admin-create",
         headers: { cookie },
@@ -118,10 +127,29 @@ compatScenario(
       const claims = await info.json();
       expect(claims).toEqual({
         sub: expectedSub,
-        name: "Private Owner",
+        name: "Operator pairwise",
+        email: "operator-pairwise@example.test",
+        extension_owner: "operator-pairwise",
+        toString: "operator-toString-pairwise",
         given_name: "Private",
         family_name: "Owner",
       });
+      const callbackResponse = await control({ action: "userinfo-claims-state" });
+      expect(callbackResponse.status).toBe(200);
+      const callback = (await callbackResponse.json()) as any;
+      expect(callback.calls).toEqual([
+        {
+          userId: "pairwise-owner",
+          userName: "Private Owner",
+          userEmail: owner.user.email,
+          scopes: ["openid", "profile", "offline_access"],
+          requestedClaims: [],
+          payloadSub: "pairwise-owner",
+          payloadClientId: client.client_id,
+          payloadScope: "openid profile offline_access",
+        },
+      ]);
+      expect(callback.events).toEqual(["operator"]);
       const inspected = [];
       for (const kind of ["access_token", "refresh_token"]) {
         const response = await control({
@@ -149,6 +177,15 @@ compatScenario(
         redirect,
         subject: payload.sub,
         claims,
+        callback: {
+          ...callback,
+          calls: callback.calls.map(
+            ({ payloadSub, payloadClientId, payloadScope, ...args }: any) => ({
+              ...args,
+              payload: { userId: payloadSub, clientId: payloadClientId, scope: payloadScope },
+            }),
+          ),
+        },
         inspected,
         storedUserId: stored.userId,
       });

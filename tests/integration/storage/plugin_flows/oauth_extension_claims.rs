@@ -1,13 +1,13 @@
 use super::*;
-use alibi::AuthUser as _;
 use alibi::endpoint::{EndpointCall, EndpointDefinition, EndpointOptions};
 use alibi::plugins::{
     OAuthProviderConfig, OAuthProviderPlugin, OAuthTokenIssueParams, jwt::JwtPlugin,
 };
+use alibi::{AuthSession as _, AuthUser as _};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 #[path = "../../../fixtures/oauth/extension-claims.rs"]
-mod extension_claims;
+pub(super) mod extension_claims;
 
 backend_tests!(
     oauth_opaque_validation_rederives_live_access_claims,
@@ -167,8 +167,10 @@ async fn oauth_extension_claims_receive_live_trusted_issuance_context<B: Backend
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let live = Arc::new(extension_claims::LiveUserInfoClaims::default());
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
-        extensions: extension_claims::extensions(),
+        extensions: extension_claims::extensions_with_user_info(live.clone()),
+        custom_user_info_claims: Some(live.clone()),
         ..Default::default()
     });
     let auth = super::auth_probe::fast_builder::<B>(&connection)
@@ -204,14 +206,21 @@ async fn oauth_extension_claims_receive_live_trusted_issuance_context<B: Backend
         .await?
         .unwrap();
     let mut params = OAuthTokenIssueParams::new(
-        client,
+        client.clone(),
         vec!["openid".into(), "profile".into(), "email".into()],
     );
     params.user = Some(auth.context().trusted_user_view(&user));
+    let session = auth
+        .store()
+        .get_user_sessions(user.id().as_ref())
+        .await?
+        .pop()
+        .unwrap();
+    params.session_id = Some(session.id().as_ref().into());
     params.reference_id = Some("native-reference".into());
     params.access_token_claims = Some(json!({"per_request":"native"}));
     params.id_token_claims = Some(json!({"per_request":"native"}));
-    params.resources = Some(vec![format!("{ORIGIN}/api/auth/oauth2/userinfo")]);
+    params.requested_user_info_claims = Some(vec!["email".into(), "unsupported".into()]);
     let call = EndpointCall::new(
         &EndpointDefinition {
             name: "nativeClaims",
@@ -230,25 +239,213 @@ async fn oauth_extension_claims_receive_live_trusted_issuance_context<B: Backend
             ..Default::default()
         },
     );
-    let tokens = provider
+    let info_options = |token: &str| EndpointOptions {
+        headers: Some(
+            [
+                ("authorization".into(), format!("Bearer {token}")),
+                ("x-claims-caller".into(), "userinfo-caller".into()),
+            ]
+            .into_iter()
+            .collect(),
+        ),
+        request: Some(request("/oauth2/userinfo", None, "")),
+        ..Default::default()
+    };
+    let mut access_tokens = Vec::new();
+    for signed in [false, true] {
+        params.resources = signed.then(|| vec![format!("{ORIGIN}/api/auth/oauth2/userinfo")]);
+        *live.value.lock().unwrap() = None;
+        let tokens = provider
+            .issue_tokens(auth.context(), &call, Some("urn:native:claims"), &params)
+            .await?;
+        for key in ["access_token", "id_token"] {
+            if key == "access_token" && !signed {
+                continue;
+            }
+            let claims: Value = serde_json::from_slice(
+                &URL_SAFE_NO_PAD
+                    .decode(tokens[key].as_str().unwrap().split('.').nth(1).unwrap())?,
+            )?;
+            assert_eq!(claims["extension_owner"], "first");
+            assert_eq!(claims["per_request"], "native");
+            assert_eq!(claims["extension_first"]["caller"], "native-caller");
+            assert_eq!(claims["extension_second"]["caller"], "native-caller");
+            assert_eq!(claims["extension_first"]["userId"], user.id().as_ref());
+            assert_eq!(claims["extension_first"]["grant"], "urn:native:claims");
+            assert_eq!(
+                claims["extension_first"]["metadata"],
+                json!({"tenant":"application"})
+            );
+            assert_eq!(claims["sub"], user.id().as_ref());
+            assert!(claims.get("constructor").is_none());
+        }
+        let token = tokens["access_token"].as_str().unwrap();
+        access_tokens.push(token.to_owned());
+        let requested = if signed {
+            vec![]
+        } else {
+            vec!["email", "unsupported"]
+        };
+        if !signed {
+            let hash = provider.hash_token(token, "access_token").await?;
+            let row = auth
+                .store()
+                .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+                .await?
+                .unwrap();
+            assert_eq!(row.user_id.as_deref(), Some(user.id().as_ref()));
+            assert_eq!(row.client_id, client.client_id);
+            assert_eq!(row.metadata["requestedUserInfoClaims"], json!(requested));
+        }
+        let baseline = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            info_options(token),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(body(&baseline)["name"], "Native owner");
+        assert_eq!(body(&baseline)["email"], "extension-claims@example.test");
+        assert_eq!(body(&baseline)["email_verified"], false);
+        assert_eq!(body(&baseline)["extension_owner"], "first");
+        live.calls.lock().unwrap().clear();
+        live.events.lock().unwrap().clear();
+        live.contexts.lock().unwrap().clear();
+        for value in ["before", "after"] {
+            *live.value.lock().unwrap() = Some(value.into());
+            let info = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_user_info_endpoint(),
+                info_options(token),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(info.status, 200);
+            let claims = body(&info);
+            assert_eq!(claims["name"], format!("Operator {value}"));
+            assert_eq!(claims["email"], format!("operator-{value}@example.test"));
+            assert_eq!(claims["extension_owner"], format!("operator-{value}"));
+            assert_eq!(claims["toString"], format!("operator-toString-{value}"));
+            assert!(claims.get("__proto__").is_none());
+            assert!(claims.get("operatorPrototype").is_none());
+            assert_eq!(claims["sub"], user.id().as_ref());
+            assert_eq!(claims["email_verified"], false);
+            assert_eq!(
+                claims["extension_first"],
+                body(&baseline)["extension_first"]
+            );
+            assert_eq!(
+                claims["extension_second"],
+                body(&baseline)["extension_second"]
+            );
+        }
+        let calls = live.calls.lock().unwrap().clone();
+        assert_eq!(
+            calls,
+            vec![
+                json!({
+                    "userId":user.id().as_ref(),"userName":"Native owner","userEmail":"extension-claims@example.test",
+                    "scopes":["openid","profile","email"],"requestedClaims":requested,
+                    "payloadSub":user.id().as_ref(),"payloadClientId":client.client_id,"payloadScope":"openid profile email",
+                });
+                2
+            ]
+        );
+        let events = live.events.lock().unwrap().clone();
+        assert_eq!(
+            events,
+            ["first", "second", "operator", "first", "second", "operator"]
+        );
+        assert_eq!(
+            *live.contexts.lock().unwrap(),
+            vec![
+                json!({
+                    "clientId":client.client_id,"caller":"userinfo-caller","configured":true,"path":"/api/auth/oauth2/userinfo",
+                });
+                2
+            ]
+        );
+        // A real signed ID token has the wrong audience/authority for UserInfo.
+        for invalid in ["missing-token", tokens["id_token"].as_str().unwrap()] {
+            let denied = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_user_info_endpoint(),
+                info_options(invalid),
+            ))
+            .await
+            .unwrap_err();
+            assert_eq!(denied.error.status_code(), 401);
+            assert_eq!(
+                denied.body.unwrap().to_json_value()?,
+                json!({"error":"invalid_token","error_description":"Invalid access token"})
+            );
+        }
+        assert_eq!(*live.calls.lock().unwrap(), calls);
+        assert_eq!(*live.events.lock().unwrap(), events);
+    }
+    // Like the reference, operator-only configuration does not resolve an
+    // additional client for UserInfo without pairwise or extension claims.
+    let operator_only = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+            custom_user_info_claims: Some(live.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let count = live.calls.lock().unwrap().len();
+    let info = Box::pin(operator_only.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_user_info_endpoint(),
+        info_options(access_tokens.last().unwrap()),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(body(&info)["name"], "Operator after");
+    assert_eq!(live.calls.lock().unwrap().len(), count + 1);
+    assert_eq!(
+        live.contexts.lock().unwrap().last(),
+        Some(&json!({
+            "clientId":null,"caller":"userinfo-caller","configured":true,"path":"/api/auth/oauth2/userinfo",
+        }))
+    );
+    let calls = live.calls.lock().unwrap().clone();
+    let events = live.events.lock().unwrap().clone();
+    params.scopes = vec!["email".into()];
+    params.resources = None;
+    let email_only = provider
         .issue_tokens(auth.context(), &call, Some("urn:native:claims"), &params)
         .await?;
-    for key in ["access_token", "id_token"] {
-        let claims: Value = serde_json::from_slice(
-            &URL_SAFE_NO_PAD.decode(tokens[key].as_str().unwrap().split('.').nth(1).unwrap())?,
-        )?;
-        assert_eq!(claims["extension_owner"], "first");
-        assert_eq!(claims["per_request"], "native");
-        assert_eq!(claims["extension_first"]["caller"], "native-caller");
-        assert_eq!(claims["extension_second"]["caller"], "native-caller");
-        assert_eq!(claims["extension_first"]["userId"], user.id().as_ref());
-        assert_eq!(claims["extension_first"]["grant"], "urn:native:claims");
+    let denied = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_user_info_endpoint(),
+        info_options(email_only["access_token"].as_str().unwrap()),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 400);
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_scope","error_description":"Missing required scope"})
+    );
+    assert_eq!(*live.calls.lock().unwrap(), calls);
+    assert_eq!(*live.events.lock().unwrap(), events);
+    // Expire actual persisted session authority; neither token representation may call back.
+    auth.store()
+        .update_session_expiry(
+            session.token(),
+            chrono::Utc::now() - chrono::Duration::seconds(1),
+        )
+        .await?;
+    for token in &access_tokens {
+        let denied = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_user_info_endpoint(),
+            info_options(token),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 401);
         assert_eq!(
-            claims["extension_first"]["metadata"],
-            json!({"tenant":"application"})
+            denied.body.unwrap().to_json_value()?,
+            json!({"error":"invalid_token","error_description":"Invalid access token"})
         );
-        assert_eq!(claims["sub"], user.id().as_ref());
-        assert!(claims.get("constructor").is_none());
     }
+    assert_eq!(*live.calls.lock().unwrap(), calls);
+    assert_eq!(*live.events.lock().unwrap(), events);
     Ok(())
 }

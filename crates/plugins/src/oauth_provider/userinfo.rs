@@ -224,18 +224,26 @@ impl OAuthProviderPlugin {
             _ = claims.insert("email_verified".into(), json!(user.email_verified));
         }
         let scopes = scopes.into_iter().map(str::to_owned).collect::<Vec<_>>();
-        let extensions = self
-            .collect_user_info_claims(super::OAuthUserInfoClaimsInput {
-                context: super::extension_claims::callback_context(ctx, req),
-                options: &self.config,
-                user: &user,
-                client: client.as_ref(),
-                scopes: &scopes,
-                payload: &payload,
-                requested_claims: &requested,
-            })
-            .await?;
+        let input = super::OAuthUserInfoClaimsInput {
+            context: super::extension_claims::callback_context(ctx, req),
+            options: &self.config,
+            user: &user,
+            client: client.as_ref(),
+            scopes: &scopes,
+            payload: &payload,
+            requested_claims: &requested,
+        };
+        let extensions = self.collect_user_info_claims(input.clone()).await?;
         super::extension_claims::merge_additive(&mut claims, extensions);
+        if let Some(contributor) = &self.config.custom_user_info_claims {
+            // Unlike extensions, the operator may replace ordinary claims,
+            // including Object.prototype names. JS pickClaims assigns into {},
+            // whose __proto__ setter does not create an own key for spreading.
+            let operator = contributor.contribute(input).await?;
+            claims.extend(operator.into_iter().filter(|(key, _)| key != "__proto__"));
+        }
+        // Subject presentation remains authoritative, including pairwise clients.
+        _ = claims.insert("sub".into(), json!(subject));
         Ok(no_store(EndpointResponse::json(&claims)?))
     }
 }

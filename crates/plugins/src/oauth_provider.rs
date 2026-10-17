@@ -107,6 +107,9 @@ pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
     pub extensions: Vec<std::sync::Arc<OAuthProviderExtension>>,
+    /// Operator-owned UserInfo claims, applied after additive extension claims.
+    /// May override ordinary profile claims, but never the authoritative subject.
+    pub custom_user_info_claims: Option<std::sync::Arc<dyn OAuthUserInfoClaimsContributor>>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Managed identities cached by provider instance and protected from API mutations.
     pub cached_trusted_clients: std::collections::HashSet<String>,
@@ -157,6 +160,7 @@ impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
             extensions: Vec::new(),
+            custom_user_info_claims: None,
             client_discoveries: Vec::new(),
             cached_trusted_clients: std::collections::HashSet::new(),
             client_credentials_scope_privileges: None,

@@ -242,6 +242,7 @@ pub(crate) async fn router(
     let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
+    let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
     for mode in [
         "extension-grant",
         "pairwise",
@@ -335,7 +336,8 @@ pub(crate) async fn router(
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
-        if mode=="claims" {provider.extensions=extension_claims::extensions();}
+        if mode=="claims" {provider.extensions=extension_claims::extensions_with_user_info(user_info_claims.clone());}
+        if matches!(mode,"claims"|"pairwise") {provider.custom_user_info_claims=Some(user_info_claims.clone());}
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
@@ -364,6 +366,7 @@ pub(crate) async fn router(
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
+        let user_info_claims=user_info_claims.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -389,6 +392,15 @@ pub(crate) async fn router(
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
                 return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="userinfo-claims-state" {
+                if let Some(value)=input.get("value") {*user_info_claims.value.lock().unwrap()=value.as_str().map(str::to_owned);}
+                if input["reset"]==true {
+                    user_info_claims.calls.lock().unwrap().clear();
+                    user_info_claims.events.lock().unwrap().clear();
+                    user_info_claims.contexts.lock().unwrap().clear();
+                }
+                return axum::Json(serde_json::json!({"value":*user_info_claims.value.lock().unwrap(),"calls":*user_info_claims.calls.lock().unwrap(),"events":*user_info_claims.events.lock().unwrap()})).into_response();
             }
             if input["action"]=="backchannel-uri" {
                 let id=input["clientId"].as_str().unwrap();
@@ -441,7 +453,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="issue-tokens" {
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
-                if body["claimsProfile"]==true {config.extensions=extension_claims::extensions();}
+                if body["claimsProfile"]==true {config.extensions=extension_claims::extensions_with_live(None);}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
