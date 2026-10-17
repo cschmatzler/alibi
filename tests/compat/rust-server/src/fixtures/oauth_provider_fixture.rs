@@ -350,7 +350,7 @@ pub(crate) async fn router(
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
-        if mode=="reuse" {provider.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));provider.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));}
+        if mode=="reuse" {provider.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));provider.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));provider.token_hasher=Some(credential_generators.clone());provider.opaque_access_token_prefix=Some("A_".into());provider.refresh_token_prefix=Some("R_".into());}
         if mode=="claims" {provider.extensions=extension_claims::extensions_with_user_info(user_info_claims.clone());}
         if mode=="claims" {provider.custom_id_token_claims=Some(id_token_claims.clone());}
         if matches!(mode,"claims"|"claims-opaque") {provider.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));}
@@ -434,8 +434,8 @@ pub(crate) async fn router(
             if input["action"]=="credential-generator-state" {
                 if let Some(mode)=input["accessMode"].as_str(){*credential_generators.access_mode.lock().unwrap()=mode.into();}
                 if let Some(mode)=input["refreshMode"].as_str(){*credential_generators.refresh_mode.lock().unwrap()=mode.into();}
-                if input["reset"]==true {*credential_generators.access_count.lock().unwrap()=0;*credential_generators.refresh_count.lock().unwrap()=0;credential_generators.calls.lock().unwrap().clear();credential_generators.contexts.lock().unwrap().clear();}
-                return axum::Json(serde_json::json!({"accessMode":*credential_generators.access_mode.lock().unwrap(),"refreshMode":*credential_generators.refresh_mode.lock().unwrap(),"accessCount":*credential_generators.access_count.lock().unwrap(),"refreshCount":*credential_generators.refresh_count.lock().unwrap(),"calls":*credential_generators.calls.lock().unwrap()})).into_response();
+                if input["reset"]==true {*credential_generators.access_count.lock().unwrap()=0;*credential_generators.refresh_count.lock().unwrap()=0;credential_generators.calls.lock().unwrap().clear();credential_generators.contexts.lock().unwrap().clear();credential_generators.hash_calls.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"accessMode":*credential_generators.access_mode.lock().unwrap(),"refreshMode":*credential_generators.refresh_mode.lock().unwrap(),"accessCount":*credential_generators.access_count.lock().unwrap(),"refreshCount":*credential_generators.refresh_count.lock().unwrap(),"calls":*credential_generators.calls.lock().unwrap(),"hashCalls":*credential_generators.hash_calls.lock().unwrap()})).into_response();
             }
             if input["action"]=="response-fields-state" {
                 if let Some(value)=input["value"].as_str(){*response_fields.mode.lock().unwrap()=value.into();}
@@ -510,7 +510,8 @@ pub(crate) async fn router(
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
                 if body["claimsProfile"]==true {config.extensions=extension_claims::extensions_with_live(None);}
                 if body["idClaimsProfile"]==true {config.custom_id_token_claims=Some(id_token_claims.clone());}
-                if body["credentialGenerators"]==true {config.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));config.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));}
+                if body["credentialGenerators"]==true {config.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));config.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));config.token_hasher=Some(credential_generators.clone());}
+                config.opaque_access_token_prefix=body["prefix"]["opaqueAccessToken"].as_str().map(str::to_owned);config.refresh_token_prefix=body["prefix"]["refreshToken"].as_str().map(str::to_owned);
                 if body["accessClaimsProfile"]==true {config.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));config.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
                 if body["responseFieldsProfile"]==true {config.custom_token_response_fields=Some(response_fields.clone());}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
@@ -539,7 +540,7 @@ pub(crate) async fn router(
                 };
             }
             if input["action"]=="validate-access" {
-                let body=&input["body"];let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{custom_access_token_claims:(body["accessClaimsProfile"]==true).then(||extension_claims::access_operator::<TestSchema>(live_claims.clone())),extensions:if body["accessClaimsProfile"]==true{extension_claims::extensions_with_live(Some(live_claims.clone()))}else{Vec::new()},..Default::default()});let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
+                let body=&input["body"];let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{custom_access_token_claims:(body["accessClaimsProfile"]==true).then(||extension_claims::access_operator::<TestSchema>(live_claims.clone())),extensions:if body["accessClaimsProfile"]==true{extension_claims::extensions_with_live(Some(live_claims.clone()))}else{Vec::new()},token_hasher:body["prefix"].is_object().then(||credential_generators.clone() as Arc<dyn alibi::plugins::OAuthTokenHasher>),opaque_access_token_prefix:body["prefix"]["opaqueAccessToken"].as_str().map(str::to_owned),refresh_token_prefix:body["prefix"]["refreshToken"].as_str().map(str::to_owned),..Default::default()});let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
                 let result=if body["requireActive"]==true{provider.require_active_access_token(auth.context(),token,client).await}else{provider.validate_access_token(auth.context(),token,client).await};
                 return match result {Ok(payload)=>axum::Json(payload).into_response(),Err(error)=>{if matches!(&error.error,alibi::AuthError::Internal(_)){return axum::Json(serde_json::json!({"ordinary_error":true})).into_response();}let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
             }
@@ -556,7 +557,7 @@ pub(crate) async fn router(
                 return response.into_response();
             }
             if input["action"]=="hash-token" {
-                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{token_hasher:(input["mode"]=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),..Default::default()});
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{token_hasher:if input["mode"]=="custom-token-hash"{Some(Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>)}else if input["prefix"].is_object(){Some(credential_generators.clone())}else{None},opaque_access_token_prefix:input["prefix"]["opaqueAccessToken"].as_str().map(str::to_owned),refresh_token_prefix:input["prefix"]["refreshToken"].as_str().map(str::to_owned),..Default::default()});
                 return axum::Json(serde_json::json!({"hash":provider.hash_token(input["token"].as_str().unwrap(),input["kind"].as_str().unwrap()).await.unwrap()})).into_response();
             }
             if input["action"]=="authenticate-client" {

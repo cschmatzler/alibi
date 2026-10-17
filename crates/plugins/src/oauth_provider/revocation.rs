@@ -86,6 +86,12 @@ impl OAuthProviderPlugin {
             _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh],
         };
         for kind in kinds {
+            let Some(token) = self.decode_token_prefix(token, *kind) else {
+                if matches!(kind, OAuthTokenKind::Refresh) && hint == "refresh_token" {
+                    return error(400, "invalid_token", "refresh token not found");
+                }
+                continue;
+            };
             let hash = self
                 .hash_token(
                     token,

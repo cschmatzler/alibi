@@ -29,6 +29,9 @@ impl OAuthProviderPlugin {
                 "Missing a required refresh_token for refresh_token grant",
             );
         }
+        let Some(token) = self.decode_token_prefix(token, OAuthTokenKind::Refresh) else {
+            return error("invalid_token", "refresh token not found");
+        };
         let protected = self.hash_token(token, "refresh_token").await?;
         let Some(original) = ctx
             .database

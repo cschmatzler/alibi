@@ -77,6 +77,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     accessCount: 0,
     refreshCount: 0,
     calls: [] as string[],
+    hashCalls: [] as { token: string; kind: string }[],
   };
   const generateCredential = async (kind: "access" | "refresh") => {
     credentialGenerators.calls.push(kind);
@@ -86,11 +87,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       kind === "access" ? credentialGenerators.accessMode : credentialGenerators.refreshMode;
     if (mode === "error") throw new Error(`${kind} generator failed`);
     if (mode === "empty") return "";
+    if (mode === "embedded") return `application-${kind}-${count}-A_-R_`;
     return `application-${kind}-${mode === "fixed" ? "fixed" : count}`;
   };
   const generationOptions = {
     generateOpaqueAccessToken: () => generateCredential("access"),
     generateRefreshToken: () => generateCredential("refresh"),
+    storeTokens: {
+      hash: async (token: string, kind: string) => {
+        credentialGenerators.hashCalls.push({ token, kind });
+        return createHash("sha256").update(token).digest("base64url");
+      },
+    },
   };
   const remoteKeys = JSON.parse(
     await readFixtureFile(
@@ -380,7 +388,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         "/fixture/hash-token",
         {
           method: "POST",
-          body: z.object({ token: z.string(), kind: z.string(), custom: z.boolean() }),
+          body: z.object({
+            token: z.string(),
+            kind: z.string(),
+            custom: z.boolean(),
+            prefix: z
+              .object({
+                opaqueAccessToken: z.string().optional(),
+                refreshToken: z.string().optional(),
+              })
+              .optional(),
+          }),
         },
         async (ctx) =>
           ctx.json({
@@ -388,6 +406,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               loginPage: "/login",
               consentPage: "/consent",
               ...(ctx.body.custom ? { storeTokens: tokenStorage } : {}),
+              ...(ctx.body.prefix
+                ? { prefix: ctx.body.prefix, storeTokens: generationOptions.storeTokens }
+                : {}),
             }).hashToken(ctx.body.token, ctx.body.kind),
           }),
       ),
@@ -405,6 +426,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             clientId: z.string().optional(),
             requireActive: z.boolean(),
             accessClaimsProfile: z.boolean().optional(),
+            prefix: z
+              .object({
+                opaqueAccessToken: z.string().optional(),
+                refreshToken: z.string().optional(),
+              })
+              .optional(),
           }),
         },
         async (ctx) => {
@@ -415,6 +442,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 consentPage: "/consent",
                 ...(ctx.body.accessClaimsProfile
                   ? { customAccessTokenClaims, extensions: claimExtensions(true) }
+                  : {}),
+                ...(ctx.body.prefix
+                  ? { prefix: ctx.body.prefix, storeTokens: generationOptions.storeTokens }
                   : {}),
               })[ctx.body.requireActive ? "requireActiveAccessToken" : "validateAccessToken"](
                 ctx.body.token,
@@ -757,6 +787,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 : {}),
               ...(ctx.body.credentialGenerators ? generationOptions : {}),
               ...(ctx.body.responseFieldsProfile ? { customTokenResponseFields } : {}),
+              ...(ctx.body.prefix ? { prefix: ctx.body.prefix } : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
@@ -1419,6 +1450,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           loginPage: "/login",
           consentPage: "/consent",
           refreshTokenReuseInterval: 60,
+          prefix: { opaqueAccessToken: "A_", refreshToken: "R_" },
           ...generationOptions,
         }),
         issuanceHelper,
@@ -1553,6 +1585,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         credentialGenerators.accessCount = 0;
         credentialGenerators.refreshCount = 0;
         credentialGenerators.calls.length = 0;
+        credentialGenerators.hashCalls.length = 0;
       }
       return Response.json(credentialGenerators);
     }
@@ -2170,7 +2203,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "hash-token") {
       return (auth.api as any).hashTokenFixture({
-        body: { token: input.token, kind: input.kind, custom: input.mode === "custom-token-hash" },
+        body: {
+          token: input.token,
+          kind: input.kind,
+          custom: input.mode === "custom-token-hash",
+          prefix: input.prefix,
+        },
         asResponse: true,
       });
     }

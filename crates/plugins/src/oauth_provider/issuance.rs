@@ -337,7 +337,7 @@ impl OAuthProviderPlugin {
                     },
                 )
                 .await?;
-            token
+            self.encode_token_prefix(&token, OAuthTokenKind::Access)
         };
         Ok(access)
     }
@@ -408,7 +408,10 @@ impl OAuthProviderPlugin {
                 },
             )
             .await?;
-        Ok(Some((row.id, token)))
+        Ok(Some((
+            row.id,
+            self.encode_token_prefix(&token, OAuthTokenKind::Refresh),
+        )))
     }
     pub(super) async fn mint_tokens<S: AuthSchema>(
         &self,

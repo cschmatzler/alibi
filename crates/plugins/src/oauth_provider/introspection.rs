@@ -137,6 +137,9 @@ impl OAuthProviderPlugin {
                     }
                 }
             }
+            let Some(token) = self.decode_token_prefix(token, OAuthTokenKind::Refresh) else {
+                continue;
+            };
             let row = ctx
                 .database
                 .get_oauth_token(*kind, &self.hash_token(token, "refresh_token").await?)

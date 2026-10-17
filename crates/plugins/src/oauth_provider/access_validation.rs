@@ -3,6 +3,7 @@ use super::OAuthProviderPlugin;
 use alibi_core::endpoint::EndpointError;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthSession};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 
 #[derive(Debug)]
@@ -38,7 +39,23 @@ impl OAuthProviderPlugin {
         token: &str,
         client_id: Option<&str>,
     ) -> Result<AccessTokenValidation, EndpointError> {
+        let decoded = self.decode_token_prefix(token, OAuthTokenKind::Access);
+        // A prefix may introduce JWT separators. With prefix presentation in
+        // use, non-JWS headers must still reach opaque prefix/row validation,
+        // as they do after the reference's caught JWS-format error.
+        let prefixed_opaque = self
+            .config
+            .opaque_access_token_prefix
+            .as_deref()
+            .is_some_and(|prefix| !prefix.is_empty())
+            && token
+                .split('.')
+                .next()
+                .and_then(|header| URL_SAFE_NO_PAD.decode(header).ok())
+                .and_then(|header| serde_json::from_slice::<Value>(&header).ok())
+                .is_none_or(|header| !header.is_object());
         if !self.config.disable_jwt_plugin
+            && !prefixed_opaque
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
             && let Some(mut claims) = jwt
                 .verify_signed_payload_with_optional_kid(token, None, ctx)
@@ -118,9 +135,12 @@ impl OAuthProviderPlugin {
             );
             return Ok(Value::Object(claims).into());
         }
-        if !self.config.disable_jwt_plugin && compact_jwt(token) {
+        if !self.config.disable_jwt_plugin && compact_jwt(token) && !prefixed_opaque {
             return Err(AuthError::internal("JWT verification failed").into());
         }
+        let Some(token) = decoded else {
+            return Err(invalid_access_token());
+        };
         let hash = self.hash_token(token, "access_token").await?;
         let Some(row) = ctx
             .database

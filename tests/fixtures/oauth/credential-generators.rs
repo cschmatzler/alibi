@@ -10,6 +10,19 @@ pub(crate) struct Generators {
     pub contexts: Mutex<Vec<Value>>,
     pub access_count: Mutex<usize>,
     pub refresh_count: Mutex<usize>,
+    pub hash_calls: Mutex<Vec<Value>>,
+}
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthTokenHasher for Generators {
+    async fn hash(&self, token: &str, kind: &str) -> alibi::AuthResult<String> {
+        use base64::Engine as _;
+        use sha2::Digest as _;
+        self.hash_calls
+            .lock()
+            .unwrap()
+            .push(json!({"token":token,"kind":kind}));
+        Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token)))
+    }
 }
 #[derive(Debug)]
 struct Generator {
@@ -41,6 +54,7 @@ impl alibi::plugins::OAuthTokenGenerator for Generator {
             ))),
             "empty" => Ok(String::new()),
             "fixed" => Ok(format!("application-{}-fixed", self.kind)),
+            "embedded" => Ok(format!("application-{}-{number}-A_-R_", self.kind)),
             _ => Ok(format!("application-{}-{number}", self.kind)),
         }
     }

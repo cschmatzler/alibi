@@ -156,6 +156,10 @@ pub struct OAuthProviderConfig {
     pub token_hasher: Option<std::sync::Arc<dyn OAuthTokenHasher>>,
     pub opaque_access_token_generator: Option<std::sync::Arc<dyn OAuthTokenGenerator>>,
     pub refresh_token_generator: Option<std::sync::Arc<dyn OAuthTokenGenerator>>,
+    /// Presentation prefix for opaque access credentials; storage hashes plaintext.
+    pub opaque_access_token_prefix: Option<String>,
+    /// Presentation prefix for refresh credentials; storage hashes plaintext.
+    pub refresh_token_prefix: Option<String>,
     pub client_secret_cipher: Option<std::sync::Arc<dyn OAuthClientSecretCipher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
@@ -210,6 +214,8 @@ impl Default for OAuthProviderConfig {
             token_hasher: None,
             opaque_access_token_generator: None,
             refresh_token_generator: None,
+            opaque_access_token_prefix: None,
+            refresh_token_prefix: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),

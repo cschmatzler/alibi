@@ -14,19 +14,30 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
 >(
     db: Db,
 ) -> TestResult {
+    Box::pin(refresh_reuse_flow::<B>(db)).await
+}
+
+async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let generators = Arc::new(credential_generators::Generators::default());
+    *generators.access_mode.lock().unwrap() = "embedded".into();
+    *generators.refresh_mode.lock().unwrap() = "embedded".into();
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
         refresh_token_reuse_interval: 60.0,
         opaque_access_token_generator: Some(credential_generators::access(generators.clone())),
         refresh_token_generator: Some(credential_generators::refresh(generators.clone())),
+        opaque_access_token_prefix: Some("A_".into()),
+        refresh_token_prefix: Some("R_".into()),
+        token_hasher: Some(generators.clone()),
         ..Default::default()
     });
-    let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(JwtPlugin::new())
-        .plugin(provider.clone())
-        .build()
-        .await?;
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(provider.clone())
+            .build(),
+    )
+    .await?;
     let owner = signup(&auth, "reuse-owner@example.test").await;
     let headers = [
         ("cookie".into(), cookies(&owner)),
@@ -34,9 +45,14 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     ]
     .into_iter()
     .collect();
-    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email offline_access","token_endpoint_auth_method":"none","skip_consent":true,"grant_types":["authorization_code","refresh_token"]}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
+    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email offline_access","token_endpoint_auth_method":"client_secret_post","skip_consent":true,"grant_types":["authorization_code","refresh_token"]}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
     assert_eq!(created.status, 201);
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    let client_secret = body(&created)["client_secret"].clone();
+    let credential_body = |mut input: Value| {
+        input["client_secret"] = client_secret.clone();
+        input
+    };
     let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     let challenge =
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
@@ -69,7 +85,9 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         .unwrap()
         .1
         .into_owned();
-    let input = json!({"grant_type":"authorization_code","client_id":id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
+    let input = credential_body(
+        json!({"grant_type":"authorization_code","client_id":id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"}),
+    );
     let endpoint =
         ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?;
     let output = Box::pin(auth.dispatch_endpoint(
@@ -87,19 +105,71 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     assert_eq!(token["token_type"], "Bearer");
     assert_eq!(token["expires_in"], 3600);
     let plaintext = token["access_token"].as_str().unwrap();
-    assert_eq!(plaintext, "application-access-1");
+    assert_eq!(plaintext, "A_application-access-1-A_-R_");
     let refresh = token["refresh_token"]
         .as_str()
         .expect("offline_access must issue a refresh token");
-    assert_eq!(refresh, "application-refresh-1");
+    assert_eq!(refresh, "R_application-refresh-1-A_-R_");
     assert!(token["id_token"].is_string());
     assert_eq!(*generators.calls.lock().unwrap(), ["refresh", "access"]);
 
     use alibi::store::OAuthTokenKind;
     let hash = |token: &str| {
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token))
+        let plain = token
+            .strip_prefix("A_")
+            .or_else(|| token.strip_prefix("R_"))
+            .unwrap_or(token);
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plain))
     };
-    let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+    assert_eq!(
+        generators
+            .hash_calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| matches!(
+                call["kind"].as_str(),
+                Some("access_token" | "refresh_token")
+            ))
+            .cloned()
+            .collect::<Vec<_>>(),
+        [
+            json!({"kind":"refresh_token","token":"application-refresh-1-A_-R_"}),
+            json!({"kind":"access_token","token":"application-access-1-A_-R_"}),
+        ]
+    );
+    let hash_count = || generators.hash_calls.lock().unwrap().len();
+    let hashes_since = |start| generators.hash_calls.lock().unwrap()[start..].to_vec();
+    for invalid in [
+        refresh.strip_prefix("R_").unwrap().to_owned(),
+        format!("A_{}", refresh.strip_prefix("R_").unwrap()),
+        format!("lead-{refresh}"),
+    ] {
+        let start = hash_count();
+        let input = credential_body(
+            json!({"grant_type":"refresh_token","client_id":id,"refresh_token":invalid}),
+        );
+        let denied = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
+            EndpointOptions {
+                request: Some(request("/oauth2/token", Some(input.clone()), "")),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(
+            denied.body.unwrap().to_json_value()?,
+            json!({"error":"invalid_token","error_description":"refresh token not found"})
+        );
+        assert!(
+            hashes_since(start).is_empty(),
+            "wrong prefix is rejected before hashing"
+        );
+    }
+    let input = credential_body(
+        json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh}),
+    );
     let issued = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
         EndpointOptions {
@@ -116,8 +186,8 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         .get_oauth_token(OAuthTokenKind::Refresh, &hash(refresh))
         .await?
         .unwrap();
-    assert_eq!(issued["access_token"], "application-access-2");
-    assert_eq!(issued["refresh_token"], "application-refresh-2");
+    assert_eq!(issued["access_token"], "A_application-access-2-A_-R_");
+    assert_eq!(issued["refresh_token"], "R_application-refresh-2-A_-R_");
     let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let session_id = stored.session_id.clone().unwrap();
     let expected_calls = ["refresh", "access", "refresh", "access"];
@@ -125,6 +195,112 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     assert_eq!(*generators.contexts.lock().unwrap(), expected_calls.map(|kind|json!({
         "kind":kind,"userId":user_id,"clientId":id,"scopes":["openid","email","offline_access"],"sessionId":session_id,
     })));
+    for invalid in [
+        plaintext.strip_prefix("A_").unwrap().to_owned(),
+        format!("R_{}", plaintext.strip_prefix("A_").unwrap()),
+        format!("lead-{plaintext}"),
+        format!("A_{plaintext}"),
+    ] {
+        let start = hash_count();
+        let denied = Box::pin(
+            auth.dispatch_endpoint(
+                OAuthProviderPlugin::oauth2_user_info_endpoint(),
+                EndpointOptions {
+                    headers: Some(
+                        [("authorization".into(), format!("Bearer {invalid}"))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                    ..Default::default()
+                },
+            ),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(denied.error.status_code(), 401);
+        if invalid.starts_with("A_") {
+            assert_eq!(
+                hashes_since(start),
+                [json!({"kind":"access_token","token":plaintext})]
+            );
+        } else {
+            assert!(hashes_since(start).is_empty());
+        }
+    }
+    let wire_hash = provider.hash_token(plaintext, "access_token").await?;
+    assert_eq!(
+        wire_hash,
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plaintext)),
+        "public hashToken is literal, not a prefix decoder"
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Access, &wire_hash)
+            .await?
+            .is_none()
+    );
+    assert_eq!(
+        Box::pin(OAuthProviderPlugin::new().validate_access_token(
+            auth.context(),
+            plaintext.strip_prefix("A_").unwrap(),
+            None
+        ))
+        .await?["active"],
+        true,
+        "no-prefix provider still accepts raw authority"
+    );
+    for (value, hint, plain) in [
+        (
+            issued["access_token"].as_str().unwrap(),
+            "access_token",
+            "application-access-2-A_-R_",
+        ),
+        (
+            issued["refresh_token"].as_str().unwrap(),
+            "refresh_token",
+            "application-refresh-2-A_-R_",
+        ),
+        (
+            issued["refresh_token"].as_str().unwrap(),
+            "",
+            "application-refresh-2-A_-R_",
+        ),
+    ] {
+        let start = hash_count();
+        let response = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_introspect_endpoint(&credential_body(
+                json!({"client_id":id,"token":value,"token_type_hint":hint}),
+            ))?,
+            EndpointOptions::default(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(body(&response)["active"], true);
+        assert_eq!(
+            hashes_since(start),
+            [
+                json!({"kind":if hint=="access_token" {"access_token"} else {"refresh_token"},"token":plain})
+            ]
+        );
+    }
+    for (value, hint) in [
+        ("application-access-2-A_-R_", "access_token"),
+        ("application-refresh-2-A_-R_", "refresh_token"),
+        (issued["refresh_token"].as_str().unwrap(), "access_token"),
+        (issued["access_token"].as_str().unwrap(), "refresh_token"),
+    ] {
+        let start = hash_count();
+        let response = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_introspect_endpoint(&credential_body(
+                json!({"client_id":id,"token":value,"token_type_hint":hint}),
+            ))?,
+            EndpointOptions::default(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(body(&response), json!({"active":false}));
+        assert!(hashes_since(start).is_empty());
+    }
     for access in [plaintext, issued["access_token"].as_str().unwrap()] {
         let row = auth
             .store()
@@ -151,9 +327,9 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         assert_eq!(body(&info)["sub"], user_id);
     }
     let revoked = Box::pin(auth.dispatch_endpoint(
-        OAuthProviderPlugin::oauth2_revoke_endpoint(
-            &json!({"client_id":id,"token":plaintext,"token_type_hint":"access_token"}),
-        )?,
+        OAuthProviderPlugin::oauth2_revoke_endpoint(&credential_body(
+            json!({"client_id":id,"token":plaintext,"token_type_hint":"access_token"}),
+        ))?,
         EndpointOptions::default(),
     ))
     .await?
@@ -323,7 +499,9 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         auth.store()
             .store_oauth_refresh_replay(&stored.id, &changed)
             .await?;
-        let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+        let input = credential_body(
+            json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh}),
+        );
         let denied = Box::pin(auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
             EndpointOptions {
@@ -351,7 +529,9 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     auth.store()
         .store_oauth_refresh_replay(&stored.id, encrypted)
         .await?;
-    let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+    let input = credential_body(
+        json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh}),
+    );
     let valid = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
         EndpointOptions {
@@ -377,7 +557,9 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
                 .unwrap()
         )? < chrono::Utc::now()
     );
-    let input = json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh});
+    let input = credential_body(
+        json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh}),
+    );
     let denied = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
         EndpointOptions {
@@ -416,6 +598,57 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         expected_calls,
         "all reuse and rejected retries bypass generators"
     );
+    Box::pin(check_generation_edges(
+        &auth,
+        &generators,
+        &body(&created),
+        &user_id,
+        &session_id,
+    ))
+    .await
+}
+
+async fn check_generation_edges<S: AuthSchema>(
+    auth: &Alibi<S>,
+    generators: &Arc<credential_generators::Generators>,
+    registration: &Value,
+    user_id: &str,
+    session_id: &str,
+) -> TestResult {
+    let id = registration["client_id"].as_str().unwrap().to_owned();
+    let client_secret = registration["client_secret"].clone();
+    let credential_body = |mut input: Value| {
+        input["client_secret"] = client_secret.clone();
+        input
+    };
+    let user_id = user_id.to_owned();
+    let session_id = session_id.to_owned();
+    let hash = |token: &str| {
+        let plain = token
+            .strip_prefix("A_")
+            .or_else(|| token.strip_prefix("R_"))
+            .unwrap_or(token);
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plain))
+    };
+    let hash_count = || generators.hash_calls.lock().unwrap().len();
+    let hashes_since = |start| generators.hash_calls.lock().unwrap()[start..].to_vec();
+    use alibi::store::OAuthTokenKind;
+    let wire_provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        opaque_access_token_generator: Some(credential_generators::access(generators.clone())),
+        refresh_token_generator: Some(credential_generators::refresh(generators.clone())),
+        token_hasher: Some(generators.clone()),
+        opaque_access_token_prefix: Some("A.x.".into()),
+        refresh_token_prefix: Some("R_".into()),
+        ..Default::default()
+    });
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        opaque_access_token_generator: Some(credential_generators::access(generators.clone())),
+        refresh_token_generator: Some(credential_generators::refresh(generators.clone())),
+        token_hasher: Some(generators.clone()),
+        opaque_access_token_prefix: Some(String::new()),
+        refresh_token_prefix: Some(String::new()),
+        ..Default::default()
+    });
     let client = provider.get_client(auth.context(), &id).await?.unwrap();
     let user = auth.store().get_user_by_id(&user_id).await?.unwrap();
     let mut params =
@@ -451,15 +684,14 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         *generators.access_mode.lock().unwrap() =
             if kind == "access" { "error" } else { "" }.into();
         let before = counts().await?;
-        let failed = provider
-            .issue_tokens(
-                auth.context(),
-                &call,
-                Some("urn:fixture:generators"),
-                &params,
-            )
-            .await
-            .unwrap_err();
+        let failed = Box::pin(provider.issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:generators"),
+            &params,
+        ))
+        .await
+        .unwrap_err();
         assert!(
             matches!(failed.error,alibi::AuthError::Internal(ref message) if message==&format!("{kind} generator failed"))
         );
@@ -471,28 +703,26 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     }
     *generators.refresh_mode.lock().unwrap() = "fixed".into();
     *generators.access_mode.lock().unwrap() = "fixed".into();
-    let fixed = provider
-        .issue_tokens(
-            auth.context(),
-            &call,
-            Some("urn:fixture:generators"),
-            &params,
-        )
-        .await?;
+    let fixed = Box::pin(provider.issue_tokens(
+        auth.context(),
+        &call,
+        Some("urn:fixture:generators"),
+        &params,
+    ))
+    .await?;
     assert_eq!(fixed["access_token"], "application-access-fixed");
     assert_eq!(fixed["refresh_token"], "application-refresh-fixed");
     let before = counts().await?;
     let call_count = generators.calls.lock().unwrap().len();
     assert!(
-        provider
-            .issue_tokens(
-                auth.context(),
-                &call,
-                Some("urn:fixture:generators"),
-                &params
-            )
-            .await
-            .is_err()
+        Box::pin(provider.issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:generators"),
+            &params
+        ))
+        .await
+        .is_err()
     );
     assert_eq!(counts().await?, before);
     assert_eq!(
@@ -504,15 +734,14 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     let before = counts().await?;
     let call_count = generators.calls.lock().unwrap().len();
     assert!(
-        provider
-            .issue_tokens(
-                auth.context(),
-                &call,
-                Some("urn:fixture:generators"),
-                &params
-            )
-            .await
-            .is_err()
+        Box::pin(provider.issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:generators"),
+            &params
+        ))
+        .await
+        .is_err()
     );
     assert_eq!(counts().await?, (before.0, before.1 + 1));
     assert_eq!(
@@ -522,14 +751,13 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     );
     *generators.refresh_mode.lock().unwrap() = "empty".into();
     *generators.access_mode.lock().unwrap() = "empty".into();
-    let empty = provider
-        .issue_tokens(
-            auth.context(),
-            &call,
-            Some("urn:fixture:generators"),
-            &params,
-        )
-        .await?;
+    let empty = Box::pin(provider.issue_tokens(
+        auth.context(),
+        &call,
+        Some("urn:fixture:generators"),
+        &params,
+    ))
+    .await?;
     assert_eq!(empty["access_token"], "");
     assert_eq!(empty["refresh_token"], "");
     for kind in [OAuthTokenKind::Access, OAuthTokenKind::Refresh] {
@@ -545,14 +773,13 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
     *generators.access_mode.lock().unwrap() = String::new();
     params.resources = Some(vec![format!("{ORIGIN}/api/auth/oauth2/userinfo")]);
     let access_count = *generators.access_count.lock().unwrap();
-    let signed = provider
-        .issue_tokens(
-            auth.context(),
-            &call,
-            Some("urn:fixture:generators"),
-            &params,
-        )
-        .await?;
+    let signed = Box::pin(provider.issue_tokens(
+        auth.context(),
+        &call,
+        Some("urn:fixture:generators"),
+        &params,
+    ))
+    .await?;
     assert!(
         JwtPlugin::with_config(alibi::plugins::jwt::JwtPluginConfig {
             claims: alibi::plugins::jwt::JwtClaimsConfig {
@@ -577,6 +804,70 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
         *generators.access_count.lock().unwrap(),
         access_count,
         "JWT access issuance does not call the opaque generator or use it for jti"
+    );
+    params.resources = None;
+    let prefixed = Box::pin(wire_provider.issue_tokens(
+        auth.context(),
+        &call,
+        Some("urn:fixture:prefixes"),
+        &params,
+    ))
+    .await?;
+    let wire = prefixed["refresh_token"].as_str().unwrap();
+    let raw = wire.strip_prefix("R_").unwrap();
+    let access = prefixed["access_token"].as_str().unwrap();
+    let plain_access = access.strip_prefix("A.x.").unwrap();
+    assert_eq!(
+        Box::pin(wire_provider.validate_access_token(auth.context(), access, None)).await?["active"],
+        true,
+        "literal dots in a prefix do not turn issued opaque authority into JWT authority"
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Access, &hash(plain_access))
+            .await?
+            .is_some()
+    );
+    let start = hash_count();
+    let bad = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_revoke_endpoint(&credential_body(
+            json!({"client_id":id,"token":raw,"token_type_hint":"refresh_token"}),
+        ))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(
+        bad.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_token","error_description":"refresh token not found"})
+    );
+    assert!(hashes_since(start).is_empty());
+    let response = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_revoke_endpoint(&credential_body(
+            json!({"client_id":id,"token":wire,"token_type_hint":"refresh_token"}),
+        ))?,
+        EndpointOptions::default(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(response.status, 200);
+    assert_eq!(
+        hashes_since(start),
+        [json!({"kind":"refresh_token","token":raw})]
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &hash(wire))
+            .await?
+            .unwrap()
+            .metadata["revoked"]
+            .is_string()
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Access, &hash(plain_access))
+            .await?
+            .is_none()
     );
     Ok(())
 }

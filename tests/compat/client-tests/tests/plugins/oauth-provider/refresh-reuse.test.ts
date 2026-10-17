@@ -10,18 +10,37 @@ compatScenario(
   "Refresh reuse intervals replay encrypted authority and preserve the family after mismatched retries",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: unknown) =>
-      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+    let clientSecret: string | undefined;
+    const plain = (token: string) =>
+      token.startsWith("A.x.")
+        ? token.slice(4)
+        : token.startsWith("A_") || token.startsWith("R_")
+          ? token.slice(2)
+          : token;
+    const control = (input: unknown) => {
+      const value = { ...(input as Record<string, any>) };
+      if (clientSecret && ["token", "revoke", "introspect"].includes(value.action)) {
+        value.body = { ...value.body, client_secret: clientSecret };
+      }
+      // Store inspection/replay controls take a storage preimage, not a wire credential.
+      if (
+        ["token-row", "replace-refresh-replay", "expire-refresh-replay"].includes(value.action) &&
+        typeof value.token === "string"
+      ) {
+        value.token = plain(value.token);
+      }
+      return actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mode: "reuse", ...(input as Record<string, unknown>) }),
+        body: JSON.stringify({ mode: "reuse", ...value }),
       });
+    };
     const generatorState = async (input: object = {}) => {
       const response = await control({ action: "credential-generator-state", ...input });
       expect(response.status).toBe(200);
       return (await response.json()) as any;
     };
-    await generatorState({ accessMode: "", refreshMode: "", reset: true });
+    await generatorState({ accessMode: "embedded", refreshMode: "embedded", reset: true });
     const signup = await control({
       action: "signup",
       body: { email: ctx.uniqueEmail("reuse-owner"), name: "Owner", password: "password123" },
@@ -40,13 +59,15 @@ compatScenario(
         client_name: "Token client",
         redirect_uris: ["https://app.fixture.test/callback"],
         scope: "openid email offline_access",
-        token_endpoint_auth_method: "none",
+        token_endpoint_auth_method: "client_secret_post",
         skip_consent: true,
         grant_types: ["authorization_code", "refresh_token"],
       },
     });
     expect(created.status).toBe(201);
-    const id = ((await created.json()) as any).client_id;
+    const client = (await created.json()) as any;
+    const id = client.client_id;
+    clientSecret = client.client_secret;
     const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
     const challenge = createHash("sha256").update(verifier).digest("base64url");
     const grant = await control({
@@ -84,10 +105,38 @@ compatScenario(
     expect(token.scope).toBe("openid email offline_access");
     expect(token.token_type).toBe("Bearer");
     expect(token.expires_in).toBe(3600);
-    expect(token.access_token).toBe("application-access-1");
-    expect(token.refresh_token).toBe("application-refresh-1");
+    expect(token.access_token).toBe("A_application-access-1-A_-R_");
+    expect(token.refresh_token).toBe("R_application-refresh-1-A_-R_");
     expect(token.id_token).toBeTypeOf("string");
     expect((await generatorState()).calls).toEqual(["refresh", "access"]);
+    const hashes = async () =>
+      (await generatorState()).hashCalls as { token: string; kind: string }[];
+    const prefixReceipts = [];
+    const issuanceHashes = (await hashes()).filter((call) =>
+      ["access_token", "refresh_token"].includes(call.kind),
+    );
+    expect(issuanceHashes).toEqual([
+      { kind: "refresh_token", token: "application-refresh-1-A_-R_" },
+      { kind: "access_token", token: "application-access-1-A_-R_" },
+    ]);
+    prefixReceipts.push({ phase: "issuance", calls: issuanceHashes });
+    for (const invalid of [
+      plain(token.refresh_token),
+      `A_${plain(token.refresh_token)}`,
+      `lead-${token.refresh_token}`,
+    ]) {
+      const start = (await hashes()).length;
+      const response = await control({
+        action: "token",
+        body: { grant_type: "refresh_token", client_id: id, refresh_token: invalid },
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_token",
+        error_description: "refresh token not found",
+      });
+      expect((await hashes()).slice(start)).toEqual([]);
+    }
 
     const refreshInput = {
       grant_type: "refresh_token",
@@ -97,15 +146,88 @@ compatScenario(
     const issuedResponse = await control({ action: "token", body: refreshInput });
     expect(issuedResponse.status).toBe(200);
     const issued = (await issuedResponse.json()) as any;
-    expect(issued.access_token).toBe("application-access-2");
-    expect(issued.refresh_token).toBe("application-refresh-2");
+    expect(issued.access_token).toBe("A_application-access-2-A_-R_");
+    expect(issued.refresh_token).toBe("R_application-refresh-2-A_-R_");
     const expectedCalls = ["refresh", "access", "refresh", "access"];
     expect((await generatorState()).calls).toEqual(expectedCalls);
+    for (const invalid of [
+      plain(token.access_token),
+      `R_${plain(token.access_token)}`,
+      `lead-${token.access_token}`,
+      `A_${token.access_token}`,
+    ]) {
+      const start = (await hashes()).length;
+      const response = await control({
+        action: "userinfo",
+        headers: { authorization: `Bearer ${invalid}` },
+      });
+      expect(response.status).toBe(401);
+      expect(await response.json()).toEqual({
+        error: "invalid_token",
+        error_description: "Invalid access token",
+      });
+      expect((await hashes()).slice(start)).toEqual(
+        invalid.startsWith("A_") ? [{ kind: "access_token", token: token.access_token }] : [],
+      );
+    }
+    let start = (await hashes()).length;
+    const hashedWire = await control({
+      mode: "default",
+      action: "hash-token",
+      token: token.access_token,
+      kind: "access_token",
+      prefix: { opaqueAccessToken: "A_", refreshToken: "R_" },
+    });
+    expect(hashedWire.status).toBe(200);
+    expect(await hashedWire.json()).toEqual({
+      hash: createHash("sha256").update(token.access_token).digest("base64url"),
+    });
+    expect((await hashes()).slice(start)).toEqual([
+      { kind: "access_token", token: token.access_token },
+    ]);
+    prefixReceipts.push({ phase: "literal-hash", calls: (await hashes()).slice(start) });
+    const rawValidation = await control({
+      mode: "default",
+      action: "validate-access",
+      body: { token: plain(token.access_token), requireActive: true },
+    });
+    expect(rawValidation.status).toBe(200);
+    expect(((await rawValidation.json()) as any).active).toBe(true);
+    for (const [value, hint, kind] of [
+      [issued.access_token, "access_token", "access_token"],
+      [issued.refresh_token, "refresh_token", "refresh_token"],
+      [issued.refresh_token, "", "refresh_token"],
+    ]) {
+      const start = (await hashes()).length;
+      const response = await control({
+        action: "introspect",
+        body: { client_id: id, token: value, token_type_hint: hint },
+      });
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as any).active).toBe(true);
+      expect((await hashes()).slice(start)).toEqual([{ kind, token: plain(value) }]);
+      prefixReceipts.push({ phase: `introspect-${hint}`, calls: (await hashes()).slice(start) });
+    }
+    for (const [value, hint] of [
+      [plain(issued.access_token), "access_token"],
+      [plain(issued.refresh_token), "refresh_token"],
+      [issued.refresh_token, "access_token"],
+      [issued.access_token, "refresh_token"],
+    ]) {
+      const start = (await hashes()).length;
+      const response = await control({
+        action: "introspect",
+        body: { client_id: id, token: value, token_type_hint: hint },
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ active: false });
+      expect((await hashes()).slice(start)).toEqual([]);
+    }
     for (const access of [token.access_token, issued.access_token]) {
       const row = await control({ action: "token-row", token: access });
       expect(row.status).toBe(200);
       const stored = (await row.json()) as any;
-      expect(stored.token).toBe(createHash("sha256").update(access).digest("base64url"));
+      expect(stored.token).toBe(createHash("sha256").update(plain(access)).digest("base64url"));
       expect(stored.token).not.toBe(access);
       const info = await control({
         action: "userinfo",
@@ -332,6 +454,69 @@ compatScenario(
       audience: resource,
     });
     expect((await generatorState()).accessCount).toBe(accessCount);
+    const prefixedResponse = await control({
+      action: "issue-tokens",
+      body: {
+        credentialGenerators: true,
+        prefix: { opaqueAccessToken: "A.x.", refreshToken: "R_" },
+        clientId: id,
+        userId: owner.user.id,
+        grantType: "urn:fixture:prefixes",
+        params,
+      },
+    });
+    expect(prefixedResponse.status).toBe(200);
+    const prefixed = (await prefixedResponse.json()) as any;
+    expect(prefixed.refresh_token.startsWith("R_")).toBe(true);
+    expect(prefixed.access_token.startsWith("A.x.")).toBe(true);
+    const dottedValidation = await control({
+      mode: "default",
+      action: "validate-access",
+      body: {
+        token: prefixed.access_token,
+        requireActive: true,
+        prefix: { opaqueAccessToken: "A.x.", refreshToken: "R_" },
+      },
+    });
+    expect(dottedValidation.status).toBe(200);
+    expect(((await dottedValidation.json()) as any).active).toBe(true);
+    expect(
+      await (await control({ action: "token-row", token: prefixed.access_token })).json(),
+    ).not.toBeNull();
+    start = (await hashes()).length;
+    const wrongRevoke = await control({
+      action: "revoke",
+      body: {
+        client_id: id,
+        token: plain(prefixed.refresh_token),
+        token_type_hint: "refresh_token",
+      },
+    });
+    expect(wrongRevoke.status).toBe(400);
+    expect(await wrongRevoke.json()).toEqual({
+      error: "invalid_token",
+      error_description: "refresh token not found",
+    });
+    expect((await hashes()).slice(start)).toEqual([]);
+    const revokeRefresh = await control({
+      action: "revoke",
+      body: { client_id: id, token: prefixed.refresh_token, token_type_hint: "refresh_token" },
+    });
+    expect(revokeRefresh.status).toBe(200);
+    expect((await hashes()).slice(start)).toEqual([
+      { kind: "refresh_token", token: plain(prefixed.refresh_token) },
+    ]);
+    prefixReceipts.push({ phase: "refresh-revoke", calls: (await hashes()).slice(start) });
+    expect(
+      typeof (
+        (await (
+          await control({ action: "token-row", kind: "refresh", token: prefixed.refresh_token })
+        ).json()) as any
+      ).revoked,
+    ).toBe("string");
+    expect(
+      await (await control({ action: "token-row", token: prefixed.access_token })).json(),
+    ).toBeNull();
     return ctx.snapshot({
       authorizationSession: session,
       scope: issued.scope,
@@ -341,6 +526,7 @@ compatScenario(
       expired: refused.status,
       generatorCalls: (await generatorState()).calls,
       failures,
+      prefixReceipts,
     });
   },
 );
