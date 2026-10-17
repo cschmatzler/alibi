@@ -9,9 +9,253 @@ use alibi::{
     RateLimitStorage,
 };
 use std::{collections::HashMap, sync::Arc};
+#[path = "../../fixtures/oauth/rate-limits.rs"]
+mod oauth_policies;
 
-backend_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_closed);
+backend_tests!(
+    independent_sqlite_instances_preserve_quota_expiry_and_fail_closed,
+    oauth_protocol_quotas_use_shared_http_storage_and_exempt_private_dispatch
+);
 postgres_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_closed,);
+
+async fn oauth_protocol_quotas_use_shared_http_storage_and_exempt_private_dispatch<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::integrations::axum::AxumIntegration as _;
+    use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin};
+    use serde_json::json;
+    let secret = "native-oauth-rate-policy-secret-at-least-32";
+    let (first, _) = db.migrated::<B>(secret).await?;
+    B::rate_limit(&first).migrate().await?;
+    let second = B::connect(&db.url, None).await?;
+    for (mode_index, mode) in [
+        "rate-default",
+        "rate-override",
+        "rate-false",
+        "rate-global-disabled",
+        "rate-application",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let ip = format!("198.51.100.{}", mode_index + 1);
+        let mut auths = Vec::new();
+        let mut routers = Vec::new();
+        for connection in [&first, &second] {
+            let (rate_limit, global) = oauth_policies::policies(mode);
+            let config = alibi::AuthConfig::new(secret).base_url("http://localhost:43219");
+            let auth = Arc::new(
+                Box::pin(
+                    alibi::AuthBuilder::<B::Schema>::new(config.clone())
+                        .store(B::store(Arc::new(config), connection))
+                        .rate_limit(global.storage(Arc::new(B::rate_limit(connection))))
+                        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                            rate_limit,
+                            disable_jwt_plugin: true,
+                            ..Default::default()
+                        }))
+                        .build(),
+                )
+                .await?,
+            );
+            routers.push(axum::Router::new().nest(
+                "/api/auth",
+                auth.clone().axum_router().with_state(auth.clone()),
+            ));
+            auths.push(auth);
+        }
+        for (path, default_max, status) in [
+            ("token", 20, 400),
+            ("authorize", 30, 302),
+            ("introspect", 100, 400),
+            ("revoke", 30, 400),
+            ("register", 5, 403),
+            ("userinfo", 60, 401),
+        ] {
+            let (max, retry) = match (mode, path) {
+                ("rate-default", _) => (default_max, Some("60")),
+                ("rate-override", "token") => (2, Some("120")),
+                ("rate-override", "authorize") => (1, Some("60")),
+                ("rate-override", "introspect")
+                | ("rate-global-disabled", _)
+                | ("rate-application", "token") => (3, None),
+                ("rate-override", _) => continue,
+                ("rate-false", _) => (2, Some("120")),
+                ("rate-application", _) => (1, Some("180")),
+                _ => return Err("unknown quota profile".into()),
+            };
+            for index in 0..max {
+                let response =
+                    oauth_http_method(&routers[index % 2], path, &ip, index % 2 == 1).await?;
+                assert_eq!(
+                    response.status,
+                    status,
+                    "{mode} {path} admission {index}: {}",
+                    String::from_utf8_lossy(&response.body)
+                );
+                assert!(response.headers.get("x-retry-after").is_none());
+            }
+            if let Some(retry) = retry {
+                let blocked = oauth_http(&routers[1], path, &ip).await?;
+                assert_eq!(blocked.status, 429, "{mode} {path}");
+                assert_eq!(
+                    blocked.body,
+                    br#"{"message":"Too many requests. Please try again later."}"#
+                );
+                assert_eq!(
+                    blocked.headers.get("content-type").map(String::as_str),
+                    Some("application/json")
+                );
+                assert_eq!(
+                    blocked.headers.get("x-retry-after").map(String::as_str),
+                    Some(retry)
+                );
+                assert!(!blocked.headers.contains_key("set-cookie"));
+                assert_eq!(
+                    row(&db, &format!("{ip}|/oauth2/{path}")).await?.unwrap().1,
+                    i32::try_from(max)?
+                );
+                // A different trusted client has its own bucket even on the same route.
+                assert_eq!(
+                    oauth_http(&routers[0], path, &format!("198.51.101.{}", mode_index + 1))
+                        .await?
+                        .status,
+                    status
+                );
+            }
+        }
+        if mode == "rate-default" {
+            let key = format!("{ip}|/oauth2/token");
+            let before = row(&db, &key).await?.unwrap();
+            for physical in [false, true] {
+                let input = json!({"grant_type":"client_credentials","client_id":"quota-missing","client_secret":"not-secret","scope":"email"});
+                let mut request = AuthRequest::new(HttpMethod::Post, "/api/auth/oauth2/token");
+                _ = request.headers.insert("x-forwarded-for".into(), ip.clone());
+                let error = Box::pin(auths[0].dispatch_endpoint(
+                    OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
+                    alibi::endpoint::EndpointOptions {
+                        headers: Some(request.headers.clone()),
+                        request: physical.then_some(request),
+                        ..Default::default()
+                    },
+                ))
+                .await
+                .unwrap_err();
+                assert_eq!(
+                    error.error.status_code(),
+                    400,
+                    "private dispatch bypasses the exhausted HTTP quota"
+                );
+            }
+            assert_eq!(row(&db, &key).await?, Some(before.clone()));
+            set_last_request(&db, &key, chrono::Utc::now().timestamp_millis() - 61_000).await?;
+            assert_eq!(oauth_http(&routers[1], "token", &ip).await?.status, 400);
+            let reset = row(&db, &key).await?.unwrap();
+            assert_eq!(reset.1, 1);
+            assert!(reset.2 >= before.2);
+            for _ in 0..2 {
+                assert_eq!(
+                    oauth_http(&routers[0], "token-extra", &ip).await?.status,
+                    404
+                );
+            }
+            assert_eq!(
+                oauth_http(&routers[1], "token-extra", &ip)
+                    .await?
+                    .headers
+                    .get("x-retry-after")
+                    .map(String::as_str),
+                Some("120"),
+                "plugin matchers are exact"
+            );
+        }
+        if matches!(mode, "rate-global-disabled" | "rate-application") {
+            assert!(row(&db, &format!("{ip}|/oauth2/token")).await?.is_none());
+        }
+        if mode == "rate-override" {
+            assert_eq!(
+                row(&db, &format!("{ip}|/oauth2/introspect"))
+                    .await?
+                    .unwrap()
+                    .1,
+                1,
+                "zero window resets the real ledger on every request"
+            );
+        }
+    }
+    B::close(first).await?;
+    B::close(second).await
+}
+
+async fn oauth_http(
+    router: &axum::Router,
+    path: &str,
+    ip: &str,
+) -> TestResult<alibi::AuthResponse> {
+    oauth_http_method(router, path, ip, false).await
+}
+
+async fn oauth_http_method(
+    router: &axum::Router,
+    path: &str,
+    ip: &str,
+    post: bool,
+) -> TestResult<alibi::AuthResponse> {
+    use http_body_util::BodyExt as _;
+    use tower::ServiceExt as _;
+    let get = !post && matches!(path, "authorize" | "userinfo");
+    let input = match path {
+        "authorize" => {
+            "client_id=quota-missing&response_type=code&redirect_uri=https%3A%2F%2Fapp.fixture.test%2Fcallback"
+        }
+        "token" => {
+            "grant_type=client_credentials&client_id=quota-missing&client_secret=not-secret&scope=email"
+        }
+        "userinfo" => "access_token=missing",
+        _ => "client_id=quota-missing&client_secret=not-secret&token=missing",
+    };
+    let uri = format!(
+        "/api/auth/oauth2/{path}{}",
+        if path == "authorize" {
+            format!("?{input}")
+        } else {
+            String::new()
+        }
+    );
+    let request = axum::http::Request::builder()
+        .method(if get { "GET" } else { "POST" })
+        .uri(uri)
+        .header("origin", "http://localhost:43219")
+        .header("x-forwarded-for", ip)
+        .header(
+            "content-type",
+            if path == "register" {
+                "application/json"
+            } else {
+                "application/x-www-form-urlencoded"
+            },
+        );
+    let request = if path == "userinfo" && get {
+        request.header("authorization", "Bearer missing")
+    } else {
+        request
+    };
+    let request = request.body(axum::body::Body::from(if get {
+        String::new()
+    } else if path == "register" {
+        r#"{"redirect_uris":["https://app.fixture.test/callback"]}"#.into()
+    } else {
+        input.into()
+    }))?;
+    let response = router.clone().oneshot(request).await?;
+    let (parts, body) = response.into_parts();
+    let mut response = alibi::AuthResponse::new(parts.status.as_u16());
+    response.body = body.collect().await?.to_bytes().to_vec();
+    for (name, value) in &parts.headers {
+        _ = response.headers.insert(name.as_str(), value.to_str()?);
+    }
+    Ok(response)
+}
 
 #[derive(Debug)]
 struct ApplicationRule;

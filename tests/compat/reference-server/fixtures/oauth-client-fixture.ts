@@ -1660,6 +1660,62 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }),
     ...Object.fromEntries(
       [
+        "rate-default",
+        "rate-override",
+        "rate-false",
+        "rate-global-disabled",
+        "rate-application",
+      ].map((mode) => [
+        mode,
+        betterAuth({
+          ...options,
+          rateLimit: {
+            enabled: mode !== "rate-global-disabled",
+            window: 120,
+            max: 2,
+            ...(mode === "rate-application"
+              ? {
+                  customRules: {
+                    "/oauth2/token": false,
+                    "/oauth2/*": { window: 180, max: 1 },
+                  },
+                }
+              : {}),
+          },
+          plugins: [
+            jwt(),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              disableJwtPlugin: true,
+              ...(mode === "rate-false"
+                ? {
+                    rateLimit: {
+                      token: false,
+                      authorize: false,
+                      introspect: false,
+                      revoke: false,
+                      register: false,
+                      userinfo: false,
+                    },
+                  }
+                : {}),
+              ...(["rate-override", "rate-global-disabled"].includes(mode)
+                ? {
+                    rateLimit: {
+                      token: { window: 120, max: 2 },
+                      authorize: { window: 60, max: 0 },
+                      introspect: { window: 0, max: 1 },
+                    },
+                  }
+                : {}),
+            }),
+          ],
+        }),
+      ]),
+    ),
+    ...Object.fromEntries(
+      [
         "dynamic",
         "public",
         "token-dynamic",

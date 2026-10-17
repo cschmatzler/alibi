@@ -41,7 +41,9 @@ pub use initial_access_token::{
 };
 mod logout;
 mod machine;
+mod rate_limit;
 mod refresh;
+pub use rate_limit::{OAuthEndpointRateLimit, OAuthProviderRateLimits};
 mod refresh_format;
 pub use refresh_format::{
     OAuthDecodedRefreshToken, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
@@ -132,6 +134,8 @@ pub trait OAuthRequestUriResolver: Send + Sync + std::fmt::Debug {
 /// Immutable policy shared by authorization-server metadata and grant admission.
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
+    /// Protocol quotas registered with the global rate limiter, not private API calls.
+    pub rate_limit: OAuthProviderRateLimits,
     pub scopes: Vec<String>,
     pub extensions: Vec<std::sync::Arc<OAuthProviderExtension>>,
     /// Operator-owned `UserInfo` claims, applied after additive extension claims.
@@ -215,6 +219,7 @@ pub struct OAuthProviderConfig {
 impl Default for OAuthProviderConfig {
     fn default() -> Self {
         Self {
+            rate_limit: OAuthProviderRateLimits::default(),
             extensions: Vec::new(),
             custom_user_info_claims: None,
             custom_id_token_claims: None,
@@ -443,6 +448,9 @@ fn normalize_issuer(value: &str) -> String {
 impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     fn name(&self) -> &'static str {
         "oauth-provider"
+    }
+    fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+        self.config.rate_limit.rules()
     }
     fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> {
         vec![self]

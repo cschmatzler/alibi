@@ -19,6 +19,8 @@ mod initial_access_token;
 mod credential_generators;
 #[path = "../../../../fixtures/oauth/refresh-formatting.rs"]
 mod refresh_formatting;
+#[path = "../../../../fixtures/oauth/rate-limits.rs"]
+mod rate_limits;
 #[path = "../../../../fixtures/oauth/extension-authentication.rs"]
 mod extension_authentication;
 #[path = "../../../../fixtures/oauth/redirect-policy.rs"]
@@ -316,6 +318,11 @@ pub(crate) async fn router(
         "scope-date",
         "scope-ceiling",
         "issuance-expiry",
+        "rate-default",
+        "rate-override",
+        "rate-false",
+        "rate-global-disabled",
+        "rate-application",
         "assertion-short",
         "assertion-zero",
         "assertion-negative",
@@ -401,6 +408,7 @@ pub(crate) async fn router(
             };
         }
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
+        if mode.starts_with("rate-") {provider.rate_limit=rate_limits::policies(mode).0;provider.disable_jwt_plugin=true;}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
         if mode=="response-fields" {client_config=client_config.base_path("/__test/profiles/oauth-response-fields/api/auth");}
         if mode=="pairwise" {
@@ -411,6 +419,7 @@ pub(crate) async fn router(
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder=if mode.starts_with("rate-") {builder.rate_limit(rate_limits::policies(mode).1)} else {builder};
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
