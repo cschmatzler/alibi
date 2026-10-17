@@ -272,6 +272,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const requestUriRedirects: unknown[] = [];
   let requestUriParameters: Record<string, unknown> = {};
   const signupCalls: unknown[] = [];
+  const postLoginCalls: unknown[] = [];
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -1308,6 +1309,62 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     ...Object.fromEntries(
+      ["postlogin-policy", "postlogin-empty-page"].map((mode) => [
+        mode,
+        betterAuth({
+          ...options,
+          rateLimit: { enabled: false },
+          plugins: [
+            username(),
+            jwt({ disableSettingJwtHeader: true }),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              signup: {
+                page: "/signup",
+                shouldRedirect: async ({ headers, session }) => {
+                  postLoginCalls.push({ stage: "signup", sessionId: session.id });
+                  return headers.get("x-signup-decision") === "true";
+                },
+              },
+              postLogin: {
+                page: mode === "postlogin-empty-page" ? "" : "/post-login",
+                consentReferenceId: () => undefined,
+                shouldRedirect: async ({ headers, user, session, scopes }) => {
+                  const decision = headers.get("x-postlogin-decision");
+                  postLoginCalls.push({
+                    stage: "postLogin",
+                    caller: headers.get("x-policy-caller"),
+                    decision,
+                    user: { id: user.id, email: user.email, name: user.name },
+                    session: { id: session.id, userId: session.userId, token: session.token },
+                    scopes,
+                  });
+                  if (decision === "ordinary-error") throw new Error("post-login policy failed");
+                  if (decision === "native-error") {
+                    throw new APIError("FORBIDDEN", { message: "Post-login denied" });
+                  }
+                  if (decision === "api-error") {
+                    throw new APIError("FORBIDDEN", {
+                      code: "POSTLOGIN_DENIED",
+                      message: "Post-login denied",
+                    });
+                  }
+                  if (decision === "upstream-error") {
+                    throw new APIError("SERVICE_UNAVAILABLE", {
+                      code: "POSTLOGIN_UNAVAILABLE",
+                      message: "Post-login unavailable",
+                    });
+                  }
+                  return decision !== "false";
+                },
+              },
+            }),
+          ],
+        }),
+      ]),
+    ),
+    ...Object.fromEntries(
       ["signup-policy", "signup-fallback", "signup-empty-page", "signup-page-only"].map((mode) => [
         mode,
         betterAuth({
@@ -1832,6 +1889,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
     if (input.action === "signup-policy-calls") return Response.json(signupCalls.splice(0));
+    if (input.action === "postlogin-policy-calls") return Response.json(postLoginCalls.splice(0));
     if (input.action === "credential-generator-state") {
       if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
       if (typeof input.refreshMode === "string")

@@ -41,6 +41,7 @@ pub use initial_access_token::{
 };
 mod logout;
 mod machine;
+mod post_login;
 mod rate_limit;
 mod refresh;
 pub use rate_limit::{OAuthEndpointRateLimit, OAuthProviderRateLimits};
@@ -53,6 +54,7 @@ mod resources;
 mod revocation;
 mod session_retirement;
 mod signup;
+pub use post_login::{OAuthPostLoginConfig, OAuthPostLoginContext, OAuthPostLoginPolicy};
 pub use signup::{OAuthSignupConfig, OAuthSignupContext, OAuthSignupPolicy, OAuthSignupRedirect};
 mod subject;
 mod token;
@@ -179,6 +181,7 @@ pub struct OAuthProviderConfig {
     pub consent_page: String,
     pub select_account_page: Option<String>,
     pub signup: Option<OAuthSignupConfig>,
+    pub post_login: Option<OAuthPostLoginConfig>,
     pub code_expires_in: f64,
     /// User access-token lifetime in seconds, including refresh grant issuance.
     pub access_token_expires_in: f64,
@@ -245,6 +248,7 @@ impl Default for OAuthProviderConfig {
             consent_page: "/consent".into(),
             select_account_page: None,
             signup: None,
+            post_login: None,
             code_expires_in: 600.0,
             access_token_expires_in: 3600.0,
             m2m_access_token_expires_in: 3600.0,

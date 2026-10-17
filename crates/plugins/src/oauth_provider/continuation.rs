@@ -60,6 +60,13 @@ pub(super) fn interaction_query(supplied: &str) -> serde_json::Map<String, Value
     }
     query
 }
+// Read only after signature admission. Never accept a clearance flag from the
+// ordinary authorization query or from selected/created continuation branches.
+pub(super) fn post_login_clearance(supplied: &str) -> Option<String> {
+    url::form_urlencoded::parse(supplied.as_bytes())
+        .find(|(key, _)| key == "ba_pl")
+        .map(|(_, value)| value.into_owned())
+}
 impl OAuthProviderPlugin {
     /// Resume a signed OAuth request after account selection, registration or post-login interaction.
     pub fn oauth2_continue_endpoint(
@@ -111,6 +118,11 @@ impl OAuthProviderPlugin {
             );
         }
         let mut query = interaction_query(supplied);
+        let clearance = if remove.is_none() {
+            post_login_clearance(supplied)
+        } else {
+            None
+        };
         if let Some(remove) = remove
             && let Some(prompt) = query.get("prompt").and_then(Value::as_str)
         {
@@ -124,6 +136,6 @@ impl OAuthProviderPlugin {
                 }
             }
         }
-        Box::pin(self.resume_authorization(query, req, ctx)).await
+        Box::pin(self.resume_authorization(query, req, ctx, clearance)).await
     }
 }

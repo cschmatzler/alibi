@@ -98,12 +98,14 @@ test("OAuth error fragments normalize observed issuers but retain channels and a
 test("identity bijection preserves cross-object relationships and token rotation", () => {
   const a = {
     user: { id: "alice" },
-    session: { userId: "alice", token: "a" },
+    session: { id: "left-session", userId: "alice", token: "a" },
+    consent: { ba_pl: "left-session" },
     renewed: { token: "b" },
   };
   const b = {
     user: { id: "bob" },
-    session: { userId: "bob", token: "c" },
+    session: { id: "right-session", userId: "bob", token: "c" },
+    consent: { ba_pl: "right-session" },
     renewed: { token: "d" },
   };
   expect(compareValues(a, b, context)).toEqual([]);
@@ -111,6 +113,10 @@ test("identity bijection preserves cross-object relationships and token rotation
     compareValues(a, { ...b, session: { ...b.session, userId: "wrong" } }, context).length,
   ).toBeGreaterThan(0);
   expect(compareValues(a, { ...b, renewed: { token: "c" } }, context).length).toBeGreaterThan(0);
+  expect(
+    compareValues(a, { ...b, consent: { ba_pl: "other-session" } }, context).length,
+  ).toBeGreaterThan(0);
+  expect(compareValues(a, { ...b, consent: { ba_pl: "" } }, context).length).toBeGreaterThan(0);
 });
 
 test("multi-team invitations preserve every ordered team identity", () => {

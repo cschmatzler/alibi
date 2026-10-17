@@ -72,6 +72,9 @@ const entityKeys = new Set([
   "accountId",
   "userId",
   "sessionId",
+  // Signed post-login clearance is the same session identity, not an opaque
+  // token. Keep it in the existing bijection so changed bindings still fail.
+  "ba_pl",
   "organizationId",
   "memberId",
   "invitationId",

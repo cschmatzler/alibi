@@ -22,6 +22,11 @@ struct AuthorizationAdmission {
     nonfinite_values: std::collections::BTreeMap<String, JsValue>,
     reserved_error: Option<(&'static str, &'static str)>,
 }
+#[derive(Default)]
+pub(super) struct AuthorizationSettings {
+    pub initial: bool,
+    pub post_login_cleared_for_session: Option<String>,
+}
 impl<R: SessionRequest> SessionRequest for AuthorizationRequest<'_, R> {
     fn endpoint_call(&self) -> Option<&alibi_core::endpoint::EndpointCall> {
         Some(&self.call)
@@ -77,14 +82,23 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        Box::pin(self.authorize_flow(input, req, ctx, true)).await
+        Box::pin(self.authorize_flow(
+            input,
+            req,
+            ctx,
+            AuthorizationSettings {
+                initial: true,
+                ..Default::default()
+            },
+        ))
+        .await
     }
     pub(super) async fn authorize_flow<S: AuthSchema>(
         &self,
         mut input: Option<JsValue>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
-        initial: bool,
+        settings: AuthorizationSettings,
     ) -> AuthResult<EndpointResponse> {
         if !self
             .config
@@ -170,18 +184,24 @@ impl OAuthProviderPlugin {
             };
             return alibi_core::endpoint::with_endpoint_call_context(
                 effective.call.clone(),
-                Box::pin(self.authorize_parameters(input, &effective, ctx, initial, request_error)),
+                Box::pin(self.authorize_parameters(
+                    input,
+                    &effective,
+                    ctx,
+                    settings,
+                    request_error,
+                )),
             )
             .await;
         }
-        Box::pin(self.authorize_parameters(input, req, ctx, initial, request_error)).await
+        Box::pin(self.authorize_parameters(input, req, ctx, settings, request_error)).await
     }
     async fn authorize_parameters<S: AuthSchema>(
         &self,
         input: Option<JsValue>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
-        initial: bool,
+        settings: AuthorizationSettings,
         reserved_error: Option<(&'static str, &'static str)>,
     ) -> AuthResult<EndpointResponse> {
         let validated_max_age = maximum_age(input.as_ref().and_then(|input| input.get("max_age")));
@@ -215,7 +235,7 @@ impl OAuthProviderPlugin {
             },
             req,
             ctx,
-            initial,
+            settings,
         ));
         if let Some(logical) = logical {
             alibi_core::endpoint::with_endpoint_call_context(logical, run).await
@@ -228,7 +248,7 @@ impl OAuthProviderPlugin {
         input: AuthorizationAdmission,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
-        initial: bool,
+        settings: AuthorizationSettings,
     ) -> AuthResult<EndpointResponse> {
         let AuthorizationAdmission {
             mut query,
@@ -526,11 +546,11 @@ impl OAuthProviderPlugin {
         }
         _ = query.insert("scope".into(), json!(scope));
         if !force_login
-            && initial
+            && settings.initial
             && prompts.contains(&AuthorizationPrompt::SelectAccount)
             && let Some(page) = &self.config.select_account_page
         {
-            let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
+            let params = self.sign_authorization_query(query, &nonfinite_values, None, ctx)?;
             return browser_redirect(req, &format!("{page}?{params}"));
         }
         if !force_login
@@ -578,8 +598,58 @@ impl OAuthProviderPlugin {
                         "End-User interaction is required",
                     );
                 }
-                let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
+                let params = self.sign_authorization_query(query, &nonfinite_values, None, ctx)?;
                 return browser_redirect(req, &format!("{page}?{params}"));
+            }
+        }
+        if !force_login
+            && let Some(post_login) = &self.config.post_login
+            && let Some((user, session)) = &session
+            && settings.post_login_cleared_for_session.as_deref() != Some(session.id.as_str())
+        {
+            let user = ctx.user_view(user);
+            let scopes = requested
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect::<Vec<_>>();
+            if post_login
+                .should_redirect
+                .should_redirect(super::OAuthPostLoginContext {
+                    headers: &req
+                        .physical_request()
+                        .ok_or_else(|| AuthError::internal("request not found"))?
+                        .headers,
+                    user: &user,
+                    session,
+                    scopes: &scopes,
+                })
+                .await
+                .map_err(|error| {
+                    if alibi_core::endpoint::is_endpoint_api_error(&error) {
+                        error
+                    } else {
+                        AuthError::CallbackFailure(Box::new(error))
+                    }
+                })?
+            {
+                if prompts.contains(&AuthorizationPrompt::None) {
+                    return admission_error(
+                        "interaction_required",
+                        "End-User interaction is required",
+                    );
+                }
+                if post_login.page.is_empty() {
+                    return Ok(EndpointResponse::error(AuthError::Api {
+                        status: 500,
+                        code: None,
+                        message: String::new(),
+                    })
+                    .with_error_body(JsValue::from(
+                        json!({"error_description":"postLogin should have been defined"}),
+                    )));
+                }
+                let params = self.sign_authorization_query(query, &nonfinite_values, None, ctx)?;
+                return browser_redirect(req, &format!("{}?{params}", post_login.page));
             }
         }
         let remembered = if !force_login
@@ -728,7 +798,13 @@ impl OAuthProviderPlugin {
         } else {
             &self.config.consent_page
         };
-        let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
+        let cleared_session = if !force_login && self.config.post_login.is_some() {
+            session.as_ref().map(|(_, session)| session.id.as_str())
+        } else {
+            None
+        };
+        let params =
+            self.sign_authorization_query(query, &nonfinite_values, cleared_session, ctx)?;
         browser_redirect(req, &format!("{page}?{params}"))
     }
     fn signup_page(&self) -> &str {
@@ -783,6 +859,7 @@ impl OAuthProviderPlugin {
         &self,
         query: serde_json::Map<String, Value>,
         nonfinite_values: &std::collections::BTreeMap<String, JsValue>,
+        post_login_cleared_for_session: Option<&str>,
         ctx: &AuthContext<S>,
     ) -> AuthResult<String> {
         let now = chrono::Utc::now().timestamp_millis();
@@ -824,6 +901,9 @@ impl OAuthProviderPlugin {
             (seconds + self.config.code_expires_in).to_string(),
         ));
         pairs.push(("ba_iat".into(), now.to_string()));
+        if let Some(session_id) = post_login_cleared_for_session {
+            pairs.push(("ba_pl".into(), session_id.into()));
+        }
         let mut names = pairs
             .iter()
             .map(|(name, _)| name.clone())

@@ -900,6 +900,16 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         ),
     )
     .await?;
+    Box::pin(
+        super::oauth_authorization_post_login::assert_post_login_policy::<B>(
+            &connection,
+            &owner,
+            &managed,
+            &session_id,
+            &id,
+        ),
+    )
+    .await?;
     Ok(())
 }
 

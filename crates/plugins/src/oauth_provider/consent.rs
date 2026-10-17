@@ -188,7 +188,13 @@ impl OAuthProviderPlugin {
         let login_satisfied =
             issued.is_some_and(|issued| session.created_at.timestamp_millis() >= issued);
         if prompt.split(' ').any(|prompt| prompt == "login") && !login_satisfied {
-            return Box::pin(self.resume_authorization(query, req, ctx)).await;
+            return Box::pin(self.resume_authorization(
+                query,
+                req,
+                ctx,
+                super::continuation::post_login_clearance(supplied),
+            ))
+            .await;
         }
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid consent timestamp"))?;
@@ -249,13 +255,20 @@ impl OAuthProviderPlugin {
         if login_satisfied {
             _ = query.remove("max_age");
         }
-        Box::pin(self.resume_authorization(query, req, ctx)).await
+        Box::pin(self.resume_authorization(
+            query,
+            req,
+            ctx,
+            super::continuation::post_login_clearance(supplied),
+        ))
+        .await
     }
     pub(super) async fn resume_authorization<S: AuthSchema>(
         &self,
         query: serde_json::Map<String, Value>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
+        post_login_cleared_for_session: Option<String>,
     ) -> AuthResult<EndpointResponse> {
         let Some(mut request) = req.physical_request().cloned() else {
             return super::clients::status_protocol_error(
@@ -268,15 +281,21 @@ impl OAuthProviderPlugin {
         _ = request
             .headers
             .insert("accept".into(), "application/json".into());
-        Box::pin(self.authorize_flow(
-            Some(alibi_core::utils::json::parse_value(
-                &serde_json::to_string(&query)?,
-            )?),
-            &request,
-            ctx,
-            false,
-        ))
-        .await
+        let input = Some(alibi_core::utils::json::parse_value(
+            &serde_json::to_string(&query)?,
+        )?);
+        let settings = super::authorization::AuthorizationSettings {
+            initial: false,
+            post_login_cleared_for_session,
+        };
+        // Preserve the original physical callback headers while changing only
+        // the continuation's logical response negotiation/session credentials.
+        if let Some(call) = req.endpoint_call() {
+            let mut call = call.clone();
+            call.replace_headers(request.headers);
+            return Box::pin(self.authorize_flow(input, &call, ctx, settings)).await;
+        }
+        Box::pin(self.authorize_flow(input, &request, ctx, settings)).await
     }
 }
 

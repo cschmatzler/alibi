@@ -236,7 +236,7 @@ pub(super) async fn resume<S: AuthSchema>(
             )?),
             &request,
             ctx,
-            false,
+            super::authorization::AuthorizationSettings::default(),
         ))
         .await?,
     ))
