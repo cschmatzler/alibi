@@ -71,6 +71,27 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     return false;
   };
+  const credentialGenerators = {
+    accessMode: "",
+    refreshMode: "",
+    accessCount: 0,
+    refreshCount: 0,
+    calls: [] as string[],
+  };
+  const generateCredential = async (kind: "access" | "refresh") => {
+    credentialGenerators.calls.push(kind);
+    const count =
+      kind === "access" ? ++credentialGenerators.accessCount : ++credentialGenerators.refreshCount;
+    const mode =
+      kind === "access" ? credentialGenerators.accessMode : credentialGenerators.refreshMode;
+    if (mode === "error") throw new Error(`${kind} generator failed`);
+    if (mode === "empty") return "";
+    return `application-${kind}-${mode === "fixed" ? "fixed" : count}`;
+  };
+  const generationOptions = {
+    generateOpaqueAccessToken: () => generateCredential("access"),
+    generateRefreshToken: () => generateCredential("refresh"),
+  };
   const remoteKeys = JSON.parse(
     await readFixtureFile(
       new URL("../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
@@ -674,6 +695,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               ...(ctx.body.accessClaimsProfile
                 ? { customAccessTokenClaims, extensions: claimExtensions(true) }
                 : {}),
+              ...(ctx.body.credentialGenerators ? generationOptions : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
@@ -1249,7 +1271,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           loginPage: "/login",
           consentPage: "/consent",
           refreshTokenReuseInterval: 60,
+          ...generationOptions,
         }),
+        issuanceHelper,
       ],
     }),
     machine: betterAuth({
@@ -1363,6 +1387,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return Response.json({ calls: registrationCalls, counts });
     }
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
+    if (input.action === "credential-generator-state") {
+      if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
+      if (typeof input.refreshMode === "string")
+        credentialGenerators.refreshMode = input.refreshMode;
+      if (input.reset) {
+        credentialGenerators.accessCount = 0;
+        credentialGenerators.refreshCount = 0;
+        credentialGenerators.calls.length = 0;
+      }
+      return Response.json(credentialGenerators);
+    }
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       if (typeof input.operator === "boolean") liveClaims.operator = input.operator;
@@ -1929,6 +1964,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             result: await (auth.api as any).issueTokensFixture({ body: input.body }),
           });
         } catch (error: any) {
+          if (input.captureError === "failure") return Response.json({ failed: true });
           return Response.json(
             error instanceof EndpointAPIError
               ? { apiError: { status: error.statusCode, ...error.body } }

@@ -32,7 +32,7 @@ pub use extensions::{
 };
 mod id_token;
 mod issuance;
-pub use issuance::OAuthTokenIssueParams;
+pub use issuance::{OAuthTokenGenerator, OAuthTokenIssueParams};
 mod initial_access_token;
 mod introspection;
 pub use initial_access_token::{
@@ -128,6 +128,8 @@ pub struct OAuthProviderConfig {
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
     /// Application token hashing for authorization codes, access and refresh tokens.
     pub token_hasher: Option<std::sync::Arc<dyn OAuthTokenHasher>>,
+    pub opaque_access_token_generator: Option<std::sync::Arc<dyn OAuthTokenGenerator>>,
+    pub refresh_token_generator: Option<std::sync::Arc<dyn OAuthTokenGenerator>>,
     pub client_secret_cipher: Option<std::sync::Arc<dyn OAuthClientSecretCipher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
@@ -178,6 +180,8 @@ impl Default for OAuthProviderConfig {
             client_secret_hasher: None,
             client_secret_cipher: None,
             token_hasher: None,
+            opaque_access_token_generator: None,
+            refresh_token_generator: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),

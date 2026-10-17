@@ -6,6 +6,14 @@ use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
 use serde_json::{Value, json};
 
+/// Application-owned opaque access/refresh credentials. The admitted issuance
+/// params provide native context without additional user or client lookups.
+/// Empty output is preserved; only an absent configured generator uses randomness.
+#[async_trait::async_trait]
+pub trait OAuthTokenGenerator: Send + Sync + std::fmt::Debug {
+    async fn generate(&self, params: &OAuthTokenIssueParams) -> AuthResult<String>;
+}
+
 /// Inputs authorized by a trusted grant handler or companion endpoint.
 /// Supplying these does not repeat client authentication or scope admission.
 #[derive(Clone, Debug)]
@@ -265,7 +273,11 @@ impl OAuthProviderPlugin {
             jwt.sign_jwt(payload, &options, req.physical_request(), ctx)
                 .await?
         } else {
-            let token = random_token();
+            let token = if let Some(generator) = &self.config.opaque_access_token_generator {
+                generator.generate(p).await?
+            } else {
+                random_token()
+            };
             if let Some(id) = refresh_id {
                 _ = metadata.insert("refreshId".into(), json!(id));
             }
@@ -303,7 +315,11 @@ impl OAuthProviderPlugin {
         if !requested || !super::authentication::client_allows_grant(&p.client, "refresh_token") {
             return Ok(None);
         }
-        let token = random_token();
+        let token = if let Some(generator) = &self.config.refresh_token_generator {
+            generator.generate(p).await?
+        } else {
+            random_token()
+        };
         let protected = self.hash_token(&token, "refresh_token").await?;
         if let Some(original) = p.refresh_token.as_ref()
             && !ctx

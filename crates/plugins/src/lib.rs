@@ -299,9 +299,9 @@ pub use oauth_provider::{
     OAuthInitialAccessTokenInput, OAuthInitialAccessTokenValidator, OAuthMetadataContributor,
     OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig,
     OAuthProviderExtension, OAuthProviderPlugin, OAuthRedirectUriValidator,
-    OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenHasher, OAuthTokenIssueParams,
-    OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput, OAuthVerifiedClientAssertion,
-    consume_client_assertion,
+    OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenGenerator, OAuthTokenHasher,
+    OAuthTokenIssueParams, OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput,
+    OAuthVerifiedClientAssertion, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
