@@ -254,10 +254,16 @@ impl OAuthProviderPlugin {
                     })
                     .or_else(|| v.as_str().map(|v| vec![v.into()]))
             });
-        let response = match self.mint_tokens(ctx, req, &params, "authorization_code").await {
+        let response = match self
+            .mint_tokens(ctx, req, &params, "authorization_code")
+            .await
+        {
             Ok(value) => value,
             Err(error) => {
                 let mut response = EndpointResponse::error(error.error);
+                if error.body_absent {
+                    return Ok(response.without_error_body());
+                }
                 if let Some(body) = error.body {
                     response = response.with_error_body(*body);
                 }

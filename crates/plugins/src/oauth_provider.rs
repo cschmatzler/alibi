@@ -116,6 +116,9 @@ pub struct OAuthProviderConfig {
     /// Operator access claims, above per-issuance claims but below resource
     /// policy. Opaque validation re-derives them without an issuance grant.
     pub custom_access_token_claims: Option<std::sync::Arc<dyn OAuthTokenClaimsContributor>>,
+    /// Application response-envelope fields, collected before token writes.
+    /// Per-issuance fields take precedence; protocol response fields remain provider-owned.
+    pub custom_token_response_fields: Option<std::sync::Arc<dyn OAuthTokenClaimsContributor>>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Managed identities cached by provider instance and protected from API mutations.
     pub cached_trusted_clients: std::collections::HashSet<String>,
@@ -171,6 +174,7 @@ impl Default for OAuthProviderConfig {
             custom_user_info_claims: None,
             custom_id_token_claims: None,
             custom_access_token_claims: None,
+            custom_token_response_fields: None,
             client_discoveries: Vec::new(),
             cached_trusted_clients: std::collections::HashSet::new(),
             client_credentials_scope_privileges: None,

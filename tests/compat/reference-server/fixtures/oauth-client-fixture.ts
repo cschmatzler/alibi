@@ -503,6 +503,54 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       cnf: { jkt: "forged" },
     };
   };
+  const responseFields = { mode: "success", calls: [] as any[] };
+  const customTokenResponseFields: NonNullable<OAuthOptions["customTokenResponseFields"]> = async ({
+    grantType,
+    user,
+    scopes,
+    metadata,
+    verificationValue,
+  }) => {
+    responseFields.calls.push({
+      grant: grantType,
+      userId: user?.id ?? null,
+      email: user?.email ?? null,
+      scopes,
+      metadata: metadata ?? null,
+      verification: verificationValue
+        ? {
+            type: verificationValue.type,
+            userId: verificationValue.userId,
+            sessionId: verificationValue.sessionId,
+            scope: verificationValue.query.scope,
+            state: verificationValue.query.state,
+            clientId: verificationValue.query.client_id,
+            challenge: verificationValue.query.code_challenge,
+          }
+        : null,
+    });
+    if (responseFields.mode === "ordinary") throw new Error("private response failure");
+    if (responseFields.mode === "api") {
+      throw new APIError("UNPROCESSABLE_ENTITY", {
+        code: "RESPONSE_REJECTED",
+        message: "Operator response denied",
+      });
+    }
+    return {
+      application_metadata: { service: "billing", plan: "pro" },
+      per_request: "global",
+      nullable: null,
+      toString: "application-toString",
+      ["__proto__"]: { applicationPrototype: true },
+      access_token: "forged",
+      refresh_token: "forged",
+      id_token: "forged",
+      expires_in: 1,
+      expires_at: 1,
+      token_type: "forged",
+      scope: "forged",
+    };
+  };
   const userInfoClaims = {
     value: null as string | null,
     calls: [] as any[],
@@ -696,6 +744,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 ? { customAccessTokenClaims, extensions: claimExtensions(true) }
                 : {}),
               ...(ctx.body.credentialGenerators ? generationOptions : {}),
+              ...(ctx.body.responseFieldsProfile ? { customTokenResponseFields } : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
@@ -997,6 +1046,20 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           extensions: authenticationExtensions(),
         }),
         authenticationHelper,
+      ],
+    }),
+    "response-fields": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          disableJwtPlugin: true,
+          customTokenResponseFields,
+        }),
+        issuanceHelper,
       ],
     }),
     claims: betterAuth({
@@ -1372,6 +1435,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "response-fields-state") {
+      if (typeof input.value === "string") responseFields.mode = input.value;
+      if (input.reset) responseFields.calls.length = 0;
+      return Response.json(responseFields);
+    }
     if (input.action === "registration-state") {
       const context = await auth.$context;
       const counts = Object.fromEntries(

@@ -113,6 +113,45 @@ pub(super) fn callback_context<S: AuthSchema>(
 }
 
 impl OAuthProviderPlugin {
+    pub(super) async fn extend_token_response_fields<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        req: &impl SessionRequest,
+        params: &mut OAuthTokenIssueParams,
+        grant_type: &str,
+    ) -> Result<(), alibi_core::endpoint::EndpointError> {
+        let Some(contributor) = &self.config.custom_token_response_fields else {
+            return Ok(());
+        };
+        let mut fields = contributor
+            .contribute(OAuthTokenClaimsInput {
+                context: callback_context(ctx, req),
+                options: &self.config,
+                params,
+                grant_type: Some(grant_type),
+                metadata: alibi_core::store::oauth_clients::metadata_to_columns(
+                    params.client.metadata.clone(),
+                )?
+                .get("metadata")
+                .filter(|value| !value.is_null())
+                .cloned(),
+            })
+            .await
+            .map_err(|error| {
+                let ordinary = !matches!(error, alibi_core::AuthError::Api { .. });
+                let mut error = alibi_core::endpoint::EndpointError::from(error);
+                // Better Call exposes ordinary callback exceptions as an empty 500,
+                // while intentional API errors retain their public body.
+                error.body_absent = ordinary;
+                error
+            })?;
+        if let Some(per_request) = params.token_response.as_ref().and_then(Value::as_object) {
+            fields.extend(per_request.clone());
+        }
+        params.token_response = Some(Value::Object(fields));
+        Ok(())
+    }
+
     pub(super) async fn collect_token_claims(
         &self,
         context: CallbackContext,

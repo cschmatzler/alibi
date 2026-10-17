@@ -20,6 +20,8 @@ mod credential_generators;
 mod extension_authentication;
 #[path = "../../../../fixtures/oauth/redirect-policy.rs"]
 mod redirect_policy;
+#[path = "../../../../fixtures/oauth/token-response-fields.rs"]
+mod token_response_fields;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -247,11 +249,13 @@ pub(crate) async fn router(
     let credential_generators=Arc::new(credential_generators::Generators::default());
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
     let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
+    let response_fields=Arc::new(token_response_fields::TokenResponseFields::default());
     for mode in [
         "extension-grant",
         "pairwise",
         "claims",
         "claims-opaque",
+        "response-fields",
         "extension-auth",
         "interaction",
         "redirect-policy",
@@ -346,6 +350,7 @@ pub(crate) async fn router(
         if matches!(mode,"claims"|"claims-opaque") {provider.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));}
         if matches!(mode,"claims"|"pairwise") {provider.custom_user_info_claims=Some(user_info_claims.clone());}
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
+        if mode=="response-fields" {provider.custom_token_response_fields=Some(response_fields.clone());provider.disable_jwt_plugin=true;}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
@@ -376,6 +381,7 @@ pub(crate) async fn router(
         let credential_generators=credential_generators.clone();
         let user_info_claims=user_info_claims.clone();
         let id_token_claims=id_token_claims.clone();
+        let response_fields=response_fields.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -410,6 +416,11 @@ pub(crate) async fn router(
                 if let Some(mode)=input["refreshMode"].as_str(){*credential_generators.refresh_mode.lock().unwrap()=mode.into();}
                 if input["reset"]==true {*credential_generators.access_count.lock().unwrap()=0;*credential_generators.refresh_count.lock().unwrap()=0;credential_generators.calls.lock().unwrap().clear();credential_generators.contexts.lock().unwrap().clear();}
                 return axum::Json(serde_json::json!({"accessMode":*credential_generators.access_mode.lock().unwrap(),"refreshMode":*credential_generators.refresh_mode.lock().unwrap(),"accessCount":*credential_generators.access_count.lock().unwrap(),"refreshCount":*credential_generators.refresh_count.lock().unwrap(),"calls":*credential_generators.calls.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="response-fields-state" {
+                if let Some(value)=input["value"].as_str(){*response_fields.mode.lock().unwrap()=value.into();}
+                if input["reset"]==true {response_fields.calls.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"mode":*response_fields.mode.lock().unwrap(),"calls":*response_fields.calls.lock().unwrap()})).into_response();
             }
             if input["action"]=="userinfo-claims-state" {
                 if let Some(value)=input.get("value") {*user_info_claims.value.lock().unwrap()=value.as_str().map(str::to_owned);}
@@ -481,6 +492,7 @@ pub(crate) async fn router(
                 if body["idClaimsProfile"]==true {config.custom_id_token_claims=Some(id_token_claims.clone());}
                 if body["credentialGenerators"]==true {config.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));config.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));}
                 if body["accessClaimsProfile"]==true {config.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));config.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
+                if body["responseFieldsProfile"]==true {config.custom_token_response_fields=Some(response_fields.clone());}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();

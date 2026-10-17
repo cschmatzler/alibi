@@ -256,6 +256,17 @@ impl OAuthProviderPlugin {
         params.resources = (!resources.is_empty()).then_some(resources);
         self.extend_id_token_claims(ctx, req, &mut params, "refresh_token")
             .await?;
+        if let Err(error) = self
+            .extend_token_response_fields(ctx, req, &mut params, "refresh_token")
+            .await
+        {
+            let response = EndpointResponse::error(error.error);
+            return Ok(if error.body_absent {
+                response.without_error_body()
+            } else {
+                no_store(response)
+            });
+        }
         params.confirmation = match self
             .resolve_dpop_binding(ctx, req, &params, &admission)
             .await
@@ -315,7 +326,8 @@ impl OAuthProviderPlugin {
                 return Ok(no_store(response));
             }
         };
-        let mut response = serde_json::Map::from_iter([
+        let mut response = super::issuance::response_fields(&params);
+        response.extend([
             ("access_token".into(), json!(access)),
             (
                 "expires_in".into(),

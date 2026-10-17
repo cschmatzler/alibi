@@ -69,6 +69,27 @@ pub(super) fn random_token() -> String {
         .take(32)
         .collect()
 }
+/// Optional protocol fields must not survive custom input when not issued.
+pub(super) fn response_fields(params: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
+    let mut fields = params
+        .token_response
+        .as_ref()
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    for key in [
+        "access_token",
+        "expires_in",
+        "expires_at",
+        "token_type",
+        "refresh_token",
+        "scope",
+        "id_token",
+    ] {
+        _ = fields.remove(key);
+    }
+    fields
+}
 /// Preserve JavaScript number serialization, including integral default values.
 pub(super) fn number(value: f64) -> AuthResult<Value> {
     serde_json::from_str(&value.to_string()).map_err(AuthError::from)
@@ -396,6 +417,8 @@ impl OAuthProviderPlugin {
         resolved.scopes = admission.scopes.clone();
         self.extend_id_token_claims(ctx, req, &mut resolved, grant_type)
             .await?;
+        self.extend_token_response_fields(ctx, req, &mut resolved, grant_type)
+            .await?;
         resolved.confirmation = match p.confirmation.as_ref().filter(|value| !value.is_null()) {
             Some(confirmation) => Some(confirmation.clone()),
             None => self.resolve_dpop_binding(ctx, req, p, &admission).await?,
@@ -436,23 +459,7 @@ impl OAuthProviderPlugin {
                 },
             )
             .await?;
-        let mut response = p
-            .token_response
-            .as_ref()
-            .and_then(Value::as_object)
-            .cloned()
-            .unwrap_or_default();
-        for key in [
-            "access_token",
-            "expires_in",
-            "expires_at",
-            "token_type",
-            "refresh_token",
-            "scope",
-            "id_token",
-        ] {
-            _ = response.remove(key);
-        }
+        let mut response = response_fields(p);
         for (key, value) in [
             ("access_token", json!(access)),
             ("expires_in", remaining(issued.timestamp(), &expires_claim)?),

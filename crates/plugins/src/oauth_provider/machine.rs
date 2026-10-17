@@ -78,10 +78,16 @@ impl OAuthProviderPlugin {
         let mut params = super::OAuthTokenIssueParams::new(client, scopes);
         let resources = super::resource_policy::resource_list(body.get("resource"));
         params.resources = (!resources.is_empty()).then_some(resources);
-        match self.mint_tokens(ctx, req, &params, "client_credentials").await {
+        match self
+            .mint_tokens(ctx, req, &params, "client_credentials")
+            .await
+        {
             Ok(value) => Ok(no_store(EndpointResponse::json(&value)?)),
             Err(error) => {
                 let mut response = EndpointResponse::error(error.error);
+                if error.body_absent {
+                    return Ok(response.without_error_body());
+                }
                 if let Some(body) = error.body {
                     response = response.with_error_body(*body);
                 }
