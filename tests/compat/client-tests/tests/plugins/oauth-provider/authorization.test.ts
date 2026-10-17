@@ -454,8 +454,20 @@ compatScenario(
           "redirect_uri: URL cannot use javascript:, data:, or vbscript: scheme",
           false,
         ],
-        [{redirect_uri:"http://localhost./callback"},false,"invalid_redirect","invalid redirect uri",false],
-        [{redirect_uri:"http://[::ffff:127.0.0.1]/callback"},false,"invalid_redirect","invalid redirect uri",false],
+        [
+          { redirect_uri: "http://localhost./callback" },
+          false,
+          "invalid_redirect",
+          "invalid redirect uri",
+          false,
+        ],
+        [
+          { redirect_uri: "http://[::ffff:127.0.0.1]/callback" },
+          false,
+          "invalid_redirect",
+          "invalid redirect uri",
+          false,
+        ],
         [
           { response_type: "token", redirect_uri: " https://app.fixture.test/callback " },
           false,
@@ -861,6 +873,9 @@ compatScenario(
       postAuthorizations.push({ contentType, result, proof });
     }
     return {
+      redirectPolicy: ctx.snapshot(
+        await assertRedirectPolicy(control, cookie, managed, actualSession, ctx.baseURL),
+      ),
       callbackQueries: ctx.snapshot(callbackQueries),
       normalizedRedirects: ctx.snapshot(normalizedRedirects),
       loopbackRedirects: ctx.snapshot(loopbackRedirects),
@@ -880,3 +895,278 @@ compatScenario(
     };
   },
 );
+
+async function assertRedirectPolicy(
+  control: (input: Record<string, unknown>) => Promise<Response>,
+  cookie: string,
+  client: any,
+  session: any,
+  baseURL: string,
+) {
+  const policy = (input: Record<string, unknown>) => control({ ...input, mode: "redirect-policy" });
+  const registered = client.redirect_uris;
+  const preview = "https://preview.fixture.test/callback";
+  const variants: Record<string, string> = {};
+  for (const [name, patch] of [
+    ["disabled", {}],
+    ["grant", { grant_types: ["refresh_token"], response_types: [] }],
+  ] as const) {
+    const response = await policy({
+      action: "admin-create",
+      headers: { cookie },
+      body: {
+        client_name: `Redirect ${name}`,
+        redirect_uris: registered,
+        scope: "email",
+        skip_consent: true,
+        require_pkce: false,
+        ...patch,
+      },
+    });
+    expect(response.status).toBe(201);
+    variants[name] = (await response.json()).client_id;
+    if (name === "disabled") {
+      // Disabling a persisted client is operator-managed, not a create input.
+      const disabled = await policy({
+        action: "backchannel-uri",
+        clientId: variants[name],
+        uri: "https://app.fixture.test/backchannel",
+        disabled: true,
+      });
+      expect(disabled.status).toBe(200);
+    }
+  }
+  const results = [];
+  type PolicyCase = {
+    patch: Record<string, unknown>;
+    uri: string;
+    code?: boolean;
+    called: boolean;
+    defaultResult?: boolean;
+    callbackUri?: string;
+    error?: string;
+    trusted?: boolean;
+    fragment?: boolean;
+    status?: number;
+  };
+  for (const transport of ["private", "http"] as const) {
+    const cases: PolicyCase[] = [
+      { patch: {}, uri: preview, code: true, called: true, defaultResult: false },
+      {
+        patch: {},
+        uri: "\uFEFF https://preview.fixture.test/callback \u00A0",
+        code: true,
+        called: true,
+        defaultResult: false,
+        callbackUri: preview,
+      },
+      {
+        patch: {},
+        uri: "https://preview.fixture.test/a/../callback",
+        code: true,
+        called: true,
+        defaultResult: false,
+      },
+      { patch: {}, uri: registered[1], code: true, called: true, defaultResult: true },
+      {
+        patch: {},
+        uri: registered[0],
+        error: "invalid_redirect",
+        called: true,
+        defaultResult: true,
+      },
+      {
+        patch: {},
+        uri: "https://throw.fixture.test/callback",
+        error: "invalid_redirect",
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: {},
+        uri: "https://user:pass@preview.fixture.test/callback",
+        error: "invalid_redirect",
+        called: false,
+      },
+      {
+        patch: { response_type: "token" },
+        uri: preview,
+        error: "unsupported_response_type",
+        trusted: true,
+        fragment: true,
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { response_type: "token" },
+        uri: registered[0],
+        error: "unsupported_response_type",
+        called: true,
+        defaultResult: true,
+      },
+      {
+        patch: { response_type: "token" },
+        uri: "https://throw.fixture.test/callback",
+        error: "unsupported_response_type",
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { prompt: "surprise", response_mode: "query" },
+        uri: preview,
+        error: "invalid_request",
+        trusted: true,
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { response_type: "token" },
+        uri: ` ${preview}`,
+        error: "unsupported_response_type",
+        trusted: true,
+        fragment: true,
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { request: "", response_mode: "fragment" },
+        uri: preview,
+        error: "request_not_supported",
+        trusted: true,
+        fragment: true,
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { client_id: variants.grant },
+        uri: preview,
+        error: "unauthorized_client",
+        called: false,
+      },
+      {
+        patch: { client_id: variants.grant, response_type: "token" },
+        uri: preview,
+        error: "unsupported_response_type",
+        trusted: true,
+        fragment: true,
+        called: true,
+        defaultResult: false,
+      },
+      {
+        patch: { client_id: variants.disabled },
+        uri: preview,
+        error: "client_disabled",
+        called: false,
+      },
+      {
+        patch: { client_id: variants.disabled, response_type: "token" },
+        uri: preview,
+        error: "unsupported_response_type",
+        called: false,
+      },
+      {
+        patch: { client_id: "unknown-redirect-client" },
+        uri: preview,
+        error: "invalid_client",
+        called: false,
+      },
+      {
+        patch: { client_id: ` ${client.client_id}`, response_type: "token" },
+        uri: preview,
+        error: "unsupported_response_type",
+        called: false,
+      },
+      {
+        patch: { prompt: "select_account" },
+        uri: preview,
+        error: "unsupported_prompt_select_account",
+        called: false,
+      },
+      ...[
+        "https://user:pass@preview.fixture.test/callback",
+        "https://:pass@preview.fixture.test/callback",
+        "https://preview.fixture.test/callback#",
+        "javascript:preview.fixture.test",
+        "http://preview.fixture.test/callback",
+      ].map((uri) => ({
+        patch: { response_type: "token" },
+        uri,
+        error: "unsupported_response_type",
+        called: false,
+      })),
+      { patch: { response_type: "token" }, uri: `\uFEFF${preview}`, status: 500, called: false },
+      ...(transport === "private"
+        ? [
+            {
+              patch: { client_id: [client.client_id], response_type: "token" },
+              uri: preview,
+              error: "unsupported_response_type",
+              called: false,
+            },
+          ]
+        : []),
+    ];
+    for (const test of cases) {
+      const query = {
+        client_id: client.client_id,
+        response_type: "code",
+        redirect_uri: test.uri,
+        scope: "email",
+        state: "policy-state",
+        ...test.patch,
+      };
+      const response = await policy({
+        ...(transport === "http"
+          ? { action: "protocol-http", path: "/oauth2/authorize" }
+          : { action: "authorize" }),
+        headers: { accept: "application/json", cookie },
+        query,
+      });
+      expect(response.status, JSON.stringify({ transport, test })).toBe(test.status ?? 200);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      const calls = await (await policy({ action: "redirect-policy-calls" })).json();
+      expect(calls, JSON.stringify({ transport, query })).toEqual(
+        test.called
+          ? [{ uri: test.callbackUri ?? test.uri, registered, defaultResult: test.defaultResult }]
+          : [],
+      );
+      if (test.status === 500) {
+        expect(await response.text()).toBe("");
+        results.push({ transport, query, calls, status: 500 });
+        continue;
+      }
+      const result = await response.json();
+      const target = new URL(result.url, baseURL);
+      let stored = null;
+      if (test.code) {
+        const code = target.searchParams.get("code");
+        expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+        expect(target.searchParams.get("state")).toBe("policy-state");
+        expect(target.searchParams.get("iss")).toBe(`${baseURL}/api/auth`);
+        stored = await (await policy({ action: "grant-row", token: code })).json();
+        expect(stored.value.query.redirect_uri).toBe(test.callbackUri ?? test.uri);
+        expect(stored.value.query.client_id).toBe(client.client_id);
+        expect(stored.value.userId).toBe(session.user.id);
+        expect(stored.value.sessionId).toBe(session.session.id);
+      } else {
+        const fragment = "fragment" in test && test.fragment;
+        expect(Boolean(target.hash)).toBe(Boolean(fragment));
+        const fields = fragment ? new URLSearchParams(target.hash.slice(1)) : target.searchParams;
+        expect(fields.get("error")).toBe(test.error);
+        expect(fields.has("code")).toBe(false);
+        if ("trusted" in test && test.trusted) {
+          expect(target.hostname).toBe("preview.fixture.test");
+          expect(fields.get("state")).toBe("policy-state");
+          expect(fields.get("iss")).toBe(`${baseURL}/api/auth`);
+        } else {
+          expect(target.origin).toBe(new URL(baseURL).origin);
+          expect(target.pathname).toBe("/api/auth/error");
+          expect(fields.has("state")).toBe(false);
+          expect(fields.has("iss")).toBe(false);
+        }
+      }
+      results.push({ transport, query, result, calls, stored });
+    }
+  }
+  return results;
+}

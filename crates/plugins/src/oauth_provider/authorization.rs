@@ -118,10 +118,25 @@ impl OAuthProviderPlugin {
         } else {
             super::discovery::resolve(ctx, &client_id).await?
         };
-        let trusted = client.as_ref().is_some_and(|client| {
-            client.metadata.get("disabled") != Some(&json!(true))
-                && registered_redirect(&client.metadata, &redirect_uri)
+        let authorization_code_allowed = client.as_ref().is_some_and(|client| {
+            client
+                .metadata
+                .get("grant_types")
+                .and_then(Value::as_array)
+                .is_some_and(|grants| grants.contains(&json!("authorization_code")))
         });
+        // Early request/schema errors can trust an enabled client without grant
+        // admission. Valid requests reach the operator only after that admission.
+        // Keep one decision for both the error channel and eventual code binding.
+        let trusted = if let Some(client) = client.as_ref().filter(|client| {
+            client.metadata.get("disabled") != Some(&json!(true))
+                && (error_only || authorization_code_allowed)
+        }) {
+            self.authorization_redirect_is_trusted(&client.metadata, &redirect_uri)
+                .await?
+        } else {
+            false
+        };
         let issuer = self
             .metadata(ctx)?
             .get("issuer")
@@ -207,12 +222,7 @@ impl OAuthProviderPlugin {
                 )?,
             );
         }
-        if !client
-            .metadata
-            .get("grant_types")
-            .and_then(Value::as_array)
-            .is_some_and(|grants| grants.contains(&json!("authorization_code")))
-        {
+        if !authorization_code_allowed {
             return browser_redirect(
                 req,
                 &error_url(
@@ -511,6 +521,47 @@ impl OAuthProviderPlugin {
         };
         let params = self.sign_authorization_query(query, ctx)?;
         browser_redirect(req, &format!("{page}?{params}"))
+    }
+    async fn authorization_redirect_is_trusted(
+        &self,
+        metadata: &Value,
+        requested: &str,
+    ) -> AuthResult<bool> {
+        let default_result = registered_redirect(metadata, requested);
+        let Some(policy) = &self.config.validate_redirect_uri else {
+            return Ok(default_result);
+        };
+        // SafeUrlSchema validates a JS-trimmed value, but the subsequent URL
+        // constructor and the operator still receive the original parameter.
+        if !super::clients::safe_uri_issues(alibi_core::utils::javascript::trim(requested))
+            .is_empty()
+        {
+            return Ok(false);
+        }
+        let parsed = url::Url::parse(requested).map_err(|error| {
+            AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+        })?;
+        if !parsed.username().is_empty()
+            || parsed
+                .password()
+                .is_some_and(|password| !password.is_empty())
+        {
+            return Ok(false);
+        }
+        let registered = metadata
+            .get("redirect_uris")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+            .map(str::to_owned)
+            .collect::<Vec<_>>();
+        // Only callback failures deny trust. Raw URL constructor errors above
+        // remain ordinary empty-500 failures, matching the reference boundary.
+        Ok(policy
+            .validate(requested, &registered, default_result)
+            .await
+            .unwrap_or(false))
     }
     fn sign_authorization_query<S: AuthSchema>(
         &self,

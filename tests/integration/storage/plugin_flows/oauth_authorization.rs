@@ -6,6 +6,8 @@ use alibi::{AuthSession as _, AuthVerification as _};
 use base64::Engine;
 use sha2::Digest;
 const RESERVED_CALLBACK: &str = "https://app.fixture.test/callback?code=stale&keep=first&code=duplicate&state=stale&iss=stale&keep=second";
+#[path = "../../../fixtures/oauth/redirect-policy.rs"]
+mod redirect_policy;
 backend_tests!(oauth_authorization_admits_client_and_produces_signed_login_redirect);
 async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B: Backend>(
     db: Db,
@@ -339,6 +341,434 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         &auth, &owner, &managed, &signed, &id,
     ))
     .await?;
+    let (policy_auth, policy) = Box::pin(configured_redirect_policy::<B>(&connection)).await?;
+    let (variants, session_id) = Box::pin(redirect_policy_controls(&policy_auth, &owner)).await?;
+    Box::pin(assert_redirect_policy(
+        &policy_auth,
+        &db,
+        &owner,
+        &managed,
+        &policy,
+        &variants,
+        &session_id,
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn configured_redirect_policy<B: Backend>(
+    connection: &B::Connection,
+) -> TestResult<(Alibi<B::Schema>, Arc<redirect_policy::RedirectPolicy>)> {
+    let policy = Arc::new(redirect_policy::RedirectPolicy::default());
+    let policy_auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    validate_redirect_uri: Some(policy.clone()),
+                    ..Default::default()
+                },
+            ))
+            .build(),
+    )
+    .await?;
+    Ok((policy_auth, policy))
+}
+
+async fn redirect_policy_controls<S: AuthSchema>(
+    auth: &Alibi<S>,
+    owner: &AuthResponse,
+) -> TestResult<(Vec<String>, String)> {
+    let cookie = cookies(owner);
+    let registered = json!(["https://app.fixture.test/callback", RESERVED_CALLBACK]);
+    let mut variants = Vec::new();
+    for patch in [
+        json!({"disabled":true}),
+        json!({"grant_types":["refresh_token"],"response_types":[]}),
+    ] {
+        let mut input = json!({"client_name":"Redirect control","redirect_uris":registered,"scope":"email","skip_consent":true,"require_pkce":false});
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        let created = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::admin_create_oauth_client_endpoint(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(created.status, 201);
+        let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+        if patch["disabled"] == true {
+            // Disabled state is persisted by the operator, not create input.
+            let mut stored = Box::pin(auth.store().get_oauth_client(&id)).await?.unwrap();
+            stored.metadata["disabled"] = json!(true);
+            _ = Box::pin(auth.store().update_oauth_client_metadata(
+                &id,
+                stored.metadata,
+                chrono::Utc::now(),
+            ))
+            .await?;
+        }
+        variants.push(id);
+    }
+    let session = Box::pin(
+        auth.store()
+            .get_session(body(owner)["token"].as_str().unwrap()),
+    )
+    .await?
+    .unwrap();
+    Ok((variants, session.id().as_ref().to_owned()))
+}
+
+async fn assert_redirect_policy<S: AuthSchema>(
+    auth: &Alibi<S>,
+    db: &Db,
+    owner: &AuthResponse,
+    managed: &AuthResponse,
+    policy: &redirect_policy::RedirectPolicy,
+    variants: &[String],
+    session_id: &str,
+) -> TestResult {
+    let cookie = cookies(owner);
+    let client = body(managed)["client_id"].as_str().unwrap().to_owned();
+    let registered = json!(["https://app.fixture.test/callback", RESERVED_CALLBACK]);
+    let preview = "https://preview.fixture.test/callback";
+    for http in [false, true] {
+        // (patch, raw URI, error or code, trusted error, fragment, callback, built-in result)
+        for (patch, uri, error, trusted, fragment, called, default_result) in [
+            (json!({}), preview, None, false, false, true, false),
+            (
+                json!({}),
+                "\u{feff} https://preview.fixture.test/callback \u{a0}",
+                None,
+                false,
+                false,
+                true,
+                false,
+            ),
+            (
+                json!({}),
+                "https://preview.fixture.test/a/../callback",
+                None,
+                false,
+                false,
+                true,
+                false,
+            ),
+            (json!({}), RESERVED_CALLBACK, None, false, false, true, true),
+            (
+                json!({}),
+                "https://app.fixture.test/callback",
+                Some("invalid_redirect"),
+                false,
+                false,
+                true,
+                true,
+            ),
+            (
+                json!({}),
+                "https://throw.fixture.test/callback",
+                Some("invalid_redirect"),
+                false,
+                false,
+                true,
+                false,
+            ),
+            (
+                json!({}),
+                "https://user:pass@preview.fixture.test/callback",
+                Some("invalid_redirect"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                preview,
+                Some("unsupported_response_type"),
+                true,
+                true,
+                true,
+                false,
+            ),
+            (
+                json!({"prompt":"surprise","response_mode":"query"}),
+                preview,
+                Some("invalid_request"),
+                true,
+                false,
+                true,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "https://app.fixture.test/callback",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                true,
+                true,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "https://throw.fixture.test/callback",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                true,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "https://:pass@preview.fixture.test/callback",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                " https://preview.fixture.test/callback",
+                Some("unsupported_response_type"),
+                true,
+                true,
+                true,
+                false,
+            ),
+            (
+                json!({"request":"","response_mode":"fragment"}),
+                preview,
+                Some("request_not_supported"),
+                true,
+                true,
+                true,
+                false,
+            ),
+            (
+                json!({"client_id":variants[1]}),
+                preview,
+                Some("unauthorized_client"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"client_id":variants[1],"response_type":"token"}),
+                preview,
+                Some("unsupported_response_type"),
+                true,
+                true,
+                true,
+                false,
+            ),
+            (
+                json!({"client_id":variants[0]}),
+                preview,
+                Some("client_disabled"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"client_id":variants[0],"response_type":"token"}),
+                preview,
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"client_id":"unknown-redirect-client"}),
+                preview,
+                Some("invalid_client"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"client_id":format!(" {client}"),"response_type":"token"}),
+                preview,
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"prompt":"select_account"}),
+                preview,
+                Some("unsupported_prompt_select_account"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "https://user:pass@preview.fixture.test/callback",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "https://preview.fixture.test/callback#",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "javascript:preview.fixture.test",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "http://preview.fixture.test/callback",
+                Some("unsupported_response_type"),
+                false,
+                false,
+                false,
+                false,
+            ),
+            (
+                json!({"response_type":"token"}),
+                "\u{feff}https://preview.fixture.test/callback",
+                Some("raw_url_error"),
+                false,
+                false,
+                false,
+                false,
+            ),
+        ] {
+            let before = db
+                .tables(&["user", "account", "session", "verification", "oauthClient"])
+                .await?;
+            let mut input = json!({"client_id":client,"response_type":"code","redirect_uri":uri,"scope":"email","state":"policy-state"});
+            input
+                .as_object_mut()
+                .unwrap()
+                .extend(patch.as_object().unwrap().clone());
+            let mut physical = request("/oauth2/authorize", None, &cookie);
+            _ = physical
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let response = Box::pin(authorization_response(auth, &input, physical, http)).await?;
+            let callback_uri = if error.is_none() && uri.starts_with('\u{feff}') {
+                preview
+            } else {
+                uri
+            };
+            let calls = std::mem::take(&mut *policy.calls.lock().unwrap());
+            assert_eq!(
+                calls,
+                if called {
+                    vec![
+                        json!({"uri":callback_uri,"registered":registered,"defaultResult":default_result}),
+                    ]
+                } else {
+                    vec![]
+                },
+                "http={http}, input={input}"
+            );
+            assert!(!response.headers.contains_key("set-cookie"));
+            if error == Some("raw_url_error") {
+                assert_eq!(response.status, 500);
+                assert_eq!(
+                    db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                        .await?,
+                    before
+                );
+                continue;
+            }
+            assert_eq!(response.status, 200);
+            let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+            if let Some(error) = error {
+                assert_eq!(target.fragment().is_some(), fragment);
+                let fields = url::form_urlencoded::parse(
+                    if fragment {
+                        target.fragment().unwrap()
+                    } else {
+                        target.query().unwrap()
+                    }
+                    .as_bytes(),
+                )
+                .collect::<std::collections::HashMap<_, _>>();
+                assert_eq!(fields["error"], error);
+                assert!(!fields.contains_key("code"));
+                if trusted {
+                    assert_eq!(target.host_str(), Some("preview.fixture.test"));
+                    assert_eq!(fields["state"], "policy-state");
+                    assert_eq!(fields["iss"], format!("{ORIGIN}/api/auth"));
+                } else {
+                    assert_eq!(target.path(), "/api/auth/error");
+                    assert!(!fields.contains_key("state"));
+                    assert!(!fields.contains_key("iss"));
+                }
+                assert_eq!(
+                    db.tables(&["user", "account", "session", "verification", "oauthClient"])
+                        .await?,
+                    before
+                );
+            } else {
+                assert_eq!(target.origin(), url::Url::parse(callback_uri)?.origin());
+                let fields = target
+                    .query_pairs()
+                    .collect::<std::collections::HashMap<_, _>>();
+                let code = &fields["code"];
+                assert_eq!(code.len(), 32);
+                assert!(code.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+                assert_eq!(fields["state"], "policy-state");
+                assert_eq!(fields["iss"], format!("{ORIGIN}/api/auth"));
+                let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(code.as_bytes()));
+                let stored = Box::pin(auth.store().get_verification_by_identifier(&hash))
+                    .await?
+                    .unwrap();
+                let grant: Value = serde_json::from_str(stored.value())?;
+                assert_eq!(grant["query"]["redirect_uri"], callback_uri);
+                assert_eq!(grant["query"]["client_id"], client);
+                assert_eq!(grant["query"]["state"], "policy-state");
+                assert_eq!(grant["userId"], body(owner)["user"]["id"]);
+                assert_eq!(grant["sessionId"], session_id);
+            }
+        }
+    }
+    let input = json!({"client_id":[client],"response_type":"token","redirect_uri":preview,"state":"policy-state"});
+    let before = db
+        .tables(&["user", "account", "session", "verification", "oauthClient"])
+        .await?;
+    let mut physical = request("/oauth2/authorize", None, &cookie);
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let response = Box::pin(authorization_response(auth, &input, physical, false)).await?;
+    let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+    assert_eq!(target.path(), "/api/auth/error");
+    assert!(policy.calls.lock().unwrap().is_empty());
+    assert_eq!(
+        db.tables(&["user", "account", "session", "verification", "oauthClient"])
+            .await?,
+        before
+    );
     Ok(())
 }
 
@@ -755,8 +1185,18 @@ async fn assert_authorization_schema<S: AuthSchema>(
         );
         assert_eq!(grant["query"]["state"], "schema-state");
         for (patch, error, description, trusted) in [
-            (json!({"redirect_uri":"http://localhost./callback"}),"invalid_redirect","invalid redirect uri",false),
-            (json!({"redirect_uri":"http://[::ffff:127.0.0.1]/callback"}),"invalid_redirect","invalid redirect uri",false),
+            (
+                json!({"redirect_uri":"http://localhost./callback"}),
+                "invalid_redirect",
+                "invalid redirect uri",
+                false,
+            ),
+            (
+                json!({"redirect_uri":"http://[::ffff:127.0.0.1]/callback"}),
+                "invalid_redirect",
+                "invalid redirect uri",
+                false,
+            ),
             (
                 json!({"response_type":""}),
                 "unsupported_response_type",

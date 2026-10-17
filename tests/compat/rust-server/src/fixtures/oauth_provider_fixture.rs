@@ -16,6 +16,8 @@ mod extension_claims;
 mod initial_access_token;
 #[path = "../../../../fixtures/oauth/extension-authentication.rs"]
 mod extension_authentication;
+#[path = "../../../../fixtures/oauth/redirect-policy.rs"]
+mod redirect_policy;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -239,6 +241,7 @@ pub(crate) async fn router(
     let mut client_instances = HashMap::new();
     let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
+    let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
     for mode in [
         "extension-grant",
         "pairwise",
@@ -246,6 +249,7 @@ pub(crate) async fn router(
         "claims-opaque",
         "extension-auth",
         "interaction",
+        "redirect-policy",
         "default",
         "dynamic",
         "public",
@@ -292,6 +296,7 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let mut provider = OAuthProviderConfig {
+            validate_redirect_uri:(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>),
             pairwise_secret: (mode=="pairwise").then(|| "fixture-pairwise-secret-at-least-32-characters".into()),
             token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
             client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
@@ -342,8 +347,8 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-         let builder=if mode=="interaction" || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:mode=="interaction",..Default::default()})})};
+        let builder=if matches!(mode,"interaction"|"redirect-policy") || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -358,6 +363,7 @@ pub(crate) async fn router(
         let logout_database=logout_database.clone();
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
+        let redirect_policy=redirect_policy.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -376,6 +382,9 @@ pub(crate) async fn router(
                     counts.insert(table.into(),serde_json::json!(row.try_get::<i64>("","count").unwrap()));
                 }
                 return axum::Json(serde_json::json!({"calls":*registration_policy.calls.lock().unwrap(),"counts":counts})).into_response();
+            }
+            if input["action"]=="redirect-policy-calls" {
+                return axum::Json(std::mem::take(&mut *redirect_policy.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}

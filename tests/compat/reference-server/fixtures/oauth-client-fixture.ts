@@ -167,6 +167,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     extensions: [{ clientDiscovery: remoteDiscovery }],
   });
   const registryState = { mode: "live", events: [] as string[] };
+  const redirectCalls: unknown[] = [];
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -886,6 +887,27 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         plugin.id === "jwt" ? jwt({ disableSettingJwtHeader: true }) : plugin,
       ),
     }),
+    "redirect-policy": betterAuth({
+      ...options,
+      rateLimit: { enabled: false },
+      plugins: [
+        username(),
+        jwt({ disableSettingJwtHeader: true }),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          validateRedirectUri: async (uri, registered, defaultResult) => {
+            redirectCalls.push({ uri, registered: [...registered], defaultResult });
+            if (uri.includes("throw.fixture.test"))
+              throw new Error("application redirect policy failed");
+            return (
+              uri !== "https://app.fixture.test/callback" &&
+              (uri.includes("preview.fixture.test") || defaultResult)
+            );
+          },
+        }),
+      ],
+    }),
     "remote-jwks": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "remote-jwks-peer": betterAuth({ ...options, plugins: [username(), jwt(), remoteProvider] }),
     "uri-host": betterAuth({ ...options, trustedOrigins: ["https://*"] }),
@@ -1193,6 +1215,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       );
       return Response.json({ calls: registrationCalls, counts });
     }
+    if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       return Response.json(liveClaims);

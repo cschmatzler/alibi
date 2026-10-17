@@ -88,6 +88,20 @@ pub trait OAuthClientIdGenerator: Send + Sync + std::fmt::Debug {
 pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
     fn generate(&self) -> AuthResult<String>;
 }
+/// Application redirect trust decision. URI safety remains provider-owned.
+///
+/// The URI is the original request parameter on schema/request errors, and the
+/// successfully schema-parsed parameter otherwise. Neither argument uses parsed
+/// URL equality. Returning an error denies trust rather than failing the route.
+#[async_trait]
+pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
+    async fn validate(
+        &self,
+        redirect_uri: &str,
+        registered_uris: &[String],
+        default_result: bool,
+    ) -> AuthResult<bool>;
+}
 /// Immutable policy shared by authorization-server metadata and grant admission.
 #[derive(Clone, Debug)]
 pub struct OAuthProviderConfig {
@@ -100,6 +114,8 @@ pub struct OAuthProviderConfig {
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
+    /// Override registered redirect matching after provider-owned URI safety checks.
+    pub validate_redirect_uri: Option<std::sync::Arc<dyn OAuthRedirectUriValidator>>,
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
     /// Application token hashing for authorization codes, access and refresh tokens.
     pub token_hasher: Option<std::sync::Arc<dyn OAuthTokenHasher>>,
@@ -146,6 +162,7 @@ impl Default for OAuthProviderConfig {
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,
+            validate_redirect_uri: None,
             client_secret_hasher: None,
             client_secret_cipher: None,
             token_hasher: None,
