@@ -235,17 +235,9 @@ impl MagicLinkPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let token = req.query.get("token").cloned().ok_or(AuthError::Upstream {
-            status: 400,
-            code: codes::VALIDATION_ERROR,
-            message: "[query.token] Invalid input: expected string, received undefined",
-        })?;
-        let query = MagicLinkVerifyInput {
-            token,
-            callback_url: req.query.get("callbackURL").cloned(),
-            new_user_callback_url: req.query.get("newUserCallbackURL").cloned(),
-            error_callback_url: req.query.get("errorCallbackURL").cloned(),
-        };
+        let query = req.query_as_js_value();
+        let query =
+            alibi_core::utils::json::from_value(endpoint::validate_verify_query(Some(&query))?)?;
         self.verify_core(req, ctx, query).await
     }
 

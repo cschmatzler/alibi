@@ -91,12 +91,45 @@ async fn magic_link_delivery_is_redeemable_once<B: Backend>(db: Db) -> TestResul
     assert_eq!(delivery.email, "magic@example.test");
     let link = url::Url::parse(&delivery.url)?;
     assert_eq!(link.origin().ascii_serialization(), ORIGIN);
-    let mut redeem = AuthRequest::new(HttpMethod::Get, link.path());
-    redeem.query.extend(link.query_pairs().into_owned());
+    let mut redeem = AuthRequest::new(HttpMethod::Get, link.path()).with_url(link.clone());
+    redeem.set_query_pairs(link.query_pairs().into_owned());
+    let before = db
+        .tables(&["user", "account", "session", "verification"])
+        .await?;
+    let mut repeated_link = link.clone();
+    _ = repeated_link
+        .query_pairs_mut()
+        .append_pair("token", &delivery.token);
+    let mut repeated =
+        AuthRequest::new(HttpMethod::Get, repeated_link.path()).with_url(repeated_link.clone());
+    repeated.set_query_pairs(repeated_link.query_pairs().into_owned());
+    let denied = call(&auth, repeated, 400).await;
+    assert_eq!(
+        body(&denied),
+        json!({
+            "code": "VALIDATION_ERROR",
+            "message": "[query.token] Invalid input: expected string, received array"
+        })
+    );
+    assert!(!denied.headers.contains_key("location"));
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["user", "account", "session", "verification"])
+            .await?,
+        before
+    );
+    assert_eq!(
+        body(&call(&auth, request("/get-session", None, ""), 200).await),
+        Value::Null
+    );
     let accepted = call(&auth, redeem.clone(), 302).await;
     authenticated(&auth, &cookies(&accepted), "magic@example.test").await;
+    assert_eq!(db.count("user").await?, 1);
     assert_eq!(db.count("session").await?, 1);
     assert_eq!(db.count("verification").await?, 0);
+    let completed = db
+        .tables(&["user", "account", "session", "verification"])
+        .await?;
     let replay = call(&auth, redeem, 302).await;
     let redirect = url::Url::parse(replay.headers.get("location").unwrap())?;
     assert!(
@@ -104,7 +137,12 @@ async fn magic_link_delivery_is_redeemable_once<B: Backend>(db: Db) -> TestResul
             .query_pairs()
             .any(|(key, value)| key == "error" && value == "INVALID_TOKEN")
     );
-    assert_eq!(db.count("session").await?, 1);
+    assert!(replay.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["user", "account", "session", "verification"])
+            .await?,
+        completed
+    );
     B::close(connection).await
 }
 

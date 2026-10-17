@@ -4,6 +4,7 @@ import { expect } from "vitest";
 import { compatScenario } from "../../../support/scenario";
 import {
   expireVerification,
+  fixtureValue,
   readUserState,
   requireUser,
   verificationCount,
@@ -81,16 +82,42 @@ compatScenario(
     const identifier = `magic-link:${delivery.token}`;
     const proofBefore = await ctx.readVerificationState({ identifier });
     expect(proofBefore).toHaveLength(1);
-    const sqlBefore = await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json();
+    const readAuthority = () => fixtureValue(ctx, "/__test/provider-batch/sql-state", {});
+    const sqlBefore = await readAuthority();
+    expect(sqlBefore).toMatchObject({ user: [], account: [], session: [] });
+    const url = new URL(delivery.url);
+    const repeatedURL = new URL(url);
+    repeatedURL.searchParams.append("token", delivery.token);
+    // Even identical, legitimately delivered tokens form an array in the
+    // upstream query schema. Reject before looking up or consuming the proof.
+    const repeatedResponse = await ctx.actor().fetch(repeatedURL, { redirect: "manual" });
+    expect(repeatedResponse.status).toBe(400);
+    const repeated = {
+      status: repeatedResponse.status,
+      body: await repeatedResponse.json(),
+      location: repeatedResponse.headers.get("location"),
+      cookies: repeatedResponse.headers.getSetCookie(),
+    };
+    expect(repeated).toEqual({
+      status: 400,
+      body: {
+        code: "VALIDATION_ERROR",
+        message: "[query.token] Invalid input: expected string, received array",
+      },
+      location: null,
+      cookies: [],
+    });
+    expect(await ctx.readVerificationState({ identifier })).toEqual(proofBefore);
+    expect(await readAuthority()).toEqual(sqlBefore);
+    expect((await client.getSession()).data).toBeNull();
+
     const malformed = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("/broken%")}`,
       redirect: "manual",
     });
     expect(malformed.status).toBe(500);
     expect(await ctx.readVerificationState({ identifier })).toEqual(proofBefore);
-    expect(await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json()).toEqual(
-      sqlBefore,
-    );
+    expect(await readAuthority()).toEqual(sqlBefore);
     expect((await client.getSession()).data).toBeNull();
     const forbidden = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("https://foreign.example/steal")}`,
@@ -99,7 +126,6 @@ compatScenario(
     expect(forbidden.status).toBe(403);
     expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(1);
 
-    const url = new URL(delivery.url);
     const verified = await ctx.rawRequest({
       path: `${url.pathname}${url.search}`,
       redirect: "manual",
@@ -109,6 +135,11 @@ compatScenario(
 
     const session = await client.getSession();
     expect(session.data?.user.email).toBe(email);
+    expect(session.data?.user.emailVerified).toBe(true);
+    const state = await readUserState(ctx, requireUser(session.data?.user).id);
+    expect(state.sessions).toHaveLength(1);
+    expect(await ctx.readVerificationState({ identifier })).toEqual([]);
+    const completed = await readAuthority();
 
     const replay = await ctx.rawRequest({
       path: `${url.pathname}${url.search}`,
@@ -120,13 +151,16 @@ compatScenario(
     expect(error.pathname).toBe("/failure");
     expect(error.searchParams.get("via")).toBe("magic");
     expect(error.searchParams.get("error")).toBe("INVALID_TOKEN");
+    expect(await readAuthority()).toEqual(completed);
 
     return {
       issue: ctx.snapshot(issue),
+      repeated: ctx.snapshot(repeated),
       malformed: ctx.snapshot(malformed),
       forbidden: ctx.snapshot(forbidden),
       verified: ctx.snapshot(verified),
       session: ctx.snapshot(session),
+      state: ctx.snapshot(state),
       replay: ctx.snapshot(replay),
     };
   },

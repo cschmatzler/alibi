@@ -4,6 +4,7 @@ use crate::endpoint::{definition, validate_fields, validation};
 use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
+use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthResult, AuthSchema, HttpMethod};
 use serde::{Deserialize, Serialize};
 
@@ -61,7 +62,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let input = if call.operation_id() == "verifyMagicLink" {
         EndpointInput {
             body: call.body().cloned(),
-            query: Some(validate_fields(call.query(), "query", VERIFY_FIELDS)?),
+            query: Some(validate_verify_query(call.query())?),
         }
     } else {
         EndpointInput {
@@ -77,6 +78,10 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         return Err(validation("Headers is required"));
     }
     Ok(input)
+}
+
+pub(super) fn validate_verify_query(query: Option<&JsValue>) -> AuthResult<JsValue> {
+    validate_fields(query, "query", VERIFY_FIELDS)
 }
 
 impl MagicLinkPlugin {
