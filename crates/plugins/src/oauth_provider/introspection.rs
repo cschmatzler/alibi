@@ -137,12 +137,32 @@ impl OAuthProviderPlugin {
                     }
                 }
             }
-            let Some(token) = self.decode_token_prefix(token, OAuthTokenKind::Refresh) else {
-                continue;
+            let decoded = match self.decode_refresh_token(token).await {
+                Ok(Some(decoded)) => decoded,
+                Ok(None) => continue,
+                Err(AuthError::Api { .. }) if hint != "refresh_token" => continue,
+                Err(AuthError::Api { status: 400, .. }) => return inactive(),
+                Err(error @ AuthError::Api { .. }) => {
+                    return Ok(no_store(EndpointResponse::error(error)));
+                }
+                Err(_) => {
+                    return Ok(no_store(
+                        EndpointResponse::error(AuthError::Api {
+                            status: 500,
+                            code: None,
+                            message: String::new(),
+                        })
+                        .without_error_body()
+                        .with_header("content-type", "application/json"),
+                    ));
+                }
             };
             let row = ctx
                 .database
-                .get_oauth_token(*kind, &self.hash_token(token, "refresh_token").await?)
+                .get_oauth_token(
+                    *kind,
+                    &self.hash_token(&decoded.token, "refresh_token").await?,
+                )
                 .await?;
             let Some(row) = row else {
                 continue;

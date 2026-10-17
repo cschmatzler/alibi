@@ -17,6 +17,8 @@ mod extension_claims;
 mod initial_access_token;
 #[path = "../../../../fixtures/oauth/credential-generators.rs"]
 mod credential_generators;
+#[path = "../../../../fixtures/oauth/refresh-formatting.rs"]
+mod refresh_formatting;
 #[path = "../../../../fixtures/oauth/extension-authentication.rs"]
 mod extension_authentication;
 #[path = "../../../../fixtures/oauth/redirect-policy.rs"]
@@ -253,6 +255,7 @@ pub(crate) async fn router(
     let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
     let signup_policy=Arc::new(signup_policy::SignupPolicy::default());
     let credential_generators=Arc::new(credential_generators::Generators::default());
+    let refresh_formatter=Arc::new(refresh_formatting::Formatter::default());
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
     let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
     let response_fields=Arc::new(token_response_fields::TokenResponseFields::default());
@@ -371,7 +374,7 @@ pub(crate) async fn router(
         };
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
-        if mode=="reuse" {provider.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));provider.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));provider.token_hasher=Some(credential_generators.clone());provider.opaque_access_token_prefix=Some("A_".into());provider.refresh_token_prefix=Some("R_".into());}
+        if mode=="reuse" {provider.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));provider.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));provider.token_hasher=Some(credential_generators.clone());provider.opaque_access_token_prefix=Some("A_".into());provider.refresh_token_prefix=Some("R_".into());provider.refresh_token_formatter=Some(refresh_formatter.clone());}
         if mode=="claims" {provider.extensions=extension_claims::extensions_with_user_info(user_info_claims.clone());}
         if mode=="claims" {provider.custom_id_token_claims=Some(id_token_claims.clone());}
         if matches!(mode,"claims"|"claims-opaque") {provider.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));}
@@ -428,6 +431,7 @@ pub(crate) async fn router(
         let redirect_policy=redirect_policy.clone();
         let signup_policy=signup_policy.clone();
         let credential_generators=credential_generators.clone();
+        let refresh_formatter=refresh_formatter.clone();
         let user_info_claims=user_info_claims.clone();
         let id_token_claims=id_token_claims.clone();
         let response_fields=response_fields.clone();
@@ -463,6 +467,12 @@ pub(crate) async fn router(
             }
             if input["action"]=="redirect-policy-calls" {
                 return axum::Json(std::mem::take(&mut *redirect_policy.calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="refresh-formatter-state" {
+                if let Some(mode)=input["encryptMode"].as_str(){*refresh_formatter.encrypt_mode.lock().unwrap()=mode.into();}
+                if let Some(mode)=input["decryptMode"].as_str(){*refresh_formatter.decrypt_mode.lock().unwrap()=mode.into();}
+                if input["reset"]==true {refresh_formatter.calls.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"encryptMode":*refresh_formatter.encrypt_mode.lock().unwrap(),"decryptMode":*refresh_formatter.decrypt_mode.lock().unwrap(),"calls":*refresh_formatter.calls.lock().unwrap(),"completed":*refresh_formatter.completed.lock().unwrap()})).into_response();
             }
             if input["action"]=="request-uri-configure" {
                 *request_registry.parameters.lock().unwrap()=input["parameters"].clone().into();
@@ -564,6 +574,7 @@ pub(crate) async fn router(
                 if body["claimsProfile"]==true {config.extensions=extension_claims::extensions_with_live(None);}
                 if body["idClaimsProfile"]==true {config.custom_id_token_claims=Some(id_token_claims.clone());}
                 if body["credentialGenerators"]==true {config.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));config.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));config.token_hasher=Some(credential_generators.clone());}
+                if body["refreshFormatting"]==true {config.refresh_token_formatter=Some(refresh_formatter.clone());}
                 config.opaque_access_token_prefix=body["prefix"]["opaqueAccessToken"].as_str().map(str::to_owned);config.refresh_token_prefix=body["prefix"]["refreshToken"].as_str().map(str::to_owned);
                 if body["accessClaimsProfile"]==true {config.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));config.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
                 if body["responseFieldsProfile"]==true {config.custom_token_response_fields=Some(response_fields.clone());}
@@ -822,7 +833,7 @@ pub(crate) async fn router(
                 if input["action"]=="authorize" {let url=url::Url::parse(&format!("{logout_origin}{}",request.path)).unwrap();request=request.with_url(url);}
                 Some(request)}else{None},..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
+                Err(error)=>{if input["captureError"]==true {if let alibi::AuthError::Internal(message)=&error.error {return axum::Json(serde_json::json!({"ordinaryError":message})).into_response();}}let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
                 if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
             }
         }

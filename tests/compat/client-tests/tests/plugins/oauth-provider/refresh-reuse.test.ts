@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createDecipheriv } from "node:crypto";
 
 import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { createLocalJWKSet, jwtVerify } from "jose";
@@ -11,12 +11,26 @@ compatScenario(
   async (ctx) => {
     const actor = ctx.actor();
     let clientSecret: string | undefined;
+    const openRefresh = (token: string) => {
+      const bytes = Buffer.from(token.slice(2), "base64url");
+      const decipher = createDecipheriv(
+        "aes-256-gcm",
+        Buffer.from("application-refresh-key-32-bytes"),
+        bytes.subarray(0, 12),
+      );
+      decipher.setAuthTag(bytes.subarray(-16));
+      return JSON.parse(
+        Buffer.concat([decipher.update(bytes.subarray(12, -16)), decipher.final()]).toString(),
+      );
+    };
     const plain = (token: string) =>
       token.startsWith("A.x.")
         ? token.slice(4)
-        : token.startsWith("A_") || token.startsWith("R_")
-          ? token.slice(2)
-          : token;
+        : token.startsWith("R_") && !token.startsWith("R_application-")
+          ? openRefresh(token).token
+          : token.startsWith("A_") || token.startsWith("R_")
+            ? token.slice(2)
+            : token;
     const control = (input: unknown) => {
       const value = { ...(input as Record<string, any>) };
       if (clientSecret && ["token", "revoke", "introspect"].includes(value.action)) {
@@ -37,6 +51,11 @@ compatScenario(
     };
     const generatorState = async (input: object = {}) => {
       const response = await control({ action: "credential-generator-state", ...input });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    const formatterState = async (input: object = {}) => {
+      const response = await control({ action: "refresh-formatter-state", ...input });
       expect(response.status).toBe(200);
       return (await response.json()) as any;
     };
@@ -106,7 +125,12 @@ compatScenario(
     expect(token.token_type).toBe("Bearer");
     expect(token.expires_in).toBe(3600);
     expect(token.access_token).toBe("A_application-access-1-A_-R_");
-    expect(token.refresh_token).toBe("R_application-refresh-1-A_-R_");
+    const decoded = openRefresh(token.refresh_token);
+    expect(decoded.token).toBe("application-refresh-1-A_-R_");
+    expect(decoded.sessionId).toBeTypeOf("string");
+    expect((await formatterState()).calls).toEqual([
+      { kind: "encrypt", token: "application-refresh-1-A_-R_", sessionId: decoded.sessionId },
+    ]);
     expect(token.id_token).toBeTypeOf("string");
     expect((await generatorState()).calls).toEqual(["refresh", "access"]);
     const hashes = async () =>
@@ -143,12 +167,17 @@ compatScenario(
       client_id: id,
       refresh_token: token.refresh_token,
     };
+    await formatterState({ decryptMode: "wrong-session" });
     const issuedResponse = await control({ action: "token", body: refreshInput });
     expect(issuedResponse.status).toBe(200);
     const issued = (await issuedResponse.json()) as any;
     expect(issued.access_token).toBe("A_application-access-2-A_-R_");
-    expect(issued.refresh_token).toBe("R_application-refresh-2-A_-R_");
+    expect(openRefresh(issued.refresh_token)).toEqual({
+      token: "application-refresh-2-A_-R_",
+      sessionId: decoded.sessionId,
+    });
     const expectedCalls = ["refresh", "access", "refresh", "access"];
+    await formatterState({ decryptMode: "no-session" });
     expect((await generatorState()).calls).toEqual(expectedCalls);
     for (const invalid of [
       plain(token.access_token),
@@ -374,6 +403,12 @@ compatScenario(
     const session = (await (
       await control({ action: "session", headers: { cookie } })
     ).json()) as any;
+    expect(session.session.id).toBe(decoded.sessionId);
+    expect((await formatterState()).calls.filter((call: any) => call.kind === "encrypt")).toEqual([
+      { kind: "encrypt", token: "application-refresh-1-A_-R_", sessionId: session.session.id },
+      { kind: "encrypt", token: "application-refresh-2-A_-R_", sessionId: session.session.id },
+    ]);
+    await formatterState({ decryptMode: "" });
     const params = { scopes: ["email", "offline_access"], sessionId: session.session.id };
     const issue = (extra: object = {}, resources?: string[]) =>
       control({
@@ -458,6 +493,7 @@ compatScenario(
       action: "issue-tokens",
       body: {
         credentialGenerators: true,
+        refreshFormatting: true,
         prefix: { opaqueAccessToken: "A.x.", refreshToken: "R_" },
         clientId: id,
         userId: owner.user.id,
@@ -517,6 +553,199 @@ compatScenario(
     expect(
       await (await control({ action: "token-row", token: prefixed.access_token })).json(),
     ).toBeNull();
+    const formattedIssue = (
+      extra: object = {},
+      values: object = {},
+      originalRefreshToken?: string,
+    ) =>
+      control({
+        action: "issue-tokens",
+        ...extra,
+        body: {
+          credentialGenerators: true,
+          refreshFormatting: true,
+          prefix: { opaqueAccessToken: "A_", refreshToken: "R_" },
+          clientId: id,
+          userId: owner.user.id,
+          grantType: "urn:fixture:format",
+          params: { ...params, ...values },
+          ...(originalRefreshToken ? { originalRefreshToken } : {}),
+        },
+      });
+    const formatterReceipts = [];
+    let before = await counts();
+    let callCount = (await formatterState()).calls.length;
+    await formatterState({ encryptMode: "error" });
+    const formatFailed = await formattedIssue({ captureError: true });
+    expect(formatFailed.status).toBe(200);
+    expect(await formatFailed.json()).toEqual({ ordinaryError: "refresh encryption failed" });
+    expect(await counts()).toEqual({ ...before, refresh: before.refresh + 1 });
+    const errorCall = (await formatterState()).calls.slice(callCount);
+    expect(errorCall).toEqual([
+      {
+        kind: "encrypt",
+        token: `application-refresh-${(await generatorState()).refreshCount}`,
+        sessionId: session.session.id,
+      },
+    ]);
+    expect(
+      await (
+        await control({ action: "token-row", kind: "refresh", token: errorCall[0].token })
+      ).json(),
+    ).not.toBeNull();
+    formatterReceipts.push({ phase: "persist-before-encrypt-error", calls: errorCall });
+    await formatterState({ encryptMode: "" });
+    const usableResponse = await formattedIssue();
+    expect(usableResponse.status).toBe(200);
+    const usable = (await usableResponse.json()) as any;
+    const usableDecoded = openRefresh(usable.refresh_token);
+    expect(usableDecoded).toEqual({
+      token: `application-refresh-${(await generatorState()).refreshCount}`,
+      sessionId: session.session.id,
+    });
+    for (const mode of ["wrong-session", "no-session", "sync", "empty", "error", "api-error"]) {
+      await formatterState({ decryptMode: mode });
+      const hashCount = (await hashes()).length;
+      const response = await control({
+        action: "introspect",
+        body: { client_id: id, token: usable.refresh_token, token_type_hint: "refresh_token" },
+      });
+      if (mode === "error" || mode === "api-error") {
+        expect(response.status).toBe(mode === "error" ? 500 : 429);
+        if (mode === "error") {
+          expect(await response.text()).toBe("");
+        } else {
+          expect(await response.json()).toEqual({
+            code: "REFRESH_FORMAT_LIMIT",
+            message: "Refresh formatter limited",
+          });
+        }
+        expect((await hashes()).slice(hashCount)).toEqual([]);
+      } else if (mode === "empty") {
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as any;
+        expect(body.active).toBe(true); // The earlier empty generator issued real authority for this preimage.
+        expect(body.sid).toBe(session.session.id);
+        expect((await hashes()).slice(hashCount)).toEqual([{ token: "", kind: "refresh_token" }]);
+      } else {
+        expect(response.status).toBe(200);
+        const body = (await response.json()) as any;
+        expect(body.active).toBe(true);
+        expect(body.sid).toBe(session.session.id);
+      }
+      formatterReceipts.push({ phase: `decode-${mode}`, status: response.status });
+    }
+    const noHint = { client_id: id, token: usable.refresh_token, token_type_hint: "" };
+    const unhinted = await control({ action: "introspect", body: noHint });
+    expect(unhinted.status).toBe(200);
+    expect(await unhinted.json()).toEqual({ active: false });
+    const unhintedRevoked = await control({ action: "revoke", body: noHint });
+    expect(unhintedRevoked.status).toBe(400);
+    expect(await unhintedRevoked.json()).toEqual({
+      error: "invalid_request",
+      error_description: "token not found",
+    });
+    before = await counts();
+    await formatterState({ decryptMode: "error" });
+    callCount = (await formatterState()).calls.length;
+    for (const action of ["token", "revoke"]) {
+      const response = await control({
+        action,
+        ...(action === "token" ? { captureError: true } : {}),
+        body:
+          action === "token"
+            ? { grant_type: "refresh_token", client_id: id, refresh_token: usable.refresh_token }
+            : { client_id: id, token: usable.refresh_token, token_type_hint: "refresh_token" },
+      });
+      if (action === "token") {
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ ordinaryError: "refresh decryption failed" });
+      } else expect(response.status).toBe(500);
+    }
+    expect(await counts()).toEqual(before);
+    expect((await formatterState()).calls.slice(callCount)).toEqual([
+      { kind: "decrypt", token: usable.refresh_token.slice(2) },
+      { kind: "decrypt", token: usable.refresh_token.slice(2) },
+    ]);
+    const unchanged = (await (
+      await control({ action: "token-row", kind: "refresh", token: usable.refresh_token })
+    ).json()) as any;
+    expect(unchanged.revoked ?? null).toBeNull();
+    await formatterState({ decryptMode: "", encryptMode: "error" });
+    before = await counts();
+    const rotationFailed = await formattedIssue(
+      { captureError: true },
+      { sessionId: undefined },
+      usableDecoded.token,
+    );
+    expect(await rotationFailed.json()).toEqual({ ordinaryError: "refresh encryption failed" });
+    // The successor has no session, so inspect its raw preimage instead of session counts.
+    expect(await counts()).toEqual(before);
+    const retained = (await (
+      await control({ action: "token-row", kind: "refresh", token: usable.refresh_token })
+    ).json()) as any;
+    expect(retained.revoked).toBeTypeOf("string");
+    expect(retained.rotationReplayResponse ?? null).toBeNull();
+    const lastCall = (await formatterState()).calls.at(-1);
+    expect(lastCall).toEqual({
+      kind: "encrypt",
+      token: `application-refresh-${(await generatorState()).refreshCount}`,
+      sessionId: null,
+    });
+    const successor = (await (
+      await control({ action: "token-row", kind: "refresh", token: lastCall.token })
+    ).json()) as any;
+    expect(successor).not.toBeNull();
+    expect(successor.sessionId ?? null).toBeNull();
+    formatterReceipts.push({ phase: "rotation-before-encrypt-error", call: lastCall });
+    callCount = (await formatterState()).calls.length;
+    expect(
+      await (
+        await formattedIssue(
+          { captureError: "failure" },
+          { sessionId: undefined },
+          usableDecoded.token,
+        )
+      ).json(),
+    ).toEqual({ failed: true });
+    expect((await formatterState()).calls.length).toBe(callCount);
+    for (const [mode, expected] of [
+      ["async", "R_[object Promise]"],
+      ["empty", "R_"],
+    ]) {
+      await formatterState({ encryptMode: mode });
+      const response = await formattedIssue({}, { sessionId: undefined });
+      expect(response.status).toBe(200);
+      const issued = (await response.json()) as any;
+      expect(issued.refresh_token).toBe(expected);
+      const lastCall = (await formatterState()).calls.at(-1);
+      expect(lastCall).toEqual({
+        kind: "encrypt",
+        token: `application-refresh-${(await generatorState()).refreshCount}`,
+        sessionId: null,
+      });
+      expect(
+        await (
+          await control({ action: "token-row", kind: "refresh", token: lastCall.token })
+        ).json(),
+      ).not.toBeNull();
+      const introspected = await control({
+        action: "introspect",
+        body: { client_id: id, token: expected, token_type_hint: "refresh_token" },
+      });
+      expect(introspected.status).toBe(500);
+      formatterReceipts.push({
+        phase: `encode-${mode}`,
+        wire: issued.refresh_token,
+        call: lastCall,
+      });
+    }
+    expect((await formatterState()).completed).toEqual([
+      {
+        token: `application-refresh-${(await generatorState()).refreshCount - 1}`,
+        sessionId: null,
+      },
+    ]);
     return ctx.snapshot({
       authorizationSession: session,
       scope: issued.scope,
@@ -527,6 +756,7 @@ compatScenario(
       generatorCalls: (await generatorState()).calls,
       failures,
       prefixReceipts,
+      formatterReceipts,
     });
   },
 );

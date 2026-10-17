@@ -42,6 +42,10 @@ pub use initial_access_token::{
 mod logout;
 mod machine;
 mod refresh;
+mod refresh_format;
+pub use refresh_format::{
+    OAuthDecodedRefreshToken, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
+};
 mod resource_policy;
 mod resources;
 mod revocation;
@@ -162,6 +166,8 @@ pub struct OAuthProviderConfig {
     pub opaque_access_token_prefix: Option<String>,
     /// Presentation prefix for refresh credentials; storage hashes plaintext.
     pub refresh_token_prefix: Option<String>,
+    /// Application-owned refresh presentation, separate from generation and hashing.
+    pub refresh_token_formatter: Option<std::sync::Arc<dyn OAuthRefreshTokenFormatter>>,
     pub client_secret_cipher: Option<std::sync::Arc<dyn OAuthClientSecretCipher>>,
     /// Wire prefix matching Better Auth's `prefix.clientSecret`; stored credentials exclude it.
     pub client_secret_prefix: Option<String>,
@@ -228,6 +234,7 @@ impl Default for OAuthProviderConfig {
             refresh_token_generator: None,
             opaque_access_token_prefix: None,
             refresh_token_prefix: None,
+            refresh_token_formatter: None,
             client_secret_prefix: None,
             login_page: "/login".into(),
             consent_page: "/consent".into(),

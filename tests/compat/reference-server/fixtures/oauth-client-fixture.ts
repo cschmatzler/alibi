@@ -1,4 +1,4 @@
-import { createHash, createHmac } from "node:crypto";
+import { createHash, createHmac, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { readFile as readFixtureFile } from "node:fs/promises";
 
 import {
@@ -98,6 +98,68 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         credentialGenerators.hashCalls.push({ token, kind });
         return createHash("sha256").update(token).digest("base64url");
       },
+    },
+  };
+  const refreshFormatting = {
+    encryptMode: "",
+    decryptMode: "",
+    calls: [] as unknown[],
+    completed: [] as unknown[],
+  };
+  const refreshKey = Buffer.from("application-refresh-key-32-bytes");
+  const encryptRefresh = (token: string, sessionId?: string) => {
+    refreshFormatting.calls.push({ kind: "encrypt", token, sessionId: sessionId ?? null });
+    if (refreshFormatting.encryptMode === "error") throw new Error("refresh encryption failed");
+    if (refreshFormatting.encryptMode === "empty") return "";
+    const seal = () => {
+      const nonce = randomBytes(12);
+      const cipher = createCipheriv("aes-256-gcm", refreshKey, nonce);
+      const ciphertext = Buffer.concat([
+        nonce,
+        cipher.update(JSON.stringify({ token, sessionId: sessionId ?? null })),
+        cipher.final(),
+        cipher.getAuthTag(),
+      ]).toString("base64url");
+      return ciphertext;
+    };
+    return refreshFormatting.encryptMode === "async"
+      ? Promise.resolve().then(() => {
+          const ciphertext = seal();
+          refreshFormatting.completed.push({ token, sessionId: sessionId ?? null });
+          return ciphertext;
+        })
+      : seal();
+  };
+  const formatRefreshToken: NonNullable<OAuthOptions["formatRefreshToken"]> = {
+    encrypt: encryptRefresh,
+    decrypt: (token) => {
+      refreshFormatting.calls.push({ kind: "decrypt", token });
+      const decode = () => {
+        if (refreshFormatting.decryptMode === "error") throw new Error("refresh decryption failed");
+        if (refreshFormatting.decryptMode === "api-error") {
+          throw new EndpointAPIError("TOO_MANY_REQUESTS", {
+            code: "REFRESH_FORMAT_LIMIT",
+            message: "Refresh formatter limited",
+          });
+        }
+        if (refreshFormatting.decryptMode === "empty") return { token: "" };
+        const bytes = Buffer.from(token, "base64url");
+        const decipher = createDecipheriv("aes-256-gcm", refreshKey, bytes.subarray(0, 12));
+        decipher.setAuthTag(bytes.subarray(-16));
+        const decoded = JSON.parse(
+          Buffer.concat([decipher.update(bytes.subarray(12, -16)), decipher.final()]).toString(),
+        );
+        return {
+          token: decoded.token,
+          sessionId:
+            refreshFormatting.decryptMode === "wrong-session"
+              ? "not-the-persisted-session"
+              : refreshFormatting.decryptMode === "no-session"
+                ? undefined
+                : (decoded.sessionId ?? undefined),
+        };
+      };
+      return refreshFormatting.decryptMode === "sync" ? decode() : Promise.resolve().then(decode);
     },
   };
   const remoteKeys = JSON.parse(
@@ -787,6 +849,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 ? { customAccessTokenClaims, extensions: claimExtensions(true) }
                 : {}),
               ...(ctx.body.credentialGenerators ? generationOptions : {}),
+              ...(ctx.body.refreshFormatting ? { formatRefreshToken } : {}),
               ...(ctx.body.responseFieldsProfile ? { customTokenResponseFields } : {}),
               ...(ctx.body.prefix ? { prefix: ctx.body.prefix } : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
@@ -1513,6 +1576,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           loginPage: "/login",
           consentPage: "/consent",
           refreshTokenReuseInterval: 60,
+          formatRefreshToken,
           prefix: { opaqueAccessToken: "A_", refreshToken: "R_" },
           ...generationOptions,
         }),
@@ -1714,6 +1778,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         credentialGenerators.hashCalls.length = 0;
       }
       return Response.json(credentialGenerators);
+    }
+    if (input.action === "refresh-formatter-state") {
+      if (typeof input.encryptMode === "string") refreshFormatting.encryptMode = input.encryptMode;
+      if (typeof input.decryptMode === "string") refreshFormatting.decryptMode = input.decryptMode;
+      if (input.reset) refreshFormatting.calls.length = 0;
+      return Response.json(refreshFormatting);
     }
     if (input.action === "request-uri-configure") {
       requestUriParameters = input.parameters;
@@ -2267,10 +2337,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return auth.api.getOAuthServerConfig({ asResponse: true });
     }
     if (input.action === "token") {
-      return auth.api.oauth2Token({
+      const options = {
         body: input.body,
         headers: new Headers(input.headers ?? {}),
-        asResponse: true,
         request: new Request(`${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/token`, {
           method: "POST",
           headers: {
@@ -2279,7 +2348,19 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           },
           body: new URLSearchParams(input.formEntries ?? input.body),
         }),
-      });
+      };
+      if (input.captureError) {
+        try {
+          return Response.json({ result: await auth.api.oauth2Token(options) });
+        } catch (error: any) {
+          return Response.json(
+            error instanceof EndpointAPIError
+              ? { apiError: { status: error.statusCode, ...error.body } }
+              : { ordinaryError: error.message },
+          );
+        }
+      }
+      return auth.api.oauth2Token({ ...options, asResponse: true });
     }
     if (input.action === "dpop-proof") {
       return (auth.api as any).dpopFixture({ body: input.body, asResponse: true });

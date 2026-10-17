@@ -86,12 +86,36 @@ impl OAuthProviderPlugin {
             _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh],
         };
         for kind in kinds {
-            let Some(token) = self.decode_token_prefix(token, *kind) else {
+            let Some(prefix_token) = self.decode_token_prefix(token, *kind) else {
                 if matches!(kind, OAuthTokenKind::Refresh) && hint == "refresh_token" {
                     return error(400, "invalid_token", "refresh token not found");
                 }
                 continue;
             };
+            let decoded = if matches!(kind, OAuthTokenKind::Refresh) {
+                match self.decode_refresh_token(token).await {
+                    Ok(Some(decoded)) => Some(decoded),
+                    Ok(None) => continue,
+                    Err(alibi_core::AuthError::Api { .. }) if hint != "refresh_token" => continue,
+                    Err(error @ alibi_core::AuthError::Api { .. }) => {
+                        return Ok(EndpointResponse::error(error));
+                    }
+                    Err(_) => {
+                        return Ok(EndpointResponse::error(alibi_core::AuthError::Api {
+                            status: 500,
+                            code: None,
+                            message: String::new(),
+                        })
+                        .without_error_body()
+                        .with_header("content-type", "application/json"));
+                    }
+                }
+            } else {
+                None
+            };
+            let token = decoded
+                .as_ref()
+                .map_or(prefix_token, |decoded| decoded.token.as_str());
             let hash = self
                 .hash_token(
                     token,

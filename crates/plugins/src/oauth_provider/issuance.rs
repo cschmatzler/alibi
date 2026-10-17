@@ -410,7 +410,7 @@ impl OAuthProviderPlugin {
             .await?;
         Ok(Some((
             row.id,
-            self.encode_token_prefix(&token, OAuthTokenKind::Refresh),
+            self.encode_refresh_token(&token, p.session_id.as_deref())?,
         )))
     }
     pub(super) async fn mint_tokens<S: AuthSchema>(

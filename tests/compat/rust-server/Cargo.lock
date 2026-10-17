@@ -1266,6 +1266,7 @@ dependencies = [
 name = "compat-rust-server"
 version = "0.1.0"
 dependencies = [
+ "aes-gcm",
  "alibi",
  "async-trait",
  "axum",

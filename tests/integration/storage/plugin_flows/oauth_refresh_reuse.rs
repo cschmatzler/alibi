@@ -6,6 +6,8 @@ use alibi::plugins::{
 };
 #[path = "../../../fixtures/oauth/credential-generators.rs"]
 mod credential_generators;
+#[path = "../../../fixtures/oauth/refresh-formatting.rs"]
+mod refresh_formatting;
 use base64::Engine as _;
 use sha2::Digest as _;
 backend_tests!(oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_mismatch);
@@ -20,6 +22,7 @@ async fn oauth_refresh_reuse_replays_encrypted_response_and_preserves_family_on_
 async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let generators = Arc::new(credential_generators::Generators::default());
+    let formatter = Arc::new(refresh_formatting::Formatter::default());
     *generators.access_mode.lock().unwrap() = "embedded".into();
     *generators.refresh_mode.lock().unwrap() = "embedded".into();
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
@@ -28,6 +31,7 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
         refresh_token_generator: Some(credential_generators::refresh(generators.clone())),
         opaque_access_token_prefix: Some("A_".into()),
         refresh_token_prefix: Some("R_".into()),
+        refresh_token_formatter: Some(formatter.clone()),
         token_hasher: Some(generators.clone()),
         ..Default::default()
     });
@@ -109,7 +113,13 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
     let refresh = token["refresh_token"]
         .as_str()
         .expect("offline_access must issue a refresh token");
-    assert_eq!(refresh, "R_application-refresh-1-A_-R_");
+    let decoded = refresh_formatting::open(refresh.strip_prefix("R_").unwrap())?;
+    assert_eq!(decoded["token"], "application-refresh-1-A_-R_");
+    let session_id = decoded["sessionId"].as_str().unwrap();
+    assert_eq!(
+        *formatter.calls.lock().unwrap(),
+        [json!({"kind":"encrypt","token":"application-refresh-1-A_-R_","sessionId":session_id})]
+    );
     assert!(token["id_token"].is_string());
     assert_eq!(*generators.calls.lock().unwrap(), ["refresh", "access"]);
 
@@ -119,6 +129,12 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
             .strip_prefix("A_")
             .or_else(|| token.strip_prefix("R_"))
             .unwrap_or(token);
+        let decoded = token
+            .starts_with("R_")
+            .then(|| refresh_formatting::open(plain).unwrap());
+        let plain = decoded
+            .as_ref()
+            .map_or(plain, |value| value["token"].as_str().unwrap());
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plain))
     };
     assert_eq!(
@@ -170,6 +186,7 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
     let input = credential_body(
         json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh}),
     );
+    *formatter.decrypt_mode.lock().unwrap() = "wrong-session".into();
     let issued = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
         EndpointOptions {
@@ -187,9 +204,20 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
         .await?
         .unwrap();
     assert_eq!(issued["access_token"], "A_application-access-2-A_-R_");
-    assert_eq!(issued["refresh_token"], "R_application-refresh-2-A_-R_");
+    assert_eq!(
+        refresh_formatting::open(
+            issued["refresh_token"]
+                .as_str()
+                .unwrap()
+                .strip_prefix("R_")
+                .unwrap()
+        )?,
+        json!({"token":"application-refresh-2-A_-R_","sessionId":session_id})
+    );
     let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    assert_eq!(stored.session_id.as_deref(), Some(session_id));
     let session_id = stored.session_id.clone().unwrap();
+    *formatter.decrypt_mode.lock().unwrap() = "no-session".into();
     let expected_calls = ["refresh", "access", "refresh", "access"];
     assert_eq!(*generators.calls.lock().unwrap(), expected_calls);
     assert_eq!(*generators.contexts.lock().unwrap(), expected_calls.map(|kind|json!({
@@ -598,12 +626,25 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
         expected_calls,
         "all reuse and rejected retries bypass generators"
     );
+    assert_eq!(
+        formatter
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|call| call["kind"] == "encrypt")
+            .count(),
+        2,
+        "replays reuse the encoded credential, not re-encryption"
+    );
+    *formatter.decrypt_mode.lock().unwrap() = String::new();
     Box::pin(check_generation_edges(
         &auth,
         &generators,
         &body(&created),
         &user_id,
         &session_id,
+        &formatter,
     ))
     .await
 }
@@ -614,6 +655,7 @@ async fn check_generation_edges<S: AuthSchema>(
     registration: &Value,
     user_id: &str,
     session_id: &str,
+    formatter: &Arc<refresh_formatting::Formatter>,
 ) -> TestResult {
     let id = registration["client_id"].as_str().unwrap().to_owned();
     let client_secret = registration["client_secret"].clone();
@@ -628,6 +670,11 @@ async fn check_generation_edges<S: AuthSchema>(
             .strip_prefix("A_")
             .or_else(|| token.strip_prefix("R_"))
             .unwrap_or(token);
+        let decoded = (token.starts_with("R_") && !token.starts_with("R_application-"))
+            .then(|| refresh_formatting::open(plain).unwrap());
+        let plain = decoded
+            .as_ref()
+            .map_or(plain, |value| value["token"].as_str().unwrap());
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(plain))
     };
     let hash_count = || generators.hash_calls.lock().unwrap().len();
@@ -639,6 +686,7 @@ async fn check_generation_edges<S: AuthSchema>(
         token_hasher: Some(generators.clone()),
         opaque_access_token_prefix: Some("A.x.".into()),
         refresh_token_prefix: Some("R_".into()),
+        refresh_token_formatter: Some(formatter.clone()),
         ..Default::default()
     });
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
@@ -853,7 +901,7 @@ async fn check_generation_edges<S: AuthSchema>(
     assert_eq!(response.status, 200);
     assert_eq!(
         hashes_since(start),
-        [json!({"kind":"refresh_token","token":raw})]
+        [json!({"kind":"refresh_token","token":refresh_formatting::open(raw)?["token"]})]
     );
     assert!(
         auth.store()
@@ -868,6 +916,329 @@ async fn check_generation_edges<S: AuthSchema>(
             .get_oauth_token(OAuthTokenKind::Access, &hash(plain_access))
             .await?
             .is_none()
+    );
+    Box::pin(check_formatter_edges(
+        auth,
+        generators,
+        formatter,
+        &wire_provider,
+        params,
+        &call,
+        registration,
+    ))
+    .await
+}
+
+async fn check_formatter_edges<S: AuthSchema>(
+    auth: &Alibi<S>,
+    generators: &Arc<credential_generators::Generators>,
+    formatter: &Arc<refresh_formatting::Formatter>,
+    provider: &OAuthProviderPlugin,
+    mut params: OAuthTokenIssueParams,
+    call: &EndpointCall,
+    registration: &Value,
+) -> TestResult {
+    use alibi::store::OAuthTokenKind;
+    let hash = |token: &str| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token))
+    };
+    let session_id = params.session_id.clone().unwrap();
+    let start = *generators.refresh_count.lock().unwrap();
+    let calls = formatter.calls.lock().unwrap().len();
+    *formatter.encrypt_mode.lock().unwrap() = "error".into();
+    let access_count = *generators.access_count.lock().unwrap();
+    let failure =
+        Box::pin(provider.issue_tokens(auth.context(), call, Some("urn:fixture:format"), &params))
+            .await
+            .unwrap_err();
+    assert!(
+        matches!(failure.error,alibi::AuthError::Internal(ref message) if message=="refresh encryption failed")
+    );
+    assert_eq!(
+        *generators.access_count.lock().unwrap(),
+        access_count,
+        "format failure occurs before access issuance"
+    );
+    let raw = format!("application-refresh-{}", start + 1);
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &hash(&raw))
+            .await?
+            .is_some(),
+        "format failure does not roll back persisted refresh authority"
+    );
+    assert_eq!(
+        formatter.calls.lock().unwrap()[calls..],
+        [json!({"kind":"encrypt","token":raw,"sessionId":session_id})]
+    );
+    *formatter.encrypt_mode.lock().unwrap() = String::new();
+    let normal =
+        Box::pin(provider.issue_tokens(auth.context(), call, Some("urn:fixture:format"), &params))
+            .await?;
+    let wire = normal["refresh_token"].as_str().unwrap();
+    let decoded = refresh_formatting::open(wire.strip_prefix("R_").unwrap())?;
+    assert_eq!(
+        decoded,
+        json!({"token":format!("application-refresh-{}",start+2),"sessionId":session_id})
+    );
+    let original = auth
+        .store()
+        .get_oauth_token(
+            OAuthTokenKind::Refresh,
+            &hash(decoded["token"].as_str().unwrap()),
+        )
+        .await?
+        .unwrap();
+    Box::pin(check_formatter_decode(
+        auth,
+        generators,
+        formatter,
+        registration,
+        wire,
+        &session_id,
+        &original,
+    ))
+    .await?;
+    *formatter.decrypt_mode.lock().unwrap() = "api-error".into();
+    Box::pin(check_formatter_fallback(auth, json!({"client_id":registration["client_id"],"client_secret":registration["client_secret"],"token":wire,"token_type_hint":""}))).await?;
+    *formatter.decrypt_mode.lock().unwrap() = String::new();
+    params.refresh_token = Some(original);
+    Box::pin(check_formatter_rotation(
+        auth,
+        generators,
+        formatter,
+        provider,
+        params,
+        call,
+        registration,
+    ))
+    .await
+}
+
+async fn check_formatter_decode<S: AuthSchema>(
+    auth: &Alibi<S>,
+    generators: &Arc<credential_generators::Generators>,
+    formatter: &Arc<refresh_formatting::Formatter>,
+    registration: &Value,
+    wire: &str,
+    session_id: &str,
+    original: &alibi::store::OAuthToken,
+) -> TestResult {
+    use alibi::store::OAuthTokenKind;
+    let id = &registration["client_id"];
+    let credentials = |token: &str| json!({"client_id":id,"client_secret":registration["client_secret"],"token":token,"token_type_hint":"refresh_token"});
+    for mode in [
+        "wrong-session",
+        "no-session",
+        "sync",
+        "empty",
+        "error",
+        "api-error",
+    ] {
+        *formatter.decrypt_mode.lock().unwrap() = mode.into();
+        let before = generators.hash_calls.lock().unwrap().len();
+        let response = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_introspect_endpoint(&credentials(wire))?,
+            EndpointOptions::default(),
+        ))
+        .await;
+        if matches!(mode, "error" | "api-error") {
+            assert_eq!(
+                response.unwrap_err().error.status_code(),
+                if mode == "error" { 500 } else { 429 }
+            );
+            assert_eq!(generators.hash_calls.lock().unwrap().len(), before);
+        } else if mode == "empty" {
+            let response = response?.into_response()?;
+            assert_eq!(
+                body(&response)["active"],
+                true,
+                "empty decoded preimage finds the genuinely issued empty-generator authority"
+            );
+            assert_eq!(body(&response)["sid"], session_id);
+            assert_eq!(
+                generators.hash_calls.lock().unwrap()[before..],
+                [json!({"token":"","kind":"refresh_token"})]
+            );
+        } else {
+            let response = response?.into_response()?;
+            assert_eq!(body(&response)["active"], true);
+            assert_eq!(
+                body(&response)["sid"],
+                session_id,
+                "persisted authority wins over returned session ID"
+            );
+        }
+    }
+    *formatter.decrypt_mode.lock().unwrap() = "error".into();
+    let refresh_input = json!({"grant_type":"refresh_token","client_id":id,"client_secret":registration["client_secret"],"refresh_token":wire});
+    let before = formatter.calls.lock().unwrap().len();
+    let denied = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&refresh_input)?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 500);
+    let revoked = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_revoke_endpoint(&credentials(wire))?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(revoked.error.status_code(), 500);
+    assert_eq!(
+        formatter.calls.lock().unwrap()[before..],
+        [
+            json!({"kind":"decrypt","token":wire.strip_prefix("R_").unwrap()}),
+            json!({"kind":"decrypt","token":wire.strip_prefix("R_").unwrap()})
+        ]
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &original.token)
+            .await?
+            .unwrap()
+            .metadata
+            .get("revoked")
+            .is_none_or(Value::is_null)
+    );
+    *formatter.decrypt_mode.lock().unwrap() = String::new();
+    Ok(())
+}
+
+async fn check_formatter_fallback<S: AuthSchema>(
+    auth: &Alibi<S>,
+    mut no_hint: Value,
+) -> TestResult {
+    no_hint["token_type_hint"] = json!("");
+    let introspected = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_introspect_endpoint(&no_hint)?,
+        EndpointOptions::default(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(
+        body(&introspected),
+        json!({"active":false}),
+        "unhinted API rejection is swallowed by the reference fallback"
+    );
+    let revoked = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_revoke_endpoint(&no_hint)?,
+        EndpointOptions::default(),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(
+        revoked.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_request","error_description":"token not found"})
+    );
+    Ok(())
+}
+
+async fn check_formatter_rotation<S: AuthSchema>(
+    auth: &Alibi<S>,
+    generators: &Arc<credential_generators::Generators>,
+    formatter: &Arc<refresh_formatting::Formatter>,
+    provider: &OAuthProviderPlugin,
+    mut params: OAuthTokenIssueParams,
+    call: &EndpointCall,
+    registration: &Value,
+) -> TestResult {
+    use alibi::store::OAuthTokenKind;
+    let hash = |token: &str| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token))
+    };
+    let credentials = |token: &str| json!({"client_id":registration["client_id"],"client_secret":registration["client_secret"],"token":token,"token_type_hint":"refresh_token"});
+    let original = params.refresh_token.as_ref().unwrap().clone();
+    params.session_id = None;
+    *formatter.encrypt_mode.lock().unwrap() = "error".into();
+    let failure =
+        Box::pin(provider.issue_tokens(auth.context(), call, Some("urn:fixture:format"), &params))
+            .await
+            .unwrap_err();
+    assert_eq!(failure.error.status_code(), 500);
+    let retained = auth
+        .store()
+        .get_oauth_token(OAuthTokenKind::Refresh, &original.token)
+        .await?
+        .unwrap();
+    assert!(
+        retained.metadata["revoked"].is_string(),
+        "rotation precedes formatting failure"
+    );
+    assert!(
+        retained
+            .metadata
+            .get("rotationReplayResponse")
+            .is_none_or(Value::is_null)
+    );
+    let raw = format!(
+        "application-refresh-{}",
+        generators.refresh_count.lock().unwrap()
+    );
+    assert!(
+        auth.store()
+            .get_oauth_token(OAuthTokenKind::Refresh, &hash(&raw))
+            .await?
+            .unwrap()
+            .session_id
+            .is_none()
+    );
+    assert_eq!(
+        formatter.calls.lock().unwrap().last().unwrap(),
+        &json!({"kind":"encrypt","token":raw,"sessionId":null})
+    );
+    let before = formatter.calls.lock().unwrap().len();
+    assert!(
+        Box::pin(provider.issue_tokens(auth.context(), call, Some("urn:fixture:format"), &params))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        formatter.calls.lock().unwrap().len(),
+        before,
+        "failed rotation claim never formats"
+    );
+    params.refresh_token = None;
+    for (mode, expected) in [("async", "R_[object Promise]"), ("empty", "R_")] {
+        *formatter.encrypt_mode.lock().unwrap() = mode.into();
+        let issued = Box::pin(provider.issue_tokens(
+            auth.context(),
+            call,
+            Some("urn:fixture:format"),
+            &params,
+        ))
+        .await?;
+        assert_eq!(issued["refresh_token"], expected);
+        let raw = format!(
+            "application-refresh-{}",
+            generators.refresh_count.lock().unwrap()
+        );
+        assert!(
+            auth.store()
+                .get_oauth_token(OAuthTokenKind::Refresh, &hash(&raw))
+                .await?
+                .is_some()
+        );
+        let response = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_introspect_endpoint(&credentials(expected))?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(
+            response.error.status_code(),
+            500,
+            "coerced/empty outputs do not fall back to raw tokens"
+        );
+    }
+    assert_eq!(
+        *formatter.completed.lock().unwrap(),
+        [
+            json!({"token":format!("application-refresh-{}",*generators.refresh_count.lock().unwrap()-1),"sessionId":null})
+        ],
+        "Promise work runs despite coercion of its value"
     );
     Ok(())
 }
