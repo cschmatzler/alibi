@@ -55,6 +55,49 @@ pub struct CreateOAuthClientInput {
     pub dpop_bound_access_tokens: Option<bool>,
 }
 impl OAuthProviderPlugin {
+    async fn require_client_privileges<S: AuthSchema>(
+        &self,
+        action: &'static str,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<EndpointResponse>> {
+        let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await else {
+            return Ok(Some(client_privilege_denied(401)));
+        };
+        if req
+            .endpoint_call()
+            .is_some_and(|call| call.headers().is_none())
+        {
+            return Ok(Some(client_privilege_denied(400)));
+        }
+        let scope_policy = (action == "configure-client-credentials-scopes")
+            .then_some(self.config.client_credentials_scope_privileges.as_ref())
+            .flatten();
+        if action == "configure-client-credentials-scopes"
+            && self.config.client_privileges.is_none()
+            && scope_policy.is_none()
+        {
+            return Ok(Some(client_privilege_denied(401)));
+        }
+        if self.config.client_privileges.is_some() || scope_policy.is_some() {
+            let mut headers = alibi_core::Headers::new();
+            for (name, value) in req.session_headers() {
+                _ = headers.insert(name.clone(), value.clone());
+            }
+            let input = super::OAuthClientPrivilegeContext {
+                action,
+                headers,
+                user: serde_json::to_value(user)?,
+                session: serde_json::to_value(session)?,
+            };
+            for policy in self.config.client_privileges.iter().chain(scope_policy) {
+                if !policy.allowed(&input).await? {
+                    return Ok(Some(client_privilege_denied(401)));
+                }
+            }
+        }
+        Ok(None)
+    }
     pub fn create_oauth_client_endpoint(
         input: &CreateOAuthClientInput,
     ) -> AuthResult<ServerEndpoint<Value>> {
@@ -80,6 +123,9 @@ impl OAuthProviderPlugin {
         }
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
+        if let Some(response) = self.require_client_privileges("create", req, ctx).await? {
+            return Ok(response);
+        }
         let metadata: serde_json::Map<String, Value> =
             serde_json::from_value(serde_json::to_value(input)?)?;
         let metadata = match self.admit_metadata(metadata, &self.config.scopes, ctx)? {
@@ -554,6 +600,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        if let Some(response) = self.require_client_privileges("read", req, ctx).await? {
+            return Ok(response);
+        }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return Ok(EndpointResponse::error(AuthError::Api {
                 status: 404,
@@ -659,6 +708,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        if let Some(response) = self.require_client_privileges("list", req, ctx).await? {
+            return Ok(response);
+        }
         let clients = ctx
             .database
             .list_oauth_clients_by_user(user.id().as_ref())
@@ -684,6 +736,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
+        if let Some(response) = self.require_client_privileges("delete", req, ctx).await? {
+            return Ok(response);
+        }
         if self
             .config
             .cached_trusted_clients
@@ -744,6 +799,9 @@ impl OAuthProviderPlugin {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
+        if let Some(response) = self.require_client_privileges("rotate", req, ctx).await? {
+            return Ok(response);
+        }
         if self
             .config
             .cached_trusted_clients
@@ -1076,6 +1134,9 @@ impl OAuthProviderPlugin {
                 .await?
                 .0
         };
+        if let Some(response) = self.require_client_privileges("update", req, ctx).await? {
+            return Ok(response);
+        }
         if self
             .config
             .cached_trusted_clients
@@ -1090,16 +1151,24 @@ impl OAuthProviderPlugin {
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
             return status_protocol_error(404, "not_found", "client not found");
         };
-        if client.user_id.as_deref() != Some(user.id().as_ref()) {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 401,
-                code: None,
-                message: String::new(),
-            })
-            .without_error_body()
-            .with_header("Content-Type", "application/json"));
-        }
         let mut updates: serde_json::Map<String, Value> = serde_json::from_value(input.update)?;
+        // Only the global operator policy can authorize the pinned administrative
+        // scopes-only exception. It never grants cross-owner metadata authority.
+        let cross_owner_scopes = client.user_id.as_deref() != Some(user.id().as_ref())
+            && admin
+            && self.config.client_privileges.is_some()
+            && updates.len() == 1
+            && updates.contains_key("client_credentials_scopes");
+        if client.user_id.as_deref() != Some(user.id().as_ref()) && !cross_owner_scopes {
+            return Ok(client_privilege_denied(401));
+        }
+        if cross_owner_scopes
+            && let Some(response) = self
+                .require_client_privileges("configure-client-credentials-scopes", req, ctx)
+                .await?
+        {
+            return Ok(response);
+        }
         if updates.is_empty() {
             return client_update_response(client, admin);
         }
@@ -1113,7 +1182,7 @@ impl OAuthProviderPlugin {
         merged.extend(updates);
         if let Some(scopes) = scopes.and_then(|value| value.as_array().cloned()) {
             if let Some(response) = self
-                .admit_credential_scopes(&scopes, &merged, req, ctx)
+                .admit_credential_scopes(&scopes, &merged, req, ctx, !cross_owner_scopes)
                 .await?
             {
                 return Ok(response);
@@ -1254,6 +1323,11 @@ impl OAuthProviderPlugin {
             return status_protocol_error(403, "access_denied", "Client registration is disabled");
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
+        if session.is_some()
+            && let Some(response) = self.require_client_privileges("create", req, ctx).await?
+        {
+            return Ok(response);
+        }
         let mut token_authorization = None;
         if session.is_none()
             && let Some(authorization) = req.session_headers().get("authorization")
@@ -1550,12 +1624,15 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         };
+        if let Some(response) = self.require_client_privileges("create", req, ctx).await? {
+            return Ok(response);
+        }
         let scopes = metadata
             .remove("client_credentials_scopes")
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
         if let Some(response) = self
-            .admit_credential_scopes(&scopes, &metadata, req, ctx)
+            .admit_credential_scopes(&scopes, &metadata, req, ctx, true)
             .await?
         {
             return Ok(response);
@@ -1659,6 +1736,7 @@ impl OAuthProviderPlugin {
         metadata: &serde_json::Map<String, Value>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
+        require_privileges: bool,
     ) -> AuthResult<Option<EndpointResponse>> {
         if !scopes.is_empty() {
             if !metadata
@@ -1704,37 +1782,24 @@ impl OAuthProviderPlugin {
                 )
                 .map(Some);
             }
-            if let Some(privileges) = &self.config.client_credentials_scope_privileges
-                && let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await
-            {
-                let mut headers = alibi_core::Headers::new();
-                for (name, value) in req.session_headers() {
-                    _ = headers.insert(name.clone(), value.clone());
-                }
-                if privileges
-                    .allowed(&super::OAuthClientPrivilegeContext {
-                        action: "configure-client-credentials-scopes",
-                        headers,
-                        user: serde_json::to_value(user)?,
-                        session: serde_json::to_value(session)?,
-                    })
-                    .await?
-                {
-                    return Ok(None);
-                }
+            if require_privileges {
+                return self
+                    .require_client_privileges("configure-client-credentials-scopes", req, ctx)
+                    .await;
             }
-            return Ok(Some(
-                EndpointResponse::error(AuthError::Api {
-                    status: 401,
-                    code: None,
-                    message: String::new(),
-                })
-                .without_error_body()
-                .with_header("Content-Type", "application/json"),
-            ));
         }
         Ok(None)
     }
+}
+
+fn client_privilege_denied(status: u16) -> EndpointResponse {
+    EndpointResponse::error(AuthError::Api {
+        status,
+        code: None,
+        message: String::new(),
+    })
+    .without_error_body()
+    .with_header("Content-Type", "application/json")
 }
 
 fn client_update_response(

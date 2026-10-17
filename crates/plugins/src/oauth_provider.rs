@@ -81,6 +81,7 @@ pub use discovery::OAuthClientDiscovery;
 use serde_json::{Value, json};
 
 /// Actual authenticated context passed to an operator client-privilege decision.
+/// The pinned hook receives no client or reference identifier.
 #[derive(Debug, Clone)]
 pub struct OAuthClientPrivilegeContext {
     pub action: &'static str,
@@ -157,7 +158,13 @@ pub struct OAuthProviderConfig {
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Managed identities cached by provider instance and protected from API mutations.
     pub cached_trusted_clients: std::collections::HashSet<String>,
+    /// Global client-management policy, checked before client lookup or mutation.
+    /// Metadata and secret operations remain owner-controlled. Administrative
+    /// scopes-only patches additionally require the configure-scopes decision.
+    pub client_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     /// Operator decision for assigning client-credentials scopes.
+    /// This narrower policy does not authorize other management actions.
+    /// When both policies are configured, both must allow scope assignment.
     pub client_credentials_scope_privileges: Option<std::sync::Arc<dyn OAuthClientPrivileges>>,
     pub client_id_generator: Option<std::sync::Arc<dyn OAuthClientIdGenerator>>,
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
@@ -236,6 +243,7 @@ impl Default for OAuthProviderConfig {
             custom_token_response_fields: None,
             client_discoveries: Vec::new(),
             cached_trusted_clients: std::collections::HashSet::new(),
+            client_privileges: None,
             client_credentials_scope_privileges: None,
             client_id_generator: None,
             client_secret_generator: None,

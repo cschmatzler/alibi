@@ -273,6 +273,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let requestUriParameters: Record<string, unknown> = {};
   const signupCalls: unknown[] = [];
   const postLoginCalls: unknown[] = [];
+  const clientPolicyCalls: unknown[] = [];
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -1651,6 +1652,45 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         issuanceHelper,
       ],
     }),
+    "client-policy": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          scopes: ["api:read", "api:write"],
+          allowDynamicClientRegistration: true,
+          allowUnauthenticatedClientRegistration: true,
+          clientPrivileges: ({ action, headers, user, session }) => {
+            const decision = headers.get("x-client-decision");
+            clientPolicyCalls.push({
+              action,
+              decision,
+              caller: headers.get("x-policy-caller"),
+              user: { id: user?.id, email: user?.email },
+              session: { id: session?.id, userId: session?.userId, token: session?.token },
+            });
+            if (decision === "ordinary-error") throw new Error("client policy failed");
+            if (decision === "native-error") {
+              throw new APIError("FORBIDDEN", { message: "Client denied" });
+            }
+            if (decision === "api-error") {
+              throw new APIError("FORBIDDEN", { code: "CLIENT_DENIED", message: "Client denied" });
+            }
+            if (decision === "upstream-error") {
+              throw new APIError("SERVICE_UNAVAILABLE", {
+                code: "CLIENT_UNAVAILABLE",
+                message: "Client unavailable",
+              });
+            }
+            if (decision === "deny-scopes") return action !== "configure-client-credentials-scopes";
+            return decision !== "false";
+          },
+        }),
+      ],
+    }),
     machine: betterAuth({
       ...options,
       plugins: [
@@ -1954,6 +1994,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
     if (input.action === "signup-policy-calls") return Response.json(signupCalls.splice(0));
     if (input.action === "postlogin-policy-calls") return Response.json(postLoginCalls.splice(0));
+    if (input.action === "client-policy-calls") return Response.json(clientPolicyCalls.splice(0));
     if (input.action === "credential-generator-state") {
       if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
       if (typeof input.refreshMode === "string")
@@ -2892,72 +2933,87 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         });
       }
     }
-    if (input.action === "admin-update") {
-      return auth.api.adminUpdateOAuthClient({
+    const dispatchClient = async () => {
+      if (input.action === "admin-update") {
+        return auth.api.adminUpdateOAuthClient({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "admin-create") {
+        return auth.api.adminCreateOAuthClient({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "register") {
+        return auth.api.registerOAuthClient({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "update") {
+        return auth.api.updateOAuthClient({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "rotate") {
+        return auth.api.rotateClientSecret({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "delete") {
+        return auth.api.deleteOAuthClient({
+          body: input.body,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "list") {
+        return auth.api.getOAuthClients({
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "public") {
+        return auth.api.getOAuthClientPublic({
+          query: input.query,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      if (input.action === "get") {
+        return auth.api.getOAuthClient({
+          query: input.query,
+          headers: new Headers(input.headers ?? {}),
+          asResponse: true,
+        });
+      }
+      return auth.api.createOAuthClient({
         body: input.body,
-        headers: new Headers(input.headers ?? {}),
+        ...(input.headers ? { headers: new Headers(input.headers) } : {}),
         asResponse: true,
       });
+    };
+    try {
+      return await dispatchClient();
+    } catch (error) {
+      if (
+        input.mode === "client-policy" &&
+        input.captureError &&
+        error instanceof Error &&
+        error.name !== "APIError"
+      ) {
+        return Response.json({ ordinaryError: error.message });
+      }
+      throw error;
     }
-    if (input.action === "admin-create") {
-      return auth.api.adminCreateOAuthClient({
-        body: input.body,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "register") {
-      return auth.api.registerOAuthClient({
-        body: input.body,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "update") {
-      return auth.api.updateOAuthClient({
-        body: input.body,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "rotate") {
-      return auth.api.rotateClientSecret({
-        body: input.body,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "delete") {
-      return auth.api.deleteOAuthClient({
-        body: input.body,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "list") {
-      return auth.api.getOAuthClients({
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "public") {
-      return auth.api.getOAuthClientPublic({
-        query: input.query,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    if (input.action === "get") {
-      return auth.api.getOAuthClient({
-        query: input.query,
-        headers: new Headers(input.headers ?? {}),
-        asResponse: true,
-      });
-    }
-    return auth.api.createOAuthClient({
-      body: input.body,
-      ...(input.headers ? { headers: new Headers(input.headers) } : {}),
-      asResponse: true,
-    });
   };
 }

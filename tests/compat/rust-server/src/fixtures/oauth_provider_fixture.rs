@@ -35,6 +35,8 @@ mod signup_policy;
 mod post_login_policy;
 #[path = "../../../../fixtures/oauth/resource-identifiers.rs"]
 mod resource_identifiers;
+#[path = "../../../../fixtures/oauth/client-privileges.rs"]
+mod client_privileges;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -250,6 +252,7 @@ pub(crate) async fn router(
         instances.insert(mode.to_owned(), auth);
     }
     let registry_state=Arc::new(RegistryState::default());
+    let client_privileges = Arc::new(client_privileges::ClientPrivileges::default());
     let remote_state=Arc::new(RemoteResource{mode:std::sync::Mutex::new("valid".into()),uri:std::sync::Mutex::new("https://client.fixture.test/jwks".into()),document:std::sync::Mutex::new(remote_document("RSA","RS256","first")),fetches:std::sync::Mutex::default()});
     let trusted_config=OAuthProviderConfig{cached_trusted_clients:["trusted-client","trusted-missing"].map(str::to_owned).into(),client_id_generator:Some(Arc::new(TrustedClientId)),..Default::default()};
     let trusted_provider=OAuthProviderPlugin::with_config(trusted_config.clone());
@@ -306,6 +309,7 @@ pub(crate) async fn router(
         "resource-keyring",
         "selection",
         "machine",
+        "client-policy",
         "reuse",
         "generated",
         "empty-generator",
@@ -346,6 +350,7 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let mut provider = OAuthProviderConfig {
+            client_privileges: (mode=="client-policy").then(||client_privileges.clone() as Arc<dyn alibi::plugins::OAuthClientPrivileges>),
             request_uri_resolver:(mode=="request-uri").then(||request_registry.clone() as Arc<dyn alibi::plugins::OAuthRequestUriResolver>),
             validate_redirect_uri:if mode=="request-uri"{Some(request_registry.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)}else{(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)},
             signup:if mode.starts_with("postlogin-"){Some(alibi::plugins::OAuthSignupConfig{page:Some("/signup".into()),should_redirect:Some(post_login_policy.clone())})}else{mode.starts_with("signup-").then(||alibi::plugins::OAuthSignupConfig{page:match mode {"signup-fallback"=>None,"signup-empty-page"=>Some(String::new()),_=>Some("/signup".into())},should_redirect:(mode!="signup-page-only").then(||signup_policy.clone() as Arc<dyn alibi::plugins::OAuthSignupPolicy>)})},
@@ -368,7 +373,7 @@ pub(crate) async fn router(
             } else {
                 None
             },
-            scopes: if mode == "machine" {
+            scopes: if mode == "machine" || mode=="client-policy" {
                 vec!["api:read".into(), "api:write".into()]
             } else {
                 OAuthProviderConfig::default().scopes
@@ -381,9 +386,9 @@ pub(crate) async fn router(
             enforce_per_client_resources: mode != "resources-open",
             allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
             code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
-            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public") || mode.starts_with("registration-pkce-"),
+            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public" | "client-policy") || mode.starts_with("registration-pkce-"),
             client_registration_require_pkce: match mode {"registration-pkce-true"=>Some(true),"registration-pkce-false"=>Some(false),_=>None},
-            allow_unauthenticated_client_registration: matches!(mode, "public" | "token-public") || mode.starts_with("registration-pkce-"),
+            allow_unauthenticated_client_registration: matches!(mode, "public" | "token-public" | "client-policy") || mode.starts_with("registration-pkce-"),
             initial_access_token_validator: mode.starts_with("token-").then(||registration_policy.clone() as Arc<dyn alibi::plugins::OAuthInitialAccessTokenValidator>),
             ..Default::default()
         };
@@ -451,6 +456,7 @@ pub(crate) async fn router(
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
         let signup_policy=signup_policy.clone();
+        let client_privileges=client_privileges.clone();
         let credential_generators=credential_generators.clone();
         let refresh_formatter=refresh_formatter.clone();
         let user_info_claims=user_info_claims.clone();
@@ -484,6 +490,9 @@ pub(crate) async fn router(
                 let row=auth.store().get_oauth_resource(input["identifier"].as_str().unwrap()).await.unwrap();
                 let value=row.map(|row|{let mut value=row.metadata;value["id"]=serde_json::json!(row.id);value["identifier"]=serde_json::json!(row.identifier);value["createdAt"]=serde_json::json!(row.created_at);value["updatedAt"]=serde_json::json!(row.updated_at);value});
                 return axum::Json(value).into_response();
+            }
+            if input["action"]=="client-policy-calls" {
+                return axum::Json(std::mem::take(&mut *client_privileges.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="registration-scopes-validation" {
                 let options=&input["options"];
@@ -875,7 +884,7 @@ pub(crate) async fn router(
                 if input["action"]=="authorize" {let url=url::Url::parse(&format!("{logout_origin}{}",request.path)).unwrap();request=request.with_url(url);}
                 Some(request)}else{None},..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{if input["captureError"]==true {if let alibi::AuthError::Internal(message)=&error.error {return axum::Json(serde_json::json!({"ordinaryError":message})).into_response();}}let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
+                Err(error)=>{if input["captureError"]==true && !alibi::endpoint::is_endpoint_api_error(&error.error) {if let alibi::AuthError::Internal(message)=&error.error {return axum::Json(serde_json::json!({"ordinaryError":message})).into_response();}}let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
                 if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
             }
         }
