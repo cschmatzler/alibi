@@ -5,7 +5,7 @@ use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use serde_json::{Value, json};
-const ALGORITHMS: &[&str] = &["EdDSA", "ES256", "ES512", "PS256", "RS256"];
+pub(super) const ALGORITHMS: &[&str] = &["EdDSA", "ES256", "ES512", "PS256", "RS256"];
 pub(super) fn validate_create(input: Option<&JsValue>) -> AuthResult<JsValue> {
     validate_body(input, true)
 }

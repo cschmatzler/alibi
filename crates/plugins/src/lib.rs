@@ -301,9 +301,10 @@ pub use oauth_provider::{
     OAuthPostLoginContext, OAuthPostLoginPolicy, OAuthProviderApi, OAuthProviderConfig,
     OAuthProviderExtension, OAuthProviderPlugin, OAuthProviderRateLimits,
     OAuthRedirectUriValidator, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
-    OAuthRequestUriInput, OAuthRequestUriResolver, OAuthSignupConfig, OAuthSignupContext,
-    OAuthSignupPolicy, OAuthSignupRedirect, OAuthTokenClaimsContributor, OAuthTokenClaimsInput,
-    OAuthTokenGenerator, OAuthTokenHasher, OAuthTokenIssueParams, OAuthUserInfoClaimsContributor,
+    OAuthRequestUriInput, OAuthRequestUriResolver, OAuthResourceIdentifierValidator,
+    OAuthResourceSeedMode, OAuthSignupConfig, OAuthSignupContext, OAuthSignupPolicy,
+    OAuthSignupRedirect, OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenGenerator,
+    OAuthTokenHasher, OAuthTokenIssueParams, OAuthUserInfoClaimsContributor,
     OAuthUserInfoClaimsInput, OAuthVerifiedClientAssertion, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};

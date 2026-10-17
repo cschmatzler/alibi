@@ -50,6 +50,8 @@ pub use refresh_format::{
     OAuthDecodedRefreshToken, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
 };
 mod resource_policy;
+mod resource_seed;
+pub use resource_seed::{OAuthResourceIdentifierValidator, OAuthResourceSeedMode};
 mod resources;
 mod revocation;
 mod session_retirement;
@@ -197,6 +199,10 @@ pub struct OAuthProviderConfig {
     pub refresh_token_reuse_interval: f64,
     pub allow_public_client_prelogin: bool,
     pub enforce_per_client_resources: bool,
+    /// Configured resource identifiers or policy objects, using the provider's camelCase fields.
+    pub resources: Vec<Value>,
+    pub resource_seed_mode: OAuthResourceSeedMode,
+    pub identifier_validator: Option<std::sync::Arc<dyn OAuthResourceIdentifierValidator>>,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -259,6 +265,9 @@ impl Default for OAuthProviderConfig {
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,
             enforce_per_client_resources: true,
+            resources: Vec::new(),
+            resource_seed_mode: OAuthResourceSeedMode::default(),
+            identifier_validator: None,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),
@@ -1286,6 +1295,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 )));
             }
         }
+        self.seed_resources(ctx.database.as_ref()).await?;
+        ctx.extensions.insert(resource_seed::SeedState::default());
         ctx.extensions.insert(discovery::TrustedClients {
             ids: self.config.cached_trusted_clients.clone(),
             cache: self.trusted_clients.clone(),

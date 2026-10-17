@@ -1083,6 +1083,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       },
     },
   };
+  let seededAuth: ReturnType<typeof betterAuth> | undefined;
+  const seedIdentifiers = { calls: 0, failNext: false };
   const auths = {
     "extension-grant": betterAuth({
       ...options,
@@ -1859,7 +1861,69 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return auths.default.handler(request);
     }
     const input = await request.json();
-    const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "resource-seed-init") {
+      const seedOptions: OAuthOptions = {
+        loginPage: "/login",
+        consentPage: "/consent",
+        resources: input.resources,
+        resourceSeedMode: input.resourceSeedMode,
+        enforcePerClientResources: false,
+        ...(input.customIdentifiers
+          ? {
+              identifierValidator: async (identifier: string) => {
+                seedIdentifiers.calls++;
+                await Promise.resolve();
+                if (seedIdentifiers.failNext) {
+                  seedIdentifiers.failNext = false;
+                  throw new APIError("FORBIDDEN", { message: "Resource validation denied" });
+                }
+                return identifier === "local-resource";
+              },
+            }
+          : {}),
+      };
+      seededAuth = betterAuth({
+        ...options,
+        plugins: [
+          username(),
+          jwt(),
+          oauthProvider(seedOptions),
+          {
+            id: "configured-resource-issuance",
+            endpoints: {
+              issueTokensFixture: createAuthEndpoint(
+                "/fixture/issue-tokens",
+                { method: "POST", body: z.record(z.string(), z.unknown()) },
+                async (ctx: any) => {
+                  const api = getOAuthProviderApi(ctx, seedOptions, ctx.body.grantType);
+                  const client = await api.getClient(ctx.body.clientId);
+                  return api.issueTokens({ ...ctx.body.params, client });
+                },
+              ),
+            },
+          },
+        ],
+      });
+      await seededAuth.$context;
+      return Response.json({ initialized: true });
+    }
+    const auth =
+      (input.mode === "resource-seed" ? seededAuth : undefined) ??
+      auths[input.mode as keyof typeof auths] ??
+      auths.default;
+    if (input.action === "resource-seed-validator") {
+      if (input.failNext) seedIdentifiers.failNext = true;
+      return Response.json({ calls: seedIdentifiers.calls });
+    }
+    if (input.action === "resource-seed-row") {
+      const context = await auth.$context;
+      return Response.json(
+        await context.adapter.findOne({
+          model: "oauthResource",
+          where: [{ field: "identifier", value: input.identifier }],
+        }),
+      );
+    }
     if (input.action === "registration-scopes-validation") {
       try {
         oauthProvider({ loginPage: "/login", consentPage: "/consent", ...input.options });

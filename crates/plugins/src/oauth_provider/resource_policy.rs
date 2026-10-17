@@ -107,7 +107,7 @@ impl OAuthProviderPlugin {
             if resource == &userinfo {
                 continue;
             }
-            let Some(row) = ctx.database.get_oauth_resource(resource).await? else {
+            let Some(row) = self.get_resource(ctx, resource).await? else {
                 return Err(failure(
                     "invalid_target",
                     &format!("requested resource {resource} is not configured"),

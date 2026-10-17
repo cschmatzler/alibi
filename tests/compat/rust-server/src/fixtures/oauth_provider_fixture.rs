@@ -33,6 +33,8 @@ mod request_uri;
 mod signup_policy;
 #[path = "../../../../fixtures/oauth/post-login-policy.rs"]
 mod post_login_policy;
+#[path = "../../../../fixtures/oauth/resource-identifiers.rs"]
+mod resource_identifiers;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -439,8 +441,12 @@ pub(crate) async fn router(
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     let response_fields_auth=client_instances.get("response-fields").unwrap().clone();
     let response_fields_routes=response_fields_auth.clone().axum_router().with_state(response_fields_auth);
+    let seeded_auth=Arc::new(tokio::sync::Mutex::new(None::<(Arc<alibi::Alibi<TestSchema>>,OAuthProviderPlugin)>));
+    let seed_identifiers=Arc::new(resource_identifiers::Identifiers::default());
     Ok(Router::new().nest("/__test/profiles/oauth-response-fields/api/auth",response_fields_routes).route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
+        let seeded_auth=seeded_auth.clone();
+        let seed_identifiers=seed_identifiers.clone();
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
@@ -460,7 +466,25 @@ pub(crate) async fn router(
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
-        let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+        let auth=client_instances.get(input["mode"].as_str().filter(|mode|*mode!="resource-seed").unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="resource-seed-init" {
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),enforce_per_client_resources:false,..Default::default()});
+                let initialized=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone()).build().await.unwrap();
+                *seeded_auth.lock().await=Some((Arc::new(initialized),provider));
+                return axum::Json(serde_json::json!({"initialized":true})).into_response();
+            }
+            let seeded=if input["mode"]=="resource-seed"{seeded_auth.lock().await.clone()}else{None};
+            let auth=seeded.as_ref().map(|(auth,_)|auth.clone()).unwrap_or(auth);
+            if input["action"]=="resource-seed-validator" {
+                use std::sync::atomic::Ordering;
+                if input["failNext"]==true {seed_identifiers.fail_next.store(true,Ordering::SeqCst);}
+                return axum::Json(serde_json::json!({"calls":seed_identifiers.calls.load(Ordering::SeqCst)})).into_response();
+            }
+            if input["action"]=="resource-seed-row" {
+                let row=auth.store().get_oauth_resource(input["identifier"].as_str().unwrap()).await.unwrap();
+                let value=row.map(|row|{let mut value=row.metadata;value["id"]=serde_json::json!(row.id);value["identifier"]=serde_json::json!(row.identifier);value["createdAt"]=serde_json::json!(row.created_at);value["updatedAt"]=serde_json::json!(row.updated_at);value});
+                return axum::Json(value).into_response();
+            }
             if input["action"]=="registration-scopes-validation" {
                 let options=&input["options"];
                 let cfg=OAuthProviderConfig{
@@ -597,7 +621,7 @@ pub(crate) async fn router(
                 if body["accessClaimsProfile"]==true {config.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));config.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
                 if body["responseFieldsProfile"]==true {config.custom_token_response_fields=Some(response_fields.clone());}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
-                config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
+                config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=seeded.as_ref().map(|(_,provider)|provider.clone()).unwrap_or_else(||OAuthProviderPlugin::with_config(config));
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());
                 if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(auth.context().trusted_user_view(&user));}

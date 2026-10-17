@@ -90,7 +90,7 @@ impl OAuthProviderPlugin {
             let Some(resources) = audience_values(claims.get("aud")) else {
                 return Ok(json!({"active":false}).into());
             };
-            if !audiences_allowed(ctx, &resources).await? {
+            if !audiences_allowed(self, ctx, &resources).await? {
                 return Ok(json!({"active":false}).into());
             }
             let Some(issuing_id) = claims
@@ -164,7 +164,7 @@ impl OAuthProviderPlugin {
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
-        if !audiences_allowed(ctx, &resources).await?
+        if !audiences_allowed(self, ctx, &resources).await?
             || !authorized(ctx, client_id, &row.client_id, &resources).await?
         {
             return Ok(json!({"active":false}).into());
@@ -340,6 +340,7 @@ fn audience_values(value: Option<&Value>) -> Option<Vec<String>> {
     }
 }
 async fn audiences_allowed<S: AuthSchema>(
+    provider: &OAuthProviderPlugin,
     ctx: &AuthContext<S>,
     audiences: &[String],
 ) -> AuthResult<bool> {
@@ -348,7 +349,7 @@ async fn audiences_allowed<S: AuthSchema>(
     }
     let userinfo = format!("{}/oauth2/userinfo", base_url(ctx));
     for audience in audiences {
-        if audience != &userinfo && ctx.database.get_oauth_resource(audience).await?.is_none() {
+        if audience != &userinfo && provider.get_resource(ctx, audience).await?.is_none() {
             return Ok(false);
         }
     }
