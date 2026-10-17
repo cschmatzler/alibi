@@ -646,7 +646,7 @@ fn js_parameter_text(value: &JsValue) -> AuthResult<String> {
 
 fn nonfinite_query_values(input: Option<&JsValue>) -> std::collections::BTreeMap<String, JsValue> {
     let Some(values) = input.and_then(JsValue::as_object) else {
-        return Default::default();
+        return std::collections::BTreeMap::default();
     };
     values
         .iter()

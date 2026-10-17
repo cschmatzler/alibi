@@ -94,7 +94,7 @@ impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
                         subject,
                     }),
                     Err(error) => {
-                        tracing::warn!(%error, %client_id, "Unable to resolve back-channel logout subject")
+                        tracing::warn!(%error, %client_id, "Unable to resolve back-channel logout subject");
                     }
                 }
             }

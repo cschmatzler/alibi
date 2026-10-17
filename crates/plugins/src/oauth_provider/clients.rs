@@ -325,7 +325,9 @@ fn validate_metadata(
         let path = format!("{location}.{name}");
         let normalized = match (kind, value) {
             // SafeUrlSchema's z.url() trims JS whitespace without reserializing the URL.
-            (FieldKind::Uri, JsValue::String(value)) => JsValue::String(js_trim(value).into()),
+            (FieldKind::Uri | FieldKind::Method, JsValue::String(value)) => {
+                JsValue::String(js_trim(value).into())
+            }
             (FieldKind::Uris, JsValue::Array(values)) => JsValue::Array(
                 values
                     .iter()
@@ -337,7 +339,6 @@ fn validate_metadata(
                     })
                     .collect(),
             ),
-            (FieldKind::Method, JsValue::String(value)) => JsValue::String(js_trim(value).into()),
             (FieldKind::Grants | FieldKind::Scopes, JsValue::Array(values)) => JsValue::Array(
                 values
                     .iter()
