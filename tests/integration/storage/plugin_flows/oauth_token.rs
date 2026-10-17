@@ -82,7 +82,67 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
     let query = json!({"client_id":client_id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback",
         "scope":"profile email offline_access","resource":resource,"state":"response-state","code_challenge":challenge,"code_challenge_method":"S256"});
     let mut issued = Value::Null;
-    for mode in ["ordinary", "api", "success"] {
+    let public_request = |input: &Value| {
+        let mut req = request("/oauth2/token", None, "");
+        req.method = HttpMethod::Post;
+        _ = req.headers.insert(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        );
+        req.body = Some(
+            url::form_urlencoded::Serializer::new(String::new())
+                .extend_pairs(
+                    input
+                        .as_object()
+                        .unwrap()
+                        .iter()
+                        .map(|(key, value)| (key.as_str(), value.as_str().unwrap())),
+                )
+                .finish()
+                .into_bytes(),
+        );
+        req
+    };
+    let assert_failure = |response: &AuthResponse, mode: &str| {
+        let (status, expected) = match mode {
+            "api" => (
+                422,
+                json!({"code":"RESPONSE_REJECTED","message":"Operator response denied"}),
+            ),
+            "forbidden" => (403, json!({"message":"Operator response forbidden"})),
+            "upstream" => (
+                409,
+                json!({"code":"RESPONSE_CONFLICT","message":"Operator response conflict"}),
+            ),
+            _ => (500, Value::Null),
+        };
+        assert_eq!(response.status, status);
+        if mode == "ordinary" {
+            assert!(response.body.is_empty());
+            for name in ["content-type", "cache-control", "pragma"] {
+                assert!(
+                    response.headers.get(name).is_none(),
+                    "ordinary failure leaked {name}: {:?}",
+                    response.headers
+                );
+            }
+        } else {
+            assert_eq!(body(response), expected);
+            assert_eq!(
+                response.headers.get("content-type").map(String::as_str),
+                Some("application/json")
+            );
+            assert_eq!(
+                response.headers.get("cache-control").map(String::as_str),
+                Some("no-store")
+            );
+            assert_eq!(
+                response.headers.get("pragma").map(String::as_str),
+                Some("no-cache")
+            );
+        }
+    };
+    for mode in ["ordinary", "api", "forbidden", "upstream", "success"] {
         *fields.mode.lock().unwrap() = mode.into();
         let grant = Box::pin(auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
@@ -99,28 +159,16 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
             .1
             .into_owned();
         let input = json!({"grant_type":"authorization_code","client_id":client_id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
-        let result = Box::pin(auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
-            EndpointOptions::default(),
-        ))
-        .await;
+        let response = Box::pin(auth.handle_request(public_request(&input))).await?;
         if mode == "success" {
-            issued = body(&result?.into_response()?);
+            assert_eq!(response.status, 200);
+            issued = body(&response);
             assert_eq!(
                 issued["application_metadata"],
                 json!({"service":"billing","plan":"pro"})
             );
         } else {
-            let failure = result.unwrap_err();
-            assert_eq!(
-                failure.error.status_code(),
-                if mode == "api" { 422 } else { 500 }
-            );
-            if mode == "api" {
-                assert!(
-                    matches!(failure.error, alibi::AuthError::Api {code:Some(ref code), ref message, ..} if code == "RESPONSE_REJECTED" && message == "Operator response denied")
-                );
-            }
+            assert_failure(&response, mode);
             for kind in [OAuthTokenKind::Access, OAuthTokenKind::Refresh] {
                 assert!(
                     auth.store()
@@ -135,29 +183,17 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
         "scopes":["email","offline_access"],"metadata":{"tenant":"application"},
         "verification":{"type":"authorization_code","userId":user_id,"sessionId":session.id().as_ref(),
             "scope":"profile email offline_access","state":"response-state","clientId":client_id,"challenge":challenge}});
-    assert_eq!(*fields.calls.lock().unwrap(), vec![receipt; 3]);
+    assert_eq!(*fields.calls.lock().unwrap(), vec![receipt; 5]);
     let original = issued["refresh_token"].as_str().unwrap().to_owned();
-    for mode in ["ordinary", "api", "success"] {
+    for mode in ["ordinary", "api", "forbidden", "upstream", "success"] {
         *fields.mode.lock().unwrap() = mode.into();
         let input = json!({"grant_type":"refresh_token","client_id":client_id,"refresh_token":original,"scope":"email"});
-        let result = Box::pin(auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_token_endpoint(&input)?,
-            EndpointOptions::default(),
-        ))
-        .await;
+        let response = Box::pin(auth.handle_request(public_request(&input))).await?;
         if mode == "success" {
-            issued = body(&result?.into_response()?);
+            assert_eq!(response.status, 200);
+            issued = body(&response);
         } else {
-            let failure = result.unwrap_err();
-            assert_eq!(
-                failure.error.status_code(),
-                if mode == "api" { 422 } else { 500 }
-            );
-            if mode == "api" {
-                assert!(
-                    matches!(failure.error, alibi::AuthError::Api {code:Some(ref code), ref message, ..} if code == "RESPONSE_REJECTED" && message == "Operator response denied")
-                );
-            }
+            assert_failure(&response, mode);
             for kind in [OAuthTokenKind::Access, OAuthTokenKind::Refresh] {
                 assert_eq!(
                     auth.store()
@@ -177,11 +213,11 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
         }
     }
     assert_eq!(
-        &fields.calls.lock().unwrap()[3..],
+        &fields.calls.lock().unwrap()[5..],
         vec![
             json!({"grant":"refresh_token","userId":user_id,
         "email":"response-owner@example.test","scopes":["email"],"metadata":{"tenant":"application"},"verification":null});
-            3
+            5
         ]
     );
     assert_eq!(issued["scope"], "email");
@@ -235,6 +271,34 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
         None,
         EndpointOptions::default(),
     );
+    // The trusted API must keep the error class, not turn an ordinary callback
+    // exception into an intentional empty-body API error.
+    for mode in ["ordinary", "forbidden", "upstream"] {
+        *fields.mode.lock().unwrap() = mode.into();
+        let failure = provider
+            .issue_tokens(auth.context(), &call, Some("urn:native:response"), &params)
+            .await
+            .unwrap_err();
+        match mode {
+            "ordinary" => assert!(matches!(
+                failure.error,
+                alibi::AuthError::CallbackFailure(_)
+            )),
+            "forbidden" => assert!(
+                matches!(failure.error, alibi::AuthError::Forbidden(ref message) if message == "Operator response forbidden")
+            ),
+            _ => assert!(matches!(
+                failure.error,
+                alibi::AuthError::Upstream {
+                    status: 409,
+                    code: "RESPONSE_CONFLICT",
+                    ..
+                }
+            )),
+        }
+        assert!(!failure.body_absent);
+    }
+    *fields.mode.lock().unwrap() = "success".into();
     let machine = provider
         .issue_tokens(auth.context(), &call, Some("urn:native:response"), &params)
         .await?;

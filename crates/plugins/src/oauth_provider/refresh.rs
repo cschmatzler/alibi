@@ -260,12 +260,7 @@ impl OAuthProviderPlugin {
             .extend_token_response_fields(ctx, req, &mut params, "refresh_token")
             .await
         {
-            let response = EndpointResponse::error(error.error);
-            return Ok(if error.body_absent {
-                response.without_error_body()
-            } else {
-                no_store(response)
-            });
+            return super::issuance::error_response(error);
         }
         params.confirmation = match self
             .resolve_dpop_binding(ctx, req, &params, &admission)

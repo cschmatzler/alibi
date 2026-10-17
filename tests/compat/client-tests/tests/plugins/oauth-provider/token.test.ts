@@ -4,16 +4,30 @@ import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
+import { applicationHeaders } from "../../../support/trace";
 compatScenario(
   "Configured response fields decorate real code and refresh grants before authority writes",
   async (ctx) => {
     const actor = ctx.actor();
+    const publicActor = ctx.actor("public", "oauth-response-fields");
+    const tokenEndpoint = `${ctx.baseURL}/__test/profiles/oauth-response-fields/api/auth/oauth2/token`;
     const control = (input: object) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "response-fields", ...input }),
       });
+    // Keep the existing server-API success/persistence owner. Every callback
+    // failure uses the actual public router, whose complete headers and body
+    // must agree (not the private control route's shape-only trace).
+    const tokenRequest = (input: Record<string, string>, outcome: string) =>
+      outcome === "success"
+        ? control({ action: "token", body: input })
+        : publicActor.fetch(tokenEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/x-www-form-urlencoded" },
+            body: new URLSearchParams(input),
+          });
     const state = async (value: string, reset = false) =>
       (await control({ action: "response-fields-state", value, reset })).json() as Promise<any>;
     await state("success", true);
@@ -65,7 +79,7 @@ compatScenario(
       (await control({ action: "authority-counts", sessionId: session.session.id })).json();
     let issued: any;
     const errors = [];
-    for (const mode of ["ordinary", "api", "success"]) {
+    for (const mode of ["ordinary", "api", "forbidden", "upstream", "success"]) {
       await state(mode);
       const grant = await control({
         action: "authorize",
@@ -84,22 +98,24 @@ compatScenario(
       expect(grant.status).toBe(200);
       const code = new URL(((await grant.json()) as any).url).searchParams.get("code");
       expect(code).toBeTruthy();
-      const response = await control({
-        action: "token",
-        body: {
+      const response = await tokenRequest(
+        {
           grant_type: "authorization_code",
           client_id: client.client_id,
-          code,
+          code: code!,
           code_verifier: verifier,
           redirect_uri: "https://app.fixture.test/callback",
         },
-      });
+        mode,
+      );
       if (mode === "success") {
         expect(response.status).toBe(200);
         issued = await response.json();
         expect(issued.application_metadata).toEqual({ service: "billing", plan: "pro" });
       } else {
-        expect(response.status).toBe(mode === "api" ? 422 : 500);
+        expect(response.status).toBe(
+          { ordinary: 500, api: 422, forbidden: 403, upstream: 409 }[mode],
+        );
         const text = await response.text();
         if (mode === "api") {
           expect(JSON.parse(text)).toEqual({
@@ -107,7 +123,12 @@ compatScenario(
             message: "Operator response denied",
           });
         }
-        errors.push({ mode, status: response.status, text });
+        errors.push({
+          mode,
+          status: response.status,
+          headers: applicationHeaders(response.headers),
+          text,
+        });
         expect(await counts()).toEqual({ access: 0, refresh: 0 });
       }
     }
@@ -127,24 +148,26 @@ compatScenario(
         challenge,
       },
     };
-    expect((await state("success")).calls).toEqual([receipt, receipt, receipt]);
+    expect((await state("success")).calls).toEqual(Array(5).fill(receipt));
     const original = issued.refresh_token;
-    for (const mode of ["ordinary", "api", "success"]) {
+    for (const mode of ["ordinary", "api", "forbidden", "upstream", "success"]) {
       await state(mode);
-      const response = await control({
-        action: "token",
-        body: {
+      const response = await tokenRequest(
+        {
           grant_type: "refresh_token",
           client_id: client.client_id,
           refresh_token: original,
           scope: "email",
         },
-      });
+        mode,
+      );
       if (mode === "success") {
         expect(response.status).toBe(200);
         issued = await response.json();
       } else {
-        expect(response.status).toBe(mode === "api" ? 422 : 500);
+        expect(response.status).toBe(
+          { ordinary: 500, api: 422, forbidden: 403, upstream: 409 }[mode],
+        );
         const text = await response.text();
         if (mode === "api") {
           expect(JSON.parse(text)).toEqual({
@@ -152,7 +175,12 @@ compatScenario(
             message: "Operator response denied",
           });
         }
-        errors.push({ mode, status: response.status, text });
+        errors.push({
+          mode,
+          status: response.status,
+          headers: applicationHeaders(response.headers),
+          text,
+        });
         expect(await counts()).toEqual({ access: 1, refresh: 1 });
         const row = (await (
           await control({ action: "token-row", kind: "refresh", token: original })
@@ -168,11 +196,7 @@ compatScenario(
       metadata: { tenant: "application" },
       verification: null,
     };
-    expect((await state("success")).calls.slice(3)).toEqual([
-      refreshReceipt,
-      refreshReceipt,
-      refreshReceipt,
-    ]);
+    expect((await state("success")).calls.slice(5)).toEqual(Array(5).fill(refreshReceipt));
     expect(issued.application_metadata).toEqual({ service: "billing", plan: "pro" });
     expect(issued.per_request).toBe("global");
     expect(issued.toString).toBe("application-toString");

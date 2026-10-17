@@ -259,18 +259,7 @@ impl OAuthProviderPlugin {
             .await
         {
             Ok(value) => value,
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if error.body_absent {
-                    return Ok(response.without_error_body());
-                }
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
-                }
-                return Ok(response
-                    .with_header("Cache-Control", "no-store")
-                    .with_header("Pragma", "no-cache"));
-            }
+            Err(error) => return super::issuance::error_response(error),
         };
         Ok(EndpointResponse::json(&response)?
             .with_header("Cache-Control", "no-store")

@@ -3726,6 +3726,9 @@ const server = await serveFixture({
       ) {
         return oauthClients(request);
       }
+      if (url.pathname.startsWith("/__test/profiles/oauth-response-fields/api/auth/")) {
+        return oauthClients(request);
+      }
       if (url.pathname === "/__test/server-api/sso" && request.method === "POST") {
         return ssoControl(request);
       }

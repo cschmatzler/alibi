@@ -1,5 +1,6 @@
 //! Direct discovery delegates to actual configured provider/JWT plugins.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration as _;
 use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
 use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin};
 use alibi::seaorm::DatabaseConnection;
@@ -354,6 +355,7 @@ pub(crate) async fn router(
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
+        if mode=="response-fields" {client_config=client_config.base_path("/__test/profiles/oauth-response-fields/api/auth");}
         if mode=="pairwise" {
             client_config.advanced.database.generate_id=Some(alibi::config::DatabaseIdStrategy::Custom(Arc::new(|model:&str,_size:Option<usize>|Ok(Some(if model=="user" {"pairwise-owner".into()} else {uuid::Uuid::new_v4().to_string()})))));
         }
@@ -373,7 +375,9 @@ pub(crate) async fn router(
     let logout_origin = config.base_url.clone();
     let authorization_path = format!("{}/oauth2/authorize", config.base_path);
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
-    Ok(Router::new().route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
+    let response_fields_auth=client_instances.get("response-fields").unwrap().clone();
+    let response_fields_routes=response_fields_auth.clone().axum_router().with_state(response_fields_auth);
+    Ok(Router::new().nest("/__test/profiles/oauth-response-fields/api/auth",response_fields_routes).route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();

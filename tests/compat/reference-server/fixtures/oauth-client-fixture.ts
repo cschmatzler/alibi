@@ -530,6 +530,15 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         : null,
     });
     if (responseFields.mode === "ordinary") throw new Error("private response failure");
+    if (responseFields.mode === "forbidden") {
+      throw new APIError("FORBIDDEN", { message: "Operator response forbidden" });
+    }
+    if (responseFields.mode === "upstream") {
+      throw new APIError("CONFLICT", {
+        code: "RESPONSE_CONFLICT",
+        message: "Operator response conflict",
+      });
+    }
     if (responseFields.mode === "api") {
       throw new APIError("UNPROCESSABLE_ENTITY", {
         code: "RESPONSE_REJECTED",
@@ -1050,6 +1059,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }),
     "response-fields": betterAuth({
       ...options,
+      basePath: "/__test/profiles/oauth-response-fields/api/auth",
       plugins: [
         username(),
         jwt(),
@@ -1427,6 +1437,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     ),
   };
   return async (request: Request) => {
+    if (
+      new URL(request.url).pathname.startsWith("/__test/profiles/oauth-response-fields/api/auth/")
+    ) {
+      return auths["response-fields"].handler(request);
+    }
     if (
       request.method === "GET" &&
       new URL(request.url).pathname === `${base.basePath ?? "/api/auth"}/jwks`

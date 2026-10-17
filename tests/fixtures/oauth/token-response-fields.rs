@@ -27,6 +27,14 @@ impl alibi::plugins::OAuthTokenClaimsContributor for TokenResponseFields {
         }));
         match self.mode.lock().unwrap().as_str() {
             "ordinary" => return Err(alibi::AuthError::internal("private response failure")),
+            "forbidden" => return Err(alibi::AuthError::forbidden("Operator response forbidden")),
+            "upstream" => {
+                return Err(alibi::AuthError::Upstream {
+                    status: 409,
+                    code: "RESPONSE_CONFLICT",
+                    message: "Operator response conflict",
+                });
+            }
             "api" => {
                 return Err(alibi::AuthError::Api {
                     status: 422,

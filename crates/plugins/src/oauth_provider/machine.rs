@@ -83,16 +83,7 @@ impl OAuthProviderPlugin {
             .await
         {
             Ok(value) => Ok(no_store(EndpointResponse::json(&value)?)),
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if error.body_absent {
-                    return Ok(response.without_error_body());
-                }
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
-                }
-                Ok(no_store(response))
-            }
+            Err(error) => super::issuance::error_response(error),
         }
     }
 }

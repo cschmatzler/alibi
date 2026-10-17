@@ -138,12 +138,11 @@ impl OAuthProviderPlugin {
             })
             .await
             .map_err(|error| {
-                let ordinary = !matches!(error, alibi_core::AuthError::Api { .. });
-                let mut error = alibi_core::endpoint::EndpointError::from(error);
-                // Better Call exposes ordinary callback exceptions as an empty 500,
-                // while intentional API errors retain their public body.
-                error.body_absent = ordinary;
-                error
+                if alibi_core::endpoint::is_endpoint_api_error(&error) {
+                    error
+                } else {
+                    crate::helpers::callback_failure(error)
+                }
             })?;
         if let Some(per_request) = params.token_response.as_ref().and_then(Value::as_object) {
             fields.extend(per_request.clone());

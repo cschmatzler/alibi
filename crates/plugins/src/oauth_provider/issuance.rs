@@ -1,6 +1,6 @@
 //! Shared trusted minting primitive; grant admission belongs to the caller.
 use super::OAuthProviderPlugin;
-use alibi_core::endpoint::{EndpointCall, EndpointError};
+use alibi_core::endpoint::{EndpointCall, EndpointError, EndpointResponse, is_endpoint_api_error};
 use alibi_core::store::{CreateOAuthToken, OAuthClient, OAuthToken, OAuthTokenKind};
 use alibi_core::wire::UserView;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
@@ -89,6 +89,25 @@ pub(super) fn response_fields(params: &OAuthTokenIssueParams) -> serde_json::Map
         _ = fields.remove(key);
     }
     fields
+}
+/// Ordinary issuance failures escape endpoint dispatch; only intentional API
+/// rejections publish an error envelope and OAuth cache headers.
+pub(super) fn error_response(error: EndpointError) -> AuthResult<EndpointResponse> {
+    if !is_endpoint_api_error(&error.error) {
+        return Err(error.error);
+    }
+    let mut response = EndpointResponse::error(error.error);
+    if error.body_absent {
+        response = response.without_error_body();
+    } else if let Some(body) = error.body {
+        response = response.with_error_body(*body);
+    }
+    if let Some(headers) = error.headers {
+        response.merge_headers(headers);
+    }
+    Ok(response
+        .with_header("Cache-Control", "no-store")
+        .with_header("Pragma", "no-cache"))
 }
 /// Preserve JavaScript number serialization, including integral default values.
 pub(super) fn number(value: f64) -> AuthResult<Value> {
