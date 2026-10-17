@@ -161,7 +161,18 @@ impl OAuthProviderPlugin {
             .unwrap_or(&Value::Null)
             .as_str()
             .unwrap_or_default();
-        if registered == "none" && verifier.is_empty() {
+        // Match authorization's policy using the consumed grant's scopes and
+        // nonce, but only after binding and client authentication have passed.
+        // Required clients reject an absent verifier before challenge matching.
+        let has_oidc_nonce = scope.split(' ').any(|scope| scope == "openid")
+            && query
+                .get("nonce")
+                .and_then(Value::as_str)
+                .is_some_and(|nonce| !nonce.is_empty());
+        let pkce_required = registered == "none"
+            || client.metadata.get("require_pkce") != Some(&Value::Bool(false))
+            || (scope.split(' ').any(|scope| scope == "offline_access") && !has_oidc_nonce);
+        if pkce_required && verifier.is_empty() {
             return error(400, "invalid_request", "PKCE is required for this client");
         }
         if !challenge.is_empty() && verifier.is_empty() {

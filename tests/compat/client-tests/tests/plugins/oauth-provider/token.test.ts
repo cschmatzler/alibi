@@ -282,6 +282,7 @@ compatScenario(
       body: { email: ctx.uniqueEmail("token-owner"), name: "Owner", password: "password123" },
     });
     expect(signup.status).toBe(200);
+    const owner = (await signup.json()) as any;
     const cookie = signup.headers
       .getSetCookie()
       .filter((raw) => Boolean(Cookie.parse(raw)?.value))
@@ -358,56 +359,187 @@ compatScenario(
     expect(await removed.json()).toBeNull();
 
     const denials = [];
-    for (const [field, wrong, status, description] of [
-      ["code_verifier", "wrong-verifier", 401, "code verification failed"],
-      ["redirect_uri", "https://app.fixture.test/other", 400, "redirect_uri mismatch"],
+    const session = (await (
+      await control({ action: "session", headers: { cookie } })
+    ).json()) as any;
+    let tokenRequestNumber = 0;
+    for (const [method, required] of [
+      ["none", false],
+      ["client_secret_post", undefined],
+      ["client_secret_post", true],
+      ["client_secret_post", false],
     ] as const) {
-      const produced = await control({
-        action: "authorize",
-        headers: { cookie, accept: "application/json" },
-        query: {
-          client_id: id,
-          response_type: "code",
-          redirect_uri: "https://app.fixture.test/callback",
-          scope: "email",
-          state: "token-state",
-          code_challenge: challenge,
-          code_challenge_method: "S256",
-        },
-      });
-      expect(produced.status).toBe(200);
-      const callback = new URL(((await produced.json()) as any).url);
-      const grantCode = callback.searchParams.get("code");
-      expect(grantCode).toBeTruthy();
-      const input = {
-        grant_type: "authorization_code",
-        client_id: id,
-        code: grantCode,
-        code_verifier: verifier,
-        redirect_uri: "https://app.fixture.test/callback",
-        [field]: wrong,
-      };
-      const rejected = await control({ action: "token", body: input });
-      expect(rejected.status).toBe(status);
-      expect(await rejected.json()).toEqual({
-        error: status === 401 ? "invalid_request" : "invalid_grant",
-        error_description: description,
-      });
-      const retry = await control({
-        action: "token",
+      const publicClient = method === "none";
+      const created = await control({
+        action: "admin-create",
+        headers: { cookie },
         body: {
-          ...input,
-          [field]: field === "code_verifier" ? verifier : "https://app.fixture.test/callback",
+          client_name: "Precedence client",
+          redirect_uris: ["https://app.fixture.test/callback"],
+          scope: "email",
+          token_endpoint_auth_method: method,
+          require_pkce: required,
+          skip_consent: true,
         },
       });
-      expect(retry.status).toBe(400);
-      expect(await retry.json()).toEqual({
-        error: "invalid_grant",
-        error_description: "invalid code",
-      });
-      denials.push({ status, description, retry: retry.status });
+      expect(created.status).toBe(201);
+      const client = (await created.json()) as any;
+      const pkceRequired = publicClient || required !== false;
+      for (const [name, bound] of [
+        ["missing", true],
+        ["empty", true],
+        ["malformed", true],
+        ["redirect", true],
+        ["secret", true],
+        ["code", true],
+        ["success", true],
+        ["missing", false],
+        ["empty", false],
+        ["malformed", false],
+      ] as const) {
+        if ((!bound && pkceRequired) || (name === "secret" && publicClient)) continue;
+        const produced = await control({
+          action: "authorize",
+          headers: { cookie, accept: "application/json" },
+          query: {
+            client_id: client.client_id,
+            response_type: "code",
+            redirect_uri: "https://app.fixture.test/callback",
+            scope: "email",
+            state: "token-state",
+            ...(bound ? { code_challenge: challenge, code_challenge_method: "S256" } : {}),
+          },
+        });
+        expect(produced.status).toBe(200);
+        const callback = new URL(((await produced.json()) as any).url);
+        const grantCode = callback.searchParams.get("code");
+        expect(grantCode).toBeTruthy();
+        const valid: Record<string, string> = {
+          grant_type: "authorization_code",
+          client_id: client.client_id,
+          code: grantCode!,
+          ...(!publicClient ? { client_secret: client.client_secret } : {}),
+          ...(bound ? { code_verifier: verifier } : {}),
+          redirect_uri: "https://app.fixture.test/callback",
+        };
+        const input = { ...valid };
+        delete input.code_verifier;
+        if (name === "empty") input.code_verifier = "";
+        if (name === "malformed") input.code_verifier = "!";
+        if (name === "redirect") input.redirect_uri = "https://app.fixture.test/other";
+        if (name === "secret") input.client_secret = "wrong-secret";
+        if (name === "code") input.code = "unknown-code";
+        if (name === "success") Object.assign(input, valid);
+        const exchange = (body: Record<string, string>) =>
+          control({
+            action: "protocol-http",
+            path: "/oauth2/token",
+            method: "POST",
+            body,
+            headers: { "x-forwarded-for": `192.0.2.${++tokenRequestNumber}` },
+          });
+        const response = await exchange(input);
+        const early = publicClient && ["missing", "empty", "redirect", "code"].includes(name);
+        const success = name === "success" || (!bound && name !== "malformed");
+        const [status, error, description] = success
+          ? [200, "", ""]
+          : early
+            ? [400, "invalid_request", "Either code_verifier or client_secret is required"]
+            : name === "redirect"
+              ? [400, "invalid_grant", "redirect_uri mismatch"]
+              : name === "code"
+                ? [400, "invalid_grant", "invalid code"]
+                : name === "secret"
+                  ? [400, "invalid_client", "invalid client_secret"]
+                  : name === "malformed"
+                    ? [
+                        401,
+                        "invalid_request",
+                        bound
+                          ? "code verification failed"
+                          : "code_verifier provided but PKCE was not used in authorization",
+                      ]
+                    : pkceRequired
+                      ? [400, "invalid_request", "PKCE is required for this client"]
+                      : [
+                          401,
+                          "invalid_request",
+                          "code_verifier required because PKCE was used in authorization",
+                        ];
+        expect(response.status, `${method}/${required}/${name}/${bound}`).toBe(status);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(response.headers.get("pragma")).toBe("no-cache");
+        expect(response.headers.get("content-type")).toBe("application/json");
+        const value = (await response.json()) as any;
+        if (!success) expect(value).toEqual({ error, error_description: description });
+        const retained = early || name === "code";
+        let issued = success ? value : null;
+        if (!success) {
+          const retry = await exchange(valid);
+          expect(retry.status).toBe(retained ? 200 : 400);
+          if (retained) {
+            issued = await retry.json();
+          } else {
+            expect(await retry.json()).toEqual({
+              error: "invalid_grant",
+              error_description: "invalid code",
+            });
+          }
+        }
+        if (issued) {
+          const row = (await (
+            await control({ action: "token-row", token: issued.access_token })
+          ).json()) as any;
+          expect(row.authorizationCodeId).toBe(
+            createHash("sha256").update(grantCode!).digest("base64url"),
+          );
+          const replayInput = { ...valid };
+          delete replayInput.code_verifier;
+          const replay = await exchange(replayInput);
+          expect(replay.status).toBe(400);
+          expect(await replay.json()).toEqual(
+            publicClient
+              ? {
+                  error: "invalid_request",
+                  error_description: "Either code_verifier or client_secret is required",
+                }
+              : { error: "invalid_grant", error_description: "invalid code" },
+          );
+          const remaining = await (
+            await control({ action: "token-row", token: issued.access_token })
+          ).json();
+          if (publicClient) expect(remaining).not.toBeNull();
+          else expect(remaining).toBeNull();
+          const final = await exchange(valid);
+          expect(final.status).toBe(400);
+          expect(await final.json()).toEqual({
+            error: "invalid_grant",
+            error_description: "invalid code",
+          });
+          expect(
+            await (await control({ action: "token-row", token: issued.access_token })).json(),
+          ).toBeNull();
+        }
+        expect(
+          await (
+            await control({ action: "authority-counts", sessionId: session.session.id })
+          ).json(),
+        ).toEqual({ access: 0, refresh: 0 });
+        denials.push({
+          method,
+          required: required ?? null,
+          name,
+          bound,
+          status,
+          error,
+          description,
+          headers: applicationHeaders(response.headers),
+          retained,
+        });
+      }
     }
-    return {
+    return ctx.snapshot({
+      owner: owner.user,
       denials,
       scope: token.scope,
       type: token.token_type,
@@ -415,6 +547,6 @@ compatScenario(
       persistedScopes: stored.scopes,
       replay: replay.status,
       removed: true,
-    };
+    });
   },
 );

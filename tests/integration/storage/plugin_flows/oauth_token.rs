@@ -445,81 +445,253 @@ async fn oauth_token_exchanges_bound_code_and_revokes_on_replay<B: Backend>(db: 
             .is_none()
     );
 
-    for (field, wrong, status, description) in [
-        (
-            "code_verifier",
-            "wrong-verifier",
-            401,
-            "code verification failed",
-        ),
-        (
-            "redirect_uri",
-            "https://app.fixture.test/other",
-            400,
-            "redirect_uri mismatch",
-        ),
+    // This token owner, not registration, owns missing-verifier precedence and
+    // whether rejection consumes a genuine grant or revokes issued authority.
+    for (method, required) in [
+        ("none", Some(false)),
+        ("client_secret_post", None),
+        ("client_secret_post", Some(true)),
+        ("client_secret_post", Some(false)),
     ] {
-        let produced = Box::pin(
-            auth.dispatch_endpoint(
-                OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
-                EndpointOptions {
-                    headers: Some(
-                        [
-                            ("cookie".into(), cookies(&owner)),
-                            ("accept".into(), "application/json".into()),
-                        ]
-                        .into_iter()
-                        .collect(),
-                    ),
-                    request: Some(request("/oauth2/authorize", None, "")),
-                    ..Default::default()
-                },
-            ),
-        )
+        let public = method == "none";
+        let mut metadata = json!({"client_name":"Precedence client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":method,"skip_consent":true});
+        if let Some(required) = required {
+            metadata["require_pkce"] = json!(required);
+        }
+        let created = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::admin_create_oauth_client_endpoint(&metadata)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
         .await?
         .into_response()?;
-        let callback = url::Url::parse(body(&produced)["url"].as_str().unwrap())?;
-        let code = callback
-            .query_pairs()
-            .find(|(key, _)| key == "code")
-            .unwrap()
-            .1
-            .into_owned();
-        let mut input = json!({"grant_type":"authorization_code","client_id":id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
-        input[field] = json!(wrong);
-        let denied = Box::pin(auth.dispatch_endpoint(
-            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?,
-            EndpointOptions {
-                request: Some(request("/oauth2/token", Some(input.clone()), "")),
-                ..Default::default()
-            },
-        ))
-        .await
-        .unwrap_err();
-        assert_eq!(denied.error.status_code(), status);
-        assert_eq!(
-            denied.body.unwrap().to_json_value()?,
-            json!({"error":if status==401{"invalid_request"}else{"invalid_grant"},"error_description":description})
-        );
-        input[field] = json!(if field == "code_verifier" {
-            verifier
-        } else {
-            "https://app.fixture.test/callback"
-        });
-        let retry = Box::pin(auth.dispatch_endpoint(
-            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?,
-            EndpointOptions {
-                request: Some(request("/oauth2/token", Some(input), "")),
-                ..Default::default()
-            },
-        ))
-        .await
-        .unwrap_err();
-        assert_eq!(retry.error.status_code(), 400);
-        assert_eq!(
-            retry.body.unwrap().to_json_value()?,
-            json!({"error":"invalid_grant","error_description":"invalid code"})
-        );
+        assert_eq!(created.status, 201);
+        let client = body(&created);
+        let pkce_required = public || required != Some(false);
+        for (case, bound) in [
+            ("missing", true),
+            ("empty", true),
+            ("malformed", true),
+            ("redirect", true),
+            ("secret", true),
+            ("code", true),
+            ("success", true),
+            ("missing", false),
+            ("empty", false),
+            ("malformed", false),
+        ] {
+            if (!bound && pkce_required) || (case == "secret" && public) {
+                continue;
+            }
+            let mut query = query.clone();
+            query["client_id"] = client["client_id"].clone();
+            if !bound {
+                _ = query.as_object_mut().unwrap().remove("code_challenge");
+                _ = query
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("code_challenge_method");
+            }
+            let produced = Box::pin(
+                auth.dispatch_endpoint(
+                    OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
+                    EndpointOptions {
+                        headers: Some(
+                            [
+                                ("cookie".into(), cookies(&owner)),
+                                ("accept".into(), "application/json".into()),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                        request: Some(request("/oauth2/authorize", None, "")),
+                        ..Default::default()
+                    },
+                ),
+            )
+            .await?
+            .into_response()?;
+            let callback = url::Url::parse(body(&produced)["url"].as_str().unwrap())?;
+            let code = callback
+                .query_pairs()
+                .find(|(key, _)| key == "code")
+                .unwrap()
+                .1
+                .into_owned();
+            let mut valid = json!({"grant_type":"authorization_code","client_id":client["client_id"],"code":code,"redirect_uri":"https://app.fixture.test/callback"});
+            if !public {
+                valid["client_secret"] = client["client_secret"].clone();
+            }
+            if bound {
+                valid["code_verifier"] = json!(verifier);
+            }
+            let mut input = valid.clone();
+            _ = input.as_object_mut().unwrap().remove("code_verifier");
+            match case {
+                "empty" => input["code_verifier"] = json!(""),
+                "malformed" => input["code_verifier"] = json!("!"),
+                "redirect" => input["redirect_uri"] = json!("https://app.fixture.test/other"),
+                "secret" => input["client_secret"] = json!("wrong-secret"),
+                "code" => input["code"] = json!("unknown-code"),
+                "success" => input = valid.clone(),
+                _ => {}
+            }
+            let public_request = |input: &Value| {
+                let mut req = request("/oauth2/token", None, "");
+                req.method = HttpMethod::Post;
+                _ = req.headers.insert(
+                    "content-type".into(),
+                    "application/x-www-form-urlencoded".into(),
+                );
+                req.body = Some(
+                    url::form_urlencoded::Serializer::new(String::new())
+                        .extend_pairs(
+                            input
+                                .as_object()
+                                .unwrap()
+                                .iter()
+                                .map(|(key, value)| (key.as_str(), value.as_str().unwrap())),
+                        )
+                        .finish()
+                        .into_bytes(),
+                );
+                req
+            };
+            let output = Box::pin(auth.handle_request(public_request(&input))).await?;
+            let early = public && matches!(case, "missing" | "empty" | "redirect" | "code");
+            let success = case == "success" || (!bound && case != "malformed");
+            let (status, error, description) = if success {
+                (200, "", "")
+            } else if early {
+                (
+                    400,
+                    "invalid_request",
+                    "Either code_verifier or client_secret is required",
+                )
+            } else if case == "redirect" {
+                (400, "invalid_grant", "redirect_uri mismatch")
+            } else if case == "code" {
+                (400, "invalid_grant", "invalid code")
+            } else if case == "secret" {
+                (400, "invalid_client", "invalid client_secret")
+            } else if case == "malformed" {
+                (
+                    401,
+                    "invalid_request",
+                    if bound {
+                        "code verification failed"
+                    } else {
+                        "code_verifier provided but PKCE was not used in authorization"
+                    },
+                )
+            } else if pkce_required {
+                (400, "invalid_request", "PKCE is required for this client")
+            } else {
+                (
+                    401,
+                    "invalid_request",
+                    "code_verifier required because PKCE was used in authorization",
+                )
+            };
+            assert_eq!(
+                output.status,
+                status,
+                "{method}/{required:?}/{case}/{bound}: {}",
+                body(&output)
+            );
+            assert_eq!(
+                output.headers.get("cache-control").map(String::as_str),
+                Some("no-store")
+            );
+            assert_eq!(
+                output.headers.get("pragma").map(String::as_str),
+                Some("no-cache")
+            );
+            assert_eq!(
+                output.headers.get("content-type").map(String::as_str),
+                Some("application/json")
+            );
+            let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .encode(sha2::Sha256::digest(&code));
+            let retained = early || case == "code";
+            assert_eq!(
+                auth.store()
+                    .get_verification_by_identifier(&hash)
+                    .await?
+                    .is_some(),
+                retained
+            );
+            if !success {
+                assert_eq!(
+                    body(&output),
+                    json!({"error":error,"error_description":description})
+                );
+            }
+            let mut token = if success { body(&output) } else { Value::Null };
+            if !success {
+                let retry = Box::pin(auth.handle_request(public_request(&valid))).await?;
+                if retained {
+                    assert_eq!(retry.status, 200);
+                    token = body(&retry);
+                } else {
+                    assert_eq!(retry.status, 400);
+                    assert_eq!(
+                        body(&retry),
+                        json!({"error":"invalid_grant","error_description":"invalid code"})
+                    );
+                }
+            }
+            if let Some(access) = token["access_token"].as_str() {
+                let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(access));
+                // A verifier-free replay is rejected before consumption for public
+                // clients, but must reach replay revocation for confidential ones.
+                let mut replay = valid.clone();
+                _ = replay.as_object_mut().unwrap().remove("code_verifier");
+                let replay = Box::pin(auth.handle_request(public_request(&replay))).await?;
+                assert_eq!(replay.status, 400);
+                assert_eq!(
+                    body(&replay),
+                    if public {
+                        json!({"error":"invalid_request","error_description":"Either code_verifier or client_secret is required"})
+                    } else {
+                        json!({"error":"invalid_grant","error_description":"invalid code"})
+                    }
+                );
+                assert_eq!(
+                    auth.store()
+                        .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+                        .await?
+                        .is_some(),
+                    public
+                );
+                let _ = Box::pin(auth.handle_request(public_request(&valid))).await?;
+                assert!(
+                    auth.store()
+                        .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+                        .await?
+                        .is_none()
+                );
+            }
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM \"oauthAccessToken\" WHERE \"clientId\" = $1",
+                    &[client["client_id"].as_str().unwrap()]
+                )
+                .await?,
+                0
+            );
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM \"oauthRefreshToken\" WHERE \"clientId\" = $1",
+                    &[client["client_id"].as_str().unwrap()]
+                )
+                .await?,
+                0
+            );
+        }
     }
     Ok(())
 }
