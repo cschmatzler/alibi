@@ -1,7 +1,10 @@
 //! A real authorization grant is consumed once, with PKCE and redirect binding.
+use super::oauth_extension_claims::extension_claims;
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
+use alibi::plugins::{
+    OAuthProviderConfig, OAuthProviderPlugin, OAuthTokenIssueParams, jwt::JwtPlugin,
+};
 use base64::Engine as _;
 use sha2::Digest as _;
 backend_tests!(
@@ -15,9 +18,16 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let live = Arc::new(extension_claims::LiveIdTokenClaims::default());
+    *live.value.lock().unwrap() = Some("code".into());
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        extensions: extension_claims::extensions_with_live(None),
+        custom_id_token_claims: Some(live.clone()),
+        ..Default::default()
+    });
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(JwtPlugin::new())
-        .plugin(OAuthProviderPlugin::new())
+        .plugin(provider.clone())
         .build()
         .await?;
     let owner = signup(&auth, "oidc-owner@example.test").await;
@@ -27,7 +37,7 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
     ]
     .into_iter()
     .collect();
-    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email profile","token_endpoint_auth_method":"none","skip_consent":true}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
+    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","adminCreateOAuthClient").with_body(&json!({"client_name":"Token client","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email profile","token_endpoint_auth_method":"none","skip_consent":true,"enable_end_session":true,"metadata":{"tenant":"application"}}))?, EndpointOptions {headers:Some(headers), ..Default::default()})).await?.into_response()?;
     assert_eq!(created.status, 201);
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
     let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -131,7 +141,18 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
     let digest = sha2::Sha512::digest(plaintext);
     let expected_hash = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&digest[..32]);
     assert_eq!(payload["at_hash"], expected_hash);
-    for field in ["email", "email_verified", "name", "picture", "sid"] {
+    assert_eq!(payload.get("name"), Some(&json!("ID operator code")));
+    assert_eq!(payload["email"], "id-code@example.test");
+    assert_eq!(payload["email_verified"], true);
+    assert_eq!(payload["extension_owner"], "id-operator-code");
+    assert_eq!(payload["per_request"], "id-operator-code");
+    assert_eq!(payload["sid"], body(&observed)["session"]["id"]);
+    assert_eq!(
+        payload["cnf"],
+        json!({"operator":"code"}),
+        "cnf is not in the reference ID reserved set"
+    );
+    for field in ["picture", "nbf", "jti", "amr", "azp", "c_hash", "s_hash"] {
         assert!(!payload.contains_key(field));
     }
     let parts = id_token.split('.').collect::<Vec<_>>();
@@ -165,6 +186,114 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
             .await?
             .is_none()
     );
+    let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let client = provider.get_client(auth.context(), &id).await?.unwrap();
+    let user = auth.store().get_user_by_id(&user_id).await?.unwrap();
+    let session_id = body(&observed)["session"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let mut params = OAuthTokenIssueParams::new(
+        client,
+        vec!["openid".into(), "email".into(), "profile".into()],
+    );
+    params.user = Some(auth.context().trusted_user_view(&user));
+    params.session_id = Some(session_id.clone());
+    params.auth_time = chrono::DateTime::from_timestamp(actual_time, 0);
+    params.nonce = Some("api-nonce".into());
+    params.id_token_claims = Some(
+        json!({"name":"Request name","email":"request@example.test","extension_owner":"request","per_request":"request","request_only":"retained"}),
+    );
+    let call = alibi::endpoint::EndpointCall::new(
+        &alibi::endpoint::EndpointDefinition {
+            name: "idClaims",
+            operation_id: "idClaims",
+            path: None,
+            method: HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    *live.value.lock().unwrap() = Some("api".into());
+    let issued = provider
+        .issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:id-claims"),
+            &params,
+        )
+        .await?;
+    let claims = verifier
+        .verify_jwt(
+            issued["id_token"].as_str().unwrap(),
+            Some(&issuer),
+            None,
+            auth.context(),
+        )
+        .await?
+        .unwrap();
+    assert_eq!(claims["name"], "ID operator api");
+    assert_eq!(claims["email"], "id-api@example.test");
+    assert_eq!(claims["extension_owner"], "id-operator-api");
+    assert_eq!(claims["per_request"], "id-operator-api");
+    assert_eq!(claims["request_only"], "retained");
+    assert_eq!(claims["nonce"], "api-nonce");
+    assert_eq!(claims["sub"], user_id);
+    assert_eq!(claims["sid"], session_id);
+    for error in ["api", "ordinary"] {
+        *live.error.lock().unwrap() = error.into();
+        let before = auth
+            .store()
+            .list_oauth_tokens_for_session(alibi::store::OAuthTokenKind::Access, &session_id)
+            .await?
+            .len();
+        let rejected = provider
+            .issue_tokens(
+                auth.context(),
+                &call,
+                Some("urn:fixture:id-claims"),
+                &params,
+            )
+            .await
+            .unwrap_err();
+        if error == "api" {
+            assert!(
+                matches!(rejected.error, alibi::AuthError::Api {status:400,code:Some(ref code),ref message} if code=="ID_CLAIM_REJECTED" && message=="ID callback rejected")
+            );
+        } else {
+            assert!(
+                matches!(rejected.error, alibi::AuthError::Internal(ref message) if message=="ID callback failed")
+            );
+        }
+        assert_eq!(
+            auth.store()
+                .list_oauth_tokens_for_session(alibi::store::OAuthTokenKind::Access, &session_id)
+                .await?
+                .len(),
+            before + 1,
+            "the ID operator runs after actual opaque access issuance even when it rejects"
+        );
+    }
+    let calls = live.calls.lock().unwrap().clone();
+    assert_eq!(
+        calls,
+        vec![
+            json!({"userId":user_id,"userName":"Native owner","userEmail":"oidc-owner@example.test","scopes":["openid","email","profile"],"metadata":{"tenant":"application"}});
+            4
+        ]
+    );
+    params.scopes = vec!["email".into()];
+    let without_id = provider
+        .issue_tokens(
+            auth.context(),
+            &call,
+            Some("urn:fixture:id-claims"),
+            &params,
+        )
+        .await?;
+    assert!(without_id.get("id_token").is_none());
+    assert_eq!(*live.calls.lock().unwrap(), calls);
     Ok(())
 }
 

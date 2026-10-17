@@ -422,6 +422,48 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     calls: [] as any[],
     events: [] as string[],
   };
+  const idTokenClaims = { value: null as string | null, error: "", calls: [] as any[] };
+  const customIdTokenClaims = async ({ user, scopes, metadata }: any) => {
+    if (idTokenClaims.value === null) return {};
+    idTokenClaims.calls.push({
+      userId: user.id,
+      userName: user.name ?? null,
+      userEmail: user.email ?? null,
+      scopes,
+      metadata: metadata ?? null,
+    });
+    if (idTokenClaims.error === "api")
+      throw new APIError("BAD_REQUEST", {
+        code: "ID_CLAIM_REJECTED",
+        message: "ID callback rejected",
+      });
+    if (idTokenClaims.error === "ordinary") throw new Error("ID callback failed");
+    const value = idTokenClaims.value;
+    return {
+      name: `ID operator ${value}`,
+      email: `id-${value}@example.test`,
+      email_verified: true,
+      extension_owner: `id-operator-${value}`,
+      per_request: `id-operator-${value}`,
+      iss: "https://forged.fixture.test",
+      sub: "forged",
+      aud: "forged",
+      iat: 1,
+      exp: 2,
+      nbf: 1,
+      jti: "forged",
+      nonce: "forged",
+      azp: "forged",
+      sid: "forged",
+      auth_time: 1,
+      acr: "forged",
+      amr: ["forged"],
+      at_hash: "forged",
+      c_hash: "forged",
+      s_hash: "forged",
+      cnf: { operator: value },
+    };
+  };
   const customUserInfoClaims = async ({ user, scopes, jwt, requestedClaims }: any) => {
     if (userInfoClaims.value === null) return {};
     userInfoClaims.events.push("operator");
@@ -563,6 +605,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               consentPage: "/consent",
               ...(ctx.body.expiryProfile ? expiryPolicy : {}),
               ...(ctx.body.claimsProfile ? { extensions: claimExtensions() } : {}),
+              ...(ctx.body.idClaimsProfile ? { customIdTokenClaims } : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
@@ -876,6 +919,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           consentPage: "/consent",
           extensions: claimExtensions(),
           customUserInfoClaims,
+          customIdTokenClaims,
         }),
         issuanceHelper,
       ],
@@ -1262,6 +1306,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         userInfoClaims.events.length = 0;
       }
       return Response.json(userInfoClaims);
+    }
+    if (input.action === "id-claims-state") {
+      if (typeof input.value === "string" || input.value === null)
+        idTokenClaims.value = input.value;
+      if (typeof input.error === "string") idTokenClaims.error = input.error;
+      if (input.reset) idTokenClaims.calls.length = 0;
+      return Response.json(idTokenClaims);
     }
     if (input.action === "backchannel-uri") {
       // Install a local RP on a persisted client. Public-host admission belongs
@@ -1795,6 +1846,19 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return (auth.api as any).dpopFixture({ body: input.body, asResponse: true });
     }
     if (input.action === "issue-tokens") {
+      if (input.captureError) {
+        try {
+          return Response.json({
+            result: await (auth.api as any).issueTokensFixture({ body: input.body }),
+          });
+        } catch (error: any) {
+          return Response.json(
+            error instanceof EndpointAPIError
+              ? { apiError: { status: error.statusCode, ...error.body } }
+              : { ordinaryError: error.message },
+          );
+        }
+      }
       return (auth.api as any).issueTokensFixture({
         body: input.body,
         headers: input.headers ? new Headers(input.headers) : undefined,

@@ -463,7 +463,7 @@ impl OAuthProviderPlugin {
         }
         if p.user.is_some() && p.scopes.iter().any(|s| s == "openid") {
             let proof = json!({"userId":p.user.as_ref().map(|u|u.id().as_ref().to_owned()),"sessionId":p.session_id,"authTime":p.auth_time.map(|t|t.timestamp_millis()),"query":{"nonce":p.nonce},"idTokenClaims":p.id_token_claims});
-            match Box::pin(self.issue_id_token(&p.client, &proof, &access, req, ctx)).await? {
+            match Box::pin(self.issue_id_token(p, grant_type, &proof, &access, req, ctx)).await? {
                 Ok(Some(token)) => {
                     _ = response.insert("id_token".into(), json!(token));
                 }

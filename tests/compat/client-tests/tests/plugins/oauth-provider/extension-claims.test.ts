@@ -394,6 +394,10 @@ compatScenario(
       }
       expect(await operatorState()).toEqual(operator);
       await operatorState({ value: null });
+      expect(
+        (await control({ action: "id-claims-state", value: "refresh", error: "", reset: true }))
+          .status,
+      ).toBe(200);
       const refresh = await control({
         action: "token",
         headers: { "x-claims-caller": "refresh-caller" },
@@ -411,15 +415,34 @@ compatScenario(
       const refreshedId = (
         await jwtVerify(renewed.id_token, keys, { issuer, audience: client.client_id })
       ).payload;
-      expect(refreshedId.extension_owner).toBe("first");
+      expect(refreshedId.extension_owner).toBe("id-operator-refresh");
+      expect(refreshedId.name).toBe("ID operator refresh");
+      expect(refreshedId.email).toBe("id-refresh@example.test");
+      expect(refreshedId.nonce).toBeUndefined();
       expect((refreshedId.extension_first as any).grant).toBe("refresh_token");
       expect((refreshedId.extension_first as any).caller).toBe("refresh-caller");
-      expect(refreshedId.per_request).toBe("first");
+      expect(refreshedId.per_request).toBe("id-operator-refresh");
+      const idCallbackResponse = await control({ action: "id-claims-state" });
+      expect(idCallbackResponse.status).toBe(200);
+      const idCallback = (await idCallbackResponse.json()) as any;
+      expect(idCallback.calls).toEqual([
+        {
+          userId: owner.user.id,
+          userName: "Claim Owner",
+          userEmail: owner.user.email,
+          scopes: ["openid", "profile", "email", "offline_access"],
+          metadata: { tenant: "application" },
+        },
+      ]);
+      expect(
+        (await control({ action: "id-claims-state", value: null, error: "", reset: true })).status,
+      ).toBe(200);
       receipts.push({
         signedAccess: Boolean(resources),
         owner: claims.extension_owner,
         perRequest: id.per_request,
         refreshedGrant: (refreshedId.extension_first as any).grant,
+        idCallback,
         overrides,
         operator: {
           ...operator,

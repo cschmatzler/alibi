@@ -10,7 +10,7 @@ pub(super) struct ExtensionClaims {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct LiveAccessClaims {
+pub(crate) struct LiveAccessClaims {
     pub value: std::sync::Mutex<String>,
     pub calls: std::sync::Mutex<Vec<Value>>,
 }
@@ -22,6 +22,50 @@ pub(crate) struct LiveUserInfoClaims {
     pub calls: std::sync::Mutex<Vec<Value>>,
     pub events: std::sync::Mutex<Vec<String>>,
     pub contexts: std::sync::Mutex<Vec<Value>>,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct LiveIdTokenClaims {
+    pub value: std::sync::Mutex<Option<String>>,
+    pub error: std::sync::Mutex<String>,
+    pub calls: std::sync::Mutex<Vec<Value>>,
+}
+
+#[async_trait::async_trait]
+impl alibi::plugins::OAuthTokenClaimsContributor for LiveIdTokenClaims {
+    async fn contribute(
+        &self,
+        input: OAuthTokenClaimsInput<'_>,
+    ) -> alibi::AuthResult<Map<String, Value>> {
+        let Some(value) = self.value.lock().unwrap().clone() else {
+            return Ok(Map::new());
+        };
+        self.calls.lock().unwrap().push(json!({
+            "userId":input.params.user.as_ref().map(|user| &user.id),
+            "userName":input.params.user.as_ref().and_then(|user| user.name.as_ref()),
+            "userEmail":input.params.user.as_ref().and_then(|user| user.email.as_ref()),
+            "scopes":input.params.scopes,"metadata":input.metadata,
+        }));
+        match self.error.lock().unwrap().as_str() {
+            "api" => {
+                return Err(alibi::AuthError::Api {
+                    status: 400,
+                    code: Some("ID_CLAIM_REJECTED".into()),
+                    message: "ID callback rejected".into(),
+                });
+            }
+            "ordinary" => return Err(alibi::AuthError::internal("ID callback failed")),
+            _ => {}
+        }
+        Ok(json!({
+            "name":format!("ID operator {value}"),"email":format!("id-{value}@example.test"),"email_verified":true,
+            "extension_owner":format!("id-operator-{value}"),"per_request":format!("id-operator-{value}"),
+            "iss":"https://forged.fixture.test","sub":"forged","aud":"forged","iat":1,"exp":2,"nbf":1,"jti":"forged",
+            "nonce":"forged","azp":"forged","sid":"forged","auth_time":1,"acr":"forged","amr":["forged"],
+            "at_hash":"forged","c_hash":"forged","s_hash":"forged",
+            "cnf":{"operator":value},
+        }).as_object().unwrap().clone())
+    }
 }
 
 #[async_trait::async_trait]
@@ -162,7 +206,7 @@ impl alibi::plugins::OAuthUserInfoClaimsContributor for ExtensionClaims {
         }).as_object().unwrap().clone())
     }
 }
-pub(super) fn extensions_with_live(
+pub(crate) fn extensions_with_live(
     live: Option<std::sync::Arc<LiveAccessClaims>>,
 ) -> Vec<std::sync::Arc<alibi::plugins::OAuthProviderExtension>> {
     extensions_with_state(live, None)

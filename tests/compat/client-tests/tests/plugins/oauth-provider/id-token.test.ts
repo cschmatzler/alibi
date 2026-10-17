@@ -10,11 +10,11 @@ compatScenario(
   "OpenID code exchange issues a signed ID token bound to the actual client, session and access token",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: unknown) =>
+    const control = (input: object) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ mode: "claims", ...input }),
       });
     const signup = await control({
       action: "signup",
@@ -35,6 +35,7 @@ compatScenario(
         scope: "openid email profile",
         token_endpoint_auth_method: "none",
         skip_consent: true,
+        metadata: { tenant: "application" },
       },
     });
     expect(created.status).toBe(201);
@@ -68,6 +69,12 @@ compatScenario(
       code_verifier: verifier,
       redirect_uri: "https://app.fixture.test/callback",
     };
+    const idState = async (input: object = {}) => {
+      const response = await control({ action: "id-claims-state", ...input });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    await idState({ value: "code", error: "", reset: true });
     const response = await control({ action: "token", body: input });
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
@@ -107,7 +114,15 @@ compatScenario(
         .subarray(0, 32)
         .toString("base64url"),
     );
-    for (const field of ["email", "email_verified", "name", "picture", "sid"]) {
+    expect(payload.name).toBe("ID operator code");
+    expect(payload.email).toBe("id-code@example.test");
+    expect(payload.email_verified).toBe(true);
+    expect(payload.extension_owner).toBe("id-operator-code");
+    expect(payload.per_request).toBe("id-operator-code");
+    expect(payload.sid).toBeUndefined();
+    // cnf is deliberately not part of the pinned ID-token reserved set.
+    expect(payload.cnf).toEqual({ operator: "code" });
+    for (const field of ["picture", "nbf", "jti", "amr", "azp", "c_hash", "s_hash"]) {
       expect(payload[field]).toBeUndefined();
     }
     const parts = token.id_token.split(".");
@@ -163,6 +178,119 @@ compatScenario(
         rightFinishedAt: Date.now(),
       }).filter((difference) => difference.reason.includes("access-token expiration")),
     ).toHaveLength(1);
-    return ctx.snapshot({ authorizationSession: session, clientId: id, issued: token });
+    const params = {
+      scopes: ["openid", "email", "profile"],
+      sessionId: session.session.id,
+      authTime: session.session.createdAt,
+      nonce: "api-nonce",
+      idTokenClaims: {
+        name: "Request name",
+        email: "request@example.test",
+        extension_owner: "request",
+        per_request: "request",
+        request_only: "retained",
+      },
+    };
+    const issue = (extra: object = {}) =>
+      control({
+        action: "issue-tokens",
+        ...extra,
+        body: {
+          claimsProfile: true,
+          idClaimsProfile: true,
+          clientId: id,
+          userId: session.user.id,
+          grantType: "urn:fixture:id-claims",
+          params,
+        },
+      });
+    await idState({ value: "api" });
+    const extraResponse = await issue();
+    expect(extraResponse.status).toBe(200);
+    const extra = (await extraResponse.json()) as any;
+    const extraPayload = (
+      await jwtVerify(extra.id_token, jwksVerifier, {
+        issuer: `${ctx.baseURL}/api/auth`,
+        audience: id,
+      })
+    ).payload;
+    expect(extraPayload).toMatchObject({
+      name: "ID operator api",
+      email: "id-api@example.test",
+      extension_owner: "id-operator-api",
+      per_request: "id-operator-api",
+      request_only: "retained",
+      nonce: "api-nonce",
+      sub: session.user.id,
+    });
+    expect(extraPayload.sid).toBeUndefined();
+    expect(extraPayload.auth_time).toBe(Math.floor(Date.parse(session.session.createdAt) / 1000));
+    expect(extraPayload.exp! - extraPayload.iat!).toBe(36_000);
+    expect(extraPayload.at_hash).toBe(
+      createHash("sha512")
+        .update(extra.access_token)
+        .digest()
+        .subarray(0, 32)
+        .toString("base64url"),
+    );
+    const counts = async () => {
+      const response = await control({ action: "authority-counts", sessionId: session.session.id });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    const failures = [];
+    for (const error of ["api", "ordinary"]) {
+      await idState({ error });
+      const before = await counts();
+      const rejected = await issue({ captureError: true });
+      expect(rejected.status).toBe(200);
+      const receipt = await rejected.json();
+      expect(receipt).toEqual(
+        error === "api"
+          ? {
+              apiError: { status: 400, code: "ID_CLAIM_REJECTED", message: "ID callback rejected" },
+            }
+          : { ordinaryError: "ID callback failed" },
+      );
+      const after = await counts();
+      expect(after).toEqual({ ...before, access: before.access + 1 });
+      failures.push({ error, receipt });
+    }
+    const calls = (await idState()).calls;
+    expect(calls).toEqual(
+      Array.from({ length: 4 }, () => ({
+        userId: session.user.id,
+        userName: "Owner",
+        userEmail: session.user.email,
+        scopes: ["openid", "email", "profile"],
+        metadata: { tenant: "application" },
+      })),
+    );
+    params.scopes = ["email"];
+    const noId = await issue();
+    expect(noId.status).toBe(200);
+    expect(await noId.json()).not.toHaveProperty("id_token");
+    expect((await idState()).calls).toEqual(calls);
+    await idState({ value: null, error: "", reset: true });
+    return ctx.snapshot({
+      authorizationSession: session,
+      clientId: id,
+      issued: token,
+      // Core bindings are verified against this issuance above; keep the
+      // operator/per-request values as the differential receipt. The original
+      // bound JWT remains in the harness's canonical `issued` observation.
+      extraClaims: {
+        name: extraPayload.name,
+        email: extraPayload.email,
+        email_verified: extraPayload.email_verified,
+        extension_owner: extraPayload.extension_owner,
+        per_request: extraPayload.per_request,
+        request_only: extraPayload.request_only,
+        cnf: extraPayload.cnf,
+        nonce: extraPayload.nonce,
+      },
+      failures,
+      calls,
+    });
   },
 );

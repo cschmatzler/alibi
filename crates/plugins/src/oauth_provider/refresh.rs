@@ -349,7 +349,9 @@ impl OAuthProviderPlugin {
                 .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
                 .map(|value| value.timestamp_millis());
             let proof = json!({"userId":user_id,"sessionId":original.session_id,"authTime":auth_time,"query":{},"idTokenClaims":params.id_token_claims});
-            match Box::pin(self.issue_id_token(&client, &proof, &access, req, ctx)).await? {
+            match Box::pin(self.issue_id_token(&params, "refresh_token", &proof, &access, req, ctx))
+                .await?
+            {
                 Ok(Some(token)) => {
                     _ = response.insert("id_token".into(), json!(token));
                 }

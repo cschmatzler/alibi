@@ -243,6 +243,7 @@ pub(crate) async fn router(
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
+    let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
     for mode in [
         "extension-grant",
         "pairwise",
@@ -337,6 +338,7 @@ pub(crate) async fn router(
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
         if mode=="claims" {provider.extensions=extension_claims::extensions_with_user_info(user_info_claims.clone());}
+        if mode=="claims" {provider.custom_id_token_claims=Some(id_token_claims.clone());}
         if matches!(mode,"claims"|"pairwise") {provider.custom_user_info_claims=Some(user_info_claims.clone());}
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
@@ -367,6 +369,7 @@ pub(crate) async fn router(
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
         let user_info_claims=user_info_claims.clone();
+        let id_token_claims=id_token_claims.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -401,6 +404,12 @@ pub(crate) async fn router(
                     user_info_claims.contexts.lock().unwrap().clear();
                 }
                 return axum::Json(serde_json::json!({"value":*user_info_claims.value.lock().unwrap(),"calls":*user_info_claims.calls.lock().unwrap(),"events":*user_info_claims.events.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="id-claims-state" {
+                if let Some(value)=input.get("value") {*id_token_claims.value.lock().unwrap()=value.as_str().map(str::to_owned);}
+                if let Some(value)=input["error"].as_str(){*id_token_claims.error.lock().unwrap()=value.into();}
+                if input["reset"]==true {id_token_claims.calls.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"value":*id_token_claims.value.lock().unwrap(),"error":*id_token_claims.error.lock().unwrap(),"calls":*id_token_claims.calls.lock().unwrap()})).into_response();
             }
             if input["action"]=="backchannel-uri" {
                 let id=input["clientId"].as_str().unwrap();
@@ -454,6 +463,7 @@ pub(crate) async fn router(
             if input["action"]=="issue-tokens" {
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
                 if body["claimsProfile"]==true {config.extensions=extension_claims::extensions_with_live(None);}
+                if body["idClaimsProfile"]==true {config.custom_id_token_claims=Some(id_token_claims.clone());}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
@@ -465,7 +475,15 @@ pub(crate) async fn router(
                 if let Some(token)=body["originalRefreshToken"].as_str(){let protected=provider.hash_token(token,"refresh_token").await.unwrap();let mut retained=auth.store().get_oauth_token(alibi::store::OAuthTokenKind::Refresh,&protected).await.unwrap().unwrap();if let Some(token)=body["snapshotToken"].as_str(){retained.token=token.into();}params.refresh_token=Some(retained);}
                 params.access_token_claims=values.get("accessTokenClaims").cloned();params.id_token_claims=values.get("idTokenClaims").cloned();params.token_response=values.get("tokenResponse").cloned();params.confirmation=values.get("confirmation").cloned();params.verification_value=values.get("verificationValue").cloned();
                 let call=alibi::endpoint::EndpointCall::new(&alibi::endpoint::EndpointDefinition{name:"issueTokensFixture",operation_id:"issueTokensFixture",path:Some("/fixture/issue-tokens".into()),method:alibi::HttpMethod::Post},None,None,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),..Default::default()});
-                return match provider.issue_tokens(auth.context(),&call,body["grantType"].as_str(),&params).await {
+                let result=provider.issue_tokens(auth.context(),&call,body["grantType"].as_str(),&params).await;
+                if input["captureError"]==true {
+                    return axum::Json(match result {Ok(value)=>serde_json::json!({"result":value}),Err(error)=>match error.error {
+                        alibi::AuthError::Api{status,code,message}=>serde_json::json!({"apiError":{"status":status,"code":code,"message":message}}),
+                        alibi::AuthError::Internal(message)=>serde_json::json!({"ordinaryError":message}),
+                        other=>panic!("unexpected issuance error: {other}"),
+                    }}).into_response();
+                }
+                return match result {
                     Ok(payload)=>axum::Json(payload).into_response(),
                     Err(error)=>{let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}response.to_response().unwrap().into_response()}
                 };

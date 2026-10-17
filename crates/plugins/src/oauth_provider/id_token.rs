@@ -1,26 +1,83 @@
 //! Provider-owned OIDC claims signed through the installed JWT plugin.
 use super::OAuthProviderPlugin;
 use alibi_core::session::SessionRequest;
-use alibi_core::store::OAuthClient;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256, Sha384, Sha512};
+
+// The pinned ID-token reserved set is intentionally narrower than access-token
+// authority (for example, cnf is not reserved here).
+fn reserved_claim(name: &str) -> bool {
+    matches!(
+        name,
+        "iss"
+            | "sub"
+            | "aud"
+            | "exp"
+            | "nbf"
+            | "iat"
+            | "jti"
+            | "auth_time"
+            | "nonce"
+            | "acr"
+            | "amr"
+            | "azp"
+            | "sid"
+            | "at_hash"
+            | "c_hash"
+            | "s_hash"
+    )
+}
+
 impl OAuthProviderPlugin {
     pub(super) async fn issue_id_token<S: AuthSchema>(
         &self,
-        client: &OAuthClient,
+        params: &super::OAuthTokenIssueParams,
+        grant_type: &str,
         proof: &Value,
         access_token: &str,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<Option<String>, alibi_core::endpoint::EndpointResponse>> {
+        let client = &params.client;
+        let issued = chrono::Utc::now().timestamp();
+        let subject = self.resolve_subject(
+            proof
+                .get("userId")
+                .and_then(Value::as_str)
+                .ok_or_else(|| AuthError::internal("Missing ID token user"))?,
+            client,
+        )?;
+        // This owner is called after access issuance, unlike the additive ID
+        // contributors collected during grant preparation. Run before key
+        // selection, including public clients that ultimately omit the ID token.
+        let mut payload = if let Some(contributor) = &self.config.custom_id_token_claims {
+            contributor
+                .contribute(super::OAuthTokenClaimsInput {
+                    context: super::extension_claims::callback_context(ctx, req),
+                    options: &self.config,
+                    params,
+                    grant_type: Some(grant_type),
+                    metadata: alibi_core::store::oauth_clients::metadata_to_columns(
+                        client.metadata.clone(),
+                    )?
+                    .get("metadata")
+                    .filter(|value| !value.is_null())
+                    .cloned(),
+                })
+                .await?
+                .into_iter()
+                .filter(|(key, _)| !reserved_claim(key))
+                .collect()
+        } else {
+            serde_json::Map::new()
+        };
         if self.config.disable_jwt_plugin
             && client.client_secret.as_ref().is_none_or(String::is_empty)
         {
             return Ok(Ok(None));
         }
-        let issued = chrono::Utc::now().timestamp();
         let jwt = if self.config.disable_jwt_plugin {
             None
         } else {
@@ -74,14 +131,7 @@ impl OAuthProviderPlugin {
             .as_ref()
             .and_then(|options| options.issuer.as_ref())
             .unwrap_or(&base);
-        let subject = self.resolve_subject(
-            proof
-                .get("userId")
-                .and_then(Value::as_str)
-                .ok_or_else(|| AuthError::internal("Missing ID token user"))?,
-            client,
-        )?;
-        let mut payload=json!({"iss":issuer,"sub":subject,"aud":client.client_id,"iat":issued,"exp":super::issuance::expiration(issued,self.config.id_token_expires_in)?,"acr":"0","at_hash":access_hash}).as_object().cloned().ok_or_else(||AuthError::internal("Invalid OIDC claims"))?;
+        payload.extend(json!({"iss":issuer,"sub":subject,"aud":client.client_id,"iat":issued,"exp":super::issuance::expiration(issued,self.config.id_token_expires_in)?,"acr":"0","at_hash":access_hash}).as_object().cloned().ok_or_else(||AuthError::internal("Invalid OIDC claims"))?);
         if let Some(time) = proof.get("authTime").and_then(Value::as_i64) {
             _ = payload.insert("auth_time".into(), json!(time.div_euclid(1000)));
         }
@@ -103,31 +153,16 @@ impl OAuthProviderPlugin {
         }
         if let Some(claims) = proof.get("idTokenClaims").and_then(Value::as_object) {
             for (key, value) in claims {
-                if ![
-                    "iss",
-                    "sub",
-                    "aud",
-                    "exp",
-                    "iat",
-                    "nbf",
-                    "jti",
-                    "nonce",
-                    "auth_time",
-                    "acr",
-                    "amr",
-                    "azp",
-                    "at_hash",
-                    "c_hash",
-                    "s_hash",
-                    "sid",
-                    "name",
-                    "given_name",
-                    "family_name",
-                    "picture",
-                    "email",
-                    "email_verified",
-                ]
-                .contains(&key.as_str())
+                if !reserved_claim(key)
+                    && ![
+                        "name",
+                        "given_name",
+                        "family_name",
+                        "picture",
+                        "email",
+                        "email_verified",
+                    ]
+                    .contains(&key.as_str())
                     && !payload.contains_key(key)
                 {
                     _ = payload.insert(key.clone(), value.clone());
