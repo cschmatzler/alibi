@@ -8,17 +8,19 @@ use sha2::Digest as _;
 backend_tests!(oauth_consent_persists_grant_and_issues_bound_code);
 async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(JwtPlugin::new())
-        .plugin(OAuthProviderPlugin::new())
-        .build()
-        .await?;
-    let owner = signup(&auth, "consent-owner@example.test").await;
-    let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::new())
+            .build(),
+    )
+    .await?;
+    let owner = Box::pin(signup(&auth, "consent-owner@example.test")).await;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
     let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email profile","state":"consent-state","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
-    let producer = auth
-        .dispatch_endpoint(
+    let producer = Box::pin(
+        auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize").with_query(&query)?,
             EndpointOptions {
                 headers: Some(
@@ -29,9 +31,10 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
                 request: Some(request("/oauth2/authorize", None, "")),
                 ..Default::default()
             },
-        )
-        .await?
-        .into_response()?;
+        ),
+    )
+    .await?
+    .into_response()?;
     let url = url::Url::parse(ORIGIN)?.join(body(&producer)["url"].as_str().unwrap())?;
     let signed = url.query().unwrap();
     let before = db
@@ -45,8 +48,8 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
             "oauthConsent",
         ])
         .await?;
-    let output = auth
-        .dispatch_endpoint(
+    let output = Box::pin(
+        auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Consent")
                 .with_body(&json!({"accept":false,"oauth_query":signed}))?,
             EndpointOptions {
@@ -54,8 +57,9 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
                 request: Some(request("/oauth2/consent", None, "")),
                 ..Default::default()
             },
-        )
-        .await;
+        ),
+    )
+    .await;
     let response = match output {
         Ok(value) => value.into_response()?,
         Err(error) => error.error.to_auth_response(),
@@ -113,18 +117,16 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
             "",
         ),
     ] {
-        let denied = auth
-            .dispatch_endpoint(
-                ServerEndpoint::<Value>::new("oauth-provider", "oauth2Consent")
-                    .with_body(&input)?,
-                EndpointOptions {
-                    headers: Some([("cookie".into(), cookie)].into_iter().collect()),
-                    request: Some(request("/oauth2/consent", None, "")),
-                    ..Default::default()
-                },
-            )
-            .await
-            .unwrap_err();
+        let denied = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Consent").with_body(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie)].into_iter().collect()),
+                request: Some(request("/oauth2/consent", None, "")),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
         assert_eq!(denied.error.status_code(), status);
         if !error.is_empty() {
             assert_eq!(
@@ -146,28 +148,26 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
         ])
         .await?
     );
-    let session_response = auth
-        .dispatch_endpoint(
-            ServerEndpoint::<Value>::new("session-management", "getSession"),
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-                ..Default::default()
-            },
-        )
-        .await?
-        .into_response()?;
+    let session_response = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("session-management", "getSession"),
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     let current = body(&session_response);
-    let accepted = auth
-        .dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_consent_endpoint(true, Some("email"), Some(signed))?,
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-                request: Some(request("/oauth2/consent", None, "")),
-                ..Default::default()
-            },
-        )
-        .await?
-        .into_response()?;
+    let accepted = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, Some("email"), Some(signed))?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            request: Some(request("/oauth2/consent", None, "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     assert_eq!(accepted.status, 200);
     let callback = url::Url::parse(body(&accepted)["url"].as_str().unwrap())?;
     let code = callback
@@ -208,17 +208,16 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(rows[0].client_id, id);
     assert_eq!(rows[0].metadata["scopes"], json!(["email"]));
     let row_id = rows[0].id.clone();
-    let replay = auth
-        .dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_consent_endpoint(true, None, Some(signed))?,
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-                request: Some(request("/oauth2/consent", None, "")),
-                ..Default::default()
-            },
-        )
-        .await?
-        .into_response()?;
+    let replay = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, Some(signed))?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            request: Some(request("/oauth2/consent", None, "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     assert_eq!(replay.status, 200);
     let rows = auth.store().list_oauth_consents_by_user(user_id).await?;
     assert_eq!(rows.len(), 1);
@@ -229,7 +228,7 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
 
     // A new resource needs consent even when every requested scope is remembered.
     let resource = format!("{ORIGIN}/api/auth/oauth2/userinfo");
-    let other = signup(&auth, "consent-foreign@example.test").await;
+    let other = Box::pin(signup(&auth, "consent-foreign@example.test")).await;
     let tables = [
         "user",
         "account",
@@ -244,7 +243,7 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     expanded_query["resource"] = json!(resource);
     let mut silent_query = expanded_query.clone();
     silent_query["prompt"] = json!("none");
-    let silent = authorize_http(&auth, &silent_query, &cookies(&owner)).await?;
+    let silent = Box::pin(authorize_http(&auth, &silent_query, &cookies(&owner))).await?;
     assert!(
         silent
             .query_pairs()
@@ -256,7 +255,7 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
             .any(|(key, value)| key == "state" && value == "consent-state")
     );
     assert!(!silent.query_pairs().any(|(key, _)| key == "code"));
-    let expanded = authorize_http(&auth, &expanded_query, &cookies(&owner)).await?;
+    let expanded = Box::pin(authorize_http(&auth, &expanded_query, &cookies(&owner))).await?;
     assert_eq!(expanded.path(), "/consent");
     assert!(
         expanded
@@ -271,20 +270,19 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert!(!expanded.query_pairs().any(|(key, _)| key == "code"));
     assert_eq!(before_resource, db.tables(&tables).await?);
 
-    let accepted_resource = auth
-        .dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_consent_endpoint(true, None, expanded.query())?,
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
-                request: Some(request("/oauth2/consent", None, "")),
-                ..Default::default()
-            },
-        )
-        .await?
-        .into_response()?;
+    let accepted_resource = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, expanded.query())?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            request: Some(request("/oauth2/consent", None, "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     assert_eq!(accepted_resource.status, 200);
     let accepted_url = url::Url::parse(body(&accepted_resource)["url"].as_str().unwrap())?;
-    let remembered = authorize_http(&auth, &silent_query, &cookies(&owner)).await?;
+    let remembered = Box::pin(authorize_http(&auth, &silent_query, &cookies(&owner))).await?;
     for callback in [accepted_url, remembered] {
         assert_eq!(callback.host_str(), Some("app.fixture.test"));
         assert!(!callback.query_pairs().any(|(key, _)| key == "error"));
@@ -337,14 +335,15 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(db.count("verification").await?, 4);
 
     let before_foreign = db.tables(&tables).await?;
-    let foreign = authorize_http(&auth, &silent_query, &cookies(&other)).await?;
+    let foreign = Box::pin(authorize_http(&auth, &silent_query, &cookies(&other))).await?;
     assert!(
         foreign
             .query_pairs()
             .any(|(key, value)| key == "error" && value == "consent_required")
     );
     assert!(!foreign.query_pairs().any(|(key, _)| key == "code"));
-    let foreign_consent = authorize_http(&auth, &expanded_query, &cookies(&other)).await?;
+    let foreign_consent =
+        Box::pin(authorize_http(&auth, &expanded_query, &cookies(&other))).await?;
     assert_eq!(foreign_consent.path(), "/consent");
     assert!(!foreign_consent.query_pairs().any(|(key, _)| key == "code"));
     assert_eq!(before_foreign, db.tables(&tables).await?);
@@ -376,6 +375,6 @@ async fn authorize_http<S: AuthSchema>(
             })
             .collect::<Vec<_>>(),
     );
-    let response = call(auth, req, 200).await;
+    let response = Box::pin(call(auth, req, 200)).await;
     Ok(url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?)
 }

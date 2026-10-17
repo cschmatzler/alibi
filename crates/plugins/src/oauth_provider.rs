@@ -90,9 +90,9 @@ pub trait OAuthClientSecretGenerator: Send + Sync + std::fmt::Debug {
 }
 /// Application redirect trust decision. URI safety remains provider-owned.
 ///
-/// The URI is the original request parameter on schema/request errors, and the
-/// successfully schema-parsed parameter otherwise. Neither argument uses parsed
-/// URL equality. Returning an error denies trust rather than failing the route.
+/// The URI is raw effective input on schema errors (the original URL query on
+/// request-object or URI-resolution errors), and schema-parsed input otherwise.
+/// Neither argument uses parsed URL equality. Errors deny trust rather than failing the route.
 #[async_trait]
 pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
     async fn validate(
@@ -101,6 +101,27 @@ pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
         registered_uris: &[String],
         default_result: bool,
     ) -> AuthResult<bool>;
+}
+/// The original request URI and URL-supplied client identity, before schema parsing.
+pub struct OAuthRequestUriInput<'a> {
+    pub request_uri: &'a str,
+    pub client_id: &'a str,
+    /// Initialized application context, original logical query and genuine physical request.
+    pub context: &'a alibi_core::CallbackContext,
+}
+/// Authorization parameters with JavaScript-compatible extension values.
+pub type OAuthAuthorizationQuery = indexmap::IndexMap<String, alibi_core::utils::json::JsValue>;
+/// Application-owned asynchronous authorization request lookup.
+///
+/// Resolved parameters replace the URL query, except that the original client
+/// identity always wins. `None` means invalid or expired; errors propagate at
+/// the endpoint boundary. Values retain JavaScript numbers, including nonfinite values.
+#[async_trait]
+pub trait OAuthRequestUriResolver: Send + Sync + std::fmt::Debug {
+    async fn resolve(
+        &self,
+        input: OAuthRequestUriInput<'_>,
+    ) -> AuthResult<Option<OAuthAuthorizationQuery>>;
 }
 /// Immutable policy shared by authorization-server metadata and grant admission.
 #[derive(Clone, Debug)]
@@ -128,6 +149,8 @@ pub struct OAuthProviderConfig {
     pub client_secret_generator: Option<std::sync::Arc<dyn OAuthClientSecretGenerator>>,
     /// Override registered redirect matching after provider-owned URI safety checks.
     pub validate_redirect_uri: Option<std::sync::Arc<dyn OAuthRedirectUriValidator>>,
+    /// Optional request registry; absent by default (`request_uri_not_supported`).
+    pub request_uri_resolver: Option<std::sync::Arc<dyn OAuthRequestUriResolver>>,
     pub client_secret_hasher: Option<std::sync::Arc<dyn OAuthClientSecretHasher>>,
     /// Application token hashing for authorization codes, access and refresh tokens.
     pub token_hasher: Option<std::sync::Arc<dyn OAuthTokenHasher>>,
@@ -181,6 +204,7 @@ impl Default for OAuthProviderConfig {
             client_id_generator: None,
             client_secret_generator: None,
             validate_redirect_uri: None,
+            request_uri_resolver: None,
             client_secret_hasher: None,
             client_secret_cipher: None,
             token_hasher: None,
@@ -981,10 +1005,23 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             } else {
                 req.query_as_js_value()
             };
+            // Legacy HTTP dispatch need not carry a logical endpoint frame.
+            // Build it from the admitted route and genuine transport request,
+            // not by rewriting that Request to contain resolver parameters.
+            let call = alibi_core::endpoint::current_endpoint_call_context().unwrap_or_else(|| {
+                EndpointCall::from_http_request(
+                    req,
+                    &AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
+                )
+            });
+            let call = call.handler_context(call.body().cloned(), Some(value.clone()));
             return Ok(Some(
-                Box::pin(self.authorize(Some(value), req, ctx))
-                    .await?
-                    .to_response()?,
+                alibi_core::endpoint::with_endpoint_call_context(
+                    call,
+                    Box::pin(self.authorize(Some(value), req, ctx)),
+                )
+                .await?
+                .to_response()?,
             ));
         }
         if req.path() == "/oauth2/register" && *req.method() == HttpMethod::Post {

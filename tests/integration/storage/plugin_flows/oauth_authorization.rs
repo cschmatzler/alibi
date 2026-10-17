@@ -8,7 +8,538 @@ use sha2::Digest;
 const RESERVED_CALLBACK: &str = "https://app.fixture.test/callback?code=stale&keep=first&code=duplicate&state=stale&iss=stale&keep=second";
 #[path = "../../../fixtures/oauth/redirect-policy.rs"]
 mod redirect_policy;
-backend_tests!(oauth_authorization_admits_client_and_produces_signed_login_redirect);
+#[path = "../../../fixtures/oauth/request-uri.rs"]
+mod request_uri;
+backend_tests!(
+    oauth_authorization_resolves_request_uri_before_validation,
+    oauth_authorization_admits_client_and_produces_signed_login_redirect
+);
+async fn oauth_authorization_resolves_request_uri_before_validation<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let registry = std::sync::Arc::new(request_uri::RequestRegistry::default());
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    request_uri_resolver: Some(registry.clone()),
+                    validate_redirect_uri: Some(registry.clone()),
+                    client_discoveries: vec![registry.clone()],
+                    ..Default::default()
+                },
+            ))
+            .build(),
+    )
+    .await?;
+    let owner = Box::pin(signup(&auth, "request-uri-owner@example.test")).await;
+    let created = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::create_oauth_client_endpoint(
+            &alibi::plugins::oauth_provider::CreateOAuthClientInput {
+                client_name: Some("Request registry client".into()),
+                redirect_uris: Some(vec!["https://app.fixture.test/callback".into()]),
+                scope: Some("email".into()),
+                token_endpoint_auth_method: Some("none".into()),
+                ..Default::default()
+            },
+        )?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    let verifier = "request-uri-fixture-verifier-abcdefghijklmnopqrstuvwxyz";
+    let challenge =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
+    let parameters = json!({
+        "client_id":"malicious-client","response_type":"code",
+        "redirect_uri":" https://app.fixture.test/callback ","scope":"email","state":"resolved-state",
+        "code_challenge":challenge,"code_challenge_method":"S256", "extension_scalar":7
+    });
+    *registry.parameters.lock().unwrap() = parameters.clone().into();
+    let query = json!({"client_id":id,"request_uri":"urn:fixture:valid"});
+    let mut physical = request("/oauth2/authorize", None, "");
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    _ = physical
+        .headers
+        .insert("x-request-uri".into(), "physical".into());
+    let response = Box::pin(authorization_response(&auth, &query, physical, false)).await?;
+    let login = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+    assert_eq!(login.path(), "/login");
+    assert!(
+        login
+            .query_pairs()
+            .any(|(name, value)| name == "client_id" && value == id)
+    );
+    assert!(
+        login
+            .query_pairs()
+            .any(|(name, value)| name == "state" && value == "resolved-state")
+    );
+    let calls = registry.calls.lock().unwrap().clone();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0]["query"], query);
+    assert_eq!(calls[0]["requestHeader"], "physical");
+    assert_eq!(
+        registry.redirect_calls.lock().unwrap().as_slice(),
+        &[json!({
+            "uri":"https://app.fixture.test/callback","registered":["https://app.fixture.test/callback"],"defaultResult":true
+        })]
+    );
+
+    // The signed interaction is produced by authorization, then consumed by
+    // genuine login and consent. No grants or sessions are seeded.
+    let mut signin = request(
+        "/sign-in/email",
+        Some(json!({
+            "email":"request-uri-owner@example.test","password":PASSWORD,"oauth_query":login.query().unwrap()
+        })),
+        "",
+    );
+    _ = signin
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let signed_in = Box::pin(call(&auth, signin, 200)).await;
+    let consent = url::Url::parse(ORIGIN)?.join(body(&signed_in)["url"].as_str().unwrap())?;
+    assert_eq!(consent.path(), "/consent");
+    let cookie = cookies(&signed_in);
+    let accepted = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, consent.query())?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+            request: Some(request("/oauth2/consent", None, &cookie)),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    let callback = url::Url::parse(body(&accepted)["url"].as_str().unwrap())?;
+    assert_eq!(callback.host_str(), Some("app.fixture.test"));
+    assert!(
+        callback
+            .query_pairs()
+            .any(|(name, value)| name == "state" && value == "resolved-state")
+    );
+    let code = callback
+        .query_pairs()
+        .find(|(name, _)| name == "code")
+        .unwrap()
+        .1
+        .into_owned();
+    let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&code));
+    let stored = auth
+        .store()
+        .get_verification_by_identifier(&hash)
+        .await?
+        .unwrap();
+    let grant: Value = serde_json::from_str(stored.value())?;
+    let current = Box::pin(call(&auth, request("/get-session", None, &cookie), 200)).await;
+    assert_eq!(grant["query"]["client_id"], id);
+    assert_eq!(grant["query"]["scope"], "email");
+    assert_eq!(grant["query"]["state"], "resolved-state");
+    assert_eq!(
+        grant["query"]["redirect_uri"],
+        "https://app.fixture.test/callback"
+    );
+    assert_eq!(grant["userId"], body(&owner)["user"]["id"]);
+    assert_eq!(grant["sessionId"], body(&current)["session"]["id"]);
+    assert_eq!(
+        registry.calls.lock().unwrap().len(),
+        1,
+        "signed continuation must not repeat lookup"
+    );
+
+    let other=Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Other registered client","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":"none"}))?,
+        EndpointOptions {headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()),..Default::default()},
+    )).await?.into_response()?;
+    let other_id = body(&other)["client_id"].as_str().unwrap().to_owned();
+    let mut different = parameters.clone();
+    different["client_id"] = json!(other_id);
+    *registry.parameters.lock().unwrap() = different.into();
+    for http in [false, true] {
+        let mut physical = request("/oauth2/authorize", None, "");
+        _ = physical
+            .headers
+            .insert("accept".into(), "application/json".into());
+        let response = Box::pin(authorization_response(&auth, &query, physical, http)).await?;
+        let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+        assert!(
+            target
+                .query_pairs()
+                .any(|(name, value)| name == "client_id" && value == id)
+        );
+    }
+    *registry.parameters.lock().unwrap() = parameters.clone().into();
+
+    let protected = db
+        .tables(&[
+            "user",
+            "account",
+            "session",
+            "verification",
+            "oauthClient",
+            "oauthConsent",
+        ])
+        .await?;
+    // Original unknown values and max_age must be discarded, including the
+    // separately preserved nonfinite extension values used by signed queries.
+    let poisoned = alibi::utils::json::parse_value(&format!(
+        r#"{{"client_id":{},"request_uri":"urn:fixture:valid","max_age":1e400,"scope":42,"redirect_uri":"https://evil.fixture.test","state":"outer","extension_scalar":1e400,"outer_only":true}}"#,
+        serde_json::to_string(&id)?
+    ))?;
+    let clean = Box::pin(
+        auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+                .with_query_value(poisoned),
+            EndpointOptions {
+                headers: Some(
+                    [("accept".into(), "application/json".into())]
+                        .into_iter()
+                        .collect(),
+                ),
+                request: Some(request("/oauth2/authorize", None, "")),
+                ..Default::default()
+            },
+        ),
+    )
+    .await?
+    .into_response()?;
+    let clean = url::Url::parse(ORIGIN)?.join(body(&clean)["url"].as_str().unwrap())?;
+    assert_eq!(clean.path(), "/login");
+    assert!(
+        clean
+            .query_pairs()
+            .any(|(name, value)| name == "extension_scalar" && value == "7")
+    );
+    assert!(
+        !clean
+            .query_pairs()
+            .any(|(name, _)| matches!(name.as_ref(), "outer_only" | "max_age" | "request_uri"))
+    );
+    let mut physical = request("/oauth2/authorize", None, "");
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let nonfinite = Box::pin(authorization_response(
+        &auth,
+        &json!({"client_id":id,"request_uri":"urn:fixture:nonfinite","extension_scalar":"outer"}),
+        physical,
+        false,
+    ))
+    .await?;
+    let nonfinite = url::Url::parse(ORIGIN)?.join(body(&nonfinite)["url"].as_str().unwrap())?;
+    assert_eq!(nonfinite.path(), "/login");
+    assert!(
+        nonfinite
+            .query_pairs()
+            .any(|(name, value)| name == "extension_scalar" && value == "Infinity")
+    );
+    assert!(
+        nonfinite
+            .query_pairs()
+            .any(|(name, value)| name == "extension_array" && value == "-Infinity")
+    );
+
+    for http in [false, true] {
+        for (input, resolved, error, state, host, calls) in [
+            (
+                json!({"client_id":id,"request_uri":"urn:fixture:expired","redirect_uri":"https://app.fixture.test/callback","state":"original","response_mode":"fragment"}),
+                parameters.clone(),
+                "invalid_request_uri",
+                Some("original"),
+                "app.fixture.test",
+                1,
+            ),
+            (
+                json!({"client_id":id,"request_uri":"urn:fixture:expired","redirect_uri":" https://app.fixture.test/callback ","state":"original"}),
+                parameters.clone(),
+                "invalid_request_uri",
+                None,
+                "localhost",
+                1,
+            ),
+            (
+                json!({"client_id":id,"request_uri":"urn:fixture:valid","request":""}),
+                parameters.clone(),
+                "invalid_request",
+                None,
+                "localhost",
+                0,
+            ),
+            (
+                json!({"client_id":id,"request":""}),
+                parameters.clone(),
+                "request_not_supported",
+                None,
+                "localhost",
+                0,
+            ),
+            (
+                json!({"request_uri":"urn:fixture:valid"}),
+                parameters.clone(),
+                "invalid_request",
+                None,
+                "localhost",
+                0,
+            ),
+            (
+                json!({"client_id":"","request_uri":"urn:fixture:valid"}),
+                parameters.clone(),
+                "invalid_request",
+                None,
+                "localhost",
+                0,
+            ),
+            (
+                json!({"client_id":id,"request_uri":["one","two"]}),
+                parameters.clone(),
+                "invalid_request",
+                None,
+                "localhost",
+                0,
+            ),
+            (
+                query.clone(),
+                json!({"scope":42,"state":"resolved-error","redirect_uri":"https://app.fixture.test/callback"}),
+                "invalid_request",
+                Some("resolved-error"),
+                "app.fixture.test",
+                1,
+            ),
+            (
+                query.clone(),
+                json!({"scope":42,"state":"resolved-error","redirect_uri":" https://app.fixture.test/callback "}),
+                "invalid_request",
+                None,
+                "localhost",
+                1,
+            ),
+            (
+                query.clone(),
+                json!({"max_age":"bad","state":"resolved-max-age","redirect_uri":"https://app.fixture.test/callback"}),
+                "invalid_request",
+                Some("resolved-max-age"),
+                "app.fixture.test",
+                1,
+            ),
+            (
+                json!({"client_id":id,"request_uri":"urn:fixture:invalid-max-age","max_age":"0"}),
+                json!({"response_type":"code","scope":"email","state":"resolved-state","redirect_uri":"https://app.fixture.test/callback"}),
+                "invalid_request",
+                Some("resolved-state"),
+                "app.fixture.test",
+                1,
+            ),
+        ] {
+            *registry.parameters.lock().unwrap() = resolved.into();
+            registry.calls.lock().unwrap().clear();
+            let mut physical = request("/oauth2/authorize", None, &cookie);
+            _ = physical
+                .headers
+                .insert("accept".into(), "application/json".into());
+            let response = Box::pin(authorization_response(&auth, &input, physical, http)).await?;
+            let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+            assert_eq!(target.host_str(), Some(host), "{input}, http={http}");
+            let fields = url::form_urlencoded::parse(
+                target
+                    .fragment()
+                    .or(target.query())
+                    .unwrap_or_default()
+                    .as_bytes(),
+            )
+            .collect::<std::collections::HashMap<_, _>>();
+            assert_eq!(fields.get("error").map(|value| value.as_ref()), Some(error));
+            assert_eq!(fields.get("state").map(|value| value.as_ref()), state);
+            assert_eq!(registry.calls.lock().unwrap().len(), calls);
+            assert_eq!(
+                db.tables(&[
+                    "user",
+                    "account",
+                    "session",
+                    "verification",
+                    "oauthClient",
+                    "oauthConsent"
+                ])
+                .await?,
+                protected
+            );
+        }
+    }
+    for input in [
+        json!({"client_id":42,"request_uri":"urn:fixture:valid"}),
+        json!({"client_id":id,"request_uri":42}),
+        json!({"client_id":id,"request":42}),
+    ] {
+        registry.calls.lock().unwrap().clear();
+        let mut physical = request("/oauth2/authorize", None, "");
+        _ = physical
+            .headers
+            .insert("accept".into(), "application/json".into());
+        let response = Box::pin(authorization_response(&auth, &input, physical, false)).await?;
+        assert!(
+            body(&response)["url"]
+                .as_str()
+                .unwrap()
+                .contains("invalid_request")
+        );
+        assert!(registry.calls.lock().unwrap().is_empty());
+    }
+    *registry.parameters.lock().unwrap() = parameters.clone().into();
+    for (uri, status) in [("urn:fixture:throw", 500), ("urn:fixture:api-error", 429)] {
+        let failure=Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider","oauth2Authorize").with_query(&json!({"client_id":id,"request_uri":uri,"redirect_uri":"https://app.fixture.test/callback"}))?,
+            EndpointOptions { request:Some(request("/oauth2/authorize",None,&cookie)),..Default::default() },
+        )).await.unwrap_err();
+        assert_eq!(failure.error.status_code(), status);
+        let wire = failure.error.to_auth_response();
+        assert_eq!(wire.body.is_empty(), status == 500);
+        if status == 429 {
+            assert_eq!(
+                body(&wire),
+                json!({"code":"REQUEST_LOOKUP_LIMIT","message":"Request lookup limited"})
+            );
+        }
+        assert!(
+            failure
+                .headers
+                .as_ref()
+                .is_none_or(|headers| !headers.contains_key("location"))
+        );
+        assert_eq!(
+            db.tables(&[
+                "user",
+                "account",
+                "session",
+                "verification",
+                "oauthClient",
+                "oauthConsent"
+            ])
+            .await?,
+            protected
+        );
+    }
+    // Resolved reserved fields are schema data, not a second dispatch.
+    let mut reserved = parameters.clone();
+    reserved["request"] = json!("");
+    reserved["request_uri"] = json!("urn:fixture:throw");
+    *registry.parameters.lock().unwrap() = reserved.into();
+    registry.calls.lock().unwrap().clear();
+    let mut physical = request("/oauth2/authorize", None, "");
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let response = Box::pin(authorization_response(&auth, &query, physical, false)).await?;
+    assert_eq!(
+        url::Url::parse(ORIGIN)?
+            .join(body(&response)["url"].as_str().unwrap())?
+            .path(),
+        "/login"
+    );
+    assert_eq!(registry.calls.lock().unwrap().len(), 1);
+
+    // Discovery receives parsed effective data but the genuine physical URL.
+    *registry.parameters.lock().unwrap() = parameters.clone().into();
+    registry.calls.lock().unwrap().clear();
+    let mut physical = request("/oauth2/authorize", None, "").with_url(url::Url::parse(&format!(
+        "{ORIGIN}/api/auth/oauth2/authorize?physical=original"
+    ))?);
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let response = Box::pin(authorization_response(
+        &auth,
+        &json!({"client_id":"resolver-unknown","request_uri":"urn:fixture:valid"}),
+        physical,
+        false,
+    ))
+    .await?;
+    assert!(
+        body(&response)["url"]
+            .as_str()
+            .unwrap()
+            .contains("invalid_client")
+    );
+    let events = registry.calls.lock().unwrap().clone();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[1]["stage"], "discovery");
+    assert_eq!(events[1]["query"]["client_id"], "resolver-unknown");
+    assert_eq!(
+        events[1]["query"]["redirect_uri"],
+        "https://app.fixture.test/callback"
+    );
+    assert_eq!(events[1]["query"]["state"], "resolved-state");
+    assert!(
+        events[1]["requestURL"]
+            .as_str()
+            .unwrap()
+            .ends_with("?physical=original")
+    );
+
+    let unsupported = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::new())
+            .build(),
+    )
+    .await?;
+    let mut physical = request("/oauth2/authorize", None, "");
+    _ = physical
+        .headers
+        .insert("accept".into(), "application/json".into());
+    let rejected=Box::pin(authorization_response(&unsupported,&json!({"client_id":id,"request_uri":"urn:fixture:valid","redirect_uri":"https://app.fixture.test/callback"}),physical,false)).await?;
+    assert!(
+        body(&rejected)["url"]
+            .as_str()
+            .unwrap()
+            .contains("request_uri_not_supported")
+    );
+    assert_eq!(
+        db.tables(&[
+            "user",
+            "account",
+            "session",
+            "verification",
+            "oauthClient",
+            "oauthConsent"
+        ])
+        .await?,
+        protected
+    );
+
+    // A genuine token exchange consumes the code after every rejected request
+    // has been shown not to mutate its session/client/grant bindings.
+    let token_input = json!({"grant_type":"authorization_code","client_id":id,"code":code,"redirect_uri":"https://app.fixture.test/callback","code_verifier":verifier});
+    let token = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&token_input)?,
+        EndpointOptions {
+            request: Some(request("/oauth2/token", Some(token_input.clone()), "")),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(token.status, 200);
+    assert_eq!(body(&token)["scope"], "email");
+    assert!(
+        body(&token)["access_token"]
+            .as_str()
+            .is_some_and(|token| !token.is_empty())
+    );
+    assert!(
+        auth.store()
+            .get_verification_by_identifier(&hash)
+            .await?
+            .is_none()
+    );
+    Ok(())
+}
 async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -21,24 +552,23 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
     )
     .await?;
     let owner = Box::pin(signup(&auth, "oauth-authorization-owner@example.test")).await;
-    let created = auth
-        .dispatch_endpoint(
-            OAuthProviderPlugin::create_oauth_client_endpoint(
-                &alibi::plugins::oauth_provider::CreateOAuthClientInput {
-                    client_name: Some("Authorization client".into()),
-                    redirect_uris: Some(vec!["https://app.fixture.test/callback".into()]),
-                    scope: Some("openid email".into()),
-                    token_endpoint_auth_method: Some("none".into()),
-                    ..Default::default()
-                },
-            )?,
-            EndpointOptions {
-                headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+    let created = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::create_oauth_client_endpoint(
+            &alibi::plugins::oauth_provider::CreateOAuthClientInput {
+                client_name: Some("Authorization client".into()),
+                redirect_uris: Some(vec!["https://app.fixture.test/callback".into()]),
+                scope: Some("openid email".into()),
+                token_endpoint_auth_method: Some("none".into()),
                 ..Default::default()
             },
-        )
-        .await?
-        .into_response()?;
+        )?,
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
     let input = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"caller-state","extension_zero":0,"extension_large":1e21,"extension_object":{"label":"value"},"extension_list":["literal",false,null,{"nested":1},["a","b"]],"extension_null":null,"code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
     let before = db
@@ -52,8 +582,8 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         ])
         .await?;
     let start = chrono::Utc::now().timestamp_millis();
-    let output = auth
-        .dispatch_endpoint(
+    let output = Box::pin(
+        auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize").with_query(&input)?,
             EndpointOptions {
                 headers: Some(
@@ -64,9 +594,10 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
                 request: Some(request("/oauth2/authorize", None, "")),
                 ..Default::default()
             },
-        )
-        .await?
-        .into_response()?;
+        ),
+    )
+    .await?
+    .into_response()?;
     assert_eq!(output.status, 200);
     let value = body(&output);
     assert_eq!(value["redirect"], true);
@@ -152,8 +683,8 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
             "invalid_request",
         ),
     ] {
-        let r = auth
-            .dispatch_endpoint(
+        let r = Box::pin(
+            auth.dispatch_endpoint(
                 ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
                     .with_query(&query)?,
                 EndpointOptions {
@@ -165,9 +696,10 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
                     request: Some(request("/oauth2/authorize", None, "")),
                     ..Default::default()
                 },
-            )
-            .await?
-            .into_response()?;
+            ),
+        )
+        .await?
+        .into_response()?;
         assert_eq!(r.status, 200);
         let url = url::Url::parse(ORIGIN)?.join(body(&r)["url"].as_str().unwrap())?;
         assert_eq!(
@@ -178,8 +710,8 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
             error
         );
     }
-    let missing = auth
-        .dispatch_endpoint(
+    let missing = Box::pin(
+        auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize").with_query(&input)?,
             EndpointOptions {
                 headers: Some(
@@ -189,9 +721,10 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
                 ),
                 ..Default::default()
             },
-        )
-        .await
-        .unwrap_err();
+        ),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(missing.error.status_code(), 401);
     assert_eq!(
         db.tables(&[
@@ -226,13 +759,12 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         let rejected = call(&auth, request(path, Some(input.clone()), ""), 400).await;
         assert_eq!(body(&rejected), json!({"error":"invalid_signature"}));
         assert!(!rejected.headers.contains_key("set-cookie"));
-        let rejected = auth
-            .dispatch_endpoint(
-                ServerEndpoint::<Value>::new("email-password", operation).with_body(&input)?,
-                EndpointOptions::default(),
-            )
-            .await
-            .unwrap_err();
+        let rejected = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("email-password", operation).with_body(&input)?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
         assert_eq!(rejected.error.status_code(), 400);
         assert_eq!(
             rejected.body.as_deref(),
@@ -259,13 +791,12 @@ async fn oauth_authorization_admits_client_and_produces_signed_login_redirect<B:
         )
         .await;
         assert_eq!(body(&rejected)["code"], "INVALID_EMAIL_OR_PASSWORD");
-        let rejected = auth
-            .dispatch_endpoint(
-                ServerEndpoint::<Value>::new("email-password", "signInEmail").with_body(&input)?,
-                EndpointOptions::default(),
-            )
-            .await
-            .unwrap_err();
+        let rejected = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("email-password", "signInEmail").with_body(&input)?,
+            EndpointOptions::default(),
+        ))
+        .await
+        .unwrap_err();
         assert_eq!(rejected.error.status_code(), 401);
         assert_eq!(
             db.tables(&["user", "account", "session", "verification", "oauthClient"])

@@ -23,6 +23,8 @@ mod extension_authentication;
 mod redirect_policy;
 #[path = "../../../../fixtures/oauth/token-response-fields.rs"]
 mod token_response_fields;
+#[path = "../../../../fixtures/oauth/request-uri.rs"]
+mod request_uri;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -251,6 +253,7 @@ pub(crate) async fn router(
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
     let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
     let response_fields=Arc::new(token_response_fields::TokenResponseFields::default());
+    let request_registry=Arc::new(request_uri::RequestRegistry::default());
     for mode in [
         "extension-grant",
         "pairwise",
@@ -260,6 +263,7 @@ pub(crate) async fn router(
         "extension-auth",
         "interaction",
         "redirect-policy",
+        "request-uri",
         "default",
         "dynamic",
         "public",
@@ -306,10 +310,11 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let mut provider = OAuthProviderConfig {
-            validate_redirect_uri:(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>),
+            request_uri_resolver:(mode=="request-uri").then(||request_registry.clone() as Arc<dyn alibi::plugins::OAuthRequestUriResolver>),
+            validate_redirect_uri:if mode=="request-uri"{Some(request_registry.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)}else{(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)},
             pairwise_secret: (mode=="pairwise").then(|| "fixture-pairwise-secret-at-least-32-characters".into()),
             token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
-            client_discoveries: if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
+            client_discoveries: if mode=="request-uri"{vec![request_registry.clone()]}else if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
             client_id_generator: if mode=="discovered" {Some(Arc::new(ManagedRegistryId))} else if mode == "basic-special" {Some(Arc::new(FormCredentials))} else if matches!(mode, "generated-id" | "empty-id") {Some(Arc::new(OperatorClientIds {calls:std::sync::atomic::AtomicUsize::new(0),empty:mode=="empty-id"}))} else {None},
             assertion_max_lifetime: match mode {"assertion-short"=>30.0,"assertion-zero"=>0.0,"assertion-negative"=>-1.0,"assertion-nan"=>f64::NAN,"assertion-infinite"=>f64::INFINITY,"assertion-negative-infinite"=>f64::NEG_INFINITY,_=>300.0},
             disable_jwt_plugin: matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed"|"claims-opaque"),
@@ -363,8 +368,8 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder=if matches!(mode,"interaction"|"redirect-policy") || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"),..Default::default()})})};
+        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -386,6 +391,7 @@ pub(crate) async fn router(
         let user_info_claims=user_info_claims.clone();
         let id_token_claims=id_token_claims.clone();
         let response_fields=response_fields.clone();
+        let request_registry=request_registry.clone();
         let registry_state=registry_state.clone();
         let remote_state=remote_state.clone();
         let trusted_provider=trusted_provider.clone();
@@ -407,6 +413,16 @@ pub(crate) async fn router(
             }
             if input["action"]=="redirect-policy-calls" {
                 return axum::Json(std::mem::take(&mut *redirect_policy.calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="request-uri-configure" {
+                *request_registry.parameters.lock().unwrap()=input["parameters"].clone().into();
+                return axum::Json(serde_json::json!({"configured":true})).into_response();
+            }
+            if input["action"]=="request-uri-calls" {
+                return axum::Json(std::mem::take(&mut *request_registry.calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="request-uri-redirects" {
+                return axum::Json(std::mem::take(&mut *request_registry.redirect_calls.lock().unwrap())).into_response();
             }
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
@@ -749,6 +765,7 @@ pub(crate) async fn router(
                     request.body=Some(url::form_urlencoded::Serializer::new(String::new()).extend_pairs(pairs).finish().into_bytes());
                     _=request.headers.insert("content-type".into(),"application/x-www-form-urlencoded".into());
                 }
+                if input["action"]=="authorize" {let url=url::Url::parse(&format!("{logout_origin}{}",request.path)).unwrap();request=request.with_url(url);}
                 Some(request)}else{None},..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
                 Err(error)=>{let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}

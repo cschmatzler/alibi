@@ -8,6 +8,62 @@ use base64::Engine;
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::{Value, json};
 use sha2::Sha256;
+
+// Replace only logical query input. Browser continuations can carry genuine
+// authenticated session state and response/header overrides independently of
+// their enclosing endpoint call; those still belong to the original input.
+struct AuthorizationRequest<'a, R> {
+    original: &'a R,
+    call: alibi_core::endpoint::EndpointCall,
+}
+struct AuthorizationAdmission {
+    query: serde_json::Map<String, Value>,
+    validation: Result<AuthorizationParameters, (&'static str, String)>,
+    nonfinite_values: std::collections::BTreeMap<String, JsValue>,
+    reserved_error: Option<(&'static str, &'static str)>,
+}
+impl<R: SessionRequest> SessionRequest for AuthorizationRequest<'_, R> {
+    fn endpoint_call(&self) -> Option<&alibi_core::endpoint::EndpointCall> {
+        Some(&self.call)
+    }
+    fn physical_request(&self) -> Option<&alibi_core::AuthRequest> {
+        self.original.physical_request()
+    }
+    fn session_headers(&self) -> &std::collections::HashMap<String, String> {
+        self.original.session_headers()
+    }
+    fn session_method(&self) -> &alibi_core::HttpMethod {
+        self.original.session_method()
+    }
+    fn session_query_truthy(&self, name: &str) -> bool {
+        self.call.session_query_truthy(name)
+    }
+    fn extensions(&self) -> &alibi_core::types::RequestExtensions {
+        self.original.extensions()
+    }
+    fn virtual_session<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> Option<alibi_core::SessionView> {
+        self.original.virtual_session(ctx)
+    }
+    fn authenticated_user<S: AuthSchema>(&self, ctx: &AuthContext<S>) -> Option<S::User> {
+        self.original.authenticated_user(ctx)
+    }
+    fn take_response_headers(&self) -> alibi_core::Headers {
+        self.original.take_response_headers()
+    }
+    fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {
+        self.original.queue_response_header(name, value);
+    }
+    fn set_session_hook_snapshot(
+        &self,
+        user: alibi_core::UserView,
+        session: alibi_core::SessionView,
+    ) {
+        self.original.set_session_hook_snapshot(user, session);
+    }
+}
 impl OAuthProviderPlugin {
     /// Authorize an OAuth request with its genuine physical request attached.
     pub fn oauth2_authorize_endpoint(
@@ -25,7 +81,7 @@ impl OAuthProviderPlugin {
     }
     pub(super) async fn authorize_flow<S: AuthSchema>(
         &self,
-        input: Option<JsValue>,
+        mut input: Option<JsValue>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
         initial: bool,
@@ -51,23 +107,135 @@ impl OAuthProviderPlugin {
                 "request not found",
             );
         }
+        // Reserved request controls belong only to the original input. A
+        // resolver replaces the parameters once; its result is never resolved
+        // recursively or subjected to the original request-object dispatch.
+        let string = |name: &str| {
+            input
+                .as_ref()
+                .and_then(|value| value.get(name))
+                .and_then(JsValue::as_str)
+        };
+        let request_error = match (string("request"), string("request_uri")) {
+            (Some(_), Some(_)) => Some((
+                "invalid_request",
+                "request and request_uri cannot be used together",
+            )),
+            (Some(_), None) => Some(("request_not_supported", "request object not supported")),
+            (None, Some(uri)) => {
+                match (
+                    string("client_id").filter(|id| !id.is_empty()),
+                    &self.config.request_uri_resolver,
+                ) {
+                    (None, _) => Some(("invalid_request", "client_id is required")),
+                    (Some(_), None) => {
+                        Some(("request_uri_not_supported", "request_uri not supported"))
+                    }
+                    (Some(client_id), Some(resolver)) => {
+                        let context = alibi_core::CallbackContext::new(ctx, req.physical_request());
+                        let resolved = resolver
+                            .resolve(super::OAuthRequestUriInput {
+                                request_uri: uri,
+                                client_id,
+                                context: &context,
+                            })
+                            .await
+                            .map_err(|error| {
+                                if alibi_core::endpoint::is_endpoint_api_error(&error) {
+                                    error
+                                } else {
+                                    AuthError::CallbackFailure(Box::new(error))
+                                }
+                            })?;
+                        if let Some(mut parameters) = resolved {
+                            _ = parameters
+                                .insert("client_id".into(), JsValue::String(client_id.into()));
+                            input = Some(JsValue::Object(parameters));
+                            None
+                        } else {
+                            Some(("invalid_request_uri", "request_uri is invalid or expired"))
+                        }
+                    }
+                }
+            }
+            (None, None) => None,
+        };
+        // Clone the actual logical call, sharing its session/output state and
+        // retaining the distinct physical Request. Discovery and other native
+        // callbacks must observe the effective input, not the caller's query.
+        if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
+            let effective = AuthorizationRequest {
+                original: req,
+                call: call.handler_context(call.body().cloned(), input.clone()),
+            };
+            return alibi_core::endpoint::with_endpoint_call_context(
+                effective.call.clone(),
+                Box::pin(self.authorize_parameters(input, &effective, ctx, initial, request_error)),
+            )
+            .await;
+        }
+        Box::pin(self.authorize_parameters(input, req, ctx, initial, request_error)).await
+    }
+    async fn authorize_parameters<S: AuthSchema>(
+        &self,
+        input: Option<JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+        initial: bool,
+        reserved_error: Option<(&'static str, &'static str)>,
+    ) -> AuthResult<EndpointResponse> {
         let validated_max_age = maximum_age(input.as_ref().and_then(|input| input.get("max_age")));
         let nonfinite_values = nonfinite_query_values(input.as_ref());
+        let mut logical_query = input
+            .clone()
+            .unwrap_or_else(|| JsValue::Object(super::OAuthAuthorizationQuery::new()));
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
-        let has_request = query.get("request").is_some_and(Value::is_string);
-        let has_request_uri = query.get("request_uri").is_some_and(Value::is_string);
         let validation = authorization_parameters(&query, validated_max_age);
         // Failed schemas and unsupported request objects redirect using their raw
         // parameters. Only a fully parsed query publishes URL transformations.
-        if !has_request
-            && !has_request_uri
+        if reserved_error.is_none()
             && let Ok(parameters) = &validation
             && let Some(redirect) = &parameters.redirect_uri
         {
             _ = query.insert("redirect_uri".into(), json!(redirect));
+            if let JsValue::Object(fields) = &mut logical_query {
+                _ = fields.insert("redirect_uri".into(), JsValue::String(redirect.clone()));
+            }
         }
+        let logical = alibi_core::endpoint::current_endpoint_call_context()
+            .map(|call| call.handler_context(call.body().cloned(), Some(logical_query)));
+        let run = Box::pin(self.authorize_admission(
+            AuthorizationAdmission {
+                query,
+                validation,
+                nonfinite_values,
+                reserved_error,
+            },
+            req,
+            ctx,
+            initial,
+        ));
+        if let Some(logical) = logical {
+            alibi_core::endpoint::with_endpoint_call_context(logical, run).await
+        } else {
+            run.await
+        }
+    }
+    async fn authorize_admission<S: AuthSchema>(
+        &self,
+        input: AuthorizationAdmission,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+        initial: bool,
+    ) -> AuthResult<EndpointResponse> {
+        let AuthorizationAdmission {
+            mut query,
+            validation,
+            nonfinite_values,
+            reserved_error,
+        } = input;
         let error_mode = authorization_error_mode(&query);
         let text = |name: &str| {
             query
@@ -85,8 +253,7 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
-        if !has_request
-            && !has_request_uri
+        if reserved_error.is_none()
             && response_type == "code"
             && validation.as_ref().is_ok_and(|parameters| {
                 parameters
@@ -107,7 +274,7 @@ impl OAuthProviderPlugin {
             );
         }
         let error_only =
-            has_request || has_request_uri || validation.is_err() || response_type.is_empty();
+            reserved_error.is_some() || validation.is_err() || response_type.is_empty();
         let client = if error_only {
             if client_id.is_empty() || redirect_uri.is_empty() {
                 None
@@ -175,20 +342,8 @@ impl OAuthProviderPlugin {
                 admission_error(error, description)
             }
         };
-        if has_request && has_request_uri {
-            return request_error(
-                "invalid_request",
-                "request and request_uri cannot be used together",
-            );
-        }
-        if has_request {
-            return request_error("request_not_supported", "request object not supported");
-        }
-        if has_request_uri {
-            if client_id.is_empty() {
-                return request_error("invalid_request", "client_id is required");
-            }
-            return request_error("request_uri_not_supported", "request_uri not supported");
+        if let Some((error, description)) = reserved_error {
+            return request_error(error, description);
         }
         let parameters = match validation {
             Ok(parameters) => parameters,

@@ -288,9 +288,9 @@ pub use multi_session::{MultiSessionConfig, MultiSessionPlugin};
 pub use oauth::OAuthPlugin;
 pub use oauth_popup::OAuthPopupPlugin;
 pub use oauth_provider::{
-    OAuthAuthenticatedClient, OAuthClientAssertionInput, OAuthClientAuthenticationOptions,
-    OAuthClientAuthenticationStrategy, OAuthClientDiscovery, OAuthClientIdGenerator,
-    OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
+    OAuthAuthenticatedClient, OAuthAuthorizationQuery, OAuthClientAssertionInput,
+    OAuthClientAuthenticationOptions, OAuthClientAuthenticationStrategy, OAuthClientDiscovery,
+    OAuthClientIdGenerator, OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
     OAuthClientPrivilegeContext, OAuthClientPrivileges, OAuthClientSecretCipher,
     OAuthClientSecretGenerator, OAuthClientSecretHasher, OAuthExtensionClaims,
@@ -298,10 +298,10 @@ pub use oauth_provider::{
     OAuthInitialAccessTokenAuthorization, OAuthInitialAccessTokenError,
     OAuthInitialAccessTokenInput, OAuthInitialAccessTokenValidator, OAuthMetadataContributor,
     OAuthMetadataExtensionInput, OAuthMetadataType, OAuthProviderApi, OAuthProviderConfig,
-    OAuthProviderExtension, OAuthProviderPlugin, OAuthRedirectUriValidator,
-    OAuthTokenClaimsContributor, OAuthTokenClaimsInput, OAuthTokenGenerator, OAuthTokenHasher,
-    OAuthTokenIssueParams, OAuthUserInfoClaimsContributor, OAuthUserInfoClaimsInput,
-    OAuthVerifiedClientAssertion, consume_client_assertion,
+    OAuthProviderExtension, OAuthProviderPlugin, OAuthRedirectUriValidator, OAuthRequestUriInput,
+    OAuthRequestUriResolver, OAuthTokenClaimsContributor, OAuthTokenClaimsInput,
+    OAuthTokenGenerator, OAuthTokenHasher, OAuthTokenIssueParams, OAuthUserInfoClaimsContributor,
+    OAuthUserInfoClaimsInput, OAuthVerifiedClientAssertion, consume_client_assertion,
 };
 pub use oauth_proxy::{OAuthProxyConfig, OAuthProxyPlugin};
 pub use one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};

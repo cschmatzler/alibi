@@ -189,6 +189,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   });
   const registryState = { mode: "live", events: [] as string[] };
   const redirectCalls: unknown[] = [];
+  const requestUriCalls: unknown[] = [];
+  const requestUriRedirects: unknown[] = [];
+  let requestUriParameters: Record<string, unknown> = {};
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -1129,6 +1132,77 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         plugin.id === "jwt" ? jwt({ disableSettingJwtHeader: true }) : plugin,
       ),
     }),
+    "request-uri": betterAuth({
+      ...options,
+      rateLimit: { enabled: false },
+      plugins: [
+        username(),
+        jwt({ disableSettingJwtHeader: true }),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          requestUriResolver: async ({ requestUri, clientId, ctx }) => {
+            requestUriCalls.push({
+              stage: "resolver",
+              requestUri,
+              clientId,
+              path: ctx.path,
+              query: structuredClone(ctx.query),
+              requestURL: ctx.request?.url ?? null,
+              requestHeader: ctx.request?.headers.get("x-request-uri") ?? null,
+            });
+            if (requestUri === "urn:fixture:throw") throw new Error("private resolver failure");
+            if (requestUri === "urn:fixture:api-error") {
+              throw new EndpointAPIError("TOO_MANY_REQUESTS", {
+                code: "REQUEST_LOOKUP_LIMIT",
+                message: "Request lookup limited",
+              });
+            }
+            if (requestUri === "urn:fixture:nonfinite") {
+              return {
+                ...structuredClone(requestUriParameters),
+                extension_scalar: Infinity,
+                extension_array: [-Infinity],
+              };
+            }
+            if (requestUri === "urn:fixture:invalid-max-age") {
+              return {
+                ...structuredClone(requestUriParameters),
+                max_age: Infinity,
+              };
+            }
+            return requestUri === "urn:fixture:valid"
+              ? structuredClone(requestUriParameters)
+              : null;
+          },
+          validateRedirectUri: async (uri, registered, defaultResult) => {
+            requestUriRedirects.push({ uri, registered: [...registered], defaultResult });
+            return defaultResult;
+          },
+          extensions: [
+            {
+              clientDiscovery: [
+                {
+                  id: "request-registry",
+                  matches: (id) => id === "resolver-unknown",
+                  resolve: async (ctx, clientId) => {
+                    requestUriCalls.push({
+                      stage: "discovery",
+                      clientId,
+                      path: ctx.path,
+                      query: structuredClone(ctx.query),
+                      requestURL: ctx.request?.url ?? null,
+                      requestHeader: ctx.request?.headers.get("x-request-uri") ?? null,
+                    });
+                    return null;
+                  },
+                },
+              ],
+            },
+          ],
+        }),
+      ],
+    }),
     "redirect-policy": betterAuth({
       ...options,
       rateLimit: { enabled: false },
@@ -1140,8 +1214,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           consentPage: "/consent",
           validateRedirectUri: async (uri, registered, defaultResult) => {
             redirectCalls.push({ uri, registered: [...registered], defaultResult });
-            if (uri.includes("throw.fixture.test"))
+            if (uri.includes("throw.fixture.test")) {
               throw new Error("application redirect policy failed");
+            }
             return (
               uri !== "https://app.fixture.test/callback" &&
               (uri.includes("preview.fixture.test") || defaultResult)
@@ -1481,6 +1556,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       }
       return Response.json(credentialGenerators);
     }
+    if (input.action === "request-uri-configure") {
+      requestUriParameters = input.parameters;
+      return Response.json({ configured: true });
+    }
+    if (input.action === "request-uri-calls") return Response.json(requestUriCalls.splice(0));
+    if (input.action === "request-uri-redirects") {
+      return Response.json(requestUriRedirects.splice(0));
+    }
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       if (typeof input.operator === "boolean") liveClaims.operator = input.operator;
@@ -1728,8 +1811,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       );
       const url = new URL(`${base.baseURL}${base.basePath ?? "/api/auth"}${input.path}`);
       for (const [name, value] of Object.entries(input.query ?? {})) {
-        for (const item of Array.isArray(value) ? value : [value])
+        for (const item of Array.isArray(value) ? value : [value]) {
           url.searchParams.append(name, String(item));
+        }
       }
       return auth.handler(
         new Request(url, {
