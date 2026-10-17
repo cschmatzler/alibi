@@ -107,7 +107,7 @@ pub trait OAuthRedirectUriValidator: Send + Sync + std::fmt::Debug {
 pub struct OAuthProviderConfig {
     pub scopes: Vec<String>,
     pub extensions: Vec<std::sync::Arc<OAuthProviderExtension>>,
-    /// Operator-owned UserInfo claims, applied after additive extension claims.
+    /// Operator-owned `UserInfo` claims, applied after additive extension claims.
     /// May override ordinary profile claims, but never the authoritative subject.
     pub custom_user_info_claims: Option<std::sync::Arc<dyn OAuthUserInfoClaimsContributor>>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
