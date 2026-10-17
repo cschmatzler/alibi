@@ -1523,11 +1523,27 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     ...Object.fromEntries(
-      ["dynamic", "public", "token-dynamic", "token-public"].map((mode) => [
+      [
+        "dynamic",
+        "public",
+        "token-dynamic",
+        "token-public",
+        "registration-scopes-fallback",
+        "registration-scopes-custom-provider",
+        "registration-scopes-allowed-empty",
+        "registration-scopes-empty",
+        "registration-scopes-both-empty",
+        "registration-scopes-allowed-only",
+        "registration-scopes-default-only",
+        "registration-scopes-union",
+        "registration-scopes-allowed-fallback",
+      ].map((mode) => [
         mode,
         betterAuth({
           ...options,
-          ...(mode.startsWith("token-") ? { rateLimit: { enabled: false } } : {}),
+          ...(mode.startsWith("token-") || mode.startsWith("registration-scopes-")
+            ? { rateLimit: { enabled: false } }
+            : {}),
           plugins: [
             username(),
             jwt(),
@@ -1535,7 +1551,38 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               loginPage: "/login",
               consentPage: "/consent",
               allowDynamicClientRegistration: true,
-              allowUnauthenticatedClientRegistration: mode.endsWith("public"),
+              allowUnauthenticatedClientRegistration:
+                mode.endsWith("public") || mode.startsWith("registration-scopes-"),
+              ...(mode === "registration-scopes-custom-provider"
+                ? { scopes: ["email", "profile", "openid", "email", ""] }
+                : {}),
+              ...([
+                "registration-scopes-empty",
+                "registration-scopes-both-empty",
+                "registration-scopes-allowed-only",
+              ].includes(mode)
+                ? { clientRegistrationDefaultScopes: [] }
+                : {}),
+              ...(mode === "registration-scopes-default-only"
+                ? { clientRegistrationDefaultScopes: ["email"] }
+                : {}),
+              ...(mode === "registration-scopes-union"
+                ? {
+                    clientRegistrationDefaultScopes: ["email", "email"],
+                    clientRegistrationAllowedScopes: ["profile", "email", "profile"],
+                  }
+                : {}),
+              ...(["registration-scopes-allowed-empty", "registration-scopes-both-empty"].includes(
+                mode,
+              )
+                ? { clientRegistrationAllowedScopes: [] }
+                : {}),
+              ...(mode === "registration-scopes-allowed-only"
+                ? { clientRegistrationAllowedScopes: ["profile"] }
+                : {}),
+              ...(mode === "registration-scopes-allowed-fallback"
+                ? { clientRegistrationAllowedScopes: ["email"] }
+                : {}),
               ...(mode.startsWith("token-") ? { validateInitialAccessToken } : {}),
             }),
           ],
@@ -1557,6 +1604,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     const input = await request.json();
     const auth = auths[input.mode as keyof typeof auths] ?? auths.default;
+    if (input.action === "registration-scopes-validation") {
+      try {
+        oauthProvider({ loginPage: "/login", consentPage: "/consent", ...input.options });
+        return Response.json({ valid: true });
+      } catch (error) {
+        return Response.json({ valid: false, message: (error as Error).message });
+      }
+    }
     if (input.action === "response-fields-state") {
       if (typeof input.value === "string") responseFields.mode = input.value;
       if (input.reset) responseFields.calls.length = 0;

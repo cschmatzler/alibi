@@ -15,7 +15,214 @@ const REGISTRATION_TABLES: &[&str] = &[
     "jwks",
     "oauthClient",
 ];
-backend_tests!(oauth_dynamic_registration_enforces_policy_and_persists_clients);
+backend_tests!(
+    oauth_dynamic_registration_enforces_policy_and_persists_clients,
+    oauth_registration_scope_capabilities_are_not_grants
+);
+async fn oauth_registration_scope_capabilities_are_not_grants<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for (defaults, allowed, invalid) in [
+        (Some(vec!["unknown"]), None, "unknown"),
+        (None, Some(vec!["unknown"]), "unknown"),
+        (Some(vec![""]), None, ""),
+        (
+            Some(vec![" email"]),
+            Some(vec!["first-invalid"]),
+            "first-invalid",
+        ),
+    ] {
+        let result = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                client_registration_default_scopes: defaults
+                    .map(|v| v.into_iter().map(str::to_owned).collect()),
+                client_registration_allowed_scopes: allowed
+                    .map(|v| v.into_iter().map(str::to_owned).collect()),
+                ..Default::default()
+            }))
+            .build()
+            .await;
+        assert!(
+            matches!(result, Err(alibi::AuthError::Config(message)) if message == format!("clientRegistrationAllowedScope {invalid} not found in scopes"))
+        );
+    }
+    let mut owner = None;
+    for (mode, defaults, allowed, expected) in [
+        (
+            "fallback",
+            None,
+            None,
+            "openid profile email offline_access",
+        ),
+        (
+            "allowed-empty",
+            None,
+            Some(vec![]),
+            "openid profile email offline_access",
+        ),
+        ("custom-provider", None, None, "email profile openid"),
+        ("empty", Some(vec![]), None, ""),
+        ("both-empty", Some(vec![]), Some(vec![]), ""),
+        (
+            "allowed-only",
+            Some(vec![]),
+            Some(vec!["profile"]),
+            "profile",
+        ),
+        ("default-only", Some(vec!["email"]), None, "email"),
+        (
+            "union",
+            Some(vec!["email", "email"]),
+            Some(vec!["profile", "email", "profile"]),
+            "email profile",
+        ),
+        (
+            "allowed-fallback",
+            None,
+            Some(vec!["email"]),
+            "openid profile email offline_access",
+        ),
+    ] {
+        let auth = Box::pin(
+            super::auth_probe::fast_builder::<B>(&connection)
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                    allow_dynamic_client_registration: true,
+                    allow_unauthenticated_client_registration: true,
+                    scopes: if mode == "custom-provider" {
+                        ["email", "profile", "openid", "email", ""]
+                            .map(str::to_owned)
+                            .into()
+                    } else {
+                        OAuthProviderConfig::default().scopes
+                    },
+                    client_registration_default_scopes: defaults
+                        .map(|v| v.into_iter().map(str::to_owned).collect()),
+                    client_registration_allowed_scopes: allowed
+                        .map(|v| v.into_iter().map(str::to_owned).collect()),
+                    ..Default::default()
+                }))
+                .build(),
+        )
+        .await?;
+        if owner.is_none() {
+            owner = Some(Box::pin(signup(&auth, "registration-scopes@example.test")).await);
+        }
+        let cookie = cookies(owner.as_ref().unwrap());
+        for requested in [
+            None,
+            Some(""),
+            Some(" "),
+            Some("email"),
+            Some("profile"),
+            Some("openid"),
+            Some("forbidden"),
+        ] {
+            let mut input = json!({"redirect_uris":["https://app.fixture.test/callback"],"token_endpoint_auth_method":"none"});
+            if let Some(scope) = requested {
+                input["scope"] = json!(scope);
+            }
+            let before = db.tables(REGISTRATION_TABLES).await?;
+            let output = auth
+                .dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("oauth-provider", "registerOAuthClient")
+                        .with_body(&input)?,
+                    EndpointOptions {
+                        headers: Some(Default::default()),
+                        ..Default::default()
+                    },
+                )
+                .await;
+            if requested.is_some_and(|scope| {
+                !scope.trim().is_empty() && !expected.split(' ').any(|allowed| allowed == scope)
+            }) {
+                let error = output.unwrap_err();
+                assert_eq!(error.error.status_code(), 400, "{mode}:{requested:?}");
+                assert_eq!(
+                    error.body.as_deref(),
+                    Some(&alibi::utils::json::JsValue::from(
+                        json!({"error":"invalid_scope","error_description":format!("cannot request scope {}",requested.unwrap())})
+                    ))
+                );
+                assert_eq!(db.tables(REGISTRATION_TABLES).await?, before);
+                continue;
+            }
+            let output = output?.into_response()?;
+            assert_eq!(output.status, 201);
+            let value = body(&output);
+            assert_eq!(value["scope"], expected, "{mode}:{requested:?}");
+            let id = value["client_id"].as_str().unwrap();
+            let row = auth.store().get_oauth_client(id).await?.unwrap();
+            assert_eq!(row.metadata["scope"], expected);
+            assert_eq!(db.count("oauthConsent").await?, 0);
+            assert_eq!(db.count("oauthAccessToken").await?, 0);
+            if mode == "union" && requested == Some("email") {
+                // A later request can use the additional capability, but registration granted nothing.
+                for (scope, path) in [("profile", "/consent"), ("openid", "/callback")] {
+                    let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":scope,"code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
+                    let response = auth
+                        .dispatch_endpoint(
+                            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+                                .with_query(&query)?,
+                            EndpointOptions {
+                                headers: Some(
+                                    [
+                                        ("cookie".into(), cookie.clone()),
+                                        ("accept".into(), "application/json".into()),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                                request: Some(request("/oauth2/authorize", None, "")),
+                                ..Default::default()
+                            },
+                        )
+                        .await?
+                        .into_response()?;
+                    let destination =
+                        url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
+                    assert_eq!(destination.path(), path);
+                    assert_eq!(
+                        destination
+                            .query_pairs()
+                            .find(|(key, _)| key == "error")
+                            .map(|(_, v)| v.into_owned()),
+                        (scope == "openid").then(|| "invalid_scope".into())
+                    );
+                }
+            }
+        }
+        // Managed creation and owner updates use provider scopes, not DCR capability policy.
+        let managed = auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"openid"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()),..Default::default()}).await?.into_response()?;
+        assert_eq!(body(&managed)["scope"], "openid");
+        let id = body(&managed)["client_id"].as_str().unwrap().to_owned();
+        for patch in [
+            json!({"client_name":"Scopes unchanged"}),
+            json!({"scope":""}),
+            json!({"scope":"profile"}),
+        ] {
+            let updated = auth
+                .dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("oauth-provider", "updateOAuthClient")
+                        .with_body(&json!({"client_id":id,"update":patch}))?,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                        ..Default::default()
+                    },
+                )
+                .await?
+                .into_response()?;
+            assert_eq!(
+                body(&updated)["scope"],
+                patch
+                    .get("scope")
+                    .cloned()
+                    .unwrap_or_else(|| json!("openid"))
+            );
+        }
+    }
+    Ok(())
+}
 async fn oauth_dynamic_registration_enforces_policy_and_persists_clients<B: Backend>(
     db: Db,
 ) -> TestResult {

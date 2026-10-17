@@ -5,6 +5,164 @@ import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
+  "OAuth registration scope policy preserves capability unions without granting them",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: object) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    const signup = await control({
+      action: "signup",
+      body: {
+        email: ctx.uniqueEmail("registration-scopes"),
+        name: "Owner",
+        password: "password123",
+      },
+    });
+    expect(signup.status).toBe(200);
+    const cookie = signup.headers
+      .getSetCookie()
+      .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const results = [];
+    for (const [mode, expected] of [
+      ["fallback", "openid profile email offline_access"],
+      ["custom-provider", "email profile openid"],
+      ["allowed-empty", "openid profile email offline_access"],
+      ["empty", ""],
+      ["both-empty", ""],
+      ["allowed-only", "profile"],
+      ["default-only", "email"],
+      ["union", "email profile"],
+      ["allowed-fallback", "openid profile email offline_access"],
+    ] as const) {
+      const call = (input: object) =>
+        control({ mode: `registration-scopes-${mode}`, headers: { cookie }, ...input });
+      for (const scope of [undefined, "", " ", "email", "profile", "openid", "forbidden"]) {
+        const before = (await (await call({ action: "registration-state" })).json()) as any;
+        const response = await call({
+          action: "register",
+          body: {
+            redirect_uris: ["https://app.fixture.test/callback"],
+            token_endpoint_auth_method: "none",
+            ...(scope === undefined ? {} : { scope }),
+          },
+        });
+        const value = (await response.json()) as any;
+        if (scope?.trim() && !expected.split(" ").includes(scope)) {
+          expect(response.status).toBe(400);
+          expect(value).toEqual({
+            error: "invalid_scope",
+            error_description: `cannot request scope ${scope}`,
+          });
+          expect(
+            ((await (await call({ action: "registration-state" })).json()) as any).counts,
+          ).toEqual(before.counts);
+          results.push({ mode, scope: scope ?? null, status: response.status, value });
+          continue;
+        }
+        expect(response.status).toBe(201);
+        expect(value.scope).toBe(expected);
+        const persisted = (await (
+          await call({ action: "get", query: { client_id: value.client_id } })
+        ).json()) as any;
+        expect(persisted.scope).toBe(expected);
+        const grants = await (
+          await call({ action: "consent-row", clientId: value.client_id })
+        ).json();
+        expect(grants).toEqual([]);
+        const use = [];
+        if (mode === "union" && scope === "email") {
+          for (const requested of ["profile", "openid"]) {
+            const response = await call({
+              action: "authorize",
+              headers: { cookie, accept: "application/json" },
+              query: {
+                client_id: value.client_id,
+                response_type: "code",
+                redirect_uri: "https://app.fixture.test/callback",
+                scope: requested,
+                code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+                code_challenge_method: "S256",
+              },
+            });
+            expect(response.status).toBe(200);
+            const output = (await response.json()) as any;
+            const url = new URL(output.url, ctx.baseURL);
+            expect(url.pathname).toBe(requested === "profile" ? "/consent" : "/callback");
+            expect(url.searchParams.get("error")).toBe(
+              requested === "profile" ? null : "invalid_scope",
+            );
+            use.push(output);
+          }
+        }
+        results.push({
+          mode,
+          scope: scope ?? null,
+          status: response.status,
+          value: ctx.snapshot(value),
+          persisted: ctx.snapshot(persisted),
+          grants,
+          use: ctx.snapshot(use),
+        });
+      }
+      const created = await call({
+        body: { redirect_uris: ["https://app.fixture.test/callback"], scope: "openid" },
+      });
+      expect(created.status).toBe(201);
+      const managed = (await created.json()) as any;
+      expect(managed.scope).toBe("openid");
+      for (const update of [
+        { client_name: "Scopes unchanged" },
+        { scope: "" },
+        { scope: "profile" },
+      ]) {
+        const response = await call({
+          action: "update",
+          body: { client_id: managed.client_id, update },
+        });
+        expect(response.status).toBe(200);
+        const value = (await response.json()) as any;
+        expect(value.scope).toBe("scope" in update ? update.scope : "openid");
+        results.push({ mode, update, value: ctx.snapshot(value) });
+      }
+    }
+    const configurations = [];
+    for (const [options, invalid] of [
+      [{ clientRegistrationDefaultScopes: ["unknown"] }, "unknown"],
+      [{ clientRegistrationAllowedScopes: ["unknown"] }, "unknown"],
+      [{ clientRegistrationDefaultScopes: [""] }, ""],
+      [
+        {
+          clientRegistrationDefaultScopes: [" email"],
+          clientRegistrationAllowedScopes: ["first-invalid"],
+        },
+        "first-invalid",
+      ],
+      [{ clientRegistrationDefaultScopes: [], clientRegistrationAllowedScopes: [] }, null],
+    ] as const) {
+      const value = await (
+        await control({ action: "registration-scopes-validation", options })
+      ).json();
+      expect(value).toEqual(
+        invalid === null
+          ? { valid: true }
+          : {
+              valid: false,
+              message: `clientRegistrationAllowedScope ${invalid} not found in scopes`,
+            },
+      );
+      configurations.push(value);
+    }
+    return { results, configurations };
+  },
+);
+compatScenario(
   "Dynamic OAuth registration gates admission and persists owned and anonymous clients",
   async (ctx) => {
     const actor = ctx.actor();

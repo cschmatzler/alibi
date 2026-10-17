@@ -269,6 +269,15 @@ pub(crate) async fn router(
         "public",
         "token-dynamic",
         "token-public",
+        "registration-scopes-fallback",
+        "registration-scopes-custom-provider",
+        "registration-scopes-allowed-empty",
+        "registration-scopes-empty",
+        "registration-scopes-both-empty",
+        "registration-scopes-allowed-only",
+        "registration-scopes-default-only",
+        "registration-scopes-union",
+        "registration-scopes-allowed-fallback",
         "prelogin",
         "expired",
         "resources-open",
@@ -358,6 +367,24 @@ pub(crate) async fn router(
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="response-fields" {provider.custom_token_response_fields=Some(response_fields.clone());provider.disable_jwt_plugin=true;}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
+        if mode.starts_with("registration-scopes-") {
+            if mode=="registration-scopes-custom-provider" {provider.scopes=vec!["email".into(),"profile".into(),"openid".into(),"email".into(),String::new()];}
+            provider.allow_dynamic_client_registration=true;
+            provider.allow_unauthenticated_client_registration=true;
+            provider.client_registration_default_scopes=match mode {
+                "registration-scopes-empty"|"registration-scopes-both-empty"|"registration-scopes-allowed-only"=>Some(vec![]),
+                "registration-scopes-default-only"=>Some(vec!["email".into()]),
+                "registration-scopes-union"=>Some(vec!["email".into(),"email".into()]),
+                _=>None,
+            };
+            provider.client_registration_allowed_scopes=match mode {
+                "registration-scopes-allowed-empty"|"registration-scopes-both-empty"=>Some(vec![]),
+                "registration-scopes-allowed-only"=>Some(vec!["profile".into()]),
+                "registration-scopes-union"=>Some(vec!["profile".into(),"email".into(),"profile".into()]),
+                "registration-scopes-allowed-fallback"=>Some(vec!["email".into()]),
+                _=>None,
+            };
+        }
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
         if mode=="response-fields" {client_config=client_config.base_path("/__test/profiles/oauth-response-fields/api/auth");}
@@ -368,7 +395,7 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("token-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("token-") || mode.starts_with("registration-scopes-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
@@ -402,6 +429,16 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="registration-scopes-validation" {
+                let options=&input["options"];
+                let cfg=OAuthProviderConfig{
+                    client_registration_default_scopes:options.get("clientRegistrationDefaultScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),
+                    client_registration_allowed_scopes:options.get("clientRegistrationAllowedScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),
+                    ..Default::default()
+                };
+                let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(cfg)).build().await;
+                return axum::Json(match result {Ok(_)=>serde_json::json!({"valid":true}),Err(alibi::AuthError::Config(message))=>serde_json::json!({"valid":false,"message":message}),Err(error)=>panic!("unexpected configuration failure: {error}")}).into_response();
+            }
             if input["action"]=="registration-state" {
                 use alibi::seaorm::sea_orm::{ConnectionTrait as _,DbBackend,Statement};
                 let mut counts=serde_json::Map::new();

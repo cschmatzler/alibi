@@ -82,7 +82,7 @@ impl OAuthProviderPlugin {
         req.queue_response_header("Pragma", "no-cache");
         let metadata: serde_json::Map<String, Value> =
             serde_json::from_value(serde_json::to_value(input)?)?;
-        let metadata = match self.admit_metadata(metadata, ctx)? {
+        let metadata = match self.admit_metadata(metadata, &self.config.scopes, ctx)? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
@@ -821,6 +821,7 @@ impl OAuthProviderPlugin {
     fn admit_metadata<S: AuthSchema>(
         &self,
         mut metadata: serde_json::Map<String, Value>,
+        allowed_scopes: &[String],
         ctx: &AuthContext<S>,
     ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
         let auth = metadata
@@ -938,7 +939,7 @@ impl OAuthProviderPlugin {
         }
         if let Some(scope) = metadata.get("scope").and_then(Value::as_str) {
             for scope in scope.split(' ').filter(|scope| !scope.is_empty()) {
-                if !self.config.scopes.iter().any(|allowed| allowed == scope) {
+                if !allowed_scopes.iter().any(|allowed| allowed == scope) {
                     return protocol_error(
                         "invalid_scope",
                         format!("cannot request scope {scope}"),
@@ -1141,7 +1142,7 @@ impl OAuthProviderPlugin {
             _ = merged.insert("client_credentials_scopes".into(), json!([]));
         }
         // Update admission may infer defaults, but the reference persists only the requested patch.
-        let metadata = match self.admit_metadata(merged.clone(), ctx)? {
+        let metadata = match self.admit_metadata(merged.clone(), &self.config.scopes, ctx)? {
             Ok(_) => Value::Object(merged),
             Err(response) => return Ok(response),
         };
@@ -1333,9 +1334,33 @@ impl OAuthProviderPlugin {
             .and_then(Value::as_str)
             .is_none_or(str::is_empty)
         {
-            _ = metadata.insert("scope".into(), json!(self.config.scopes.join(" ")));
+            _ = metadata.insert(
+                "scope".into(),
+                json!(
+                    self.config
+                        .client_registration_default_scopes
+                        .as_ref()
+                        .unwrap_or(&self.config.scopes)
+                        .join(" ")
+                ),
+            );
         }
-        let mut metadata = match self.admit_metadata(metadata, ctx)? {
+        let registration_scopes = super::unique(
+            self.config
+                .client_registration_default_scopes
+                .as_ref()
+                .unwrap_or(&self.config.scopes)
+                .iter()
+                .chain(
+                    self.config
+                        .client_registration_allowed_scopes
+                        .iter()
+                        .flatten(),
+                )
+                .cloned()
+                .collect(),
+        );
+        let mut metadata = match self.admit_metadata(metadata, &registration_scopes, ctx)? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
@@ -1350,7 +1375,7 @@ impl OAuthProviderPlugin {
                 &format!("requested resource {resource} is not allowed for client registration"),
             );
         }
-        _ = metadata.insert("scope".into(), json!(self.config.scopes.join(" ")));
+        _ = metadata.insert("scope".into(), json!(registration_scopes.join(" ")));
         if let Some(reference) =
             token_authorization.and_then(|authorization| authorization.reference_id)
         {
@@ -1530,7 +1555,7 @@ impl OAuthProviderPlugin {
             .remove("metadata")
             .and_then(|value| value.as_object().cloned())
             .unwrap_or_default();
-        let mut metadata = match self.admit_metadata(metadata, ctx)? {
+        let mut metadata = match self.admit_metadata(metadata, &self.config.scopes, ctx)? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };

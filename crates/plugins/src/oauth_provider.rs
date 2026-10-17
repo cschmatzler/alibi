@@ -185,6 +185,12 @@ pub struct OAuthProviderConfig {
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
     pub allow_dynamic_client_registration: bool,
+    /// Baseline dynamic-registration capabilities. `None` uses provider scopes;
+    /// `Some(vec![])` deliberately supplies no baseline capabilities.
+    pub client_registration_default_scopes: Option<Vec<String>>,
+    /// Additional dynamic-registration capabilities, unioned after the baseline.
+    /// Requested registration scopes validate against, but do not narrow, this union.
+    pub client_registration_allowed_scopes: Option<Vec<String>>,
     /// Operator authorization for Bearer credentials presented without a genuine user session.
     pub initial_access_token_validator:
         Option<std::sync::Arc<dyn OAuthInitialAccessTokenValidator>>,
@@ -239,6 +245,8 @@ impl Default for OAuthProviderConfig {
                 .map(str::to_owned)
                 .into(),
             allow_dynamic_client_registration: false,
+            client_registration_default_scopes: None,
+            client_registration_allowed_scopes: None,
             initial_access_token_validator: None,
             allow_unauthenticated_client_registration: false,
             disable_jwt_plugin: false,
@@ -1170,6 +1178,24 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
     }
     async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         self.validate_extensions()?;
+        for scope in self
+            .config
+            .client_registration_allowed_scopes
+            .iter()
+            .flatten()
+            .chain(
+                self.config
+                    .client_registration_default_scopes
+                    .iter()
+                    .flatten(),
+            )
+        {
+            if !self.config.scopes.contains(scope) {
+                return Err(AuthError::config(format!(
+                    "clientRegistrationAllowedScope {scope} not found in scopes"
+                )));
+            }
+        }
         if self
             .config
             .advertised_scopes
