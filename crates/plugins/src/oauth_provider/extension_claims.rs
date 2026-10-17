@@ -74,7 +74,7 @@ pub(super) fn merge_additive(base: &mut Map<String, Value>, claims: Map<String, 
     }
 }
 
-/// Resource policy wins over extension/per-issuance claims, but no source may
+/// Resource policy wins over extension/per-issuance/operator claims, but no source may
 /// supply authority owned by the authorization server. Shared by JWT minting
 /// and live opaque validation (including reserved claims absent from the token).
 pub(super) fn compose_access_claims(
@@ -147,20 +147,14 @@ impl OAuthProviderPlugin {
         Ok(claims)
     }
 
-    pub(super) async fn extend_access_token_claims<S: AuthSchema>(
+    pub(super) async fn resolve_access_token_claims(
         &self,
-        ctx: &AuthContext<S>,
-        req: &impl SessionRequest,
-        params: &mut OAuthTokenIssueParams,
-        grant_type: &str,
-    ) -> AuthResult<()> {
+        context: CallbackContext,
+        params: &OAuthTokenIssueParams,
+        grant_type: Option<&str>,
+    ) -> AuthResult<Map<String, Value>> {
         let mut claims = self
-            .collect_token_claims(
-                callback_context(ctx, req),
-                params,
-                Some(grant_type),
-                TokenClaimKind::Access,
-            )
+            .collect_token_claims(context.clone(), params, grant_type, TokenClaimKind::Access)
             .await?;
         if let Some(per_request) = params
             .access_token_claims
@@ -169,6 +163,40 @@ impl OAuthProviderPlugin {
         {
             claims.extend(per_request.clone());
         }
+        if let Some(contributor) = &self.config.custom_access_token_claims {
+            let operator = contributor
+                .contribute(OAuthTokenClaimsInput {
+                    context,
+                    options: &self.config,
+                    params,
+                    grant_type,
+                    metadata: alibi_core::store::oauth_clients::metadata_to_columns(
+                        params.client.metadata.clone(),
+                    )?
+                    .get("metadata")
+                    .filter(|value| !value.is_null())
+                    .cloned(),
+                })
+                .await?;
+            // The operator overrides additive/per-request claims. The final
+            // resource merge and authority stripping remain at the callers,
+            // using resource policy captured before any contributor executes.
+            // JS stripReservedClaims assigns into {}, omitting __proto__.
+            claims.extend(operator.into_iter().filter(|(key, _)| key != "__proto__"));
+        }
+        Ok(claims)
+    }
+
+    pub(super) async fn extend_access_token_claims<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        req: &impl SessionRequest,
+        params: &mut OAuthTokenIssueParams,
+        grant_type: &str,
+    ) -> AuthResult<()> {
+        let claims = self
+            .resolve_access_token_claims(callback_context(ctx, req), params, Some(grant_type))
+            .await?;
         params.access_token_claims = Some(Value::Object(claims));
         Ok(())
     }

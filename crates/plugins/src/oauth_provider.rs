@@ -113,6 +113,9 @@ pub struct OAuthProviderConfig {
     /// Operator-owned ID-token claims. Profile claims may override additive
     /// contributions; provider-owned protocol claims remain authoritative.
     pub custom_id_token_claims: Option<std::sync::Arc<dyn OAuthTokenClaimsContributor>>,
+    /// Operator access claims, above per-issuance claims but below resource
+    /// policy. Opaque validation re-derives them without an issuance grant.
+    pub custom_access_token_claims: Option<std::sync::Arc<dyn OAuthTokenClaimsContributor>>,
     pub client_discoveries: Vec<std::sync::Arc<dyn OAuthClientDiscovery>>,
     /// Managed identities cached by provider instance and protected from API mutations.
     pub cached_trusted_clients: std::collections::HashSet<String>,
@@ -165,6 +168,7 @@ impl Default for OAuthProviderConfig {
             extensions: Vec::new(),
             custom_user_info_claims: None,
             custom_id_token_claims: None,
+            custom_access_token_claims: None,
             client_discoveries: Vec::new(),
             cached_trusted_clients: std::collections::HashSet::new(),
             client_credentials_scope_privileges: None,

@@ -192,12 +192,7 @@ impl OAuthProviderPlugin {
             }
         }
         let claims = self
-            .collect_token_claims(
-                alibi_core::CallbackContext::new(ctx, None),
-                &params,
-                None,
-                super::extension_claims::TokenClaimKind::Access,
-            )
+            .resolve_access_token_claims(alibi_core::CallbackContext::new(ctx, None), &params, None)
             .await?;
         let payload = json!({"active":true,"iss":issuer(ctx,self.config.disable_jwt_plugin),"client_id":row.client_id,"azp":row.client_id,"exp":row.expires_at.timestamp(),"iat":row.created_at.timestamp()});
         let core = payload

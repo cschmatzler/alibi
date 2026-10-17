@@ -22,12 +22,18 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
     use alibi::store::{CreateOAuthClientResource, CreateOAuthResource, OAuthTokenKind};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let live = std::sync::Arc::new(extension_claims::LiveAccessClaims::default());
+    *live.operator.lock().unwrap() = true;
+    *live.value.lock().unwrap() = "before".into();
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
         disable_jwt_plugin: true,
         extensions: extension_claims::extensions_with_live(Some(live.clone())),
+        custom_access_token_claims: Some(extension_claims::access_operator::<B::Schema>(
+            live.clone(),
+        )),
         ..Default::default()
     });
     let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
         .plugin(provider.clone())
         .build()
         .await?;
@@ -35,7 +41,7 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
     let created = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({
             "client_name":"Live claims", "redirect_uris":["https://app.fixture.test/callback"],
-            "scope":"email profile", "token_endpoint_auth_method":"none"
+            "scope":"email profile", "token_endpoint_auth_method":"none", "metadata":{"tenant":"application"}
         }))?,
         EndpointOptions {
             headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
@@ -53,15 +59,21 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
     let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let user = auth.store().get_user_by_id(&user_id).await?.unwrap();
     let resource = "https://api.fixture.test/live-claims";
-    let _ = auth.store().create_oauth_resource(CreateOAuthResource {
-        identifier: resource.into(), created_at: chrono::Utc::now(),
-        metadata: json!({
-            "name":"Live claims","disabled":false,"allowedScopes":null,
-            "accessTokenTtl":null,"refreshTokenTtl":null,"signingAlgorithm":null,"signingKeyId":null,
-            "customClaims":{"resource_wins":"resource-before","cnf":{"jkt":"forged"}},
-            "dpopBoundAccessTokensRequired":false,"metadata":null,"policyVersion":1
-        }),
-    }).await?;
+    let resource_metadata = json!({
+        "name":"Live claims","disabled":false,"allowedScopes":null,
+        "accessTokenTtl":null,"refreshTokenTtl":null,"signingAlgorithm":null,"signingKeyId":null,
+        "customClaims":{"resource_wins":"resource-before","cnf":{"jkt":"forged"}},
+        "dpopBoundAccessTokensRequired":false,"metadata":null,"policyVersion":1
+    });
+    *live.mutate_resource.lock().unwrap() = Some(resource.into());
+    let _ = auth
+        .store()
+        .create_oauth_resource(CreateOAuthResource {
+            identifier: resource.into(),
+            created_at: chrono::Utc::now(),
+            metadata: resource_metadata.clone(),
+        })
+        .await?;
     let _ = auth
         .store()
         .create_oauth_client_resource(CreateOAuthClientResource {
@@ -72,6 +84,13 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
         .await?;
     let mut params = OAuthTokenIssueParams::new(client, vec!["email".into(), "profile".into()]);
     params.user = Some(auth.context().trusted_user_view(&user));
+    let session = auth
+        .store()
+        .get_user_sessions(&user_id)
+        .await?
+        .pop()
+        .unwrap();
+    params.session_id = Some(session.id().as_ref().into());
     params.reference_id = Some("live-reference".into());
     params.resources = Some(vec![resource.into()]);
     params.access_token_claims = Some(json!({"per_request":"issuance-only"}));
@@ -96,24 +115,100 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
         live.calls.lock().unwrap().is_empty(),
         "opaque issuance does not collect access claims"
     );
+    assert!(
+        live.operator_calls.lock().unwrap().is_empty(),
+        "opaque issuance does not invoke the operator either"
+    );
+    let jwt_provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        extensions: extension_claims::extensions_with_live(Some(live.clone())),
+        custom_access_token_claims: Some(extension_claims::access_operator::<B::Schema>(
+            live.clone(),
+        )),
+        ..Default::default()
+    });
+    let signed = jwt_provider
+        .issue_tokens(auth.context(), &call, Some("urn:native:claims"), &params)
+        .await?;
+    let verifier = JwtPlugin::with_config(alibi::plugins::jwt::JwtPluginConfig {
+        claims: alibi::plugins::jwt::JwtClaimsConfig {
+            issuer: Some(format!("{ORIGIN}/api/auth")),
+            audience: Some(alibi::plugins::jwt::JwtAudience::One(resource.into())),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+    let signed_token = signed["access_token"].as_str().unwrap();
+    let signed_claims = verifier
+        .verify_jwt(signed_token, None, None, auth.context())
+        .await?
+        .expect("real issued JWT signature");
+    assert_eq!(signed_claims.get("operator_value"), Some(&json!("before")));
+    assert_eq!(signed_claims["per_request"], "operator-before");
+    assert_eq!(signed_claims["extension_owner"], "operator-before");
+    assert_eq!(signed_claims["resource_wins"], "resource-before");
+    assert_eq!(signed_claims["sub"], user_id);
+    assert_eq!(signed_claims["client_id"], client_id);
+    assert_eq!(signed_claims["azp"], client_id);
+    assert_eq!(signed_claims["scope"], "email profile");
+    assert_eq!(signed_claims["sid"], session.id().as_ref());
+    assert_eq!(signed_claims["jti"].as_str().unwrap().len(), 32);
+    assert_eq!(
+        signed_claims["exp"].as_i64().unwrap() - signed_claims["iat"].as_i64().unwrap(),
+        3600
+    );
+    for key in ["cnf", "auth_time", "acr", "amr"] {
+        assert!(!signed_claims.contains_key(key));
+    }
+    assert_eq!(
+        *live.operator_calls.lock().unwrap(),
+        [json!({
+            "userId":user_id,"scopes":["email","profile"],"resources":[resource],"referenceId":"live-reference","metadata":{"tenant":"application"},
+        })]
+    );
+    assert_eq!(
+        *live.operator_contexts.lock().unwrap(),
+        [
+            json!({"grant":"urn:native:claims","sessionId":session.id().as_ref(),"clientId":client_id})
+        ]
+    );
+    live.calls.lock().unwrap().clear();
+    live.operator_calls.lock().unwrap().clear();
+    live.operator_contexts.lock().unwrap().clear();
+    let peer = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Unlinked peer","redirect_uris":["https://peer.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,
+        EndpointOptions {headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()},
+    )).await?.into_response()?;
+    assert_eq!(peer.status, 201);
+    assert_eq!(
+        provider
+            .validate_access_token(auth.context(), token, body(&peer)["client_id"].as_str())
+            .await?,
+        json!({"active":false})
+    );
+    assert!(live.calls.lock().unwrap().is_empty());
+    assert!(live.operator_calls.lock().unwrap().is_empty());
     for value in ["before", "after"] {
         *live.value.lock().unwrap() = value.into();
-        if value == "after" {
-            let _ = auth.store().update_oauth_resource(resource, json!({
-                "name":"Live claims","disabled":true,"allowedScopes":["openid"],
-                "accessTokenTtl":null,"refreshTokenTtl":null,"signingAlgorithm":null,"signingKeyId":null,
-                "dpopBoundAccessTokensRequired":false,"metadata":null,"policyVersion":1,"customClaims":{
-                    "resource_wins":"resource-after","cnf":{"jkt":"forged"},"auth_time":1,"jti":"forged"
-                }
-            }), chrono::Utc::now()).await?;
-        }
+        let mut metadata = resource_metadata.clone();
+        metadata["disabled"] = json!(value == "after");
+        metadata["allowedScopes"] = if value == "after" {
+            json!(["openid"])
+        } else {
+            Value::Null
+        };
+        metadata["customClaims"] = json!({"resource_wins":format!("resource-{value}"),"cnf":{"jkt":"forged"},"auth_time":1,"jti":"forged"});
+        let _ = auth
+            .store()
+            .update_oauth_resource(resource, metadata, chrono::Utc::now())
+            .await?;
         let payload = provider
             .validate_access_token(auth.context(), token, None)
             .await?;
         assert_eq!(payload["live_value"], value);
+        assert_eq!(payload["operator_value"], value);
         assert_eq!(payload["resource_wins"], format!("resource-{value}"));
-        assert_eq!(payload["extension_owner"], "first");
-        assert_eq!(payload["per_request"], "first");
+        assert_eq!(payload["extension_owner"], format!("operator-{value}"));
+        assert_eq!(payload["per_request"], format!("operator-{value}"));
         assert_eq!(payload["active"], true);
         assert_eq!(payload["sub"], user_id);
         assert_eq!(payload["client_id"], client_id);
@@ -122,27 +217,56 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
         assert_eq!(payload["aud"], resource);
         assert_eq!(payload["iss"], format!("{ORIGIN}/api/auth"));
         assert_eq!(payload["token_type"], "Bearer");
+        assert_eq!(payload["sid"], session.id().as_ref());
+        assert_eq!(
+            auth.store()
+                .get_oauth_resource(resource)
+                .await?
+                .unwrap()
+                .metadata["customClaims"]["resource_wins"],
+            format!("resource-during-{value}"),
+            "resource snapshot precedes actual application callback mutation"
+        );
         assert_eq!(
             payload["exp"].as_i64().unwrap() - payload["iat"].as_i64().unwrap(),
             3600
         );
-        for key in [
-            "sid",
-            "cnf",
-            "jti",
-            "auth_time",
-            "acr",
-            "amr",
-            "constructor",
-        ] {
+        for key in ["cnf", "jti", "auth_time", "acr", "amr", "constructor"] {
             assert!(payload.get(key).is_none(), "reserved claim {key} leaked");
         }
     }
     let calls = live.calls.lock().unwrap().clone();
     assert_eq!(calls, ["first", "second", "first", "second"].map(|extension| json!({
         "extension":extension,"grant":null,"sessionId":null,"userId":user_id,"clientId":client_id,
-        "referenceId":"live-reference","scopes":["email","profile"],"resources":[resource],"metadata":null,
+        "referenceId":"live-reference","scopes":["email","profile"],"resources":[resource],"metadata":{"tenant":"application"},
     })));
+    let operator_calls = live.operator_calls.lock().unwrap().clone();
+    assert_eq!(
+        operator_calls,
+        vec![
+            json!({"userId":user_id,"scopes":["email","profile"],"resources":[resource],"referenceId":"live-reference","metadata":{"tenant":"application"}});
+            2
+        ]
+    );
+    assert_eq!(
+        *live.operator_contexts.lock().unwrap(),
+        vec![json!({"grant":null,"sessionId":null,"clientId":client_id}); 2]
+    );
+    let verified_again = verifier
+        .verify_jwt(signed_token, None, None, auth.context())
+        .await?
+        .unwrap();
+    assert_eq!(
+        verified_again, signed_claims,
+        "JWT claims retain their signed issuance snapshot"
+    );
+    let validated = jwt_provider
+        .validate_access_token(auth.context(), signed_token, None)
+        .await?;
+    assert_eq!(validated["operator_value"], "before");
+    assert_eq!(validated["resource_wins"], "resource-before");
+    assert_eq!(*live.calls.lock().unwrap(), calls);
+    assert_eq!(*live.operator_calls.lock().unwrap(), operator_calls);
     let hash = provider.hash_token(token, "access_token").await?;
     let row = auth
         .store()
@@ -160,6 +284,7 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
         json!({"active":false})
     );
     assert_eq!(*live.calls.lock().unwrap(), calls);
+    assert_eq!(*live.operator_calls.lock().unwrap(), operator_calls);
     Ok(())
 }
 

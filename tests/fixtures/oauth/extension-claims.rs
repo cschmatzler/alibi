@@ -13,6 +13,69 @@ pub(super) struct ExtensionClaims {
 pub(crate) struct LiveAccessClaims {
     pub value: std::sync::Mutex<String>,
     pub calls: std::sync::Mutex<Vec<Value>>,
+    pub operator: std::sync::Mutex<bool>,
+    pub mutate_resource: std::sync::Mutex<Option<String>>,
+    pub operator_calls: std::sync::Mutex<Vec<Value>>,
+    pub operator_contexts: std::sync::Mutex<Vec<Value>>,
+}
+
+struct AccessOperator<S: alibi::AuthSchema> {
+    live: std::sync::Arc<LiveAccessClaims>,
+    schema: std::marker::PhantomData<fn() -> S>,
+}
+impl<S: alibi::AuthSchema> std::fmt::Debug for AccessOperator<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AccessOperator").finish_non_exhaustive()
+    }
+}
+pub(crate) fn access_operator<S: alibi::AuthSchema>(
+    live: std::sync::Arc<LiveAccessClaims>,
+) -> std::sync::Arc<dyn alibi::plugins::OAuthTokenClaimsContributor> {
+    std::sync::Arc::new(AccessOperator::<S> {
+        live,
+        schema: std::marker::PhantomData,
+    })
+}
+#[async_trait::async_trait]
+impl<S: alibi::AuthSchema> alibi::plugins::OAuthTokenClaimsContributor for AccessOperator<S> {
+    async fn contribute(
+        &self,
+        input: OAuthTokenClaimsInput<'_>,
+    ) -> alibi::AuthResult<Map<String, Value>> {
+        if !*self.live.operator.lock().unwrap() {
+            return Ok(Map::new());
+        }
+        let value = self.live.value.lock().unwrap().clone();
+        self.live.operator_calls.lock().unwrap().push(json!({
+            "userId":input.params.user.as_ref().map(|user| &user.id),
+            "scopes":input.params.scopes,"resources":input.params.resources,
+            "referenceId":input.params.reference_id,"metadata":input.metadata,
+        }));
+        self.live.operator_contexts.lock().unwrap().push(json!({
+            "grant":input.grant_type,"sessionId":input.params.session_id,"clientId":input.params.client.client_id,
+        }));
+        let resource = self.live.mutate_resource.lock().unwrap().clone();
+        if let Some(resource) = resource {
+            let ctx = input
+                .context
+                .context::<S>()
+                .expect("actual callback schema");
+            let mut row = ctx.database.get_oauth_resource(&resource).await?.unwrap();
+            row.metadata["customClaims"]["resource_wins"] =
+                json!(format!("resource-during-{value}"));
+            let _ = ctx
+                .database
+                .update_oauth_resource(&resource, row.metadata, chrono::Utc::now())
+                .await?;
+        }
+        Ok(json!({
+            "operator_value":value,"extension_owner":format!("operator-{value}"),"per_request":format!("operator-{value}"),
+            "resource_wins":format!("operator-{value}"),
+            "iss":"https://forged.fixture.test","sub":"forged","aud":"forged","exp":1,"iat":1,"jti":"forged",
+            "client_id":"forged","azp":"forged","scope":"forged","sid":"forged",
+            "auth_time":1,"acr":"forged","amr":["forged"],"cnf":{"jkt":"forged"},
+        }).as_object().unwrap().clone())
+    }
 }
 
 /// Application-owned state; changing it never changes the persisted user profile.

@@ -38,6 +38,7 @@ compatScenario(
         redirect_uris: ["https://app.fixture.test/callback"],
         scope: "email profile",
         token_endpoint_auth_method: "client_secret_post",
+        metadata: { tenant: "application" },
       },
     });
     expect(created.status).toBe(201);
@@ -65,74 +66,154 @@ compatScenario(
         })
       ).status,
     ).toBe(200);
-    const issued = await control({
-      action: "issue-tokens",
-      body: {
-        disableJwtPlugin: true,
-        claimsProfile: true,
-        clientId: client.client_id,
-        userId: owner.user.id,
-        grantType: "urn:fixture:claims",
-        params: {
-          scopes: ["email", "profile"],
-          resources: [resource],
-          sessionId: session.session.id,
-          referenceId: "live-reference",
-          accessTokenClaims: { per_request: "issuance-only" },
+    const state = async (value?: string, extra: object = {}) => {
+      const response = await control({ action: "claims-state", value, ...extra });
+      expect(response.status).toBe(200);
+      return (await response.json()) as any;
+    };
+    await state("before", { operator: true, mutateResource: resource, reset: true });
+    const issue = (disableJwtPlugin: boolean) =>
+      control({
+        action: "issue-tokens",
+        body: {
+          disableJwtPlugin,
+          claimsProfile: true,
+          accessClaimsProfile: true,
+          clientId: client.client_id,
+          userId: owner.user.id,
+          grantType: "urn:fixture:claims",
+          params: {
+            scopes: ["email", "profile"],
+            resources: [resource],
+            sessionId: session.session.id,
+            referenceId: "live-reference",
+            accessTokenClaims: { per_request: "issuance-only" },
+          },
         },
-      },
-    });
+      });
+    const issued = await issue(true);
     expect(issued.status).toBe(200);
     const token = ((await issued.json()) as any).access_token;
     expect(token).toMatch(/^[A-Za-z]{32}$/);
-    const state = async (value?: string) => {
-      const response = await control({ action: "claims-state", value });
-      expect(response.status).toBe(200);
-      return (await response.json()) as any;
-    };
-    expect((await state("before")).calls).toEqual([]);
-    const introspect = async () => {
+    expect((await state()).calls).toEqual([]);
+    expect((await state()).operatorCalls).toEqual([]);
+    const signedResponse = await issue(false);
+    expect(signedResponse.status).toBe(200);
+    const signedToken = ((await signedResponse.json()) as any).access_token;
+    const keys = createLocalJWKSet((await (await control({ action: "jwks" })).json()) as any);
+    const signedClaims = (
+      await jwtVerify(signedToken, keys, { issuer: `${ctx.baseURL}/api/auth`, audience: resource })
+    ).payload;
+    expect(signedClaims).toMatchObject({
+      operator_value: "before",
+      extension_owner: "operator-before",
+      per_request: "operator-before",
+      resource_wins: "resource-before",
+      sub: owner.user.id,
+      client_id: client.client_id,
+      azp: client.client_id,
+      sid: session.session.id,
+      scope: "email profile",
+    });
+    expect(signedClaims.exp! - signedClaims.iat!).toBe(3600);
+    expect(signedClaims.jti).toHaveLength(32);
+    expect(signedClaims.jti).not.toBe("forged");
+    for (const key of ["cnf", "auth_time", "acr", "amr"]) {
+      expect(signedClaims).not.toHaveProperty(key);
+    }
+    const issuance = await state();
+    expect(issuance.operatorCalls).toEqual([
+      {
+        userId: owner.user.id,
+        scopes: ["email", "profile"],
+        resources: [resource],
+        referenceId: "live-reference",
+        metadata: { tenant: "application" },
+      },
+    ]);
+    expect(issuance.calls).toEqual(
+      ["first", "second"].map((extension) => ({
+        extension,
+        grant: "urn:fixture:claims",
+        sessionId: session.session.id,
+        userId: owner.user.id,
+        clientId: client.client_id,
+        referenceId: "live-reference",
+        scopes: ["email", "profile"],
+        resources: [resource],
+        metadata: { tenant: "application" },
+      })),
+    );
+    await state(undefined, { reset: true });
+    const introspect = async (
+      accessToken = token,
+      mode = "claims-opaque",
+      introspector = client,
+    ) => {
       const response = await control({
         action: "introspect",
+        mode,
         body: {
-          token,
+          token: accessToken,
           token_type_hint: "access_token",
-          client_id: client.client_id,
-          client_secret: client.client_secret,
+          client_id: introspector.client_id,
+          client_secret: introspector.client_secret,
         },
       });
-      expect(response.status).toBe(200);
+      expect(
+        response.status,
+        response.status === 200 ? undefined : await response.clone().text(),
+      ).toBe(200);
       return (await response.json()) as any;
     };
+    const peerResponse = await control({
+      action: "admin-create",
+      headers,
+      body: {
+        client_name: "Unlinked peer",
+        redirect_uris: ["https://peer.fixture.test/callback"],
+        scope: "email profile",
+        token_endpoint_auth_method: "client_secret_post",
+      },
+    });
+    expect(peerResponse.status).toBe(201);
+    const peer = (await peerResponse.json()) as any;
+    expect(await introspect(token, "claims-opaque", peer)).toEqual({ active: false });
+    expect((await state()).calls).toEqual([]);
+    expect((await state()).operatorCalls).toEqual([]);
     const receipts = [];
     for (const value of ["before", "after"]) {
-      if (value === "after") {
-        await state(value);
-        expect(
-          (
-            await control({
-              action: "resource-update",
-              headers,
-              params: { identifier: resource },
-              body: {
-                disabled: true,
-                allowedScopes: ["openid"],
-                customClaims: {
-                  resource_wins: "resource-after",
-                  cnf: { jkt: "forged" },
-                  jti: "forged",
-                  auth_time: 1,
-                },
+      await state(value);
+      expect(
+        (
+          await control({
+            action: "resource-update",
+            headers,
+            params: { identifier: resource },
+            body: {
+              disabled: value === "after",
+              ...(value === "after" ? { allowedScopes: ["openid"] } : {}),
+              customClaims: {
+                resource_wins: `resource-${value}`,
+                cnf: { jkt: "forged" },
+                jti: "forged",
+                auth_time: 1,
               },
-            })
-          ).status,
-        ).toBe(200);
-      }
+            },
+          })
+        ).status,
+      ).toBe(200);
       const payload = await introspect();
       expect(payload.live_value).toBe(value);
-      expect(payload.extension_owner).toBe("first");
+      expect(payload.operator_value).toBe(value);
+      expect(payload.extension_owner).toBe(`operator-${value}`);
       expect(payload.resource_wins).toBe(`resource-${value}`);
-      expect(payload.per_request).toBe("first");
+      expect(payload.per_request).toBe(`operator-${value}`);
+      const rowResponse = await control({ action: "resource-row", identifier: resource });
+      expect(rowResponse.status).toBe(200);
+      expect(((await rowResponse.json()) as any).customClaims.resource_wins).toBe(
+        `resource-during-${value}`,
+      );
       expect(payload).toMatchObject({
         active: true,
         sub: owner.user.id,
@@ -152,6 +233,7 @@ compatScenario(
       // retain the application-owned claim changes as the differential receipt.
       receipts.push({
         live: payload.live_value,
+        operator: payload.operator_value,
         resource: payload.resource_wins,
         extension: payload.extension_owner,
         perRequest: payload.per_request,
@@ -169,9 +251,38 @@ compatScenario(
         referenceId: "live-reference",
         scopes: ["email", "profile"],
         resources: [resource],
-        metadata: null,
+        metadata: { tenant: "application" },
       })),
     );
+    const operatorCalls = (await state()).operatorCalls;
+    expect(operatorCalls).toEqual(
+      Array.from({ length: 2 }, () => ({
+        userId: owner.user.id,
+        scopes: ["email", "profile"],
+        resources: [resource],
+        referenceId: "live-reference",
+        metadata: { tenant: "application" },
+      })),
+    );
+    expect(
+      (
+        await jwtVerify(signedToken, keys, {
+          issuer: `${ctx.baseURL}/api/auth`,
+          audience: resource,
+        })
+      ).payload,
+    ).toEqual(signedClaims);
+    const signedValidation = await control({
+      mode: "default",
+      action: "validate-access",
+      body: { token: signedToken, requireActive: true, accessClaimsProfile: true },
+    });
+    expect(signedValidation.status).toBe(200);
+    const signedLive = (await signedValidation.json()) as any;
+    expect(signedLive.operator_value).toBe("before");
+    expect(signedLive.resource_wins).toBe("resource-before");
+    expect((await state()).calls).toEqual(calls);
+    expect((await state()).operatorCalls).toEqual(operatorCalls);
     expect(
       (
         await control({
@@ -187,7 +298,21 @@ compatScenario(
     ).toBe(200);
     expect(await introspect()).toEqual({ active: false });
     expect((await state("must-not-leak")).calls).toEqual(calls);
-    return ctx.snapshot({ owner: owner.user, receipts, calls });
+    expect((await state()).operatorCalls).toEqual(operatorCalls);
+    await state(undefined, { operator: false, mutateResource: null });
+    return ctx.snapshot({
+      owner: owner.user,
+      authorizationSession: session,
+      receipts,
+      calls,
+      operatorCalls,
+      issuance: { calls: issuance.calls, operatorCalls: issuance.operatorCalls },
+      signed: {
+        operator: signedClaims.operator_value,
+        resource: signedClaims.resource_wins,
+        perRequest: signedClaims.per_request,
+      },
+    });
   },
 );
 
@@ -201,6 +326,16 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "claims", ...input }),
       });
+    expect(
+      (
+        await control({
+          action: "claims-state",
+          operator: false,
+          mutateResource: null,
+          reset: true,
+        })
+      ).status,
+    ).toBe(200);
     const signup = await control({
       action: "signup",
       body: {

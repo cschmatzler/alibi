@@ -380,14 +380,22 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             token: z.string(),
             clientId: z.string().optional(),
             requireActive: z.boolean(),
+            accessClaimsProfile: z.boolean().optional(),
           }),
         },
         async (ctx) => {
           try {
             return ctx.json(
-              await getOAuthProviderApi(ctx, { loginPage: "/login", consentPage: "/consent" })[
-                ctx.body.requireActive ? "requireActiveAccessToken" : "validateAccessToken"
-              ](ctx.body.token, ctx.body.clientId),
+              await getOAuthProviderApi(ctx, {
+                loginPage: "/login",
+                consentPage: "/consent",
+                ...(ctx.body.accessClaimsProfile
+                  ? { customAccessTokenClaims, extensions: claimExtensions(true) }
+                  : {}),
+              })[ctx.body.requireActive ? "requireActiveAccessToken" : "validateAccessToken"](
+                ctx.body.token,
+                ctx.body.clientId,
+              ),
             );
           } catch (error) {
             if (error instanceof Error && error.name === "APIError") throw error;
@@ -416,7 +424,64 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     idTokenExpiresIn: 600,
     refreshTokenExpiresIn: 900,
   };
-  const liveClaims = { value: "", calls: [] as any[] };
+  const liveClaims = {
+    value: "",
+    calls: [] as any[],
+    operator: false,
+    mutateResource: null as string | null,
+    operatorCalls: [] as any[],
+  };
+  const customAccessTokenClaims = async ({
+    user,
+    scopes,
+    resources,
+    referenceId,
+    metadata,
+  }: any) => {
+    if (!liveClaims.operator) return {};
+    const value = liveClaims.value;
+    liveClaims.operatorCalls.push({
+      userId: user?.id ?? null,
+      scopes,
+      resources: resources ?? null,
+      referenceId: referenceId ?? null,
+      metadata: metadata ?? null,
+    });
+    if (liveClaims.mutateResource) {
+      const context = await auths["claims-opaque"].$context;
+      const row = await context.adapter.findOne<any>({
+        model: "oauthResource",
+        where: [{ field: "identifier", value: liveClaims.mutateResource }],
+      });
+      await context.adapter.update({
+        model: "oauthResource",
+        where: [{ field: "identifier", value: liveClaims.mutateResource }],
+        update: {
+          customClaims: { ...row.customClaims, resource_wins: `resource-during-${value}` },
+        },
+      });
+    }
+    return {
+      operator_value: value,
+      extension_owner: `operator-${value}`,
+      per_request: `operator-${value}`,
+      resource_wins: `operator-${value}`,
+      iss: "https://forged.fixture.test",
+      sub: "forged",
+      aud: "forged",
+      exp: 1,
+      iat: 1,
+      jti: "forged",
+      client_id: "forged",
+      azp: "forged",
+      scope: "forged",
+      sid: "forged",
+      auth_time: 1,
+      acr: "forged",
+      amr: ["forged"],
+      cnf: { jkt: "forged" },
+    };
+  };
   const userInfoClaims = {
     value: null as string | null,
     calls: [] as any[],
@@ -606,6 +671,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               ...(ctx.body.expiryProfile ? expiryPolicy : {}),
               ...(ctx.body.claimsProfile ? { extensions: claimExtensions() } : {}),
               ...(ctx.body.idClaimsProfile ? { customIdTokenClaims } : {}),
+              ...(ctx.body.accessClaimsProfile
+                ? { customAccessTokenClaims, extensions: claimExtensions(true) }
+                : {}),
               ...(ctx.body.disableJwtPlugin ? { disableJwtPlugin: true } : {}),
               ...(ctx.body.scopePolicy
                 ? { scopeExpirations: scopePolicy(ctx.body.scopePolicy) }
@@ -920,6 +988,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           extensions: claimExtensions(),
           customUserInfoClaims,
           customIdTokenClaims,
+          customAccessTokenClaims,
         }),
         issuanceHelper,
       ],
@@ -934,6 +1003,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           consentPage: "/consent",
           disableJwtPlugin: true,
           extensions: claimExtensions(true),
+          customAccessTokenClaims,
         }),
         issuanceHelper,
       ],
@@ -1295,6 +1365,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
+      if (typeof input.operator === "boolean") liveClaims.operator = input.operator;
+      if (typeof input.mutateResource === "string" || input.mutateResource === null)
+        liveClaims.mutateResource = input.mutateResource;
+      if (input.reset) {
+        liveClaims.calls.length = 0;
+        liveClaims.operatorCalls.length = 0;
+      }
       return Response.json(liveClaims);
     }
     if (input.action === "userinfo-claims-state") {

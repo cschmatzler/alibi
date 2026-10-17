@@ -339,6 +339,7 @@ pub(crate) async fn router(
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
         if mode=="claims" {provider.extensions=extension_claims::extensions_with_user_info(user_info_claims.clone());}
         if mode=="claims" {provider.custom_id_token_claims=Some(id_token_claims.clone());}
+        if matches!(mode,"claims"|"claims-opaque") {provider.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));}
         if matches!(mode,"claims"|"pairwise") {provider.custom_user_info_claims=Some(user_info_claims.clone());}
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
@@ -394,7 +395,10 @@ pub(crate) async fn router(
             }
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}
-                return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap()})).into_response();
+                if let Some(value)=input["operator"].as_bool(){*live_claims.operator.lock().unwrap()=value;}
+                if let Some(value)=input.get("mutateResource"){*live_claims.mutate_resource.lock().unwrap()=value.as_str().map(str::to_owned);}
+                if input["reset"]==true {live_claims.calls.lock().unwrap().clear();live_claims.operator_calls.lock().unwrap().clear();live_claims.operator_contexts.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"value":*live_claims.value.lock().unwrap(),"calls":*live_claims.calls.lock().unwrap(),"operator":*live_claims.operator.lock().unwrap(),"mutateResource":*live_claims.mutate_resource.lock().unwrap(),"operatorCalls":*live_claims.operator_calls.lock().unwrap()})).into_response();
             }
             if input["action"]=="userinfo-claims-state" {
                 if let Some(value)=input.get("value") {*user_info_claims.value.lock().unwrap()=value.as_str().map(str::to_owned);}
@@ -464,6 +468,7 @@ pub(crate) async fn router(
                 let body=&input["body"];let values=&body["params"];let mut config=if let Some(policy)=body["scopePolicy"].as_str(){scope_expiry_config(policy)}else if body["expiryProfile"]==true {issuance_expiry_config()}else{OAuthProviderConfig::default()};
                 if body["claimsProfile"]==true {config.extensions=extension_claims::extensions_with_live(None);}
                 if body["idClaimsProfile"]==true {config.custom_id_token_claims=Some(id_token_claims.clone());}
+                if body["accessClaimsProfile"]==true {config.custom_access_token_claims=Some(extension_claims::access_operator::<TestSchema>(live_claims.clone()));config.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
                 config.disable_jwt_plugin=body["disableJwtPlugin"]==true;
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=OAuthProviderPlugin::with_config(config);
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
@@ -489,7 +494,7 @@ pub(crate) async fn router(
                 };
             }
             if input["action"]=="validate-access" {
-                let provider=OAuthProviderPlugin::new();let body=&input["body"];let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
+                let body=&input["body"];let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{custom_access_token_claims:(body["accessClaimsProfile"]==true).then(||extension_claims::access_operator::<TestSchema>(live_claims.clone())),extensions:if body["accessClaimsProfile"]==true{extension_claims::extensions_with_live(Some(live_claims.clone()))}else{Vec::new()},..Default::default()});let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
                 let result=if body["requireActive"]==true{provider.require_active_access_token(auth.context(),token,client).await}else{provider.validate_access_token(auth.context(),token,client).await};
                 return match result {Ok(payload)=>axum::Json(payload).into_response(),Err(error)=>{if matches!(&error.error,alibi::AuthError::Internal(_)){return axum::Json(serde_json::json!({"ordinary_error":true})).into_response();}let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
             }
