@@ -1,6 +1,6 @@
 //! Token retirement and guarded refresh-token family invalidation.
 use super::OAuthProviderPlugin;
-use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
+use alibi_core::endpoint::{EndpointResponse, ServerEndpoint, is_endpoint_api_error};
 use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
@@ -96,8 +96,10 @@ impl OAuthProviderPlugin {
                 match self.decode_refresh_token(token).await {
                     Ok(Some(decoded)) => Some(decoded),
                     Ok(None) => continue,
-                    Err(alibi_core::AuthError::Api { .. }) if hint != "refresh_token" => continue,
-                    Err(error @ alibi_core::AuthError::Api { .. }) => {
+                    Err(error) if is_endpoint_api_error(&error) => {
+                        if hint != "refresh_token" {
+                            continue;
+                        }
                         return Ok(EndpointResponse::error(error));
                     }
                     Err(_) => {

@@ -35,13 +35,15 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
         token_hasher: Some(generators.clone()),
         ..Default::default()
     });
-    let auth = Box::pin(
-        super::auth_probe::fast_builder::<B>(&connection)
-            .plugin(JwtPlugin::new())
-            .plugin(provider.clone())
-            .build(),
-    )
-    .await?;
+    let auth = Arc::new(
+        Box::pin(
+            super::auth_probe::fast_builder::<B>(&connection)
+                .plugin(JwtPlugin::new())
+                .plugin(provider.clone())
+                .build(),
+        )
+        .await?,
+    );
     let owner = signup(&auth, "reuse-owner@example.test").await;
     let headers = [
         ("cookie".into(), cookies(&owner)),
@@ -650,7 +652,7 @@ async fn refresh_reuse_flow<B: Backend>(db: Db) -> TestResult {
 }
 
 async fn check_generation_edges<S: AuthSchema>(
-    auth: &Alibi<S>,
+    auth: &Arc<Alibi<S>>,
     generators: &Arc<credential_generators::Generators>,
     registration: &Value,
     user_id: &str,
@@ -930,7 +932,7 @@ async fn check_generation_edges<S: AuthSchema>(
 }
 
 async fn check_formatter_edges<S: AuthSchema>(
-    auth: &Alibi<S>,
+    auth: &Arc<Alibi<S>>,
     generators: &Arc<credential_generators::Generators>,
     formatter: &Arc<refresh_formatting::Formatter>,
     provider: &OAuthProviderPlugin,
@@ -999,8 +1001,6 @@ async fn check_formatter_edges<S: AuthSchema>(
         &original,
     ))
     .await?;
-    *formatter.decrypt_mode.lock().unwrap() = "api-error".into();
-    Box::pin(check_formatter_fallback(auth, json!({"client_id":registration["client_id"],"client_secret":registration["client_secret"],"token":wire,"token_type_hint":""}))).await?;
     *formatter.decrypt_mode.lock().unwrap() = String::new();
     params.refresh_token = Some(original);
     Box::pin(check_formatter_rotation(
@@ -1016,7 +1016,7 @@ async fn check_formatter_edges<S: AuthSchema>(
 }
 
 async fn check_formatter_decode<S: AuthSchema>(
-    auth: &Alibi<S>,
+    auth: &Arc<Alibi<S>>,
     generators: &Arc<credential_generators::Generators>,
     formatter: &Arc<refresh_formatting::Formatter>,
     registration: &Value,
@@ -1027,14 +1027,7 @@ async fn check_formatter_decode<S: AuthSchema>(
     use alibi::store::OAuthTokenKind;
     let id = &registration["client_id"];
     let credentials = |token: &str| json!({"client_id":id,"client_secret":registration["client_secret"],"token":token,"token_type_hint":"refresh_token"});
-    for mode in [
-        "wrong-session",
-        "no-session",
-        "sync",
-        "empty",
-        "error",
-        "api-error",
-    ] {
+    for mode in ["wrong-session", "no-session", "sync", "empty"] {
         *formatter.decrypt_mode.lock().unwrap() = mode.into();
         let before = generators.hash_calls.lock().unwrap().len();
         let response = Box::pin(auth.dispatch_endpoint(
@@ -1042,13 +1035,7 @@ async fn check_formatter_decode<S: AuthSchema>(
             EndpointOptions::default(),
         ))
         .await;
-        if matches!(mode, "error" | "api-error") {
-            assert_eq!(
-                response.unwrap_err().error.status_code(),
-                if mode == "error" { 500 } else { 429 }
-            );
-            assert_eq!(generators.hash_calls.lock().unwrap().len(), before);
-        } else if mode == "empty" {
+        if mode == "empty" {
             let response = response?.into_response()?;
             assert_eq!(
                 body(&response)["active"],
@@ -1070,6 +1057,19 @@ async fn check_formatter_decode<S: AuthSchema>(
             );
         }
     }
+    let error_auth = auth.clone();
+    let error_formatter = formatter.clone();
+    let error_input = credentials(wire);
+    // Poll the HTTP matrix independently of the long issuance journey's stack.
+    tokio::spawn(async move {
+        Box::pin(check_formatter_errors(
+            &error_auth,
+            &error_formatter,
+            error_input,
+        ))
+        .await
+    })
+    .await??;
     *formatter.decrypt_mode.lock().unwrap() = "error".into();
     let refresh_input = json!({"grant_type":"refresh_token","client_id":id,"client_secret":registration["client_secret"],"refresh_token":wire});
     let before = formatter.calls.lock().unwrap().len();
@@ -1080,19 +1080,9 @@ async fn check_formatter_decode<S: AuthSchema>(
     .await
     .unwrap_err();
     assert_eq!(denied.error.status_code(), 500);
-    let revoked = Box::pin(auth.dispatch_endpoint(
-        OAuthProviderPlugin::oauth2_revoke_endpoint(&credentials(wire))?,
-        EndpointOptions::default(),
-    ))
-    .await
-    .unwrap_err();
-    assert_eq!(revoked.error.status_code(), 500);
     assert_eq!(
         formatter.calls.lock().unwrap()[before..],
-        [
-            json!({"kind":"decrypt","token":wire.strip_prefix("R_").unwrap()}),
-            json!({"kind":"decrypt","token":wire.strip_prefix("R_").unwrap()})
-        ]
+        [json!({"kind":"decrypt","token":wire.strip_prefix("R_").unwrap()})]
     );
     assert!(
         auth.store()
@@ -1107,32 +1097,126 @@ async fn check_formatter_decode<S: AuthSchema>(
     Ok(())
 }
 
-async fn check_formatter_fallback<S: AuthSchema>(
+async fn check_formatter_errors<S: AuthSchema>(
     auth: &Alibi<S>,
-    mut no_hint: Value,
+    formatter: &refresh_formatting::Formatter,
+    mut input: Value,
 ) -> TestResult {
-    no_hint["token_type_hint"] = json!("");
-    let introspected = Box::pin(auth.dispatch_endpoint(
-        OAuthProviderPlugin::oauth2_introspect_endpoint(&no_hint)?,
-        EndpointOptions::default(),
-    ))
-    .await?
-    .into_response()?;
-    assert_eq!(
-        body(&introspected),
-        json!({"active":false}),
-        "unhinted API rejection is swallowed by the reference fallback"
-    );
-    let revoked = Box::pin(auth.dispatch_endpoint(
-        OAuthProviderPlugin::oauth2_revoke_endpoint(&no_hint)?,
-        EndpointOptions::default(),
-    ))
-    .await
-    .unwrap_err();
-    assert_eq!(
-        revoked.body.unwrap().to_json_value()?,
-        json!({"error":"invalid_request","error_description":"token not found"})
-    );
+    for (mode, status, expected) in [
+        ("error", 500, String::new()),
+        (
+            "api-error",
+            429,
+            json!({"code":"REFRESH_FORMAT_LIMIT","message":"Refresh formatter limited"})
+                .to_string(),
+        ),
+        (
+            "forbidden",
+            403,
+            json!({"message":"Refresh formatter forbidden"}).to_string(),
+        ),
+        (
+            "upstream",
+            503,
+            json!({"code":"REFRESH_FORMAT_UNAVAILABLE","message":"Refresh formatter unavailable"})
+                .to_string(),
+        ),
+    ] {
+        *formatter.decrypt_mode.lock().unwrap() = mode.into();
+        for hint in ["", "refresh_token"] {
+            input["token_type_hint"] = json!(hint);
+            for (path, operation) in [
+                ("introspect", "oauth2Introspect"),
+                ("revoke", "oauth2Revoke"),
+            ] {
+                for http in [false, true] {
+                    let fallback = hint.is_empty() && mode != "error";
+                    let expected_status = if fallback {
+                        if path == "introspect" { 200 } else { 400 }
+                    } else {
+                        status
+                    };
+                    let response = if http {
+                        let mut req = request(&format!("/oauth2/{path}"), None, "");
+                        req.method = alibi::HttpMethod::Post;
+                        req.body =
+                            Some(
+                                url::form_urlencoded::Serializer::new(String::new())
+                                    .extend_pairs(input.as_object().unwrap().iter().map(
+                                        |(key, value)| (key.as_str(), value.as_str().unwrap()),
+                                    ))
+                                    .finish()
+                                    .into_bytes(),
+                            );
+                        _ = req.headers.insert(
+                            "content-type".into(),
+                            "application/x-www-form-urlencoded".into(),
+                        );
+                        Box::pin(call(auth, req, expected_status)).await
+                    } else {
+                        match Box::pin(
+                            auth.dispatch_endpoint(
+                                ServerEndpoint::<Value>::new("oauth-provider", operation)
+                                    .with_body(&input)?,
+                                EndpointOptions::default(),
+                            ),
+                        )
+                        .await
+                        {
+                            Ok(output) => output.into_response()?,
+                            Err(error) => {
+                                let mut response = if error.body_absent {
+                                    AuthResponse::new(error.error.status_code())
+                                } else {
+                                    error.error.to_auth_response()
+                                };
+                                if let Some(body) = error.body {
+                                    response.body = serde_json::to_vec(&*body)?;
+                                }
+                                if let Some(headers) = error.headers {
+                                    for (name, value) in headers {
+                                        _ = response.headers.insert(name, value);
+                                    }
+                                }
+                                response
+                            }
+                        }
+                    };
+                    assert_eq!(
+                        response.status, expected_status,
+                        "{mode} {hint} {path} http={http}"
+                    );
+                    let expected = if fallback {
+                        if path == "introspect" {
+                            json!({"active":false})
+                        } else {
+                            json!({"error":"invalid_request","error_description":"token not found"})
+                        }
+                        .to_string()
+                    } else {
+                        expected.clone()
+                    };
+                    assert_eq!(String::from_utf8(response.body)?, expected);
+                    for (name, value) in [
+                        ("content-type", Some("application/json")),
+                        (
+                            "cache-control",
+                            (path == "introspect").then_some("no-store"),
+                        ),
+                        ("pragma", (path == "introspect").then_some("no-cache")),
+                        ("www-authenticate", None),
+                        ("x-retry-after", None),
+                    ] {
+                        assert_eq!(
+                            response.headers.get(name).map(String::as_str),
+                            value,
+                            "{mode} {hint} {path} {name} http={http}"
+                        );
+                    }
+                }
+            }
+        }
+    }
     Ok(())
 }
 

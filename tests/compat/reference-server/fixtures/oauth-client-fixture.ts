@@ -142,6 +142,15 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             message: "Refresh formatter limited",
           });
         }
+        if (refreshFormatting.decryptMode === "forbidden") {
+          throw new EndpointAPIError("FORBIDDEN", { message: "Refresh formatter forbidden" });
+        }
+        if (refreshFormatting.decryptMode === "upstream") {
+          throw new EndpointAPIError("SERVICE_UNAVAILABLE", {
+            code: "REFRESH_FORMAT_UNAVAILABLE",
+            message: "Refresh formatter unavailable",
+          });
+        }
         if (refreshFormatting.decryptMode === "empty") return { token: "" };
         const bytes = Buffer.from(token, "base64url");
         const decipher = createDecipheriv("aes-256-gcm", refreshKey, bytes.subarray(0, 12));

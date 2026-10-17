@@ -97,6 +97,16 @@ impl OAuthRefreshTokenFormatter for Formatter {
                 message: "Refresh formatter limited".into(),
             });
         }
+        if mode == "forbidden" {
+            return Err(alibi::AuthError::forbidden("Refresh formatter forbidden"));
+        }
+        if mode == "upstream" {
+            return Err(alibi::AuthError::Upstream {
+                status: 503,
+                code: "REFRESH_FORMAT_UNAVAILABLE",
+                message: "Refresh formatter unavailable",
+            });
+        }
         if mode == "empty" {
             return Ok(OAuthDecodedRefreshToken {
                 token: String::new(),

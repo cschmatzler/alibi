@@ -1,6 +1,6 @@
 //! RFC 7662 introspection over actually issued and protected durable tokens.
 use super::OAuthProviderPlugin;
-use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
+use alibi_core::endpoint::{EndpointResponse, ServerEndpoint, is_endpoint_api_error};
 use alibi_core::session::SessionRequest;
 use alibi_core::store::OAuthTokenKind;
 use alibi_core::utils::json::JsValue;
@@ -140,9 +140,13 @@ impl OAuthProviderPlugin {
             let decoded = match self.decode_refresh_token(token).await {
                 Ok(Some(decoded)) => decoded,
                 Ok(None) => continue,
-                Err(AuthError::Api { .. }) if hint != "refresh_token" => continue,
-                Err(AuthError::Api { status: 400, .. }) => return inactive(),
-                Err(error @ AuthError::Api { .. }) => {
+                Err(error) if is_endpoint_api_error(&error) => {
+                    if hint != "refresh_token" {
+                        continue;
+                    }
+                    if error.status_code() == 400 {
+                        return inactive();
+                    }
                     return Ok(no_store(EndpointResponse::error(error)));
                 }
                 Err(_) => {

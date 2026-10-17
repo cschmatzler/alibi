@@ -603,25 +603,14 @@ compatScenario(
       token: `application-refresh-${(await generatorState()).refreshCount}`,
       sessionId: session.session.id,
     });
-    for (const mode of ["wrong-session", "no-session", "sync", "empty", "error", "api-error"]) {
+    for (const mode of ["wrong-session", "no-session", "sync", "empty"]) {
       await formatterState({ decryptMode: mode });
       const hashCount = (await hashes()).length;
       const response = await control({
         action: "introspect",
         body: { client_id: id, token: usable.refresh_token, token_type_hint: "refresh_token" },
       });
-      if (mode === "error" || mode === "api-error") {
-        expect(response.status).toBe(mode === "error" ? 500 : 429);
-        if (mode === "error") {
-          expect(await response.text()).toBe("");
-        } else {
-          expect(await response.json()).toEqual({
-            code: "REFRESH_FORMAT_LIMIT",
-            message: "Refresh formatter limited",
-          });
-        }
-        expect((await hashes()).slice(hashCount)).toEqual([]);
-      } else if (mode === "empty") {
+      if (mode === "empty") {
         expect(response.status).toBe(200);
         const body = (await response.json()) as any;
         expect(body.active).toBe(true); // The earlier empty generator issued real authority for this preimage.
@@ -635,36 +624,94 @@ compatScenario(
       }
       formatterReceipts.push({ phase: `decode-${mode}`, status: response.status });
     }
-    const noHint = { client_id: id, token: usable.refresh_token, token_type_hint: "" };
-    const unhinted = await control({ action: "introspect", body: noHint });
-    expect(unhinted.status).toBe(200);
-    expect(await unhinted.json()).toEqual({ active: false });
-    const unhintedRevoked = await control({ action: "revoke", body: noHint });
-    expect(unhintedRevoked.status).toBe(400);
-    expect(await unhintedRevoked.json()).toEqual({
-      error: "invalid_request",
-      error_description: "token not found",
-    });
+    for (const [mode, status, body] of [
+      ["error", 500, ""],
+      [
+        "api-error",
+        429,
+        JSON.stringify({ code: "REFRESH_FORMAT_LIMIT", message: "Refresh formatter limited" }),
+      ],
+      ["forbidden", 403, JSON.stringify({ message: "Refresh formatter forbidden" })],
+      [
+        "upstream",
+        503,
+        JSON.stringify({
+          code: "REFRESH_FORMAT_UNAVAILABLE",
+          message: "Refresh formatter unavailable",
+        }),
+      ],
+    ] as const) {
+      await formatterState({ decryptMode: mode });
+      for (const hint of ["", "refresh_token"]) {
+        for (const action of ["introspect", "revoke"]) {
+          for (const boundary of ["server-api", "http"]) {
+            const input = {
+              client_id: id,
+              client_secret: clientSecret!,
+              token: usable.refresh_token,
+              token_type_hint: hint,
+            };
+            const response = await control(
+              boundary === "http"
+                ? {
+                    action: "protocol-http",
+                    path: `/oauth2/${action}`,
+                    method: "POST",
+                    body: input,
+                  }
+                : { action, body: input },
+            );
+            const raw = await response.text();
+            const applicationHeaders = Object.fromEntries(
+              ["content-type", "cache-control", "pragma", "www-authenticate", "x-retry-after"].map(
+                (name) => [name, response.headers.get(name)],
+              ),
+            );
+            const fallback = hint === "" && mode !== "error";
+            expect(response.status).toBe(fallback ? (action === "introspect" ? 200 : 400) : status);
+            const rawBody = raw === "" ? "" : JSON.parse(raw);
+            expect(rawBody).toEqual(
+              fallback
+                ? action === "introspect"
+                  ? { active: false }
+                  : { error: "invalid_request", error_description: "token not found" }
+                : body === ""
+                  ? ""
+                  : JSON.parse(body),
+            );
+            expect(applicationHeaders).toEqual({
+              "content-type": "application/json",
+              "cache-control": action === "introspect" ? "no-store" : null,
+              pragma: action === "introspect" ? "no-cache" : null,
+              "www-authenticate": null,
+              "x-retry-after": null,
+            });
+            formatterReceipts.push({
+              phase: "decode-error",
+              mode,
+              hint,
+              action,
+              boundary,
+              status: response.status,
+              rawBody,
+              applicationHeaders,
+            });
+          }
+        }
+      }
+    }
     before = await counts();
     await formatterState({ decryptMode: "error" });
     callCount = (await formatterState()).calls.length;
-    for (const action of ["token", "revoke"]) {
-      const response = await control({
-        action,
-        ...(action === "token" ? { captureError: true } : {}),
-        body:
-          action === "token"
-            ? { grant_type: "refresh_token", client_id: id, refresh_token: usable.refresh_token }
-            : { client_id: id, token: usable.refresh_token, token_type_hint: "refresh_token" },
-      });
-      if (action === "token") {
-        expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ ordinaryError: "refresh decryption failed" });
-      } else expect(response.status).toBe(500);
-    }
+    const decryptFailed = await control({
+      action: "token",
+      captureError: true,
+      body: { grant_type: "refresh_token", client_id: id, refresh_token: usable.refresh_token },
+    });
+    expect(decryptFailed.status).toBe(200);
+    expect(await decryptFailed.json()).toEqual({ ordinaryError: "refresh decryption failed" });
     expect(await counts()).toEqual(before);
     expect((await formatterState()).calls.slice(callCount)).toEqual([
-      { kind: "decrypt", token: usable.refresh_token.slice(2) },
       { kind: "decrypt", token: usable.refresh_token.slice(2) },
     ]);
     const unchanged = (await (
