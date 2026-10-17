@@ -200,6 +200,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const requestUriCalls: unknown[] = [];
   const requestUriRedirects: unknown[] = [];
   let requestUriParameters: Record<string, unknown> = {};
+  const signupCalls: unknown[] = [];
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -1234,6 +1235,57 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
+    ...Object.fromEntries(
+      ["signup-policy", "signup-fallback", "signup-empty-page", "signup-page-only"].map((mode) => [
+        mode,
+        betterAuth({
+          ...options,
+          rateLimit: { enabled: false },
+          plugins: [
+            username(),
+            jwt({ disableSettingJwtHeader: true }),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              selectAccount: { page: "/select", shouldRedirect: () => false },
+              signup: {
+                ...(mode === "signup-fallback"
+                  ? {}
+                  : { page: mode === "signup-empty-page" ? "" : "/signup" }),
+                ...(mode === "signup-page-only"
+                  ? {}
+                  : {
+                      shouldRedirect: async ({ headers, user, session, scopes }: any) => {
+                        const decision = headers.get("x-signup-decision");
+                        signupCalls.push({
+                          caller: headers.get("x-signup-caller"),
+                          decision,
+                          user: { id: user.id, email: user.email, name: user.name },
+                          session: { id: session.id, userId: session.userId, token: session.token },
+                          scopes,
+                        });
+                        if (decision === "ordinary-error") throw new Error("signup policy failed");
+                        if (decision === "api-error") {
+                          throw new APIError("FORBIDDEN", {
+                            code: "SIGNUP_DENIED",
+                            message: "Signup denied by application",
+                          });
+                        }
+                        return decision === "true"
+                          ? true
+                          : decision === "page"
+                            ? "/registration/step"
+                            : decision === "empty"
+                              ? ""
+                              : false;
+                      },
+                    }),
+              },
+            }),
+          ],
+        }),
+      ]),
+    ),
     "redirect-policy": betterAuth({
       ...options,
       rateLimit: { enabled: false },
@@ -1632,6 +1684,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return Response.json({ calls: registrationCalls, counts });
     }
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
+    if (input.action === "signup-policy-calls") return Response.json(signupCalls.splice(0));
     if (input.action === "credential-generator-state") {
       if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
       if (typeof input.refreshMode === "string")

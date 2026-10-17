@@ -25,6 +25,8 @@ mod redirect_policy;
 mod token_response_fields;
 #[path = "../../../../fixtures/oauth/request-uri.rs"]
 mod request_uri;
+#[path = "../../../../fixtures/oauth/signup-policy.rs"]
+mod signup_policy;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -249,6 +251,7 @@ pub(crate) async fn router(
     let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
+    let signup_policy=Arc::new(signup_policy::SignupPolicy::default());
     let credential_generators=Arc::new(credential_generators::Generators::default());
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
     let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
@@ -264,6 +267,10 @@ pub(crate) async fn router(
         "interaction",
         "redirect-policy",
         "request-uri",
+        "signup-policy",
+        "signup-fallback",
+        "signup-empty-page",
+        "signup-page-only",
         "default",
         "dynamic",
         "public",
@@ -321,6 +328,7 @@ pub(crate) async fn router(
         let mut provider = OAuthProviderConfig {
             request_uri_resolver:(mode=="request-uri").then(||request_registry.clone() as Arc<dyn alibi::plugins::OAuthRequestUriResolver>),
             validate_redirect_uri:if mode=="request-uri"{Some(request_registry.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)}else{(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)},
+            signup:mode.starts_with("signup-").then(||alibi::plugins::OAuthSignupConfig{page:match mode {"signup-fallback"=>None,"signup-empty-page"=>Some(String::new()),_=>Some("/signup".into())},should_redirect:(mode!="signup-page-only").then(||signup_policy.clone() as Arc<dyn alibi::plugins::OAuthSignupPolicy>)}),
             pairwise_secret: (mode=="pairwise").then(|| "fixture-pairwise-secret-at-least-32-characters".into()),
             token_hasher:(mode=="custom-token-hash").then(||Arc::new(TypedTokenHasher) as Arc<dyn alibi::plugins::OAuthTokenHasher>),
             client_discoveries: if mode=="request-uri"{vec![request_registry.clone()]}else if mode=="discovered" {vec![Arc::new(RegistryDiscovery{first:true,state:registry_state.clone()}),Arc::new(RegistryDiscovery{first:false,state:registry_state.clone()})]}else{Vec::new()},
@@ -344,7 +352,7 @@ pub(crate) async fn router(
             } else {
                 OAuthProviderConfig::default().scopes
             },
-            select_account_page: if mode == "selection" {
+            select_account_page: if mode == "selection" || mode.starts_with("signup-") {
                 Some("/select".into())
             } else {
                 None
@@ -395,8 +403,8 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("token-") || mode.starts_with("registration-scopes-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"),..Default::default()})})};
+        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-scopes-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -414,6 +422,7 @@ pub(crate) async fn router(
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
+        let signup_policy=signup_policy.clone();
         let credential_generators=credential_generators.clone();
         let user_info_claims=user_info_claims.clone();
         let id_token_claims=id_token_claims.clone();
@@ -460,6 +469,9 @@ pub(crate) async fn router(
             }
             if input["action"]=="request-uri-redirects" {
                 return axum::Json(std::mem::take(&mut *request_registry.redirect_calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="signup-policy-calls" {
+                return axum::Json(std::mem::take(&mut *signup_policy.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="claims-state" {
                 if let Some(value)=input["value"].as_str(){*live_claims.value.lock().unwrap()=value.into();}

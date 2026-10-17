@@ -533,6 +533,54 @@ impl OAuthProviderPlugin {
             let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
             return browser_redirect(req, &format!("{page}?{params}"));
         }
+        if !force_login
+            && let Some(policy) = self
+                .config
+                .signup
+                .as_ref()
+                .and_then(|signup| signup.should_redirect.as_ref())
+            && let Some((user, session)) = &session
+        {
+            let user = ctx.user_view(user);
+            let scopes = requested
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect::<Vec<_>>();
+            let decision = policy
+                .should_redirect(super::OAuthSignupContext {
+                    // authorize_flow has already required a physical request.
+                    headers: &req
+                        .physical_request()
+                        .ok_or_else(|| AuthError::internal("request not found"))?
+                        .headers,
+                    user: &user,
+                    session,
+                    scopes: &scopes,
+                })
+                .await
+                .map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    other => AuthError::CallbackFailure(Box::new(other)),
+                })?;
+            let page = match decision {
+                super::OAuthSignupRedirect::Continue => None,
+                super::OAuthSignupRedirect::Page(page) if page.is_empty() => None,
+                super::OAuthSignupRedirect::Page(page) => Some(page),
+                super::OAuthSignupRedirect::ConfiguredPage => Some(self.signup_page().to_owned()),
+            };
+            if let Some(page) = page {
+                if prompts.contains(&AuthorizationPrompt::None) {
+                    return admission_error(
+                        "interaction_required",
+                        "End-User interaction is required",
+                    );
+                }
+                let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
+                return browser_redirect(req, &format!("{page}?{params}"));
+            }
+        }
         let remembered = if !force_login
             && !prompts.contains(&AuthorizationPrompt::Consent)
             && client.metadata.get("skip_consent") != Some(&json!(true))
@@ -671,12 +719,23 @@ impl OAuthProviderPlugin {
             );
         }
         let page = if force_login {
-            &self.config.login_page
+            if prompts.contains(&AuthorizationPrompt::Create) {
+                self.signup_page()
+            } else {
+                &self.config.login_page
+            }
         } else {
             &self.config.consent_page
         };
         let params = self.sign_authorization_query(query, &nonfinite_values, ctx)?;
         browser_redirect(req, &format!("{page}?{params}"))
+    }
+    fn signup_page(&self) -> &str {
+        self.config
+            .signup
+            .as_ref()
+            .and_then(|signup| signup.page.as_deref())
+            .unwrap_or(&self.config.login_page)
     }
     async fn authorization_redirect_is_trusted(
         &self,
