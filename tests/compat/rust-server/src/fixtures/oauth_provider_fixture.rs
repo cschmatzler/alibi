@@ -276,6 +276,9 @@ pub(crate) async fn router(
         "public",
         "token-dynamic",
         "token-public",
+        "registration-pkce-absent",
+        "registration-pkce-true",
+        "registration-pkce-false",
         "registration-scopes-fallback",
         "registration-scopes-custom-provider",
         "registration-scopes-allowed-empty",
@@ -360,8 +363,9 @@ pub(crate) async fn router(
             enforce_per_client_resources: mode != "resources-open",
             allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
             code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
-            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public"),
-            allow_unauthenticated_client_registration: matches!(mode, "public" | "token-public"),
+            allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public") || mode.starts_with("registration-pkce-"),
+            client_registration_require_pkce: match mode {"registration-pkce-true"=>Some(true),"registration-pkce-false"=>Some(false),_=>None},
+            allow_unauthenticated_client_registration: matches!(mode, "public" | "token-public") || mode.starts_with("registration-pkce-"),
             initial_access_token_validator: mode.starts_with("token-").then(||registration_policy.clone() as Arc<dyn alibi::plugins::OAuthInitialAccessTokenValidator>),
             ..Default::default()
         };
@@ -403,7 +407,7 @@ pub(crate) async fn router(
             .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
-        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-scopes-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+        let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
         let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri") || mode.starts_with("signup-"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
@@ -726,7 +730,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="row" {
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
-                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret,"referenceId":row.metadata.get("reference_id")}))).into_response();
+                return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret,"referenceId":row.metadata.get("reference_id"),"requirePKCE":row.metadata.get("require_pkce")}))).into_response();
             }
             if input["action"]=="authority-counts" {
                 let session=input["sessionId"].as_str().unwrap();

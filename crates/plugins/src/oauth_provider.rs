@@ -188,6 +188,9 @@ pub struct OAuthProviderConfig {
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
     pub allow_dynamic_client_registration: bool,
+    /// Dynamic confidential clients may omit PKCE only when explicitly false.
+    /// Public and managed clients retain their existing PKCE policy.
+    pub client_registration_require_pkce: Option<bool>,
     /// Baseline dynamic-registration capabilities. `None` uses provider scopes;
     /// `Some(vec![])` deliberately supplies no baseline capabilities.
     pub client_registration_default_scopes: Option<Vec<String>>,
@@ -249,6 +252,7 @@ impl Default for OAuthProviderConfig {
                 .map(str::to_owned)
                 .into(),
             allow_dynamic_client_registration: false,
+            client_registration_require_pkce: None,
             client_registration_default_scopes: None,
             client_registration_allowed_scopes: None,
             initial_access_token_validator: None,

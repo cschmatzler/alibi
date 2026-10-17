@@ -5,6 +5,208 @@ import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 compatScenario(
+  "Registration PKCE policy survives persistence and governs genuine code exchanges",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: object) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    const signup = await control({
+      action: "signup",
+      body: { email: ctx.uniqueEmail("registration-pkce"), name: "Owner", password: "password123" },
+    });
+    expect(signup.status).toBe(200);
+    const cookie = signup.headers
+      .getSetCookie()
+      .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const verifier = "registration-pkce-verifier-abcdefghijklmnopqrstuvwxyz";
+    const challenge = createHash("sha256").update(verifier).digest("base64url");
+    const results = [];
+    for (const policy of ["absent", "true", "false"]) {
+      const call = (input: object) =>
+        control({ mode: `registration-pkce-${policy}`, headers: { cookie }, ...input });
+      for (const source of [
+        "dynamic-confidential",
+        "dynamic-public",
+        "managed",
+        "admin-true",
+        "admin-false",
+      ]) {
+        // DCR/ordinary creation strip this field; only the administrative API admits it.
+        for (const explicit of source.startsWith("dynamic")
+          ? [undefined, true, false]
+          : [source === "admin-true"]) {
+          const publicClient = source === "dynamic-public";
+          const created = await call({
+            ...(source.startsWith("dynamic")
+              ? { action: "register" }
+              : source.startsWith("admin")
+                ? { action: "admin-create" }
+                : {}),
+            body: {
+              redirect_uris: ["https://app.fixture.test/callback"],
+              scope: "email",
+              token_endpoint_auth_method: publicClient ? "none" : "client_secret_basic",
+              ...(explicit === undefined ? {} : { require_pkce: explicit }),
+            },
+          });
+          expect(created.status, `${ctx.baseURL}:${policy}:${source}:${explicit}`).toBe(201);
+          const client = (await created.json()) as any;
+          const row = (await (
+            await call({ action: "row", clientId: client.client_id })
+          ).json()) as any;
+          const optional =
+            source === "admin-false" || (source === "dynamic-confidential" && policy === "false");
+          const exchanges = [];
+          for (const [name, pkce, proof] of [
+            ["absent", {}, undefined],
+            ["unsolicited-verifier", {}, verifier],
+            ["empty", { code_challenge: "" }, undefined],
+            ["empty-pair", { code_challenge: "", code_challenge_method: "S256" }, undefined],
+            ["missing-method", { code_challenge: challenge }, verifier],
+            [
+              "invalid-method",
+              { code_challenge: challenge, code_challenge_method: "plain" },
+              verifier,
+            ],
+            ["malformed", { code_challenge: "short", code_challenge_method: "S256" }, verifier],
+            [
+              "missing-verifier",
+              { code_challenge: challenge, code_challenge_method: "S256" },
+              undefined,
+            ],
+            [
+              "wrong-verifier",
+              { code_challenge: challenge, code_challenge_method: "S256" },
+              "wrong",
+            ],
+            ["valid", { code_challenge: challenge, code_challenge_method: "S256" }, verifier],
+          ] as const) {
+            // Required confidential-client token error precedence is a separate existing mismatch;
+            // this finding owns optional registration and the public-client security boundary.
+            if (name === "missing-verifier" && !optional && !publicClient) continue;
+            const authorized = await call({
+              action: "authorize",
+              headers: { cookie, accept: "application/json" },
+              query: {
+                client_id: client.client_id,
+                response_type: "code",
+                redirect_uri: "https://app.fixture.test/callback",
+                scope: "email",
+                prompt: "consent",
+                ...pkce,
+              },
+            });
+            expect(authorized.status).toBe(200);
+            const target = new URL(((await authorized.json()) as any).url, ctx.baseURL);
+            const admitted =
+              name === "valid" ||
+              name === "malformed" ||
+              name === "missing-verifier" ||
+              name === "wrong-verifier" ||
+              (optional && ["absent", "empty", "unsolicited-verifier"].includes(name));
+            if (!admitted) {
+              expect(target.searchParams.get("error"), `${policy}:${source}:${name}`).toBe(
+                "invalid_request",
+              );
+              expect(target.searchParams.has("code")).toBe(false);
+              exchanges.push({
+                name,
+                error: target.searchParams.get("error"),
+                description: target.searchParams.get("error_description"),
+              });
+              continue;
+            }
+            expect(target.pathname, `${policy}:${source}:${name}`).toBe("/consent");
+            const consent = await call({
+              action: "consent",
+              body: { accept: true, oauth_query: target.search.slice(1) },
+            });
+            expect(consent.status).toBe(200);
+            const callback = new URL(((await consent.json()) as any).url);
+            const code = callback.searchParams.get("code");
+            expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+            const token = await call({
+              action: "token",
+              headers: publicClient
+                ? {}
+                : {
+                    authorization: `Basic ${Buffer.from(`${client.client_id}:${client.client_secret}`).toString("base64")}`,
+                  },
+              body: {
+                grant_type: "authorization_code",
+                client_id: client.client_id,
+                redirect_uri: "https://app.fixture.test/callback",
+                code,
+                ...(proof === undefined ? {} : { code_verifier: proof }),
+              },
+            });
+            const value = (await token.json()) as any;
+            const success = name === "valid" || name === "absent" || name === "empty";
+            expect(
+              token.status,
+              `${ctx.baseURL}:${policy}:${source}:${name}:${JSON.stringify(value)}`,
+            ).toBe(success ? 200 : publicClient && name === "missing-verifier" ? 400 : 401);
+            if (success) {
+              expect(value.access_token).toBeTypeOf("string");
+              expect(value.token_type).toBe("Bearer");
+              expect(value.scope).toBe("email");
+            } else {
+              expect(value.error).toBe("invalid_request");
+            }
+            exchanges.push({
+              name,
+              status: token.status,
+              value: success ? { scope: value.scope, token_type: value.token_type } : value,
+            });
+          }
+          expect(row.requirePKCE, `${ctx.baseURL}:${policy}:${source}:${explicit}`).toBe(
+            source.startsWith("admin") ? source === "admin-true" : optional ? false : null,
+          );
+          // An ordinary update cannot override the stored operator/DCR decision.
+          const updated = await call({
+            action: "update",
+            body: {
+              client_id: client.client_id,
+              update: { client_name: "Updated", require_pkce: !optional },
+            },
+          });
+          expect(updated.status).toBe(200);
+          const after = (await (
+            await call({ action: "row", clientId: client.client_id })
+          ).json()) as any;
+          expect(after.requirePKCE).toBe(row.requirePKCE);
+          console.log(
+            "registration-pkce-runtime",
+            JSON.stringify({
+              baseURL: ctx.baseURL,
+              policy,
+              source,
+              explicit,
+              stored: row.requirePKCE,
+              exchanges,
+            }),
+          );
+          results.push({
+            policy,
+            source,
+            explicit: explicit ?? null,
+            stored: row.requirePKCE,
+            exchanges,
+          });
+        }
+      }
+    }
+    return results;
+  },
+);
+compatScenario(
   "OAuth registration scope policy preserves capability unions without granting them",
   async (ctx) => {
     const actor = ctx.actor();

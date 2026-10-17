@@ -17,8 +17,291 @@ const REGISTRATION_TABLES: &[&str] = &[
 ];
 backend_tests!(
     oauth_dynamic_registration_enforces_policy_and_persists_clients,
-    oauth_registration_scope_capabilities_are_not_grants
+    oauth_registration_scope_capabilities_are_not_grants,
+    oauth_registration_pkce_policy_controls_genuine_code_exchanges
 );
+async fn oauth_registration_pkce_policy_controls_genuine_code_exchanges<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut cookie = None;
+    let verifier = "registration-pkce-verifier-abcdefghijklmnopqrstuvwxyz";
+    let challenge =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
+    for policy in [None, Some(true), Some(false)] {
+        let auth = Box::pin(
+            super::auth_probe::fast_builder::<B>(&connection)
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                    allow_dynamic_client_registration: true,
+                    allow_unauthenticated_client_registration: true,
+                    client_registration_require_pkce: policy,
+                    ..Default::default()
+                }))
+                .build(),
+        )
+        .await?;
+        if cookie.is_none() {
+            cookie = Some(cookies(
+                &Box::pin(signup(&auth, "registration-pkce@example.test")).await,
+            ));
+        }
+        let cookie = cookie.as_ref().unwrap();
+        for source in [
+            "dynamic-confidential",
+            "dynamic-public",
+            "managed",
+            "admin-true",
+            "admin-false",
+        ] {
+            let explicit_values = if source.starts_with("dynamic") {
+                vec![None, Some(true), Some(false)]
+            } else {
+                vec![Some(source == "admin-true")]
+            };
+            for explicit in explicit_values {
+                let public = source == "dynamic-public";
+                let optional = source == "admin-false"
+                    || (source == "dynamic-confidential" && policy == Some(false));
+                let mut input = json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":if public{"none"}else{"client_secret_basic"}});
+                if let Some(explicit) = explicit {
+                    input["require_pkce"] = json!(explicit);
+                }
+                let operation = if source.starts_with("dynamic") {
+                    "registerOAuthClient"
+                } else if source.starts_with("admin") {
+                    "adminCreateOAuthClient"
+                } else {
+                    "createOAuthClient"
+                };
+                let created = Box::pin(auth.dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("oauth-provider", operation).with_body(&input)?,
+                    EndpointOptions {
+                        headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                        ..Default::default()
+                    },
+                ))
+                .await?
+                .into_response()?;
+                assert_eq!(created.status, 201);
+                let client = body(&created);
+                let id = client["client_id"].as_str().unwrap();
+                for (name, pkce, proof) in [
+                    ("absent", json!({}), None),
+                    ("unsolicited-verifier", json!({}), Some(verifier)),
+                    ("empty", json!({"code_challenge":""}), None),
+                    (
+                        "empty-pair",
+                        json!({"code_challenge":"","code_challenge_method":"S256"}),
+                        None,
+                    ),
+                    (
+                        "missing-method",
+                        json!({"code_challenge":challenge}),
+                        Some(verifier),
+                    ),
+                    (
+                        "invalid-method",
+                        json!({"code_challenge":challenge,"code_challenge_method":"plain"}),
+                        Some(verifier),
+                    ),
+                    (
+                        "malformed",
+                        json!({"code_challenge":"short","code_challenge_method":"S256"}),
+                        Some(verifier),
+                    ),
+                    (
+                        "missing-verifier",
+                        json!({"code_challenge":challenge,"code_challenge_method":"S256"}),
+                        None,
+                    ),
+                    (
+                        "wrong-verifier",
+                        json!({"code_challenge":challenge,"code_challenge_method":"S256"}),
+                        Some("wrong"),
+                    ),
+                    (
+                        "valid",
+                        json!({"code_challenge":challenge,"code_challenge_method":"S256"}),
+                        Some(verifier),
+                    ),
+                ] {
+                    if name == "missing-verifier" && !optional && !public {
+                        continue;
+                    }
+                    let mut query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","prompt":"consent"});
+                    query
+                        .as_object_mut()
+                        .unwrap()
+                        .extend(pkce.as_object().unwrap().clone());
+                    let authorized = Box::pin(
+                        auth.dispatch_endpoint(
+                            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+                                .with_query(&query)?,
+                            EndpointOptions {
+                                headers: Some(
+                                    [
+                                        ("cookie".into(), cookie.clone()),
+                                        ("accept".into(), "application/json".into()),
+                                    ]
+                                    .into_iter()
+                                    .collect(),
+                                ),
+                                request: Some(request("/oauth2/authorize", None, cookie)),
+                                ..Default::default()
+                            },
+                        ),
+                    )
+                    .await?
+                    .into_response()?;
+                    let target = url::Url::parse(ORIGIN)?
+                        .join(body(&authorized)["url"].as_str().unwrap())?;
+                    let admitted = matches!(
+                        name,
+                        "valid" | "malformed" | "missing-verifier" | "wrong-verifier"
+                    ) || (optional
+                        && matches!(name, "absent" | "empty" | "unsolicited-verifier"));
+                    if !admitted {
+                        assert_eq!(
+                            target
+                                .query_pairs()
+                                .find(|(k, _)| k == "error")
+                                .map(|(_, v)| v.into_owned()),
+                            Some("invalid_request".into()),
+                            "{policy:?}:{source}:{explicit:?}:{name}"
+                        );
+                        assert!(!target.query_pairs().any(|(k, _)| k == "code"));
+                        continue;
+                    }
+                    assert_eq!(
+                        target.path(),
+                        "/consent",
+                        "{policy:?}:{source}:{explicit:?}:{name}: {target}"
+                    );
+                    let consent = Box::pin(auth.dispatch_endpoint(
+                        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, target.query())?,
+                        EndpointOptions {
+                            headers: Some(
+                                [("cookie".into(), cookie.clone())].into_iter().collect(),
+                            ),
+                            request: Some(request("/oauth2/consent", None, cookie)),
+                            ..Default::default()
+                        },
+                    ))
+                    .await?
+                    .into_response()?;
+                    let callback = url::Url::parse(body(&consent)["url"].as_str().unwrap())?;
+                    let code = callback
+                        .query_pairs()
+                        .find(|(k, _)| k == "code")
+                        .unwrap()
+                        .1
+                        .into_owned();
+                    let mut token_body = json!({"grant_type":"authorization_code","client_id":id,"redirect_uri":"https://app.fixture.test/callback","code":code});
+                    if let Some(proof) = proof {
+                        token_body["code_verifier"] = json!(proof);
+                    }
+                    let mut physical = request("/oauth2/token", None, "");
+                    if !public {
+                        _ = physical.headers.insert(
+                            "authorization".into(),
+                            format!(
+                                "Basic {}",
+                                base64::engine::general_purpose::STANDARD.encode(format!(
+                                    "{id}:{}",
+                                    client["client_secret"].as_str().unwrap()
+                                ))
+                            ),
+                        );
+                    }
+                    _ = physical.headers.insert(
+                        "content-type".into(),
+                        "application/x-www-form-urlencoded".into(),
+                    );
+                    physical.body = Some(
+                        url::form_urlencoded::Serializer::new(String::new())
+                            .extend_pairs(
+                                token_body
+                                    .as_object()
+                                    .unwrap()
+                                    .iter()
+                                    .map(|(k, v)| (k.as_str(), v.as_str().unwrap())),
+                            )
+                            .finish()
+                            .into_bytes(),
+                    );
+                    let output = Box::pin(
+                        auth.dispatch_endpoint(
+                            ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token")
+                                .with_body(&token_body)?,
+                            EndpointOptions {
+                                headers: Some(physical.headers.clone()),
+                                request: Some(physical),
+                                ..Default::default()
+                            },
+                        ),
+                    )
+                    .await;
+                    let success = matches!(name, "valid" | "absent" | "empty");
+                    if success {
+                        let token = output?.into_response()?;
+                        assert_eq!(token.status, 200);
+                        assert_eq!(body(&token)["scope"], "email");
+                        assert_eq!(body(&token)["token_type"], "Bearer");
+                        let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(
+                            sha2::Sha256::digest(body(&token)["access_token"].as_str().unwrap()),
+                        );
+                        let stored = auth
+                            .store()
+                            .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+                            .await?
+                            .unwrap();
+                        assert_eq!(stored.client_id, id);
+                    } else {
+                        let error = output.unwrap_err();
+                        assert_eq!(
+                            error.error.status_code(),
+                            if public && name == "missing-verifier" {
+                                400
+                            } else {
+                                401
+                            },
+                            "{policy:?}:{source}:{name}"
+                        );
+                        assert_eq!(
+                            error
+                                .body
+                                .as_ref()
+                                .unwrap()
+                                .get("error")
+                                .and_then(alibi::utils::json::JsValue::as_str),
+                            Some("invalid_request")
+                        );
+                    }
+                }
+                let row = auth.store().get_oauth_client(id).await?.unwrap();
+                let expected = if source.starts_with("admin") {
+                    Some(json!(source == "admin-true"))
+                } else {
+                    optional.then(|| json!(false))
+                };
+                assert_eq!(row.metadata.get("require_pkce"), expected.as_ref());
+                let updated=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","updateOAuthClient").with_body(&json!({"client_id":id,"update":{"client_name":"Updated","require_pkce":!optional}}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()),..Default::default()})).await?.into_response()?;
+                assert_eq!(updated.status, 200);
+                assert_eq!(
+                    auth.store()
+                        .get_oauth_client(id)
+                        .await?
+                        .unwrap()
+                        .metadata
+                        .get("require_pkce"),
+                    expected.as_ref()
+                );
+            }
+        }
+    }
+    Ok(())
+}
 async fn oauth_registration_scope_capabilities_are_not_grants<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     for (defaults, allowed, invalid) in [

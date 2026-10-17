@@ -1591,6 +1591,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         "public",
         "token-dynamic",
         "token-public",
+        "registration-pkce-absent",
+        "registration-pkce-true",
+        "registration-pkce-false",
         "registration-scopes-fallback",
         "registration-scopes-custom-provider",
         "registration-scopes-allowed-empty",
@@ -1604,7 +1607,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         mode,
         betterAuth({
           ...options,
-          ...(mode.startsWith("token-") || mode.startsWith("registration-scopes-")
+          ...(mode.startsWith("token-") || mode.startsWith("registration-")
             ? { rateLimit: { enabled: false } }
             : {}),
           plugins: [
@@ -1615,7 +1618,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               consentPage: "/consent",
               allowDynamicClientRegistration: true,
               allowUnauthenticatedClientRegistration:
-                mode.endsWith("public") || mode.startsWith("registration-scopes-"),
+                mode.endsWith("public") || mode.startsWith("registration-"),
+              ...(mode === "registration-pkce-true" ? { clientRegistrationRequirePKCE: true } : {}),
+              ...(mode === "registration-pkce-false"
+                ? { clientRegistrationRequirePKCE: false }
+                : {}),
               ...(mode === "registration-scopes-custom-provider"
                 ? { scopes: ["email", "profile", "openid", "email", ""] }
                 : {}),
@@ -2043,6 +2050,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 redirectUris: row.redirectUris,
                 client_secret: row.clientSecret ?? null,
                 referenceId: row.referenceId ?? null,
+                requirePKCE: row.requirePKCE ?? null,
               }
             : null,
         ),

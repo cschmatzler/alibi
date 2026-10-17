@@ -1376,6 +1376,16 @@ impl OAuthProviderPlugin {
             );
         }
         _ = metadata.insert("scope".into(), json!(registration_scopes.join(" ")));
+        if self.config.client_registration_require_pkce == Some(false)
+            && metadata
+                .get("token_endpoint_auth_method")
+                .and_then(Value::as_str)
+                != Some("none")
+        {
+            _ = metadata
+                .entry("require_pkce")
+                .or_insert_with(|| json!(false));
+        }
         if let Some(reference) =
             token_authorization.and_then(|authorization| authorization.reference_id)
         {
