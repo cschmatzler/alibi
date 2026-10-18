@@ -54,6 +54,15 @@ pub struct CreateOAuthClientInput {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub dpop_bound_access_tokens: Option<bool>,
 }
+/// Dynamic registration metadata. Requested resources admit additions to server defaults;
+/// unlike scopes, they narrow which optional resource capabilities become durable links.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct RegisterOAuthClientInput {
+    #[serde(flatten)]
+    pub metadata: CreateOAuthClientInput,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resources: Option<Vec<String>>,
+}
 impl OAuthProviderPlugin {
     async fn require_client_privileges<S: AuthSchema>(
         &self,
@@ -1248,7 +1257,7 @@ impl OAuthProviderPlugin {
     }
     async fn persist_client<S: AuthSchema>(
         &self,
-        metadata: serde_json::Map<String, Value>,
+        mut metadata: serde_json::Map<String, Value>,
         user_id: Option<String>,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
@@ -1273,6 +1282,58 @@ impl OAuthProviderPlugin {
         };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid client creation timestamp"))?;
+        // Only dynamic registration passes this extension through admission. It is
+        // response/relation data, never a field of the oauthClient model.
+        let requested = metadata
+            .remove("resources")
+            .map(serde_json::from_value::<Vec<String>>)
+            .transpose()?
+            .unwrap_or_default();
+        let defaults = self
+            .config
+            .client_registration_default_resources
+            .as_deref()
+            .unwrap_or_default();
+        for identifier in &requested {
+            if !defaults.contains(identifier)
+                && !self
+                    .config
+                    .client_registration_allowed_resources
+                    .as_ref()
+                    .is_some_and(|allowed| allowed.contains(identifier))
+            {
+                return protocol_error(
+                    "invalid_target",
+                    format!(
+                        "requested resource {identifier} is not allowed for client registration"
+                    ),
+                );
+            }
+        }
+        let mut resources = Vec::new();
+        for identifier in defaults.iter().chain(&requested) {
+            if !resources.contains(identifier) {
+                resources.push(identifier.clone());
+            }
+        }
+        for identifier in &resources {
+            let Some(resource) = self.get_resource(ctx, identifier).await? else {
+                return protocol_error(
+                    "invalid_target",
+                    format!("requested resource {identifier} does not exist"),
+                );
+            };
+            if resource.metadata.get("disabled").and_then(Value::as_bool) == Some(true) {
+                return protocol_error(
+                    "invalid_target",
+                    format!("requested resource {identifier} is disabled"),
+                );
+            }
+        }
+        let administrative = metadata.contains_key("client_credentials_scopes");
+        _ = metadata
+            .entry("client_credentials_scopes")
+            .or_insert_with(|| json!([]));
         let client = ctx
             .database
             .create_oauth_client(alibi_core::store::CreateOAuthClient {
@@ -1283,7 +1344,23 @@ impl OAuthProviderPlugin {
                 created_at: now,
             })
             .await?;
+        for resource_id in &resources {
+            _ = ctx
+                .database
+                .create_oauth_client_resource(alibi_core::store::CreateOAuthClientResource {
+                    client_id: client.client_id.clone(),
+                    resource_id: resource_id.clone(),
+                    created_at: chrono::Utc::now(),
+                })
+                .await?;
+        }
         let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        if !administrative {
+            _ = output.remove("client_credentials_scopes");
+        }
+        if !resources.is_empty() {
+            _ = output.insert("resources".into(), json!(resources));
+        }
         _ = output.insert("client_id".into(), json!(client.client_id));
         if let Some(user_id) = client.user_id {
             _ = output.insert("user_id".into(), json!(user_id));
@@ -1303,7 +1380,7 @@ impl OAuthProviderPlugin {
     }
     /// Register a client under the provider's dynamic-registration policy.
     pub fn register_oauth_client_endpoint(
-        input: &CreateOAuthClientInput,
+        input: &impl Serialize,
     ) -> AuthResult<ServerEndpoint<Value>> {
         ServerEndpoint::new("oauth-provider", "registerOAuthClient").with_body(input)
     }
@@ -1438,15 +1515,10 @@ impl OAuthProviderPlugin {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
-        if let Some(resources) = body
-            .and_then(|body| body.get("resources"))
-            .and_then(JsValue::as_array)
-            && let Some(resource) = resources.first().and_then(JsValue::as_str)
-        {
-            return status_protocol_error(
-                400,
-                "invalid_target",
-                &format!("requested resource {resource} is not allowed for client registration"),
+        if let Some(resources) = body.and_then(|body| body.get("resources")) {
+            _ = metadata.insert(
+                "resources".into(),
+                alibi_core::utils::json::from_value(resources.clone())?,
             );
         }
         _ = metadata.insert("scope".into(), json!(registration_scopes.join(" ")));

@@ -1116,6 +1116,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     },
   };
   let seededAuth: ReturnType<typeof betterAuth> | undefined;
+  let registrationResourceClientIds = 0;
   const seedIdentifiers = { calls: 0, failNext: false };
   const resourcePrivileges = { calls: [] as unknown[] };
   const resourcePrivilegeDecision: NonNullable<OAuthOptions["resourcePrivileges"]> = async (
@@ -1993,7 +1994,15 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         consentPage: "/consent",
         resources: input.resources,
         resourceSeedMode: input.resourceSeedMode,
-        enforcePerClientResources: false,
+        enforcePerClientResources: input.registrationResources === true,
+        ...(input.registrationResources
+          ? {
+              allowDynamicClientRegistration: true,
+              allowUnauthenticatedClientRegistration: true,
+              generateClientId: () => `operator-client-${++registrationResourceClientIds}`,
+              ...input.options,
+            }
+          : {}),
         ...(input.customIdentifiers
           ? {
               identifierValidator: async (identifier: string) => {
@@ -2010,6 +2019,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       };
       seededAuth = betterAuth({
         ...options,
+        ...(input.registrationResources ? { rateLimit: { enabled: false } } : {}),
         plugins: [
           username(),
           jwt(),
@@ -2074,7 +2084,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       );
     }
-    if (input.action === "registration-scopes-validation") {
+    if (
+      input.action === "registration-scopes-validation" ||
+      input.action === "registration-resources-validation"
+    ) {
       try {
         oauthProvider({ loginPage: "/login", consentPage: "/consent", ...input.options });
         return Response.json({ valid: true });
@@ -2458,6 +2471,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         model: "oauthClient",
         where: [{ field: "clientId", value: input.clientId }],
       })) as any;
+      if (input.raw) return Response.json(row);
       return new Response(
         JSON.stringify(
           row

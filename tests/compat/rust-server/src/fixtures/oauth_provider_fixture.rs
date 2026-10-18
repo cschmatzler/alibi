@@ -457,11 +457,13 @@ pub(crate) async fn router(
     let response_fields_routes=response_fields_auth.clone().axum_router().with_state(response_fields_auth);
     let seeded_auth=Arc::new(tokio::sync::Mutex::new(None::<(Arc<alibi::Alibi<TestSchema>>,OAuthProviderPlugin)>));
     let seed_identifiers=Arc::new(resource_identifiers::Identifiers::default());
+    let registration_resource_client_ids=Arc::new(OperatorClientIds{calls:std::sync::atomic::AtomicUsize::new(0),empty:false});
     Ok(Router::new().nest("/__test/profiles/oauth-response-fields/api/auth",response_fields_routes).route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
         let seeded_auth=seeded_auth.clone();
         let seed_identifiers=seed_identifiers.clone();
         let resource_privileges=resource_privileges.clone();
+        let registration_resource_client_ids=registration_resource_client_ids.clone();
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
@@ -487,8 +489,10 @@ pub(crate) async fn router(
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="resource-seed-init" {
-                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),enforce_per_client_resources:false,..Default::default()});
-                let initialized=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone()).build().await.unwrap();
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),client_id_generator:(input["registrationResources"]==true).then(||registration_resource_client_ids as Arc<dyn alibi::plugins::OAuthClientIdGenerator>),enforce_per_client_resources:input["registrationResources"]==true,allow_dynamic_client_registration:input["registrationResources"]==true,allow_unauthenticated_client_registration:input["registrationResources"]==true,client_registration_default_resources:input["options"].get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_resources:input["options"].get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),..Default::default()});
+                let builder=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone());
+                let builder=if input["registrationResources"]==true {builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
+                let initialized=builder.build().await.unwrap();
                 *seeded_auth.lock().await=Some((Arc::new(initialized),provider));
                 return axum::Json(serde_json::json!({"initialized":true})).into_response();
             }
@@ -507,11 +511,14 @@ pub(crate) async fn router(
             if input["action"]=="client-policy-calls" {
                 return axum::Json(std::mem::take(&mut *client_privileges.calls.lock().unwrap())).into_response();
             }
-            if input["action"]=="registration-scopes-validation" {
+            if input["action"]=="registration-scopes-validation" || input["action"]=="registration-resources-validation" {
                 let options=&input["options"];
                 let cfg=OAuthProviderConfig{
                     client_registration_default_scopes:options.get("clientRegistrationDefaultScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),
                     client_registration_allowed_scopes:options.get("clientRegistrationAllowedScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),
+                    resources:options.get("resources").map(|v|serde_json::from_value(v.clone()).unwrap()).unwrap_or_default(),
+                    client_registration_default_resources:options.get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),
+                    client_registration_allowed_resources:options.get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),
                     ..Default::default()
                 };
                 let result=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(JwtPlugin::new()).plugin(OAuthProviderPlugin::with_config(cfg)).build().await;
@@ -813,6 +820,10 @@ pub(crate) async fn router(
                 return axum::Json(serde_json::json!({"status":response.status})).into_response();
             }
             if input["action"]=="row" {
+                if input["raw"]==true {
+                    use alibi::seaorm::{sea_orm::{EntityTrait as _,ColumnTrait as _,QueryFilter as _},store::entities::oauth_client::{Entity,Column}};
+                    return axum::Json(Entity::find().filter(Column::ClientId.eq(input["clientId"].as_str().unwrap())).one(&logout_database).await.unwrap()).into_response();
+                }
                 let row=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(row.map(|row|serde_json::json!({"id":row.id,"clientId":row.client_id,"userId":row.user_id,"clientName":row.metadata.get("client_name"),"redirectUris":row.metadata.get("redirect_uris"),"client_secret":row.client_secret,"referenceId":row.metadata.get("reference_id"),"requirePKCE":row.metadata.get("require_pkce")}))).into_response();
             }

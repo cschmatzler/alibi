@@ -1,9 +1,297 @@
 import { createHash } from "node:crypto";
 
+import { createLocalJWKSet, jwtVerify } from "jose";
 import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
+compatScenario(
+  "Registration resource capability policy persists genuine links and issued authority",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: object) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        redirect: "manual",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "resource-seed", ...input }),
+      });
+    const a = "https://api.fixture.test/registration/a";
+    const b = "https://api.fixture.test/registration/b";
+    const c = "https://api.fixture.test/registration/c";
+    const disabled = "https://api.fixture.test/registration/disabled";
+    const resources = [
+      a,
+      { identifier: b, allowedScopes: ["email"], accessTokenTtl: 123 },
+      c,
+      { identifier: disabled, disabled: true },
+      "relative",
+    ];
+    let cookie: string | undefined;
+    const results = [];
+    for (const [mode, defaults, allowed] of [
+      ["absent", undefined, undefined],
+      ["empty-default", [], undefined],
+      ["empty-allowed", undefined, []],
+      ["empty", [], []],
+      ["default", [a, a], []],
+      ["allowed-only", undefined, [b]],
+      ["union", [a, a], [b, a, b, disabled, "relative"]],
+      ["disabled-default", [disabled], undefined],
+      ["missing-default", ["relative"], undefined],
+    ] as const) {
+      const initialized = await control({
+        action: "resource-seed-init",
+        registrationResources: true,
+        resources,
+        options: {
+          ...(defaults === undefined ? {} : { clientRegistrationDefaultResources: defaults }),
+          ...(allowed === undefined ? {} : { clientRegistrationAllowedResources: allowed }),
+        },
+      });
+      expect(initialized.status).toBe(200);
+      expect(await initialized.json()).toEqual({ initialized: true });
+      if (!cookie) {
+        const signup = await control({
+          action: "signup",
+          body: {
+            email: ctx.uniqueEmail("registration-resources"),
+            name: "Owner",
+            password: "password123",
+          },
+        });
+        expect(signup.status).toBe(200);
+        cookie = signup.headers
+          .getSetCookie()
+          .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+          .map((raw) => raw.split(";")[0])
+          .join("; ");
+      }
+      const call = (input: object) => control({ headers: { cookie }, ...input });
+      const configured = (await (
+        await call({ action: "resource-row", identifier: a })
+      ).json()) as any;
+      expect(configured.identifier).toBe(a);
+      for (const requested of [
+        undefined,
+        [],
+        [a],
+        [b, b],
+        [b, b, a],
+        [c],
+        [disabled],
+        ["urn:fixture:unknown"],
+      ]) {
+        const baseline: readonly string[] = defaults ?? [];
+        const admitted: readonly string[] = [...baseline, ...(allowed ?? [])];
+        const forbidden = requested?.find((id) => !admitted.includes(id));
+        const invalid = [...baseline, ...(requested ?? [])].find(
+          (id) => id === disabled || id === "relative",
+        );
+        const description = forbidden
+          ? `requested resource ${forbidden} is not allowed for client registration`
+          : invalid
+            ? `requested resource ${invalid} ${invalid === disabled ? "is disabled" : "does not exist"}`
+            : undefined;
+        const before = (await (await call({ action: "registration-state" })).json()) as any;
+        const response = await call({
+          action: "register",
+          body: {
+            redirect_uris: ["https://app.fixture.test/callback"],
+            scope: "email",
+            token_endpoint_auth_method: "none",
+            ...(requested === undefined ? {} : { resources: requested }),
+          },
+        });
+        const value = (await response.json()) as any;
+        if (description) {
+          expect(response.status, `${ctx.baseURL}:${mode}:${JSON.stringify(requested)}`).toBe(400);
+          expect(value).toEqual({ error: "invalid_target", error_description: description });
+          expect(
+            ((await (await call({ action: "registration-state" })).json()) as any).counts,
+          ).toEqual(before.counts);
+          results.push({ mode, requested: requested ?? null, status: response.status, value });
+          continue;
+        }
+        expect(response.status).toBe(201);
+        const expected = [...new Set([...baseline, ...(requested ?? [])])];
+        expect(value.resources).toEqual(expected.length ? expected : undefined);
+        const row = (await (
+          await call({ action: "row", clientId: value.client_id, raw: true })
+        ).json()) as any;
+        expect(row).not.toHaveProperty("resources");
+        expect(row.metadata).toBeNull();
+        expect(row.clientCredentialsScopes).toEqual([]);
+        const links = (await (
+          await call({ action: "resource-links", clientId: value.client_id })
+        ).json()) as any[];
+        expect(links.map((row) => row.resourceId).sort()).toEqual([...expected].sort());
+        for (const link of links) {
+          expect(link.clientId).toBe(value.client_id);
+          expect(link.metadata).toBeNull();
+          expect(link.createdAt).toBeTypeOf("string");
+        }
+        expect(
+          await (await call({ action: "consent-row", clientId: value.client_id })).json(),
+        ).toEqual([]);
+        const uses = [];
+        if (mode === "union" && requested?.length === 3) {
+          const verifier = "registration-resource-verifier-abcdefghijklmnopqrstuvwxyz";
+          const challenge = createHash("sha256").update(verifier).digest("base64url");
+          const keys = createLocalJWKSet((await (await call({ action: "jwks" })).json()) as any);
+          for (const [resource, unlink] of [
+            [a, false],
+            [b, false],
+            [b, true],
+            [c, false],
+          ] as const) {
+            const authorized = await call({
+              action: "authorize",
+              headers: { cookie, accept: "application/json" },
+              query: {
+                client_id: value.client_id,
+                response_type: "code",
+                redirect_uri: "https://app.fixture.test/callback",
+                scope: "email",
+                resource,
+                prompt: "consent",
+                code_challenge: challenge,
+                code_challenge_method: "S256",
+              },
+            });
+            expect(authorized.status).toBe(200);
+            const target = new URL(((await authorized.json()) as any).url, ctx.baseURL);
+            if (resource === c) {
+              expect(target.searchParams.get("error")).toBe("invalid_target");
+              expect(target.searchParams.has("code")).toBe(false);
+              uses.push({ resource, error: target.searchParams.get("error") });
+              continue;
+            }
+            expect(target.pathname).toBe("/consent");
+            const consent = await call({
+              action: "consent",
+              body: { accept: true, oauth_query: target.search.slice(1) },
+            });
+            expect(consent.status).toBe(200);
+            const code = new URL(((await consent.json()) as any).url).searchParams.get("code");
+            expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+            if (unlink) {
+              const removed = await call({
+                action: "resource-unlink",
+                params: { identifier: resource, client_id: value.client_id },
+              });
+              expect(removed.status).toBe(200);
+              const remaining = (await (
+                await call({ action: "resource-links", clientId: value.client_id })
+              ).json()) as any[];
+              expect(remaining.map((row) => row.resourceId)).toEqual([a]);
+            }
+            const token = await call({
+              action: "token",
+              body: {
+                grant_type: "authorization_code",
+                client_id: value.client_id,
+                redirect_uri: "https://app.fixture.test/callback",
+                code,
+                code_verifier: verifier,
+              },
+            });
+            const issued = (await token.json()) as any;
+            if (unlink) {
+              expect(token.status).toBe(400);
+              expect(issued).toEqual({
+                error: "invalid_target",
+                error_description: `client ${value.client_id} is not linked to resource(s) ${resource}`,
+              });
+              uses.push({ resource, unlinked: true, error: issued.error });
+              continue;
+            }
+            expect(token.status).toBe(200);
+            expect(issued.scope).toBe("email");
+            if (resource === b) expect(issued.expires_in).toBe(123);
+            const { payload } = await jwtVerify(issued.access_token, keys, {
+              issuer: `${ctx.baseURL}/api/auth`,
+              audience: resource,
+            });
+            expect(payload.scope).toBe("email");
+            expect(payload.aud).toBe(resource);
+            uses.push({
+              resource,
+              scope: issued.scope,
+              expires_in: issued.expires_in,
+              aud: payload.aud,
+            });
+          }
+        }
+        results.push({
+          mode,
+          requested: requested ?? null,
+          value: ctx.snapshot(value),
+          links: ctx.snapshot(links),
+          uses,
+        });
+      }
+      if (mode === "union") {
+        for (const action of [undefined, "admin-create"]) {
+          const response = await call({
+            ...(action ? { action } : {}),
+            body: {
+              redirect_uris: ["https://app.fixture.test/callback"],
+              scope: "email",
+              resources: [b, c],
+              token_endpoint_auth_method: "none",
+            },
+          });
+          expect(response.status).toBe(201);
+          const value = (await response.json()) as any;
+          expect(value.resources).toEqual([a]);
+          const links = (await (
+            await call({ action: "resource-links", clientId: value.client_id })
+          ).json()) as any[];
+          expect(links.map((row) => row.resourceId)).toEqual([a]);
+          results.push({
+            mode,
+            action: action ?? "managed",
+            value: ctx.snapshot(value),
+            links: ctx.snapshot(links),
+          });
+        }
+      }
+    }
+    const configurations = [];
+    for (const [options, option, identifier] of [
+      [
+        { resources: [a], clientRegistrationDefaultResources: [c] },
+        "clientRegistrationDefaultResources",
+        c,
+      ],
+      [
+        { resources: [a], clientRegistrationAllowedResources: [c] },
+        "clientRegistrationAllowedResources",
+        c,
+      ],
+      [
+        {
+          resources: [a],
+          clientRegistrationDefaultResources: ["first"],
+          clientRegistrationAllowedResources: ["second"],
+        },
+        "clientRegistrationDefaultResources",
+        "first",
+      ],
+    ] as const) {
+      const value = await (
+        await control({ action: "registration-resources-validation", options })
+      ).json();
+      expect(value).toEqual({
+        valid: false,
+        message: `${option} resource ${identifier} not found in resources`,
+      });
+      configurations.push(value);
+    }
+    return { results, configurations };
+  },
+);
 compatScenario(
   "Registration PKCE policy survives persistence and governs genuine code exchanges",
   async (ctx) => {

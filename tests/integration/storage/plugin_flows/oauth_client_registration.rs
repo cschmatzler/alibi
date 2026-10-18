@@ -18,8 +18,359 @@ const REGISTRATION_TABLES: &[&str] = &[
 backend_tests!(
     oauth_dynamic_registration_enforces_policy_and_persists_clients,
     oauth_registration_scope_capabilities_are_not_grants,
-    oauth_registration_pkce_policy_controls_genuine_code_exchanges
+    oauth_registration_pkce_policy_controls_genuine_code_exchanges,
+    oauth_registration_resources_persist_only_admitted_links
 );
+async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let a = "https://api.fixture.test/registration/a";
+    let b = "https://api.fixture.test/registration/b";
+    let c = "https://api.fixture.test/registration/c";
+    let disabled = "https://api.fixture.test/registration/disabled";
+    let resources = vec![
+        json!(a),
+        json!({"identifier":b,"allowedScopes":["email"],"accessTokenTtl":123}),
+        json!(c),
+        json!({"identifier":disabled,"disabled":true}),
+        json!("relative"),
+    ];
+    let mut owner = None;
+    for (mode, defaults, allowed) in [
+        ("absent", None, None),
+        ("empty-default", Some(vec![]), None),
+        ("empty-allowed", None, Some(vec![])),
+        ("empty", Some(vec![]), Some(vec![])),
+        ("default", Some(vec![a, a]), Some(vec![])),
+        ("allowed-only", None, Some(vec![b])),
+        (
+            "union",
+            Some(vec![a, a]),
+            Some(vec![b, a, b, disabled, "relative"]),
+        ),
+        ("disabled-default", Some(vec![disabled]), None),
+        ("missing-default", Some(vec!["relative"]), None),
+    ] {
+        let auth = Box::pin(
+            super::auth_probe::fast_builder::<B>(&connection)
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                    resources: resources.clone(),
+                    allow_dynamic_client_registration: true,
+                    allow_unauthenticated_client_registration: true,
+                    client_registration_default_resources: defaults
+                        .clone()
+                        .map(|v| v.into_iter().map(str::to_owned).collect()),
+                    client_registration_allowed_resources: allowed
+                        .clone()
+                        .map(|v| v.into_iter().map(str::to_owned).collect()),
+                    ..Default::default()
+                }))
+                .build(),
+        )
+        .await?;
+        if owner.is_none() {
+            owner = Some(cookies(
+                &Box::pin(signup(&auth, "registration-resources@example.test")).await,
+            ));
+        }
+        let cookie = owner.as_ref().unwrap();
+        assert!(
+            auth.store().get_oauth_resource(a).await?.is_some(),
+            "real provider initialization owns resources"
+        );
+        for requested in [
+            None,
+            Some(vec![]),
+            Some(vec![a]),
+            Some(vec![b, b]),
+            Some(vec![b, b, a]),
+            Some(vec![c]),
+            Some(vec![disabled]),
+            Some(vec!["urn:fixture:unknown"]),
+        ] {
+            let mut input = json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":"none"});
+            if let Some(requested) = &requested {
+                input["resources"] = json!(requested);
+            }
+            let baseline = defaults.clone().unwrap_or_default();
+            let admitted = baseline
+                .iter()
+                .chain(allowed.iter().flatten())
+                .copied()
+                .collect::<Vec<_>>();
+            let denied = requested
+                .iter()
+                .flatten()
+                .find(|id| !admitted.contains(id))
+                .map(|id| format!("requested resource {id} is not allowed for client registration"))
+                .or_else(|| {
+                    baseline
+                        .iter()
+                        .chain(requested.iter().flatten())
+                        .find_map(|id| {
+                            if *id == disabled {
+                                Some(format!("requested resource {id} is disabled"))
+                            } else if *id == "relative" {
+                                Some(format!("requested resource {id} does not exist"))
+                            } else {
+                                None
+                            }
+                        })
+                });
+            let before = db
+                .tables(&[
+                    "oauthClient",
+                    "oauthClientResource",
+                    "oauthConsent",
+                    "oauthAccessToken",
+                    "verification",
+                ])
+                .await?;
+            let input = serde_json::from_value::<
+                alibi::plugins::oauth_provider::RegisterOAuthClientInput,
+            >(input)?;
+            let output = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::register_oauth_client_endpoint(&input)?,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await;
+            if let Some(description) = denied {
+                let error = output.unwrap_err();
+                assert_eq!(error.error.status_code(), 400, "{mode}:{requested:?}");
+                assert_eq!(
+                    error.body.unwrap().to_json_value()?,
+                    json!({"error":"invalid_target","error_description":description})
+                );
+                assert_eq!(
+                    db.tables(&[
+                        "oauthClient",
+                        "oauthClientResource",
+                        "oauthConsent",
+                        "oauthAccessToken",
+                        "verification"
+                    ])
+                    .await?,
+                    before
+                );
+                continue;
+            }
+            let output = output?.into_response()?;
+            assert_eq!(output.status, 201);
+            let value = body(&output);
+            let mut expected = Vec::new();
+            for id in baseline.iter().chain(requested.iter().flatten()) {
+                if !expected.contains(id) {
+                    expected.push(*id);
+                }
+            }
+            assert_eq!(
+                value.get("resources"),
+                (!expected.is_empty()).then(|| json!(&expected)).as_ref(),
+                "{mode}:{requested:?}"
+            );
+            let id = value["client_id"].as_str().unwrap();
+            let row = auth.store().get_oauth_client(id).await?.unwrap();
+            assert_eq!(row.metadata["client_credentials_scopes"], json!([]));
+            assert!(
+                row.metadata.get("resources").is_none(),
+                "resources are relation rows, not client metadata"
+            );
+            let links = auth.store().list_oauth_client_resources(id).await?;
+            let mut linked = links
+                .iter()
+                .map(|row| row.resource_id.as_str())
+                .collect::<Vec<_>>();
+            linked.sort_unstable();
+            let mut sorted = expected.clone();
+            sorted.sort_unstable();
+            assert_eq!(linked, sorted);
+            for link in &links {
+                assert_eq!(link.client_id, id);
+                assert_eq!(link.metadata, Value::Null);
+                assert!(link.created_at.is_some());
+            }
+            assert_eq!(db.count("oauthConsent").await?, 0);
+            assert_eq!(db.count("oauthAccessToken").await?, 0);
+            // Exercise the capability through real authorize/consent/code/token endpoints once.
+            if mode == "union" && requested == Some(vec![b, b, a]) {
+                let verifier = "registration-resource-verifier-abcdefghijklmnopqrstuvwxyz";
+                let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(verifier));
+                for (resource, unlink) in [(a, false), (b, false), (b, true), (c, false)] {
+                    let before = db
+                        .tables(&[
+                            "oauthAccessToken",
+                            "oauthRefreshToken",
+                            "verification",
+                            "oauthConsent",
+                        ])
+                        .await?;
+                    let authorized=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_authorize_endpoint(&json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","resource":resource,"prompt":"consent","code_challenge":challenge,"code_challenge_method":"S256"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.clone()),("accept".into(),"application/json".into())].into_iter().collect()),request:Some(request("/oauth2/authorize",None,cookie)),..Default::default()})).await?.into_response()?;
+                    let target = url::Url::parse(ORIGIN)?
+                        .join(body(&authorized)["url"].as_str().unwrap())?;
+                    if resource == c {
+                        assert_eq!(
+                            target.query_pairs().find(|(k, _)| k == "error").unwrap().1,
+                            "invalid_target"
+                        );
+                        assert_eq!(
+                            db.tables(&[
+                                "oauthAccessToken",
+                                "oauthRefreshToken",
+                                "verification",
+                                "oauthConsent"
+                            ])
+                            .await?,
+                            before
+                        );
+                        continue;
+                    }
+                    assert_eq!(target.path(), "/consent");
+                    let consent = Box::pin(auth.dispatch_endpoint(
+                        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, target.query())?,
+                        EndpointOptions {
+                            headers: Some(
+                                [("cookie".into(), cookie.clone())].into_iter().collect(),
+                            ),
+                            request: Some(request("/oauth2/consent", None, cookie)),
+                            ..Default::default()
+                        },
+                    ))
+                    .await?
+                    .into_response()?;
+                    let callback = url::Url::parse(body(&consent)["url"].as_str().unwrap())?;
+                    let code = callback
+                        .query_pairs()
+                        .find(|(k, _)| k == "code")
+                        .unwrap()
+                        .1
+                        .into_owned();
+                    if unlink {
+                        let removed = Box::pin(auth.dispatch_endpoint(
+                            OAuthProviderPlugin::admin_unlink_client_resource_endpoint(
+                                resource, id,
+                            )?,
+                            EndpointOptions {
+                                headers: Some(
+                                    [("cookie".into(), cookie.clone())].into_iter().collect(),
+                                ),
+                                ..Default::default()
+                            },
+                        ))
+                        .await?
+                        .into_response()?;
+                        assert_eq!(removed.status, 200);
+                        assert_eq!(
+                            auth.store()
+                                .list_oauth_client_resources(id)
+                                .await?
+                                .iter()
+                                .map(|row| row.resource_id.as_str())
+                                .collect::<Vec<_>>(),
+                            vec![a]
+                        );
+                    }
+                    let authority = db
+                        .tables(&["oauthAccessToken", "oauthRefreshToken"])
+                        .await?;
+                    let output=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_token_endpoint(&json!({"grant_type":"authorization_code","client_id":id,"redirect_uri":"https://app.fixture.test/callback","code":code,"code_verifier":verifier}))?,EndpointOptions::default())).await;
+                    if unlink {
+                        let error = output.unwrap_err();
+                        assert_eq!(error.error.status_code(), 400);
+                        assert_eq!(
+                            error.body.unwrap().to_json_value()?,
+                            json!({"error":"invalid_target","error_description":format!("client {id} is not linked to resource(s) {resource}")})
+                        );
+                        assert_eq!(
+                            db.tables(&["oauthAccessToken", "oauthRefreshToken"])
+                                .await?,
+                            authority
+                        );
+                        continue;
+                    }
+                    let token = output?.into_response()?;
+                    assert_eq!(token.status, 200);
+                    let issued = body(&token);
+                    assert_eq!(issued["scope"], "email");
+                    if resource == b {
+                        assert_eq!(issued["expires_in"], 123);
+                    }
+                    let claims = JwtPlugin::with_config(alibi::plugins::jwt::JwtPluginConfig {
+                        claims: alibi::plugins::jwt::JwtClaimsConfig {
+                            issuer: Some(format!(
+                                "{}{}",
+                                auth.config().base_url.trim_end_matches('/'),
+                                auth.config().base_path
+                            )),
+                            audience: Some(alibi::plugins::jwt::JwtAudience::One(resource.into())),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .verify_jwt(
+                        issued["access_token"].as_str().unwrap(),
+                        None,
+                        None,
+                        auth.context(),
+                    )
+                    .await?
+                    .unwrap();
+                    assert_eq!(claims["scope"], "email");
+                    assert_eq!(claims["aud"], resource);
+                }
+            }
+        }
+        if mode == "union" {
+            // Managed endpoint schema strips requested resources; only defaults are linked.
+            for operation in ["createOAuthClient", "adminCreateOAuthClient"] {
+                let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider",operation).with_body(&json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","resources":[b,c],"token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()),..Default::default()})).await?.into_response()?;
+                assert_eq!(body(&created)["resources"], json!([a]));
+                let id = body(&created)["client_id"].as_str().unwrap().to_owned();
+                assert_eq!(
+                    auth.store()
+                        .list_oauth_client_resources(&id)
+                        .await?
+                        .iter()
+                        .map(|row| row.resource_id.as_str())
+                        .collect::<Vec<_>>(),
+                    vec![a]
+                );
+            }
+        }
+    }
+    for (defaults, allowed, option, identifier) in [
+        (Some(vec![c]), None, "clientRegistrationDefaultResources", c),
+        (None, Some(vec![c]), "clientRegistrationAllowedResources", c),
+        (
+            Some(vec!["first"]),
+            Some(vec!["second"]),
+            "clientRegistrationDefaultResources",
+            "first",
+        ),
+    ] {
+        let result = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                resources: vec![json!(a)],
+                client_registration_default_resources: defaults
+                    .map(|v| v.into_iter().map(str::to_owned).collect()),
+                client_registration_allowed_resources: allowed
+                    .map(|v| v.into_iter().map(str::to_owned).collect()),
+                ..Default::default()
+            }))
+            .build()
+            .await;
+        assert!(
+            matches!(result,Err(alibi::AuthError::Config(message)) if message==format!("{option} resource {identifier} not found in resources"))
+        );
+    }
+    Ok(())
+}
 async fn oauth_registration_pkce_policy_controls_genuine_code_exchanges<B: Backend>(
     db: Db,
 ) -> TestResult {

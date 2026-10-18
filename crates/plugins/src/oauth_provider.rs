@@ -79,7 +79,7 @@ pub use client_jwks::{
     OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
 };
-pub use clients::CreateOAuthClientInput;
+pub use clients::{CreateOAuthClientInput, RegisterOAuthClientInput};
 pub use discovery::OAuthClientDiscovery;
 use serde_json::{Value, json};
 
@@ -243,6 +243,12 @@ pub struct OAuthProviderConfig {
     /// Additional dynamic-registration capabilities, unioned after the baseline.
     /// Requested registration scopes validate against, but do not narrow, this union.
     pub client_registration_allowed_scopes: Option<Vec<String>>,
+    /// Server-default resource links for newly registered clients. Omitted and empty
+    /// lists both supply no links; identifiers must be present in `resources`.
+    pub client_registration_default_resources: Option<Vec<String>>,
+    /// Additional resource identifiers that dynamic registration may explicitly request.
+    /// Defaults remain admitted even when this list is empty.
+    pub client_registration_allowed_resources: Option<Vec<String>>,
     /// Operator authorization for Bearer credentials presented without a genuine user session.
     pub initial_access_token_validator:
         Option<std::sync::Arc<dyn OAuthInitialAccessTokenValidator>>,
@@ -309,6 +315,8 @@ impl Default for OAuthProviderConfig {
             client_registration_require_pkce: None,
             client_registration_default_scopes: None,
             client_registration_allowed_scopes: None,
+            client_registration_default_resources: None,
+            client_registration_allowed_resources: None,
             initial_access_token_validator: None,
             allow_unauthenticated_client_registration: false,
             disable_jwt_plugin: false,
@@ -1274,6 +1282,34 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             return Err(AuthError::config(
                 "advertisedMetadata.scopes_supported contains an unsupported scope",
             ));
+        }
+        let configured_resources = self
+            .config
+            .resources
+            .iter()
+            .filter_map(|resource| {
+                resource
+                    .as_str()
+                    .or_else(|| resource.get("identifier").and_then(Value::as_str))
+            })
+            .collect::<std::collections::HashSet<_>>();
+        for (option, identifiers) in [
+            (
+                "clientRegistrationDefaultResources",
+                &self.config.client_registration_default_resources,
+            ),
+            (
+                "clientRegistrationAllowedResources",
+                &self.config.client_registration_allowed_resources,
+            ),
+        ] {
+            for identifier in identifiers.iter().flatten() {
+                if !configured_resources.contains(identifier.as_str()) {
+                    return Err(AuthError::config(format!(
+                        "{option} resource {identifier} not found in resources"
+                    )));
+                }
+            }
         }
         if self
             .config
