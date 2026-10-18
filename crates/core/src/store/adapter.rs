@@ -60,6 +60,11 @@ pub enum AfterHook<S: AuthSchema> {
     SessionCreated(S::Session),
     SessionUpdated(S::Session),
     SessionUpdateMissing(String),
+    SessionDeleted(S::Session),
+    SessionRetirement {
+        works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
+        context: Arc<crate::AuthContext<S>>,
+    },
     VerificationCreated(S::Verification),
     VerificationRecordCreated(VerificationSnapshot),
 }
@@ -91,6 +96,8 @@ impl<S: AuthSchema> AfterHook<S> {
             Self::SessionUpdateMissing(token) => {
                 hook.after_update_session_missing(token, ctx).await
             }
+            Self::SessionDeleted(session) => hook.after_delete_session(session, ctx).await,
+            Self::SessionRetirement { .. } => Ok(()),
             Self::VerificationCreated(verification) => {
                 hook.after_create_verification(verification, ctx).await
             }
@@ -123,6 +130,19 @@ impl<S: AuthSchema> AfterHookQueue<S> {
     pub async fn push(&self, event: AfterHook<S>) {
         self.0.lock().await.push(event);
     }
+    /// Keep plugin retirement after the selected row's application after-hooks.
+    pub async fn attach_session_retirement(
+        &self,
+        session_id: &str,
+        works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
+        context: Arc<crate::AuthContext<S>>,
+    ) {
+        use crate::AuthSession as _;
+        let mut events = self.0.lock().await;
+        if let Some(index) = events.iter().rposition(|event| matches!(event, AfterHook::SessionDeleted(session) if session.id().as_ref() == session_id)) {
+            events.insert(index + 1, AfterHook::SessionRetirement { works, context });
+        }
+    }
 
     /// Run every queued event against `hooks`, in order.
     ///
@@ -148,6 +168,17 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         policy: crate::store::AfterCommitErrorPolicy,
     ) -> AuthResult<()> {
         for event in self.0.into_inner() {
+            if let AfterHook::SessionRetirement { works, context } = event {
+                for work in works {
+                    if let Err(error) = work.complete(&context).await {
+                        if policy == crate::store::AfterCommitErrorPolicy::Propagate {
+                            return Err(error);
+                        }
+                        tracing::error!("Committed session retirement failed");
+                    }
+                }
+                continue;
+            }
             for hook in hooks {
                 if let Err(error) = event.dispatch(hook.as_ref(), ctx).await {
                     if policy == crate::store::AfterCommitErrorPolicy::Propagate {

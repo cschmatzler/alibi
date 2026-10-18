@@ -7,17 +7,30 @@ import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
-  (["signout", "revoke-sessions"] as const).map((retirement) => ({ preserve, retirement })),
-)) {
+for (const { preserve, retirement } of [
+  ...[false, true].flatMap((preserve) =>
+    (["signout", "revoke-sessions"] as const).map((retirement) => ({ preserve, retirement })),
+  ),
+  ...(["transaction", "transaction-report"] as const).map((retirement) => ({
+    preserve: false,
+    retirement,
+  })),
+]) {
+  const transactional = retirement.startsWith("transaction");
   compatScenario(
     `${preserve ? "preserved" : "deleted"} ${retirement} retires session-bound authority exactly once while offline refresh survives`,
     async (ctx) => {
       const receipts: { target: string; contentType?: string; accept?: string; form: string }[] =
         [];
+      const checkpoints: any[] = [];
       const rp = createServer(async (request, response) => {
         let form = "";
         for await (const chunk of request) form += chunk;
+        if (request.url === "/checkpoint") {
+          checkpoints.push({ ...JSON.parse(form), notifications: receipts.length });
+          response.writeHead(204).end();
+          return;
+        }
         receipts.push({
           target: request.url!,
           contentType: request.headers["content-type"],
@@ -37,7 +50,9 @@ for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
             headers: { "content-type": "application/json" },
             body: JSON.stringify({ ...input, mode: preserve ? "preserved" : "retirement" }),
           });
-        if (preserve) await control({ action: "preserved-gate", gate: "", reset: true });
+        if (preserve || transactional) {
+          await control({ action: "preserved-gate", gate: "", reset: true });
+        }
         const signup = await control({
           action: "signup",
           body: {
@@ -193,7 +208,7 @@ for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
         expect(sessionResponse.status).toBe(200);
         const session = (await sessionResponse.json()) as any;
         let sibling: { session: any; token: any } | undefined;
-        if (retirement === "revoke-sessions") {
+        if (retirement === "revoke-sessions" || transactional) {
           const signedIn = await control({
             action: "signin",
             body: { email: session.user.email, password: "password123" },
@@ -249,6 +264,39 @@ for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
           expect(response.status).toBe(200);
           return (await response.json()) as any;
         };
+        const transactionBody = {
+          userId: session.user.id,
+          transactional: true,
+          accessToken: token.access_token,
+          checkpointURI: `${rpURL}/checkpoint`,
+        };
+        if (transactional) {
+          for (const gate of ["veto", "error", "rollback"]) {
+            await control({ action: "preserved-gate", gate: gate === "rollback" ? "" : gate });
+            const attempted = await control({
+              action: "end-session-rows",
+              body: { ...transactionBody, rollback: gate === "rollback" },
+            });
+            expect(attempted.status).toBe(gate === "veto" ? 200 : 503);
+            expect((await state()).row.id).toBe(session.session.id);
+            expect((await state()).completed).toEqual([]);
+            expect(receipts).toEqual([]);
+            const row = await control({
+              action: "token-row",
+              kind: "access",
+              token: token.access_token,
+            });
+            expect(((await row.json()) as any).revoked).toBeNull();
+          }
+          expect(checkpoints).toEqual([
+            { sessionPresent: true, authorityLive: true, completed: [], notifications: 0 },
+            { sessionPresent: false, authorityLive: true, completed: [], notifications: 0 },
+          ]);
+          await control({
+            action: "preserved-gate",
+            gate: retirement === "transaction-report" ? "after-error" : "",
+          });
+        }
         if (preserve) {
           const live = await state();
           expect(live.row.id).toBe(session.session.id);
@@ -288,12 +336,30 @@ for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
         }
         const started = Date.now();
         const ended = await control({
-          action: retirement,
+          action: transactional ? "end-session-rows" : retirement,
+          ...(transactional
+            ? { body: { ...transactionBody, report: retirement === "transaction-report" } }
+            : {}),
           headers: { cookie, origin: ctx.baseURL },
           foreignKeys: true,
         });
         const finished = Date.now();
         expect(ended.status).toBe(200);
+        if (transactional) {
+          expect(await ended.json()).toEqual({
+            success: true,
+            beforeCommit: { sessionPresent: false, authorityLive: true, completed: [] },
+            reported: retirement === "transaction-report" ? 2 : 0,
+          });
+          expect(checkpoints.at(-1)).toEqual({
+            sessionPresent: false,
+            authorityLive: true,
+            completed: [],
+            notifications: 0,
+          });
+          expect((await state()).completed).toHaveLength(2);
+          await control({ action: "preserved-gate", gate: "" });
+        }
         expect(receipts.map((receipt) => receipt.target).sort()).toEqual(
           sibling ? ["/failure", "/success", "/success"] : ["/failure", "/success"],
         );

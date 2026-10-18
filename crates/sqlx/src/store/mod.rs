@@ -327,6 +327,19 @@ where
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         use crate::model::SqlxModel;
+        let sessions = self.get_user_sessions(user_id).await?;
+        let context = self.store.hook_context(Some(self.tx));
+        for session in &sessions {
+            for hook in self.store.hooks() {
+                if hook
+                    .before_delete_session(session, &context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(());
+                }
+            }
+        }
         let exec = Exec::tx(self.tx);
         let table = <S::Session as SqlxModel>::TABLE;
         let id = <S::Session as SqlxSessionModel>::parse_user_id(user_id)?;
@@ -335,6 +348,55 @@ where
         sql.push(" WHERE ");
         sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", id);
         _ = exec.execute(sql).await?;
+        for session in sessions {
+            self.pending_after
+                .push(AfterHook::SessionDeleted(session))
+                .await;
+        }
+        Ok(())
+    }
+    async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        use crate::model::SqlxModel;
+        let exec = Exec::tx(self.tx);
+        let table = <S::Session as SqlxModel>::TABLE;
+        let mut sql = crate::model::select_model::<S::Session>(exec);
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Session>(
+            table,
+            S::Session::user_id_column(),
+            " = ",
+            S::Session::parse_user_id(user_id)?,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(self.store.find_many_limit());
+        exec.fetch_all::<S::Session>(sql).await
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        self.store
+            .session_oauth_tokens(Exec::tx(self.tx), kind, session_id)
+            .await
+    }
+    async fn get_oauth_client(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthClient>> {
+        self.store
+            .oauth_client_with_exec(Exec::tx(self.tx), client_id)
+            .await
+    }
+    async fn queue_session_deletion_work(
+        &self,
+        session_id: &str,
+        works: Vec<Box<dyn alibi_core::store::SessionDeletionWork<S>>>,
+        context: Arc<alibi_core::AuthContext<S>>,
+    ) -> AuthResult<()> {
+        self.pending_after
+            .attach_session_retirement(session_id, works, context)
+            .await;
         Ok(())
     }
     async fn check_scim_user_attributes(

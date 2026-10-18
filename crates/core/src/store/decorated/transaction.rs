@@ -175,10 +175,73 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         }
         let tokens = self.record_store.cached_user_tokens(user_id).await?;
         if self.record_store.session_uses_database() {
+            let mut pending = Vec::new();
+            if let Some(hooks) = self
+                .record_store
+                .projection_context
+                .extensions
+                .get::<crate::store::SessionDeletionHooks<S>>()
+            {
+                for session in self.inner.get_user_sessions(user_id).await? {
+                    let mut works = Vec::new();
+                    for hook in &hooks.0 {
+                        if let Some(work) = hook
+                            .prepare_in_transaction(
+                                &session,
+                                &self.record_store.projection_context,
+                                self.inner,
+                            )
+                            .await?
+                        {
+                            works.push(work);
+                        }
+                    }
+                    pending.push((session.id().as_ref().to_owned(), works));
+                }
+            }
             self.inner.delete_user_sessions(user_id).await?;
+            for (id, works) in pending {
+                if !works.is_empty() {
+                    self.inner
+                        .queue_session_deletion_work(
+                            &id,
+                            works,
+                            self.record_store.projection_context.clone(),
+                        )
+                        .await?;
+                }
+            }
         }
         self.record_store
             .remove_cached_user_sessions(user_id, tokens)
+            .await
+    }
+    async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        self.inner.get_user_sessions(user_id).await
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: crate::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<crate::store::OAuthToken>> {
+        self.inner
+            .list_oauth_tokens_for_session(kind, session_id)
+            .await
+    }
+    async fn get_oauth_client(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Option<crate::store::OAuthClient>> {
+        self.inner.get_oauth_client(client_id).await
+    }
+    async fn queue_session_deletion_work(
+        &self,
+        session_id: &str,
+        works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
+        context: Arc<crate::AuthContext<S>>,
+    ) -> AuthResult<()> {
+        self.inner
+            .queue_session_deletion_work(session_id, works, context)
             .await
     }
 

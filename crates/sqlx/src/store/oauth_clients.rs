@@ -8,6 +8,51 @@ use alibi_core::{
     store::{CreateOAuthClient, OAuthClient, OAuthClientStore},
 };
 use async_trait::async_trait;
+impl<S: AuthSchema> SqlxStore<S> {
+    pub(super) async fn session_oauth_tokens(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        macro_rules! select {
+            ($model:ty) => {{
+                let mut sql = model::select_model::<$model>(exec);
+                sql.push(" WHERE ");
+                sql.compare(<$model>::TABLE, "sessionId", " = ", session_id);
+                sql.push(" LIMIT ");
+                sql.bind(self.find_many_limit());
+                exec.fetch_all::<$model>(sql)
+                    .await?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }};
+        }
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                select!(super::entities::oauth_access_token::Model)
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                select!(super::entities::oauth_refresh_token::Model)
+            }
+        }
+    }
+    pub(super) async fn oauth_client_with_exec(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        client_id: &str,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let mut sql = model::select_model::<Model>(exec);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
+        model::limit_one(&mut sql);
+        exec.fetch_optional::<Model>(sql)
+            .await?
+            .map(TryInto::try_into)
+            .transpose()
+    }
+}
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     async fn has_oauth_client_resource(
@@ -234,46 +279,8 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         kind: alibi_core::store::OAuthTokenKind,
         session_id: &str,
     ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
-        match kind {
-            alibi_core::store::OAuthTokenKind::Access => {
-                let mut sql =
-                    model::select_model::<super::entities::oauth_access_token::Model>(self.exec());
-                sql.push(" WHERE ");
-                sql.compare(
-                    super::entities::oauth_access_token::Model::TABLE,
-                    "sessionId",
-                    " = ",
-                    session_id,
-                );
-                sql.push(" LIMIT ");
-                sql.bind(self.find_many_limit());
-                self.exec()
-                    .fetch_all::<super::entities::oauth_access_token::Model>(sql)
-                    .await?
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect()
-            }
-            alibi_core::store::OAuthTokenKind::Refresh => {
-                let mut sql =
-                    model::select_model::<super::entities::oauth_refresh_token::Model>(self.exec());
-                sql.push(" WHERE ");
-                sql.compare(
-                    super::entities::oauth_refresh_token::Model::TABLE,
-                    "sessionId",
-                    " = ",
-                    session_id,
-                );
-                sql.push(" LIMIT ");
-                sql.bind(self.find_many_limit());
-                self.exec()
-                    .fetch_all::<super::entities::oauth_refresh_token::Model>(sql)
-                    .await?
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect()
-            }
-        }
+        self.session_oauth_tokens(self.exec(), kind, session_id)
+            .await
     }
 
     async fn delete_oauth_token(
@@ -817,15 +824,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .transpose()
     }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
-        let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "clientId", " = ", client_id);
-        model::limit_one(&mut sql);
-        self.exec()
-            .fetch_optional::<Model>(sql)
-            .await?
-            .map(TryInto::try_into)
-            .transpose()
+        self.oauth_client_with_exec(self.exec(), client_id).await
     }
     async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
         let mut sql = model::select_model::<Model>(self.exec());

@@ -10,23 +10,31 @@ backend_tests!(
     oauth_bulk_revocation_notifies_each_deleted_session,
     oauth_preserved_signout_retires_authority_once,
     oauth_preserved_bulk_retirement_skips_ended_audit_rows,
-    oauth_logout_retains_dynamic_authority_and_signing_context
+    oauth_logout_retains_dynamic_authority_and_signing_context,
+    oauth_transaction_retires_only_after_commit,
+    oauth_transaction_reports_after_commit_errors
 );
 #[path = "../../../fixtures/oauth/logout-context.rs"]
 mod logout_context;
 async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Backend>(
     db: Db,
 ) -> TestResult {
-    retirement_case::<B>(db, false, false).await
+    retirement_case::<B>(db, false, false, 0).await
 }
 async fn oauth_bulk_revocation_notifies_each_deleted_session<B: Backend>(db: Db) -> TestResult {
-    retirement_case::<B>(db, true, false).await
+    retirement_case::<B>(db, true, false, 0).await
 }
 async fn oauth_preserved_signout_retires_authority_once<B: Backend>(db: Db) -> TestResult {
-    retirement_case::<B>(db, false, true).await
+    retirement_case::<B>(db, false, true, 0).await
 }
 async fn oauth_preserved_bulk_retirement_skips_ended_audit_rows<B: Backend>(db: Db) -> TestResult {
-    retirement_case::<B>(db, true, true).await
+    retirement_case::<B>(db, true, true, 0).await
+}
+async fn oauth_transaction_retires_only_after_commit<B: Backend>(db: Db) -> TestResult {
+    retirement_case::<B>(db, true, false, 1).await
+}
+async fn oauth_transaction_reports_after_commit_errors<B: Backend>(db: Db) -> TestResult {
+    retirement_case::<B>(db, true, false, 2).await
 }
 
 async fn issue_for_session<S: AuthSchema>(
@@ -357,7 +365,12 @@ async fn revoke_all<S: AuthSchema>(
     .into_response()
 }
 
-async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> TestResult {
+async fn retirement_case<B: Backend>(
+    db: Db,
+    bulk: bool,
+    preserve: bool,
+    transactional: u8,
+) -> TestResult {
     use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
     struct DeleteGate(Arc<std::sync::atomic::AtomicU8>, Arc<Mutex<Vec<String>>>);
     #[async_trait::async_trait]
@@ -382,10 +395,17 @@ async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> Test
                 .lock()
                 .unwrap()
                 .push(session.id().as_ref().to_owned());
+            if self.0.load(std::sync::atomic::Ordering::SeqCst) == 3 {
+                return Err(alibi::AuthError::internal(
+                    "application after-delete failed",
+                ));
+            }
             Ok(())
         }
     }
     let (received, mut receipts) = tokio::sync::mpsc::unbounded_channel();
+    let receipt_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let delivered = receipt_count.clone();
     let rp = axum::Router::new().route(
         "/{target}",
         axum::routing::post(
@@ -393,7 +413,9 @@ async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> Test
                   headers: axum::http::HeaderMap,
                   text: String| {
                 let received = received.clone();
+                let delivered = delivered.clone();
                 async move {
+                    _ = delivered.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                     received.send((target.clone(), headers, text)).unwrap();
                     if target == "failure" {
                         axum::http::StatusCode::SERVICE_UNAVAILABLE
@@ -592,7 +614,13 @@ async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> Test
     // Preparation must not send or retire anything when the adapter vetoes/fails.
     for mode in [1, 2].into_iter().filter(|_| !preserve || bulk) {
         gate.store(mode, std::sync::atomic::Ordering::SeqCst);
-        let result = if bulk {
+        let result = if transactional != 0 {
+            let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+            alibi::store::transaction(auth.store().as_ref(), move |tx| {
+                Box::pin(async move { tx.delete_user_sessions(&user_id).await })
+            })
+            .await
+        } else if bulk {
             revoke_all(&auth, &owner).await.map(|_| ())
         } else {
             auth.store()
@@ -633,8 +661,70 @@ async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> Test
         }
     }
     gate.store(0, std::sync::atomic::Ordering::SeqCst);
+    if transactional != 0 {
+        let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        let receipt_count = receipt_count.clone();
+        let pending_completed = completed.clone();
+        let result: alibi::AuthResult<()> =
+            alibi::store::transaction(auth.store().as_ref(), move |tx| {
+                Box::pin(async move {
+                    tx.delete_user_sessions(&user_id).await?;
+                    assert_eq!(receipt_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+                    assert!(pending_completed.lock().unwrap().is_empty());
+                    Err(alibi::AuthError::internal("deliberate rollback"))
+                })
+            })
+            .await;
+        assert!(result.is_err());
+        assert!(
+            auth.store()
+                .get_session(body(&owner)["token"].as_str().unwrap())
+                .await?
+                .is_some()
+        );
+        assert!(
+            auth.store()
+                .get_oauth_token(OAuthTokenKind::Access, &protected)
+                .await?
+                .unwrap()
+                .metadata
+                .get("revoked")
+                .is_none_or(Value::is_null)
+        );
+        assert!(completed.lock().unwrap().is_empty());
+        assert!(receipts.try_recv().is_err());
+    }
     let started = chrono::Utc::now().timestamp_millis();
-    let ended = if bulk {
+    let ended = if transactional != 0 {
+        let user_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+        let completed = completed.clone();
+        let receipt_count = receipt_count.clone();
+        if transactional == 2 {
+            gate.store(3, std::sync::atomic::Ordering::SeqCst);
+        }
+        alibi::store::transaction_with_policy(
+            auth.store().as_ref(),
+            if transactional == 2 {
+                alibi::store::AfterCommitErrorPolicy::Report
+            } else {
+                alibi::store::AfterCommitErrorPolicy::Propagate
+            },
+            move |tx| {
+                Box::pin(async move {
+                    tx.delete_user_sessions(&user_id).await?;
+                    assert_eq!(receipt_count.load(std::sync::atomic::Ordering::SeqCst), 0);
+                    assert!(
+                        completed.lock().unwrap().is_empty(),
+                        "delete after-hooks must wait for commit"
+                    );
+                    Ok(())
+                })
+            },
+        )
+        .await?;
+        gate.store(0, std::sync::atomic::Ordering::SeqCst);
+        AuthResponse::json(200, &json!({"success":true}))?
+    } else if bulk {
         revoke_all(&auth, &owner).await?
     } else {
         Box::pin(
@@ -919,6 +1009,45 @@ async fn retirement_case<B: Backend>(db: Db, bulk: bool, preserve: bool) -> Test
     .into_response()?;
     assert_eq!(unaffected.status, 200);
     assert_ne!(body(&unaffected)["sub"], id_claims["sub"]);
+    if transactional != 0 {
+        let user_id = body(&other)["user"]["id"].as_str().unwrap().to_owned();
+        gate.store(3, std::sync::atomic::Ordering::SeqCst);
+        let result = alibi::store::transaction(auth.store().as_ref(), move |tx| {
+            Box::pin(async move { tx.delete_user_sessions(&user_id).await })
+        })
+        .await;
+        assert!(
+            result.is_err(),
+            "propagate an after-hook error, without undoing commit"
+        );
+        assert!(
+            auth.store()
+                .get_session(body(&other)["token"].as_str().unwrap())
+                .await?
+                .is_none()
+        );
+        let protected = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(sha2::Sha256::digest(&other_access));
+        let row = auth
+            .store()
+            .get_oauth_token(OAuthTokenKind::Access, &protected)
+            .await?
+            .unwrap();
+        assert!(row.metadata.get("revoked").is_none_or(Value::is_null));
+        let count = completed.lock().unwrap().len();
+        let user_id = body(&other)["user"]["id"].as_str().unwrap().to_owned();
+        alibi::store::transaction(auth.store().as_ref(), move |tx| {
+            Box::pin(async move { tx.delete_user_sessions(&user_id).await })
+        })
+        .await?;
+        assert_eq!(completed.lock().unwrap().len(), count);
+        assert!(
+            receipts.try_recv().is_err(),
+            "failed after-commit work is not retried"
+        );
+        rp_task.abort();
+        return Ok(());
+    }
     if preserve {
         use alibi::store::CacheAdapter as _;
         let other_token = body(&other)["token"].as_str().unwrap().to_owned();

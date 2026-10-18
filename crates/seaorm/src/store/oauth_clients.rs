@@ -12,6 +12,54 @@ use async_trait::async_trait;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QuerySelect, Set,
 };
+impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn session_oauth_tokens<C: sea_orm::ConnectionTrait>(
+        &self,
+        db: &C,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        let limit = u64::try_from(self.config().advanced.database.default_find_many_limit)
+            .unwrap_or(u64::MAX);
+        match kind {
+            alibi_core::store::OAuthTokenKind::Access => {
+                super::entities::oauth_access_token::Entity::find()
+                    .filter(super::entities::oauth_access_token::Column::SessionId.eq(session_id))
+                    .limit(limit)
+                    .all(db)
+                    .await
+                    .map_err(map_db_err)?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+            alibi_core::store::OAuthTokenKind::Refresh => {
+                super::entities::oauth_refresh_token::Entity::find()
+                    .filter(super::entities::oauth_refresh_token::Column::SessionId.eq(session_id))
+                    .limit(limit)
+                    .all(db)
+                    .await
+                    .map_err(map_db_err)?
+                    .into_iter()
+                    .map(TryInto::try_into)
+                    .collect()
+            }
+        }
+    }
+    pub(super) async fn oauth_client_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        db: &C,
+        client_id: &str,
+    ) -> AuthResult<Option<OAuthClient>> {
+        Entity::find()
+            .filter(Column::ClientId.eq(client_id))
+            .one(db)
+            .await
+            .map_err(map_db_err)?
+            .map(TryInto::try_into)
+            .transpose()
+    }
+}
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
     async fn has_oauth_client_resource(
@@ -255,36 +303,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         kind: alibi_core::store::OAuthTokenKind,
         session_id: &str,
     ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
-        match kind {
-            alibi_core::store::OAuthTokenKind::Access => {
-                super::entities::oauth_access_token::Entity::find()
-                    .filter(super::entities::oauth_access_token::Column::SessionId.eq(session_id))
-                    .limit(
-                        u64::try_from(self.config().advanced.database.default_find_many_limit)
-                            .unwrap_or(u64::MAX),
-                    )
-                    .all(self.scoped_connection())
-                    .await
-                    .map_err(map_db_err)?
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect()
-            }
-            alibi_core::store::OAuthTokenKind::Refresh => {
-                super::entities::oauth_refresh_token::Entity::find()
-                    .filter(super::entities::oauth_refresh_token::Column::SessionId.eq(session_id))
-                    .limit(
-                        u64::try_from(self.config().advanced.database.default_find_many_limit)
-                            .unwrap_or(u64::MAX),
-                    )
-                    .all(self.scoped_connection())
-                    .await
-                    .map_err(map_db_err)?
-                    .into_iter()
-                    .map(TryInto::try_into)
-                    .collect()
-            }
-        }
+        self.session_oauth_tokens(self.scoped_connection(), kind, session_id)
+            .await
     }
 
     async fn delete_oauth_token(
@@ -703,13 +723,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .transpose()
     }
     async fn get_oauth_client(&self, client_id: &str) -> AuthResult<Option<OAuthClient>> {
-        Entity::find()
-            .filter(Column::ClientId.eq(client_id))
-            .one(self.scoped_connection())
+        self.oauth_client_with_connection(self.scoped_connection(), client_id)
             .await
-            .map_err(map_db_err)?
-            .map(TryInto::try_into)
-            .transpose()
     }
     async fn list_oauth_clients_by_user(&self, user_id: &str) -> AuthResult<Vec<OAuthClient>> {
         Entity::find()

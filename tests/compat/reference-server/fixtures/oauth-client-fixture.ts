@@ -1,6 +1,7 @@
 import { createHash, createHmac, createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { readFile as readFixtureFile } from "node:fs/promises";
 
+import { getCurrentAdapter, runWithTransaction } from "@better-auth/core/context";
 import {
   consumeClientAssertion,
   getOAuthProviderApi,
@@ -38,6 +39,25 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     gate: "",
     completed: [] as string[],
     cache: new Map<string, { value: string; expires: number }>(),
+  };
+  const retirementHooks = {
+    session: {
+      delete: {
+        before: async () => {
+          if (preserved.gate === "error") {
+            throw new APIError("SERVICE_UNAVAILABLE", {
+              code: "SESSION_END_FAILED",
+              message: "application rejected deletion",
+            });
+          }
+          if (preserved.gate === "veto") return false;
+        },
+        after: async (session: { id: string }) => {
+          preserved.completed.push(session.id);
+          if (preserved.gate === "after-error") throw new Error("application after-delete failed");
+        },
+      },
+    },
   };
   const registrationCalls: unknown[] = [];
   const validateInitialAccessToken: NonNullable<
@@ -377,9 +397,67 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         "/fixture/end-session-rows",
         {
           method: "POST",
-          body: z.object({ token: z.string().optional(), userId: z.string().optional() }),
+          body: z.object({
+            token: z.string().optional(),
+            userId: z.string().optional(),
+            transactional: z.boolean().optional(),
+            rollback: z.boolean().optional(),
+            report: z.boolean().optional(),
+            accessToken: z.string().optional(),
+            checkpointURI: z.string().optional(),
+          }),
         },
         async (ctx) => {
+          if (ctx.body.transactional) {
+            let beforeCommit: unknown;
+            let reported = 0;
+            await runWithTransaction(
+              ctx.context.adapter,
+              async () => {
+                await ctx.context.internalAdapter.deleteUserSessions(ctx.body.userId!);
+                const adapter = await getCurrentAdapter(ctx.context.adapter);
+                const sessions = await adapter.findMany({
+                  model: "session",
+                  where: [{ field: "userId", value: ctx.body.userId! }],
+                });
+                const token = await adapter.findOne<{ revoked: Date | null }>({
+                  model: "oauthAccessToken",
+                  where: [
+                    {
+                      field: "token",
+                      value: createHash("sha256").update(ctx.body.accessToken!).digest("base64url"),
+                    },
+                  ],
+                });
+                beforeCommit = {
+                  sessionPresent: sessions.length > 0,
+                  authorityLive: token != null && token.revoked == null,
+                  completed: [...preserved.completed],
+                };
+                if (ctx.body.checkpointURI) {
+                  await fetch(ctx.body.checkpointURI, {
+                    method: "POST",
+                    headers: { "content-type": "application/json" },
+                    body: JSON.stringify(beforeCommit),
+                  });
+                }
+                if (ctx.body.rollback) {
+                  throw new APIError("SERVICE_UNAVAILABLE", {
+                    code: "TRANSACTION_ROLLED_BACK",
+                    message: "deliberate rollback",
+                  });
+                }
+              },
+              ctx.body.report
+                ? {
+                    onAfterCommitHookError: () => {
+                      reported++;
+                    },
+                  }
+                : undefined,
+            );
+            return ctx.json({ success: true, beforeCommit, reported });
+          }
           if (ctx.body.token) await ctx.context.internalAdapter.deleteSession(ctx.body.token);
           else await ctx.context.internalAdapter.deleteUserSessions(ctx.body.userId!);
           return ctx.json({ success: true });
@@ -1385,6 +1463,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     default: betterAuth(options),
     retirement: betterAuth({
       ...options,
+      databaseHooks: retirementHooks,
       plugins: [
         username(),
         jwt({ disableSettingJwtHeader: true }),
@@ -1428,24 +1507,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           preserved.cache.delete(key);
         },
       },
-      databaseHooks: {
-        session: {
-          delete: {
-            before: async () => {
-              if (preserved.gate === "error") {
-                throw new APIError("SERVICE_UNAVAILABLE", {
-                  code: "SESSION_END_FAILED",
-                  message: "application rejected deletion",
-                });
-              }
-              if (preserved.gate === "veto") return false;
-            },
-            after: async (session) => {
-              preserved.completed.push(session.id);
-            },
-          },
-        },
-      },
+      databaseHooks: retirementHooks,
     }),
     interaction: betterAuth({
       ...options,
@@ -2287,26 +2349,6 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       (input.mode === "resource-seed" ? seededAuths.get(input.context ?? "default") : undefined) ??
       auths[input.mode as keyof typeof auths] ??
       auths.default;
-    if (input.action === "preserved-gate") {
-      preserved.gate = input.gate;
-      if (input.reset) preserved.completed.length = 0;
-      return Response.json({ completed: preserved.completed });
-    }
-    if (input.action === "end-session-rows") {
-      return (auth.api as any).fixtureEndSessionRows({ body: input.body, asResponse: true });
-    }
-    if (input.action === "preserved-state") {
-      const context = await auth.$context;
-      const row = await context.adapter.findOne<{ id: string; expiresAt: Date }>({
-        model: "session",
-        where: [{ field: "token", value: input.token }],
-      });
-      return Response.json({
-        row: row ? { id: row.id, expiresAt: row.expiresAt } : null,
-        cached: (await context.options.secondaryStorage?.get(input.token)) != null,
-        completed: preserved.completed,
-      });
-    }
     if (input.action === "logout-context-calls") {
       await Promise.all(logoutCompletions.splice(0));
       return Response.json(logoutCalls.splice(0));
@@ -2376,6 +2418,40 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         update: input.update,
       });
       return Response.json({ updated: true });
+    }
+    if (input.action === "preserved-gate") {
+      preserved.gate = input.gate;
+      if (input.reset) preserved.completed.length = 0;
+      return Response.json({ completed: preserved.completed });
+    }
+    if (input.action === "end-session-rows") {
+      const call = () =>
+        (auth.api as any).fixtureEndSessionRows({ body: input.body, asResponse: true });
+      if (input.body.transactional) {
+        const database = base.database as import("better-sqlite3").Database;
+        const prior = database
+          .prepare<[], { foreign_keys: number }>("PRAGMA foreign_keys")
+          .get()!.foreign_keys;
+        database.exec("PRAGMA foreign_keys=ON");
+        try {
+          return await call();
+        } finally {
+          database.exec(`PRAGMA foreign_keys=${prior}`);
+        }
+      }
+      return call();
+    }
+    if (input.action === "preserved-state") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<{ id: string; expiresAt: Date }>({
+        model: "session",
+        where: [{ field: "token", value: input.token }],
+      });
+      return Response.json({
+        row: row ? { id: row.id, expiresAt: row.expiresAt } : null,
+        cached: (await context.options.secondaryStorage?.get(input.token)) != null,
+        completed: preserved.completed,
+      });
     }
     if (input.mode === "resource-privileges") {
       const operations: Record<string, string> = {

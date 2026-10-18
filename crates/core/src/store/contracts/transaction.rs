@@ -190,6 +190,41 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Transactional session retirement is unsupported",
         ))
     }
+    /// Read session deletion candidates on this transaction's connection.
+    async fn get_user_sessions(&self, _user_id: &str) -> AuthResult<Vec<S::Session>> {
+        Err(AuthError::not_implemented(
+            "Transactional session reads are unsupported",
+        ))
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        _kind: crate::store::OAuthTokenKind,
+        _session_id: &str,
+    ) -> AuthResult<Vec<crate::store::OAuthToken>> {
+        Err(AuthError::not_implemented(
+            "Transactional OAuth token reads are unsupported",
+        ))
+    }
+    async fn get_oauth_client(
+        &self,
+        _client_id: &str,
+    ) -> AuthResult<Option<crate::store::OAuthClient>> {
+        Err(AuthError::not_implemented(
+            "Transactional OAuth client reads are unsupported",
+        ))
+    }
+    /// Attach prepared retirement to the matching queued delete-after event.
+    /// A veto or missing row has no event and must not complete the work.
+    async fn queue_session_deletion_work(
+        &self,
+        _session_id: &str,
+        _works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
+        _context: std::sync::Arc<crate::AuthContext<S>>,
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional session retirement queueing is unsupported",
+        ))
+    }
 
     async fn prepare_scim_projection(
         &self,

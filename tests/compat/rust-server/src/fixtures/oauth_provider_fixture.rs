@@ -11,9 +11,24 @@ use std::{collections::HashMap, sync::Arc};
 struct PreservedSessions {
     gate: std::sync::Mutex<String>,
     completed: std::sync::Mutex<Vec<String>>,
+    probe: std::sync::Mutex<bool>,
+    after_errors: std::sync::atomic::AtomicUsize,
 }
 #[async_trait::async_trait]
 impl alibi::store::DatabaseHooks<TestSchema, crate::backend::Backend> for PreservedSessions {
+    async fn before_update_user(&self, _: &str, update: &mut alibi::UpdateUser, ctx: &crate::backend::HookContext<'_>) -> AuthResult<alibi::store::HookControl> {
+        if let Some(token) = update.name.as_deref().and_then(|name| name.strip_prefix("transaction-probe:")) {
+            assert!(ctx.tx.is_some());
+            #[cfg(feature = "seaorm")]
+            use alibi::seaorm::sea_orm;
+            #[cfg_attr(not(feature = "seaorm"), derive(sqlx::FromRow))]
+            #[cfg_attr(feature = "seaorm", derive(sea_orm::FromQueryResult))]
+            struct Authority { live: i64 }
+            let rows = crate::backend::hook_rows::<Authority>(ctx, &format!("SELECT COUNT(*) AS live FROM oauthAccessToken WHERE token = '{}' AND revoked IS NULL", token.replace('\'', "''"))).await?;
+            *self.probe.lock().unwrap() = rows[0].live == 1;
+        }
+        Ok(alibi::store::HookControl::Continue)
+    }
     async fn before_delete_session(
         &self,
         _: &<TestSchema as alibi::AuthSchema>::Session,
@@ -39,6 +54,10 @@ impl alibi::store::DatabaseHooks<TestSchema, crate::backend::Backend> for Preser
             .lock()
             .unwrap()
             .push(session.id().as_ref().to_owned());
+        if *self.gate.lock().unwrap() == "after-error" {
+            _ = self.after_errors.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            return Err(alibi::AuthError::internal("application after-delete failed"));
+        }
         Ok(())
     }
 }
@@ -505,7 +524,7 @@ pub(crate) async fn router(
             client_config.advanced.database.generate_id=Some(alibi::config::DatabaseIdStrategy::Custom(Arc::new(|model:&str,_size:Option<usize>|Ok(Some(if model=="user" {"pairwise-owner".into()} else {uuid::Uuid::new_v4().to_string()})))));
         }
         let store=crate::backend::store::<TestSchema>(client_config.clone(), database.clone());
-        let store=if mode=="preserved" {store.with_hooks(vec![preserved.clone()])}else{store};
+        let store=if matches!(mode,"preserved"|"retirement") {store.with_hooks(vec![preserved.clone()])}else{store};
         let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
             .store(store)
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
@@ -562,21 +581,6 @@ pub(crate) async fn router(
         let preserved=preserved.clone();
         let preserved_cache=preserved_cache.clone();
         let auth=client_instances.get(input["mode"].as_str().filter(|mode|*mode!="resource-seed").unwrap_or("default")).unwrap().clone();async move {
-            if input["action"]=="preserved-gate" {
-                *preserved.gate.lock().unwrap()=input["gate"].as_str().unwrap().into();
-                if input["reset"]==true {preserved.completed.lock().unwrap().clear();}
-                return axum::Json(serde_json::json!({"completed":*preserved.completed.lock().unwrap()})).into_response();
-            }
-            if input["action"]=="end-session-rows" {
-                let result=if let Some(token)=input["body"]["token"].as_str(){auth.store().delete_session(token).await}else{auth.store().delete_user_sessions(input["body"]["userId"].as_str().unwrap()).await};
-                return match result {Ok(())=>axum::Json(serde_json::json!({"success":true})).into_response(),Err(error)=>error.to_auth_response().into_response()};
-            }
-            if input["action"]=="preserved-state" {
-                use alibi::AuthSession as _;
-                use alibi::store::CacheAdapter as _;
-                let row=auth.store().get_session_by_id(input["sessionId"].as_str().unwrap()).await.unwrap();
-                return axum::Json(serde_json::json!({"row":row.map(|row|serde_json::json!({"id":row.id(),"expiresAt":row.expires_at()})),"cached":preserved_cache.get(input["token"].as_str().unwrap()).await.unwrap().is_some(),"completed":*preserved.completed.lock().unwrap()})).into_response();
-            }
             if input["action"]=="logout-context-calls" {
                 logout_context.drain().await.unwrap();
                 return axum::Json(std::mem::take(&mut *logout_context.calls.lock().unwrap())).into_response();
@@ -599,6 +603,45 @@ pub(crate) async fn router(
                         Err(error)=>panic!("unexpected logout failure: {error:?}"),
                     }
                 };
+            }
+            if input["action"]=="preserved-gate" {
+                *preserved.gate.lock().unwrap()=input["gate"].as_str().unwrap().into();
+                if input["reset"]==true {preserved.completed.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"completed":*preserved.completed.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="end-session-rows" {
+                if input["body"]["transactional"]==true {
+                    use alibi::seaorm::sea_orm::{ConnectionTrait,DbBackend,Statement};
+                    let prior=logout_database.query_one_raw(Statement::from_string(DbBackend::Sqlite,"PRAGMA foreign_keys")).await.unwrap().unwrap().try_get::<i64>("","foreign_keys").unwrap();
+                    _=logout_database.execute_unprepared("PRAGMA foreign_keys=ON").await.unwrap();
+                    use base64::Engine as _;
+                    use sha2::Digest as _;
+                    let user_id=input["body"]["userId"].as_str().unwrap().to_owned();
+                    let protected=base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(input["body"]["accessToken"].as_str().unwrap()));
+                    let rollback=input["body"]["rollback"]==true;
+                    let report=input["body"]["report"]==true;
+                    let checkpoint=input["body"]["checkpointURI"].as_str().map(str::to_owned);
+                    let hooks=preserved.clone();
+                    let errors=preserved.after_errors.load(std::sync::atomic::Ordering::SeqCst);
+                    let result=alibi::store::transaction_with_policy(auth.store().as_ref(),if report {alibi::store::AfterCommitErrorPolicy::Report}else{alibi::store::AfterCommitErrorPolicy::Propagate},move |tx|Box::pin(async move {
+                        tx.delete_user_sessions(&user_id).await?;
+                        _=tx.update_user(&user_id,alibi::UpdateUser{name:Some(format!("transaction-probe:{protected}")),..Default::default()}).await?;
+                        let before=serde_json::json!({"sessionPresent":!tx.get_user_sessions(&user_id).await?.is_empty(),"authorityLive":*hooks.probe.lock().unwrap(),"completed":*hooks.completed.lock().unwrap()});
+                        if let Some(uri)=checkpoint {_=reqwest::Client::new().post(uri).json(&before).send().await.map_err(|error|alibi::AuthError::internal(error.to_string()))?.error_for_status().map_err(|error|alibi::AuthError::internal(error.to_string()))?;}
+                        if rollback {return Err(alibi::AuthError::Api{status:503,code:Some("TRANSACTION_ROLLED_BACK".into()),message:"deliberate rollback".into()});}
+                        Ok(before)
+                    })).await;
+                    _=logout_database.execute_unprepared(&format!("PRAGMA foreign_keys={prior}")).await.unwrap();
+                    return match result {Ok(before)=>axum::Json(serde_json::json!({"success":true,"beforeCommit":before,"reported":if report {preserved.after_errors.load(std::sync::atomic::Ordering::SeqCst)-errors}else{0}})).into_response(),Err(error)=>error.to_auth_response().into_response()};
+                }
+                let result=if let Some(token)=input["body"]["token"].as_str(){auth.store().delete_session(token).await}else{auth.store().delete_user_sessions(input["body"]["userId"].as_str().unwrap()).await};
+                return match result {Ok(())=>axum::Json(serde_json::json!({"success":true})).into_response(),Err(error)=>error.to_auth_response().into_response()};
+            }
+            if input["action"]=="preserved-state" {
+                use alibi::AuthSession as _;
+                use alibi::store::CacheAdapter as _;
+                let row=auth.store().get_session_by_id(input["sessionId"].as_str().unwrap()).await.unwrap();
+                return axum::Json(serde_json::json!({"row":row.map(|row|serde_json::json!({"id":row.id(),"expiresAt":row.expires_at()})),"cached":preserved_cache.get(input["token"].as_str().unwrap()).await.unwrap().is_some(),"completed":*preserved.completed.lock().unwrap()})).into_response();
             }
             if input["action"]=="resource-privileges-state" {
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();

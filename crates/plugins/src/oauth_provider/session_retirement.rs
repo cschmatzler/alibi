@@ -30,17 +30,41 @@ impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
         session: &S::Session,
         context: &AuthContext<S>,
     ) -> AuthResult<Option<Box<dyn SessionDeletionWork<S>>>> {
+        self.prepare_using(session, context, None).await
+    }
+    async fn prepare_in_transaction(
+        &self,
+        session: &S::Session,
+        context: &AuthContext<S>,
+        transaction: &dyn alibi_core::AuthTransaction<S>,
+    ) -> AuthResult<Option<Box<dyn SessionDeletionWork<S>>>> {
+        self.prepare_using(session, context, Some(transaction))
+            .await
+    }
+}
+impl TokenRetirementHook {
+    async fn prepare_using<S: AuthSchema>(
+        &self,
+        session: &S::Session,
+        context: &AuthContext<S>,
+        transaction: Option<&dyn alibi_core::AuthTransaction<S>>,
+    ) -> AuthResult<Option<Box<dyn SessionDeletionWork<S>>>> {
         if session.user_id().as_ref().is_empty() {
             return Ok(None);
         }
         let mut selected = Vec::new();
         let mut client_ids = BTreeSet::new();
         for kind in [OAuthTokenKind::Access, OAuthTokenKind::Refresh] {
-            let rows = match context
-                .database
-                .list_oauth_tokens_for_session(kind, session.id().as_ref())
-                .await
-            {
+            let rows = match if let Some(transaction) = transaction {
+                transaction
+                    .list_oauth_tokens_for_session(kind, session.id().as_ref())
+                    .await
+            } else {
+                context
+                    .database
+                    .list_oauth_tokens_for_session(kind, session.id().as_ref())
+                    .await
+            } {
                 Ok(rows) => rows,
                 Err(error) => {
                     tracing::error!(%error,"Unable to prepare OAuth session token retirement");
@@ -71,7 +95,11 @@ impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
         let mut targets = Vec::new();
         if !self.0.config.disable_jwt_plugin {
             for client_id in client_ids {
-                let client = match context.database.get_oauth_client(&client_id).await {
+                let client = match if let Some(transaction) = transaction {
+                    transaction.get_oauth_client(&client_id).await
+                } else {
+                    context.database.get_oauth_client(&client_id).await
+                } {
                     Ok(Some(client)) => client,
                     Ok(None) => continue,
                     Err(error) => {

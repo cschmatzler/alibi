@@ -356,6 +356,19 @@ where
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         use sea_orm::{ColumnTrait, QueryFilter};
+        let sessions = self.get_user_sessions(user_id).await?;
+        let context = self.store.hook_context(Some(self.tx));
+        for session in &sessions {
+            for hook in self.store.hooks() {
+                if hook
+                    .before_delete_session(session, &context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(());
+                }
+            }
+        }
         _ = <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(
                 S::Session::user_id_column()
@@ -364,6 +377,57 @@ where
             .exec(self.tx)
             .await
             .map_err(map_db_err)?;
+        for session in sessions {
+            self.pending_after
+                .push(AfterHook::SessionDeleted(session))
+                .await;
+        }
+        Ok(())
+    }
+    async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        use sea_orm::{ColumnTrait, QueryFilter, QuerySelect};
+        <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(S::Session::user_id_column().eq(S::Session::parse_user_id(user_id)?))
+            .limit(
+                u64::try_from(
+                    self.store
+                        .config()
+                        .advanced
+                        .database
+                        .default_find_many_limit,
+                )
+                .unwrap_or(u64::MAX),
+            )
+            .all(self.tx)
+            .await
+            .map_err(map_db_err)
+    }
+    async fn list_oauth_tokens_for_session(
+        &self,
+        kind: alibi_core::store::OAuthTokenKind,
+        session_id: &str,
+    ) -> AuthResult<Vec<alibi_core::store::OAuthToken>> {
+        self.store
+            .session_oauth_tokens(self.tx, kind, session_id)
+            .await
+    }
+    async fn get_oauth_client(
+        &self,
+        client_id: &str,
+    ) -> AuthResult<Option<alibi_core::store::OAuthClient>> {
+        self.store
+            .oauth_client_with_connection(self.tx, client_id)
+            .await
+    }
+    async fn queue_session_deletion_work(
+        &self,
+        session_id: &str,
+        works: Vec<Box<dyn alibi_core::store::SessionDeletionWork<S>>>,
+        context: Arc<alibi_core::AuthContext<S>>,
+    ) -> AuthResult<()> {
+        self.pending_after
+            .attach_session_retirement(session_id, works, context)
+            .await;
         Ok(())
     }
     async fn check_scim_user_attributes(
