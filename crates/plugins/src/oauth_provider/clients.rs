@@ -693,7 +693,7 @@ impl OAuthProviderPlugin {
 }
 
 fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Value> {
-    let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+    let mut output = client_response_metadata(serde_json::from_value(client.metadata)?);
     _ = output.insert("client_id".into(), json!(client.client_id));
     _ = output.insert("user_id".into(), json!(client.user_id));
     _ = output.insert(
@@ -708,6 +708,21 @@ fn client_read_metadata(client: alibi_core::store::OAuthClient) -> AuthResult<Va
     _ = output.remove("client_secret");
     _ = output.remove("client_credentials_scopes");
     Ok(Value::Object(output))
+}
+
+/// Opaque aliases are native-internal only in the envelope; on the OAuth wire
+/// they retain their allowed extension names, never the native authority value.
+fn client_response_metadata(
+    mut metadata: serde_json::Map<String, Value>,
+) -> serde_json::Map<String, Value> {
+    if let Some(Value::Object(extensions)) = metadata.remove("metadata") {
+        metadata.extend(
+            extensions
+                .into_iter()
+                .filter(|(name, _)| !RESERVED_METADATA_FIELDS.contains(&name.as_str())),
+        );
+    }
+    metadata
 }
 impl OAuthProviderPlugin {
     /// List durable clients belonging to the authenticated user.
@@ -1300,8 +1315,11 @@ impl OAuthProviderPlugin {
                 .filter(|(name, _)| !RESERVED_METADATA_FIELDS.contains(&name.as_str()))
                 .collect::<serde_json::Map<_, _>>();
             if !extensions.is_empty() {
-                merged.retain(|name, _| RESERVED_METADATA_FIELDS.contains(&name.as_str()));
-                merged.extend(extensions);
+                merged.retain(|name, _| {
+                    RESERVED_METADATA_FIELDS.contains(&name.as_str())
+                        || name == "client_discovery_id"
+                });
+                _ = merged.insert("metadata".into(), Value::Object(extensions));
             }
         }
         if !merged
@@ -1450,7 +1468,7 @@ impl OAuthProviderPlugin {
                 | OAuthClientRegistrationWriteError::Collision { cause: error, .. } => error,
             })?
             .ok_or_else(|| AuthError::internal("Client creation returned no client"))?;
-        let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
+        let mut output = client_response_metadata(serde_json::from_value(client.metadata)?);
         if !administrative {
             _ = output.remove("client_credentials_scopes");
         }
@@ -1814,10 +1832,12 @@ impl OAuthProviderPlugin {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
-        for (name, value) in extensions {
-            if !RESERVED_METADATA_FIELDS.contains(&name.as_str()) {
-                _ = metadata.insert(name, value);
-            }
+        let extensions = extensions
+            .into_iter()
+            .filter(|(name, _)| !RESERVED_METADATA_FIELDS.contains(&name.as_str()))
+            .collect::<serde_json::Map<_, _>>();
+        if !extensions.is_empty() {
+            _ = metadata.insert("metadata".into(), Value::Object(extensions));
         }
         _ = metadata.insert("client_credentials_scopes".into(), json!(scopes));
         self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)

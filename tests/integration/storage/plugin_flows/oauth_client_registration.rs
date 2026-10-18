@@ -6,6 +6,8 @@ use base64::Engine;
 use sha2::Digest;
 #[path = "../../../fixtures/oauth/initial-access-token.rs"]
 mod initial_access_token;
+#[path = "../../../fixtures/oauth/metadata-document-owner.rs"]
+mod metadata_document_owner;
 
 const REGISTRATION_TABLES: &[&str] = &[
     "user",
@@ -33,6 +35,8 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
         client_registration_default_resources: Some(vec![resource.into()]),
         client_registration_default_scopes: Some(vec!["email".into()]),
         client_registration_allowed_scopes: Some(vec!["profile".into()]),
+        client_discoveries: vec![Arc::new(metadata_document_owner::MetadataDocumentOwner)],
+        custom_access_token_claims: Some(Arc::new(metadata_document_owner::MetadataDocumentClaims)),
         ..Default::default()
     });
     let auth = super::auth_probe::fast_builder::<B>(&connection)
@@ -42,7 +46,7 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
         .await?;
     let input = RegisterClientMetadataDocumentInput {
         metadata: serde_json::from_value::<OAuthClientMetadata>(
-            json!({"client_id":"ignored", "redirect_uris":["https://app.fixture.test/callback"],"client_name":"Remote","unknown_root":"discarded","metadata":{"custom":{"version":1},"clientId":"forged","resources":["forged"],"metadata":{"nested":"reserved"}}}),
+            json!({"client_id":"ignored", "redirect_uris":["https://app.fixture.test/callback"],"client_name":"Remote","unknown_root":"discarded","metadata":{"custom":{"version":1},"client_discovery_id":"opaque-not-owner","clientId":"forged","resources":["forged"],"metadata":{"nested":"reserved"}}}),
         )?,
         client_id: "https://client.fixture.test/metadata.json".into(),
         client_discovery_id: "trusted-document-owner".into(),
@@ -65,6 +69,155 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
     assert!(result.client.metadata.get("unknown_root").is_none());
     assert!(result.client.metadata.get("clientId").is_none());
     assert!(result.client.metadata.get("resources").is_none());
+    let raw_metadata: Value = serde_json::from_str(
+        &db.text(
+            "SELECT metadata FROM \"oauthClient\" WHERE \"clientId\" = $1",
+            &[&input.client_id],
+        )
+        .await?
+        .unwrap(),
+    )?;
+    assert_eq!(
+        raw_metadata,
+        json!({"custom":{"version":1},"client_discovery_id":"opaque-not-owner"})
+    );
+    assert_eq!(
+        db.text(
+            "SELECT \"clientDiscoveryId\" FROM \"oauthClient\" WHERE \"clientId\" = $1",
+            &[&input.client_id]
+        )
+        .await?
+        .as_deref(),
+        Some("trusted-document-owner")
+    );
+    let owner = Box::pin(signup(&auth, "cimd-claims@example.test")).await;
+    let cookie = cookies(&owner);
+    let mut managed_id = String::new();
+    for source in ["managed-create", "managed-update", "document"] {
+        let extensions = json!({"custom":{"version":if source == "managed-update" {2}else{1}},"client_discovery_id":"opaque-not-owner"});
+        if source == "managed-create" {
+            let created = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none","metadata":{"custom":{"version":1},"client_discovery_id":"opaque-not-owner","clientDiscoveryId":"forged","skip_consent":true}}))?,
+                EndpointOptions { headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()), ..Default::default() },
+            )).await?.into_response()?;
+            assert_eq!(created.status, 201);
+            assert_eq!(body(&created)["client_discovery_id"], "opaque-not-owner");
+            managed_id = body(&created)["client_id"].as_str().unwrap().into();
+        } else if source == "managed-update" {
+            let updated = Box::pin(auth.dispatch_endpoint(
+                ServerEndpoint::<Value>::new("oauth-provider","adminUpdateOAuthClient").with_body(&json!({"client_id":managed_id,"update":{"metadata":{"custom":{"version":2},"client_discovery_id":"opaque-not-owner","clientDiscoveryId":"forged","skip_consent":true}}}))?,
+                EndpointOptions { headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()), ..Default::default() },
+            )).await?.into_response()?;
+            assert_eq!(updated.status, 200);
+            assert_eq!(body(&updated)["client_discovery_id"], "opaque-not-owner");
+        }
+        let client_id = if source == "document" {
+            &input.client_id
+        } else {
+            &managed_id
+        };
+        let raw_metadata: Value = serde_json::from_str(
+            &db.text(
+                "SELECT metadata FROM \"oauthClient\" WHERE \"clientId\" = $1",
+                &[client_id],
+            )
+            .await?
+            .unwrap(),
+        )?;
+        assert_eq!(raw_metadata, extensions, "{source}: physical opaque column");
+        let expected_owner = (source == "document").then_some("trusted-document-owner");
+        assert_eq!(
+            db.text(
+                "SELECT \"clientDiscoveryId\" FROM \"oauthClient\" WHERE \"clientId\" = $1",
+                &[client_id]
+            )
+            .await?
+            .as_deref(),
+            expected_owner,
+            "{source}: physical authority column"
+        );
+        let client = provider
+            .get_client(auth.context(), client_id)
+            .await?
+            .expect("real lookup must not mistake opaque metadata for source ownership");
+        assert_eq!(
+            client
+                .metadata
+                .get("client_discovery_id")
+                .and_then(Value::as_str),
+            expected_owner
+        );
+        assert_eq!(client.metadata["scope"], "email profile");
+        if source != "document" {
+            let read = Box::pin(auth.dispatch_endpoint(
+                OAuthProviderPlugin::get_oauth_client_endpoint(client_id)?,
+                EndpointOptions {
+                    headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                    ..Default::default()
+                },
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(read.status, 200);
+            assert_eq!(body(&read)["client_discovery_id"], "opaque-not-owner");
+            assert_eq!(body(&read)["custom"], extensions["custom"]);
+        }
+        let verifier = "cimd-verifier-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP";
+        let challenge =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier));
+        let authorized = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_authorize_endpoint(&json!({"client_id":client_id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","resource":resource,"prompt":"consent","code_challenge":challenge,"code_challenge_method":"S256"}))?,
+        EndpointOptions { headers: Some([("cookie".into(),cookie.clone()),("accept".into(),"application/json".into())].into_iter().collect()), request:Some(request("/oauth2/authorize",None,&cookie)), ..Default::default() },
+    )).await?.into_response()?;
+        let target = url::Url::parse(ORIGIN)?.join(body(&authorized)["url"].as_str().unwrap())?;
+        assert_eq!(target.path(), "/consent");
+        let consent = Box::pin(auth.dispatch_endpoint(
+            OAuthProviderPlugin::oauth2_consent_endpoint(true, None, target.query())?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                request: Some(request("/oauth2/consent", None, &cookie)),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        let callback = url::Url::parse(body(&consent)["url"].as_str().unwrap())?;
+        let code = callback
+            .query_pairs()
+            .find(|(key, _)| key == "code")
+            .unwrap()
+            .1
+            .into_owned();
+        let token = Box::pin(auth.dispatch_endpoint(
+        OAuthProviderPlugin::oauth2_token_endpoint(&json!({"grant_type":"authorization_code","client_id":client_id,"redirect_uri":"https://app.fixture.test/callback","code":code,"code_verifier":verifier}))?,
+        EndpointOptions::default(),
+    )).await?.into_response()?;
+        assert_eq!(token.status, 200);
+        let verifier = JwtPlugin::with_config(alibi::plugins::jwt::JwtPluginConfig {
+            claims: alibi::plugins::jwt::JwtClaimsConfig {
+                issuer: Some(format!("{ORIGIN}/api/auth")),
+                audience: Some(alibi::plugins::jwt::JwtAudience::One(resource.into())),
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+        let claims = verifier
+            .verify_jwt(
+                body(&token)["access_token"].as_str().unwrap(),
+                None,
+                None,
+                auth.context(),
+            )
+            .await?
+            .unwrap();
+        assert_eq!(
+            claims["document_metadata"], extensions,
+            "{source}: actual operator callback"
+        );
+        assert_eq!(claims["client_id"], *client_id);
+        assert_eq!(claims["sub"], body(&owner)["user"]["id"]);
+        assert_eq!(claims["scope"], "email");
+    }
     for (extension, expected) in [
         (
             json!({"custom":{"version":2},"other":false,"client_secret":"forged"}),
@@ -253,7 +406,7 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
             .len(),
         1
     );
-    assert_eq!(db.count("oauthConsent").await?, 0);
+    assert_eq!(db.count("oauthConsent").await?, 2);
     assert_eq!(db.count("oauthAccessToken").await?, 0);
     auth.store().delete_oauth_client(&input.client_id).await?;
     let denied = provider

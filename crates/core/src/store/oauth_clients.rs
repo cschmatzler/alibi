@@ -9,6 +9,8 @@ pub struct OAuthClient {
     pub client_id: String,
     pub user_id: Option<String>,
     pub client_secret: Option<String>,
+    /// Native standard-client fields and flattened opaque extensions. Extensions
+    /// colliding with native aliases remain under `metadata`, never as authority.
     pub metadata: Value,
     pub created_at: Option<DateTime<Utc>>,
     pub updated_at: Option<DateTime<Utc>>,
@@ -454,7 +456,14 @@ pub fn metadata_from_columns(fields: &Value) -> AuthResult<Value> {
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
+    // Keep opaque aliases out of the native field namespace even when the
+    // authoritative column is null. The envelope also makes a later write or
+    // callback projection lossless without changing standard-client accessors.
+    let mut extensions = serde_json::Map::new();
     for (rfc, column) in CLIENT_FIELDS {
+        if let Some(value) = metadata.remove(*rfc) {
+            _ = extensions.insert((*rfc).into(), value);
+        }
         if let Some(mut value) = fields
             .get(*column)
             .filter(|value| !value.is_null())
@@ -478,6 +487,9 @@ pub fn metadata_from_columns(fields: &Value) -> AuthResult<Value> {
             }
             _ = metadata.insert((*rfc).into(), value);
         }
+    }
+    if !extensions.is_empty() {
+        _ = metadata.insert("metadata".into(), Value::Object(extensions));
     }
     Ok(Value::Object(metadata))
 }

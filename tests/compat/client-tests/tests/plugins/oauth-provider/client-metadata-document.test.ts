@@ -82,8 +82,8 @@ compatScenario(
     expect(first.client.clientId).toBe(clientId);
     expect(first.client.scopes).toEqual(["email", "profile"]);
     expect(first.resources).toEqual([a]);
-    const row = async () =>
-      (await (await control({ action: "row", clientId, raw: true })).json()) as any;
+    const row = async (id = clientId) =>
+      (await (await control({ action: "row", clientId: id, raw: true })).json()) as any;
     const links = async () =>
       (await (await control({ action: "resource-links", clientId })).json()) as any[];
     const initial = await row();
@@ -292,71 +292,135 @@ compatScenario(
     // Restore capabilities, then use the persisted client through actual authorization and code redemption.
     await initialize([b]);
     await control({
-      action: "cimd-register",
-      clientId,
-      clientDiscoveryId,
-      existing: true,
-      metadata: replacement,
-    });
-    await control({
       action: "cimd-operator",
       clientId,
       update: { disabled: false, skipConsent: false },
     });
+    await control({
+      action: "cimd-register",
+      clientId,
+      clientDiscoveryId,
+      existing: true,
+      metadata: { ...replacement, metadata: metadata.metadata },
+    });
+    expect((await row()).metadata).toEqual({
+      custom: { version: 1 },
+      client_discovery_id: "opaque-not-owner",
+    });
+    expect((await row()).clientDiscoveryId).toBe(clientDiscoveryId);
     expect(await (await control({ action: "consent-row", clientId })).json()).toEqual([]);
     const signup = await control({
       action: "signup",
       body: { email: ctx.uniqueEmail("cimd"), name: "Document user", password: "password123" },
     });
     expect(signup.status).toBe(200);
+    const signedUp = (await signup.json()) as any;
     const cookie = signup.headers
       .getSetCookie()
       .filter((raw) => Boolean(Cookie.parse(raw)?.value))
       .map((raw) => raw.split(";")[0])
       .join("; ");
     const call = (input: object) => control({ headers: { cookie }, ...input });
-    const verifier = "cimd-verifier-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP";
-    const challenge = createHash("sha256").update(verifier).digest("base64url");
-    const authorization = await call({
-      action: "authorize",
-      headers: { cookie, accept: "application/json" },
-      query: {
-        client_id: clientId,
-        redirect_uri: "http://127.0.0.1/callback",
-        response_type: "code",
-        scope: "email",
-        resource: b,
-        prompt: "consent",
-        code_challenge: challenge,
-        code_challenge_method: "S256",
-      },
-    });
-    expect(authorization.status).toBe(200);
-    const target = new URL(((await authorization.json()) as any).url, ctx.baseURL);
-    expect(target.pathname).toBe("/consent");
-    const consent = await call({
-      action: "consent",
-      body: { accept: true, oauth_query: target.search.slice(1) },
-    });
-    expect(consent.status).toBe(200);
-    const code = new URL(((await consent.json()) as any).url).searchParams.get("code");
-    expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
-    const tokenResponse = await call({
-      action: "token",
-      body: {
-        client_id: clientId,
-        grant_type: "authorization_code",
-        redirect_uri: "http://127.0.0.1/callback",
-        code,
-        code_verifier: verifier,
-      },
-    });
-    const token = (await tokenResponse.json()) as any;
-    expect(tokenResponse.status, JSON.stringify(token)).toBe(200);
-    const keys = createLocalJWKSet((await (await call({ action: "jwks" })).json()) as any);
-    const { payload } = await jwtVerify(token.access_token, keys, { audience: b });
-    expect(payload.scope).toBe("email");
-    expect(payload.aud).toBe(b);
+    let managedId = "";
+    const callbackReceipts = [];
+    for (const source of ["managed-create", "managed-update", "document"]) {
+      const extensions = {
+        custom: { version: source === "managed-update" ? 2 : 1 },
+        client_discovery_id: "opaque-not-owner",
+      };
+      if (source === "managed-create") {
+        const response = await call({
+          action: "admin-create",
+          body: {
+            redirect_uris: ["https://app.fixture.test/callback"],
+            scope: "email profile",
+            token_endpoint_auth_method: "none",
+            metadata: { ...extensions, clientDiscoveryId: "forged", skip_consent: true },
+          },
+        });
+        const created = (await response.json()) as any;
+        expect(response.status, JSON.stringify(created)).toBe(201);
+        expect(created.client_discovery_id).toBe("opaque-not-owner");
+        managedId = created.client_id;
+      } else if (source === "managed-update") {
+        const response = await call({
+          action: "admin-update",
+          body: {
+            client_id: managedId,
+            update: {
+              metadata: { ...extensions, clientDiscoveryId: "forged", skip_consent: true },
+            },
+          },
+        });
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as any).client_discovery_id).toBe("opaque-not-owner");
+      }
+      const grantClientId = source === "document" ? clientId : managedId;
+      const redirectUri =
+        source === "document" ? "http://127.0.0.1/callback" : "https://app.fixture.test/callback";
+      const physical = await row(grantClientId);
+      expect(physical.metadata).toEqual(extensions);
+      expect(physical.clientDiscoveryId).toBe(source === "document" ? clientDiscoveryId : null);
+      if (source !== "document") {
+        const response = await call({ action: "get", query: { client_id: grantClientId } });
+        expect(response.status).toBe(200);
+        const read = (await response.json()) as any;
+        expect(read.client_discovery_id).toBe("opaque-not-owner");
+        expect(read.custom).toEqual(extensions.custom);
+      }
+      const verifier = "cimd-verifier-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP";
+      const challenge = createHash("sha256").update(verifier).digest("base64url");
+      const authorization = await call({
+        action: "authorize",
+        headers: { cookie, accept: "application/json" },
+        query: {
+          client_id: grantClientId,
+          redirect_uri: redirectUri,
+          response_type: "code",
+          scope: "email",
+          resource: b,
+          prompt: "consent",
+          code_challenge: challenge,
+          code_challenge_method: "S256",
+        },
+      });
+      expect(authorization.status).toBe(200);
+      const target = new URL(((await authorization.json()) as any).url, ctx.baseURL);
+      expect(target.pathname).toBe("/consent");
+      const consent = await call({
+        action: "consent",
+        body: { accept: true, oauth_query: target.search.slice(1) },
+      });
+      expect(consent.status).toBe(200);
+      const code = new URL(((await consent.json()) as any).url).searchParams.get("code");
+      expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
+      const tokenResponse = await call({
+        action: "token",
+        body: {
+          client_id: grantClientId,
+          grant_type: "authorization_code",
+          redirect_uri: redirectUri,
+          code,
+          code_verifier: verifier,
+        },
+      });
+      const token = (await tokenResponse.json()) as any;
+      expect(tokenResponse.status, JSON.stringify(token)).toBe(200);
+      const keys = createLocalJWKSet((await (await call({ action: "jwks" })).json()) as any);
+      const { payload } = await jwtVerify(token.access_token, keys, { audience: b });
+      expect(payload.document_metadata).toEqual(extensions);
+      expect(payload.client_id).toBe(grantClientId);
+      expect(payload.sub).toBe(signedUp.user.id);
+      expect(payload.scope).toBe("email");
+      expect(payload.aud).toBe(b);
+      callbackReceipts.push({
+        source,
+        physical,
+        metadata: payload.document_metadata,
+        scope: token.scope,
+        audience: payload.aud,
+      });
+    }
     const consents = (await (await call({ action: "consent-row", clientId })).json()) as any[];
     expect(consents).toHaveLength(1);
     expect(consents[0].clientId).toBe(clientId);
@@ -371,8 +435,7 @@ compatScenario(
       stored,
       additive,
       empty,
-      tokenScope: token.scope,
-      tokenAudience: payload.aud,
+      callbackReceipts,
       consents,
     };
   },

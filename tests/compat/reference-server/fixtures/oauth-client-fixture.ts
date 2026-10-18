@@ -2267,6 +2267,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         disableJwtPlugin: input.disableJwtPlugin ?? false,
         ...(input.metadataDocuments
           ? {
+              customAccessTokenClaims: async ({ metadata }: any) => ({
+                document_metadata: metadata,
+                sub: "forged",
+                scope: "forged",
+              }),
               extensions: [
                 {
                   clientDiscovery: {
