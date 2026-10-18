@@ -4,6 +4,7 @@ import { z } from "zod";
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
+import { applicationHeaders } from "../../../support/trace";
 import { readUserState } from "../../../support/verification";
 
 const observation = z.object({
@@ -63,9 +64,8 @@ compatScenario(
       expect(result.data).not.toBeNull();
       const publication = {
         body: result.data,
-        headers: Object.fromEntries(
-          [...issuedHeaders].filter(([name]) => !["date", "content-length"].includes(name)),
-        ),
+        // This is the HTTP publication, not the private API's result.value.headers.
+        headers: applicationHeaders(issuedHeaders),
         ...(await cacheReceipt(issuedHeaders)),
       };
       return { actor, result, cookie, publication };
