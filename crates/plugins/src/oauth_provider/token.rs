@@ -227,6 +227,10 @@ impl OAuthProviderPlugin {
         );
         params.user = Some(ctx.trusted_user_view(&user));
         params.verification_value = Some(value.clone());
+        params.reference_id = value
+            .get("referenceId")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
         let supported = self.supported_claims();
         params.requested_user_info_claims = Some(
             query

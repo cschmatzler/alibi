@@ -652,6 +652,19 @@ impl OAuthProviderPlugin {
                 return browser_redirect(req, &format!("{}?{params}", post_login.page));
             }
         }
+        let reference_id = if !force_login
+            && !prompts.contains(&AuthorizationPrompt::Consent)
+            && let Some((user, session)) = &session
+        {
+            let scopes = requested
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect::<Vec<_>>();
+            self.consent_reference_id(&ctx.user_view(user), session, &scopes)
+                .await?
+        } else {
+            None
+        };
         let remembered = if !force_login
             && !prompts.contains(&AuthorizationPrompt::Consent)
             && client.metadata.get("skip_consent") != Some(&json!(true))
@@ -662,37 +675,44 @@ impl OAuthProviderPlugin {
                 .list_oauth_consents_by_user(user.id().as_ref())
                 .await?
                 .into_iter()
-                .any(|consent| {
+                .find(|consent| {
                     consent.client_id == client_id
-                        && requested_user_info_claims.iter().all(|name| {
-                            consent
-                                .metadata
-                                .get("requestedUserInfoClaims")
-                                .and_then(Value::as_array)
-                                .is_some_and(|names| {
-                                    names.iter().any(|value| value.as_str() == Some(name))
-                                })
-                        })
-                        && scope.split(' ').all(|scope| {
-                            consent
-                                .metadata
-                                .get("scopes")
-                                .and_then(Value::as_array)
-                                .is_some_and(|scopes| {
-                                    scopes.iter().any(|value| value.as_str() == Some(scope))
-                                })
-                        })
-                        && requested_resources.iter().all(|resource| {
-                            consent
-                                .metadata
-                                .get("resources")
-                                .and_then(Value::as_array)
-                                .is_some_and(|resources| {
-                                    resources
-                                        .iter()
-                                        .any(|value| value.as_str() == Some(resource))
-                                })
-                        })
+                        && reference_id
+                            .as_deref()
+                            .filter(|id| !id.is_empty())
+                            .is_none_or(|id| {
+                                consent.metadata.get("referenceId").and_then(Value::as_str)
+                                    == Some(id)
+                            })
+                })
+                .is_some_and(|consent| {
+                    requested_user_info_claims.iter().all(|name| {
+                        consent
+                            .metadata
+                            .get("requestedUserInfoClaims")
+                            .and_then(Value::as_array)
+                            .is_some_and(|names| {
+                                names.iter().any(|value| value.as_str() == Some(name))
+                            })
+                    }) && scope.split(' ').all(|scope| {
+                        consent
+                            .metadata
+                            .get("scopes")
+                            .and_then(Value::as_array)
+                            .is_some_and(|scopes| {
+                                scopes.iter().any(|value| value.as_str() == Some(scope))
+                            })
+                    }) && requested_resources.iter().all(|resource| {
+                        consent
+                            .metadata
+                            .get("resources")
+                            .and_then(Value::as_array)
+                            .is_some_and(|resources| {
+                                resources
+                                    .iter()
+                                    .any(|value| value.as_str() == Some(resource))
+                            })
+                    })
                 })
         } else {
             false
@@ -726,9 +746,14 @@ impl OAuthProviderPlugin {
                     .cloned()
                     .unwrap_or_else(|| vec![value.clone()])
             });
-            let value = serde_json::to_string(
-                &json!({"type":"authorization_code","query":query,"userId":user.id().as_ref(),"sessionId":session.id,"authTime":session.created_at.timestamp_millis(),"resource":resources}),
-            )?;
+            let mut value = json!({"type":"authorization_code","query":query,"userId":user.id().as_ref(),"sessionId":session.id,"authTime":session.created_at.timestamp_millis(),"resource":resources});
+            if let Some(reference_id) = reference_id {
+                _ = value
+                    .as_object_mut()
+                    .ok_or_else(|| AuthError::internal("Invalid authorization code payload"))?
+                    .insert("referenceId".into(), json!(reference_id));
+            }
+            let value = serde_json::to_string(&value)?;
             _ = ctx
                 .verifications()
                 .create(alibi_core::verification::VerificationCreation {

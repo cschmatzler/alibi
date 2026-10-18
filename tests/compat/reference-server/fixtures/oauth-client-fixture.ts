@@ -274,6 +274,37 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const signupCalls: unknown[] = [];
   const postLoginCalls: unknown[] = [];
   const clientPolicyCalls: unknown[] = [];
+  const consentReferenceChoices = new Map<string, string>();
+  const consentReferenceCalls: unknown[] = [];
+  const consentReferenceId: NonNullable<OAuthOptions["postLogin"]>["consentReferenceId"] = async ({
+    user,
+    session,
+    scopes,
+  }) => {
+    consentReferenceCalls.push({
+      user: { id: user.id, email: user.email, name: user.name },
+      session: { id: session.id, userId: session.userId, token: session.token },
+      scopes,
+    });
+    const choice = consentReferenceChoices.get(session.id);
+    if (choice === "ordinary-error") throw new Error("consent reference failed");
+    if (choice === "native-error") {
+      throw new APIError("FORBIDDEN", { message: "Consent reference denied" });
+    }
+    if (choice === "api-error") {
+      throw new APIError("FORBIDDEN", {
+        code: "CONSENT_REFERENCE_DENIED",
+        message: "Consent reference denied",
+      });
+    }
+    if (choice === "upstream-error") {
+      throw new APIError("SERVICE_UNAVAILABLE", {
+        code: "CONSENT_REFERENCE_UNAVAILABLE",
+        message: "Consent reference unavailable",
+      });
+    }
+    return choice;
+  };
   const registryDiscoveries = [
     {
       id: "registry-first",
@@ -1312,7 +1343,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     ...Object.fromEntries(
-      ["postlogin-policy", "postlogin-empty-page"].map((mode) => [
+      ["postlogin-policy", "postlogin-empty-page", "consent-reference"].map((mode) => [
         mode,
         betterAuth({
           ...options,
@@ -1323,17 +1354,22 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             oauthProvider({
               loginPage: "/login",
               consentPage: "/consent",
-              signup: {
-                page: "/signup",
-                shouldRedirect: async ({ headers, session }) => {
-                  postLoginCalls.push({ stage: "signup", sessionId: session.id });
-                  return headers.get("x-signup-decision") === "true";
-                },
-              },
+              signup:
+                mode === "consent-reference"
+                  ? undefined
+                  : {
+                      page: "/signup",
+                      shouldRedirect: async ({ headers, session }) => {
+                        postLoginCalls.push({ stage: "signup", sessionId: session.id });
+                        return headers.get("x-signup-decision") === "true";
+                      },
+                    },
               postLogin: {
                 page: mode === "postlogin-empty-page" ? "" : "/post-login",
-                consentReferenceId: () => undefined,
+                consentReferenceId:
+                  mode === "consent-reference" ? consentReferenceId : () => undefined,
                 shouldRedirect: async ({ headers, user, session, scopes }) => {
+                  if (mode === "consent-reference") return false;
                   const decision = headers.get("x-postlogin-decision");
                   postLoginCalls.push({
                     stage: "postLogin",
@@ -1362,6 +1398,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                   return decision !== "false";
                 },
               },
+              disableJwtPlugin: mode === "consent-reference",
             }),
           ],
         }),
@@ -1995,6 +2032,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "signup-policy-calls") return Response.json(signupCalls.splice(0));
     if (input.action === "postlogin-policy-calls") return Response.json(postLoginCalls.splice(0));
     if (input.action === "client-policy-calls") return Response.json(clientPolicyCalls.splice(0));
+    if (input.action === "consent-reference-choice") {
+      if (typeof input.reference === "string") {
+        consentReferenceChoices.set(input.sessionId, input.reference);
+      } else {
+        consentReferenceChoices.delete(input.sessionId);
+      }
+      return Response.json({ selected: true });
+    }
+    if (input.action === "consent-reference-calls") {
+      return Response.json(consentReferenceCalls.splice(0));
+    }
     if (input.action === "credential-generator-state") {
       if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
       if (typeof input.refreshMode === "string")

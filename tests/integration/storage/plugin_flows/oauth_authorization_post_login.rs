@@ -28,6 +28,7 @@ pub(super) async fn assert_post_login_policy<B: Backend>(
                     should_redirect: Some(policy.clone()),
                 }),
                 post_login: Some(OAuthPostLoginConfig {
+                    consent_reference_id: None,
                     page: "/post-login".into(),
                     should_redirect: policy.clone(),
                 }),

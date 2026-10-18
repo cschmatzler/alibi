@@ -5,20 +5,36 @@ use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
 use sha2::Digest as _;
+#[path = "../../../fixtures/oauth/consent-reference.rs"]
+mod consent_reference;
 backend_tests!(oauth_consent_persists_grant_and_issues_bound_code);
 async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let references = Arc::new(consent_reference::ConsentReferencePolicy::default());
     let auth = Box::pin(
         super::auth_probe::fast_builder::<B>(&connection)
             .plugin(JwtPlugin::new())
-            .plugin(OAuthProviderPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(
+                alibi::plugins::OAuthProviderConfig {
+                    disable_jwt_plugin: true,
+                    post_login: Some(alibi::plugins::OAuthPostLoginConfig {
+                        page: "/post-login".into(),
+                        should_redirect: references.clone(),
+                        consent_reference_id: Some(references.clone()),
+                    }),
+                    ..Default::default()
+                },
+            ))
             .build(),
     )
     .await?;
     let owner = Box::pin(signup(&auth, "consent-owner@example.test")).await;
-    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email profile offline_access","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
-    let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email profile","state":"consent-state","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
+    let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(
+        "consent-reference-verifier-with-at-least-43-characters",
+    ));
+    let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email profile","state":"consent-state","code_challenge":challenge,"code_challenge_method":"S256"});
     let producer = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize").with_query(&query)?,
@@ -158,6 +174,10 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     .await?
     .into_response()?;
     let current = body(&session_response);
+    _ = references.references.lock().unwrap().insert(
+        current["session"]["id"].as_str().unwrap().into(),
+        "team-a".into(),
+    );
     let accepted = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_consent_endpoint(true, Some("email"), Some(signed))?,
         EndpointOptions {
@@ -189,6 +209,15 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(payload["query"]["client_id"], id);
     assert_eq!(payload["userId"], current["user"]["id"]);
     assert_eq!(payload["sessionId"], current["session"]["id"]);
+    assert_eq!(payload["referenceId"], "team-a");
+    let calls = std::mem::take(&mut *references.reference_calls.lock().unwrap());
+    assert_eq!(calls.len(), 2);
+    assert_eq!(calls[0]["scopes"], json!(["email"]));
+    assert_eq!(calls[1]["scopes"], json!(["email"]));
+    for call in calls {
+        assert_eq!(call["user"]["id"], current["user"]["id"]);
+        assert_eq!(call["session"]["id"], current["session"]["id"]);
+    }
     assert_eq!(
         payload["authTime"],
         chrono::DateTime::parse_from_rfc3339(current["session"]["createdAt"].as_str().unwrap())?
@@ -207,6 +236,7 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].client_id, id);
     assert_eq!(rows[0].metadata["scopes"], json!(["email"]));
+    assert_eq!(rows[0].metadata["referenceId"], "team-a");
     let row_id = rows[0].id.clone();
     let replay = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_consent_endpoint(true, None, Some(signed))?,
@@ -347,7 +377,399 @@ async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) 
     assert_eq!(foreign_consent.path(), "/consent");
     assert!(!foreign_consent.query_pairs().any(|(key, _)| key == "code"));
     assert_eq!(before_foreign, db.tables(&tables).await?);
+    Box::pin(assert_reference_partitions(
+        &auth,
+        &references,
+        &owner,
+        &other,
+        &expanded_query,
+    ))
+    .await?;
     Ok(())
+}
+
+async fn assert_reference_partitions<S: AuthSchema>(
+    auth: &Alibi<S>,
+    references: &consent_reference::ConsentReferencePolicy,
+    owner: &AuthResponse,
+    other: &AuthResponse,
+    query: &Value,
+) -> TestResult {
+    let user_id = body(owner)["user"]["id"].as_str().unwrap().to_owned();
+    let session = Box::pin(reference_call(
+        auth,
+        ServerEndpoint::<Value>::new("session-management", "getSession"),
+        &cookies(owner),
+        "/get-session",
+    ))
+    .await?;
+    let session_id = body(&session)["session"]["id"].as_str().unwrap().to_owned();
+    let choose = |choice: Option<&str>| {
+        let mut choices = references.references.lock().unwrap();
+        if let Some(choice) = choice {
+            _ = choices.insert(session_id.clone(), choice.into());
+        } else {
+            _ = choices.remove(&session_id);
+        }
+    };
+    let mut silent = query.clone();
+    silent["prompt"] = json!("none");
+    choose(Some("team-b"));
+    let denied = Box::pin(authorize_http(auth, &silent, &cookies(owner))).await?;
+    assert!(
+        denied
+            .query_pairs()
+            .any(|(key, value)| key == "error" && value == "consent_required")
+    );
+    let mut partition_query = query.clone();
+    partition_query["scope"] = json!("email profile offline_access");
+    let consent = Box::pin(authorize_http(auth, &partition_query, &cookies(owner))).await?;
+    assert_eq!(consent.path(), "/consent");
+    let accepted = Box::pin(reference_call(
+        auth,
+        OAuthProviderPlugin::oauth2_consent_endpoint(
+            true,
+            Some("email offline_access"),
+            consent.query(),
+        )?,
+        &cookies(owner),
+        "/oauth2/consent",
+    ))
+    .await?;
+    assert!(body(&accepted)["url"].as_str().unwrap().contains("code="));
+    let rows = auth.store().list_oauth_consents_by_user(&user_id).await?;
+    assert_eq!(rows.len(), 2);
+    let a = rows
+        .iter()
+        .find(|row| row.metadata["referenceId"] == "team-a")
+        .unwrap();
+    let b = rows
+        .iter()
+        .find(|row| row.metadata["referenceId"] == "team-b")
+        .unwrap();
+    assert_ne!(a.id, b.id);
+    assert_eq!(a.metadata["scopes"], json!(["email", "profile"]));
+    assert_eq!(b.metadata["scopes"], json!(["email", "offline_access"]));
+    // Same user, a genuine new session: choices do not leak between sessions.
+    let signed_in = Box::pin(call(
+        auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"consent-owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    ))
+    .await;
+    let second = Box::pin(reference_call(
+        auth,
+        ServerEndpoint::<Value>::new("session-management", "getSession"),
+        &cookies(&signed_in),
+        "/get-session",
+    ))
+    .await?;
+    let second_id = body(&second)["session"]["id"].as_str().unwrap().to_owned();
+    assert_ne!(second_id, session_id);
+    _ = references
+        .references
+        .lock()
+        .unwrap()
+        .insert(second_id.clone(), "team-a".into());
+    let reused = Box::pin(authorize_http(auth, &silent, &cookies(&signed_in))).await?;
+    assert!(reused.query_pairs().any(|(key, _)| key == "code"));
+    // Empty and undefined fall back to the first matching user/client row.
+    for fallback in [Some(""), None] {
+        choose(fallback);
+        let reused = Box::pin(authorize_http(auth, &silent, &cookies(owner))).await?;
+        assert!(reused.query_pairs().any(|(key, _)| key == "code"));
+    }
+    // Management remains user-scoped even while a different reference is selected.
+    choose(Some("team-b"));
+    _ = Box::pin(reference_call(
+        auth,
+        OAuthProviderPlugin::update_oauth_consent_endpoint(
+            &b.id,
+            &["email".into(), "profile".into()],
+        )?,
+        &cookies(owner),
+        "/oauth2/update-consent",
+    ))
+    .await?;
+    let updated = Box::pin(reference_call(
+        auth,
+        OAuthProviderPlugin::update_oauth_consent_endpoint(&a.id, &["email".into()])?,
+        &cookies(owner),
+        "/oauth2/update-consent",
+    ))
+    .await?;
+    assert_eq!(body(&updated)["referenceId"], "team-a");
+    for endpoint in [
+        OAuthProviderPlugin::get_oauth_consent_endpoint(&a.id)?,
+        ServerEndpoint::<Value>::new("oauth-provider", "deleteOAuthConsent")
+            .with_body(&json!({"id":a.id}))?,
+    ] {
+        let denied = Box::pin(reference_call(
+            auth,
+            endpoint,
+            &cookies(other),
+            "/oauth2/get-consent",
+        ))
+        .await
+        .unwrap_err();
+        assert_eq!(denied.status_code(), 401);
+    }
+    // A later matching row must not hide insufficient authority in the first row.
+    choose(None);
+    let denied = Box::pin(authorize_http(auth, &silent, &cookies(owner))).await?;
+    assert!(
+        denied
+            .query_pairs()
+            .any(|(key, value)| key == "error" && value == "consent_required")
+    );
+    for (choice, status) in [
+        ("ordinary-error", 500),
+        ("native-error", 403),
+        ("api-error", 403),
+        ("upstream-error", 503),
+    ] {
+        choose(Some(choice));
+        for endpoint in [
+            OAuthProviderPlugin::oauth2_authorize_endpoint(query)?,
+            OAuthProviderPlugin::oauth2_consent_endpoint(true, None, consent.query())?,
+        ] {
+            let failed = Box::pin(reference_call(
+                auth,
+                endpoint,
+                &cookies(owner),
+                "/oauth2/authorize",
+            ))
+            .await
+            .unwrap_err();
+            assert_eq!(failed.status_code(), status);
+            if choice == "ordinary-error" {
+                assert!(failed.to_auth_response().body.is_empty());
+            }
+        }
+    }
+    assert_eq!(
+        auth.store()
+            .list_oauth_consents_by_user(&user_id)
+            .await?
+            .len(),
+        2
+    );
+    let callback = url::Url::parse(body(&accepted)["url"].as_str().unwrap())?;
+    let code = callback
+        .query_pairs()
+        .find(|(key, _)| key == "code")
+        .unwrap()
+        .1
+        .into_owned();
+    let token=Box::pin(reference_call(auth,OAuthProviderPlugin::oauth2_token_endpoint(&json!({"grant_type":"authorization_code","client_id":query["client_id"],"code":code,"redirect_uri":query["redirect_uri"],"code_verifier":"consent-reference-verifier-with-at-least-43-characters"}))?,"","/oauth2/token")).await?;
+    let access = body(&token)["access_token"].as_str().unwrap().to_owned();
+    let hash =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(access));
+    let stored = auth
+        .store()
+        .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash)
+        .await?
+        .unwrap();
+    assert_eq!(stored.metadata["referenceId"], "team-b");
+    assert_eq!(stored.user_id.as_deref(), Some(user_id.as_str()));
+    assert_eq!(stored.session_id.as_deref(), Some(session_id.as_str()));
+    assert_eq!(
+        stored.metadata["scopes"],
+        json!(["email", "offline_access"])
+    );
+    let refresh = body(&token)["refresh_token"].as_str().unwrap().to_owned();
+    let hash =
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(refresh));
+    let stored = auth
+        .store()
+        .get_oauth_token(alibi::store::OAuthTokenKind::Refresh, &hash)
+        .await?
+        .unwrap();
+    assert_eq!(stored.metadata["referenceId"], "team-b");
+    assert_eq!(stored.user_id.as_deref(), Some(user_id.as_str()));
+    assert_eq!(stored.session_id.as_deref(), Some(session_id.as_str()));
+    assert_eq!(
+        stored.metadata["scopes"],
+        json!(["email", "offline_access"])
+    );
+    Box::pin(assert_reference_claims(
+        auth, references, owner, other, query,
+    ))
+    .await?;
+    Ok(())
+}
+
+async fn assert_reference_claims<S: AuthSchema>(
+    auth: &Alibi<S>,
+    references: &consent_reference::ConsentReferencePolicy,
+    owner: &AuthResponse,
+    other: &AuthResponse,
+    query: &Value,
+) -> TestResult {
+    let session = Box::pin(reference_call(
+        auth,
+        ServerEndpoint::new("session-management", "getSession"),
+        &cookies(owner),
+        "/get-session",
+    ))
+    .await?;
+    let session_id = body(&session)["session"]["id"].as_str().unwrap().to_owned();
+    let user_id = body(&session)["user"]["id"].as_str().unwrap().to_owned();
+    let rows = auth.store().list_oauth_consents_by_user(&user_id).await?;
+    let a = rows
+        .iter()
+        .find(|row| row.metadata["referenceId"] == "team-a")
+        .unwrap();
+    let b = rows
+        .iter()
+        .find(|row| row.metadata["referenceId"] == "team-b")
+        .unwrap();
+    // Empty/undefined consent updates preserve the first row's reference.
+    let mut forced = query.clone();
+    forced["prompt"] = json!("consent");
+    let consent = Box::pin(authorize_http(auth, &forced, &cookies(owner))).await?;
+    for choice in [Some(""), None] {
+        {
+            let mut choices = references.references.lock().unwrap();
+            if let Some(choice) = choice {
+                _ = choices.insert(session_id.clone(), choice.into());
+            } else {
+                _ = choices.remove(&session_id);
+            }
+        }
+        _ = Box::pin(reference_call(
+            auth,
+            OAuthProviderPlugin::oauth2_consent_endpoint(true, None, consent.query())?,
+            &cookies(owner),
+            "/oauth2/consent",
+        ))
+        .await?;
+        let updated = auth.store().get_oauth_consent(&a.id).await?.unwrap();
+        assert_eq!(updated.metadata["referenceId"], "team-a");
+        assert_eq!(updated.metadata["resources"], json!([query["resource"]]));
+    }
+    _ = references
+        .references
+        .lock()
+        .unwrap()
+        .insert(session_id, "team-b".into());
+    let mut claims = query.clone();
+    claims["scope"] = json!("openid email");
+    claims["claims"] = json!(r#"{"userinfo":{"email":null,"name":null}}"#);
+    let consent = Box::pin(authorize_http(auth, &claims, &cookies(owner))).await?;
+    assert_eq!(consent.path(), "/consent");
+    _ = Box::pin(reference_call(auth,ServerEndpoint::new("oauth-provider","oauth2Consent").with_body(&json!({"accept":true,"claims":{"userinfo":{"email":null}},"oauth_query":consent.query()}))?,&cookies(owner),"/oauth2/consent")).await?;
+    let updated = auth.store().get_oauth_consent(&b.id).await?.unwrap();
+    assert_eq!(
+        updated.metadata["requestedUserInfoClaims"],
+        json!(["email"])
+    );
+    assert_eq!(updated.metadata["referenceId"], "team-b");
+    assert_eq!(
+        auth.store()
+            .get_oauth_consent(&a.id)
+            .await?
+            .unwrap()
+            .metadata["requestedUserInfoClaims"],
+        json!([])
+    );
+    claims["prompt"] = json!("none");
+    for (claim, allowed) in [("email", true), ("name", false)] {
+        claims["claims"] = json!(format!(r#"{{"userinfo":{{"{claim}":null}}}}"#));
+        let target = Box::pin(authorize_http(auth, &claims, &cookies(owner))).await?;
+        assert_eq!(target.query_pairs().any(|(key, _)| key == "code"), allowed);
+        if !allowed {
+            assert!(
+                target
+                    .query_pairs()
+                    .any(|(key, value)| key == "error" && value == "consent_required")
+            );
+        }
+    }
+    let foreign = Box::pin(reference_call(
+        auth,
+        ServerEndpoint::new("session-management", "getSession"),
+        &cookies(other),
+        "/get-session",
+    ))
+    .await?;
+    let foreign_session = body(&foreign)["session"]["id"].as_str().unwrap().to_owned();
+    _ = references
+        .references
+        .lock()
+        .unwrap()
+        .insert(foreign_session.clone(), "team-a".into());
+    let mut silent = query.clone();
+    silent["prompt"] = json!("none");
+    assert!(
+        Box::pin(authorize_http(auth, &silent, &cookies(other)))
+            .await?
+            .query_pairs()
+            .any(|(key, value)| key == "error" && value == "consent_required")
+    );
+    _ = references
+        .references
+        .lock()
+        .unwrap()
+        .insert(foreign_session, String::new());
+    _ = Box::pin(reference_call(
+        auth,
+        OAuthProviderPlugin::oauth2_consent_endpoint(true, None, consent.query())?,
+        &cookies(other),
+        "/oauth2/consent",
+    ))
+    .await?;
+    let foreign_rows = auth
+        .store()
+        .list_oauth_consents_by_user(body(&foreign)["user"]["id"].as_str().unwrap())
+        .await?;
+    assert_eq!(foreign_rows.len(), 1);
+    assert_eq!(foreign_rows[0].metadata["referenceId"], "");
+    // A user's selected reference does not restrict their own revocation authority.
+    _ = Box::pin(reference_call(
+        auth,
+        ServerEndpoint::new("oauth-provider", "deleteOAuthConsent")
+            .with_body(&json!({"id":a.id}))?,
+        &cookies(owner),
+        "/oauth2/delete-consent",
+    ))
+    .await?;
+    let rows = auth.store().list_oauth_consents_by_user(&user_id).await?;
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].id, b.id);
+    Ok(())
+}
+
+async fn reference_call<S: AuthSchema>(
+    auth: &Alibi<S>,
+    endpoint: ServerEndpoint<Value>,
+    cookie: &str,
+    path: &str,
+) -> alibi::AuthResult<AuthResponse> {
+    Box::pin(
+        auth.dispatch_endpoint(
+            endpoint,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookie.into()),
+                        ("accept".into(), "application/json".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                request: Some(request(path, None, cookie)),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .map_err(|error| error.error)?
+    .into_response()
 }
 
 async fn authorize_http<S: AuthSchema>(

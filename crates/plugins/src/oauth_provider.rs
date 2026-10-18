@@ -56,7 +56,10 @@ mod resources;
 mod revocation;
 mod session_retirement;
 mod signup;
-pub use post_login::{OAuthPostLoginConfig, OAuthPostLoginContext, OAuthPostLoginPolicy};
+pub use post_login::{
+    OAuthConsentReference, OAuthConsentReferenceContext, OAuthPostLoginConfig,
+    OAuthPostLoginContext, OAuthPostLoginPolicy,
+};
 pub use signup::{OAuthSignupConfig, OAuthSignupContext, OAuthSignupPolicy, OAuthSignupRedirect};
 mod subject;
 mod token;

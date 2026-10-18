@@ -196,6 +196,9 @@ impl OAuthProviderPlugin {
             ))
             .await;
         }
+        let reference_id = self
+            .consent_reference_id(&ctx.user_view(&user), &session, &accepted)
+            .await?;
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid consent timestamp"))?;
         let resource = query.get("resource").cloned().map_or(Value::Null, |value| {
@@ -205,17 +208,37 @@ impl OAuthProviderPlugin {
                 json!([value])
             }
         });
-        let metadata = json!({"scopes":accepted,"requestedUserInfoClaims":accepted_claims,"resources":resource,"referenceId":null});
+        let metadata = json!({"scopes":accepted,"requestedUserInfoClaims":accepted_claims,"resources":resource,"referenceId":reference_id});
         let existing = ctx
             .database
             .list_oauth_consents_by_user(user.id().as_ref())
             .await?
             .into_iter()
-            .find(|consent| consent.client_id == client_id);
+            .find(|consent| {
+                consent.client_id == client_id
+                    && reference_id
+                        .as_deref()
+                        .filter(|id| !id.is_empty())
+                        .is_none_or(|id| {
+                            consent.metadata.get("referenceId").and_then(Value::as_str) == Some(id)
+                        })
+            });
         if let Some(existing) = existing {
+            let mut updated = existing
+                .metadata
+                .as_object()
+                .cloned()
+                .ok_or_else(|| AuthError::internal("Invalid consent metadata"))?;
+            _ = updated.insert("scopes".into(), json!(accepted));
+            _ = updated.insert("requestedUserInfoClaims".into(), json!(accepted_claims));
+            // An absent resources value is filtered out of the pinned adapter
+            // update; likewise an update never replaces the selected row's reference.
+            if !resource.is_null() {
+                _ = updated.insert("resources".into(), resource);
+            }
             _ = ctx
                 .database
-                .update_oauth_consent_metadata(&existing.id, metadata, now)
+                .update_oauth_consent_metadata(&existing.id, Value::Object(updated), now)
                 .await?;
         } else {
             _ = ctx

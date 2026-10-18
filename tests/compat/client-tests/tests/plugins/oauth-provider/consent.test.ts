@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
@@ -6,11 +8,11 @@ compatScenario(
   "Consent persists accepted scopes and issues an authorization code bound to the current user",
   async (ctx) => {
     const actor = ctx.actor();
-    const control = (input: unknown) =>
+    const control = (input: Record<string, unknown>) =>
       actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(input),
+        body: JSON.stringify({ mode: "consent-reference", ...input }),
       });
     const signup = await control({
       action: "signup",
@@ -27,19 +29,20 @@ compatScenario(
       body: {
         client_name: "Consent client",
         redirect_uris: ["https://app.fixture.test/callback"],
-        scope: "email profile",
+        scope: "openid email profile offline_access",
         token_endpoint_auth_method: "none",
       },
     });
     expect(created.status).toBe(201);
     const id = ((await created.json()) as any).client_id;
+    const verifier = "consent-reference-verifier-with-at-least-43-characters";
     const query = {
       client_id: id,
       response_type: "code",
       redirect_uri: "https://app.fixture.test/callback",
       scope: "email profile",
       state: "consent-state",
-      code_challenge: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ",
+      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
       code_challenge_method: "S256",
     };
     const producer = await control({
@@ -85,6 +88,14 @@ compatScenario(
     const sessionResponse = await control({ action: "session", headers: { cookie } });
     expect(sessionResponse.status).toBe(200);
     const session = (await sessionResponse.json()) as any;
+    const choose = async (reference: string | undefined, sessionId = session.session.id) => {
+      expect(
+        (await control({ action: "consent-reference-choice", sessionId, reference })).status,
+      ).toBe(200);
+    };
+    const referenceCalls = async () =>
+      (await control({ action: "consent-reference-calls" })).json() as Promise<any[]>;
+    await choose("team-a");
     const accepted = await control({
       action: "consent",
       headers: { cookie },
@@ -104,12 +115,23 @@ compatScenario(
     expect(proof.value.query.client_id).toBe(id);
     expect(proof.value.userId).toBe(session.user.id);
     expect(proof.value.sessionId).toBe(session.session.id);
+    expect(proof.value.referenceId).toBe("team-a");
+    const selectionCalls = await referenceCalls();
+    expect(selectionCalls).toHaveLength(2);
+    for (const call of selectionCalls) {
+      expect(call).toEqual({
+        user: { id: session.user.id, email: session.user.email, name: session.user.name },
+        session: { id: session.session.id, userId: session.user.id, token: session.session.token },
+        scopes: ["email"],
+      });
+    }
     expect(proof.value.authTime).toBe(new Date(session.session.createdAt).getTime());
     const rowsResponse = await control({ action: "consent-row", clientId: id });
     const rows = (await rowsResponse.json()) as any[];
     expect(rows).toHaveLength(1);
     expect(rows[0].scopes).toEqual(["email"]);
     expect(rows[0].userId).toBe(session.user.id);
+    expect(rows[0].referenceId).toBe("team-a");
     const replay = await control({
       action: "consent",
       headers: { cookie },
@@ -133,13 +155,14 @@ compatScenario(
       prompt?: string,
       http = false,
       resources: string | string[] = resource,
+      scope = query.scope,
     ) => {
       const response = await control({
         ...(http
           ? { action: "protocol-http", path: "/oauth2/authorize" }
           : { action: "authorize" }),
         headers: { ...headers, accept: "application/json" },
-        query: { ...query, resource: resources, ...(prompt ? { prompt } : {}) },
+        query: { ...query, scope, resource: resources, ...(prompt ? { prompt } : {}) },
       });
       expect(response.status).toBe(200);
       return new URL(((await response.json()) as any).url, ctx.baseURL);
@@ -212,6 +235,287 @@ compatScenario(
     expect(foreignConsent.searchParams.has("code")).toBe(false);
     const isolated = await control({ action: "consent-row", clientId: id });
     expect(await isolated.json()).toEqual(resourceConsents);
+
+    // A real application selection is stored against the actual session, not
+    // inferred from a fixture user's name, client, or hardcoded affinity.
+    await choose("team-b");
+    const partitionDenied = await authorizeResource({ cookie }, "none");
+    expect(partitionDenied.searchParams.get("error")).toBe("consent_required");
+    const partitionConsent = await authorizeResource(
+      { cookie },
+      undefined,
+      false,
+      resource,
+      "email profile offline_access",
+    );
+    expect(partitionConsent.pathname).toBe("/consent");
+    const partitionAccept = await control({
+      action: "consent",
+      headers: { cookie },
+      body: {
+        accept: true,
+        scope: "email offline_access",
+        oauth_query: partitionConsent.search.slice(1),
+      },
+    });
+    expect(partitionAccept.status).toBe(200);
+    const partitionResult = (await partitionAccept.json()) as any;
+    const partitionRows = (await (
+      await control({ action: "consent-row", clientId: id })
+    ).json()) as any[];
+    expect(partitionRows).toHaveLength(2);
+    const a = partitionRows.find((row) => row.referenceId === "team-a")!;
+    const b = partitionRows.find((row) => row.referenceId === "team-b")!;
+    expect(a.id).toBe(resourceConsents[0].id);
+    expect(b.id).not.toBe(a.id);
+    expect(a.scopes).toEqual(["email", "profile"]);
+    expect(b.scopes).toEqual(["email", "offline_access"]);
+    const secondLogin = await control({
+      action: "signin",
+      body: { email: session.user.email, password: "password123" },
+    });
+    expect(secondLogin.status).toBe(200);
+    const secondCookie = secondLogin.headers
+      .getSetCookie()
+      .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const secondSession = (await (
+      await control({ action: "session", headers: { cookie: secondCookie } })
+    ).json()) as any;
+    expect(secondSession.user.id).toBe(session.user.id);
+    expect(secondSession.session.id).not.toBe(session.session.id);
+    await choose("team-a", secondSession.session.id);
+    expect(
+      (await authorizeResource({ cookie: secondCookie }, "none")).searchParams.has("code"),
+    ).toBe(true);
+    const fallbackReferences = [];
+    for (const fallback of ["", undefined]) {
+      await choose(fallback);
+      const target = await authorizeResource({ cookie }, "none");
+      expect(target.searchParams.has("code")).toBe(true);
+      const grant = (await (
+        await control({ action: "grant-row", token: target.searchParams.get("code") })
+      ).json()) as any;
+      expect(grant.value.referenceId).toBe(fallback);
+      fallbackReferences.push(grant.value.referenceId ?? null);
+    }
+    // Management endpoints use user ownership, irrespective of selected reference.
+    await choose("team-b");
+    expect(
+      (
+        await control({
+          action: "consent-update",
+          headers: { cookie },
+          body: { id: b.id, update: { scopes: ["email", "profile"] } },
+        })
+      ).status,
+    ).toBe(200);
+    const changed = await control({
+      action: "consent-update",
+      headers: { cookie },
+      body: { id: a.id, update: { scopes: ["email"] } },
+    });
+    expect(changed.status).toBe(200);
+    expect(((await changed.json()) as any).referenceId).toBe("team-a");
+    for (const action of ["consent-get", "consent-update", "consent-delete"]) {
+      const denied = await control({
+        action,
+        headers: { cookie: foreignCookie },
+        query: { id: a.id },
+        body: { id: a.id, update: { scopes: ["email"] } },
+      });
+      expect(denied.status).toBe(401);
+    }
+    // Undefined selects the first row, not any later consent with more authority.
+    await choose(undefined);
+    expect((await authorizeResource({ cookie }, "none")).searchParams.get("error")).toBe(
+      "consent_required",
+    );
+    const errors = [];
+    for (const [choice, status] of [
+      ["ordinary-error", 500],
+      ["native-error", 403],
+      ["api-error", 403],
+      ["upstream-error", 503],
+    ] as const) {
+      await choose(choice);
+      for (const action of ["authorize", "consent"]) {
+        const failed = await control({
+          action,
+          headers: { cookie, accept: "application/json" },
+          query,
+          body: { accept: true, oauth_query: partitionConsent.search.slice(1) },
+        });
+        expect(failed.status).toBe(status);
+        const text = await failed.text();
+        if (choice === "ordinary-error") expect(text).toBe("");
+        errors.push({ choice, action, status, body: text ? JSON.parse(text) : null });
+      }
+    }
+    await choose("team-b");
+    // Reference propagation follows the actual code through the public token grant.
+    const boundCode = new URL(partitionResult.url).searchParams.get("code");
+    const boundGrant = (await (
+      await control({ action: "grant-row", token: boundCode })
+    ).json()) as any;
+    expect(boundGrant.value.referenceId).toBe("team-b");
+    const tokens = await control({
+      action: "token",
+      body: {
+        grant_type: "authorization_code",
+        client_id: id,
+        code: boundCode,
+        redirect_uri: query.redirect_uri,
+        code_verifier: verifier,
+      },
+    });
+    expect(tokens.status).toBe(200);
+    const token = (await tokens.json()) as any;
+    const access = (await (
+      await control({ action: "token-row", token: token.access_token })
+    ).json()) as any;
+    expect(access.referenceId).toBe("team-b");
+    expect(access.userId).toBe(session.user.id);
+    expect(access.sessionId).toBe(session.session.id);
+    expect(access.scopes).toEqual(["email", "offline_access"]);
+    const refresh = (await (
+      await control({ action: "token-row", kind: "refresh", token: token.refresh_token })
+    ).json()) as any;
+    expect(refresh.referenceId).toBe("team-b");
+    expect(refresh.userId).toBe(session.user.id);
+    expect(refresh.sessionId).toBe(session.session.id);
+    expect(refresh.scopes).toEqual(["email", "offline_access"]);
+    expect(access.authorizationCodeId).toBe(
+      createHash("sha256").update(boundCode!).digest("base64url"),
+    );
+    expect(access.resources).toEqual([resource]);
+    expect(boundGrant.value.resource).toEqual([resource]);
+    expect(boundGrant.value.query.resource).toBe(resource);
+    // Same reference does not grant another real user the owner's consent.
+    const foreignSession = (await (
+      await control({ action: "session", headers: { cookie: foreignCookie } })
+    ).json()) as any;
+    await choose("team-a", foreignSession.session.id);
+    expect(
+      (await authorizeResource({ cookie: foreignCookie }, "none")).searchParams.get("error"),
+    ).toBe("consent_required");
+    // A falsy selection updates the first row without overwriting its reference.
+    for (const fallback of ["", undefined]) {
+      await choose(fallback);
+      const accepted = await control({
+        action: "consent",
+        headers: { cookie },
+        body: { accept: true, oauth_query: signed },
+      });
+      expect(accepted.status).toBe(200);
+      const persisted = (await (
+        await control({ action: "consent-row", clientId: id })
+      ).json()) as any[];
+      expect(persisted).toHaveLength(2);
+      expect(persisted.find((row) => row.id === a.id)).toMatchObject({
+        referenceId: "team-a",
+        resources: [resource],
+        scopes: ["email", "profile"],
+      });
+    }
+    // Accepted UserInfo claims are bound to the selected consent, not borrowed
+    // from another reference or from the originally requested claim set.
+    await choose("team-b");
+    const claimsQuery = {
+      ...query,
+      scope: "openid email",
+      resource,
+      claims: JSON.stringify({ userinfo: { email: null, name: null } }),
+    };
+    const claimsStart = await control({
+      action: "authorize",
+      headers: { cookie, accept: "application/json" },
+      query: claimsQuery,
+    });
+    const claimsConsent = new URL(((await claimsStart.json()) as any).url, ctx.baseURL);
+    expect(claimsConsent.pathname).toBe("/consent");
+    const claimsAccept = await control({
+      action: "consent",
+      headers: { cookie },
+      body: {
+        accept: true,
+        claims: { userinfo: { email: null } },
+        oauth_query: claimsConsent.search.slice(1),
+      },
+    });
+    expect(claimsAccept.status).toBe(200);
+    const claimsRows = (await (
+      await control({ action: "consent-row", clientId: id })
+    ).json()) as any[];
+    expect(claimsRows.find((row) => row.id === b.id)).toMatchObject({
+      referenceId: "team-b",
+      scopes: ["openid", "email"],
+      requestedUserInfoClaims: ["email"],
+      resources: [resource],
+    });
+    expect(claimsRows.find((row) => row.id === a.id).requestedUserInfoClaims).toEqual([]);
+    const claimDecisions = [];
+    for (const claim of ["email", "name"]) {
+      const response = await control({
+        action: "authorize",
+        headers: { cookie, accept: "application/json" },
+        query: {
+          ...claimsQuery,
+          prompt: "none",
+          claims: JSON.stringify({ userinfo: { [claim]: null } }),
+        },
+      });
+      const target = new URL(((await response.json()) as any).url);
+      expect(target.searchParams.has("code")).toBe(claim === "email");
+      if (claim === "name") expect(target.searchParams.get("error")).toBe("consent_required");
+      claimDecisions.push({ claim, error: target.searchParams.get("error") });
+    }
+    // A fresh empty reference is persisted as empty, not treated as undefined.
+    await choose("", foreignSession.session.id);
+    const emptyAccept = await control({
+      action: "consent",
+      headers: { cookie: foreignCookie },
+      body: { accept: true, oauth_query: signed },
+    });
+    expect(emptyAccept.status).toBe(200);
+    const foreignConsents = (await (
+      await control({ action: "consents", headers: { cookie: foreignCookie } })
+    ).json()) as any[];
+    expect(foreignConsents).toHaveLength(1);
+    expect(foreignConsents[0].referenceId).toBe("");
+    await choose(undefined, foreignSession.session.id);
+    expect(
+      (
+        await control({
+          action: "consent",
+          headers: { cookie: foreignCookie },
+          body: { accept: true, oauth_query: signed },
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (
+        (await (
+          await control({ action: "consents", headers: { cookie: foreignCookie } })
+        ).json()) as any[]
+      )[0],
+    ).toMatchObject({ id: foreignConsents[0].id, referenceId: "" });
+    const listed = (await (
+      await control({ action: "consents", headers: { cookie } })
+    ).json()) as any[];
+    expect(listed.map((row) => row.referenceId).sort()).toEqual(["team-a", "team-b"]);
+    const removed = await control({
+      action: "consent-delete",
+      headers: { cookie },
+      body: { id: a.id },
+    });
+    expect(removed.status).toBe(200);
+    expect(
+      ((await (await control({ action: "consents", headers: { cookie } })).json()) as any[]).map(
+        (row) => row.id,
+      ),
+    ).toEqual([b.id]);
     return ctx.snapshot({
       authorizationSession: session,
       denial,
@@ -233,6 +537,20 @@ compatScenario(
           (value: string) => new URL(value).pathname,
         ),
         foreignError: foreign.searchParams.get("error"),
+      },
+      referencePartitions: {
+        fallbackReferences,
+        errors,
+        selectionCalls,
+        partitionResult,
+        claimDecisions,
+        tokenBinding: {
+          referenceId: access.referenceId,
+          userId: access.userId,
+          sessionId: access.sessionId,
+          scopes: access.scopes,
+          resourcePaths: access.resources.map((value: string) => new URL(value).pathname),
+        },
       },
     });
   },
