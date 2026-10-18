@@ -378,7 +378,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         session.expires_at()
     );
     assert_eq!(store.delete_expired_sessions().await?, 0);
-    store.end_session_preserving("synthetic-session").await?;
+    let _ = store.end_session_preserving("synthetic-session").await?;
     let ended = stored_date(raw, "session", "expiresAt", &session_id, naive)
         .await?
         .unwrap();
@@ -397,7 +397,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
             active_team_id: None,
         })
         .await?;
-    store
+    let _ = store
         .end_user_sessions_preserving(user.id().as_ref())
         .await?;
     let ended = stored_date(raw, "session", "expiresAt", second.id().as_ref(), naive)
