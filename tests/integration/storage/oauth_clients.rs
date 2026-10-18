@@ -17,7 +17,7 @@ async fn oauth_registration_rolls_back_row_and_links_on_storage_fault<B: Backend
         .await?;
     let now = Utc::now();
     for identifier in ["first", "fault", "retained", "collision"] {
-        store
+        let _ = store
             .create_oauth_resource(alibi::store::CreateOAuthResource {
                 identifier: identifier.into(),
                 metadata: json!({"name":identifier}),
