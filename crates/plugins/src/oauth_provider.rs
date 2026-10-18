@@ -1037,20 +1037,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)
         {
             let body = if *req.method() == HttpMethod::Post {
-                let fields = url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
-                    .map(|(key, value)| {
-                        (
-                            key.into_owned(),
-                            alibi_core::utils::json::JsValue::String(value.into_owned()),
-                        )
-                    })
-                    .collect();
-                Some(alibi_core::utils::json::JsValue::Object(fields))
+                Some(req.body_as_json::<alibi_core::utils::json::JsValue>()?)
             } else {
                 None
             };
+            // The admitted body may now have JSON dispatch bytes. Keep it
+            // separate from the genuine Request used for POST/DPoP binding.
+            let call = alibi_core::endpoint::current_endpoint_call_context().unwrap_or_else(|| {
+                EndpointCall::from_http_request(
+                    req,
+                    &AuthRoute::get("/oauth2/userinfo", "oauth2UserInfo"),
+                )
+            });
             return Ok(Some(
-                Box::pin(self.user_info(body.as_ref(), req, ctx))
+                Box::pin(self.user_info(body.as_ref(), &call, ctx))
                     .await?
                     .to_response()?,
             ));

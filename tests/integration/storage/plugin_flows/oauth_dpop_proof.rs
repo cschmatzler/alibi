@@ -338,7 +338,7 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
     assert_eq!(body(&response)["token_type"], "DPoP");
     Ok(())
 }
-fn proof(payload: Value, extra: Value) -> TestResult<String> {
+pub(super) fn proof(payload: Value, extra: Value) -> TestResult<String> {
     use ed25519_dalek::Signer as _;
     let keys: Value = serde_json::from_str(include_str!(
         "../../../fixtures/oauth/client-assertion-keys.json"

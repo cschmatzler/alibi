@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 
+import { SignJWT, importJWK } from "jose";
 import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
@@ -170,6 +172,228 @@ compatScenario(
       failures.push({ status, body: errorBody });
     }
 
+    // Unlike the private API controls above, this crosses auth.handler with a
+    // real form Request. Assert read/error authority before any retirement.
+    const http = (input: object) =>
+      control({
+        action: "protocol-http",
+        path: "/oauth2/userinfo",
+        method: "POST",
+        body: {},
+        ...input,
+      });
+    const row = async (token: string) => {
+      const response = await control({ action: "token-row", kind: "access", token });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const original = await row(token.access_token);
+    expect(original).toMatchObject({
+      clientId: id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+    });
+    for (const [value, kind] of [
+      [null, "null"],
+      [17, "number"],
+      [[token.access_token], "array"],
+    ] as const) {
+      const response = await control({
+        action: "userinfo",
+        headers: { authorization: `Bearer ${token.access_token}` },
+        body: { access_token: value },
+        method: "POST",
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        code: "VALIDATION_ERROR",
+        message: `[body.access_token] Invalid input: expected string, received ${kind}`,
+      });
+      expect(await row(token.access_token)).toEqual(original);
+    }
+    const publicTransports = [];
+    for (const [headers, rawBody, method, status, expected] of [
+      [{}, `access_token=${token.access_token}`, "POST", 200, claims],
+      [{ authorization: " \t " }, `access_token=${token.access_token}`, "POST", 200, claims],
+      [
+        { authorization: `Bearer ${token.access_token}` },
+        `access_token=${token.access_token}`,
+        "POST",
+        400,
+        {
+          error: "invalid_request",
+          error_description: "Multiple access token transport methods are not allowed",
+        },
+      ],
+      [{ authorization: `Bearer ${token.access_token}` }, "access_token=", "POST", 200, claims],
+      [{ authorization: `Bearer ${token.access_token}` }, "", "POST", 200, claims],
+      [{ authorization: `Bearer ${token.access_token}` }, "", "GET", 200, claims],
+      [
+        {},
+        "",
+        "GET",
+        401,
+        { error: "invalid_request", error_description: "access token not found" },
+      ],
+      [{}, `access_token=missing&access_token=${token.access_token}`, "POST", 200, claims],
+      [
+        {},
+        `access_token=${token.access_token}&access_token=`,
+        "POST",
+        401,
+        { error: "invalid_request", error_description: "access token not found" },
+      ],
+    ] as const) {
+      const response = await http({
+        headers,
+        rawBody,
+        method,
+        query: { access_token: token.access_token },
+      });
+      expect(response.status).toBe(status);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("pragma")).toBe("no-cache");
+      expect(await response.json()).toEqual(expected);
+      expect(await row(token.access_token)).toEqual(original);
+      publicTransports.push(response.status);
+    }
+
+    const key = JSON.parse(
+      await readFile(
+        new URL("../../../../../fixtures/oauth/client-assertion-keys.json", import.meta.url),
+        "utf8",
+      ),
+    ).keys.find((key: any) => key.family === "Ed25519");
+    const hash = (value: string) => createHash("sha256").update(value).digest("base64url");
+    const issuer = `${ctx.baseURL}/api/auth`;
+    const proof = async (method: string, url: string, jti: string, accessToken?: string) =>
+      new SignJWT({
+        htm: method,
+        htu: url,
+        jti,
+        iat: Math.floor(Date.now() / 1000),
+        ...(accessToken ? { ath: hash(accessToken) } : {}),
+      })
+        .setProtectedHeader({ typ: "dpop+jwt", alg: "EdDSA", jwk: key.publicJwk })
+        .sign(await importJWK(key.privateJwk, "EdDSA"));
+    const boundGrant = await control({
+      action: "authorize",
+      headers: { cookie, accept: "application/json" },
+      query: {
+        client_id: id,
+        response_type: "code",
+        redirect_uri: input.redirect_uri,
+        scope: "openid email profile",
+        state: "bound-state",
+        nonce: "bound-nonce",
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      },
+    });
+    expect(boundGrant.status).toBe(200);
+    const boundCallback = new URL(((await boundGrant.json()) as any).url);
+    expect(boundCallback.pathname).toBe("/callback");
+    expect(boundCallback.searchParams.get("state")).toBe("bound-state");
+    const boundCode = boundCallback.searchParams.get("code");
+    expect(boundCode).toBeTruthy();
+    const boundIssued = await control({
+      action: "token",
+      body: { ...input, code: boundCode },
+      headers: { dpop: await proof("POST", `${issuer}/oauth2/token`, "userinfo-issue") },
+    });
+    expect(boundIssued.status).toBe(200);
+    const boundToken = (await boundIssued.json()) as any;
+    expect(boundToken.token_type).toBe("DPoP");
+    const bound = boundToken.access_token;
+    const boundOriginal = await row(bound);
+    expect(boundOriginal).toMatchObject({
+      clientId: id,
+      userId: session.user.id,
+      sessionId: session.session.id,
+      confirmation: { jkt: "yAJQz9pEsZrW3t2ISLq2eQ2bDNmV0AHCGdbF-8RSbko" },
+    });
+    const uri = `${issuer}/oauth2/userinfo`;
+    const acceptedProof = await proof("POST", uri, "userinfo-post", bound);
+    const publicBound = [];
+    for (const [method, authorization, rawBody, dpop, status, expected] of [
+      [
+        "POST",
+        `DPoP ${bound}`,
+        `access_token=${bound}`,
+        await proof("POST", uri, "userinfo-mixed", bound),
+        400,
+        {
+          error: "invalid_request",
+          error_description: "Multiple access token transport methods are not allowed",
+        },
+      ],
+      [
+        "POST",
+        "",
+        `access_token=${bound}`,
+        await proof("POST", uri, "userinfo-body", bound),
+        401,
+        {
+          error: "invalid_token",
+          error_description: "DPoP-bound access token requires the DPoP authorization scheme",
+        },
+      ],
+      [
+        "POST",
+        `DPoP ${bound}`,
+        "",
+        await proof("GET", uri, "userinfo-method", bound),
+        401,
+        {
+          error: "invalid_dpop_proof",
+          error_description: "DPoP proof htm does not match the request method",
+        },
+      ],
+      [
+        "POST",
+        `DPoP ${bound}`,
+        "",
+        await proof("POST", "https://wrong.test/userinfo", "userinfo-url", bound),
+        401,
+        {
+          error: "invalid_dpop_proof",
+          error_description: "DPoP proof htu does not match the request URL",
+        },
+      ],
+      ["POST", `DPoP ${bound}`, "", acceptedProof, 200, claims],
+      [
+        "POST",
+        `DPoP ${bound}`,
+        "",
+        acceptedProof,
+        401,
+        { error: "invalid_dpop_proof", error_description: "DPoP proof jti has already been used" },
+      ],
+      ["GET", `DPoP ${bound}`, "", await proof("GET", uri, "userinfo-get", bound), 200, claims],
+    ] as const) {
+      const response = await http({
+        method,
+        headers: { authorization, dpop },
+        rawBody,
+        query: { ignored: "1" },
+      });
+      expect(response.status).toBe(status);
+      expect(await response.json()).toEqual(expected);
+      expect(await row(bound)).toEqual(boundOriginal);
+      publicBound.push(response.status);
+    }
+    const noPhysical = await control({
+      action: "userinfo",
+      attachRequest: false,
+      headers: { authorization: `DPoP ${bound}` },
+    });
+    expect(noPhysical.status).toBe(401);
+    expect(await noPhysical.json()).toEqual({
+      error: "invalid_token",
+      error_description: "DPoP-bound access token requires an HTTP request context",
+    });
+    expect(await row(bound)).toEqual(boundOriginal);
+
     const scoped = [];
     for (const scope of ["openid", "email"]) {
       const grant = await control({
@@ -242,6 +466,8 @@ compatScenario(
       authorizationSession: session,
       successes,
       failures,
+      publicTransports,
+      publicBound,
       scoped,
       expired: denied.status,
     });
