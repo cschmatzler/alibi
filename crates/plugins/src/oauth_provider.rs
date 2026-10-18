@@ -96,6 +96,20 @@ pub struct OAuthClientPrivilegeContext {
 pub trait OAuthClientPrivileges: Send + Sync + std::fmt::Debug {
     async fn allowed(&self, context: &OAuthClientPrivilegeContext) -> AuthResult<bool>;
 }
+/// Authenticated operator input for resource catalog and client-resource link management.
+#[derive(Debug, Clone)]
+pub struct OAuthResourcePrivilegeContext {
+    pub action: &'static str,
+    pub headers: alibi_core::Headers,
+    pub user: Value,
+    pub session: Value,
+    /// Decoded resource identifier; absent for create and list. No client identity is supplied.
+    pub resource_id: Option<String>,
+}
+#[async_trait]
+pub trait OAuthResourcePrivileges: Send + Sync + std::fmt::Debug {
+    async fn allowed(&self, context: &OAuthResourcePrivilegeContext) -> AuthResult<bool>;
+}
 /// Application-owned client identifiers. Empty output is preserved, matching the reference.
 pub trait OAuthClientIdGenerator: Send + Sync + std::fmt::Debug {
     fn generate(&self) -> AuthResult<String>;
@@ -213,6 +227,9 @@ pub struct OAuthProviderConfig {
     pub resources: Vec<Value>,
     pub resource_seed_mode: OAuthResourceSeedMode,
     pub identifier_validator: Option<std::sync::Arc<dyn OAuthResourceIdentifierValidator>>,
+    /// Optional operator decision for resource CRUD and link/unlink actions.
+    /// Without a hook, any authenticated session with headers may manage resources.
+    pub resource_privileges: Option<std::sync::Arc<dyn OAuthResourcePrivileges>>,
     pub advertised_scopes: Option<Vec<String>>,
     pub advertised_claims: Option<Vec<String>>,
     pub grant_types: Vec<String>,
@@ -279,6 +296,7 @@ impl Default for OAuthProviderConfig {
             resources: Vec::new(),
             resource_seed_mode: OAuthResourceSeedMode::default(),
             identifier_validator: None,
+            resource_privileges: None,
             scopes: ["openid", "profile", "email", "offline_access"]
                 .map(str::to_owned)
                 .into(),

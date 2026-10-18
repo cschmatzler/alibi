@@ -1117,6 +1117,39 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   };
   let seededAuth: ReturnType<typeof betterAuth> | undefined;
   const seedIdentifiers = { calls: 0, failNext: false };
+  const resourcePrivileges = { calls: [] as unknown[] };
+  const resourcePrivilegeDecision: NonNullable<OAuthOptions["resourcePrivileges"]> = async (
+    input,
+  ) => {
+    await Promise.resolve();
+    const decision = input.headers.get("x-resource-decision");
+    resourcePrivileges.calls.push({
+      action: input.action,
+      decision,
+      resourceId: input.resourceId ?? null,
+      caller: input.headers.get("x-policy-caller"),
+      user: { id: input.user?.id, email: input.user?.email },
+      session: {
+        id: input.session?.id,
+        userId: input.session?.userId,
+        token: input.session?.token,
+      },
+    });
+    if (decision === "ordinary-error") throw new Error("resource policy failed");
+    if (decision === "native-error") {
+      throw new APIError("FORBIDDEN", { message: "Resource denied" });
+    }
+    if (decision === "api-error") {
+      throw new APIError("FORBIDDEN", { code: "RESOURCE_DENIED", message: "Resource denied" });
+    }
+    if (decision === "upstream-error") {
+      throw new APIError("SERVICE_UNAVAILABLE", {
+        code: "RESOURCE_UNAVAILABLE",
+        message: "Resource unavailable",
+      });
+    }
+    return decision !== "false";
+  };
   const auths = {
     "extension-grant": betterAuth({
       ...options,
@@ -1794,6 +1827,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
+    "resource-privileges": betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt(),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          resourcePrivileges: resourcePrivilegeDecision,
+        }),
+      ],
+    }),
     ...Object.fromEntries(
       [
         "rate-default",
@@ -1938,6 +1983,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return auths.default.handler(request);
     }
     const input = await request.json();
+    if (input.action === "resource-privileges-state") {
+      const calls = resourcePrivileges.calls.splice(0);
+      return Response.json(calls);
+    }
     if (input.action === "resource-seed-init") {
       const seedOptions: OAuthOptions = {
         loginPage: "/login",
@@ -1988,6 +2037,30 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       (input.mode === "resource-seed" ? seededAuth : undefined) ??
       auths[input.mode as keyof typeof auths] ??
       auths.default;
+    if (input.mode === "resource-privileges") {
+      const operations: Record<string, string> = {
+        "resource-create": "adminCreateOAuthResource",
+        "resource-list": "adminListOAuthResources",
+        "resource-get": "adminGetOAuthResource",
+        "resource-update": "adminUpdateOAuthResource",
+        "resource-delete": "adminDeleteOAuthResource",
+        "resource-link": "adminLinkClientResource",
+        "resource-unlink": "adminUnlinkClientResource",
+      };
+      const operation = operations[input.action];
+      if (operation && input.captureError) {
+        try {
+          return await (auth.api as any)[operation]({
+            ...(input.headers === undefined ? {} : { headers: new Headers(input.headers) }),
+            body: input.body,
+            params: input.params,
+            asResponse: true,
+          });
+        } catch (error: any) {
+          return Response.json({ ordinaryError: error.message });
+        }
+      }
+    }
     if (input.action === "resource-seed-validator") {
       if (input.failNext) seedIdentifiers.failNext = true;
       return Response.json({ calls: seedIdentifiers.calls });

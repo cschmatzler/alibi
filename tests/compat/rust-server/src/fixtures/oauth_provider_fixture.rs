@@ -39,6 +39,8 @@ mod resource_identifiers;
 mod client_privileges;
 #[path = "../../../../fixtures/oauth/consent-reference.rs"]
 mod consent_reference;
+#[path = "../../../../fixtures/oauth/resource-privileges.rs"]
+mod resource_privileges;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -262,6 +264,7 @@ pub(crate) async fn router(
 
     let mut client_instances = HashMap::new();
     let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
+    let resource_privileges = Arc::new(resource_privileges::ResourcePrivileges::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
     let redirect_policy=Arc::new(redirect_policy::RedirectPolicy::default());
     let signup_policy=Arc::new(signup_policy::SignupPolicy::default());
@@ -310,6 +313,7 @@ pub(crate) async fn router(
         "prelogin",
         "expired",
         "resources-open",
+        "resource-privileges",
         "resource-keyring",
         "selection",
         "machine",
@@ -388,6 +392,7 @@ pub(crate) async fn router(
                 None
             },
             enforce_per_client_resources: mode != "resources-open",
+            resource_privileges: (mode == "resource-privileges").then(|| resource_privileges.clone() as Arc<dyn alibi::plugins::OAuthResourcePrivileges>),
             allow_public_client_prelogin: matches!(mode, "prelogin" | "expired"),
             code_expires_in: if mode == "expired" { -1.0 } else { 600.0 },
             allow_dynamic_client_registration: matches!(mode, "dynamic" | "public" | "token-dynamic" | "token-public" | "client-policy") || mode.starts_with("registration-pkce-"),
@@ -456,6 +461,7 @@ pub(crate) async fn router(
         let logout_database=logout_database.clone();
         let seeded_auth=seeded_auth.clone();
         let seed_identifiers=seed_identifiers.clone();
+        let resource_privileges=resource_privileges.clone();
         let live_claims=live_claims.clone();
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
@@ -477,6 +483,9 @@ pub(crate) async fn router(
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
         let auth=client_instances.get(input["mode"].as_str().filter(|mode|*mode!="resource-seed").unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="resource-privileges-state" {
+                return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
+            }
             if input["action"]=="resource-seed-init" {
                 let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),enforce_per_client_resources:false,..Default::default()});
                 let initialized=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone()).build().await.unwrap();

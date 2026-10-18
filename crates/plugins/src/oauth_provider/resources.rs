@@ -128,7 +128,7 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx, "create", None)).await? {
             return Ok(response);
         }
         let identifier = input
@@ -204,8 +204,10 @@ impl OAuthProviderPlugin {
         &self,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
+        action: &'static str,
+        resource_id: Option<&str>,
     ) -> AuthResult<Option<EndpointResponse>> {
-        if Box::pin(ctx.require_cached_session(req)).await.is_err() {
+        let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await else {
             return Ok(Some(
                 EndpointResponse::error(AuthError::Api {
                     status: 401,
@@ -215,7 +217,7 @@ impl OAuthProviderPlugin {
                 .without_error_body()
                 .with_header("Content-Type", "application/json"),
             ));
-        }
+        };
         if req
             .endpoint_call()
             .is_some_and(|call| call.headers().is_none())
@@ -230,7 +232,38 @@ impl OAuthProviderPlugin {
                 .with_header("Content-Type", "application/json"),
             ));
         }
-        Ok(None)
+        let Some(privileges) = &self.config.resource_privileges else {
+            return Ok(None);
+        };
+        let mut headers = alibi_core::Headers::new();
+        for (name, value) in req.session_headers() {
+            _ = headers.insert(name.clone(), value.clone());
+        }
+        match privileges
+            .allowed(&super::OAuthResourcePrivilegeContext {
+                action,
+                headers,
+                user: serde_json::to_value(user)?,
+                session: serde_json::to_value(session)?,
+                resource_id: resource_id.map(str::to_owned),
+            })
+            .await
+        {
+            Ok(true) => Ok(None),
+            Ok(false) => Ok(Some(
+                EndpointResponse::error(AuthError::Api {
+                    status: 401,
+                    code: None,
+                    message: String::new(),
+                })
+                .without_error_body()
+                .with_header("Content-Type", "application/json"),
+            )),
+            Err(error) if alibi_core::endpoint::is_endpoint_api_error(&error) => {
+                Ok(Some(EndpointResponse::error(error)))
+            }
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -245,7 +278,7 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) = Box::pin(self.resource_admission(req, ctx, "list", None)).await? {
             return Ok(response);
         }
         let rows = ctx.database.list_oauth_resources().await?;
@@ -293,7 +326,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let identifier = decode_parameter(params, "identifier")?;
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) =
+            Box::pin(self.resource_admission(req, ctx, "read", Some(&identifier))).await?
+        {
             return Ok(response);
         }
         let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
@@ -325,7 +360,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let identifier = decode_parameter(params, "identifier")?;
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) =
+            Box::pin(self.resource_admission(req, ctx, "update", Some(&identifier))).await?
+        {
             return Ok(response);
         }
         let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
@@ -380,7 +417,9 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let identifier = decode_parameter(params, "identifier")?;
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) =
+            Box::pin(self.resource_admission(req, ctx, "delete", Some(&identifier))).await?
+        {
             return Ok(response);
         }
         if ctx
@@ -417,7 +456,9 @@ impl OAuthProviderPlugin {
     ) -> AuthResult<EndpointResponse> {
         let identifier = decode_parameter(params, "identifier")?;
         let client_id = decode_parameter(params, "client_id")?;
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) =
+            Box::pin(self.resource_admission(req, ctx, "link", Some(&identifier))).await?
+        {
             return Ok(response);
         }
         if ctx
@@ -481,7 +522,9 @@ impl OAuthProviderPlugin {
     ) -> AuthResult<EndpointResponse> {
         let identifier = decode_parameter(params, "identifier")?;
         let client_id = decode_parameter(params, "client_id")?;
-        if let Some(response) = Box::pin(self.resource_admission(req, ctx)).await? {
+        if let Some(response) =
+            Box::pin(self.resource_admission(req, ctx, "unlink", Some(&identifier))).await?
+        {
             return Ok(response);
         }
         ctx.database

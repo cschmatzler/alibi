@@ -9,7 +9,10 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(JwtPlugin::new())
-        .plugin(OAuthProviderPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+            resource_privileges: None,
+            ..Default::default()
+        }))
         .build()
         .await?;
     let owner = signup(&auth, "resource-owner@example.test").await;
