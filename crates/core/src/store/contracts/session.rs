@@ -46,13 +46,15 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         ))
     }
     /// End a still-live physical session without deleting its audit row.
-    async fn end_session_preserving(&self, _token: &str) -> AuthResult<()> {
+    /// Returns false when no live row matched or a delete hook vetoed the end.
+    async fn end_session_preserving(&self, _token: &str) -> AuthResult<bool> {
         Err(AuthError::NotImplemented(
             "Preserving ended session rows is unsupported".into(),
         ))
     }
     /// End all live session rows for one owner while retaining audit history.
-    async fn end_user_sessions_preserving(&self, _user_id: &str) -> AuthResult<()> {
+    /// Returns false when a delete hook vetoed the bulk mutation.
+    async fn end_user_sessions_preserving(&self, _user_id: &str) -> AuthResult<bool> {
         Err(AuthError::NotImplemented(
             "Preserving ended session rows is unsupported".into(),
         ))

@@ -24,7 +24,20 @@ pub(super) async fn live_access_row<S: AuthSchema>(
         return Ok(None);
     }
     if let Some(session) = row.session_id.as_deref() {
-        let sessions = if let Some(user) = row.user_id.as_deref() {
+        let sessions = if ctx.config.session.secondary_storage.is_some()
+            && ctx.config.session.store_in_database
+            && ctx.config.session.preserve_in_database
+            && !ctx.config.session.stateless
+        {
+            // Preserved SQL rows, not browser-cache membership, decide bound
+            // OAuth authority. A single-delete veto may already have evicted
+            // the cache while leaving this durable session live.
+            ctx.database
+                .get_session_by_id(session)
+                .await?
+                .into_iter()
+                .collect()
+        } else if let Some(user) = row.user_id.as_deref() {
             ctx.database.get_user_sessions(user).await?
         } else {
             Vec::new()

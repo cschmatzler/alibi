@@ -1,15 +1,17 @@
 import { createHash } from "node:crypto";
-import { createServer } from "node:http";
 import { once } from "node:events";
-import { createLocalJWKSet, jwtVerify } from "jose";
+import { createServer } from "node:http";
 
+import { createLocalJWKSet, jwtVerify } from "jose";
 import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-for (const retirement of ["signout", "revoke-sessions"] as const)
+for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
+  (["signout", "revoke-sessions"] as const).map((retirement) => ({ preserve, retirement })),
+)) {
   compatScenario(
-    `${retirement} retires session-bound access tokens while offline refresh authority survives`,
+    `${preserve ? "preserved" : "deleted"} ${retirement} retires session-bound authority exactly once while offline refresh survives`,
     async (ctx) => {
       const receipts: { target: string; contentType?: string; accept?: string; form: string }[] =
         [];
@@ -29,12 +31,13 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
       const rpURL = `http://127.0.0.1:${(rp.address() as { port: number }).port}`;
       try {
         const actor = ctx.actor();
-        const control = (input: unknown) =>
+        const control = (input: Record<string, unknown>) =>
           actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
             method: "POST",
             headers: { "content-type": "application/json" },
-            body: JSON.stringify(input),
+            body: JSON.stringify({ ...input, mode: preserve ? "preserved" : "retirement" }),
           });
+        if (preserve) await control({ action: "preserved-gate", gate: "", reset: true });
         const signup = await control({
           action: "signup",
           body: {
@@ -101,7 +104,7 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
           redirect_uri: "https://app.fixture.test/callback",
         };
         const response = await control({ action: "token", body: input });
-        expect(response.status).toBe(200);
+        expect(response.status, await response.clone().text()).toBe(200);
         expect(response.headers.get("cache-control")).toBe("no-store");
         expect(response.headers.get("pragma")).toBe("no-cache");
         const token = (await response.json()) as any;
@@ -138,6 +141,23 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
           return (await issued.json()) as any;
         };
         const recipientIDs = new Map([["/success", id]]);
+        // A genuine rotated/downscoped refresh token no longer carries
+        // offline_access; unlike the original offline grant it must retire.
+        const onlineGrant = await issueForSession(cookie);
+        const downscoped = await control({
+          action: "token",
+          body: {
+            grant_type: "refresh_token",
+            client_id: id,
+            client_secret: client.client_secret,
+            refresh_token: onlineGrant.refresh_token,
+            scope: "openid email",
+          },
+        });
+        expect(downscoped.status).toBe(200);
+        const online = (await downscoped.json()) as any;
+        expect(online.scope).toBe("openid email");
+        expect(online.refresh_token).toMatch(/^[A-Za-z]{32}$/);
         for (const target of ["failure", "disabled", "no-uri"]) {
           const created = await control({
             action: "admin-create",
@@ -155,7 +175,7 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
           const recipient = (await created.json()) as any;
           recipientIDs.set(`/${target}`, recipient.client_id);
           await issueForSession(cookie, recipient);
-          if (target !== "no-uri")
+          if (target !== "no-uri") {
             expect(
               (
                 await control({
@@ -166,6 +186,7 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
                 })
               ).status,
             ).toBe(200);
+          }
         }
 
         const sessionResponse = await control({ action: "session", headers: { cookie } });
@@ -219,6 +240,52 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
         expect(before.status).toBe(200);
         const original = (await before.json()) as any;
         expect(original.revoked).toBeNull();
+        const state = async (selected = session) => {
+          const response = await control({
+            action: "preserved-state",
+            token: selected.session.token,
+            sessionId: selected.session.id,
+          });
+          expect(response.status).toBe(200);
+          return (await response.json()) as any;
+        };
+        if (preserve) {
+          const live = await state();
+          expect(live.row.id).toBe(session.session.id);
+          expect(Date.parse(live.row.expiresAt)).toBeGreaterThan(Date.now());
+          expect(live.cached).toBe(true);
+          expect(live.completed).toEqual([]);
+          if (sibling) {
+            for (const gate of ["veto", "error"]) {
+              await control({ action: "preserved-gate", gate });
+              const attempted = await control({
+                action: "end-session-rows",
+                body: { userId: session.user.id },
+              });
+              expect(attempted.status).toBe(gate === "veto" ? 200 : 503);
+              if (gate === "error") {
+                expect(await attempted.json()).toEqual({
+                  code: "SESSION_END_FAILED",
+                  message: "application rejected deletion",
+                });
+              }
+              for (const selected of [session, sibling.session]) {
+                const unchanged = await state(selected);
+                expect(unchanged.cached).toBe(true);
+                expect(Date.parse(unchanged.row.expiresAt)).toBeGreaterThan(Date.now());
+                expect(unchanged.completed).toEqual([]);
+              }
+              expect(receipts).toEqual([]);
+              const row = await control({
+                action: "token-row",
+                kind: "access",
+                token: token.access_token,
+              });
+              expect(((await row.json()) as any).revoked).toBeNull();
+            }
+          }
+          await control({ action: "preserved-gate", gate: "" });
+        }
         const started = Date.now();
         const ended = await control({
           action: retirement,
@@ -265,9 +332,22 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
         if (sibling) expectedSessions.push(`/success:${sibling.session.session.id}`);
         expect(notifiedSessions.sort()).toEqual(expectedSessions.sort());
         for (const removed of [session, ...(sibling ? [sibling.session] : [])]) {
-          const row = await control({ action: "session-row", token: removed.session.token });
-          expect(row.status).toBe(200);
-          expect(await row.json()).toBeNull();
+          if (preserve) {
+            const audit = await state(removed);
+            expect(audit.cached).toBe(false);
+            expect(audit.row.id).toBe(removed.session.id);
+            expect(Date.parse(audit.row.expiresAt)).toBeGreaterThanOrEqual(started);
+            expect(Date.parse(audit.row.expiresAt)).toBeLessThanOrEqual(finished);
+            expect(audit.completed.sort()).toEqual(
+              [session.session.id, ...(sibling ? [sibling.session.session.id] : [])].sort(),
+            );
+            const liveness = await control({ action: "session", headers: { cookie } });
+            expect(await liveness.json()).toBeNull();
+          } else {
+            const row = await control({ action: "session-row", token: removed.session.token });
+            expect(row.status).toBe(200);
+            expect(await row.json()).toBeNull();
+          }
         }
         const afterResponse = await control({
           action: "token-row",
@@ -277,7 +357,7 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
         expect(afterResponse.status).toBe(200);
         const after = (await afterResponse.json()) as any;
         expect(after.id).toBe(original.id);
-        expect(after.sessionId).toBeNull();
+        expect(after.sessionId).toBe(preserve ? session.session.id : null);
         expect(Date.parse(after.revoked)).toBeGreaterThanOrEqual(started);
         expect(Date.parse(after.revoked)).toBeLessThanOrEqual(finished);
         const denied = await control({
@@ -293,6 +373,8 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
         for (const [value, hint, active] of [
           [token.access_token, "access_token", false],
           [token.refresh_token, "refresh_token", true],
+          [online.access_token, "access_token", false],
+          [online.refresh_token, "refresh_token", false],
         ] as const) {
           const observed = await control({
             action: "introspect",
@@ -324,7 +406,7 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
             expect(row.status).toBe(200);
             const observed = (await row.json()) as any;
             expect(observed.revoked !== null).toBe(revoked);
-            expect(observed.sessionId).toBeNull();
+            expect(observed.sessionId).toBe(preserve ? sibling.session.session.id : null);
           }
         }
         const unaffected = await control({
@@ -340,6 +422,60 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
         });
         expect(survivingSession.status).toBe(200);
         expect(await survivingSession.json()).toEqual({ id: otherSession.session.id });
+        if (preserve) {
+          const audit = await state();
+          const authority = await control({
+            action: "token-row",
+            kind: "refresh",
+            token: online.refresh_token,
+          });
+          const revoked = (await authority.json()) as any;
+          expect(Date.parse(revoked.revoked)).toBeGreaterThanOrEqual(started);
+          expect(Date.parse(revoked.revoked)).toBeLessThanOrEqual(finished);
+          for (const body of [
+            { token: session.session.token },
+            { userId: session.user.id },
+            { userId: session.user.id },
+          ]) {
+            const repeated = await control({ action: "end-session-rows", body });
+            expect(repeated.status).toBe(200);
+            expect(await state()).toEqual(audit);
+            expect(receipts).toHaveLength(sibling ? 3 : 2);
+            const unchanged = await control({
+              action: "token-row",
+              kind: "refresh",
+              token: online.refresh_token,
+            });
+            expect(await unchanged.json()).toEqual(revoked);
+          }
+          // Single-session failure ordering differs from bulk: cache eviction
+          // precedes the veto, but the durable row and token authority stay live.
+          for (const gate of ["veto", "error"]) {
+            await control({ action: "preserved-gate", gate });
+            const attempted = await control({
+              action: "end-session-rows",
+              body: { token: otherSession.session.token },
+            });
+            expect(attempted.status).toBe(gate === "veto" ? 200 : 503);
+            if (gate === "error") {
+              expect(await attempted.json()).toEqual({
+                code: "SESSION_END_FAILED",
+                message: "application rejected deletion",
+              });
+            }
+            const retained = await state(otherSession);
+            expect(retained.cached).toBe(false);
+            expect(Date.parse(retained.row.expiresAt)).toBeGreaterThan(Date.now());
+            expect(retained.completed).toEqual(audit.completed);
+            const authority = await control({
+              action: "userinfo",
+              headers: { authorization: `Bearer ${otherToken.access_token}` },
+            });
+            expect(authority.status).toBe(200);
+            expect(receipts).toHaveLength(sibling ? 3 : 2);
+          }
+          await control({ action: "preserved-gate", gate: "" });
+        }
         return ctx.snapshot({
           authorizationSession: session,
           otherAuthorizationSession: otherSession,
@@ -357,3 +493,4 @@ for (const retirement of ["signout", "revoke-sessions"] as const)
       }
     },
   );
+}

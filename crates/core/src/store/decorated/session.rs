@@ -284,6 +284,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .get::<crate::store::SessionDeletionHooks<S>>()
             .is_some_and(|hooks| !hooks.0.is_empty())
             && let Some(session) = self.inner.get_session(token).await?
+            && (!(self.secondary().is_some() && self.config.session.preserve_in_database)
+                || session.expires_at() > chrono::Utc::now())
         {
             self.prepare_session_deletion(&session).await?
         } else {
@@ -294,9 +296,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             return Ok(());
         }
         if self.secondary().is_some() && self.config.session.preserve_in_database {
-            return self.inner.end_session_preserving(token).await;
+            if !self.inner.end_session_preserving(token).await? {
+                return Ok(());
+            }
+        } else {
+            self.inner.delete_session(token).await?;
         }
-        self.inner.delete_session(token).await?;
         self.complete_session_deletion(token, works).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
@@ -309,7 +314,22 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         let tokens = self.cached_user_tokens(user_id).await?;
         if self.session_uses_database() {
             if self.secondary().is_some() && self.config.session.preserve_in_database {
-                self.inner.end_user_sessions_preserving(user_id).await?;
+                // Retained audit rows are not a new session end. Capture only
+                // live rows, and leave the cache intact if the bulk was vetoed.
+                let now = chrono::Utc::now();
+                let mut pending = Vec::new();
+                for session in self.inner.get_user_sessions(user_id).await? {
+                    if session.expires_at() > now {
+                        let works = self.prepare_session_deletion(&session).await?;
+                        pending.push((session.token().to_owned(), works));
+                    }
+                }
+                if !self.inner.end_user_sessions_preserving(user_id).await? {
+                    return Ok(());
+                }
+                for (token, works) in pending {
+                    self.complete_session_deletion(&token, works).await?;
+                }
             } else {
                 // Capture dependants while every physical session FK still exists.
                 // Adapter hooks may veto individual rows, so completion below must
@@ -401,7 +421,14 @@ impl<S: AuthSchema> PluginStore<S> {
         token: &str,
         works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
     ) -> AuthResult<()> {
-        if !works.is_empty() && self.inner.get_session(token).await?.is_none() {
+        let preserved = self.secondary().is_some() && self.config.session.preserve_in_database;
+        if !works.is_empty()
+            && self
+                .inner
+                .get_session(token)
+                .await?
+                .is_none_or(|session| preserved && session.expires_at() <= chrono::Utc::now())
+        {
             for work in works {
                 work.complete(&self.projection_context).await?;
             }

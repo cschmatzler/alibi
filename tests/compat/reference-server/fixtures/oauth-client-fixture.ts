@@ -33,6 +33,11 @@ import { z } from "zod";
 
 import { createDatabase } from "../sqlite.ts";
 export async function oauthClientFixture(base: BetterAuthOptions) {
+  const preserved = {
+    gate: "",
+    completed: [] as string[],
+    cache: new Map<string, { value: string; expires: number }>(),
+  };
   const registrationCalls: unknown[] = [];
   const validateInitialAccessToken: NonNullable<
     OAuthOptions["validateInitialAccessToken"]
@@ -367,6 +372,18 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   const providerClientHelper = {
     id: "provider-client-helper",
     endpoints: {
+      fixtureEndSessionRows: createAuthEndpoint(
+        "/fixture/end-session-rows",
+        {
+          method: "POST",
+          body: z.object({ token: z.string().optional(), userId: z.string().optional() }),
+        },
+        async (ctx) => {
+          if (ctx.body.token) await ctx.context.internalAdapter.deleteSession(ctx.body.token);
+          else await ctx.context.internalAdapter.deleteUserSessions(ctx.body.userId!);
+          return ctx.json({ success: true });
+        },
+      ),
       providerResolveClient: createAuthEndpoint(
         "/fixture/provider-client",
         { method: "POST", body: z.object({ clientId: z.string(), discover: z.boolean() }) },
@@ -716,11 +733,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       scopes,
       metadata: metadata ?? null,
     });
-    if (idTokenClaims.error === "api")
+    if (idTokenClaims.error === "api") {
       throw new APIError("BAD_REQUEST", {
         code: "ID_CLAIM_REJECTED",
         message: "ID callback rejected",
       });
+    }
     if (idTokenClaims.error === "ordinary") throw new Error("ID callback failed");
     const value = idTokenClaims.value;
     return {
@@ -1301,6 +1319,70 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       ],
     }),
     default: betterAuth(options),
+    retirement: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt({ disableSettingJwtHeader: true }),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        providerClientHelper,
+      ],
+    }),
+    preserved: betterAuth({
+      ...options,
+      plugins: [
+        username(),
+        jwt({ disableSettingJwtHeader: true }),
+        oauthProvider({ loginPage: "/login", consentPage: "/consent" }),
+        providerClientHelper,
+      ],
+      session: { storeSessionInDatabase: true, preserveSessionInDatabase: true },
+      secondaryStorage: {
+        getAndDelete: async (key) => {
+          const entry = preserved.cache.get(key);
+          preserved.cache.delete(key);
+          return entry && entry.expires > Date.now() ? entry.value : null;
+        },
+        increment: async (key, ttl) => {
+          const entry = preserved.cache.get(key);
+          const live = entry && entry.expires > Date.now();
+          const count = live ? Number(entry.value) + 1 : 1;
+          preserved.cache.set(key, {
+            value: String(count),
+            expires: live ? entry.expires : Date.now() + ttl * 1000,
+          });
+          return count;
+        },
+        get: async (key) => {
+          const entry = preserved.cache.get(key);
+          return entry && entry.expires > Date.now() ? entry.value : null;
+        },
+        set: async (key, value, ttl) => {
+          preserved.cache.set(key, { value, expires: Date.now() + (ttl ?? 3600) * 1000 });
+        },
+        delete: async (key) => {
+          preserved.cache.delete(key);
+        },
+      },
+      databaseHooks: {
+        session: {
+          delete: {
+            before: async () => {
+              if (preserved.gate === "error") {
+                throw new APIError("SERVICE_UNAVAILABLE", {
+                  code: "SESSION_END_FAILED",
+                  message: "application rejected deletion",
+                });
+              }
+              if (preserved.gate === "veto") return false;
+            },
+            after: async (session) => {
+              preserved.completed.push(session.id);
+            },
+          },
+        },
+      },
+    }),
     interaction: betterAuth({
       ...options,
       rateLimit: { enabled: false },
@@ -2126,6 +2208,26 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       (input.mode === "resource-seed" ? seededAuths.get(input.context ?? "default") : undefined) ??
       auths[input.mode as keyof typeof auths] ??
       auths.default;
+    if (input.action === "preserved-gate") {
+      preserved.gate = input.gate;
+      if (input.reset) preserved.completed.length = 0;
+      return Response.json({ completed: preserved.completed });
+    }
+    if (input.action === "end-session-rows") {
+      return (auth.api as any).fixtureEndSessionRows({ body: input.body, asResponse: true });
+    }
+    if (input.action === "preserved-state") {
+      const context = await auth.$context;
+      const row = await context.adapter.findOne<{ id: string; expiresAt: Date }>({
+        model: "session",
+        where: [{ field: "token", value: input.token }],
+      });
+      return Response.json({
+        row: row ? { id: row.id, expiresAt: row.expiresAt } : null,
+        cached: (await context.options.secondaryStorage?.get(input.token)) != null,
+        completed: preserved.completed,
+      });
+    }
     if (input.mode === "resource-privileges") {
       const operations: Record<string, string> = {
         "resource-create": "adminCreateOAuthResource",
@@ -2237,8 +2339,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     if (input.action === "credential-generator-state") {
       if (typeof input.accessMode === "string") credentialGenerators.accessMode = input.accessMode;
-      if (typeof input.refreshMode === "string")
+      if (typeof input.refreshMode === "string") {
         credentialGenerators.refreshMode = input.refreshMode;
+      }
       if (input.reset) {
         credentialGenerators.accessCount = 0;
         credentialGenerators.refreshCount = 0;
@@ -2264,8 +2367,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "claims-state") {
       if (typeof input.value === "string") liveClaims.value = input.value;
       if (typeof input.operator === "boolean") liveClaims.operator = input.operator;
-      if (typeof input.mutateResource === "string" || input.mutateResource === null)
+      if (typeof input.mutateResource === "string" || input.mutateResource === null) {
         liveClaims.mutateResource = input.mutateResource;
+      }
       if (input.reset) {
         liveClaims.calls.length = 0;
         liveClaims.operatorCalls.length = 0;
@@ -2283,8 +2387,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return Response.json(userInfoClaims);
     }
     if (input.action === "id-claims-state") {
-      if (typeof input.value === "string" || input.value === null)
+      if (typeof input.value === "string" || input.value === null) {
         idTokenClaims.value = input.value;
+      }
       if (typeof input.error === "string") idTokenClaims.error = input.error;
       if (input.reset) idTokenClaims.calls.length = 0;
       return Response.json(idTokenClaims);

@@ -382,7 +382,7 @@ where
         .await
     }
 
-    async fn end_session_preserving(&self, token: &str) -> AuthResult<()> {
+    async fn end_session_preserving(&self, token: &str) -> AuthResult<bool> {
         use alibi_core::AuthSession;
         let now = Utc::now();
         let Some(session) = self
@@ -390,7 +390,7 @@ where
             .await?
             .filter(|session| session.expires_at() > now)
         else {
-            return Ok(());
+            return Ok(false);
         };
         let context = self.hook_context(None);
         for hook in self.hooks() {
@@ -399,7 +399,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Ok(());
+                return Ok(false);
             }
         }
         let table = <S::Session as SqlxModel>::TABLE;
@@ -423,9 +423,9 @@ where
         for hook in self.hooks() {
             hook.after_delete_session(&session, &context).await?;
         }
-        Ok(())
+        Ok(true)
     }
-    async fn end_user_sessions_preserving(&self, user_id: &str) -> AuthResult<()> {
+    async fn end_user_sessions_preserving(&self, user_id: &str) -> AuthResult<bool> {
         let now = Utc::now();
         let user_id = S::Session::parse_user_id(user_id)?;
         let table = <S::Session as SqlxModel>::TABLE;
@@ -455,7 +455,7 @@ where
                     .await?
                     .is_cancelled()
                 {
-                    return Ok(());
+                    return Ok(false);
                 }
             }
         }
@@ -481,7 +481,7 @@ where
                 hook.after_delete_session(session, &context).await?;
             }
         }
-        Ok(())
+        Ok(true)
     }
 
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {

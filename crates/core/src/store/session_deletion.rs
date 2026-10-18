@@ -12,7 +12,7 @@ pub trait SessionDeletionHook<S: AuthSchema>: Send + Sync {
         context: &AuthContext<S>,
     ) -> AuthResult<Option<Box<dyn SessionDeletionWork<S>>>>;
 }
-/// Work performed after the selected physical session has actually disappeared.
+/// Work performed after the selected session is deleted or its audit row expires.
 /// Implementations may hand owned work to the instance's background-task policy.
 #[async_trait]
 pub trait SessionDeletionWork<S: AuthSchema>: Send + Sync {

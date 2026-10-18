@@ -7,6 +7,41 @@ use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{Router, extract::Query, response::IntoResponse, routing::get};
 use std::{collections::HashMap, sync::Arc};
+#[derive(Default)]
+struct PreservedSessions {
+    gate: std::sync::Mutex<String>,
+    completed: std::sync::Mutex<Vec<String>>,
+}
+#[async_trait::async_trait]
+impl alibi::store::DatabaseHooks<TestSchema, crate::backend::Backend> for PreservedSessions {
+    async fn before_delete_session(
+        &self,
+        _: &<TestSchema as alibi::AuthSchema>::Session,
+        _: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<alibi::store::HookControl> {
+        match self.gate.lock().unwrap().as_str() {
+            "veto" => Ok(alibi::store::HookControl::Cancel),
+            "error" => Err(alibi::AuthError::Api {
+                status: 503,
+                code: Some("SESSION_END_FAILED".into()),
+                message: "application rejected deletion".into(),
+            }),
+            _ => Ok(alibi::store::HookControl::Continue),
+        }
+    }
+    async fn after_delete_session(
+        &self,
+        session: &<TestSchema as alibi::AuthSchema>::Session,
+        _: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<()> {
+        use alibi::AuthSession as _;
+        self.completed
+            .lock()
+            .unwrap()
+            .push(session.id().as_ref().to_owned());
+        Ok(())
+    }
+}
 #[path = "../../../../fixtures/oauth/access-jwt.rs"]
 mod access_jwt;
 #[path = "../../../../fixtures/oauth/extension-grant.rs"]
@@ -265,6 +300,8 @@ pub(crate) async fn router(
     let remote_provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{client_discoveries:vec![Arc::new(RemoteRegistry{resource:remote_state.clone()})],..Default::default()});
 
     let mut client_instances = HashMap::new();
+    let preserved = Arc::new(PreservedSessions::default());
+    let preserved_cache = Arc::new(alibi::store::MemoryCacheAdapter::new());
     let registration_policy=Arc::new(initial_access_token::RegistrationPolicy::default());
     let resource_privileges = Arc::new(resource_privileges::ResourcePrivileges::default());
     let live_claims=Arc::new(extension_claims::LiveAccessClaims::default());
@@ -297,6 +334,8 @@ pub(crate) async fn router(
         "signup-empty-page",
         "signup-page-only",
         "default",
+        "preserved",
+        "retirement",
         "dynamic",
         "public",
         "token-dynamic",
@@ -442,17 +481,24 @@ pub(crate) async fn router(
         if let Some(name)=mode.strip_prefix("scope-"){provider=scope_expiry_config(name);}
         if mode.starts_with("rate-") {provider.rate_limit=rate_limits::policies(mode).0;provider.disable_jwt_plugin=true;}
         let mut client_config=if mode=="uri-host" {config.clone().trusted_origin("https://*")}else{config.clone()};
+        if mode=="preserved" {
+            client_config.session.secondary_storage=Some(preserved_cache.clone());
+            client_config.session.store_in_database=true;
+            client_config.session.preserve_in_database=true;
+        }
         if mode=="response-fields" {client_config=client_config.base_path("/__test/profiles/oauth-response-fields/api/auth");}
         if mode=="pairwise" {
             client_config.advanced.database.generate_id=Some(alibi::config::DatabaseIdStrategy::Custom(Arc::new(|model:&str,_size:Option<usize>|Ok(Some(if model=="user" {"pairwise-owner".into()} else {uuid::Uuid::new_v4().to_string()})))));
         }
+        let store=crate::backend::store::<TestSchema>(client_config.clone(), database.clone());
+        let store=if mode=="preserved" {store.with_hooks(vec![preserved.clone()])}else{store};
         let builder = AuthBuilder::<TestSchema>::new(client_config.clone())
-            .store(crate::backend::store::<TestSchema>(client_config, database.clone()))
+            .store(store)
             .plugin(alibi::plugins::EmailPasswordPlugin::new())
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference") || mode.starts_with("postlogin-") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
         let builder=if mode.starts_with("rate-") {builder.rate_limit(rate_limits::policies(mode).1)} else {builder};
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference") || mode.starts_with("signup-") || mode.starts_with("postlogin-"),..Default::default()})})};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference"|"retirement"|"preserved") || mode.starts_with("signup-") || mode.starts_with("postlogin-"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -498,7 +544,24 @@ pub(crate) async fn router(
         let logout_origin=logout_origin.clone();
         let authorization_path=authorization_path.clone();
         let admin_path=admin_path.clone();
+        let preserved=preserved.clone();
+        let preserved_cache=preserved_cache.clone();
         let auth=client_instances.get(input["mode"].as_str().filter(|mode|*mode!="resource-seed").unwrap_or("default")).unwrap().clone();async move {
+            if input["action"]=="preserved-gate" {
+                *preserved.gate.lock().unwrap()=input["gate"].as_str().unwrap().into();
+                if input["reset"]==true {preserved.completed.lock().unwrap().clear();}
+                return axum::Json(serde_json::json!({"completed":*preserved.completed.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="end-session-rows" {
+                let result=if let Some(token)=input["body"]["token"].as_str(){auth.store().delete_session(token).await}else{auth.store().delete_user_sessions(input["body"]["userId"].as_str().unwrap()).await};
+                return match result {Ok(())=>axum::Json(serde_json::json!({"success":true})).into_response(),Err(error)=>error.to_auth_response().into_response()};
+            }
+            if input["action"]=="preserved-state" {
+                use alibi::AuthSession as _;
+                use alibi::store::CacheAdapter as _;
+                let row=auth.store().get_session_by_id(input["sessionId"].as_str().unwrap()).await.unwrap();
+                return axum::Json(serde_json::json!({"row":row.map(|row|serde_json::json!({"id":row.id(),"expiresAt":row.expires_at()})),"cached":preserved_cache.get(input["token"].as_str().unwrap()).await.unwrap().is_some(),"completed":*preserved.completed.lock().unwrap()})).into_response();
+            }
             if input["action"]=="resource-privileges-state" {
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
             }
