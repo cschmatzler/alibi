@@ -216,6 +216,16 @@ The browser fixture uses local HTTP. Production HTTPS/Secure-cookie deployment
 behavior is not claimed by that test. Structural route evidence is also not a
 claim that every behavior of an endpoint has been tested.
 
+The OAuth resource policy owner also exercises configured `cachedResources`
+membership. The pinned 1.7.7 cache is module-global **by identifier**, even across
+independently initialized databases: another store can consume the first store's
+cached policy. This quirk is intentionally preserved, not isolated per plugin.
+Nonmembers remain live; misses are not cached; there is no TTL or size policy.
+Only successful admin resource create/update/delete evict, after the write (update
+evicts before its response re-read). Reads, links/unlinks, denied/failed writes,
+init and seeding do not evict. Lazy seeding still precedes a cache hit. Opaque
+validation's separate live custom-claim lookup is not routed through this cache.
+
 ## Assurance of the combined suite
 
 The assurance runner evaluates what the suite can establish, including missing

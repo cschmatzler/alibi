@@ -3,6 +3,278 @@ import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
+compatScenario(
+  "Opt-in resource cache preserves module-wide policy until successful admin CRUD",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (context: string, input: object) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "resource-seed", context, ...input }),
+      });
+    const identifier = "https://api.fixture.test/cache/policy";
+    const live = `${identifier}/live`;
+    const initialize = async (context: string, options: object = {}) => {
+      const response = await control(context, {
+        action: "resource-seed-init",
+        resources: [],
+        ...options,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ initialized: true });
+    };
+    await initialize("cached", {
+      cachedResources: [identifier],
+      enforcePerClientResources: true,
+      resources: [
+        { identifier, accessTokenTtl: 120, customClaims: { version: "old" } },
+        { identifier: live, accessTokenTtl: 120 },
+      ],
+    });
+    const signup = async (context: string) => {
+      const response = await control(context, {
+        action: "signup",
+        body: {
+          email: ctx.uniqueEmail(`cache-${context}`),
+          name: "Owner",
+          password: "password123",
+        },
+      });
+      expect(response.status).toBe(200);
+      return {
+        cookie: response.headers
+          .getSetCookie()
+          .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+          .map((raw) => raw.split(";")[0])
+          .join("; "),
+      };
+    };
+    const headers = await signup("cached");
+    const client = async (context: string, headers: object) => {
+      const response = await control(context, {
+        action: "admin-create",
+        // Reuse the real configured application ID generator: protocol errors
+        // embed the client ID literally, outside the comparator's identity graph.
+        ...(context === "cached" ? { mode: "basic-special" } : {}),
+        headers,
+        body: {
+          client_name: "Cache observer",
+          redirect_uris: ["https://app.fixture.test/callback"],
+          scope: "email",
+          token_endpoint_auth_method: "none",
+        },
+      });
+      expect(response.status).toBe(201);
+      return (await response.json()) as any;
+    };
+    const createdClient = await client("cached", headers);
+    const clientId = createdClient.client_id as string;
+    const admin = (action: string, body?: object, extra: object = {}) =>
+      control("cached", {
+        action,
+        headers,
+        params: { identifier, client_id: clientId },
+        ...(body ? { body } : {}),
+        ...extra,
+      });
+    const external = async (context: string, action: string, body?: object, id = identifier) => {
+      const response = await control(context, {
+        action: `resource-external-${action}`,
+        identifier: id,
+        body,
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(
+        action === "create" ? { created: true } : { updated: true },
+      );
+    };
+    const receipts: object[] = [];
+    let issuingContext = "cached";
+    const issue = (context = issuingContext, id = identifier, issuingClient = clientId) =>
+      control(context, {
+        action: "issue-tokens",
+        body: {
+          clientId: issuingClient,
+          grantType: "urn:fixture:server",
+          params: { scopes: ["email"], resources: [id] },
+        },
+      });
+    const accepted = async (
+      ttl: number,
+      version: string | undefined,
+      context = issuingContext,
+      issuingClient = clientId,
+    ) => {
+      const response = await issue(context, identifier, issuingClient);
+      expect(response.status).toBe(200);
+      const issued = (await response.json()) as any;
+      expect(issued.expires_in).toBe(ttl);
+      expect(issued.scope).toBe("email");
+      const keys = createLocalJWKSet(
+        (await (await control(context, { action: "jwks" })).json()) as any,
+      );
+      const { payload } = await jwtVerify(issued.access_token, keys, {
+        issuer: `${ctx.baseURL}/api/auth`,
+        audience: identifier,
+      });
+      expect(Number(payload.exp) - Number(payload.iat)).toBe(ttl);
+      expect(payload.version).toBe(version);
+      receipts.push({ context, ttl, version: version ?? null });
+      return issued;
+    };
+    const denied = async (
+      context = issuingContext,
+      id = identifier,
+      description = `requested resource ${id} is disabled`,
+    ) => {
+      const response = await issue(context, id);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "invalid_target",
+        error_description: description,
+      });
+    };
+    expect((await admin("resource-link")).status).toBe(200);
+    expect(
+      (
+        await admin("resource-link", undefined, {
+          params: { identifier: live, client_id: clientId },
+        })
+      ).status,
+    ).toBe(200);
+    await accepted(120, "old");
+    await external("cached", "update", {
+      disabled: true,
+      accessTokenTtl: 33,
+      customClaims: { version: "new" },
+    });
+    await external("cached", "update", { disabled: true }, live);
+    await accepted(120, "old");
+    await initialize("live");
+    await denied("live");
+    await denied("cached", live);
+    const read = await admin("resource-get");
+    expect(read.status).toBe(200);
+    expect(((await read.json()) as any).disabled).toBe(true);
+    expect((await admin("resource-list")).status).toBe(200);
+    for (const [action, body, extra, status] of [
+      ["resource-create", { identifier }, {}, 400],
+      ["resource-update", { accessTokenTtl: -1 }, {}, 400],
+      ["resource-update", { disabled: false }, { headers: {} }, 401],
+      ["resource-link", undefined, { params: { identifier, client_id: "missing" } }, 404],
+    ] as const) {
+      expect((await admin(action, body, extra)).status).toBe(status);
+      await accepted(120, "old");
+    }
+    expect((await admin("resource-unlink")).status).toBe(200);
+    await denied(
+      "cached",
+      identifier,
+      `client ${clientId} is not linked to resource(s) ${identifier}`,
+    );
+    for (let n = 0; n < 2; n++) {
+      expect((await admin("resource-link")).status).toBe(200);
+      await accepted(120, "old");
+    }
+    expect((await admin("resource-update", { name: "Invalidate" })).status).toBe(200);
+    await denied();
+    await external("cached", "update", { disabled: false });
+    await denied();
+    expect((await admin("resource-update", {})).status).toBe(200);
+    await accepted(33, "new");
+    await initialize("opaque", { cachedResources: [identifier], disableJwtPlugin: true });
+    const opaqueResponse = await issue("opaque");
+    expect(opaqueResponse.status).toBe(200);
+    const opaque = (await opaqueResponse.json()) as any;
+    expect(opaque.expires_in).toBe(33);
+    await external("cached", "update", { customClaims: { version: "live-validation" } });
+    const validation = await control("opaque", {
+      action: "validate-access",
+      body: { token: opaque.access_token, clientId },
+    });
+    expect(validation.status).toBe(200);
+    const validated = (await validation.json()) as any;
+    expect(validated).toEqual({
+      active: true,
+      version: "live-validation",
+      client_id: clientId,
+      azp: clientId,
+      iss: `${ctx.baseURL}/api/auth`,
+      aud: identifier,
+      scope: "email",
+      token_type: "Bearer",
+      exp: expect.any(Number),
+      iat: expect.any(Number),
+    });
+    expect(validated.exp - validated.iat).toBe(33);
+    // Catalog lifecycle is independent of join-table deletion semantics.
+    await initialize("catalog", { cachedResources: [identifier] });
+    issuingContext = "catalog";
+    await external("cached", "delete");
+    for (const action of ["resource-update", "resource-delete"]) {
+      expect((await admin(action, {})).status).toBe(404);
+      await accepted(33, "new");
+    }
+    expect((await admin("resource-create", { identifier, accessTokenTtl: 60 })).status).toBe(200);
+    await accepted(60, undefined);
+    expect((await admin("resource-delete")).status).toBe(200);
+    await denied("catalog", identifier, `requested resource ${identifier} is not configured`);
+    await external("cached", "create", {
+      name: identifier,
+      disabled: false,
+      accessTokenTtl: 90,
+      refreshTokenTtl: null,
+      signingAlgorithm: null,
+      signingKeyId: null,
+      allowedScopes: null,
+      customClaims: { version: "a" },
+      dpopBoundAccessTokensRequired: false,
+      policyVersion: 1,
+      metadata: null,
+    });
+    await accepted(90, "a");
+    // A separate real database still consumes the module cache. Init and lazy seed
+    // both write its own policy without evicting the first database's entry.
+    await initialize("peer", {
+      isolated: true,
+      cachedResources: [identifier],
+      resourceSeedMode: "overwrite",
+      resources: [{ identifier, disabled: true, accessTokenTtl: 22 }],
+    });
+    await external("peer", "update", { disabled: false, accessTokenTtl: 44 });
+    const peerHeaders = await signup("peer");
+    const createdPeerClient = await client("peer", peerHeaders);
+    const peerClient = createdPeerClient.client_id as string;
+    await accepted(90, "a", "peer", peerClient);
+    const peerRow = await control("peer", { action: "resource-seed-row", identifier });
+    expect(peerRow.status).toBe(200);
+    expect(await peerRow.json()).toMatchObject({ disabled: true, accessTokenTtl: 22 });
+    const peerUpdate = await control("peer", {
+      action: "resource-update",
+      headers: peerHeaders,
+      params: { identifier },
+      body: { disabled: false },
+    });
+    expect(peerUpdate.status).toBe(200);
+    await accepted(22, undefined, "peer", peerClient);
+    await accepted(22, undefined);
+    await accepted(90, "a", "live");
+    const peerDelete = await control("peer", {
+      action: "resource-delete",
+      headers: peerHeaders,
+      params: { identifier },
+    });
+    expect(peerDelete.status).toBe(200);
+    await accepted(90, "a");
+    return ctx.snapshot({
+      client: createdClient,
+      peerClient: createdPeerClient,
+      receipts,
+      validated,
+    });
+  },
+);
 compatScenario("Configured resources seed at init and once again at first lookup", async (ctx) => {
   const actor = ctx.actor();
   const control = (input: object) =>

@@ -30,6 +30,8 @@ import { jwt, username } from "better-auth/plugins";
 import { APIError as EndpointAPIError, kAPIErrorHeaderSymbol } from "better-call";
 import { SignJWT, importJWK, decodeProtectedHeader } from "jose";
 import { z } from "zod";
+
+import { createDatabase } from "../sqlite.ts";
 export async function oauthClientFixture(base: BetterAuthOptions) {
   const registrationCalls: unknown[] = [];
   const validateInitialAccessToken: NonNullable<
@@ -1116,8 +1118,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       },
     },
   };
-  let seededAuth: ReturnType<typeof betterAuth> | undefined;
   let registrationResourceClientIds = 0;
+  const seededAuths = new Map<string, ReturnType<typeof betterAuth>>();
   const seedIdentifiers = { calls: 0, failNext: false };
   const resourcePrivileges = { calls: [] as unknown[] };
   const resourcePrivilegeDecision: NonNullable<OAuthOptions["resourcePrivileges"]> = async (
@@ -2051,7 +2053,10 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         consentPage: "/consent",
         resources: input.resources,
         resourceSeedMode: input.resourceSeedMode,
-        enforcePerClientResources: input.registrationResources === true,
+        cachedResources: new Set(input.cachedResources ?? []),
+        enforcePerClientResources:
+          input.registrationResources === true || (input.enforcePerClientResources ?? false),
+        disableJwtPlugin: input.disableJwtPlugin ?? false,
         ...(input.registrationResources
           ? {
               allowDynamicClientRegistration: true,
@@ -2074,9 +2079,14 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             }
           : {}),
       };
-      seededAuth = betterAuth({
+      const database = input.isolated ? createDatabase(":memory:") : options.database;
+      if (input.isolated) {
+        await (await getMigrations({ ...options, database })).runMigrations();
+      }
+      const seededAuth = betterAuth({
         ...options,
         ...(input.registrationResources ? { rateLimit: { enabled: false } } : {}),
+        database,
         plugins: [
           username(),
           jwt(),
@@ -2093,15 +2103,27 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                   return api.issueTokens({ ...ctx.body.params, client });
                 },
               ),
+              validateAccessFixture: createAuthEndpoint(
+                "/fixture/validate-access",
+                { method: "POST", body: z.record(z.string(), z.unknown()) },
+                async (ctx: any) =>
+                  ctx.json(
+                    await getOAuthProviderApi(ctx, seedOptions).validateAccessToken(
+                      ctx.body.token,
+                      ctx.body.clientId,
+                    ),
+                  ),
+              ),
             },
           },
         ],
       });
       await seededAuth.$context;
+      seededAuths.set(input.context ?? "default", seededAuth);
       return Response.json({ initialized: true });
     }
     const auth =
-      (input.mode === "resource-seed" ? seededAuth : undefined) ??
+      (input.mode === "resource-seed" ? seededAuths.get(input.context ?? "default") : undefined) ??
       auths[input.mode as keyof typeof auths] ??
       auths.default;
     if (input.mode === "resource-privileges") {
@@ -2140,6 +2162,32 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           where: [{ field: "identifier", value: input.identifier }],
         }),
       );
+    }
+    if (
+      input.action === "resource-external-update" ||
+      input.action === "resource-external-delete"
+    ) {
+      const context = await auth.$context;
+      const where = [{ field: "identifier", value: input.identifier }];
+      if (input.action === "resource-external-update") {
+        await context.adapter.update({ model: "oauthResource", where, update: input.body });
+      } else {
+        await context.adapter.delete({ model: "oauthResource", where });
+      }
+      return Response.json({ updated: true });
+    }
+    if (input.action === "resource-external-create") {
+      const context = await auth.$context;
+      await context.adapter.create({
+        model: "oauthResource",
+        data: {
+          ...input.body,
+          identifier: input.identifier,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      return Response.json({ created: true });
     }
     if (
       input.action === "registration-scopes-validation" ||

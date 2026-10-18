@@ -21,6 +21,7 @@ async fn oauth_resource_token_policy_controls_lifetimes_claims_and_signing<B: Ba
     deferred_resource_lifecycle::<B>(&db).await?;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     configured_resource_lifecycle::<B>(&connection).await?;
+    Box::pin(cached_resource_lifecycle::<B>(&connection)).await?;
     let jwt = JwtPlugin::with_config(JwtPluginConfig {
         additional_key_pairs: vec![JwtKeyPairConfig {
             algorithm: JwtAlgorithm::Es256,
@@ -411,6 +412,475 @@ async fn configured_resource_lifecycle<B: Backend>(connection: &B::Connection) -
             }
         );
     }
+    Ok(())
+}
+
+// The policy owner exercises the cache through genuine minting, never a cache inspection seam.
+async fn cached_resource_lifecycle<B: Backend>(connection: &B::Connection) -> TestResult {
+    let identifier = format!("https://api.fixture.test/cache/{}", uuid::Uuid::new_v4());
+    let live = format!("{identifier}/live");
+    let config = |resources| OAuthProviderConfig {
+        resources,
+        cached_resources: [identifier.clone()].into_iter().collect(),
+        enforce_per_client_resources: true,
+        ..Default::default()
+    };
+    let provider = OAuthProviderPlugin::with_config(config(vec![
+        json!({"identifier":identifier,"accessTokenTtl":120,"customClaims":{"version":"old"}}),
+        json!({"identifier":live,"accessTokenTtl":120}),
+    ]));
+    let auth = super::auth_probe::fast_builder::<B>(connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let owner = signup(&auth, "cache-owner@example.test").await;
+    let cookie = cookies(&owner);
+    let created = cache_admin(&auth, OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Cache observer","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":"none"}))?, &cookie).await?;
+    assert_eq!(created.status, 201);
+    let client_id = body(&created)["client_id"].as_str().unwrap().to_owned();
+    let client = provider
+        .get_client(auth.context(), &client_id)
+        .await?
+        .unwrap();
+    let mut params = OAuthTokenIssueParams::new(client, vec!["email".into()]);
+    params.resources = Some(vec![identifier.clone()]);
+    for id in [&identifier, &live] {
+        assert_eq!(
+            cache_admin(
+                &auth,
+                OAuthProviderPlugin::admin_link_client_resource_endpoint(id, &client_id)?,
+                &cookie
+            )
+            .await?
+            .status,
+            200
+        );
+    }
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        120
+    );
+    cache_external(
+        &auth,
+        &identifier,
+        json!({"disabled":true,"accessTokenTtl":33,"customClaims":{"version":"new"}}),
+    )
+    .await?;
+    cache_external(&auth, &live, json!({"disabled":true})).await?;
+    let issued = cache_issue(&auth, &provider, &params).await?;
+    assert_eq!(issued["expires_in"], 120);
+    let claims: Value = serde_json::from_slice(
+        &URL_SAFE_NO_PAD.decode(
+            issued["access_token"]
+                .as_str()
+                .unwrap()
+                .split('.')
+                .nth(1)
+                .unwrap(),
+        )?,
+    )?;
+    assert_eq!(claims["version"], "old");
+    let live_provider = OAuthProviderPlugin::new();
+    assert_eq!(
+        cache_issue(&auth, &live_provider, &params)
+            .await
+            .unwrap_err()
+            .body
+            .unwrap()
+            .get("error")
+            .unwrap()
+            .as_str(),
+        Some("invalid_target")
+    );
+    let mut live_params = params.clone();
+    live_params.resources = Some(vec![live]);
+    assert_eq!(
+        cache_issue(&auth, &provider, &live_params)
+            .await
+            .unwrap_err()
+            .body
+            .unwrap()
+            .get("error")
+            .unwrap()
+            .as_str(),
+        Some("invalid_target")
+    );
+    // Read/list, failed writes, and both link operations must leave stale policy intact.
+    let read = cache_admin(
+        &auth,
+        OAuthProviderPlugin::admin_get_oauth_resource_endpoint(&identifier)?,
+        &cookie,
+    )
+    .await?;
+    assert_eq!(body(&read)["disabled"], true);
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_list_oauth_resources_endpoint(),
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    for (endpoint, expected) in [
+        (
+            OAuthProviderPlugin::admin_create_oauth_resource_endpoint(
+                &json!({"identifier":identifier}),
+            )?,
+            400,
+        ),
+        (
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
+                &identifier,
+                &json!({"accessTokenTtl":-1}),
+            )?,
+            400,
+        ),
+    ] {
+        assert_eq!(
+            cache_admin(&auth, endpoint, &cookie).await?.status,
+            expected
+        );
+        assert_eq!(
+            cache_issue(&auth, &provider, &params).await?["expires_in"],
+            120
+        );
+    }
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
+                &identifier,
+                &json!({"disabled":false})
+            )?,
+            ""
+        )
+        .await?
+        .status,
+        401
+    );
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_unlink_client_resource_endpoint(&identifier, &client_id)?,
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    let denied = cache_issue(&auth, &provider, &params).await.unwrap_err();
+    assert!(
+        denied
+            .body
+            .unwrap()
+            .get("error_description")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("not linked")
+    );
+    for _ in 0..2 {
+        assert_eq!(
+            cache_admin(
+                &auth,
+                OAuthProviderPlugin::admin_link_client_resource_endpoint(&identifier, &client_id)?,
+                &cookie
+            )
+            .await?
+            .status,
+            200
+        );
+        assert_eq!(
+            cache_issue(&auth, &provider, &params).await?["expires_in"],
+            120
+        );
+    }
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
+                &identifier,
+                &json!({"name":"Invalidate"})
+            )?,
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params)
+            .await
+            .unwrap_err()
+            .body
+            .unwrap()
+            .get("error_description")
+            .unwrap()
+            .as_str(),
+        Some(format!("requested resource {identifier} is disabled").as_str())
+    );
+    cache_external(&auth, &identifier, json!({"disabled":false})).await?;
+    assert_eq!(
+        cache_issue(&auth, &provider, &params)
+            .await
+            .unwrap_err()
+            .body
+            .unwrap()
+            .get("error_description")
+            .unwrap()
+            .as_str(),
+        Some(format!("requested resource {identifier} is disabled").as_str()),
+        "disabled rows are cached too"
+    );
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(&identifier, &json!({}))?,
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        33
+    );
+    // Opaque validation re-reads custom claims, not cached issuance policy.
+    let opaque = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        disable_jwt_plugin: true,
+        ..config(vec![])
+    });
+    let token = cache_issue(&auth, &opaque, &params).await?;
+    cache_external(
+        &auth,
+        &identifier,
+        json!({"customClaims":{"version":"live-validation"}}),
+    )
+    .await?;
+    let validated = opaque
+        .validate_access_token(
+            auth.context(),
+            token["access_token"].as_str().unwrap(),
+            Some(&client_id),
+        )
+        .await?;
+    assert_eq!(
+        validated.get("version").unwrap().as_str(),
+        Some("live-validation")
+    );
+    // Catalog lifecycle is independent of join-table deletion semantics.
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        enforce_per_client_resources: false,
+        ..config(vec![])
+    });
+    let live_provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        enforce_per_client_resources: false,
+        ..Default::default()
+    });
+    auth.store().delete_oauth_resource(&identifier).await?;
+    for endpoint in [
+        OAuthProviderPlugin::admin_update_oauth_resource_endpoint(&identifier, &json!({}))?,
+        OAuthProviderPlugin::admin_delete_oauth_resource_endpoint(&identifier)?,
+    ] {
+        assert_eq!(cache_admin(&auth, endpoint, &cookie).await?.status, 404);
+        assert_eq!(
+            cache_issue(&auth, &provider, &params).await?["expires_in"],
+            33
+        );
+    }
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_create_oauth_resource_endpoint(
+                &json!({"identifier":identifier,"accessTokenTtl":60})
+            )?,
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        60
+    );
+    assert_eq!(
+        cache_admin(
+            &auth,
+            OAuthProviderPlugin::admin_delete_oauth_resource_endpoint(&identifier)?,
+            &cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params)
+            .await
+            .unwrap_err()
+            .body
+            .unwrap()
+            .get("error_description")
+            .unwrap()
+            .as_str(),
+        Some(format!("requested resource {identifier} is not configured").as_str())
+    );
+    _ = auth
+        .store()
+        .create_oauth_resource(CreateOAuthResource {
+            identifier: identifier.clone(),
+            metadata: json!({"name":identifier,"disabled":false,"accessTokenTtl":90,"customClaims":{"version":"a"}}),
+            created_at: chrono::Utc::now(),
+        })
+        .await?;
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        90,
+        "misses must not be cached"
+    );
+    // A genuinely separate initialized database shares the module cache by identifier.
+    let peer_db = Db::sqlite().await?;
+    let (peer_connection, _) = peer_db.migrated::<B>(SECRET).await?;
+    let peer_provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        resource_seed_mode: alibi::plugins::OAuthResourceSeedMode::Overwrite,
+        enforce_per_client_resources: false,
+        ..config(vec![
+            json!({"identifier":identifier,"disabled":true,"accessTokenTtl":22}),
+        ])
+    });
+    let peer = super::auth_probe::fast_builder::<B>(&peer_connection)
+        .plugin(JwtPlugin::new())
+        .plugin(peer_provider.clone())
+        .build()
+        .await?;
+    cache_external(
+        &peer,
+        &identifier,
+        json!({"disabled":false,"accessTokenTtl":44}),
+    )
+    .await?;
+    let peer_owner = signup(&peer, "cache-peer@example.test").await;
+    let peer_cookie = cookies(&peer_owner);
+    let made = cache_admin(&peer, OAuthProviderPlugin::admin_create_oauth_client_endpoint(&json!({"client_name":"Peer","redirect_uris":["https://app.fixture.test/callback"],"scope":"email","token_endpoint_auth_method":"none"}))?, &peer_cookie).await?;
+    let mut peer_params = OAuthTokenIssueParams::new(
+        peer_provider
+            .get_client(peer.context(), body(&made)["client_id"].as_str().unwrap())
+            .await?
+            .unwrap(),
+        vec!["email".into()],
+    );
+    peer_params.resources = Some(vec![identifier.clone()]);
+    assert_eq!(
+        cache_issue(&peer, &peer_provider, &peer_params).await?["expires_in"],
+        90
+    );
+    let seeded = peer.store().get_oauth_resource(&identifier).await?.unwrap();
+    assert_eq!(
+        seeded.metadata["disabled"], true,
+        "lazy seed precedes even a cache hit"
+    );
+    assert_eq!(seeded.metadata["accessTokenTtl"], 22);
+    assert_eq!(
+        cache_admin(
+            &peer,
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
+                &identifier,
+                &json!({"disabled":false})
+            )?,
+            &peer_cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&peer, &peer_provider, &peer_params).await?["expires_in"],
+        22
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        22,
+        "admin invalidation also crosses stores"
+    );
+    assert_eq!(
+        cache_issue(&auth, &live_provider, &params).await?["expires_in"],
+        90
+    );
+    assert_eq!(
+        cache_admin(
+            &peer,
+            OAuthProviderPlugin::admin_delete_oauth_resource_endpoint(&identifier)?,
+            &peer_cookie
+        )
+        .await?
+        .status,
+        200
+    );
+    assert_eq!(
+        cache_issue(&auth, &provider, &params).await?["expires_in"],
+        90
+    );
+    Ok(())
+}
+
+async fn cache_issue<S: alibi::AuthSchema>(
+    auth: &alibi::Alibi<S>,
+    provider: &OAuthProviderPlugin,
+    params: &OAuthTokenIssueParams,
+) -> Result<Value, alibi::endpoint::EndpointError> {
+    let call = EndpointCall::new(
+        &EndpointDefinition {
+            name: "resourceCache",
+            operation_id: "resourceCache",
+            path: None,
+            method: alibi::HttpMethod::Post,
+        },
+        None,
+        None,
+        EndpointOptions::default(),
+    );
+    Box::pin(provider.issue_tokens(auth.context(), &call, Some("urn:fixture:server"), params)).await
+}
+
+async fn cache_admin<S: alibi::AuthSchema>(
+    auth: &alibi::Alibi<S>,
+    endpoint: ServerEndpoint<Value>,
+    cookie: &str,
+) -> TestResult<alibi::AuthResponse> {
+    Ok(
+        match Box::pin(auth.dispatch_endpoint(
+            endpoint,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.into())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        {
+            Ok(output) => output.into_response()?,
+            Err(error) => error.error.to_auth_response(),
+        },
+    )
+}
+
+async fn cache_external<S: alibi::AuthSchema>(
+    auth: &alibi::Alibi<S>,
+    identifier: &str,
+    patch: Value,
+) -> TestResult {
+    let mut row = auth.store().get_oauth_resource(identifier).await?.unwrap();
+    row.metadata
+        .as_object_mut()
+        .unwrap()
+        .extend(patch.as_object().unwrap().clone());
+    _ = auth
+        .store()
+        .update_oauth_resource(identifier, row.metadata, chrono::Utc::now())
+        .await?;
     Ok(())
 }
 

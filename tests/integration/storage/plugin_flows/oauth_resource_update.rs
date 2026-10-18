@@ -11,16 +11,20 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let identifier = format!("https://api.fixture.test/update/{}", uuid::Uuid::new_v4());
+    let encoded_identifier =
+        url::form_urlencoded::byte_serialize(identifier.as_bytes()).collect::<String>();
     let auth = super::auth_probe::fast_builder::<B>(&connection)
         .plugin(JwtPlugin::new())
         .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
             enforce_per_client_resources: false,
+            cached_resources: [identifier.clone()].into_iter().collect(),
             ..Default::default()
         }))
         .build()
         .await?;
     let owner = signup(&auth, "resource-update-owner@example.test").await;
-    let original=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_resource_endpoint(&json!({"identifier":"https://api.fixture.test/update","name":"Original","allowedScopes":["email"],"accessTokenTtl":120,"refreshTokenTtl":3600,"signingAlgorithm":"EdDSA","customClaims":{"original":true},"metadata":{"tenant":"old"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
+    let original=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::admin_create_oauth_resource_endpoint(&json!({"identifier":identifier,"name":"Original","allowedScopes":["email"],"accessTokenTtl":120,"refreshTokenTtl":3600,"signingAlgorithm":"EdDSA","customClaims":{"original":true},"metadata":{"tenant":"old"}}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
     assert_eq!(original.status, 200);
     let other = signup(&auth, "resource-update-other@example.test").await;
     let patch = json!({"name":"Updated","allowedScopes":["profile"],"accessTokenTtl":null,"customClaims":null,"metadata":{"tenant":"new"},"identifier":"urn:ignored:rename","policyVersion":99});
@@ -40,7 +44,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     let result = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "adminUpdateOAuthResource")
-                .with_params(&json!({"identifier":"https%3A%2F%2Fapi.fixture.test%2Fupdate"}))?
+                .with_params(&json!({"identifier":encoded_identifier}))?
                 .with_body(&patch)?,
             EndpointOptions {
                 headers: Some([("cookie".into(), cookies(&other))].into_iter().collect()),
@@ -72,7 +76,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     assert!(time >= start);
     assert!(time <= chrono::Utc::now().timestamp_millis());
     let loaded = Box::pin(auth.dispatch_endpoint(
-        OAuthProviderPlugin::admin_get_oauth_resource_endpoint("https://api.fixture.test/update")?,
+        OAuthProviderPlugin::admin_get_oauth_resource_endpoint(&identifier)?,
         EndpointOptions {
             headers: Some([("cookie".into(), cookies(&owner))].into_iter().collect()),
             ..Default::default()
@@ -128,21 +132,21 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
             "not_found",
         ),
         (
-            "https://api.fixture.test/update",
+            identifier.as_str(),
             json!({"name":"Unauthorized"}),
             String::new(),
             401,
             "",
         ),
         (
-            "https://api.fixture.test/update",
+            identifier.as_str(),
             json!({"allowedScopes":[true]}),
             cookies(&owner),
             400,
             "",
         ),
         (
-            "https://api.fixture.test/update",
+            identifier.as_str(),
             json!({"accessTokenTtl":-1}),
             cookies(&owner),
             400,
@@ -296,7 +300,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
         before
     );
     let mut http = request(
-        "/admin/oauth2/resources/https%3A%2F%2Fapi.fixture.test%2Fupdate",
+        &format!("/admin/oauth2/resources/{encoded_identifier}"),
         Some(patch.clone()),
         &cookies(&owner),
     );
@@ -308,7 +312,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
         ("email", "/callback", Some("invalid_scope")),
         ("profile", "/login", None),
     ] {
-        let query = json!({"client_id":body(&client)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":scope,"resource":"https://api.fixture.test/update","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
+        let query = json!({"client_id":body(&client)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":scope,"resource":identifier,"code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
         let result = Box::pin(
             auth.dispatch_endpoint(
                 OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
@@ -336,7 +340,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     }
     let disabled = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
-            "https://api.fixture.test/update",
+            &identifier,
             &json!({"disabled":true,"metadata":null}),
         )?,
         EndpointOptions {
@@ -349,7 +353,7 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
     assert_eq!(body(&disabled)["disabled"], true);
     assert_eq!(body(&disabled)["metadata"], Value::Null);
     assert_eq!(body(&disabled)["name"], "Updated");
-    let query = json!({"client_id":body(&client)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"profile","resource":"https://api.fixture.test/update","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
+    let query = json!({"client_id":body(&client)["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"profile","resource":identifier,"code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
     let rejected = Box::pin(
         auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,

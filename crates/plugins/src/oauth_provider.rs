@@ -50,6 +50,7 @@ pub use refresh_format::{
     OAuthDecodedRefreshToken, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
 };
 mod resource_policy;
+mod resource_cache;
 mod resource_seed;
 pub use resource_seed::{OAuthResourceIdentifierValidator, OAuthResourceSeedMode};
 mod resources;
@@ -228,6 +229,10 @@ pub struct OAuthProviderConfig {
     pub refresh_token_reuse_interval: f64,
     pub allow_public_client_prelogin: bool,
     pub enforce_per_client_resources: bool,
+    /// Opt-in resource-policy cache membership. Entries are process-global by
+    /// identifier, including across initialized stores, matching the pinned provider.
+    /// External writes remain live by default; successful admin CRUD evicts entries.
+    pub cached_resources: std::collections::HashSet<String>,
     /// Configured resource identifiers or policy objects, using the provider's camelCase fields.
     pub resources: Vec<Value>,
     pub resource_seed_mode: OAuthResourceSeedMode,
@@ -305,6 +310,7 @@ impl Default for OAuthProviderConfig {
             refresh_token_reuse_interval: 0.0,
             allow_public_client_prelogin: false,
             enforce_per_client_resources: true,
+            cached_resources: std::collections::HashSet::new(),
             resources: Vec::new(),
             resource_seed_mode: OAuthResourceSeedMode::default(),
             identifier_validator: None,

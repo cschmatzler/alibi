@@ -256,7 +256,12 @@ impl OAuthProviderPlugin {
                 result.map_err(SeedFailure::into_error)?;
             }
         }
-        ctx.database.get_oauth_resource(identifier).await
+        super::resource_cache::get(
+            ctx,
+            identifier,
+            self.config.cached_resources.contains(identifier),
+        )
+        .await
     }
 }
 

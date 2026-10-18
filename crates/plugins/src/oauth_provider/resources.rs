@@ -210,6 +210,7 @@ impl OAuthProviderPlugin {
             }
             Err(error) => return Err(error),
         };
+        super::resource_cache::invalidate(&row.identifier).await;
         EndpointResponse::json(&resource_value(row)?)
     }
     async fn resource_admission<S: AuthSchema>(
@@ -403,6 +404,7 @@ impl OAuthProviderPlugin {
             .database
             .update_oauth_resource(&identifier, Value::Object(metadata), now)
             .await?;
+        super::resource_cache::invalidate(&identifier).await;
         let Some(row) = ctx.database.get_oauth_resource(&identifier).await? else {
             return super::clients::status_protocol_error(
                 404,
@@ -447,6 +449,7 @@ impl OAuthProviderPlugin {
             );
         }
         ctx.database.delete_oauth_resource(&identifier).await?;
+        super::resource_cache::invalidate(&identifier).await;
         EndpointResponse::json(&json!({"deleted":true}))
     }
 }

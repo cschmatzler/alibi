@@ -465,7 +465,10 @@ pub(crate) async fn router(
     let admin_path = format!("{}/admin/oauth2/create-client", config.base_path);
     let response_fields_auth=client_instances.get("response-fields").unwrap().clone();
     let response_fields_routes=response_fields_auth.clone().axum_router().with_state(response_fields_auth);
-    let seeded_auth=Arc::new(tokio::sync::Mutex::new(None::<(Arc<alibi::Alibi<TestSchema>>,OAuthProviderPlugin)>));
+    let seeded_auth = Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::<
+        String,
+        (Arc<alibi::Alibi<TestSchema>>, OAuthProviderPlugin),
+    >::new()));
     let seed_identifiers=Arc::new(resource_identifiers::Identifiers::default());
     let registration_resource_client_ids=Arc::new(OperatorClientIds{calls:std::sync::atomic::AtomicUsize::new(0),empty:false});
     Ok(Router::new().nest("/__test/profiles/oauth-response-fields/api/auth",response_fields_routes).route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
@@ -500,14 +503,15 @@ pub(crate) async fn router(
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="resource-seed-init" {
-                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),client_id_generator:(input["registrationResources"]==true).then(||registration_resource_client_ids as Arc<dyn alibi::plugins::OAuthClientIdGenerator>),enforce_per_client_resources:input["registrationResources"]==true,allow_dynamic_client_registration:input["registrationResources"]==true,allow_unauthenticated_client_registration:input["registrationResources"]==true,client_registration_default_resources:input["options"].get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_resources:input["options"].get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),..Default::default()});
-                let builder=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,logout_database.clone())).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone());
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),cached_resources:input.get("cachedResources").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),disable_jwt_plugin:input["disableJwtPlugin"]==true,resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),client_id_generator:(input["registrationResources"]==true).then(||registration_resource_client_ids as Arc<dyn alibi::plugins::OAuthClientIdGenerator>),enforce_per_client_resources:input["registrationResources"]==true || input["enforcePerClientResources"].as_bool().unwrap_or(false),allow_dynamic_client_registration:input["registrationResources"]==true,allow_unauthenticated_client_registration:input["registrationResources"]==true,client_registration_default_resources:input["options"].get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_resources:input["options"].get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),..Default::default()});
+                let database=if input["isolated"]==true {let database=alibi::seaorm::sea_orm::Database::connect(crate::sqlite_fixture::options()).await.unwrap();crate::backend::migrate(&database).await.unwrap();database}else{logout_database.clone()};
+                let builder=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,database)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone());
                 let builder=if input["registrationResources"]==true {builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
                 let initialized=builder.build().await.unwrap();
-                *seeded_auth.lock().await=Some((Arc::new(initialized),provider));
+                seeded_auth.lock().await.insert(input["context"].as_str().unwrap_or("default").into(),(Arc::new(initialized),provider));
                 return axum::Json(serde_json::json!({"initialized":true})).into_response();
             }
-            let seeded=if input["mode"]=="resource-seed"{seeded_auth.lock().await.clone()}else{None};
+            let seeded=if input["mode"]=="resource-seed"{seeded_auth.lock().await.get(input["context"].as_str().unwrap_or("default")).cloned()}else{None};
             let auth=seeded.as_ref().map(|(auth,_)|auth.clone()).unwrap_or(auth);
             if input["action"]=="resource-seed-validator" {
                 use std::sync::atomic::Ordering;
@@ -518,6 +522,19 @@ pub(crate) async fn router(
                 let row=auth.store().get_oauth_resource(input["identifier"].as_str().unwrap()).await.unwrap();
                 let value=row.map(|row|{let mut value=row.metadata;value["id"]=serde_json::json!(row.id);value["identifier"]=serde_json::json!(row.identifier);value["createdAt"]=serde_json::json!(row.created_at);value["updatedAt"]=serde_json::json!(row.updated_at);value});
                 return axum::Json(value).into_response();
+            }
+            if input["action"]=="resource-external-update" || input["action"]=="resource-external-delete" {
+                let identifier=input["identifier"].as_str().unwrap();
+                if input["action"]=="resource-external-update" {
+                    let mut row=auth.store().get_oauth_resource(identifier).await.unwrap().unwrap();
+                    row.metadata.as_object_mut().unwrap().extend(input["body"].as_object().unwrap().clone());
+                    auth.store().update_oauth_resource(identifier,row.metadata,chrono::Utc::now()).await.unwrap();
+                }else{auth.store().delete_oauth_resource(identifier).await.unwrap();}
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
+            if input["action"]=="resource-external-create" {
+                auth.store().create_oauth_resource(alibi::store::CreateOAuthResource{identifier:input["identifier"].as_str().unwrap().into(),metadata:input["body"].clone(),created_at:chrono::Utc::now()}).await.unwrap();
+                return axum::Json(serde_json::json!({"created":true})).into_response();
             }
             if input["action"]=="client-policy-calls" {
                 return axum::Json(std::mem::take(&mut *client_privileges.calls.lock().unwrap())).into_response();
@@ -699,6 +716,7 @@ pub(crate) async fn router(
             }
             if input["action"]=="validate-access" {
                 let body=&input["body"];let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{custom_access_token_claims:(body["accessClaimsProfile"]==true).then(||extension_claims::access_operator::<TestSchema>(live_claims.clone())),extensions:if body["accessClaimsProfile"]==true{extension_claims::extensions_with_live(Some(live_claims.clone()))}else{Vec::new()},token_hasher:body["prefix"].is_object().then(||credential_generators.clone() as Arc<dyn alibi::plugins::OAuthTokenHasher>),opaque_access_token_prefix:body["prefix"]["opaqueAccessToken"].as_str().map(str::to_owned),refresh_token_prefix:body["prefix"]["refreshToken"].as_str().map(str::to_owned),..Default::default()});let token=body["token"].as_str().unwrap();let client=body["clientId"].as_str();
+                let provider=seeded.as_ref().map(|(_,provider)|provider.clone()).unwrap_or(provider);
                 let result=if body["requireActive"]==true{provider.require_active_access_token(auth.context(),token,client).await}else{provider.validate_access_token(auth.context(),token,client).await};
                 return match result {Ok(payload)=>axum::Json(payload).into_response(),Err(error)=>{if matches!(&error.error,alibi::AuthError::Internal(_)){return axum::Json(serde_json::json!({"ordinary_error":true})).into_response();}let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
             }
