@@ -1,4 +1,5 @@
-//! A real authorization grant is consumed once, with PKCE and redirect binding.
+//! Revocation authenticates before retiring matching durable token authority.
+use super::oauth_introspection::{LogicalTokenInput, client_denials, public_request};
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
@@ -10,6 +11,7 @@ async fn oauth_revocation_retires_access_and_revokes_refresh_family<B: Backend>(
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .endpoint_hook(LogicalTokenInput)
         .plugin(JwtPlugin::new())
         .plugin(OAuthProviderPlugin::new())
         .build()
@@ -87,16 +89,52 @@ async fn oauth_revocation_retires_access_and_revokes_refresh_family<B: Backend>(
     let hash = |value: &str| {
         base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(value))
     };
+    let access_before = auth
+        .store()
+        .get_oauth_token(alibi::store::OAuthTokenKind::Access, &hash(plaintext))
+        .await?
+        .unwrap();
+    let refresh_before = auth
+        .store()
+        .get_oauth_token(alibi::store::OAuthTokenKind::Refresh, &hash(refresh))
+        .await?
+        .unwrap();
+    client_denials(&auth, "/oauth2/revoke", &id, &secret, plaintext).await?;
+    for (kind, issued, before) in [
+        (
+            alibi::store::OAuthTokenKind::Access,
+            plaintext,
+            access_before,
+        ),
+        (
+            alibi::store::OAuthTokenKind::Refresh,
+            refresh,
+            refresh_before,
+        ),
+    ] {
+        let after = auth
+            .store()
+            .get_oauth_token(kind, &hash(issued))
+            .await?
+            .unwrap();
+        assert_eq!(after.id, before.id);
+        assert_eq!(after.token, before.token);
+        assert_eq!(after.client_id, before.client_id);
+        assert_eq!(after.user_id, before.user_id);
+        assert_eq!(after.session_id, before.session_id);
+        assert_eq!(after.authorization_code_id, before.authorization_code_id);
+        assert_eq!(after.metadata, before.metadata);
+        assert_eq!(after.created_at, before.created_at);
+        assert_eq!(after.expires_at, before.expires_at);
+    }
     let revoke_input = json!({"client_id":id,"client_secret":secret,"token":plaintext,"token_type_hint":"access_token"});
-    let revoked = Box::pin(auth.dispatch_endpoint(
-        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Revoke").with_body(&revoke_input)?,
-        EndpointOptions {
-            request: Some(request("/oauth2/revoke", Some(revoke_input.clone()), "")),
-            ..Default::default()
-        },
-    ))
-    .await?
-    .into_response()?;
+    let mut physical = revoke_input.clone();
+    physical["token"] = json!("physical-token-is-not-the-logical-input");
+    let mut req = public_request("/oauth2/revoke", &physical);
+    _ = req
+        .headers
+        .insert("x-logical-token".into(), plaintext.into());
+    let revoked = call(&auth, req, 200).await;
     assert_eq!(revoked.status, 200);
     assert!(revoked.body.is_empty());
     assert!(
@@ -166,15 +204,17 @@ async fn oauth_revocation_retires_access_and_revokes_refresh_family<B: Backend>(
     let second_refresh = second_tokens["refresh_token"].as_str().unwrap();
     let revocation_started = chrono::Utc::now().timestamp();
     let revoke_input = json!({"client_id":id,"client_secret":secret,"token":second_refresh,"token_type_hint":"refresh_token"});
-    let revoked = Box::pin(auth.dispatch_endpoint(
-        ServerEndpoint::<Value>::new("oauth-provider", "oauth2Revoke").with_body(&revoke_input)?,
-        EndpointOptions {
-            request: Some(request("/oauth2/revoke", Some(revoke_input.clone()), "")),
-            ..Default::default()
-        },
-    ))
-    .await?
-    .into_response()?;
+    let mut repeated_fields = revoke_input.clone();
+    repeated_fields["token"] = json!(["unknown-token", second_refresh]);
+    repeated_fields["token_type_hint"] = json!(["access_token", "refresh_token"]);
+    repeated_fields["client_id"] = json!(["", id]);
+    repeated_fields["client_secret"] = json!(["", secret]);
+    let revoked = call(
+        &auth,
+        public_request("/oauth2/revoke", &repeated_fields),
+        200,
+    )
+    .await;
     assert_eq!(revoked.status, 200);
     assert!(revoked.body.is_empty());
     assert!(

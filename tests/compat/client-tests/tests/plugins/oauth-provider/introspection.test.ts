@@ -14,6 +14,13 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       });
+    const introspect = (body: Record<string, string>) =>
+      control({
+        action: "protocol-http",
+        path: "/oauth2/introspect",
+        method: "POST",
+        body,
+      });
     const signup = await control({
       action: "signup",
       body: {
@@ -94,14 +101,11 @@ compatScenario(
       [token.refresh_token, "refresh_token", 2_592_000],
     ] as const) {
       for (const hint of [kind, undefined, "unknown_hint"]) {
-        const response = await control({
-          action: "introspect",
-          body: {
-            client_id: id,
-            client_secret: secret,
-            token: issued,
-            ...(hint ? { token_type_hint: hint } : {}),
-          },
+        const response = await introspect({
+          client_id: id,
+          client_secret: secret,
+          token: issued,
+          ...(hint ? { token_type_hint: hint } : {}),
         });
         expect(response.status).toBe(200);
         expect(response.headers.get("cache-control")).toBe("no-store");
@@ -137,7 +141,7 @@ compatScenario(
         "missing a required token for introspection",
       ],
     ] as const) {
-      const r = await control({ action: "introspect", body });
+      const r = await introspect(body);
       expect(r.status).toBe(status);
       const errorBody = await r.json();
       expect(errorBody).toEqual({ error, error_description: description });
@@ -150,9 +154,11 @@ compatScenario(
       [token.access_token, "refresh_token"],
       [token.refresh_token, "access_token"],
     ]) {
-      const r = await control({
-        action: "introspect",
-        body: { client_id: id, client_secret: secret, token: issued, token_type_hint: hint },
+      const r = await introspect({
+        client_id: id,
+        client_secret: secret,
+        token: issued,
+        token_type_hint: hint,
       });
       expect(r.status).toBe(200);
       expect(await r.json()).toEqual({ active: false });
@@ -166,9 +172,11 @@ compatScenario(
       [token.access_token, "access_token", false],
       [token.refresh_token, "refresh_token", true],
     ] as const) {
-      const r = await control({
-        action: "introspect",
-        body: { client_id: id, client_secret: secret, token: issued, token_type_hint: hint },
+      const r = await introspect({
+        client_id: id,
+        client_secret: secret,
+        token: issued,
+        token_type_hint: hint,
       });
       expect(r.status).toBe(200);
       const payload = (await r.json()) as any;

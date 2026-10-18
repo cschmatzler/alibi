@@ -79,7 +79,9 @@ compatScenario(
     expect(tokens.access_token.split(".")).toHaveLength(3);
     const introspect = async (client: any, token = tokens.access_token, hint?: string) => {
       const response = await control({
-        action: "introspect",
+        action: "protocol-http",
+        path: "/oauth2/introspect",
+        method: "POST",
         body: {
           client_id: client.client_id,
           client_secret: client.client_secret,

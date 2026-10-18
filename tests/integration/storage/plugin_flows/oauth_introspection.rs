@@ -1,15 +1,180 @@
-//! A real authorization grant is consumed once, with PKCE and redirect binding.
+//! Introspection authenticates real clients and reports issued token authority.
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 use base64::Engine as _;
 use sha2::Digest as _;
+
+pub(super) struct LogicalTokenInput;
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for LogicalTokenInput {
+    fn matches_before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<bool> {
+        Ok(
+            matches!(call.operation_id(), "oauth2Introspect" | "oauth2Revoke")
+                && call
+                    .headers()
+                    .is_some_and(|headers| headers.contains_key("x-logical-token")),
+        )
+    }
+    async fn before(
+        &self,
+        call: &alibi::endpoint::EndpointCall,
+        _: &alibi::AuthContext<S>,
+    ) -> alibi::AuthResult<Option<alibi::endpoint::BeforeEndpointAction>> {
+        let headers = call.headers().unwrap();
+        let mut body = call.body().unwrap().to_json_value()?;
+        body["token"] = json!(headers["x-logical-token"]);
+        body["client_id"] = json!("logical-client-is-not-authoritative");
+        body["client_secret"] = json!(
+            headers
+                .get("x-logical-secret")
+                .map_or("logical-secret-is-not-authoritative", String::as_str)
+        );
+        Ok(Some(alibi::endpoint::BeforeEndpointAction::Patch(
+            Box::new(alibi::endpoint::EndpointContextPatch {
+                body: Some(alibi::utils::json::JsValue::from(body)),
+                ..Default::default()
+            }),
+        )))
+    }
+}
+
+pub(super) async fn client_denials<S: AuthSchema>(
+    auth: &Alibi<S>,
+    path: &str,
+    id: &str,
+    secret: &str,
+    token: &str,
+) -> TestResult {
+    // The private control verifies the issued client's secret before exercising
+    // the HTTP adapter; the denial must not merely be a lost-token parse error.
+    let operation = if path.ends_with("introspect") {
+        "oauth2Introspect"
+    } else {
+        "oauth2Revoke"
+    };
+    let wrong = json!({"client_id":id,"client_secret":"wrong","token":token});
+    let denied = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("oauth-provider", operation).with_body(&wrong)?,
+        EndpointOptions {
+            request: Some(request(path, Some(wrong.clone()), "")),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 400);
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_client","error_description":"invalid client_secret"})
+    );
+    let valid = json!({"client_id":id,"client_secret":secret,"token":token});
+    for (field, value, description) in [
+        ("client_secret", json!("wrong"), "invalid client_secret"),
+        (
+            "client_id",
+            json!([id, id]),
+            "client_id must not be repeated",
+        ),
+        (
+            "client_secret",
+            json!([secret, secret]),
+            "client_secret must not be repeated",
+        ),
+        (
+            "client_assertion",
+            json!(["assertion", "assertion"]),
+            "client_assertion must not be repeated",
+        ),
+        (
+            "client_assertion_type",
+            json!(["urn:assertion", "urn:assertion"]),
+            "client_assertion_type must not be repeated",
+        ),
+    ] {
+        let mut input = valid.clone();
+        input[field] = value;
+        let response = call(auth, public_request(path, &input), 400).await;
+        assert_eq!(
+            body(&response),
+            json!({"error":if field == "client_secret" && input[field].is_string() {"invalid_client"} else {"invalid_request"},"error_description":description})
+        );
+    }
+    let basic = format!(
+        "Basic {}",
+        base64::engine::general_purpose::STANDARD.encode(format!("{id}:{secret}"))
+    );
+    for (input, description) in [
+        (
+            valid.clone(),
+            "A request must use only one client authentication method",
+        ),
+        (
+            json!({"token":token}),
+            "client registered for client_secret_post cannot use client_secret_basic",
+        ),
+    ] {
+        let mut req = public_request(path, &input);
+        _ = req.headers.insert("authorization".into(), basic.clone());
+        let response = call(
+            auth,
+            req,
+            if input.get("client_secret").is_some() {
+                400
+            } else {
+                401
+            },
+        )
+        .await;
+        assert_eq!(body(&response)["error_description"], description);
+    }
+    // A logical patch cannot replace a wrong physical credential.
+    let mut req = public_request(path, &wrong);
+    req.headers.extend([
+        ("x-logical-token".into(), token.into()),
+        ("x-logical-secret".into(), secret.into()),
+    ]);
+    let response = call(auth, req, 400).await;
+    assert_eq!(
+        body(&response),
+        json!({"error":"invalid_client","error_description":"invalid client_secret"})
+    );
+    Ok(())
+}
+
+pub(super) fn public_request(path: &str, input: &Value) -> AuthRequest {
+    let mut req = request(path, None, "");
+    req.method = HttpMethod::Post;
+    _ = req.headers.insert(
+        "content-type".into(),
+        "application/x-www-form-urlencoded".into(),
+    );
+    req.body = Some(
+        url::form_urlencoded::Serializer::new(String::new())
+            .extend_pairs(input.as_object().unwrap().iter().flat_map(|(key, value)| {
+                let values = value
+                    .as_array()
+                    .map_or_else(|| vec![value], |values| values.iter().collect());
+                values
+                    .into_iter()
+                    .map(move |value| (key.as_str(), value.as_str().unwrap()))
+            }))
+            .finish()
+            .into_bytes(),
+    );
+    req
+}
 backend_tests!(oauth_introspection_reports_issued_tokens_and_session_liveness);
 async fn oauth_introspection_reports_issued_tokens_and_session_liveness<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .endpoint_hook(LogicalTokenInput)
         .plugin(JwtPlugin::new())
         .plugin(OAuthProviderPlugin::new())
         .build()
@@ -93,6 +258,7 @@ async fn oauth_introspection_reports_issued_tokens_and_session_liveness<B: Backe
     ))
     .await?
     .into_response()?;
+    client_denials(&auth, "/oauth2/introspect", &id, &secret, plaintext).await?;
     for (issued, hint, lifetime) in [
         (plaintext, "access_token", 3600),
         (refresh, "refresh_token", 2_592_000),
@@ -102,18 +268,7 @@ async fn oauth_introspection_reports_issued_tokens_and_session_liveness<B: Backe
             if let Some(hint) = hint {
                 input["token_type_hint"] = json!(hint);
             }
-            let active = Box::pin(
-                auth.dispatch_endpoint(
-                    ServerEndpoint::<Value>::new("oauth-provider", "oauth2Introspect")
-                        .with_body(&input)?,
-                    EndpointOptions {
-                        request: Some(request("/oauth2/introspect", Some(input), "")),
-                        ..Default::default()
-                    },
-                ),
-            )
-            .await?
-            .into_response()?;
+            let active = call(&auth, public_request("/oauth2/introspect", &input), 200).await;
             assert_eq!(active.status, 200);
             let payload = body(&active);
             assert_eq!(payload["active"], true);
@@ -140,6 +295,20 @@ async fn oauth_introspection_reports_issued_tokens_and_session_liveness<B: Backe
                 assert!(payload.get("azp").is_none());
             }
             assert!(payload.get("aud").is_none());
+            if hint == Some("access_token") && lifetime == 3600 {
+                let mut repeated = input.clone();
+                repeated["token"] = json!(["unknown-token", issued]);
+                repeated["token_type_hint"] = json!(["refresh_token", "access_token"]);
+                repeated["client_id"] = json!(["", id]);
+                repeated["client_secret"] = json!(["", secret]);
+                let last = call(&auth, public_request("/oauth2/introspect", &repeated), 200).await;
+                assert_eq!(body(&last), payload);
+                input["token"] = json!("physical-token-is-not-the-logical-input");
+                let mut req = public_request("/oauth2/introspect", &input);
+                _ = req.headers.insert("x-logical-token".into(), issued.into());
+                let patched = call(&auth, req, 200).await;
+                assert_eq!(body(&patched), payload);
+            }
         }
     }
     for (input, status, error, description) in [

@@ -1078,36 +1078,30 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         if matches!(req.path(), "/oauth2/introspect" | "/oauth2/revoke")
             && *req.method() == HttpMethod::Post
         {
-            let mut fields = indexmap::IndexMap::new();
-            for (key, value) in url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
-            {
-                _ = fields.insert(
-                    key.into_owned(),
-                    alibi_core::utils::json::JsValue::String(value.into_owned()),
-                );
-            }
-            if req.path() == "/oauth2/revoke" {
-                return Ok(Some(
-                    Box::pin(self.revoke(
-                        Some(&alibi_core::utils::json::JsValue::Object(fields)),
-                        req,
-                        ctx,
-                    ))
-                    .await?
-                    .to_response()?,
-                ));
-            }
-            if req.path() == "/oauth2/introspect" {
-                return Ok(Some(
-                    Box::pin(self.introspect(
-                        Some(&alibi_core::utils::json::JsValue::Object(fields)),
-                        req,
-                        ctx,
-                    ))
-                    .await?
-                    .to_response()?,
-                ));
-            }
+            // Consume admitted logical input (including form values and hook
+            // patches), but authenticate against the original physical Request.
+            let body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
+            let revoking = req.path() == "/oauth2/revoke";
+            let call = alibi_core::endpoint::current_endpoint_call_context().unwrap_or_else(|| {
+                EndpointCall::from_http_request(
+                    req,
+                    &AuthRoute::post(
+                        req.path(),
+                        if revoking {
+                            "oauth2Revoke"
+                        } else {
+                            "oauth2Introspect"
+                        },
+                    ),
+                )
+            });
+            let call = call.handler_context(Some(body.clone()), call.query().cloned());
+            let response = if revoking {
+                Box::pin(self.revoke(Some(&body), &call, ctx)).await?
+            } else {
+                Box::pin(self.introspect(Some(&body), &call, ctx)).await?
+            };
+            return Ok(Some(response.to_response()?));
         }
         if req.path() == "/oauth2/authorize"
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)

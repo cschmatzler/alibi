@@ -14,6 +14,13 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify(input),
       });
+    const protocol = (path: string, body: Record<string, string>) =>
+      control({
+        action: "protocol-http",
+        path: `/oauth2/${path}`,
+        method: "POST",
+        body,
+      });
     const signup = await control({
       action: "signup",
       body: {
@@ -85,13 +92,96 @@ compatScenario(
     expect(token.refresh_token).toMatch(/^[A-Za-z]{32}$/);
     expect(token.id_token).toBeUndefined();
 
+    const before = await Promise.all(
+      (
+        [
+          ["access", token.access_token],
+          ["refresh", token.refresh_token],
+        ] as const
+      ).map(async ([kind, token]) => {
+        const response = await control({ action: "token-row", kind, token });
+        expect(response.status).toBe(200);
+        return response.json();
+      }),
+    );
+    for (const path of ["introspect", "revoke"]) {
+      const valid = { client_id: id, client_secret: secret, token: token.access_token };
+      const cases: [string, Record<string, string>, string | undefined, number, string][] = [
+        [
+          "wrong-secret",
+          { ...valid, client_secret: "wrong" },
+          undefined,
+          400,
+          "invalid client_secret",
+        ],
+        [
+          "mixed-method",
+          valid,
+          `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`,
+          400,
+          "A request must use only one client authentication method",
+        ],
+        [
+          "registered-method",
+          { token: token.access_token },
+          `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}`,
+          401,
+          "client registered for client_secret_post cannot use client_secret_basic",
+        ],
+      ];
+      for (const [name, body, authorization, status, description] of cases) {
+        const response = await control({
+          action: "protocol-http",
+          path: `/oauth2/${path}`,
+          method: "POST",
+          body,
+          ...(authorization ? { headers: { authorization } } : {}),
+        });
+        expect(response.status, `${path}/${name}`).toBe(status);
+        expect(((await response.json()) as any).error_description).toBe(description);
+        expect(response.headers.get("cache-control")).toBe(
+          path === "introspect" ? "no-store" : null,
+        );
+        expect(response.headers.get("pragma")).toBe(path === "introspect" ? "no-cache" : null);
+      }
+      for (const [field, value] of Object.entries({
+        client_id: id,
+        client_secret: secret,
+        client_assertion: "assertion",
+        client_assertion_type: "urn:assertion",
+      })) {
+        const entries = [...Object.entries(valid), [field, value]];
+        if (field.startsWith("client_assertion")) entries.push([field, value]);
+        const response = await control({
+          action: "protocol-http",
+          path: `/oauth2/${path}`,
+          method: "POST",
+          rawBody: new URLSearchParams(entries).toString(),
+        });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({
+          error: "invalid_request",
+          error_description: `${field} must not be repeated`,
+        });
+      }
+    }
+    for (const [index, [kind, issued]] of (
+      [
+        ["access", token.access_token],
+        ["refresh", token.refresh_token],
+      ] as const
+    ).entries()) {
+      const response = await control({ action: "token-row", kind, token: issued });
+      expect(await response.json()).toEqual(before[index]);
+    }
+
     const revocationBody = {
       client_id: id,
       client_secret: secret,
       token: token.access_token,
       token_type_hint: "access_token",
     };
-    const revoked = await control({ action: "revoke", body: revocationBody });
+    const revoked = await protocol("revoke", revocationBody);
     expect(revoked.status).toBe(200);
     expect(await revoked.text()).toBe("");
     const accessAfter = await control({ action: "token-row", token: token.access_token });
@@ -102,7 +192,7 @@ compatScenario(
       token: token.refresh_token,
     });
     expect((await refreshAfter.json()) as any).toBeTruthy();
-    const repeatedAccess = await control({ action: "revoke", body: revocationBody });
+    const repeatedAccess = await protocol("revoke", revocationBody);
     expect(repeatedAccess.status).toBe(400);
     expect(await repeatedAccess.json()).toEqual({
       error: "invalid_request",
@@ -136,7 +226,21 @@ compatScenario(
       token_type_hint: "refresh_token",
     };
     const start = Date.now();
-    const refreshRevoked = await control({ action: "revoke", body: refreshRevocationBody });
+    const refreshRevoked = await control({
+      action: "protocol-http",
+      path: "/oauth2/revoke",
+      method: "POST",
+      rawBody: new URLSearchParams([
+        ["client_id", ""],
+        ["client_id", id],
+        ["client_secret", ""],
+        ["client_secret", secret],
+        ["token", "unknown-token"],
+        ["token", secondTokens.refresh_token],
+        ["token_type_hint", "access_token"],
+        ["token_type_hint", "refresh_token"],
+      ]).toString(),
+    });
     expect(refreshRevoked.status).toBe(200);
     expect(await refreshRevoked.text()).toBe("");
     const access = await control({ action: "token-row", token: secondTokens.access_token });
@@ -157,10 +261,10 @@ compatScenario(
       token: token.refresh_token,
     });
     expect((await older.json()) as any).toBeTruthy();
-    const inactive = await control({ action: "introspect", body: refreshRevocationBody });
+    const inactive = await protocol("introspect", refreshRevocationBody);
     expect(inactive.status).toBe(200);
     expect(await inactive.json()).toEqual({ active: false });
-    const repeated = await control({ action: "revoke", body: refreshRevocationBody });
+    const repeated = await protocol("revoke", refreshRevocationBody);
     expect(repeated.status).toBe(400);
     expect(await repeated.json()).toEqual({
       error: "invalid_request",
