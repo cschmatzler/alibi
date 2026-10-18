@@ -9,6 +9,10 @@ mod claims_request;
 mod client_jwks;
 mod client_secret;
 mod clients;
+mod metadata_document;
+pub use metadata_document::{
+    OAuthClientMetadata, OAuthClientRegistrationResult, RegisterClientMetadataDocumentInput,
+};
 mod consent;
 mod continuation;
 mod credentials;

@@ -41,6 +41,7 @@ mod native_api_keys;
 mod native_device_codes;
 mod native_jwks;
 mod native_organizations;
+mod oauth_clients;
 mod optional_records;
 mod organizations;
 mod plugin_flows;

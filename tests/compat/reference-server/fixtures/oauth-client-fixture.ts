@@ -7,6 +7,7 @@ import {
   oauthProvider,
   type OAuthOptions,
 } from "@better-auth/oauth-provider";
+import { registerClientMetadataDocument } from "@better-auth/oauth-provider/internal";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError, createAuthEndpoint } from "better-auth/api";
 import { symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
@@ -1136,6 +1137,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       },
     },
   };
+  const seededOptions = new Map<string, OAuthOptions>();
   let registrationResourceClientIds = 0;
   const seededAuths = new Map<string, ReturnType<typeof betterAuth>>();
   const seedIdentifiers = { calls: 0, failNext: false };
@@ -2201,6 +2203,19 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         enforcePerClientResources:
           input.registrationResources === true || (input.enforcePerClientResources ?? false),
         disableJwtPlugin: input.disableJwtPlugin ?? false,
+        ...(input.metadataDocuments
+          ? {
+              extensions: [
+                {
+                  clientDiscovery: {
+                    id: "trusted-document-owner",
+                    matches: (id: string) => id === "https://client.fixture.test/metadata.json",
+                    resolve: async (_ctx: unknown, _id: string, existing: any) => existing,
+                  },
+                },
+              ],
+            }
+          : {}),
         ...(input.registrationResources
           ? {
               allowDynamicClientRegistration: true,
@@ -2227,6 +2242,8 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       if (input.isolated) {
         await (await getMigrations({ ...options, database })).runMigrations();
       }
+      const seedProvider = oauthProvider(seedOptions);
+      seededOptions.set(input.context ?? "default", seedProvider.options);
       const seededAuth = betterAuth({
         ...options,
         ...(input.registrationResources ? { rateLimit: { enabled: false } } : {}),
@@ -2234,7 +2251,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         plugins: [
           username(),
           jwt(),
-          oauthProvider(seedOptions),
+          seedProvider,
           {
             id: "configured-resource-issuance",
             endpoints: {
@@ -2310,6 +2327,55 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return input.action === "logout-context-http"
         ? auth.handler(request!)
         : auth.api.signOut({ headers, request, asResponse: true });
+    }
+    if (input.action === "cimd-register") {
+      const context = await auth.$context;
+      const existingClient = input.existing
+        ? await context.adapter.findOne<any>({
+            model: "oauthClient",
+            where: [{ field: "clientId", value: input.clientId }],
+          })
+        : undefined;
+      try {
+        const result = await registerClientMetadataDocument(
+          { context } as any,
+          seededOptions.get(input.context ?? "default")!,
+          {
+            metadata: input.metadata,
+            clientId: input.clientId,
+            clientDiscoveryId: input.clientDiscoveryId,
+            existingClient: existingClient ?? undefined,
+          },
+        );
+        return Response.json({
+          created: result.created,
+          resources: result.resources,
+          clientSecret: result.clientSecret ?? null,
+          client: {
+            id: result.client.id,
+            clientId: result.client.clientId,
+            clientDiscoveryId: result.client.clientDiscoveryId ?? null,
+            name: result.client.name ?? null,
+            applicationType: result.client.applicationType ?? null,
+            scopes: result.client.scopes,
+            clientCredentialsScopes: result.client.clientCredentialsScopes,
+          },
+        });
+      } catch (error) {
+        if (error instanceof EndpointAPIError) {
+          return Response.json(error.body, { status: error.statusCode });
+        }
+        throw error;
+      }
+    }
+    if (input.action === "cimd-operator") {
+      const context = await auth.$context;
+      await context.adapter.update({
+        model: "oauthClient",
+        where: [{ field: "clientId", value: input.clientId }],
+        update: input.update,
+      });
+      return Response.json({ updated: true });
     }
     if (input.mode === "resource-privileges") {
       const operations: Record<string, string> = {

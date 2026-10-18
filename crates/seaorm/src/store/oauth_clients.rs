@@ -14,6 +14,113 @@ use sea_orm::{
 };
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
+    async fn has_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_client_resource as link;
+        Ok(link::Entity::find()
+            .filter(link::Column::ClientId.eq(client_id))
+            .filter(link::Column::ResourceId.eq(resource_id))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?
+            .is_some())
+    }
+    async fn persist_oauth_client_registration(
+        &self,
+        data: alibi_core::store::oauth_clients::PersistOAuthClientRegistration,
+    ) -> Result<
+        Option<OAuthClient>,
+        alibi_core::store::oauth_clients::OAuthClientRegistrationWriteError,
+    > {
+        use super::entities::oauth_client_resource as link;
+        use alibi_core::store::oauth_clients::OAuthClientRegistrationWriteError as WriteError;
+        use sea_orm::{IdenStatic as _, Iterable as _};
+        let tx = self.scoped_connection().begin_immediate().await?;
+        let metadata = data.client.metadata;
+        let patch = alibi_core::store::oauth_clients::metadata_to_columns(metadata.clone())?;
+        let mut active = if data.replace {
+            <oauth_client::ActiveModel as Default>::default()
+        } else {
+            oauth_client::ActiveModel {
+                id: Set(self
+                    .generated_id(&tx, "oauthClient", "oauthClient", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                client_id: Set(data.client.client_id.clone()),
+                user_id: Set(data.client.user_id),
+                client_secret: Set(data.client.client_secret),
+                ..Default::default()
+            }
+        };
+        let mut fields = <oauth_client::ActiveModel as Default>::default();
+        oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut fields);
+        for column in Column::iter() {
+            if (!data.replace
+                || patch
+                    .get(column.as_str())
+                    .is_some_and(|value| column.as_str() != "metadata" || !value.is_null()))
+                && let sea_orm::ActiveValue::Set(value) = fields.get(column)
+            {
+                active.set(column, value);
+            }
+        }
+        if !data.replace {
+            active.created_at = Set(Some(data.client.created_at));
+        } else if let Some(created_at) = data.existing_created_at {
+            active.created_at = Set(Some(created_at));
+        }
+        active.updated_at = Set(Some(data.updated_at));
+        let client = if data.replace {
+            let mut clients = Entity::update_many()
+                .set(active)
+                .filter(Column::ClientId.eq(&data.client.client_id))
+                .filter(Column::ClientDiscoveryId.eq(&data.discovery_id))
+                .exec_with_returning(&tx)
+                .await
+                .map_err(map_db_err)?;
+            let Some(client) = clients.pop() else {
+                return Ok(None);
+            };
+            client
+        } else {
+            active
+                .insert(&tx)
+                .await
+                .map_err(|error| WriteError::classify(map_db_err(error), None))?
+        };
+        let linked_at = chrono::Utc::now();
+        for resource_id in &data.resources {
+            if link::Entity::find()
+                .filter(link::Column::ClientId.eq(&data.client.client_id))
+                .filter(link::Column::ResourceId.eq(resource_id))
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?
+                .is_some()
+            {
+                continue;
+            }
+            _ = link::ActiveModel {
+                id: Set(self
+                    .generated_id(&tx, "oauthClientResource", "oauthClientResource", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+                client_id: Set(data.client.client_id.clone()),
+                resource_id: Set(resource_id.clone()),
+                metadata: Set(None),
+                created_at: Set(Some(linked_at)),
+            }
+            .insert(&tx)
+            .await
+            .map_err(|error| WriteError::classify(map_db_err(error), Some(resource_id.clone())))?;
+        }
+        let client = client.try_into()?;
+        tx.commit().await.map_err(map_db_err)?;
+        Ok(Some(client))
+    }
     async fn claim_oauth_client_assertion(
         &self,
         id: &str,

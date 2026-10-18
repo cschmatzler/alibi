@@ -19,8 +19,219 @@ backend_tests!(
     oauth_dynamic_registration_enforces_policy_and_persists_clients,
     oauth_registration_scope_capabilities_are_not_grants,
     oauth_registration_pkce_policy_controls_genuine_code_exchanges,
-    oauth_registration_resources_persist_only_admitted_links
+    oauth_registration_resources_persist_only_admitted_links,
+    oauth_metadata_document_registration_owns_replacement
 );
+async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: Db) -> TestResult {
+    use alibi::plugins::oauth_provider::{
+        OAuthClientMetadata, RegisterClientMetadataDocumentInput,
+    };
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let resource = "https://api.fixture.test/cimd/a";
+    let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
+        resources: vec![json!(resource)],
+        client_registration_default_resources: Some(vec![resource.into()]),
+        client_registration_default_scopes: Some(vec!["email".into()]),
+        client_registration_allowed_scopes: Some(vec!["profile".into()]),
+        ..Default::default()
+    });
+    let auth = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(provider.clone())
+        .build()
+        .await?;
+    let input = RegisterClientMetadataDocumentInput {
+        metadata: serde_json::from_value::<OAuthClientMetadata>(
+            json!({"client_id":"ignored", "redirect_uris":["https://app.fixture.test/callback"],"client_name":"Remote"}),
+        )?,
+        client_id: "https://client.fixture.test/metadata.json".into(),
+        client_discovery_id: "trusted-document-owner".into(),
+        existing_client: None,
+    };
+    let result = provider
+        .register_client_metadata_document(input.clone(), auth.context())
+        .await?;
+    assert_eq!(
+        result.client.metadata["client_discovery_id"],
+        "trusted-document-owner"
+    );
+    assert_eq!(result.resources, vec![resource]);
+    assert!(result.created);
+    assert!(result.client_secret.is_none());
+    assert!(result.client.client_secret.is_none());
+    assert!(result.client.user_id.is_none());
+    assert_eq!(result.client.metadata["scope"], "email profile");
+    assert_eq!(
+        result.client.metadata["client_credentials_scopes"],
+        json!([])
+    );
+    assert!(result.client.metadata.get("application_type").is_none());
+    let before = db.tables(&["oauthClient", "oauthClientResource"]).await?;
+    for (patch, error, description) in [
+        (
+            json!({"backchannel_logout_session_required":false}),
+            "invalid_client_metadata",
+            "Client ID Metadata Documents cannot register a back-channel logout target",
+        ),
+        (
+            json!({"backchannel_logout_uri":"https://logout.fixture.test/target"}),
+            "invalid_client_metadata",
+            "Client ID Metadata Documents cannot register a back-channel logout target",
+        ),
+        (
+            json!({"token_endpoint_auth_method":"client_secret_basic"}),
+            "invalid_client_metadata",
+            "Client ID Metadata Document clients cannot use a shared secret",
+        ),
+        (
+            json!({"require_pkce":false}),
+            "invalid_client_metadata",
+            "pkce is required for registered clients.",
+        ),
+        (
+            json!({"scope":"openid"}),
+            "invalid_scope",
+            "cannot request scope openid",
+        ),
+        (
+            json!({"grant_types":["future_grant"]}),
+            "invalid_client_metadata",
+            "no mutually supported grant_type among future_grant",
+        ),
+        (
+            json!({"grant_types":[]}),
+            "invalid_client_metadata",
+            "grant_types must contain at least one grant type",
+        ),
+    ] {
+        let mut rejected = input.clone();
+        let mut metadata = serde_json::to_value(&rejected.metadata)?;
+        metadata
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        rejected.metadata = serde_json::from_value(metadata)?;
+        rejected.existing_client = Some(result.client.clone());
+        let denied = provider
+            .register_client_metadata_document(rejected, auth.context())
+            .await
+            .unwrap_err();
+        assert!(alibi::endpoint::is_endpoint_api_error(&denied.error));
+        assert_eq!(
+            denied.body.unwrap().to_json_value()?,
+            json!({"error":error,"error_description":description})
+        );
+        assert_eq!(
+            db.tables(&["oauthClient", "oauthClientResource"]).await?,
+            before
+        );
+    }
+    let mut wrong = input.clone();
+    wrong.existing_client = Some(result.client.clone());
+    wrong.client_discovery_id = "other".into();
+    let denied = provider
+        .register_client_metadata_document(wrong, auth.context())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_client","error_description":"client_id is already owned by a different registration source"})
+    );
+    let mut collision_other_owner = input.clone();
+    collision_other_owner.client_discovery_id = "different-owner".into();
+    let denied = provider
+        .register_client_metadata_document(collision_other_owner, auth.context())
+        .await
+        .unwrap_err();
+    assert!(
+        !alibi::endpoint::is_endpoint_api_error(&denied.error),
+        "a conflicting create without an owned snapshot preserves the underlying unique error"
+    );
+    assert_eq!(
+        db.tables(&["oauthClient", "oauthClientResource"]).await?,
+        before
+    );
+    // A stale create retries once against the same discovery owner after the real unique failure.
+    let retried = provider
+        .register_client_metadata_document(input.clone(), auth.context())
+        .await?;
+    assert!(!retried.created);
+    assert_eq!(retried.client.id, result.client.id);
+    let mut private_key = input.clone();
+    private_key.existing_client = Some(result.client.clone());
+    private_key.metadata.client_id = input.client_id.clone();
+    private_key.metadata.metadata.token_endpoint_auth_method = Some("private_key_jwt".into());
+    private_key.metadata.metadata.jwks_uri = Some("https://client.fixture.test/keys".into());
+    let private_key = provider
+        .register_client_metadata_document(private_key, auth.context())
+        .await?;
+    assert!(private_key.client_secret.is_none());
+    assert!(private_key.client.client_secret.is_none());
+    assert_eq!(
+        private_key.client.metadata["token_endpoint_auth_method"],
+        "private_key_jwt"
+    );
+    let mut controlled = result.client.clone();
+    for (name, value) in [
+        ("disabled", json!(true)),
+        ("skip_consent", json!(true)),
+        ("enable_end_session", json!(false)),
+        ("client_credentials_scopes", json!(["operator-scope"])),
+        ("application_type", json!("web")),
+        ("dpop_bound_access_tokens", json!(true)),
+    ] {
+        controlled.metadata[name] = value;
+    }
+    let controlled = auth
+        .store()
+        .update_oauth_client_metadata(&input.client_id, controlled.metadata, chrono::Utc::now())
+        .await?
+        .unwrap();
+    let mut replacement = input.clone();
+    replacement.metadata = serde_json::from_value(
+        json!({"client_id":input.client_id,"redirect_uris":["http://127.0.0.1/callback"],"grant_types":["authorization_code","future_grant"],"disabled":false,"skip_consent":false,"enable_end_session":true}),
+    )?;
+    replacement.existing_client = Some(controlled);
+    let replaced = provider
+        .register_client_metadata_document(replacement.clone(), auth.context())
+        .await?;
+    assert!(!replaced.created);
+    assert_eq!(replaced.client.id, result.client.id);
+    assert_eq!(replaced.client.created_at, result.client.created_at);
+    for (name, value) in [
+        ("client_name", json!("Remote")),
+        ("disabled", json!(true)),
+        ("skip_consent", json!(true)),
+        ("enable_end_session", json!(false)),
+        ("client_credentials_scopes", json!(["operator-scope"])),
+        ("dpop_bound_access_tokens", json!(true)),
+    ] {
+        assert_eq!(replaced.client.metadata[name], value, "{name}");
+    }
+    assert!(
+        replaced.client.metadata.get("application_type").is_none(),
+        "only the explicit null application type clears the model column"
+    );
+    assert_eq!(
+        auth.store()
+            .list_oauth_client_resources(&input.client_id)
+            .await?
+            .len(),
+        1
+    );
+    assert_eq!(db.count("oauthConsent").await?, 0);
+    assert_eq!(db.count("oauthAccessToken").await?, 0);
+    auth.store().delete_oauth_client(&input.client_id).await?;
+    let denied = provider
+        .register_client_metadata_document(replacement, auth.context())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        denied.body.unwrap().to_json_value()?,
+        json!({"error":"invalid_client","error_description":"client no longer exists"})
+    );
+    Ok(())
+}
 async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
     db: Db,
 ) -> TestResult {

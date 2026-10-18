@@ -580,6 +580,24 @@ impl<S: AuthSchema> WalletAddressStore for PluginStore<S> {
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
+    async fn has_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<bool> {
+        self.inner
+            .has_oauth_client_resource(client_id, resource_id)
+            .await
+    }
+    async fn persist_oauth_client_registration(
+        &self,
+        data: crate::store::oauth_clients::PersistOAuthClientRegistration,
+    ) -> Result<
+        Option<crate::store::OAuthClient>,
+        crate::store::oauth_clients::OAuthClientRegistrationWriteError,
+    > {
+        self.inner.persist_oauth_client_registration(data).await
+    }
     async fn claim_oauth_client_assertion(
         &self,
         id: &str,

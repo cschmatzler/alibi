@@ -21,6 +21,41 @@ pub struct CreateOAuthClient {
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
 }
+/// One atomic client row write and additive server-default resource linkage.
+/// Replacement metadata is a patch: omitted model fields survive, explicit nulls clear.
+#[derive(Clone, Debug)]
+pub struct PersistOAuthClientRegistration {
+    pub client: CreateOAuthClient,
+    pub discovery_id: String,
+    pub replace: bool,
+    /// Replacement snapshot timestamp; absence is filtered out like an undefined adapter field.
+    pub existing_created_at: Option<DateTime<Utc>>,
+    pub resources: Vec<String>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum OAuthClientRegistrationWriteError {
+    #[error(transparent)]
+    Failure(#[from] AuthError),
+    #[error("client registration collision: {cause}")]
+    Collision {
+        cause: AuthError,
+        resource_id: Option<String>,
+    },
+}
+impl OAuthClientRegistrationWriteError {
+    /// Bundled adapters retain unique diagnostics in their constraint contract.
+    #[must_use]
+    pub fn classify(cause: AuthError, resource_id: Option<String>) -> Self {
+        if matches!(&cause, AuthError::Database(crate::error::DatabaseError::Constraint(message)) if message.to_ascii_lowercase().contains("unique"))
+        {
+            Self::Collision { cause, resource_id }
+        } else {
+            Self::Failure(cause)
+        }
+    }
+}
 /// Durable token kind; refresh and opaque access tokens have distinct lifecycles.
 #[derive(Clone, Copy, Debug)]
 pub enum OAuthTokenKind {
@@ -52,6 +87,28 @@ pub struct CreateOAuthToken {
 }
 #[async_trait]
 pub trait OAuthClientStore: Send + Sync {
+    /// Exact relation lookup, independent of the configured list page limit.
+    async fn has_oauth_client_resource(
+        &self,
+        _client_id: &str,
+        _resource_id: &str,
+    ) -> AuthResult<bool> {
+        Err(AuthError::config(
+            "OAuth resource linkage is not supported by this store",
+        ))
+    }
+    /// Atomically insert or conditionally update a discovery-owned client and ensure
+    /// its resource links. `None` means the replacement ownership predicate lost.
+    /// Existing links (including their metadata/timestamps) are never replaced.
+    async fn persist_oauth_client_registration(
+        &self,
+        _data: PersistOAuthClientRegistration,
+    ) -> Result<Option<OAuthClient>, OAuthClientRegistrationWriteError> {
+        Err(
+            AuthError::config("Atomic OAuth client registration is not supported by this store")
+                .into(),
+        )
+    }
     /// Atomically claim a caller-supplied assertion digest; false means it already exists.
     async fn claim_oauth_client_assertion(
         &self,
@@ -346,8 +403,9 @@ pub fn metadata_to_columns(metadata: Value) -> AuthResult<Value> {
                 && let Some(scope) = value.as_str()
             {
                 value = Value::Array(
+                    // oauthToSchema uses JavaScript split(" "), including the empty scope sentinel.
                     scope
-                        .split_whitespace()
+                        .split(' ')
                         .map(|scope| Value::String(scope.into()))
                         .collect(),
                 );

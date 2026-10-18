@@ -887,9 +887,18 @@ pub(super) fn status_protocol_error(
 impl OAuthProviderPlugin {
     fn admit_metadata<S: AuthSchema>(
         &self,
+        metadata: serde_json::Map<String, Value>,
+        allowed_scopes: &[String],
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
+        self.admit_metadata_for_source(metadata, allowed_scopes, ctx, false)
+    }
+    pub(super) fn admit_metadata_for_source<S: AuthSchema>(
+        &self,
         mut metadata: serde_json::Map<String, Value>,
         allowed_scopes: &[String],
         ctx: &AuthContext<S>,
+        document: bool,
     ) -> AuthResult<Result<serde_json::Map<String, Value>, EndpointResponse>> {
         let auth = metadata
             .get("token_endpoint_auth_method")
@@ -908,12 +917,43 @@ impl OAuthProviderPlugin {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_else(|| vec![json!("authorization_code")]);
+        if document && grants.is_empty() {
+            return protocol_error(
+                "invalid_client_metadata",
+                "grant_types must contain at least one grant type",
+            )
+            .map(Err);
+        }
+        if document
+            && !grants.iter().any(|grant| {
+                grant.as_str().is_some_and(|grant| {
+                    self.supported_grant_types()
+                        .iter()
+                        .any(|supported| supported == grant)
+                })
+            })
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                format!(
+                    "no mutually supported grant_type among {}",
+                    grants
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            )
+            .map(Err);
+        }
         for grant in &grants {
-            if !grant.as_str().is_some_and(|grant| {
-                self.supported_grant_types()
-                    .iter()
-                    .any(|supported| supported == grant)
-            }) {
+            if !document
+                && !grant.as_str().is_some_and(|grant| {
+                    self.supported_grant_types()
+                        .iter()
+                        .any(|supported| supported == grant)
+                })
+            {
                 return protocol_error(
                     "invalid_client_metadata",
                     format!(
@@ -940,7 +980,14 @@ impl OAuthProviderPlugin {
         let application = metadata
             .get("application_type")
             .and_then(Value::as_str)
-            .unwrap_or("web");
+            .unwrap_or(if document { "native" } else { "web" });
+        if document && !["web", "native"].contains(&application) {
+            return protocol_error(
+                "invalid_client_metadata",
+                "application_type must be web or native",
+            )
+            .map(Err);
+        }
         for redirect in &redirects {
             if let Some(error) = redirect_error(redirect.as_str().unwrap_or_default(), application)
             {
@@ -971,6 +1018,18 @@ impl OAuthProviderPlugin {
                 "invalid_client_metadata",
                 "When 'code' response type is used, 'authorization_code' grant type must be included",
             ).map(Err);
+        }
+        if document
+            && metadata
+                .get("subject_type")
+                .and_then(Value::as_str)
+                .is_some_and(|subject| !["public", "pairwise"].contains(&subject))
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                "subject_type must be \"public\" or \"pairwise\"",
+            )
+            .map(Err);
         }
         if metadata.get("subject_type").and_then(Value::as_str) == Some("pairwise") {
             if self
@@ -1022,10 +1081,39 @@ impl OAuthProviderPlugin {
             )
             .map(Err);
         }
+        if document && metadata.get("require_pkce") == Some(&json!(false)) {
+            return protocol_error(
+                "invalid_client_metadata",
+                "pkce is required for registered clients.",
+            )
+            .map(Err);
+        }
         if let Some(uri) = metadata.get("jwks_uri").and_then(Value::as_str)
-            && let Some(error) = remote_key_uri_error(uri, ctx)
+            && let Some(error) = remote_key_uri_error(uri, ctx).filter(|error| {
+                !(document
+                    && error.starts_with("jwks_uri must belong")
+                    && metadata
+                        .get("client_id")
+                        .and_then(Value::as_str)
+                        .and_then(|id| url::Url::parse(id).ok())
+                        .zip(url::Url::parse(uri).ok())
+                        .is_some_and(|(id, key)| id.origin() == key.origin()))
+            })
         {
             return protocol_error("invalid_client_metadata", error).map(Err);
+        }
+        if let Some(jwks) = metadata.get("jwks")
+            && document
+            && !jwks
+                .get("keys")
+                .and_then(Value::as_array)
+                .is_some_and(|keys| !keys.is_empty() && keys.iter().all(Value::is_object))
+        {
+            return protocol_error(
+                "invalid_client_metadata",
+                "jwks must be an RFC 7517 JWK Set object with a non-empty keys array",
+            )
+            .map(Err);
         }
         if let Some(jwks) = metadata.get("jwks")
             && let Some(error) = public_jwks_error(jwks)
@@ -1057,18 +1145,22 @@ impl OAuthProviderPlugin {
             }
         }
         _ = metadata.insert("token_endpoint_auth_method".into(), json!(auth));
-        _ = metadata
-            .entry("application_type")
-            .or_insert_with(|| json!("web"));
+        if !document {
+            _ = metadata
+                .entry("application_type")
+                .or_insert_with(|| json!("web"));
+        }
         _ = metadata.insert("grant_types".into(), json!(grants));
         if let Some(responses) = responses {
             _ = metadata.insert("response_types".into(), json!(responses));
         }
         _ = metadata.insert("redirect_uris".into(), json!(redirects));
-        _ = metadata.entry("disabled").or_insert_with(|| json!(false));
-        _ = metadata
-            .entry("dpop_bound_access_tokens")
-            .or_insert_with(|| json!(false));
+        if !document {
+            _ = metadata.entry("disabled").or_insert_with(|| json!(false));
+            _ = metadata
+                .entry("dpop_bound_access_tokens")
+                .or_insert_with(|| json!(false));
+        }
         Ok(Ok(metadata))
     }
 }

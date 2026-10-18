@@ -10,6 +10,125 @@ use alibi_core::{
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
+    async fn has_oauth_client_resource(
+        &self,
+        client_id: &str,
+        resource_id: &str,
+    ) -> AuthResult<bool> {
+        use super::entities::oauth_client_resource::Model as Link;
+        let mut sql = model::select_model::<Link>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(Link::TABLE, "clientId", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare(Link::TABLE, "resourceId", " = ", resource_id);
+        model::limit_one(&mut sql);
+        Ok(self.exec().fetch_optional::<Link>(sql).await?.is_some())
+    }
+    async fn persist_oauth_client_registration(
+        &self,
+        data: alibi_core::store::oauth_clients::PersistOAuthClientRegistration,
+    ) -> Result<
+        Option<OAuthClient>,
+        alibi_core::store::oauth_clients::OAuthClientRegistrationWriteError,
+    > {
+        use super::entities::oauth_client_resource::Model as Link;
+        use alibi_core::store::oauth_clients::OAuthClientRegistrationWriteError as WriteError;
+        let tx = self.begin(true).await?;
+        let exec = crate::pool::Exec::tx(&tx);
+        let mut active = ActiveRow::new();
+        let metadata = data.client.metadata;
+        let patch = alibi_core::store::oauth_clients::metadata_to_columns(metadata.clone())?;
+        if !data.replace {
+            active.set(
+                "id",
+                self.generated_id(exec, "oauthClient", "oauthClient", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            active.set("clientId", data.client.client_id.clone());
+            active.set("userId", data.client.user_id);
+            active.set("clientSecret", data.client.client_secret);
+        }
+        let fields = Model::columns_from_metadata(metadata)?.into_active();
+        for (column, value) in fields.present() {
+            if ![
+                "id",
+                "clientId",
+                "userId",
+                "clientSecret",
+                "createdAt",
+                "updatedAt",
+            ]
+            .contains(&column)
+                && (!data.replace
+                    || patch
+                        .get(column)
+                        .is_some_and(|value| column != "metadata" || !value.is_null()))
+            {
+                active.set(column, value.clone());
+            }
+        }
+        if !data.replace {
+            active.set("createdAt", data.client.created_at);
+        } else if let Some(created_at) = data.existing_created_at {
+            active.set("createdAt", created_at);
+        }
+        active.set("updatedAt", data.updated_at);
+        let client = if data.replace {
+            let mut sql = crate::sql::Sql::with(exec.engine(), "UPDATE ");
+            sql.ident(Model::TABLE);
+            sql.push(" SET ");
+            for (index, (column, value)) in active.changed().enumerate() {
+                if index > 0 {
+                    sql.push(", ");
+                }
+                sql.ident(column);
+                sql.push(" = ");
+                model::bind_model_value::<Model>(&mut sql, column, value.clone());
+            }
+            sql.push(" WHERE ");
+            sql.compare(Model::TABLE, "clientId", " = ", &data.client.client_id);
+            sql.push(" AND ");
+            sql.compare(Model::TABLE, "clientDiscoveryId", " = ", &data.discovery_id);
+            model::returning::<Model>(&mut sql);
+            let Some(client) = exec.fetch_optional::<Model>(sql).await? else {
+                return Ok(None);
+            };
+            client
+        } else {
+            model::insert::<Model>(exec, &active)
+                .await
+                .map_err(|error| WriteError::classify(error, None))?
+        };
+        let linked_at = chrono::Utc::now();
+        for resource_id in &data.resources {
+            let mut sql = model::select_model::<Link>(exec);
+            sql.push(" WHERE ");
+            sql.compare(Link::TABLE, "clientId", " = ", &data.client.client_id);
+            sql.push(" AND ");
+            sql.compare(Link::TABLE, "resourceId", " = ", resource_id);
+            if exec.fetch_optional::<Link>(sql).await?.is_some() {
+                continue;
+            }
+            let mut link = ActiveRow::new();
+            link.set(
+                "id",
+                self.generated_id(exec, "oauthClientResource", "oauthClientResource", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            );
+            link.set("clientId", data.client.client_id.clone());
+            link.set("resourceId", resource_id.clone());
+            link.set("metadata", Option::<serde_json::Value>::None);
+            link.set("createdAt", Some(linked_at));
+            _ = model::insert::<Link>(exec, &link)
+                .await
+                .map_err(|error| WriteError::classify(error, Some(resource_id.clone())))?;
+        }
+        let client = client.try_into()?;
+        tx.commit().await?;
+        Ok(Some(client))
+    }
     async fn claim_oauth_client_assertion(
         &self,
         id: &str,

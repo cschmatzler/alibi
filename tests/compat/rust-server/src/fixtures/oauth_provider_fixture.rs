@@ -80,6 +80,8 @@ mod consent_reference;
 mod resource_privileges;
 #[path = "../../../../fixtures/oauth/logout-context.rs"]
 mod logout_context;
+#[path = "../../../../fixtures/oauth/metadata-document-owner.rs"]
+mod metadata_document_owner;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -602,7 +604,9 @@ pub(crate) async fn router(
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="resource-seed-init" {
-                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{resources:serde_json::from_value(input["resources"].clone()).unwrap(),cached_resources:input.get("cachedResources").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),disable_jwt_plugin:input["disableJwtPlugin"]==true,resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),client_id_generator:(input["registrationResources"]==true).then(||registration_resource_client_ids as Arc<dyn alibi::plugins::OAuthClientIdGenerator>),enforce_per_client_resources:input["registrationResources"]==true || input["enforcePerClientResources"].as_bool().unwrap_or(false),allow_dynamic_client_registration:input["registrationResources"]==true,allow_unauthenticated_client_registration:input["registrationResources"]==true,client_registration_default_resources:input["options"].get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_resources:input["options"].get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),..Default::default()});
+                let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{
+                    client_discoveries:if input["metadataDocuments"]==true {vec![Arc::new(metadata_document_owner::MetadataDocumentOwner)]}else{vec![]},
+                    resources:serde_json::from_value(input["resources"].clone()).unwrap(),cached_resources:input.get("cachedResources").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),disable_jwt_plugin:input["disableJwtPlugin"]==true,resource_seed_mode:input.get("resourceSeedMode").cloned().map(serde_json::from_value).transpose().unwrap().unwrap_or_default(),identifier_validator:(input["customIdentifiers"]==true).then(||seed_identifiers.clone() as Arc<dyn alibi::plugins::OAuthResourceIdentifierValidator>),client_id_generator:(input["registrationResources"]==true).then(||registration_resource_client_ids as Arc<dyn alibi::plugins::OAuthClientIdGenerator>),enforce_per_client_resources:input["registrationResources"]==true || input["enforcePerClientResources"].as_bool().unwrap_or(false),allow_dynamic_client_registration:input["registrationResources"]==true,allow_unauthenticated_client_registration:input["registrationResources"]==true,client_registration_default_scopes:input["options"].get("clientRegistrationDefaultScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_scopes:input["options"].get("clientRegistrationAllowedScopes").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_default_resources:input["options"].get("clientRegistrationDefaultResources").map(|v|serde_json::from_value(v.clone()).unwrap()),client_registration_allowed_resources:input["options"].get("clientRegistrationAllowedResources").map(|v|serde_json::from_value(v.clone()).unwrap()),..Default::default()});
                 let database=if input["isolated"]==true {let database=alibi::seaorm::sea_orm::Database::connect(crate::sqlite_fixture::options()).await.unwrap();crate::backend::migrate(&database).await.unwrap();database}else{logout_database.clone()};
                 let builder=AuthBuilder::<TestSchema>::new(validation_config.clone()).store(crate::backend::store::<TestSchema>(validation_config,database)).plugin(alibi::plugins::EmailPasswordPlugin::new()).plugin(alibi::plugins::SessionManagementPlugin::new()).plugin(JwtPlugin::new()).plugin(provider.clone());
                 let builder=if input["registrationResources"]==true {builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
@@ -612,6 +616,29 @@ pub(crate) async fn router(
             }
             let seeded=if input["mode"]=="resource-seed"{seeded_auth.lock().await.get(input["context"].as_str().unwrap_or("default")).cloned()}else{None};
             let auth=seeded.as_ref().map(|(auth,_)|auth.clone()).unwrap_or(auth);
+            if input["action"]=="cimd-register" {
+                use alibi::plugins::oauth_provider::RegisterClientMetadataDocumentInput;
+                let provider=&seeded.as_ref().unwrap().1;
+                let existing_client=if input["existing"]==true {auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap()}else{None};
+                let result=provider.register_client_metadata_document(RegisterClientMetadataDocumentInput{metadata:serde_json::from_value(input["metadata"].clone()).unwrap(),client_id:input["clientId"].as_str().unwrap().into(),client_discovery_id:input["clientDiscoveryId"].as_str().unwrap().into(),existing_client},auth.context()).await;
+                return match result {
+                    Ok(result)=>{
+                        let row=result.client;
+                        let client=serde_json::json!({"id":row.id,"clientId":row.client_id,"clientDiscoveryId":row.metadata.get("client_discovery_id"),"name":row.metadata.get("client_name"),"applicationType":row.metadata.get("application_type"),"scopes":row.metadata["scope"].as_str().map(|scope|scope.split(' ').collect::<Vec<_>>()),"clientCredentialsScopes":row.metadata.get("client_credentials_scopes")});
+                        axum::Json(serde_json::json!({"client":client,"clientSecret":result.client_secret,"resources":result.resources,"created":result.created})).into_response()
+                    },
+                    Err(error)=>{let status=error.error.status_code();let value=error.body.map(|body|body.to_json_value().unwrap()).unwrap_or_else(||serde_json::json!({"message":error.error.to_string()}));(axum::http::StatusCode::from_u16(status).unwrap(),axum::Json(value)).into_response()}
+                };
+            }
+            if input["action"]=="cimd-operator" {
+                let id=input["clientId"].as_str().unwrap();
+                let mut row=auth.store().get_oauth_client(id).await.unwrap().unwrap();
+                for (column, field) in [("disabled","disabled"),("skipConsent","skip_consent"),("enableEndSession","enable_end_session"),("clientCredentialsScopes","client_credentials_scopes")] {
+                    if let Some(value)=input["update"].get(column) {row.metadata[field]=value.clone();}
+                }
+                auth.store().update_oauth_client_metadata(id,row.metadata,chrono::Utc::now()).await.unwrap();
+                return axum::Json(serde_json::json!({"updated":true})).into_response();
+            }
             if input["action"]=="resource-seed-validator" {
                 use std::sync::atomic::Ordering;
                 if input["failNext"]==true {seed_identifiers.fail_next.store(true,Ordering::SeqCst);}
@@ -930,8 +957,8 @@ pub(crate) async fn router(
                 let response=auth.handle_request(request).await.unwrap();return axum::Json(serde_json::json!({"status":response.status})).into_response();
             }
             if input["action"]=="consent-row" {
-                let clients=auth.store().get_oauth_client(input["clientId"].as_str().unwrap()).await.unwrap().unwrap();
-                let rows=auth.store().list_oauth_consents_by_user(clients.user_id.as_deref().unwrap()).await.unwrap().into_iter().filter(|row|row.client_id==clients.client_id).map(|row|{let mut value=row.metadata.as_object().unwrap().clone();value.insert("id".into(),serde_json::json!(row.id));value.insert("clientId".into(),serde_json::json!(row.client_id));value.insert("userId".into(),serde_json::json!(row.user_id));value.insert("createdAt".into(),serde_json::json!(row.created_at));value.insert("updatedAt".into(),serde_json::json!(row.updated_at));serde_json::Value::Object(value)}).collect::<Vec<_>>();
+                use alibi::seaorm::{sea_orm::{EntityTrait as _,ColumnTrait as _,QueryFilter as _},store::entities::oauth_consent::{Entity,Column}};
+                let rows=Entity::find().filter(Column::ClientId.eq(input["clientId"].as_str().unwrap())).all(&logout_database).await.unwrap();
                 return axum::Json(rows).into_response();
             }
             if input["action"]=="grant-row" {
