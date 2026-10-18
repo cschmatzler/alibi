@@ -280,7 +280,7 @@ impl OAuthProviderPlugin {
                     .prompts
                     .contains(&AuthorizationPrompt::SelectAccount)
             })
-            && self.config.select_account_page.is_none()
+            && self.select_account_page().is_none_or(str::is_empty)
         {
             return browser_redirect(
                 req,
@@ -548,10 +548,53 @@ impl OAuthProviderPlugin {
         if !force_login
             && settings.initial
             && prompts.contains(&AuthorizationPrompt::SelectAccount)
-            && let Some(page) = &self.config.select_account_page
+            && let Some(page) = self.select_account_page()
         {
             let params = self.sign_authorization_query(query, &nonfinite_values, None, ctx)?;
             return browser_redirect(req, &format!("{page}?{params}"));
+        }
+        if !force_login
+            && settings.initial
+            && let Some(selection) = &self.config.select_account
+            && let Some((user, session)) = &session
+        {
+            let user = ctx.user_view(user);
+            let scopes = requested
+                .iter()
+                .map(|scope| (*scope).to_owned())
+                .collect::<Vec<_>>();
+            if selection
+                .should_redirect
+                .should_redirect(super::OAuthInteractionContext {
+                    headers: &req
+                        .physical_request()
+                        .ok_or_else(|| AuthError::internal("request not found"))?
+                        .headers,
+                    user: &user,
+                    session,
+                    scopes: &scopes,
+                })
+                .await
+                .map_err(|error| {
+                    if alibi_core::endpoint::is_endpoint_api_error(&error) {
+                        error
+                    } else {
+                        AuthError::CallbackFailure(Box::new(error))
+                    }
+                })?
+            {
+                if prompts.contains(&AuthorizationPrompt::None) {
+                    return admission_error(
+                        "account_selection_required",
+                        "End-User account selection is required",
+                    );
+                }
+                let page = self
+                    .select_account_page()
+                    .unwrap_or(&self.config.login_page);
+                let params = self.sign_authorization_query(query, &nonfinite_values, None, ctx)?;
+                return browser_redirect(req, &format!("{page}?{params}"));
+            }
         }
         if !force_login
             && let Some(policy) = self
@@ -838,6 +881,13 @@ impl OAuthProviderPlugin {
             .as_ref()
             .and_then(|signup| signup.page.as_deref())
             .unwrap_or(&self.config.login_page)
+    }
+    fn select_account_page(&self) -> Option<&str> {
+        self.config
+            .select_account
+            .as_ref()
+            .and_then(|selection| selection.page.as_deref())
+            .or(self.config.select_account_page.as_deref())
     }
     async fn authorization_redirect_is_trusted(
         &self,

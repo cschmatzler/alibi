@@ -273,6 +273,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
   let requestUriParameters: Record<string, unknown> = {};
   const signupCalls: unknown[] = [];
   const postLoginCalls: unknown[] = [];
+  const selectionCalls: unknown[] = [];
   const clientPolicyCalls: unknown[] = [];
   const consentReferenceChoices = new Map<string, string>();
   const consentReferenceCalls: unknown[] = [];
@@ -1804,18 +1805,74 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         }),
       ],
     }),
-    selection: betterAuth({
-      ...options,
-      plugins: [
-        username(),
-        jwt(),
-        oauthProvider({
-          loginPage: "/login",
-          consentPage: "/consent",
-          selectAccount: { page: "/select", shouldRedirect: () => false },
+    ...Object.fromEntries(
+      ["selection", "selection-fallback", "selection-empty-page"].map((mode) => [
+        mode,
+        betterAuth({
+          ...options,
+          rateLimit: { enabled: false },
+          plugins: [
+            username(),
+            jwt(),
+            oauthProvider({
+              loginPage: "/login",
+              consentPage: "/consent",
+              selectAccount: {
+                page:
+                  mode === "selection-fallback"
+                    ? undefined
+                    : mode === "selection-empty-page"
+                      ? ""
+                      : "/select",
+                shouldRedirect: async ({ headers, user, session, scopes }) => {
+                  const decision = headers.get("x-selection-decision");
+                  selectionCalls.push({
+                    stage: "selectAccount",
+                    caller: headers.get("x-policy-caller"),
+                    decision,
+                    user: { id: user.id, email: user.email, name: user.name },
+                    session: { id: session.id, userId: session.userId, token: session.token },
+                    scopes,
+                  });
+                  if (decision === "ordinary-error") throw new Error("selection policy failed");
+                  if (decision === "native-error") {
+                    throw new APIError("FORBIDDEN", { message: "Selection denied" });
+                  }
+                  if (decision === "api-error") {
+                    throw new APIError("FORBIDDEN", {
+                      code: "SELECTION_DENIED",
+                      message: "Selection denied",
+                    });
+                  }
+                  if (decision === "upstream-error") {
+                    throw new APIError("SERVICE_UNAVAILABLE", {
+                      code: "SELECTION_UNAVAILABLE",
+                      message: "Selection unavailable",
+                    });
+                  }
+                  return decision === "true";
+                },
+              },
+              signup: {
+                page: "/signup",
+                shouldRedirect: ({ headers, session }) => {
+                  selectionCalls.push({ stage: "signup", sessionId: session.id });
+                  return headers.get("x-signup-decision") === "true";
+                },
+              },
+              postLogin: {
+                page: "/post-login",
+                consentReferenceId: () => undefined,
+                shouldRedirect: ({ headers, session }) => {
+                  selectionCalls.push({ stage: "postLogin", sessionId: session.id });
+                  return headers.get("x-postlogin-decision") === "true";
+                },
+              },
+            }),
+          ],
         }),
-      ],
-    }),
+      ]),
+    ),
     "resources-open": betterAuth({
       ...options,
       plugins: [
@@ -2117,6 +2174,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "redirect-policy-calls") return Response.json(redirectCalls.splice(0));
     if (input.action === "signup-policy-calls") return Response.json(signupCalls.splice(0));
     if (input.action === "postlogin-policy-calls") return Response.json(postLoginCalls.splice(0));
+    if (input.action === "selection-policy-calls") return Response.json(selectionCalls.splice(0));
     if (input.action === "client-policy-calls") return Response.json(clientPolicyCalls.splice(0));
     if (input.action === "consent-reference-choice") {
       if (typeof input.reference === "string") {
@@ -2438,7 +2496,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             ? {
                 request: new Request(
                   `${base.baseURL}${base.basePath ?? "/api/auth"}/sign-in/email`,
-                  { method: "POST", headers: input.headers },
+                  { method: "POST", headers: { ...input.headers, ...input.requestHeaders } },
                 ),
               }
             : {}),
@@ -2856,7 +2914,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           : {
               request: new Request(
                 `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/authorize`,
-                { headers },
+                { headers: { ...input.headers, ...input.requestHeaders } },
               ),
             }),
       });
@@ -3013,7 +3071,7 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
             : {
                 request: new Request(
                   `${base.baseURL}${base.basePath ?? "/api/auth"}/oauth2/continue`,
-                  { method: "POST", headers: input.headers },
+                  { method: "POST", headers: { ...input.headers, ...input.requestHeaders } },
                 ),
               }),
         });

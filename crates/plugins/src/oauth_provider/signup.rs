@@ -1,15 +1,10 @@
-use alibi_core::{AuthResult, SessionView, UserView};
+use alibi_core::AuthResult;
 use async_trait::async_trait;
-use std::{collections::HashMap, sync::Arc};
+use std::sync::Arc;
 
 /// Authenticated input to the application's additional registration decision.
 /// Headers come from the physical authorization request, not logical API headers.
-pub struct OAuthSignupContext<'a> {
-    pub headers: &'a HashMap<String, String>,
-    pub user: &'a UserView,
-    pub session: &'a SessionView,
-    pub scopes: &'a [String],
-}
+pub type OAuthSignupContext<'a> = super::OAuthInteractionContext<'a>;
 
 /// Better Auth's boolean-or-string signup decision. An empty page string, like
 /// `false`, continues authorization; `true` uses the configured page fallback.

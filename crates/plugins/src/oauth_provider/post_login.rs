@@ -4,12 +4,14 @@ use std::{collections::HashMap, sync::Arc};
 
 /// Authenticated post-login policy input. The pinned callback does not receive
 /// a client argument; admission has already validated the requesting client.
-pub struct OAuthPostLoginContext<'a> {
+pub struct OAuthInteractionContext<'a> {
     pub headers: &'a HashMap<String, String>,
     pub user: &'a UserView,
     pub session: &'a SessionView,
     pub scopes: &'a [String],
 }
+
+pub type OAuthPostLoginContext<'a> = OAuthInteractionContext<'a>;
 
 #[async_trait]
 pub trait OAuthPostLoginPolicy: Send + Sync + std::fmt::Debug {

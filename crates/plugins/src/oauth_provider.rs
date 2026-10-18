@@ -54,11 +54,15 @@ mod resource_seed;
 pub use resource_seed::{OAuthResourceIdentifierValidator, OAuthResourceSeedMode};
 mod resources;
 mod revocation;
+mod select_account;
 mod session_retirement;
 mod signup;
 pub use post_login::{
-    OAuthConsentReference, OAuthConsentReferenceContext, OAuthPostLoginConfig,
-    OAuthPostLoginContext, OAuthPostLoginPolicy,
+    OAuthConsentReference, OAuthConsentReferenceContext, OAuthInteractionContext,
+    OAuthPostLoginConfig, OAuthPostLoginContext, OAuthPostLoginPolicy,
+};
+pub use select_account::{
+    OAuthSelectAccountConfig, OAuthSelectAccountContext, OAuthSelectAccountPolicy,
 };
 pub use signup::{OAuthSignupConfig, OAuthSignupContext, OAuthSignupPolicy, OAuthSignupRedirect};
 mod subject;
@@ -206,6 +210,7 @@ pub struct OAuthProviderConfig {
     pub login_page: String,
     pub consent_page: String,
     pub select_account_page: Option<String>,
+    pub select_account: Option<OAuthSelectAccountConfig>,
     pub signup: Option<OAuthSignupConfig>,
     pub post_login: Option<OAuthPostLoginConfig>,
     pub code_expires_in: f64,
@@ -287,6 +292,7 @@ impl Default for OAuthProviderConfig {
             login_page: "/login".into(),
             consent_page: "/consent".into(),
             select_account_page: None,
+            select_account: None,
             signup: None,
             post_login: None,
             code_expires_in: 600.0,

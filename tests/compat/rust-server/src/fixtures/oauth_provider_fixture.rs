@@ -33,6 +33,8 @@ mod request_uri;
 mod signup_policy;
 #[path = "../../../../fixtures/oauth/post-login-policy.rs"]
 mod post_login_policy;
+#[path = "../../../../fixtures/oauth/select-account-policy.rs"]
+mod select_account_policy;
 #[path = "../../../../fixtures/oauth/resource-identifiers.rs"]
 mod resource_identifiers;
 #[path = "../../../../fixtures/oauth/client-privileges.rs"]
@@ -270,6 +272,7 @@ pub(crate) async fn router(
     let signup_policy=Arc::new(signup_policy::SignupPolicy::default());
     let post_login_policy=Arc::new(post_login_policy::PostLoginPolicy::default());
     let consent_reference_policy=Arc::new(consent_reference::ConsentReferencePolicy::default());
+    let selection_policy=Arc::new(select_account_policy::SelectAccountPolicy::default());
     let credential_generators=Arc::new(credential_generators::Generators::default());
     let refresh_formatter=Arc::new(refresh_formatting::Formatter::default());
     let user_info_claims=Arc::new(extension_claims::LiveUserInfoClaims::default());
@@ -316,6 +319,8 @@ pub(crate) async fn router(
         "resource-privileges",
         "resource-keyring",
         "selection",
+        "selection-fallback",
+        "selection-empty-page",
         "machine",
         "client-policy",
         "reuse",
@@ -358,6 +363,7 @@ pub(crate) async fn router(
         "trusted-peer",
     ] {
         let mut provider = OAuthProviderConfig {
+            select_account:mode.starts_with("selection").then(||alibi::plugins::OAuthSelectAccountConfig{page:match mode {"selection-fallback"=>None,"selection-empty-page"=>Some(String::new()),_=>Some("/select".into())},should_redirect:selection_policy.clone()}),
             client_privileges: (mode=="client-policy").then(||client_privileges.clone() as Arc<dyn alibi::plugins::OAuthClientPrivileges>),
             request_uri_resolver:(mode=="request-uri").then(||request_registry.clone() as Arc<dyn alibi::plugins::OAuthRequestUriResolver>),
             validate_redirect_uri:if mode=="request-uri"{Some(request_registry.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)}else{(mode=="redirect-policy").then(||redirect_policy.clone() as Arc<dyn alibi::plugins::OAuthRedirectUriValidator>)},
@@ -401,6 +407,10 @@ pub(crate) async fn router(
             initial_access_token_validator: mode.starts_with("token-").then(||registration_policy.clone() as Arc<dyn alibi::plugins::OAuthInitialAccessTokenValidator>),
             ..Default::default()
         };
+        if mode.starts_with("selection") {
+            provider.signup=Some(alibi::plugins::OAuthSignupConfig{page:Some("/signup".into()),should_redirect:Some(selection_policy.clone())});
+            provider.post_login=Some(alibi::plugins::OAuthPostLoginConfig{page:"/post-login".into(),should_redirect:selection_policy.clone(),consent_reference_id:None});
+        }
         if mode=="extension-grant" {provider.grant_types.push("urn:fixture:orphan".into());provider.extensions.push(Arc::new(alibi::plugins::OAuthProviderExtension{grants:[("urn:fixture:extension".into(),Arc::new(ExtensionGrant) as Arc<dyn alibi::plugins::OAuthExtensionGrantHandler>)].into_iter().collect(),..Default::default()}));}
         if mode=="extension-auth" {provider.extensions=extension_authentication::extensions();}
         if mode=="reuse" {provider.opaque_access_token_generator=Some(credential_generators::access(credential_generators.clone()));provider.refresh_token_generator=Some(credential_generators::refresh(credential_generators.clone()));provider.token_hasher=Some(credential_generators.clone());provider.opaque_access_token_prefix=Some("A_".into());provider.refresh_token_prefix=Some("R_".into());provider.refresh_token_formatter=Some(refresh_formatter.clone());}
@@ -468,6 +478,7 @@ pub(crate) async fn router(
         let registration_policy=registration_policy.clone();
         let redirect_policy=redirect_policy.clone();
         let signup_policy=signup_policy.clone();
+        let selection_policy=selection_policy.clone();
         let client_privileges=client_privileges.clone();
         let credential_generators=credential_generators.clone();
         let refresh_formatter=refresh_formatter.clone();
@@ -554,6 +565,9 @@ pub(crate) async fn router(
             }
             if input["action"]=="signup-policy-calls" {
                 return axum::Json(std::mem::take(&mut *signup_policy.calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="selection-policy-calls" {
+                return axum::Json(std::mem::take(&mut *selection_policy.calls.lock().unwrap())).into_response();
             }
             if input["action"]=="postlogin-policy-calls" {
                 return axum::Json(std::mem::take(&mut *post_login_policy.calls.lock().unwrap())).into_response();
@@ -908,7 +922,9 @@ pub(crate) async fn router(
             }
             let (plugin,operation)=if input["action"]=="signout" {("session-management","signOut")}else if input["action"]=="confirm-logical" {("oauth-provider","oauth2EndSessionConfirmation")}else if input["action"]=="end-session" {("oauth-provider","oauth2EndSession")}else if input["action"]=="userinfo" {("oauth-provider","oauth2UserInfo")}else if input["action"]=="jwks" {("jwt","getJwks")}else if input["action"]=="revoke" {("oauth-provider","oauth2Revoke")}else if input["action"]=="introspect" {("oauth-provider","oauth2Introspect")}else if input["action"]=="token" {("oauth-provider","oauth2Token")}else if input["action"]=="signup" {("email-password","signUpEmail")}else if input["action"]=="signin" {("email-password","signInEmail")}else if input["action"]=="session" {("session-management","getSession")}else if input["action"]=="authorize" {("oauth-provider","oauth2Authorize")}else if input["action"]=="resource-unlink" {("oauth-provider","adminUnlinkClientResource")}else if input["action"]=="resource-link" {("oauth-provider","adminLinkClientResource")}else if input["action"]=="resource-delete" {("oauth-provider","adminDeleteOAuthResource")}else if input["action"]=="resource-update" {("oauth-provider","adminUpdateOAuthResource")}else if input["action"]=="resource-get" {("oauth-provider","adminGetOAuthResource")}else if input["action"]=="resource-list" {("oauth-provider","adminListOAuthResources")}else if input["action"]=="resource-create" {("oauth-provider","adminCreateOAuthResource")}else if input["action"]=="consent-delete" {("oauth-provider","deleteOAuthConsent")}else if input["action"]=="consent-update" {("oauth-provider","updateOAuthConsent")}else if input["action"]=="consent-get" {("oauth-provider","getOAuthConsent")}else if input["action"]=="consents" {("oauth-provider","getOAuthConsents")}else if input["action"]=="continue" {("oauth-provider","oauth2Continue")}else if input["action"]=="consent" {("oauth-provider","oauth2Consent")}else if input["action"]=="prelogin" {("oauth-provider","getOAuthClientPublicPrelogin")}else if input["action"]=="admin-update" {("oauth-provider","adminUpdateOAuthClient")}else if input["action"]=="admin-create" {("oauth-provider","adminCreateOAuthClient")}else if input["action"]=="register" {("oauth-provider","registerOAuthClient")}else if input["action"]=="update" {("oauth-provider","updateOAuthClient")}else if input["action"]=="rotate" {("oauth-provider","rotateClientSecret")}else if input["action"]=="delete" {("oauth-provider","deleteOAuthClient")}else if input["action"]=="list" {("oauth-provider","getOAuthClients")}else if input["action"]=="public" {("oauth-provider","getOAuthClientPublic")}else if input["action"]=="get" {("oauth-provider","getOAuthClient")}else{("oauth-provider","createOAuthClient")};
             let endpoint=if input["action"]=="signout" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation)}else if input["action"]=="confirm-logical" {alibi::plugins::OAuthProviderPlugin::oauth2_end_session_confirmation_endpoint().unwrap()}else if input["action"]=="userinfo" {let endpoint=alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation);if let Some(body)=input.get("body"){endpoint.with_body(body).unwrap()}else{endpoint}}else if input["action"]=="resource-update" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_params(&input["params"]).unwrap().with_body(&input["body"]).unwrap()}else if input["action"]=="resource-get" || input["action"]=="resource-delete" || input["action"]=="resource-link" || input["action"]=="resource-unlink" {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_params(&input["params"]).unwrap()}else if input["action"]=="consent-get" || input["action"]=="get" || input["action"]=="public" || (input["action"]=="authorize" || input["action"]=="end-session") {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_query(&input["query"]).unwrap()} else {alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(plugin,operation).with_body(&input["body"]).unwrap()};
-            match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request:if input["action"]=="signin" && input["attachRequest"]==true {let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,authorization_path.replace("/oauth2/authorize","/sign-in/email"));request.headers=input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()).unwrap_or_default();Some(request)}else if (input["action"]=="userinfo" || input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="authorize" || input["action"]=="consent" || input["action"]=="continue") && input["attachRequest"]!=false {let mut request=alibi::AuthRequest::new(if (input["action"]=="userinfo" && input["method"]=="POST") || input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="consent" || input["action"]=="continue" {alibi::HttpMethod::Post}else{alibi::HttpMethod::Get},if input["action"]=="userinfo"{authorization_path.replace("authorize","userinfo")}else if input["action"]=="revoke"{authorization_path.replace("authorize","revoke")}else if input["action"]=="introspect"{authorization_path.replace("authorize","introspect")}else if input["action"]=="token"{authorization_path.replace("authorize","token")}else if input["action"]=="continue"{authorization_path.replace("authorize","continue")}else if input["action"]=="consent"{authorization_path.replace("authorize","consent")}else{authorization_path});request.headers=input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()).unwrap_or_default();
+            let mut request_headers:HashMap<String,String>=input.get("headers").map(|value|serde_json::from_value(value.clone()).unwrap()).unwrap_or_default();
+            if let Some(headers)=input.get("requestHeaders") {request_headers.extend(serde_json::from_value::<HashMap<String,String>>(headers.clone()).unwrap());}
+            match auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions{headers:input.get("headers").map(|headers|serde_json::from_value(headers.clone()).unwrap()),request:if input["action"]=="signin" && input["attachRequest"]==true {let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,authorization_path.replace("/oauth2/authorize","/sign-in/email"));request.headers=request_headers.clone();Some(request)}else if (input["action"]=="userinfo" || input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="authorize" || input["action"]=="consent" || input["action"]=="continue") && input["attachRequest"]!=false {let mut request=alibi::AuthRequest::new(if (input["action"]=="userinfo" && input["method"]=="POST") || input["action"]=="revoke" || input["action"]=="introspect" || input["action"]=="token" || input["action"]=="consent" || input["action"]=="continue" {alibi::HttpMethod::Post}else{alibi::HttpMethod::Get},if input["action"]=="userinfo"{authorization_path.replace("authorize","userinfo")}else if input["action"]=="revoke"{authorization_path.replace("authorize","revoke")}else if input["action"]=="introspect"{authorization_path.replace("authorize","introspect")}else if input["action"]=="token"{authorization_path.replace("authorize","token")}else if input["action"]=="continue"{authorization_path.replace("authorize","continue")}else if input["action"]=="consent"{authorization_path.replace("authorize","consent")}else{authorization_path});request.headers=request_headers;
                 if matches!(input["action"].as_str(),Some("revoke"|"introspect"|"token")) {
                     let pairs:Vec<(String,String)>=if let Some(entries)=input["formEntries"].as_array() {entries.iter().map(|pair|(pair[0].as_str().unwrap().into(),pair[1].as_str().unwrap().into())).collect()} else {input["body"].as_object().into_iter().flat_map(|body|body.iter()).map(|(key,value)|(key.clone(),alibi::utils::json::JsValue::from(value.clone()).coerce_string().unwrap())).collect()};
                     request.body=Some(url::form_urlencoded::Serializer::new(String::new()).extend_pairs(pairs).finish().into_bytes());

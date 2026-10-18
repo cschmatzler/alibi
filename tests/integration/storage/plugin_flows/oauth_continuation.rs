@@ -2,47 +2,112 @@
 use super::*;
 use alibi::AuthVerification as _;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
-use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
+use alibi::plugins::{
+    OAuthPostLoginConfig, OAuthProviderConfig, OAuthProviderPlugin, OAuthSelectAccountConfig,
+    OAuthSignupConfig, jwt::JwtPlugin,
+};
 use base64::Engine as _;
 use sha2::Digest as _;
+#[path = "../../../fixtures/oauth/select-account-policy.rs"]
+mod select_account_policy;
 backend_tests!(oauth_continuation_resumes_signed_authorization_for_authenticated_caller);
 async fn oauth_continuation_resumes_signed_authorization_for_authenticated_caller<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let auth = super::auth_probe::fast_builder::<B>(&connection)
-        .plugin(JwtPlugin::new())
-        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
-            select_account_page: Some("/select".into()),
-            ..Default::default()
-        }))
-        .build()
-        .await?;
+    let policy = Arc::new(select_account_policy::SelectAccountPolicy::default());
+    let auth = Box::pin(
+        super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                select_account_page: Some("/select".into()),
+                select_account: Some(OAuthSelectAccountConfig {
+                    page: None,
+                    should_redirect: policy.clone(),
+                }),
+                signup: Some(OAuthSignupConfig {
+                    page: Some("/signup".into()),
+                    should_redirect: Some(policy.clone()),
+                }),
+                post_login: Some(OAuthPostLoginConfig {
+                    page: "/post-login".into(),
+                    should_redirect: policy.clone(),
+                    consent_reference_id: None,
+                }),
+                ..Default::default()
+            }))
+            .build(),
+    )
+    .await?;
     let owner = signup(&auth, "consent-owner@example.test").await;
-    let created=auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()}).await?.into_response()?;
+    let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider","createOAuthClient").with_body(&json!({"client_name":"Consent client","client_uri":"https://app.fixture.test","redirect_uris":["https://app.fixture.test/callback"],"scope":"email profile","token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookies(&owner))].into_iter().collect()),..Default::default()})).await?.into_response()?;
     let id = body(&created)["client_id"].as_str().unwrap().to_owned();
     let query = json!({"client_id":id,"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"email","state":"continue-state","prompt":"select_account","code_challenge":"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ","code_challenge_method":"S256"});
-    let produced = Box::pin(
-        auth.dispatch_endpoint(
-            OAuthProviderPlugin::oauth2_authorize_endpoint(&query)?,
-            EndpointOptions {
-                headers: Some(
-                    [
-                        ("cookie".into(), cookies(&owner)),
-                        ("accept".into(), "application/json".into()),
-                    ]
-                    .into_iter()
-                    .collect(),
-                ),
-                request: Some(request("/oauth2/authorize", None, "")),
-                ..Default::default()
-            },
-        ),
-    )
-    .await?
-    .into_response()?;
+    Box::pin(assert_selection_cases(&auth, &policy, &owner, &query)).await?;
+    for page in [None, Some(String::new())] {
+        let fallback = Box::pin(
+            super::auth_probe::fast_builder::<B>(&connection)
+                .plugin(JwtPlugin::new())
+                .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                    select_account: Some(OAuthSelectAccountConfig {
+                        page: page.clone(),
+                        should_redirect: policy.clone(),
+                    }),
+                    ..Default::default()
+                }))
+                .build(),
+        )
+        .await?;
+        let mut automatic = query.clone();
+        _ = automatic.as_object_mut().unwrap().remove("prompt");
+        let response = Box::pin(selection_invoke(
+            &fallback,
+            "/oauth2/authorize",
+            automatic,
+            &cookies(&owner),
+            "true",
+            false,
+            false,
+        ))
+        .await?;
+        let value = body(&response);
+        let raw = value["url"].as_str().unwrap();
+        assert!(raw.starts_with(if page.is_none() { "/login?" } else { "?" }));
+        let calls = std::mem::take(&mut *policy.calls.lock().unwrap());
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["stage"], "selectAccount");
+        let response = Box::pin(selection_invoke(
+            &fallback,
+            "/oauth2/authorize",
+            query.clone(),
+            &cookies(&owner),
+            "ordinary-error",
+            false,
+            false,
+        ))
+        .await?;
+        assert!(
+            selection_target(&response)
+                .query_pairs()
+                .any(|(k, v)| k == "error" && v == "unsupported_prompt_select_account")
+        );
+        assert!(policy.calls.lock().unwrap().is_empty());
+    }
+    let mut automatic = query.clone();
+    _ = automatic.as_object_mut().unwrap().remove("prompt");
+    let produced = Box::pin(selection_invoke(
+        &auth,
+        "/oauth2/authorize",
+        automatic,
+        &cookies(&owner),
+        "true",
+        false,
+        false,
+    ))
+    .await?;
     let url = url::Url::parse(ORIGIN)?.join(body(&produced)["url"].as_str().unwrap())?;
     assert_eq!(url.path(), "/select");
+    assert_eq!(std::mem::take(&mut *policy.calls.lock().unwrap()).len(), 1);
     let signed = url.query().unwrap();
     let before = db
         .tables(&[
@@ -179,7 +244,7 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
         ),
         (
             json!({"selected":true,"created":true,"oauth_query":creation_signed}),
-            "/login",
+            "/signup",
         ),
         (json!({"postLogin":true,"oauth_query":signed}), "/consent"),
     ] {
@@ -295,5 +360,428 @@ async fn oauth_continuation_resumes_signed_authorization_for_authenticated_calle
             .timestamp_millis()
     );
     assert_eq!(db.count("verification").await?, 2);
+    assert!(
+        policy
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|call| call["stage"] != "selectAccount"),
+        "continuation and consent must not re-enter initial policy"
+    );
+    Ok(())
+}
+
+fn selection_target(response: &AuthResponse) -> url::Url {
+    url::Url::parse(ORIGIN)
+        .unwrap()
+        .join(body(response)["url"].as_str().unwrap())
+        .unwrap()
+}
+
+async fn selection_invoke<S: AuthSchema>(
+    auth: &Alibi<S>,
+    path: &str,
+    input: Value,
+    cookie: &str,
+    decision: &str,
+    signup: bool,
+    post_login: bool,
+) -> alibi::AuthResult<AuthResponse> {
+    let mut physical = request(path, Some(input.clone()), cookie);
+    for (key, value) in [
+        ("x-selection-decision", decision),
+        ("x-policy-caller", "physical"),
+        ("x-signup-decision", if signup { "true" } else { "false" }),
+        (
+            "x-postlogin-decision",
+            if post_login { "true" } else { "false" },
+        ),
+    ] {
+        _ = physical.headers.insert(key.into(), value.into());
+    }
+    let endpoint = if path == "/oauth2/authorize" {
+        OAuthProviderPlugin::oauth2_authorize_endpoint(&input)?
+    } else if path == "/sign-in/email" {
+        ServerEndpoint::<Value>::new("email-password", "signInEmail").with_body(&input)?
+    } else {
+        OAuthProviderPlugin::oauth2_continue_endpoint(&input)?
+    };
+    auth.dispatch_endpoint(
+        endpoint,
+        EndpointOptions {
+            headers: Some(
+                [
+                    ("cookie".into(), cookie.into()),
+                    ("accept".into(), "application/json".into()),
+                    ("x-selection-decision".into(), "ordinary-error".into()),
+                    ("x-policy-caller".into(), "logical".into()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+            request: Some(physical),
+            ..Default::default()
+        },
+    )
+    .await
+    .map_err(|e| e.error)?
+    .into_response()
+}
+
+async fn assert_selection_cases<S: AuthSchema>(
+    auth: &Alibi<S>,
+    policy: &select_account_policy::SelectAccountPolicy,
+    owner: &AuthResponse,
+    original: &Value,
+) -> TestResult {
+    let actual = Box::pin(auth.dispatch_endpoint(
+        ServerEndpoint::<Value>::new("session-management", "getSession"),
+        EndpointOptions {
+            headers: Some([("cookie".into(), cookies(owner))].into_iter().collect()),
+            ..Default::default()
+        },
+    ))
+    .await?
+    .into_response()?;
+    let current = body(&actual);
+    let mut base = original.clone();
+    let cookie = cookies(owner);
+    _ = base.as_object_mut().unwrap().remove("prompt");
+    base["scope"] = json!("email  email profile");
+    for (decision, patch, authenticated, signup, post_login, expected, stages) in [
+        (
+            "true",
+            json!({}),
+            true,
+            true,
+            true,
+            "/select",
+            vec!["selectAccount"],
+        ),
+        (
+            "true",
+            json!({"max_age":3600}),
+            true,
+            false,
+            false,
+            "/select",
+            vec!["selectAccount"],
+        ),
+        (
+            "true",
+            json!({"prompt":"consent"}),
+            true,
+            true,
+            true,
+            "/select",
+            vec!["selectAccount"],
+        ),
+        (
+            "ordinary-error",
+            json!({"prompt":"select_account"}),
+            true,
+            true,
+            true,
+            "/select",
+            vec![],
+        ),
+        (
+            "true",
+            json!({"prompt":"none"}),
+            true,
+            true,
+            true,
+            "account_selection_required",
+            vec!["selectAccount"],
+        ),
+        (
+            "false",
+            json!({}),
+            true,
+            true,
+            true,
+            "/signup",
+            vec!["selectAccount", "signup"],
+        ),
+        (
+            "false",
+            json!({}),
+            true,
+            false,
+            true,
+            "/post-login",
+            vec!["selectAccount", "signup", "postLogin"],
+        ),
+        (
+            "false",
+            json!({}),
+            true,
+            false,
+            false,
+            "/consent",
+            vec!["selectAccount", "signup", "postLogin"],
+        ),
+        (
+            "ordinary-error",
+            json!({"scope":"forbidden"}),
+            true,
+            false,
+            false,
+            "invalid_scope",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"client_id":"missing"}),
+            true,
+            false,
+            false,
+            "invalid_client",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"redirect_uri":"https://evil.fixture.test/callback"}),
+            true,
+            false,
+            false,
+            "invalid_redirect",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"code_challenge":""}),
+            true,
+            false,
+            false,
+            "invalid_request",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"max_age":0}),
+            true,
+            false,
+            false,
+            "/login",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"prompt":"login"}),
+            true,
+            false,
+            false,
+            "/login",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"prompt":"create"}),
+            true,
+            false,
+            false,
+            "/signup",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({"prompt":"none"}),
+            false,
+            false,
+            false,
+            "login_required",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({}),
+            false,
+            false,
+            false,
+            "/login",
+            vec![],
+        ),
+        (
+            "ordinary-error",
+            json!({}),
+            true,
+            false,
+            false,
+            "ordinary-error",
+            vec!["selectAccount"],
+        ),
+        (
+            "native-error",
+            json!({}),
+            true,
+            false,
+            false,
+            "native-error",
+            vec!["selectAccount"],
+        ),
+        (
+            "api-error",
+            json!({}),
+            true,
+            false,
+            false,
+            "api-error",
+            vec!["selectAccount"],
+        ),
+        (
+            "upstream-error",
+            json!({}),
+            true,
+            false,
+            false,
+            "upstream-error",
+            vec!["selectAccount"],
+        ),
+    ] {
+        policy.calls.lock().unwrap().clear();
+        let mut query = base.clone();
+        query
+            .as_object_mut()
+            .unwrap()
+            .extend(patch.as_object().unwrap().clone());
+        let response = Box::pin(selection_invoke(
+            auth,
+            "/oauth2/authorize",
+            query,
+            if authenticated { &cookie } else { "" },
+            decision,
+            signup,
+            post_login,
+        ))
+        .await;
+        if expected.ends_with("-error") {
+            let error = response.unwrap_err();
+            match expected {
+                "ordinary-error" => assert!(matches!(error, alibi::AuthError::CallbackFailure(_))),
+                "native-error" => assert!(matches!(error, alibi::AuthError::Forbidden(_))),
+                "api-error" => assert!(matches!(error, alibi::AuthError::Api { status: 403, .. })),
+                _ => assert!(matches!(
+                    error,
+                    alibi::AuthError::Upstream { status: 503, .. }
+                )),
+            }
+        } else {
+            let target = selection_target(&response?);
+            if expected.starts_with('/') {
+                assert_eq!(target.path(), expected);
+                if expected == "/select" {
+                    assert!(
+                        !target
+                            .query_pairs()
+                            .any(|(k, _)| k == "ba_pl" || k == "max_age")
+                    );
+                }
+            } else {
+                assert!(
+                    target
+                        .query_pairs()
+                        .any(|(k, v)| k == "error" && v == expected),
+                    "{target}"
+                );
+                if expected == "invalid_request" {
+                    assert!(target.query_pairs().any(|(k, v)| k == "error_description"
+                        && v == "pkce is required for public clients"));
+                }
+            }
+        }
+        let calls = policy.calls.lock().unwrap().clone();
+        assert_eq!(
+            calls
+                .iter()
+                .map(|v| v["stage"].as_str().unwrap())
+                .collect::<Vec<_>>(),
+            stages
+        );
+        if stages.first() == Some(&"selectAccount") {
+            assert_eq!(
+                calls[0],
+                json!({"stage":"selectAccount","caller":"physical","decision":decision,"user":{"id":current["user"]["id"],"email":current["user"]["email"],"name":current["user"]["name"]},"session":{"id":current["session"]["id"],"userId":current["session"]["userId"],"token":current["session"]["token"]},"scopes":["email","email","profile"]})
+            );
+        }
+    }
+    // A policy-produced signed request must resume without rerunning the policy,
+    // even when the physical request would make it throw.
+    let mut default_scope = base.clone();
+    _ = default_scope.as_object_mut().unwrap().remove("scope");
+    policy.calls.lock().unwrap().clear();
+    let response = Box::pin(selection_invoke(
+        auth,
+        "/oauth2/authorize",
+        default_scope,
+        &cookie,
+        "true",
+        false,
+        false,
+    ))
+    .await?;
+    assert_eq!(selection_target(&response).path(), "/select");
+    assert_eq!(
+        std::mem::take(&mut *policy.calls.lock().unwrap())[0]["scopes"],
+        json!(["email", "profile"])
+    );
+    let response = Box::pin(selection_invoke(
+        auth,
+        "/oauth2/authorize",
+        base.clone(),
+        &cookies(owner),
+        "true",
+        false,
+        false,
+    ))
+    .await?;
+    let target = selection_target(&response);
+    let signed = target.query().unwrap();
+    for flag in ["selected", "created", "postLogin"] {
+        policy.calls.lock().unwrap().clear();
+        let mut input = json!({"oauth_query":signed});
+        input[flag] = json!(true);
+        let resumed = Box::pin(selection_invoke(
+            auth,
+            "/oauth2/continue",
+            input,
+            &cookies(owner),
+            "ordinary-error",
+            false,
+            false,
+        ))
+        .await?;
+        assert_eq!(selection_target(&resumed).path(), "/consent");
+        assert!(
+            policy
+                .calls
+                .lock()
+                .unwrap()
+                .iter()
+                .all(|v| v["stage"] != "selectAccount")
+        );
+    }
+    policy.calls.lock().unwrap().clear();
+    let signin = Box::pin(selection_invoke(
+        auth,
+        "/sign-in/email",
+        json!({"email":body(owner)["user"]["email"],"password":PASSWORD,"oauth_query":signed}),
+        "",
+        "ordinary-error",
+        false,
+        false,
+    ))
+    .await?;
+    assert_eq!(selection_target(&signin).path(), "/consent");
+    assert!(
+        policy
+            .calls
+            .lock()
+            .unwrap()
+            .iter()
+            .all(|v| v["stage"] != "selectAccount")
+    );
+    policy.calls.lock().unwrap().clear();
     Ok(())
 }
