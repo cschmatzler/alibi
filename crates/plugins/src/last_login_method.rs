@@ -159,7 +159,41 @@ impl LastLoginMethodPlugin {
     }
     fn adapter_context<S: AuthSchema>(ctx: &AuthContext<S>) -> Option<LastLoginMethodContext> {
         if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
-            return Some(Self::endpoint_context(&call));
+            let mut context = Self::endpoint_context(&call);
+            // HTTP handlers retain their validated/transformed input on the
+            // physical request; trusted SDK handlers retain it on the call.
+            // An optional SDK Request is metadata, not logical endpoint input.
+            let http_request = current_request_hook_context().filter(|request| {
+                request
+                    .extensions
+                    .get::<alibi_core::plugin::ResolvedEndpoint>()
+                    .is_some()
+            });
+            let extensions = http_request
+                .as_ref()
+                .map_or_else(|| call.extensions(), |request| &request.extensions);
+            context.body = extensions
+                .get::<alibi_core::hooks::ValidatedRequestBody>()
+                .map(|body| body.0.clone())
+                .or_else(|| {
+                    extensions
+                        .get::<alibi_core::hooks::TransformedRequestBody>()
+                        .map(|body| body.0.clone())
+                })
+                .or(context.body);
+            if let Some(mut request) = http_request {
+                if let Some(endpoint) = request
+                    .extensions
+                    .get::<alibi_core::plugin::ResolvedEndpoint>()
+                {
+                    context.params.clone_from(&endpoint.params);
+                }
+                if request.path.starts_with(&ctx.config.base_path) {
+                    request.path.replace_range(..ctx.config.base_path.len(), "");
+                }
+                context.request = Some(request);
+            }
+            return Some(context);
         }
         let mut request = current_request_hook_context()?;
         request.path = request
@@ -361,13 +395,24 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
         ctx: &AuthContext<S>,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        let new_session =
-            super::helpers::completed_response_session(req, ctx, &response).map(|completed| {
-                LastLoginMethodSession {
-                    user: completed.callback_user(ctx),
-                    session: completed.callback_session(ctx),
-                }
+        let new_session = super::helpers::completed_response_session(req, ctx, &response)
+            .map(|completed| LastLoginMethodSession {
+                user: completed.callback_user(ctx),
+                session: completed.callback_session(ctx),
+            })
+            .or_else(|| {
+                alibi_core::session::cookie_cache::runtime::published_session(req)
+                    .map(|(user, session)| LastLoginMethodSession { user, session })
             });
+        let mut request =
+            current_request_hook_context().unwrap_or_else(|| RequestHookContext::from_request(req));
+        request.path = request
+            .path
+            .strip_prefix(&ctx.config.base_path)
+            .unwrap_or(&request.path)
+            .to_owned();
+        // Logical headers can be patched independently of the original Request.
+        request.headers.clone_from(&req.headers);
         let endpoint = req
             .extensions()
             .get::<alibi_core::plugin::ResolvedEndpoint>();
@@ -383,11 +428,19 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
                 .get::<alibi_core::hooks::TransformedRequestBody>()
                 .map(|body| body.0.clone())
                 .or_else(|| {
+                    req.extensions()
+                        .get::<alibi_core::types::ParsedRequestBody>()
+                        .and_then(|body| match body.as_ref() {
+                            alibi_core::types::ParsedRequestBody::Value(body) => Some(body.clone()),
+                            alibi_core::types::ParsedRequestBody::Opaque(_) => None,
+                        })
+                })
+                .or_else(|| {
                     req.body
                         .as_deref()
                         .and_then(|body| alibi_core::utils::json::from_slice(body).ok())
                 }),
-            request: Some(RequestHookContext::from_request(req)),
+            request: Some(request),
             endpoint: None,
             endpoint_response: None,
             response: Some(response.clone()),

@@ -21,6 +21,21 @@ pub(super) struct HttpEndpointFrame {
     pub returned_response: Arc<std::sync::Mutex<Option<alibi_core::AuthResponse>>>,
 }
 
+/// HTTP callbacks keep live dispatch state separate from a frame's owned
+/// optional Request. Storing that physical context in the frame itself would
+/// make its extension map own itself through `HttpEndpointFrame`.
+pub(super) fn with_http_endpoint_call_context<T>(
+    call: EndpointCall,
+    future: impl Future<Output = T>,
+) -> impl Future<Output = T> {
+    let request = alibi_core::hooks::current_request_hook_context();
+    // Bound the HTTP dispatch future without increasing callers' stack sizes.
+    Box::pin(with_endpoint_call_context(
+        call,
+        alibi_core::hooks::with_optional_request_hook_context(request, future),
+    ))
+}
+
 impl<S: AuthSchema> Alibi<S> {
     pub(super) async fn before_http_endpoint(
         &self,
@@ -36,7 +51,7 @@ impl<S: AuthSchema> Alibi<S> {
         let mut patch = EndpointContextPatch::default();
         let mut headers = Headers::new();
         for hook in &self.endpoint_hooks {
-            let matches = with_endpoint_call_context(call.clone(), async { hook.matches_before(&call, context) }).await.map_err(|error| {
+            let matches = with_http_endpoint_call_context(call.clone(), async { hook.matches_before(&call, context) }).await.map_err(|error| {
                 tracing::error!(%error, "Endpoint before-hook matcher failed");
                 AuthError::Api { status: 500, code: None, message: "An error occurred during hook matcher execution. Check the logs for more details.".into() }
             })?;
@@ -45,7 +60,8 @@ impl<S: AuthSchema> Alibi<S> {
             }
             let middleware = call.middleware_context();
             let action =
-                with_endpoint_call_context(call.clone(), hook.before(&middleware, context)).await;
+                with_http_endpoint_call_context(call.clone(), hook.before(&middleware, context))
+                    .await;
             let emitted = call.take_response_headers();
             let action = match action {
                 Ok(action) => action,
@@ -149,7 +165,7 @@ impl<S: AuthSchema> Alibi<S> {
             logical.merge_headers(headers);
         }
         for hook in &self.endpoint_hooks {
-            if !with_endpoint_call_context(frame.outer.clone(), async {
+            if !with_http_endpoint_call_context(frame.outer.clone(), async {
                 hook.matches_after(&frame.call, context, &logical)
             })
             .await
@@ -165,7 +181,7 @@ impl<S: AuthSchema> Alibi<S> {
             let middleware = frame.call.middleware_context();
             let prior_headers = logical.headers().clone();
             let status = logical.status();
-            logical = match with_endpoint_call_context(
+            logical = match with_http_endpoint_call_context(
                 frame.outer.clone(),
                 hook.after(&middleware, context, logical),
             )

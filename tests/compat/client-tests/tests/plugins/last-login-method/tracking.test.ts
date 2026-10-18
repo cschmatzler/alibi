@@ -762,6 +762,19 @@ compatScenario(
     const owner = actor(ctx, "owner", "last-login-custom");
     const email = ctx.uniqueEmail("numeric-context");
     const body = `{"email":${JSON.stringify(email)},"password":"password123","name":"Numeric Owner","username":"numericowner","extra":{"overflow":1e400,"zero":-0,"nested":[null,false,"literal"]}}`;
+    const before = await state(ctx);
+    const denied = await owner.fetch(`${authProfilePath("last-login-custom")}/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password: "wrong-password" }),
+    });
+    expect(denied.status).toBe(401);
+    expect(tracking(denied.headers.getSetCookie(), "fixture.last_login_method")).toBeUndefined();
+    const rejected = await state(ctx);
+    expect(rejected.users).toEqual(before.users);
+    expect(rejected.events).toMatchObject([{ kind: "resolve", newSession: null }]);
+    expect(rejected.events).toHaveLength(1);
+    await control(ctx, { action: "clear" });
     const result = await owner.fetch(`${authProfilePath("last-login-custom")}/sign-up/email`, {
       method: "POST",
       headers: {
@@ -777,13 +790,25 @@ compatScenario(
       decodeURIComponent(
         tracking(result.headers.getSetCookie(), "fixture.last_login_method")!.value,
       ),
-    ).toBe("body:Infinity:-0");
+    ).toBe("body:Infinity:-0:numericowner");
 
     const persisted = await state(ctx);
     expect(persisted.users.find((row) => row.email === email)?.lastLoginMethod).toBe(
-      "body:Infinity:-0",
+      "body:Infinity:-0:numericowner",
     );
-    expect(persisted.events.length).toBeGreaterThan(0);
+    expect(persisted.events.map((event) => event.kind)).toEqual([
+      "resolve",
+      "resolve",
+      "resolve",
+      "cookie",
+    ]);
+    expect(persisted.events[0]!.newSession).toBeNull();
+    for (const event of persisted.events.slice(1)) {
+      expect(event.newSession).toMatchObject({
+        user: { id: returned.user.id },
+        session: { token: returned.token, userId: returned.user.id },
+      });
+    }
     expect(
       persisted.events.filter((event) => event.kind === "cookie").map((event) => event.requestBody),
     ).toEqual([body]);
@@ -809,5 +834,5 @@ compatScenario(
       physical: await ctx.readUserState({ userId: returned.user.id }),
     });
   },
-  ["POST /sign-up/email"],
+  ["POST /sign-up/email", "POST /sign-in/email"],
 );

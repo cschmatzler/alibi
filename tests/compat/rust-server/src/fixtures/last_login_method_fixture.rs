@@ -126,7 +126,7 @@ impl ResolveLastLoginMethod for Application {
                 .get("zero")
                 .and_then(alibi::utils::json::JsValue::as_f64);
             return Ok(Some(format!(
-                "body:{}:{}",
+                "body:{}:{}:{}",
                 if overflow == Some(f64::INFINITY) {
                     "Infinity"
                 } else {
@@ -136,7 +136,13 @@ impl ResolveLastLoginMethod for Application {
                     "-0"
                 } else {
                     "other"
-                }
+                },
+                context
+                    .body
+                    .as_ref()
+                    .and_then(|body| body.get("displayUsername"))
+                    .and_then(alibi::utils::json::JsValue::as_str)
+                    .unwrap_or("missing"),
             )));
         }
         Ok((matches!(self.mode, "custom" | "update-error"))

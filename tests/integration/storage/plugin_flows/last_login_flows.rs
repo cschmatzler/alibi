@@ -393,7 +393,34 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
     impl ResolveLastLoginMethod for Capture {
         fn resolve(&self, context: &LastLoginMethodContext) -> AuthResult<Option<String>> {
             self.0.lock().unwrap().push(context.clone());
-            Ok(Some("body:Infinity:-0".into()))
+            let Some(body) = context.body.as_ref() else {
+                return Ok(None);
+            };
+            let Some(extra) = body.get("extra") else {
+                return Ok(None);
+            };
+            let overflow = extra
+                .get("overflow")
+                .and_then(alibi::utils::json::JsValue::as_f64);
+            let zero = extra
+                .get("zero")
+                .and_then(alibi::utils::json::JsValue::as_f64);
+            Ok(Some(format!(
+                "body:{}:{}:{}",
+                if overflow == Some(f64::INFINITY) {
+                    "Infinity"
+                } else {
+                    "other"
+                },
+                if zero.is_some_and(|value| value == 0.0 && value.is_sign_negative()) {
+                    "-0"
+                } else {
+                    "other"
+                },
+                body.get("displayUsername")
+                    .and_then(alibi::utils::json::JsValue::as_str)
+                    .unwrap_or("missing"),
+            )))
         }
     }
     #[async_trait::async_trait]
@@ -431,10 +458,49 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
     _ = input
         .headers
         .insert("x-last-login-body".into(), "true".into());
+    let before = db.tables(&["user", "account", "session"]).await?;
+    let denied = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"numeric@example.test","password":"wrong-password"})),
+            "",
+        ),
+        401,
+    )
+    .await;
+    assert!(tracked(&denied).is_none());
+    {
+        let mut contexts = capture.0.lock().unwrap();
+        assert_eq!(contexts.len(), 1);
+        assert!(contexts[0].response.is_some());
+        assert!(contexts[0].new_session.is_none());
+        contexts.clear();
+    }
+    assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let issued = call(&auth, input, 200).await;
+    assert_eq!(
+        tracked(&issued).as_deref(),
+        Some("better-auth.last_used_login_method=body%3AInfinity%3A-0%3Anumericowner")
+    );
+    assert_eq!(
+        db.text("SELECT \"lastLoginMethod\" FROM \"user\"", &[])
+            .await?
+            .as_deref(),
+        Some("body:Infinity:-0:numericowner")
+    );
     {
         let contexts = capture.0.lock().unwrap();
-        assert!(contexts.len() >= 3);
+        assert_eq!(contexts.len(), 4);
+        assert!(contexts[0].new_session.is_none());
+        for context in &contexts[1..] {
+            let session = context
+                .new_session
+                .as_ref()
+                .expect("genuine issuance snapshot");
+            assert_eq!(session.user.id, body(&issued)["user"]["id"]);
+            assert_eq!(session.session.token, body(&issued)["token"]);
+        }
         for context in contexts.iter() {
             assert_eq!(
                 context.request.as_ref().unwrap().body.as_deref(),
@@ -469,16 +535,6 @@ async fn last_login_resolver_receives_transformed_numbers_and_original_http_byte
             );
         }
     }
-    assert_eq!(
-        tracked(&issued).as_deref(),
-        Some("better-auth.last_used_login_method=body%3AInfinity%3A-0")
-    );
-    assert_eq!(
-        db.text("SELECT \"lastLoginMethod\" FROM \"user\"", &[])
-            .await?
-            .as_deref(),
-        Some("body:Infinity:-0")
-    );
     authenticated(&auth, &cookies(&issued), "numeric@example.test").await;
     B::close(connection).await
 }

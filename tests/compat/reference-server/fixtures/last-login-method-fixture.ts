@@ -170,7 +170,7 @@ export async function createLastLoginMethodFixture(base: BetterAuthOptions, data
             }
 
             if (mode === "custom" && ctx.headers?.get("x-last-login-body") === "true") {
-              return `body:${String(ctx.body.extra.overflow)}:${Object.is(ctx.body.extra.zero, -0) ? "-0" : "other"}`;
+              return `body:${String(ctx.body.extra.overflow)}:${Object.is(ctx.body.extra.zero, -0) ? "-0" : "other"}:${ctx.body.displayUsername ?? "missing"}`;
             }
 
             if (mode === "custom" || mode === "update-error") {

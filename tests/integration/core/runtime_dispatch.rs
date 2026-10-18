@@ -458,6 +458,75 @@ struct PathHook {
     patch: Option<EndpointContextPatch>,
 }
 
+struct CallbackLease {
+    available: Arc<tokio::sync::Semaphore>,
+    retained: Arc<Mutex<Option<alibi::CallbackContext>>>,
+}
+
+#[async_trait]
+impl<S: AuthSchema> EndpointHook<S> for CallbackLease {
+    async fn before(
+        &self,
+        call: &EndpointCall,
+        context: &AuthContext<S>,
+    ) -> AuthResult<Option<BeforeEndpointAction>> {
+        // An application callback may retain request-local resources for work
+        // after dispatch. Releasing its context must release the lease too.
+        let permit = self
+            .available
+            .clone()
+            .try_acquire_owned()
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        call.extensions().insert(permit);
+        *self
+            .retained
+            .lock()
+            .map_err(|error| AuthError::internal(error.to_string()))? =
+            Some(alibi::CallbackContext::new(context, None));
+        Ok(None)
+    }
+}
+
+#[tokio::test]
+async fn completed_http_dispatch_releases_resources_after_retained_callback_context_is_dropped()
+-> AuthResult<()> {
+    for (mode, status) in [(None, 200), (Some("api"), 403), (Some("boom"), 500)] {
+        let available = Arc::new(tokio::sync::Semaphore::new(1));
+        let retained = Arc::new(Mutex::new(None));
+        let auth = AuthBuilder::without_database(config())
+            .plugin(Edge)
+            .endpoint_hook(CallbackLease {
+                available: available.clone(),
+                retained: retained.clone(),
+            })
+            .build()
+            .await?;
+        let mut request = get("/api/auth/echo");
+        if let Some(mode) = mode {
+            drop(request.headers.insert("x-mode".into(), mode.into()));
+        }
+        assert_eq!(auth.handle_request(request).await?.status, status);
+        assert!(
+            retained
+                .lock()
+                .map_err(|error| AuthError::internal(error.to_string()))?
+                .is_some()
+        );
+        assert!(available.clone().try_acquire_owned().is_err());
+        drop(
+            retained
+                .lock()
+                .map_err(|error| AuthError::internal(error.to_string()))?
+                .take(),
+        );
+        assert!(
+            available.clone().try_acquire_owned().is_ok(),
+            "completed {mode:?} dispatch retained the callback's resource lease"
+        );
+    }
+    Ok(())
+}
+
 #[async_trait]
 impl<S: AuthSchema> EndpointHook<S> for PathHook {
     fn matches_before(&self, call: &EndpointCall, _: &AuthContext<S>) -> AuthResult<bool> {

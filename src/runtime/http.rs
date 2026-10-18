@@ -1,5 +1,5 @@
 use super::endpoint::merge_headers;
-use super::http_hooks::apply_http_endpoint_input;
+use super::http_hooks::{apply_http_endpoint_input, with_http_endpoint_call_context};
 use super::{
     Alibi, Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, BeforeRequestAction, HttpEndpointResponse, HttpMethod, HttpRequestAction,
@@ -449,11 +449,8 @@ impl<S: AuthSchema> Alibi<S> {
             .extensions()
             .get::<super::http_hooks::HttpEndpointFrame>()
         {
-            let result = alibi_core::endpoint::with_endpoint_call_context(
-                frame.call.clone(),
-                Box::pin(handler),
-            )
-            .await;
+            let result =
+                with_http_endpoint_call_context(frame.call.clone(), Box::pin(handler)).await;
             if let Err(error) = &result
                 && alibi_core::endpoint::is_endpoint_api_error(error)
             {
@@ -467,12 +464,10 @@ impl<S: AuthSchema> Alibi<S> {
         } else {
             // Store/plugin callbacks still have a genuine endpoint when no
             // application hook required an accumulated HTTP frame.
-            let call = alibi_core::endpoint::EndpointCall::from_http_request(
-                &internal_req,
-                &global_route,
-            );
+            let call =
+                alibi_core::endpoint::EndpointCall::from_http_request(&internal_req, &global_route);
             call.extensions().insert((*context.config).clone());
-            alibi_core::endpoint::with_endpoint_call_context(call, Box::pin(handler)).await
+            with_http_endpoint_call_context(call, Box::pin(handler)).await
         }
     }
 }
