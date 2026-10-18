@@ -397,6 +397,9 @@ pub fn metadata_to_columns(metadata: Value) -> AuthResult<Value> {
         ));
     };
     let mut fields = serde_json::Map::new();
+    // A protocol metadata envelope stays opaque even when a safe extension name
+    // coincides with a native projection key (for example client_discovery_id).
+    let extensions = metadata.remove("metadata");
     for (rfc, column) in CLIENT_FIELDS {
         if let Some(mut value) = metadata.remove(*rfc) {
             if *rfc == "scope"
@@ -418,6 +421,9 @@ pub fn metadata_to_columns(metadata: Value) -> AuthResult<Value> {
     }
     if !fields.contains_key("redirectUris") {
         _ = fields.insert("redirectUris".into(), serde_json::json!([]));
+    }
+    if let Some(Value::Object(extensions)) = extensions {
+        metadata.extend(extensions);
     }
     _ = fields.insert(
         "metadata".into(),

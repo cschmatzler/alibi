@@ -15,6 +15,10 @@ use serde_json::{Value, json};
 pub struct OAuthClientMetadata {
     #[serde(flatten)]
     pub metadata: CreateOAuthClientInput,
+    /// Opaque protocol metadata, distinct from the flattened standard client fields.
+    /// Reserved record/wire keys are stripped before persistence.
+    #[serde(rename = "metadata", skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<serde_json::Map<String, Value>>,
     pub client_id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub client_secret: Option<String>,
@@ -146,6 +150,11 @@ impl OAuthProviderPlugin {
             .ok_or_else(|| AuthError::internal("Invalid OAuth metadata"))?;
         _ = metadata.remove("client_secret");
         _ = metadata.remove("client_secret_expires_at");
+        if let Some(Value::Object(extensions)) = metadata.get_mut("metadata") {
+            extensions.retain(|name, _| {
+                !super::clients::RESERVED_METADATA_FIELDS.contains(&name.as_str())
+            });
+        }
         _ = metadata
             .entry("token_endpoint_auth_method")
             .or_insert_with(|| json!("none"));

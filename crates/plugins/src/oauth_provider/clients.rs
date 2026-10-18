@@ -1821,7 +1821,7 @@ impl OAuthProviderPlugin {
     }
 }
 
-const RESERVED_METADATA_FIELDS: &[&str] = &[
+pub(super) const RESERVED_METADATA_FIELDS: &[&str] = &[
     "clientId",
     "clientSecret",
     "clientDiscoveryId",

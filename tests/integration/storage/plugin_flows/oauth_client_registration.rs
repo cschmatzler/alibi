@@ -42,7 +42,7 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
         .await?;
     let input = RegisterClientMetadataDocumentInput {
         metadata: serde_json::from_value::<OAuthClientMetadata>(
-            json!({"client_id":"ignored", "redirect_uris":["https://app.fixture.test/callback"],"client_name":"Remote"}),
+            json!({"client_id":"ignored", "redirect_uris":["https://app.fixture.test/callback"],"client_name":"Remote","unknown_root":"discarded","metadata":{"custom":{"version":1},"clientId":"forged","resources":["forged"],"metadata":{"nested":"reserved"}}}),
         )?,
         client_id: "https://client.fixture.test/metadata.json".into(),
         client_discovery_id: "trusted-document-owner".into(),
@@ -61,6 +61,40 @@ async fn oauth_metadata_document_registration_owns_replacement<B: Backend>(db: D
     assert!(result.client.client_secret.is_none());
     assert!(result.client.user_id.is_none());
     assert_eq!(result.client.metadata["scope"], "email profile");
+    assert_eq!(result.client.metadata["custom"], json!({"version":1}));
+    assert!(result.client.metadata.get("unknown_root").is_none());
+    assert!(result.client.metadata.get("clientId").is_none());
+    assert!(result.client.metadata.get("resources").is_none());
+    for (extension, expected) in [
+        (
+            json!({"custom":{"version":2},"other":false,"client_secret":"forged"}),
+            json!({"custom":{"version":2},"other":false}),
+        ),
+        (Value::Null, json!({"custom":{"version":2},"other":false})),
+        (json!({}), json!({"custom":{"version":2},"other":false})),
+        (
+            json!({"clientId":"forged","resources":[],"metadata":{}}),
+            json!({"custom":{"version":2},"other":false}),
+        ),
+        (
+            json!({"final":[1,null,true]}),
+            json!({"final":[1,null,true]}),
+        ),
+    ] {
+        let mut replacement = input.clone();
+        let mut wire = serde_json::to_value(&input.metadata)?;
+        wire["metadata"] = extension;
+        replacement.metadata = serde_json::from_value(wire)?;
+        replacement.existing_client = auth.store().get_oauth_client(&input.client_id).await?;
+        let replaced = provider
+            .register_client_metadata_document(replacement, auth.context())
+            .await?;
+        for key in ["custom", "other", "final"] {
+            assert_eq!(replaced.client.metadata.get(key), expected.get(key));
+        }
+        assert!(replaced.client.metadata.get("client_secret").is_none());
+        assert!(replaced.client.metadata.get("metadata").is_none());
+    }
     assert_eq!(
         result.client.metadata["client_credentials_scopes"],
         json!([])

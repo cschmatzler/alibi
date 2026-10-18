@@ -56,6 +56,14 @@ compatScenario(
       skip_consent: false,
       enable_end_session: true,
       resources: [b],
+      unknown_root: "discarded",
+      metadata: {
+        custom: { version: 1 },
+        client_discovery_id: "opaque-not-owner",
+        clientId: "forged",
+        resources: ["forged"],
+        metadata: { nested: "reserved" },
+      },
     };
     const register = (patch: object = {}, extra: object = {}) =>
       control({
@@ -85,7 +93,11 @@ compatScenario(
     expect(initial.disabled).toBe(false);
     expect(initial.clientCredentialsScopes).toEqual([]);
     expect(initial.dpopBoundAccessTokens).toBe(false);
-    expect(initial.metadata).toBeNull();
+    expect(initial.metadata).toEqual({
+      custom: { version: 1 },
+      client_discovery_id: "opaque-not-owner",
+    });
+    expect(initial).not.toHaveProperty("unknown_root");
     expect(initial).not.toHaveProperty("resources");
     const initialLinks = await links();
     expect(initialLinks.map((link) => link.resourceId)).toEqual([a]);
@@ -182,6 +194,28 @@ compatScenario(
     expect(((await privateKey.json()) as any).clientSecret).toBeNull();
     expect((await row()).tokenEndpointAuthMethod).toBe("private_key_jwt");
     expect((await row()).clientSecret).toBeNull();
+    const extensionUpdates = [];
+    for (const [extension, expected] of [
+      [
+        { custom: { version: 2 }, other: false, client_secret: "forged" },
+        { custom: { version: 2 }, other: false },
+      ],
+      [null, { custom: { version: 2 }, other: false }],
+      [{}, { custom: { version: 2 }, other: false }],
+      [
+        { clientId: "forged", resources: [], metadata: {} },
+        { custom: { version: 2 }, other: false },
+      ],
+      [{ final: [1, null, true] }, { final: [1, null, true] }],
+    ] as const) {
+      const response = await register({ metadata: extension }, { existing: true });
+      expect(response.status).toBe(200);
+      const stored = await row();
+      expect(stored.metadata).toEqual(expected);
+      expect(stored.clientDiscoveryId).toBe(clientDiscoveryId);
+      expect(stored.clientSecret).toBeNull();
+      extensionUpdates.push(stored.metadata);
+    }
     await control({
       action: "cimd-operator",
       clientId,
@@ -225,6 +259,7 @@ compatScenario(
     expect(stored.icon).toBe(initial.icon);
     expect(stored.jwksUri).toBe(initial.jwksUri);
     expect(stored.requirePKCE).toBe(true);
+    expect(stored.metadata).toEqual({ final: [1, null, true] });
     const additive = await links();
     expect(additive.map((link) => link.resourceId).sort()).toEqual([a, b]);
     expect(additive.find((link) => link.resourceId === a)).toEqual(initialLinks[0]);
@@ -329,6 +364,7 @@ compatScenario(
       first,
       initial,
       initialLinks,
+      extensionUpdates,
       rejections,
       retried,
       updated,
