@@ -588,6 +588,104 @@ async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
             }
         }
     }
+    // Admission success is not registration success: a genuine second-link write
+    // failure must leave neither the client nor the first relation behind.
+    for operation in [
+        "createOAuthClient",
+        "adminCreateOAuthClient",
+        "registerOAuthClient",
+    ] {
+        let dynamic = operation == "registerOAuthClient";
+        let auth = super::auth_probe::fast_builder::<B>(&connection)
+            .plugin(JwtPlugin::new())
+            .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                resources: resources.clone(),
+                allow_dynamic_client_registration: true,
+                allow_unauthenticated_client_registration: true,
+                client_registration_default_resources: Some(if dynamic {
+                    vec![a.into()]
+                } else {
+                    vec![a.into(), b.into()]
+                }),
+                client_registration_allowed_resources: Some(vec![b.into()]),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let input = json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","resources":[b,c],"client_name":"Atomic registration"});
+        let mut input = input;
+        if dynamic {
+            input["resources"] = json!([b]);
+        }
+        let cookie = owner.as_ref().unwrap();
+        let tables = [
+            "oauthClient",
+            "oauthClientResource",
+            "oauthConsent",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+            "verification",
+        ];
+        let before = db.tables(&tables).await?;
+        _ = db.execute(&format!("CREATE TRIGGER registration_managed_fault BEFORE INSERT ON \"oauthClientResource\" WHEN NEW.\"resourceId\"='{b}' BEGIN SELECT CASE WHEN EXISTS(SELECT 1 FROM \"oauthClient\" WHERE \"clientId\"=NEW.\"clientId\") AND EXISTS(SELECT 1 FROM \"oauthClientResource\" WHERE \"clientId\"=NEW.\"clientId\" AND \"resourceId\"='{a}') THEN RAISE(ABORT,'real second registration relation failure') ELSE RAISE(ABORT,'registration write order changed') END; END"), &[]).await?;
+        let error = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", operation).with_body(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await
+        .unwrap_err();
+        assert!(
+            !alibi::endpoint::is_endpoint_api_error(&error.error),
+            "storage failures remain ordinary errors: {error:?}"
+        );
+        assert!(
+            error
+                .error
+                .to_string()
+                .contains("real second registration relation failure"),
+            "{error:?}"
+        );
+        assert_eq!(
+            db.tables(&tables).await?,
+            before,
+            "{operation} must roll back the row and first link without granting authority"
+        );
+        _ = db
+            .execute("DROP TRIGGER registration_managed_fault", &[])
+            .await?;
+        let created = Box::pin(auth.dispatch_endpoint(
+            ServerEndpoint::<Value>::new("oauth-provider", operation).with_body(&input)?,
+            EndpointOptions {
+                headers: Some([("cookie".into(), cookie.clone())].into_iter().collect()),
+                ..Default::default()
+            },
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(created.status, 201);
+        let value = body(&created);
+        assert_eq!(value["resources"], json!([a, b]));
+        let client = auth
+            .store()
+            .get_oauth_client(value["client_id"].as_str().unwrap())
+            .await?
+            .unwrap();
+        assert!(client.metadata.get("client_discovery_id").is_none());
+        assert!(client.user_id.is_some());
+        assert_eq!(
+            client.client_secret.as_deref(),
+            Some(
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(
+                        value["client_secret"].as_str().unwrap()
+                    ))
+                    .as_str()
+            )
+        );
+    }
     for (defaults, allowed, option, identifier) in [
         (Some(vec![c]), None, "clientRegistrationDefaultResources", c),
         (None, Some(vec![c]), "clientRegistrationAllowedResources", c),

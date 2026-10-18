@@ -258,6 +258,64 @@ compatScenario(
         }
       }
     }
+    const atomicCreations = [];
+    for (const action of [undefined, "admin-create", "register"]) {
+      const dynamic = action === "register";
+      const initialized = await control({
+        action: "resource-seed-init",
+        registrationResources: true,
+        resources,
+        options: {
+          clientRegistrationDefaultResources: dynamic ? [a] : [a, b],
+          clientRegistrationAllowedResources: [b],
+        },
+      });
+      expect(initialized.status).toBe(200);
+      const call = (input: object) => control({ headers: { cookie }, ...input });
+      const input = {
+        ...(action ? { action } : {}),
+        body: {
+          redirect_uris: ["https://app.fixture.test/callback"],
+          scope: "email",
+          resources: dynamic ? [b] : [b, c],
+          client_name: "Atomic registration",
+        },
+      };
+      const before = (await (await call({ action: "registration-state" })).json()) as any;
+      expect(
+        await (await call({ action: "registration-storage-fault", enabled: true })).json(),
+      ).toEqual({ enabled: true });
+      const failed = await call({ ...input, captureError: "registration" });
+      expect(await failed.json()).toEqual({ ordinaryError: true, headers: null, body: null });
+      const after = (await (await call({ action: "registration-state" })).json()) as any;
+      expect(after.counts).toEqual(before.counts);
+      expect(
+        await (await call({ action: "registration-storage-fault", enabled: false })).json(),
+      ).toEqual({ enabled: false });
+      const created = await call(input);
+      expect(created.status).toBe(201);
+      expect(created.headers.get("cache-control")).toBe("no-store");
+      expect(created.headers.get("pragma")).toBe("no-cache");
+      const value = (await created.json()) as any;
+      expect(value.resources).toEqual([a, b]);
+      const row = (await (
+        await call({ action: "row", clientId: value.client_id, raw: true })
+      ).json()) as any;
+      expect(row.clientDiscoveryId).toBeNull();
+      expect(row.userId).toBe(value.user_id);
+      expect(row.clientSecret).toBe(
+        createHash("sha256").update(value.client_secret).digest("base64url"),
+      );
+      const links = (await (
+        await call({ action: "resource-links", clientId: value.client_id })
+      ).json()) as any[];
+      expect(links.map((link) => link.resourceId).sort()).toEqual([a, b]);
+      atomicCreations.push({
+        action: action ?? "managed",
+        value: ctx.snapshot(value),
+        links: ctx.snapshot(links),
+      });
+    }
     const configurations = [];
     for (const [options, option, identifier] of [
       [
@@ -289,7 +347,7 @@ compatScenario(
       });
       configurations.push(value);
     }
-    return { results, configurations };
+    return { results, atomicCreations, configurations };
   },
 );
 compatScenario(

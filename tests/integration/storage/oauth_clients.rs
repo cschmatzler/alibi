@@ -1,7 +1,8 @@
 //! Atomic registration owns the row and every newly ensured resource relation.
 use super::{Backend, Db, TestResult, backend_tests};
 use alibi::store::oauth_clients::{
-    OAuthClientRegistrationWriteError, PersistOAuthClientRegistration,
+    OAuthClientRegistrationReplacement, OAuthClientRegistrationWriteError,
+    PersistOAuthClientRegistration,
 };
 use alibi::store::{CreateOAuthClient, OAuthClientStore};
 use chrono::Utc;
@@ -33,30 +34,48 @@ async fn oauth_registration_rolls_back_row_and_links_on_storage_fault<B: Backend
             metadata: json!({"client_discovery_id":"document-owner","client_name":"Initial","redirect_uris":[]}),
             created_at: now,
         },
-        discovery_id: "document-owner".into(),
-        replace: false,
-        existing_created_at: Some(now),
+        replacement: None,
         resources: vec!["first".into(), "fault".into()],
         updated_at: now,
     };
     _ = db.execute("CREATE TRIGGER registration_fault BEFORE INSERT ON \"oauthClientResource\" WHEN NEW.\"resourceId\"='fault' BEGIN SELECT RAISE(ABORT,'real registration storage failure'); END", &[]).await?;
     let before = db.tables(&["oauthClient", "oauthClientResource"]).await?;
-    let error = store
-        .persist_oauth_client_registration(input.clone())
-        .await
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("real registration storage failure"),
-        "{error}"
-    );
-    assert_eq!(
-        db.tables(&["oauthClient", "oauthClientResource"]).await?,
-        before,
-        "a later relation fault must roll back the client and earlier link"
-    );
+    let mut ordinary = input.clone();
+    ordinary.client.client_id = "ordinary".into();
+    ordinary.client.metadata = json!({"client_name":"Managed","redirect_uris":[]});
+    ordinary.client.client_secret = Some("stored-secret-hash".into());
+    for create in [input.clone(), ordinary.clone()] {
+        let error = store
+            .persist_oauth_client_registration(create)
+            .await
+            .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("real registration storage failure"),
+            "{error}"
+        );
+        assert_eq!(
+            db.tables(&["oauthClient", "oauthClientResource"]).await?,
+            before,
+            "a later relation fault must roll back the client and earlier link for every creation source"
+        );
+    }
     _ = db.execute("DROP TRIGGER registration_fault", &[]).await?;
+    let ordinary = store
+        .persist_oauth_client_registration(ordinary)
+        .await?
+        .unwrap();
+    assert_eq!(
+        ordinary.client_secret.as_deref(),
+        Some("stored-secret-hash")
+    );
+    assert!(ordinary.metadata.get("client_discovery_id").is_none());
+    assert_eq!(
+        store.list_oauth_client_resources("ordinary").await?.len(),
+        2
+    );
+    store.delete_oauth_client("ordinary").await?;
     let mut initial = input.clone();
     initial.resources = vec!["retained".into()];
     let created = store
@@ -65,7 +84,10 @@ async fn oauth_registration_rolls_back_row_and_links_on_storage_fault<B: Backend
         .unwrap();
     _ = db.execute("UPDATE \"oauthClientResource\" SET metadata='{\"operator\":true}' WHERE \"clientId\"='document' AND \"resourceId\"='retained'", &[]).await?;
     let mut replacement = input.clone();
-    replacement.replace = true;
+    replacement.replacement = Some(OAuthClientRegistrationReplacement {
+        discovery_id: "document-owner".into(),
+        existing_created_at: Some(now),
+    });
     replacement.client.metadata["client_name"] = json!("Replacement");
     _ = db.execute("CREATE TRIGGER registration_fault BEFORE INSERT ON \"oauthClientResource\" WHEN NEW.\"resourceId\"='fault' BEGIN SELECT RAISE(ABORT,'real registration storage failure'); END", &[]).await?;
     let before = db.tables(&["oauthClient", "oauthClientResource"]).await?;
@@ -85,7 +107,7 @@ async fn oauth_registration_rolls_back_row_and_links_on_storage_fault<B: Backend
         "replacement rollback retains the prior row, links, and their metadata"
     );
     _ = db.execute("DROP TRIGGER registration_fault", &[]).await?;
-    replacement.discovery_id = "another-owner".into();
+    replacement.replacement.as_mut().unwrap().discovery_id = "another-owner".into();
     assert!(
         store
             .persist_oauth_client_registration(replacement.clone())
@@ -96,7 +118,7 @@ async fn oauth_registration_rolls_back_row_and_links_on_storage_fault<B: Backend
         db.tables(&["oauthClient", "oauthClientResource"]).await?,
         before
     );
-    replacement.discovery_id = "document-owner".into();
+    replacement.replacement.as_mut().unwrap().discovery_id = "document-owner".into();
     let updated = store
         .persist_oauth_client_registration(replacement.clone())
         .await?

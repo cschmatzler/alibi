@@ -2349,6 +2349,17 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       (input.mode === "resource-seed" ? seededAuths.get(input.context ?? "default") : undefined) ??
       auths[input.mode as keyof typeof auths] ??
       auths.default;
+    if (input.action === "registration-storage-fault") {
+      const database = base.database as import("better-sqlite3").Database;
+      if (input.enabled) {
+        database.exec(
+          `CREATE TRIGGER registration_managed_fault BEFORE INSERT ON "oauthClientResource" WHEN NEW."resourceId"='https://api.fixture.test/registration/b' BEGIN SELECT CASE WHEN EXISTS(SELECT 1 FROM "oauthClient" WHERE "clientId"=NEW."clientId") AND EXISTS(SELECT 1 FROM "oauthClientResource" WHERE "clientId"=NEW."clientId" AND "resourceId"='https://api.fixture.test/registration/a') THEN RAISE(ABORT,'real second registration relation failure') ELSE RAISE(ABORT,'registration write order changed') END; END`,
+        );
+      } else {
+        database.exec("DROP TRIGGER registration_managed_fault");
+      }
+      return Response.json({ enabled: input.enabled });
+    }
     if (input.action === "logout-context-calls") {
       await Promise.all(logoutCompletions.splice(0));
       return Response.json(logoutCalls.splice(0));
@@ -2536,12 +2547,21 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       const context = await auth.$context;
       const counts = Object.fromEntries(
         await Promise.all(
-          ["user", "account", "session", "verification", "jwks", "oauthClient"].map(
-            async (model) => [
-              model,
-              (await context.adapter.findMany({ model, limit: 10000 })).length,
-            ],
-          ),
+          [
+            "user",
+            "account",
+            "session",
+            "verification",
+            "jwks",
+            "oauthClient",
+            "oauthClientResource",
+            "oauthConsent",
+            "oauthAccessToken",
+            "oauthRefreshToken",
+          ].map(async (model) => [
+            model,
+            (await context.adapter.findMany({ model, limit: 10000 })).length,
+          ]),
         ),
       );
       return Response.json({ calls: registrationCalls, counts });
@@ -3580,6 +3600,20 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     try {
       return await dispatchClient();
     } catch (error) {
+      if (input.captureError === "registration") {
+        // Report whether the real server invocation threw an ordinary error,
+        // rather than fabricating a protocol response for a database failure.
+        if (error instanceof EndpointAPIError) {
+          throw error;
+        }
+        console.error("registration-storage-failure", error);
+        const failure = error as { headers?: Headers; body?: unknown };
+        return Response.json({
+          ordinaryError: true,
+          headers: failure.headers ? Object.fromEntries(failure.headers) : null,
+          body: failure.body ?? null,
+        });
+      }
       if (
         input.mode === "client-policy" &&
         input.captureError &&

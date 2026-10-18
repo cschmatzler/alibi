@@ -1,6 +1,10 @@
 use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
+use alibi_core::store::CreateOAuthClient;
+use alibi_core::store::oauth_clients::{
+    OAuthClientRegistrationWriteError, PersistOAuthClientRegistration,
+};
 use alibi_core::utils::javascript::trim as js_trim;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser};
@@ -1428,24 +1432,24 @@ impl OAuthProviderPlugin {
             .or_insert_with(|| json!([]));
         let client = ctx
             .database
-            .create_oauth_client(alibi_core::store::CreateOAuthClient {
-                client_id,
-                user_id,
-                client_secret: stored,
-                metadata: Value::Object(metadata),
-                created_at: now,
+            .persist_oauth_client_registration(PersistOAuthClientRegistration {
+                client: CreateOAuthClient {
+                    client_id,
+                    user_id,
+                    client_secret: stored,
+                    metadata: Value::Object(metadata),
+                    created_at: now,
+                },
+                replacement: None,
+                resources: resources.clone(),
+                updated_at: now,
             })
-            .await?;
-        for resource_id in &resources {
-            _ = ctx
-                .database
-                .create_oauth_client_resource(alibi_core::store::CreateOAuthClientResource {
-                    client_id: client.client_id.clone(),
-                    resource_id: resource_id.clone(),
-                    created_at: chrono::Utc::now(),
-                })
-                .await?;
-        }
+            .await
+            .map_err(|error| match error {
+                OAuthClientRegistrationWriteError::Failure(error)
+                | OAuthClientRegistrationWriteError::Collision { cause: error, .. } => error,
+            })?
+            .ok_or_else(|| AuthError::internal("Client creation returned no client"))?;
         let mut output: serde_json::Map<String, Value> = serde_json::from_value(client.metadata)?;
         if !administrative {
             _ = output.remove("client_credentials_scopes");

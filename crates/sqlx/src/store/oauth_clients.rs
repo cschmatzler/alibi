@@ -83,7 +83,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         let mut active = ActiveRow::new();
         let metadata = data.client.metadata;
         let patch = alibi_core::store::oauth_clients::metadata_to_columns(metadata.clone())?;
-        if !data.replace {
+        if data.replacement.is_none() {
             active.set(
                 "id",
                 self.generated_id(exec, "oauthClient", "oauthClient", "id")
@@ -105,7 +105,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 "updatedAt",
             ]
             .contains(&column)
-                && (!data.replace
+                && (data.replacement.is_none()
                     || patch
                         .get(column)
                         .is_some_and(|value| column != "metadata" || !value.is_null()))
@@ -113,13 +113,17 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 active.set(column, value.clone());
             }
         }
-        if !data.replace {
+        if data.replacement.is_none() {
             active.set("createdAt", data.client.created_at);
-        } else if let Some(created_at) = data.existing_created_at {
+        } else if let Some(created_at) = data
+            .replacement
+            .as_ref()
+            .and_then(|replacement| replacement.existing_created_at)
+        {
             active.set("createdAt", created_at);
         }
         active.set("updatedAt", data.updated_at);
-        let client = if data.replace {
+        let client = if let Some(replacement) = &data.replacement {
             let mut sql = crate::sql::Sql::with(exec.engine(), "UPDATE ");
             sql.ident(Model::TABLE);
             sql.push(" SET ");
@@ -134,7 +138,12 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             sql.push(" WHERE ");
             sql.compare(Model::TABLE, "clientId", " = ", &data.client.client_id);
             sql.push(" AND ");
-            sql.compare(Model::TABLE, "clientDiscoveryId", " = ", &data.discovery_id);
+            sql.compare(
+                Model::TABLE,
+                "clientDiscoveryId",
+                " = ",
+                &replacement.discovery_id,
+            );
             model::returning::<Model>(&mut sql);
             let Some(client) = exec.fetch_optional::<Model>(sql).await? else {
                 return Ok(None);

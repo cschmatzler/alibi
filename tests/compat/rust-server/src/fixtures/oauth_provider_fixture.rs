@@ -659,6 +659,12 @@ pub(crate) async fn router(
             }
             let seeded=if input["mode"]=="resource-seed"{seeded_auth.lock().await.get(input["context"].as_str().unwrap_or("default")).cloned()}else{None};
             let auth=seeded.as_ref().map(|(auth,_)|auth.clone()).unwrap_or(auth);
+            if input["action"]=="registration-storage-fault" {
+                use alibi::seaorm::sea_orm::ConnectionTrait as _;
+                let sql=if input["enabled"]==true {"CREATE TRIGGER registration_managed_fault BEFORE INSERT ON \"oauthClientResource\" WHEN NEW.\"resourceId\"='https://api.fixture.test/registration/b' BEGIN SELECT CASE WHEN EXISTS(SELECT 1 FROM \"oauthClient\" WHERE \"clientId\"=NEW.\"clientId\") AND EXISTS(SELECT 1 FROM \"oauthClientResource\" WHERE \"clientId\"=NEW.\"clientId\" AND \"resourceId\"='https://api.fixture.test/registration/a') THEN RAISE(ABORT,'real second registration relation failure') ELSE RAISE(ABORT,'registration write order changed') END; END"}else{"DROP TRIGGER registration_managed_fault"};
+                _=logout_database.execute_unprepared(sql).await.unwrap();
+                return axum::Json(serde_json::json!({"enabled":input["enabled"]})).into_response();
+            }
             if input["action"]=="cimd-register" {
                 use alibi::plugins::oauth_provider::RegisterClientMetadataDocumentInput;
                 let provider=&seeded.as_ref().unwrap().1;
@@ -724,7 +730,7 @@ pub(crate) async fn router(
             if input["action"]=="registration-state" {
                 use alibi::seaorm::sea_orm::{ConnectionTrait as _,DbBackend,Statement};
                 let mut counts=serde_json::Map::new();
-                for table in ["user","account","session","verification","jwks","oauthClient"] {
+                for table in ["user","account","session","verification","jwks","oauthClient","oauthClientResource","oauthConsent","oauthAccessToken","oauthRefreshToken"] {
                     let row=logout_database.query_one_raw(Statement::from_string(DbBackend::Sqlite,format!("SELECT COUNT(*) AS count FROM \"{table}\""))).await.unwrap().unwrap();
                     counts.insert(table.into(),serde_json::json!(row.try_get::<i64>("","count").unwrap()));
                 }
@@ -1120,7 +1126,7 @@ pub(crate) async fn router(
                 if input["action"]=="authorize" {let url=url::Url::parse(&format!("{logout_origin}{}",request.path)).unwrap();request=request.with_url(url);}
                 Some(request)}else{None},..Default::default()}).await {
                 Ok(output)=>output.into_response().unwrap().into_response(),
-                Err(error)=>{if input["captureError"]==true && !alibi::endpoint::is_endpoint_api_error(&error.error) {if let alibi::AuthError::Internal(message)=&error.error {return axum::Json(serde_json::json!({"ordinaryError":message})).into_response();}}let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
+                Err(error)=>{if input["captureError"]=="registration" && !alibi::endpoint::is_endpoint_api_error(&error.error) {eprintln!("registration-storage-failure: {error:?}");return axum::Json(serde_json::json!({"ordinaryError":true,"headers":error.headers.as_ref().map(|headers|headers.iter().collect::<std::collections::BTreeMap<_,_>>()),"body":error.body})).into_response();}if input["captureError"]==true && !alibi::endpoint::is_endpoint_api_error(&error.error) {if let alibi::AuthError::Internal(message)=&error.error {return axum::Json(serde_json::json!({"ordinaryError":message})).into_response();}}let mut response=if error.body_absent{alibi::AuthResponse::new(error.error.status_code())}else{error.error.to_auth_response()};if let Some(body)=error.body{response.body=serde_json::to_vec(&*body).unwrap();}
                 if let Some(headers)=error.headers {for(name,value)in headers.iter(){if name.eq_ignore_ascii_case("set-cookie"){response.headers.append(name,value);}else{response.headers.insert(name,value);}}}response.into_response()}
             }
         }

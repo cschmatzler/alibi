@@ -21,17 +21,23 @@ pub struct CreateOAuthClient {
     pub metadata: Value,
     pub created_at: DateTime<Utc>,
 }
-/// One atomic client row write and additive server-default resource linkage.
+/// One atomic client row write and additive default/requested resource linkage.
 /// Replacement metadata is a patch: omitted model fields survive, explicit nulls clear.
 #[derive(Clone, Debug)]
 pub struct PersistOAuthClientRegistration {
     pub client: CreateOAuthClient,
-    pub discovery_id: String,
-    pub replace: bool,
-    /// Replacement snapshot timestamp; absence is filtered out like an undefined adapter field.
-    pub existing_created_at: Option<DateTime<Utc>>,
+    /// `None` creates an ordinary or discovery-owned client without replacement authority.
+    pub replacement: Option<OAuthClientRegistrationReplacement>,
     pub resources: Vec<String>,
     pub updated_at: DateTime<Utc>,
+}
+
+/// Conditional replacement authority, used only for trusted discovery-owned clients.
+#[derive(Clone, Debug)]
+pub struct OAuthClientRegistrationReplacement {
+    pub discovery_id: String,
+    /// Replacement snapshot timestamp; absence is filtered out like an undefined adapter field.
+    pub existing_created_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -97,7 +103,7 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth resource linkage is not supported by this store",
         ))
     }
-    /// Atomically insert or conditionally update a discovery-owned client and ensure
+    /// Atomically insert any client or conditionally update a discovery-owned client and ensure
     /// its resource links. `None` means the replacement ownership predicate lost.
     /// Existing links (including their metadata/timestamps) are never replaced.
     async fn persist_oauth_client_registration(

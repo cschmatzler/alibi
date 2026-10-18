@@ -3,7 +3,8 @@ use super::{CreateOAuthClientInput, OAuthProviderPlugin};
 use alibi_core::AuthError;
 use alibi_core::endpoint::EndpointError;
 use alibi_core::store::oauth_clients::{
-    OAuthClientRegistrationWriteError, PersistOAuthClientRegistration,
+    OAuthClientRegistrationReplacement, OAuthClientRegistrationWriteError,
+    PersistOAuthClientRegistration,
 };
 use alibi_core::store::{CreateOAuthClient, OAuthClient};
 use alibi_core::{AuthContext, AuthSchema};
@@ -257,9 +258,10 @@ impl OAuthProviderPlugin {
                     metadata: Value::Object(metadata),
                     created_at: existing.and_then(|client| client.created_at).unwrap_or(now),
                 },
-                discovery_id: input.client_discovery_id.clone(),
-                replace: existing.is_some(),
-                existing_created_at: existing.and_then(|client| client.created_at),
+                replacement: existing.map(|client| OAuthClientRegistrationReplacement {
+                    discovery_id: input.client_discovery_id.clone(),
+                    existing_created_at: client.created_at,
+                }),
                 resources: resources.clone(),
                 updated_at: now,
             })

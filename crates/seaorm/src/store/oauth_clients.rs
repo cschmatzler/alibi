@@ -89,7 +89,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         let tx = self.scoped_connection().begin_immediate().await?;
         let metadata = data.client.metadata;
         let patch = alibi_core::store::oauth_clients::metadata_to_columns(metadata.clone())?;
-        let mut active = if data.replace {
+        let mut active = if data.replacement.is_some() {
             <oauth_client::ActiveModel as Default>::default()
         } else {
             oauth_client::ActiveModel {
@@ -106,7 +106,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         let mut fields = <oauth_client::ActiveModel as Default>::default();
         oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut fields);
         for column in Column::iter() {
-            if (!data.replace
+            if (data.replacement.is_none()
                 || patch
                     .get(column.as_str())
                     .is_some_and(|value| column.as_str() != "metadata" || !value.is_null()))
@@ -115,17 +115,21 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
                 active.set(column, value);
             }
         }
-        if !data.replace {
+        if data.replacement.is_none() {
             active.created_at = Set(Some(data.client.created_at));
-        } else if let Some(created_at) = data.existing_created_at {
+        } else if let Some(created_at) = data
+            .replacement
+            .as_ref()
+            .and_then(|replacement| replacement.existing_created_at)
+        {
             active.created_at = Set(Some(created_at));
         }
         active.updated_at = Set(Some(data.updated_at));
-        let client = if data.replace {
+        let client = if let Some(replacement) = &data.replacement {
             let mut clients = Entity::update_many()
                 .set(active)
                 .filter(Column::ClientId.eq(&data.client.client_id))
-                .filter(Column::ClientDiscoveryId.eq(&data.discovery_id))
+                .filter(Column::ClientDiscoveryId.eq(&replacement.discovery_id))
                 .exec_with_returning(&tx)
                 .await
                 .map_err(map_db_err)?;
