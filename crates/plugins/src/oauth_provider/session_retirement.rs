@@ -133,13 +133,13 @@ impl<S: AuthSchema> SessionDeletionWork<S> for RetirementWork {
         crate::authentication_helpers::run_owned_notification(
             context,
             async move {
+                // Context restoration must not inline the large signing/delivery
+                // future into every enclosing notification polling frame.
+                let apply = Box::pin(work.apply(&owned_context));
                 if let Some(endpoint) = work.endpoint.clone() {
-                    alibi_core::endpoint::with_endpoint_call_context(
-                        endpoint,
-                        work.apply(&owned_context),
-                    ).await
+                    alibi_core::endpoint::with_endpoint_call_context(endpoint, apply).await
                 } else {
-                    work.apply(&owned_context).await
+                    apply.await
                 }
             },
             alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
