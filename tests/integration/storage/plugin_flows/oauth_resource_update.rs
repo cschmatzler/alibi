@@ -2,6 +2,8 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
+#[path = "../../../fixtures/oauth/resource-privileges.rs"]
+mod resource_privileges;
 backend_tests!(oauth_resource_update_persists_partial_policy_and_changes_authorization_admission);
 async fn oauth_resource_update_persists_partial_policy_and_changes_authorization_admission<
     B: Backend,
@@ -104,7 +106,18 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
             "oauthConsent",
             "oauthResource",
             "oauthClientResource",
+            "oauthAccessToken",
+            "oauthRefreshToken",
         ])
+        .await?;
+    let policy = Arc::new(resource_privileges::ResourcePrivileges::default());
+    let guarded = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+            resource_privileges: Some(policy.clone()),
+            ..Default::default()
+        }))
+        .build()
         .await?;
     for (identifier, patch, cookie, status, error) in [
         (
@@ -135,14 +148,59 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
             400,
             "",
         ),
+        (
+            "https://api.fixture.test/update",
+            json!({"identifier":null}),
+            cookies(&owner),
+            400,
+            "[body.identifier] Invalid input: expected string, received null",
+        ),
+        (
+            "https://api.fixture.test/update",
+            json!({"identifier":42}),
+            cookies(&owner),
+            400,
+            "[body.identifier] Invalid input: expected string, received number",
+        ),
+        (
+            "https://api.fixture.test/update",
+            json!({"identifier":""}),
+            cookies(&owner),
+            400,
+            "[body.identifier] Too small: expected string to have >=1 characters",
+        ),
+        (
+            "https://api.fixture.test/update",
+            json!({"disabled":"bad","name":42}),
+            String::new(),
+            400,
+            "[body.name] Invalid input: expected string, received number; [body.disabled] Invalid input: expected boolean, received string",
+        ),
+        (
+            "https://api.fixture.test/update",
+            json!({"name":42,"identifier":null}),
+            cookies(&owner),
+            400,
+            "[body.identifier] Invalid input: expected string, received null; [body.name] Invalid input: expected string, received number",
+        ),
     ] {
         let denied = Box::pin(
-            auth.dispatch_endpoint(
+            guarded.dispatch_endpoint(
                 ServerEndpoint::<Value>::new("oauth-provider", "adminUpdateOAuthResource")
                     .with_params(&json!({"identifier":identifier}))?
                     .with_body(&patch)?,
                 EndpointOptions {
-                    headers: Some([("cookie".into(), cookie)].into_iter().collect()),
+                    headers: Some(
+                        [
+                            ("cookie".into(), cookie),
+                            (
+                                "x-resource-decision".into(),
+                                if status == 400 { "false" } else { "true" }.into(),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
                     ..Default::default()
                 },
             ),
@@ -150,7 +208,29 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
         .await
         .unwrap_err();
         assert_eq!(denied.error.status_code(), status);
-        if !error.is_empty() {
+        let calls = std::mem::take(&mut *policy.calls.lock().unwrap());
+        assert_eq!(calls.len(), usize::from(status == 404));
+        if error.starts_with("[body.") {
+            assert!(!denied.body_absent);
+            let mut response = alibi::endpoint::EndpointResponse::error(denied.error);
+            if let Some(body) = denied.body {
+                response = response.with_error_body(*body);
+            }
+            if let Some(headers) = denied.headers {
+                response.merge_headers(headers);
+            }
+            let response = response.to_response()?;
+            assert_eq!(response.status, 400);
+            assert_eq!(
+                body(&response),
+                json!({"code":"VALIDATION_ERROR","message":error})
+            );
+            assert_eq!(
+                response.headers.get("content-type").map(String::as_str),
+                Some("application/json")
+            );
+            assert!(response.headers.get("set-cookie").is_none());
+        } else if !error.is_empty() {
             assert_eq!(
                 denied.body.as_ref().unwrap().get("error").unwrap().as_str(),
                 Some(error)
@@ -167,11 +247,54 @@ async fn oauth_resource_update_persists_partial_policy_and_changes_authorization
                 "oauthClient",
                 "oauthConsent",
                 "oauthResource",
-                "oauthClientResource"
+                "oauthClientResource",
+                "oauthAccessToken",
+                "oauthRefreshToken"
             ])
             .await?
         );
     }
+    let denied = Box::pin(
+        guarded.dispatch_endpoint(
+            OAuthProviderPlugin::admin_update_oauth_resource_endpoint(
+                "https://api.fixture.test/update",
+                &json!({"name":"Denied"}),
+            )?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(&owner)),
+                        ("x-resource-decision".into(), "false".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 401);
+    assert!(denied.body_absent);
+    assert_eq!(policy.calls.lock().unwrap().len(), 1);
+    assert_eq!(
+        db.tables(&[
+            "user",
+            "account",
+            "session",
+            "verification",
+            "jwks",
+            "oauthClient",
+            "oauthConsent",
+            "oauthResource",
+            "oauthClientResource",
+            "oauthAccessToken",
+            "oauthRefreshToken"
+        ])
+        .await?,
+        before
+    );
     let mut http = request(
         "/admin/oauth2/resources/https%3A%2F%2Fapi.fixture.test%2Fupdate",
         Some(patch.clone()),

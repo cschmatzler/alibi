@@ -47,6 +47,70 @@ compatScenario(
     expect(new Date(value.createdAt).getTime()).toBeLessThanOrEqual(Date.now());
     const row = await control({ action: "resource-row", identifier: input.identifier });
     expect(await row.json()).toEqual(value);
+    const catalog = async () => {
+      const response = await control({ action: "resource-list", headers: { cookie } });
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const beforeValidation = await catalog();
+    const callbackCalls = async () => {
+      const response = await control({ action: "resource-privileges-state" });
+      return response.json();
+    };
+    expect(await callbackCalls()).toEqual([]);
+    const validation = [];
+    for (const mode of ["default", "resource-privileges"]) {
+      for (const session of [true, false]) {
+        for (const [body, message] of [
+          [{}, "[body.identifier] Invalid input: expected nonoptional, received undefined"],
+          [
+            { disabled: "bad", name: 42 },
+            "[body.identifier] Invalid input: expected nonoptional, received undefined; [body.name] Invalid input: expected string, received number; [body.disabled] Invalid input: expected boolean, received string",
+          ],
+          [{ identifier: null }, "[body.identifier] Invalid input: expected string, received null"],
+          [{ identifier: 42 }, "[body.identifier] Invalid input: expected string, received number"],
+          [
+            { identifier: "" },
+            "[body.identifier] Too small: expected string to have >=1 characters",
+          ],
+          [
+            { name: 42, identifier: null },
+            "[body.identifier] Invalid input: expected string, received null; [body.name] Invalid input: expected string, received number",
+          ],
+        ] as const) {
+          const response = await control({
+            action: "resource-create",
+            mode,
+            body,
+            headers: { ...(session ? { cookie } : {}), "x-resource-decision": "false" },
+          });
+          expect(response.status).toBe(400);
+          expect(response.headers.get("content-type")).toBe("application/json");
+          expect(response.headers.getSetCookie()).toEqual([]);
+          const result = await response.json();
+          expect(result).toEqual({ code: "VALIDATION_ERROR", message });
+          expect(await callbackCalls()).toEqual([]);
+          expect(await catalog()).toEqual(beforeValidation);
+          validation.push({
+            mode,
+            session,
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+            body: result,
+          });
+        }
+      }
+    }
+    const privilegeDenied = await control({
+      action: "resource-create",
+      mode: "resource-privileges",
+      headers: { cookie, "x-resource-decision": "false" },
+      body: { identifier: "urn:fixture:denied" },
+    });
+    expect(privilegeDenied.status).toBe(401);
+    expect(await privilegeDenied.text()).toBe("");
+    expect(((await callbackCalls()) as any[]).map((call) => call.action)).toEqual(["create"]);
+    expect(await catalog()).toEqual(beforeValidation);
     const failures = [];
     for (const [body, headers, status, error] of [
       [{ identifier: input.identifier }, { cookie }, 400, "invalid_request"],
@@ -143,6 +207,7 @@ compatScenario(
       created: project(value),
       defaults: project(defaults),
       failures,
+      validation,
       redirects,
     });
   },

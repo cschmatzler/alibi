@@ -95,6 +95,65 @@ compatScenario(
     });
     expect(await loaded.json()).toEqual(updated);
     const failures = [];
+    const validation = [];
+    const callbackCalls = async () => {
+      const response = await control({ action: "resource-privileges-state" });
+      return response.json();
+    };
+    expect(await callbackCalls()).toEqual([]);
+    for (const mode of ["resources-open", "resource-privileges"]) {
+      for (const session of [true, false]) {
+        for (const [body, message] of [
+          [{ identifier: null }, "[body.identifier] Invalid input: expected string, received null"],
+          [{ identifier: 42 }, "[body.identifier] Invalid input: expected string, received number"],
+          [
+            { identifier: "" },
+            "[body.identifier] Too small: expected string to have >=1 characters",
+          ],
+          [
+            { disabled: "bad", name: 42 },
+            "[body.name] Invalid input: expected string, received number; [body.disabled] Invalid input: expected boolean, received string",
+          ],
+          [
+            { name: 42, identifier: null },
+            "[body.identifier] Invalid input: expected string, received null; [body.name] Invalid input: expected string, received number",
+          ],
+        ] as const) {
+          const response = await control({
+            action: "resource-update",
+            mode,
+            params: { identifier },
+            body,
+            headers: { ...(session ? { cookie } : {}), "x-resource-decision": "false" },
+          });
+          expect(response.status).toBe(400);
+          expect(response.headers.get("content-type")).toBe("application/json");
+          expect(response.headers.getSetCookie()).toEqual([]);
+          const result = await response.json();
+          expect(result).toEqual({ code: "VALIDATION_ERROR", message });
+          expect(await callbackCalls()).toEqual([]);
+          const row = await control({ action: "resource-row", identifier });
+          expect(await row.json()).toEqual(updated);
+          validation.push({
+            mode,
+            session,
+            status: response.status,
+            contentType: response.headers.get("content-type"),
+            body: result,
+          });
+        }
+      }
+    }
+    const denied = await control({
+      action: "resource-update",
+      mode: "resource-privileges",
+      params: { identifier },
+      headers: { cookie, "x-resource-decision": "false" },
+      body: { name: "Denied" },
+    });
+    expect(denied.status).toBe(401);
+    expect(await denied.text()).toBe("");
+    expect(((await callbackCalls()) as any[]).map((call) => call.action)).toEqual(["update"]);
     for (const [params, body, headers, status, error] of [
       [{ identifier: "urn:fixture:missing" }, { name: "Unknown" }, { cookie }, 404, "not_found"],
       [{ identifier }, { name: "Unauthorized" }, {}, 401, null],
@@ -190,6 +249,7 @@ compatScenario(
       updated: project(updated),
       disabled: project(disabled),
       failures,
+      validation,
       redirects,
     });
   },

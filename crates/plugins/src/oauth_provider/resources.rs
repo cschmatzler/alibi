@@ -13,17 +13,29 @@ pub(super) fn validate_update(input: Option<&JsValue>) -> AuthResult<JsValue> {
     validate_body(input, false)
 }
 fn validate_body(input: Option<&JsValue>, require_identifier: bool) -> AuthResult<JsValue> {
-    use crate::authentication_helpers::{JsonField, JsonFieldKind, field_issue, json_type};
-    let mut output = crate::endpoint::validate_fields(
-        input,
-        "body",
-        &[JsonField {
-            name: "identifier",
-            kind: JsonFieldKind::NonEmptyString,
-            required: require_identifier,
-        }],
-    )?;
+    use crate::authentication_helpers::{JsonFieldKind, field_issue, json_type};
+    let mut output = crate::endpoint::validate_fields(input, "body", &[])?;
     let mut issues = Vec::new();
+    let identifier = input.and_then(|input| input.get("identifier"));
+    // Create uses optional().nonoptional(), not an ordinary required string.
+    // Keep its issue first, but collect the rest of the object schema's issues too.
+    let identifier_issue = if identifier.is_none() && require_identifier {
+        Some("Invalid input: expected nonoptional, received undefined".into())
+    } else if identifier.is_some() {
+        field_issue(
+            JsonFieldKind::NonEmptyString,
+            identifier,
+            json_type(identifier),
+        )
+    } else {
+        None
+    };
+    if let Some(issue) = identifier_issue {
+        issues.push(format!("[body.identifier] {issue}"));
+    }
+    if let (Some(identifier), JsValue::Object(output)) = (identifier, &mut output) {
+        _ = output.insert("identifier".into(), identifier.clone());
+    }
     for name in [
         "name",
         "accessTokenTtl",

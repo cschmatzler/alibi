@@ -2,6 +2,8 @@
 use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
+#[path = "../../../fixtures/oauth/resource-privileges.rs"]
+mod resource_privileges;
 backend_tests!(oauth_resource_creation_persists_policy_and_admits_resource_authorization);
 async fn oauth_resource_creation_persists_policy_and_admits_resource_authorization<B: Backend>(
     db: Db,
@@ -16,6 +18,124 @@ async fn oauth_resource_creation_persists_policy_and_admits_resource_authorizati
         .build()
         .await?;
     let owner = signup(&auth, "resource-owner@example.test").await;
+    let policy = Arc::new(resource_privileges::ResourcePrivileges::default());
+    let guarded = super::auth_probe::fast_builder::<B>(&connection)
+        .plugin(JwtPlugin::new())
+        .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+            resource_privileges: Some(policy.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let tables = [
+        "user",
+        "account",
+        "session",
+        "verification",
+        "jwks",
+        "oauthClient",
+        "oauthConsent",
+        "oauthResource",
+        "oauthClientResource",
+        "oauthAccessToken",
+        "oauthRefreshToken",
+    ];
+    let before_validation = db.tables(&tables).await?;
+    for target in [&auth, &guarded] {
+        for cookie in [cookies(&owner), String::new()] {
+            for (input, message) in [
+                (
+                    json!({}),
+                    "[body.identifier] Invalid input: expected nonoptional, received undefined",
+                ),
+                (
+                    json!({"disabled":"bad","name":42}),
+                    "[body.identifier] Invalid input: expected nonoptional, received undefined; [body.name] Invalid input: expected string, received number; [body.disabled] Invalid input: expected boolean, received string",
+                ),
+                (
+                    json!({"identifier":null}),
+                    "[body.identifier] Invalid input: expected string, received null",
+                ),
+                (
+                    json!({"identifier":42}),
+                    "[body.identifier] Invalid input: expected string, received number",
+                ),
+                (
+                    json!({"identifier":""}),
+                    "[body.identifier] Too small: expected string to have >=1 characters",
+                ),
+                (
+                    json!({"name":42,"identifier":null}),
+                    "[body.identifier] Invalid input: expected string, received null; [body.name] Invalid input: expected string, received number",
+                ),
+            ] {
+                let error = Box::pin(
+                    target.dispatch_endpoint(
+                        OAuthProviderPlugin::admin_create_oauth_resource_endpoint(&input)?,
+                        EndpointOptions {
+                            headers: Some(
+                                [
+                                    ("cookie".into(), cookie.clone()),
+                                    ("x-resource-decision".into(), "false".into()),
+                                ]
+                                .into_iter()
+                                .collect(),
+                            ),
+                            ..Default::default()
+                        },
+                    ),
+                )
+                .await
+                .unwrap_err();
+                assert!(!error.body_absent);
+                let mut response = alibi::endpoint::EndpointResponse::error(error.error);
+                if let Some(body) = error.body {
+                    response = response.with_error_body(*body);
+                }
+                if let Some(headers) = error.headers {
+                    response.merge_headers(headers);
+                }
+                let response = response.to_response()?;
+                assert_eq!(response.status, 400);
+                assert_eq!(
+                    body(&response),
+                    json!({"code":"VALIDATION_ERROR","message":message})
+                );
+                assert_eq!(
+                    response.headers.get("content-type").map(String::as_str),
+                    Some("application/json")
+                );
+                assert!(response.headers.get("set-cookie").is_none());
+                assert!(policy.calls.lock().unwrap().is_empty());
+                assert_eq!(db.tables(&tables).await?, before_validation);
+            }
+        }
+    }
+    // A schema-valid request reaches the configured callback instead of writing.
+    let denied = Box::pin(
+        guarded.dispatch_endpoint(
+            OAuthProviderPlugin::admin_create_oauth_resource_endpoint(
+                &json!({"identifier":"urn:fixture:denied"}),
+            )?,
+            EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), cookies(&owner)),
+                        ("x-resource-decision".into(), "false".into()),
+                    ]
+                    .into_iter()
+                    .collect(),
+                ),
+                ..Default::default()
+            },
+        ),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(denied.error.status_code(), 401);
+    assert!(denied.body_absent);
+    assert_eq!(policy.calls.lock().unwrap().len(), 1);
+    assert_eq!(db.tables(&tables).await?, before_validation);
     let input = json!({"identifier":"https://api.fixture.test/metrics","name":"Metrics","allowedScopes":["email"],"accessTokenTtl":120,"refreshTokenTtl":3600,"signingAlgorithm":"EdDSA","metadata":{"tenant":"fixture"},"customClaims":{"purpose":"metrics"}});
     let start = chrono::Utc::now().timestamp_millis();
     let result = Box::pin(
