@@ -9,8 +9,11 @@ backend_tests!(
     oauth_signout_retires_bound_access_while_offline_refresh_survives,
     oauth_bulk_revocation_notifies_each_deleted_session,
     oauth_preserved_signout_retires_authority_once,
-    oauth_preserved_bulk_retirement_skips_ended_audit_rows
+    oauth_preserved_bulk_retirement_skips_ended_audit_rows,
+    oauth_logout_retains_dynamic_authority_and_signing_context
 );
+#[path = "../../../fixtures/oauth/logout-context.rs"]
+mod logout_context;
 async fn oauth_signout_retires_bound_access_while_offline_refresh_survives<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -30,8 +33,27 @@ async fn issue_for_session<S: AuthSchema>(
     auth: &Alibi<S>,
     session: &AuthResponse,
     query: &Value,
-    mut input: Value,
+    input: Value,
 ) -> TestResult<Value> {
+    issue_for_session_at(auth, session, query, input, None).await
+}
+
+async fn issue_for_session_at<S: AuthSchema>(
+    auth: &Alibi<S>,
+    session: &AuthResponse,
+    query: &Value,
+    mut input: Value,
+    authority: Option<&str>,
+) -> TestResult<Value> {
+    let physical = |path: &str, body| {
+        let mut input = request(path, body, "");
+        if let Some(authority) = authority {
+            input = input
+                .with_url(url::Url::parse(&format!("https://{authority}/api/auth{path}")).unwrap());
+            _ = input.headers.insert("host".into(), authority.into());
+        }
+        input
+    };
     let grant = Box::pin(
         auth.dispatch_endpoint(
             OAuthProviderPlugin::oauth2_authorize_endpoint(query)?,
@@ -44,7 +66,7 @@ async fn issue_for_session<S: AuthSchema>(
                     .into_iter()
                     .collect(),
                 ),
-                request: Some(request("/oauth2/authorize", None, "")),
+                request: Some(physical("/oauth2/authorize", None)),
                 ..Default::default()
             },
         ),
@@ -65,7 +87,7 @@ async fn issue_for_session<S: AuthSchema>(
     let issued = Box::pin(auth.dispatch_endpoint(
         ServerEndpoint::<Value>::new("oauth-provider", "oauth2Token").with_body(&input)?,
         EndpointOptions {
-            request: Some(request("/oauth2/token", Some(input), "")),
+            request: Some(physical("/oauth2/token", Some(input))),
             ..Default::default()
         },
     ))
@@ -73,6 +95,241 @@ async fn issue_for_session<S: AuthSchema>(
     .into_response()?;
     assert_eq!(issued.status, 200);
     Ok(body(&issued))
+}
+
+async fn oauth_logout_retains_dynamic_authority_and_signing_context<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::plugins::jwt::{JwtClaimsConfig, JwtPluginConfig};
+    let (received, mut receipts) = tokio::sync::mpsc::unbounded_channel();
+    let rp = axum::Router::new().route(
+        "/logout",
+        axum::routing::post(move |text: String| {
+            let received = received.clone();
+            async move {
+                received.send(text).unwrap();
+                axum::http::StatusCode::NO_CONTENT
+            }
+        }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let rp_url = format!("http://{}/logout", listener.local_addr()?);
+    let rp_task = tokio::spawn(async move { axum::serve(listener, rp).await.unwrap() });
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    for background in [false, true] {
+        for explicit in [false, true] {
+            let ring = Arc::new(logout_context::LogoutContext::default());
+            let mut config = AuthConfig::new(SECRET).base_url(ORIGIN).dynamic_base_url(
+                alibi::config::DynamicBaseUrl {
+                    allowed_hosts: vec![
+                        "tenant-a.fixture.test".into(),
+                        "tenant-b.fixture.test".into(),
+                    ],
+                    protocol: Some(alibi::config::BaseUrlProtocol::Https),
+                    fallback: Some("https://fallback.fixture.test".into()),
+                },
+            );
+            if background {
+                config.background_tasks = Some(ring.clone());
+            }
+            let auth = AuthBuilder::new(config.clone())
+                .store(B::store(Arc::new(config), &connection))
+                .plugin(super::auth_probe::fast_password())
+                .plugin(SessionManagementPlugin::new())
+                .plugin(JwtPlugin::with_config(JwtPluginConfig {
+                    keyring: Some(ring.clone()),
+                    disable_setting_jwt_header: true,
+                    claims: JwtClaimsConfig {
+                        issuer: explicit.then(|| "https://explicit.fixture.test/issuer".into()),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                }))
+                .plugin(OAuthProviderPlugin::with_config(OAuthProviderConfig {
+                    pairwise_secret: Some("native-pairwise-secret-at-least-32-characters".into()),
+                    ..Default::default()
+                }))
+                .build()
+                .await?;
+            let mut recipient = None;
+            let mut previous_subject = None;
+            for (index, host) in [
+                "tenant-a.fixture.test",
+                "tenant-b.fixture.test",
+                "fallback.fixture.test",
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let owner = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("email-password", "signUpEmail").with_body(&json!({"email":format!("logout-{background}-{explicit}-{index}@example.test"),"name":"Owner","password":PASSWORD}))?, EndpointOptions {
+                    headers: (index != 2).then(|| [("host".into(), host.into())].into_iter().collect()), ..Default::default()
+                })).await?.into_response()?;
+                assert_eq!(owner.status, 200);
+                if recipient.is_none() {
+                    let created = Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider", "adminCreateOAuthClient").with_body(&json!({"client_name":"Logout context","redirect_uris":["https://app.fixture.test/callback"],"scope":"openid email offline_access","token_endpoint_auth_method":"client_secret_post","skip_consent":true,"grant_types":["authorization_code","refresh_token"],"enable_end_session":true,"subject_type":"pairwise"}))?, EndpointOptions { headers: Some([("cookie".into(),cookies(&owner)),("host".into(),host.into())].into_iter().collect()), ..Default::default() })).await?.into_response()?;
+                    assert_eq!(created.status, 201);
+                    let client = body(&created);
+                    let id = client["client_id"].as_str().unwrap();
+                    let mut row = auth.store().get_oauth_client(id).await?.unwrap();
+                    row.metadata["backchannel_logout_uri"] = json!(rp_url);
+                    _ = auth
+                        .store()
+                        .update_oauth_client_metadata(id, row.metadata, chrono::Utc::now())
+                        .await?;
+                    recipient = Some(client);
+                }
+                let client = recipient.as_ref().unwrap();
+                let verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+                let challenge = base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .encode(sha2::Sha256::digest(verifier));
+                let issued = issue_for_session_at(&auth,&owner,&json!({"client_id":client["client_id"],"response_type":"code","redirect_uri":"https://app.fixture.test/callback","scope":"openid email offline_access","code_challenge":challenge,"code_challenge_method":"S256"}),json!({"grant_type":"authorization_code","client_id":client["client_id"],"client_secret":client["client_secret"],"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"}),Some(host)).await?;
+                let keys_response = Box::pin(auth.dispatch_endpoint(
+                    ServerEndpoint::<Value>::new("jwt", "getJwks"),
+                    EndpointOptions::default(),
+                ))
+                .await?
+                .into_response()?;
+                let keys: jsonwebtoken::jwk::JwkSet = serde_json::from_value(body(&keys_response))?;
+                let expected_issuer = if explicit {
+                    "https://explicit.fixture.test/issuer".to_owned()
+                } else {
+                    format!("https://{host}/api/auth")
+                };
+                let verify = |token: &str,
+                              issuer: &str|
+                 -> Result<
+                    jsonwebtoken::TokenData<Value>,
+                    jsonwebtoken::errors::Error,
+                > {
+                    let header = jsonwebtoken::decode_header(token)?;
+                    let mut validation = jsonwebtoken::Validation::new(header.alg);
+                    validation.set_issuer(&[issuer]);
+                    validation.set_audience(&[client["client_id"].as_str().unwrap()]);
+                    jsonwebtoken::decode(
+                        token,
+                        &jsonwebtoken::DecodingKey::from_jwk(
+                            keys.find(header.kid.as_deref().unwrap()).unwrap(),
+                        )?,
+                        &validation,
+                    )
+                };
+                let id = verify(issued["id_token"].as_str().unwrap(), &expected_issuer)?;
+                ring.calls.lock().unwrap().clear();
+                let logical_host = if index == 0 {
+                    "tenant-b.fixture.test"
+                } else {
+                    host
+                };
+                let mut headers = [
+                    ("cookie".into(), cookies(&owner)),
+                    ("origin".into(), format!("https://{host}")),
+                    ("x-logout-proof".into(), "logical".into()),
+                ]
+                .into_iter()
+                .collect::<std::collections::HashMap<String, String>>();
+                if index != 2 {
+                    _ = headers.insert("host".into(), logical_host.into());
+                }
+                let mut physical = request("/sign-out", Some(json!({})), "").with_url(
+                    url::Url::parse(&format!("https://{host}/api/auth/sign-out"))?,
+                );
+                physical.headers = headers.clone();
+                _ = physical.headers.insert("host".into(), host.into());
+                _ = physical
+                    .headers
+                    .insert("x-logout-proof".into(), "physical".into());
+                _ = physical
+                    .headers
+                    .insert("content-type".into(), "application/json".into());
+                let started = chrono::Utc::now().timestamp();
+                let ended = if index == 1 {
+                    Box::pin(auth.handle_request(physical)).await?
+                } else {
+                    Box::pin(auth.dispatch_endpoint(
+                        ServerEndpoint::<Value>::new("session-management", "signOut"),
+                        EndpointOptions {
+                            headers: Some(headers),
+                            request: (index == 0).then_some(physical),
+                            ..Default::default()
+                        },
+                    ))
+                    .await?
+                    .into_response()?
+                };
+                assert_eq!(ended.status, 200);
+                ring.drain().await?;
+                let form = tokio::time::timeout(std::time::Duration::from_secs(2), receipts.recv())
+                    .await?
+                    .unwrap();
+                let fields: Vec<_> = url::form_urlencoded::parse(form.as_bytes())
+                    .into_owned()
+                    .collect();
+                assert_eq!(fields.len(), 1);
+                assert_eq!(fields[0].0, "logout_token");
+                let token = &fields[0].1;
+                let logout = verify(token, &expected_issuer)
+                    .map_err(|error| format!("logout JWT issuer {expected_issuer}: {error}"))?;
+                assert_eq!(logout.header.typ.as_deref(), Some("logout+jwt"));
+                assert_eq!(logout.header.kid, id.header.kid);
+                assert_eq!(logout.header.alg, id.header.alg);
+                assert_eq!(logout.claims["sub"], id.claims["sub"]);
+                assert_ne!(logout.claims["sub"], body(&owner)["user"]["id"]);
+                if let Some(previous) = previous_subject {
+                    assert_ne!(logout.claims["sub"], previous);
+                }
+                previous_subject = Some(logout.claims["sub"].clone());
+                assert_eq!(logout.claims["sid"], id.claims["sid"]);
+                assert_eq!(logout.claims["aud"], client["client_id"]);
+                assert!(
+                    (started..=chrono::Utc::now().timestamp())
+                        .contains(&logout.claims["iat"].as_i64().unwrap())
+                );
+                assert_eq!(
+                    logout.claims["exp"].as_i64().unwrap() - logout.claims["iat"].as_i64().unwrap(),
+                    120
+                );
+                assert_eq!(
+                    logout.claims["events"],
+                    json!({"http://schemas.openid.net/event/backchannel-logout":{}})
+                );
+                assert!(logout.claims.get("nonce").is_none());
+                assert!(verify(token, "https://wrong.fixture.test/api/auth").is_err());
+                if !explicit {
+                    assert!(
+                        verify(
+                            token,
+                            &format!(
+                                "https://{}/api/auth",
+                                if index == 0 {
+                                    logical_host
+                                } else {
+                                    "tenant-a.fixture.test"
+                                }
+                            )
+                        )
+                        .is_err()
+                    );
+                }
+                let calls = ring.calls.lock().unwrap().clone();
+                assert_eq!(
+                    calls,
+                    vec![
+                        json!({"operation":"read","path":"/sign-out","physicalHost":(index != 2).then_some(host),"physicalProof":(index != 2).then_some("physical"),"logicalHost":(index != 2).then_some(if index==1 {host}else{logical_host}),"logicalProof":if index==1 {"physical"}else{"logical"}})
+                    ]
+                );
+                assert_eq!(auth.context().config.base_url, ORIGIN);
+                assert!(
+                    auth.store()
+                        .get_session(body(&owner)["token"].as_str().unwrap())
+                        .await?
+                        .is_none()
+                );
+                assert!(receipts.try_recv().is_err());
+            }
+        }
+    }
+    rp_task.abort();
+    B::close(connection).await
 }
 
 async fn revoke_all<S: AuthSchema>(

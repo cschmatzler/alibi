@@ -1172,7 +1172,69 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     }
     return decision !== "false";
   };
+  const logoutRows: any[] = [];
+  const logoutCalls: unknown[] = [];
+  const logoutCompletions: Promise<unknown>[] = [];
+  const observeLogout = async (operation: string, ctx: any) => {
+    if (ctx.path === "/sign-out") await new Promise((resolve) => setTimeout(resolve, 20));
+    logoutCalls.push({
+      operation,
+      path: ctx.path,
+      physicalHost: ctx.request?.headers.get("host") ?? null,
+      physicalProof: ctx.request?.headers.get("x-logout-proof") ?? null,
+      logicalHost: ctx.headers?.get("host") ?? null,
+      logicalProof: ctx.headers?.get("x-logout-proof") ?? null,
+    });
+  };
+  const logoutProfile = (background: boolean, explicit: boolean) =>
+    betterAuth({
+      ...options,
+      baseURL: {
+        allowedHosts: ["tenant-a.fixture.test", "tenant-b.fixture.test"],
+        protocol: "https",
+        fallback: "https://fallback.fixture.test",
+      },
+      ...(background
+        ? {
+            advanced: {
+              backgroundTasks: {
+                handler: (completion: Promise<unknown>) => {
+                  logoutCompletions.push(completion);
+                },
+              },
+            },
+          }
+        : {}),
+      plugins: [
+        username(),
+        jwt({
+          disableSettingJwtHeader: true,
+          ...(explicit ? { jwt: { issuer: "https://explicit.fixture.test/issuer" } } : {}),
+          adapter: {
+            getJwks: async (ctx: any) => {
+              await observeLogout("read", ctx);
+              return logoutRows;
+            },
+            createJwk: async (data: any, ctx: any) => {
+              await observeLogout("create", ctx);
+              const row = { ...data, id: `logout-key-${logoutRows.length + 1}` };
+              logoutRows.push(row);
+              return row;
+            },
+          },
+        }),
+        oauthProvider({
+          loginPage: "/login",
+          consentPage: "/consent",
+          pairwiseSecret: "native-pairwise-secret-at-least-32-characters",
+        }),
+      ],
+    });
   const auths = {
+    "logout-context": logoutProfile(false, false),
+    "logout-context-background": logoutProfile(true, false),
+    "logout-context-issuer": logoutProfile(false, true),
+    "logout-context-background-issuer": logoutProfile(true, true),
     "extension-grant": betterAuth({
       ...options,
       plugins: [
@@ -2228,6 +2290,27 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         completed: preserved.completed,
       });
     }
+    if (input.action === "logout-context-calls") {
+      await Promise.all(logoutCompletions.splice(0));
+      return Response.json(logoutCalls.splice(0));
+    }
+    if (input.action === "logout-context" || input.action === "logout-context-http") {
+      const headers = new Headers(input.headers);
+      const physicalHeaders = new Headers(headers);
+      physicalHeaders.set("host", input.physicalHost);
+      physicalHeaders.set("x-logout-proof", "physical");
+      physicalHeaders.set("content-type", "application/json");
+      const request = input.physicalHost
+        ? new Request(`https://${input.physicalHost}/api/auth/sign-out`, {
+            method: "POST",
+            headers: physicalHeaders,
+            body: "{}",
+          })
+        : undefined;
+      return input.action === "logout-context-http"
+        ? auth.handler(request!)
+        : auth.api.signOut({ headers, request, asResponse: true });
+    }
     if (input.mode === "resource-privileges") {
       const operations: Record<string, string> = {
         "resource-create": "adminCreateOAuthResource",
@@ -2637,7 +2720,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     if (input.action === "signup" || input.action === "signin") {
       try {
         if (input.action === "signup") {
-          return await auth.api.signUpEmail({ body: input.body, asResponse: true });
+          return await auth.api.signUpEmail({
+            body: input.body,
+            headers: new Headers(input.headers ?? {}),
+            asResponse: true,
+          });
         }
         const output = await auth.api.signInEmail({
           body: input.body,

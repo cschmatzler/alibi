@@ -32,6 +32,7 @@ impl<S: AuthSchema> Alibi<S> {
             return Ok(None);
         }
         let mut call = EndpointCall::from_http_request(request, route);
+        call.extensions().insert((*context.config).clone());
         let mut outer = call.clone();
         let mut patch = EndpointContextPatch::default();
         let mut headers = Headers::new();

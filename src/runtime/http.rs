@@ -465,7 +465,14 @@ impl<S: AuthSchema> Alibi<S> {
             }
             result
         } else {
-            handler.await
+            // Store/plugin callbacks still have a genuine endpoint when no
+            // application hook required an accumulated HTTP frame.
+            let call = alibi_core::endpoint::EndpointCall::from_http_request(
+                &internal_req,
+                &global_route,
+            );
+            call.extensions().insert((*context.config).clone());
+            alibi_core::endpoint::with_endpoint_call_context(call, Box::pin(handler)).await
         }
     }
 }

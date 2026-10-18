@@ -19,6 +19,9 @@ struct RetirementWork {
     tokens: Vec<(OAuthTokenKind, String)>,
     session_id: String,
     targets: Vec<LogoutTarget>,
+    config: Arc<alibi_core::AuthConfig>,
+    endpoint: Option<alibi_core::endpoint::EndpointCall>,
+    request: Option<alibi_core::AuthRequest>,
 }
 #[async_trait]
 impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
@@ -99,10 +102,25 @@ impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
                 }
             }
         }
+        // The store projection is initialized once. Dispatch owns the resolved
+        // request policy; retain it and the actual callback frame before the
+        // deletion work can leave that endpoint's task-local scope.
+        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
+        let config = endpoint
+            .as_ref()
+            .and_then(|call| call.extensions().get::<alibi_core::AuthConfig>())
+            .unwrap_or_else(|| Arc::clone(&context.config));
+        let request = endpoint
+            .as_ref()
+            .and_then(|call| call.request().cloned())
+            .or_else(|| alibi_core::hooks::current_request_hook_context().map(|hook| hook.request));
         Ok(Some(Box::new(RetirementWork {
             tokens: selected,
             session_id: session.id().as_ref().into(),
             targets,
+            config,
+            endpoint,
+            request,
         })))
     }
 }
@@ -110,10 +128,20 @@ impl<S: AuthSchema> SessionDeletionHook<S> for TokenRetirementHook {
 impl<S: AuthSchema> SessionDeletionWork<S> for RetirementWork {
     async fn complete(&self, context: &AuthContext<S>) -> AuthResult<()> {
         let work = self.clone();
-        let owned_context = context.clone();
+        let mut owned_context = context.clone();
+        owned_context.config = Arc::clone(&self.config);
         crate::authentication_helpers::run_owned_notification(
             context,
-            async move { work.apply(&owned_context).await },
+            async move {
+                if let Some(endpoint) = work.endpoint.clone() {
+                    alibi_core::endpoint::with_endpoint_call_context(
+                        endpoint,
+                        work.apply(&owned_context),
+                    ).await
+                } else {
+                    work.apply(&owned_context).await
+                }
+            },
             alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
         )
         .await
@@ -147,7 +175,7 @@ impl RetirementWork {
             ..Default::default()
         };
         options.resolved_key = jwt
-            .resolve_signing_key(&options, None, context)
+            .resolve_signing_key(&options, self.request.as_ref(), context)
             .await?
             .map(Arc::new);
         let base = format!(
@@ -181,7 +209,7 @@ impl RetirementWork {
                         "jti": identifier,
                         "events": {"http://schemas.openid.net/event/backchannel-logout": {}}
                     }).as_object().cloned().ok_or_else(|| AuthError::internal("Invalid logout token claims"))?;
-                    let token = jwt.sign_jwt(payload, options, None, context).await?;
+                    let token = jwt.sign_jwt(payload, options, self.request.as_ref(), context).await?;
                     let response = http.post(&target.uri)
                         .header(reqwest::header::ACCEPT, "application/json")
                         .form(&[("logout_token", token)])

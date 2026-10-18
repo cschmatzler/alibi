@@ -494,3 +494,202 @@ for (const { preserve, retirement } of [false, true].flatMap((preserve) =>
     },
   );
 }
+
+for (const background of [false, true]) {
+  for (const explicit of [false, true]) {
+    compatScenario(
+      `logout retains dynamic request authority and signing context background=${background} explicit=${explicit}`,
+      async (ctx) => {
+        const receipts: string[] = [];
+        const rp = createServer(async (request, response) => {
+          let form = "";
+          for await (const chunk of request) form += chunk;
+          expect(request.headers["content-type"]).toBe("application/x-www-form-urlencoded");
+          expect(request.headers.accept).toBe("application/json");
+          receipts.push(form);
+          response.writeHead(204).end();
+        });
+        rp.listen(0, "127.0.0.1");
+        await once(rp, "listening");
+        const rpURL = `http://127.0.0.1:${(rp.address() as { port: number }).port}/logout`;
+        try {
+          const actor = ctx.actor();
+          const mode = `logout-context${background ? "-background" : ""}${explicit ? "-issuer" : ""}`;
+          const control = (input: object) =>
+            actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ mode, ...input }),
+            });
+          const verifier = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+          const challenge = createHash("sha256").update(verifier).digest("base64url");
+          let client: any;
+          let previousSubject: string | undefined;
+          const observations = [];
+          for (const [index, host] of [
+            "tenant-a.fixture.test",
+            "tenant-b.fixture.test",
+            "fallback.fixture.test",
+          ].entries()) {
+            const signup = await control({
+              action: "signup",
+              headers: index === 2 ? {} : { host },
+              body: {
+                email: ctx.uniqueEmail(`logout-${index}`),
+                name: "Owner",
+                password: "password123",
+              },
+            });
+            expect(signup.status).toBe(200);
+            const owner = (await signup.json()) as any;
+            const cookie = signup.headers
+              .getSetCookie()
+              .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+              .map((raw) => raw.split(";")[0])
+              .join("; ");
+            if (!client) {
+              const created = await control({
+                action: "admin-create",
+                headers: { cookie, host },
+                body: {
+                  client_name: "Logout context",
+                  redirect_uris: ["https://app.fixture.test/callback"],
+                  scope: "openid email offline_access",
+                  token_endpoint_auth_method: "client_secret_post",
+                  skip_consent: true,
+                  grant_types: ["authorization_code", "refresh_token"],
+                  enable_end_session: true,
+                  subject_type: "pairwise",
+                },
+              });
+              expect(created.status).toBe(201);
+              client = await created.json();
+              expect(
+                (
+                  await control({
+                    action: "backchannel-uri",
+                    clientId: client.client_id,
+                    uri: rpURL,
+                  })
+                ).status,
+              ).toBe(200);
+            }
+            const grant = await control({
+              action: "authorize",
+              headers: { cookie, host, accept: "application/json" },
+              query: {
+                client_id: client.client_id,
+                response_type: "code",
+                redirect_uri: "https://app.fixture.test/callback",
+                scope: "openid email offline_access",
+                code_challenge: challenge,
+                code_challenge_method: "S256",
+              },
+            });
+            expect(grant.status).toBe(200);
+            const code = new URL(((await grant.json()) as any).url).searchParams.get("code");
+            expect(code).toBeTruthy();
+            const issued = await control({
+              action: "token",
+              headers: { host },
+              body: {
+                grant_type: "authorization_code",
+                client_id: client.client_id,
+                client_secret: client.client_secret,
+                code,
+                code_verifier: verifier,
+                redirect_uri: "https://app.fixture.test/callback",
+              },
+            });
+            expect(issued.status).toBe(200);
+            const token = (await issued.json()) as any;
+            const jwks = await control({ action: "jwks" });
+            expect(jwks.status).toBe(200);
+            const keys = createLocalJWKSet((await jwks.json()) as any);
+            const issuer = explicit
+              ? "https://explicit.fixture.test/issuer"
+              : `https://${host}/api/auth`;
+            const id = await jwtVerify(token.id_token, keys, {
+              issuer,
+              audience: client.client_id,
+            });
+            await control({ action: "logout-context-calls" });
+            const logicalHost = index === 0 ? "tenant-b.fixture.test" : host;
+            const started = Date.now();
+            const ended = await control({
+              action: index === 1 ? "logout-context-http" : "logout-context",
+              headers: {
+                cookie,
+                origin: `https://${host}`,
+                "x-logout-proof": "logical",
+                ...(index !== 2 ? { host: logicalHost } : {}),
+              },
+              ...(index !== 2 ? { physicalHost: host } : {}),
+            });
+            expect(ended.status).toBe(200);
+            const callbackResponse = await control({ action: "logout-context-calls" });
+            expect(callbackResponse.status).toBe(200);
+            const calls = await callbackResponse.json();
+            const finished = Date.now();
+            expect(receipts).toHaveLength(index + 1);
+            const form = new URLSearchParams(receipts[index]);
+            expect([...form.keys()]).toEqual(["logout_token"]);
+            const signed = form.get("logout_token")!;
+            const logout = await jwtVerify(signed, keys, { issuer, audience: client.client_id });
+            expect(logout.protectedHeader.typ).toBe("logout+jwt");
+            expect(logout.protectedHeader.kid).toBe(id.protectedHeader.kid);
+            expect(logout.protectedHeader.alg).toBe(id.protectedHeader.alg);
+            expect(logout.payload.sub).toBe(id.payload.sub);
+            expect(logout.payload.sub).not.toBe(owner.user.id);
+            expect(logout.payload.sub).not.toBe(previousSubject);
+            previousSubject = logout.payload.sub;
+            expect(logout.payload.sid).toBe(id.payload.sid);
+            expect(logout.payload.aud).toBe(client.client_id);
+            expect(logout.payload.iat).toBeGreaterThanOrEqual(Math.floor(started / 1000));
+            expect(logout.payload.iat).toBeLessThanOrEqual(Math.floor(finished / 1000));
+            expect(logout.payload.exp! - logout.payload.iat!).toBe(120);
+            expect(logout.payload.jti).toMatch(/^[A-Za-z0-9]{32}$/);
+            expect(logout.payload.events).toEqual({
+              "http://schemas.openid.net/event/backchannel-logout": {},
+            });
+            expect(logout.payload).not.toHaveProperty("nonce");
+            await expect(
+              jwtVerify(signed, keys, {
+                issuer: "https://wrong.fixture.test/api/auth",
+                audience: client.client_id,
+              }),
+            ).rejects.toThrow();
+            if (!explicit) {
+              await expect(
+                jwtVerify(signed, keys, {
+                  issuer: `https://${index === 0 ? logicalHost : "tenant-a.fixture.test"}/api/auth`,
+                  audience: client.client_id,
+                }),
+              ).rejects.toThrow();
+            }
+            expect(calls).toEqual([
+              {
+                operation: "read",
+                path: "/sign-out",
+                physicalHost: index === 2 ? null : host,
+                physicalProof: index === 2 ? null : "physical",
+                logicalHost: index === 2 ? null : index === 1 ? host : logicalHost,
+                logicalProof: index === 1 ? "physical" : "logical",
+              },
+            ]);
+            const row = await control({ action: "session-row", token: owner.token });
+            expect(row.status).toBe(200);
+            expect(await row.json()).toBeNull();
+            observations.push({ issuer: logout.payload.iss, calls, ended: ended.status });
+          }
+          return ctx.snapshot({ observations });
+        } finally {
+          rp.closeAllConnections();
+          await new Promise<void>((resolve, reject) =>
+            rp.close((error) => (error ? reject(error) : resolve())),
+          );
+        }
+      },
+    );
+  }
+}

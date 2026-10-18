@@ -78,6 +78,8 @@ mod client_privileges;
 mod consent_reference;
 #[path = "../../../../fixtures/oauth/resource-privileges.rs"]
 mod resource_privileges;
+#[path = "../../../../fixtures/oauth/logout-context.rs"]
+mod logout_context;
 use extension_grant::ExtensionGrant;
 #[derive(Debug)]
 struct MachinePrivileges;
@@ -316,6 +318,7 @@ pub(crate) async fn router(
     let id_token_claims=Arc::new(extension_claims::LiveIdTokenClaims::default());
     let response_fields=Arc::new(token_response_fields::TokenResponseFields::default());
     let request_registry=Arc::new(request_uri::RequestRegistry::default());
+    let logout_context = Arc::new(logout_context::LogoutContext::default());
     for mode in [
         "extension-grant",
         "pairwise",
@@ -333,6 +336,10 @@ pub(crate) async fn router(
         "signup-fallback",
         "signup-empty-page",
         "signup-page-only",
+        "logout-context",
+        "logout-context-background",
+        "logout-context-issuer",
+        "logout-context-background-issuer",
         "default",
         "preserved",
         "retirement",
@@ -486,6 +493,11 @@ pub(crate) async fn router(
             client_config.session.store_in_database=true;
             client_config.session.preserve_in_database=true;
         }
+        if mode.starts_with("logout-context") {
+            client_config=client_config.dynamic_base_url(alibi::config::DynamicBaseUrl{allowed_hosts:vec!["tenant-a.fixture.test".into(),"tenant-b.fixture.test".into()],protocol:Some(alibi::config::BaseUrlProtocol::Https),fallback:Some("https://fallback.fixture.test".into())});
+            if mode.contains("background") {client_config.background_tasks=Some(logout_context.clone());}
+            provider.pairwise_secret=Some("native-pairwise-secret-at-least-32-characters".into());
+        }
         if mode=="response-fields" {client_config=client_config.base_path("/__test/profiles/oauth-response-fields/api/auth");}
         if mode=="pairwise" {
             client_config.advanced.database.generate_id=Some(alibi::config::DatabaseIdStrategy::Custom(Arc::new(|model:&str,_size:Option<usize>|Ok(Some(if model=="user" {"pairwise-owner".into()} else {uuid::Uuid::new_v4().to_string()})))));
@@ -498,7 +510,7 @@ pub(crate) async fn router(
             .plugin(alibi::plugins::SessionManagementPlugin::new());
         let builder=if matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference") || mode.starts_with("postlogin-") || mode.starts_with("signup-") || mode.starts_with("token-") || mode.starts_with("registration-"){builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))}else{builder};
         let builder=if mode.starts_with("rate-") {builder.rate_limit(rate_limits::policies(mode).1)} else {builder};
-        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference"|"retirement"|"preserved") || mode.starts_with("signup-") || mode.starts_with("postlogin-"),..Default::default()})})};
+        let builder = if matches!(mode,"encrypted-generator"|"encrypted-prefixed-generator"|"custom-encrypted-prefixed") {builder} else {builder.plugin(if mode.starts_with("logout-context") {JwtPlugin::with_config(JwtPluginConfig{keyring:Some(logout_context.clone()),disable_setting_jwt_header:true,claims:alibi::plugins::jwt::JwtClaimsConfig{issuer:mode.ends_with("issuer").then(||"https://explicit.fixture.test/issuer".into()),..Default::default()},..Default::default()})} else if mode=="resource-keyring"{JwtPlugin::with_config(JwtPluginConfig{additional_key_pairs:vec![alibi::plugins::jwt::JwtKeyPairConfig{algorithm:alibi::plugins::jwt::JwtAlgorithm::Es256,modulus_length:None}],..Default::default()})}else{JwtPlugin::with_config(JwtPluginConfig{disable_setting_jwt_header:matches!(mode,"interaction"|"redirect-policy"|"request-uri"|"consent-reference"|"retirement"|"preserved") || mode.starts_with("signup-") || mode.starts_with("postlogin-"),..Default::default()})})};
         let provider=if matches!(mode,"remote-jwks"|"remote-jwks-peer"){remote_provider.clone()}else if matches!(mode,"trusted"|"trusted-peer"){trusted_provider.clone()}else{OAuthProviderPlugin::with_config(provider)};
         let auth = Arc::new(builder.plugin(provider).build().await?);
         client_instances.insert(mode.to_owned(), auth);
@@ -519,6 +531,7 @@ pub(crate) async fn router(
     let registration_resource_client_ids=Arc::new(OperatorClientIds{calls:std::sync::atomic::AtomicUsize::new(0),empty:false});
     Ok(Router::new().nest("/__test/profiles/oauth-response-fields/api/auth",response_fields_routes).route("/__test/server-api/oauth-provider-clients",axum::routing::post(move |axum::Json(input):axum::Json<serde_json::Value>| {
         let logout_database=logout_database.clone();
+        let logout_context=logout_context.clone();
         let seeded_auth=seeded_auth.clone();
         let seed_identifiers=seed_identifiers.clone();
         let resource_privileges=resource_privileges.clone();
@@ -561,6 +574,29 @@ pub(crate) async fn router(
                 use alibi::store::CacheAdapter as _;
                 let row=auth.store().get_session_by_id(input["sessionId"].as_str().unwrap()).await.unwrap();
                 return axum::Json(serde_json::json!({"row":row.map(|row|serde_json::json!({"id":row.id(),"expiresAt":row.expires_at()})),"cached":preserved_cache.get(input["token"].as_str().unwrap()).await.unwrap().is_some(),"completed":*preserved.completed.lock().unwrap()})).into_response();
+            }
+            if input["action"]=="logout-context-calls" {
+                logout_context.drain().await.unwrap();
+                return axum::Json(std::mem::take(&mut *logout_context.calls.lock().unwrap())).into_response();
+            }
+            if input["action"]=="logout-context" || input["action"]=="logout-context-http" {
+                let headers:HashMap<String,String>=serde_json::from_value(input["headers"].clone()).unwrap();
+                let physical=input["physicalHost"].as_str().map(|host| {
+                    let mut request=alibi::AuthRequest::new(alibi::HttpMethod::Post,"/api/auth/sign-out").with_url(url::Url::parse(&format!("https://{host}/api/auth/sign-out")).unwrap());
+                    request.headers=headers.clone();
+                    request.headers.insert("host".into(),host.into());
+                    request.headers.insert("x-logout-proof".into(),"physical".into());
+                    request.headers.insert("content-type".into(),"application/json".into());
+                    request.body=Some(b"{}".to_vec());
+                    request
+                });
+                return if input["action"]=="logout-context-http" {auth.handle_request(physical.unwrap()).await.unwrap().into_response()} else {
+                    match auth.dispatch_endpoint(alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("session-management","signOut"),alibi::endpoint::EndpointOptions{headers:Some(headers),request:physical,..Default::default()}).await {
+                        Ok(output)=>output.into_response().unwrap().into_response(),
+                        Err(error) if alibi::endpoint::is_endpoint_api_error(&error.error)=>error.error.to_auth_response().into_response(),
+                        Err(error)=>panic!("unexpected logout failure: {error:?}"),
+                    }
+                };
             }
             if input["action"]=="resource-privileges-state" {
                 return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();

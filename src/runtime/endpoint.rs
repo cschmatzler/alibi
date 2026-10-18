@@ -55,6 +55,10 @@ impl<S: AuthSchema> Alibi<S> {
                 .insert(self.context.config.advanced.ip_address.clone());
         }
         let context = self.resolve_endpoint_context(&call).await?;
+        // Store hooks may outlive this dispatcher; retain the admitted policy,
+        // not the initialized store projection or a second host resolution.
+        call.extensions()
+            .insert((*context.as_ref().unwrap_or(&self.context).config).clone());
         with_endpoint_call_context(
             call.clone(),
             self.dispatch_endpoint_inner(call, plugin, context.as_ref().unwrap_or(&self.context)),
