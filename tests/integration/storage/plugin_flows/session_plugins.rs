@@ -99,10 +99,12 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let auth = builder::<B>(&connection)
         .plugin(MultiSessionPlugin::new())
+        .plugin(alibi::plugins::TwoFactorPlugin::new())
         .build()
         .await?;
     let jar = Jar::default();
     let alice = signup(&auth, "alice-device@example.test").await;
+    authenticated(&auth, &cookies(&alice), "alice-device@example.test").await;
     retain(&jar, &alice);
     let bob = call(
         &auth,
@@ -115,7 +117,25 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
     )
     .await;
     retain(&jar, &bob);
+    for response in [&alice, &bob] {
+        let token = body(response)["token"].as_str().unwrap().to_owned();
+        assert!(auth.store().get_session(&token).await?.is_some());
+        let name = format!("better-auth.session_token_multi-{}=", token.to_lowercase());
+        let proof = response
+            .headers
+            .get_all("set-cookie")
+            .find_map(|header| header.strip_prefix(&name))
+            .expect("a completed HTTP login must deliver its signed device proof");
+        assert_eq!(
+            alibi::utils::cookie_utils::verify_cookie_value(
+                proof.split(';').next().unwrap(),
+                SECRET
+            ),
+            Some(token)
+        );
+    }
     let foreign = signup(&auth, "foreign-device@example.test").await;
+    let before_list = db.tables(&["user", "account", "session"]).await?;
     let listed = call(
         &auth,
         request(
@@ -137,6 +157,10 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
         emails,
         ["alice-device@example.test", "bob-device@example.test"]
     );
+    assert_eq!(
+        db.tables(&["user", "account", "session"]).await?,
+        before_list
+    );
     let denied = call(
         &auth,
         request(
@@ -148,6 +172,12 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
     )
     .await;
     assert_eq!(body(&denied)["code"], "INVALID_SESSION_TOKEN");
+    assert!(denied.headers.get_all("set-cookie").next().is_none());
+    assert_eq!(
+        db.tables(&["user", "account", "session"]).await?,
+        before_list
+    );
+    authenticated(&auth, &browser_cookie(&jar), "bob-device@example.test").await;
     let selected = call(
         &auth,
         request(
@@ -160,6 +190,10 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
     .await;
     retain(&jar, &selected);
     authenticated(&auth, &browser_cookie(&jar), "alice-device@example.test").await;
+    assert_eq!(
+        db.tables(&["user", "account", "session"]).await?,
+        before_list
+    );
     let revoked = call(
         &auth,
         request(
@@ -170,16 +204,82 @@ async fn multiple_sessions_require_delivered_device_proofs<B: Backend>(db: Db) -
         200,
     )
     .await;
+    let alice_token = body(&alice)["token"].as_str().unwrap().to_owned();
+    let proof_name = format!(
+        "better-auth.session_token_multi-{}=;",
+        alice_token.to_lowercase()
+    );
+    assert!(
+        revoked
+            .headers
+            .get_all("set-cookie")
+            .any(|cookie| { cookie.starts_with(&proof_name) && cookie.contains("Max-Age=0") })
+    );
     retain(&jar, &revoked);
     authenticated(&auth, &browser_cookie(&jar), "bob-device@example.test").await;
     authenticated(&auth, &cookies(&foreign), "foreign-device@example.test").await;
     assert_eq!(db.count("session").await?, 2);
-    assert!(
-        auth.store()
-            .get_session(body(&alice)["token"].as_str().unwrap())
-            .await?
-            .is_none()
+    assert!(auth.store().get_session(&alice_token).await?.is_none());
+    let after_revoke = db.tables(&["user", "account", "session"]).await?;
+    let replay = call(
+        &auth,
+        request(
+            "/multi-session/set-active",
+            Some(json!({"sessionToken":alice_token})),
+            &browser_cookie(&jar),
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&replay)["code"], "INVALID_SESSION_TOKEN");
+    assert_eq!(
+        db.tables(&["user", "account", "session"]).await?,
+        after_revoke
     );
+    // A later password login that stops at a real factor challenge must not
+    // turn its discarded provisional session into another device proof.
+    let enrollment = call(
+        &auth,
+        request(
+            "/two-factor/enable",
+            Some(json!({"password":PASSWORD})),
+            &browser_cookie(&jar),
+        ),
+        200,
+    )
+    .await;
+    let authenticator = totp_rs::Totp::from_url(body(&enrollment)["totpURI"].as_str().unwrap())?;
+    let verified = call(
+        &auth,
+        request(
+            "/two-factor/verify-totp",
+            Some(json!({"code":authenticator.generate_current().to_string()})),
+            &browser_cookie(&jar),
+        ),
+        200,
+    )
+    .await;
+    retain(&jar, &verified);
+    let before_pending = db.table("session").await?;
+    let pending = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"bob-device@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&pending)["twoFactorRedirect"], true);
+    assert!(
+        !pending
+            .headers
+            .get_all("set-cookie")
+            .any(|cookie| cookie.contains("_multi-"))
+    );
+    assert_eq!(db.table("session").await?, before_pending);
+    authenticated(&auth, &browser_cookie(&jar), "bob-device@example.test").await;
     B::close(connection).await
 }
 

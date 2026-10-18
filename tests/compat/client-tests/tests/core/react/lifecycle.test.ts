@@ -429,6 +429,10 @@ compatScenario(
         userId: bob.data!.user.id,
         token: bob.data!.token!,
       });
+      const aliceBefore = await ctx.readUserState({ userId: alice.data!.user.id });
+      const bobBefore = await ctx.readUserState({ userId: bob.data!.user.id });
+      expect(aliceBefore).toMatchObject({ sessions: [{ token: alice.data!.token }] });
+      expect(bobBefore).toMatchObject({ sessions: [{ token: bob.data!.token }] });
       const listed = await page.evaluate(() =>
         window.reactClient.multiSession.listDeviceSessions(),
       );
@@ -450,6 +454,8 @@ compatScenario(
         userId: alice.data!.user.id,
         token: alice.data!.token!,
       });
+      expect(await ctx.readUserState({ userId: alice.data!.user.id })).toEqual(aliceBefore);
+      expect(await ctx.readUserState({ userId: bob.data!.user.id })).toEqual(bobBefore);
       const revoked = await page.evaluate(
         (sessionToken) => window.reactClient.multiSession.revoke({ sessionToken }),
         alice.data!.token!,
@@ -470,9 +476,13 @@ compatScenario(
       expect(await settledSession(page, { userId: bob.data!.user.id })).toEqual(fallback);
       const aliceState = await ctx.readUserState({ userId: alice.data!.user.id });
       expect(aliceState).toMatchObject({ sessions: [] });
+      const bobState = await ctx.readUserState({ userId: bob.data!.user.id });
+      expect(bobState).toEqual(bobBefore);
       return ctx.snapshot({
         alice,
         bob,
+        aliceBefore,
+        bobBefore,
         listed,
         before,
         rejected,
@@ -483,6 +493,7 @@ compatScenario(
         fallback,
         replay,
         aliceState,
+        bobState,
       });
     } finally {
       await browser.close();

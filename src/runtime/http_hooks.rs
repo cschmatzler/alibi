@@ -182,6 +182,9 @@ impl<S: AuthSchema> Alibi<S> {
             };
             logical.merge_headers(frame.call.take_response_headers());
         }
+        // Plugin HTTP response hooks run on the physical request, not the
+        // logical frame where the handler completed its session publication.
+        alibi_core::session::cookie_cache::runtime::retain_publication(&frame.call, request);
         if matches!(logical.result(), Ok(value) if value == &original) {
             response.status = logical.status().unwrap_or(response.status);
             response.headers = logical.headers().clone();

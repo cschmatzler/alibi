@@ -82,6 +82,23 @@ pub fn published_session_snapshot(
         .and_then(|session| session.0.clone())
 }
 
+/// Retain the logical HTTP issuer's completed publication for physical response
+/// hooks. This copies callback observation only, never authentication authority.
+pub fn retain_publication(source: &impl SessionRequest, target: &impl SessionRequest) {
+    // A physical handler may explicitly retire issuance (for example while
+    // beginning a pending factor challenge). Do not resurrect that publication.
+    if target
+        .extensions()
+        .get::<PublishedSession>()
+        .is_some_and(|session| session.0.is_none())
+    {
+        return;
+    }
+    target
+        .extensions()
+        .insert(PublishedSession(published_session_snapshot(source)));
+}
+
 /// Retire cookie publication when a real login becomes a pending factor challenge.
 pub fn discard_issuance(request: &impl SessionRequest) {
     request.extensions().insert(PublishedSession(None));
