@@ -28,9 +28,8 @@ impl<S: AuthSchema> Alibi<S> {
         route: &alibi_core::AuthRoute,
         context: &alibi_core::AuthContext<S>,
     ) -> alibi_core::AuthResult<Option<alibi_core::AuthResponse>> {
-        if self.endpoint_hooks.is_empty() {
-            return Ok(None);
-        }
+        // Retain the logical frame even without application endpoint hooks:
+        // handlers publish renewed session cookies into this frame's extensions.
         let mut call = EndpointCall::from_http_request(request, route);
         call.extensions().insert((*context.config).clone());
         let mut outer = call.clone();

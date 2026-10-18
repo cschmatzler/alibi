@@ -22,29 +22,34 @@ backend_tests!(
 );
 
 #[derive(Default)]
-struct Inbox(Mutex<Vec<(String, String)>>);
+struct Inbox(Mutex<Vec<(String, String, String)>>);
 impl Inbox {
     fn take(&self) -> (String, String) {
+        let (email, _, token) = self.delivery();
+        (email, token)
+    }
+
+    fn delivery(&self) -> (String, String, String) {
         self.0.lock().unwrap().pop().unwrap()
     }
 }
 #[async_trait]
 impl SendVerificationEmail for Inbox {
-    async fn send(&self, user: &UserView, _: &str, token: &str) -> AuthResult<()> {
+    async fn send(&self, user: &UserView, url: &str, token: &str) -> AuthResult<()> {
         self.0
             .lock()
             .unwrap()
-            .push((user.email.clone().unwrap(), token.to_owned()));
+            .push((user.email.clone().unwrap(), url.to_owned(), token.to_owned()));
         Ok(())
     }
 }
 #[async_trait]
 impl SendChangeEmailConfirmation for Inbox {
-    async fn send(&self, _: &UserInfo, new_email: &str, _: &str, token: &str) -> AuthResult<()> {
+    async fn send(&self, user: &UserInfo, _: &str, url: &str, token: &str) -> AuthResult<()> {
         self.0
             .lock()
             .unwrap()
-            .push((new_email.to_owned(), token.to_owned()));
+            .push((user.email.clone().unwrap(), url.to_owned(), token.to_owned()));
         Ok(())
     }
 }
@@ -249,75 +254,149 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let inbox = Arc::new(Inbox::default());
     let (verification, management) = plugins(&inbox, Duration::hours(1), false);
-    let auth = fast_builder::<B>(&connection)
+    let config = AuthConfig::new(SECRET)
+        .base_url(ORIGIN)
+        .session_cookie_cache(alibi::CookieCacheConfig {
+            enabled: true,
+            max_age: 300.0,
+            ..Default::default()
+        });
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
         .plugin(verification)
         .plugin(management)
         .build()
         .await?;
-    let mut probe = Probe::new(&auth);
     let mut accounts = Vec::new();
     for email in ["mover@example.test", "other@example.test"] {
         let response = signup(&auth, email).await;
-        let _ = inbox.take();
+        let (_, token) = inbox.take();
+        let _ = call(&auth, verify(&token, None, &cookies(&response)), 200).await;
         accounts.push(cookies(&response));
     }
-    _ = db
-        .execute("UPDATE \"user\" SET \"emailVerified\" = true", &[])
-        .await?;
+    let mut current_email = "mover@example.test";
     for (label, callback, target) in [
         ("with callback", Some("/done"), "moved@example.test"),
         ("json", None, "second@example.test"),
     ] {
-        let _ = probe
-            .post(
-                &format!("request change {label}"),
+        let before = db
+            .tables(&["user", "account", "session", "verification"])
+            .await?;
+        let _ = call(
+            &auth,
+            request(
                 "/change-email",
-                &json!({"newEmail":target.to_uppercase(),"callbackURL":"/done"}).to_string(),
+                Some(json!({"newEmail":target.to_uppercase(),"callbackURL":"/done"})),
                 &accounts[0],
-            )
-            .await;
-        let (new_email, confirmation) = inbox.take();
-        assert_eq!(new_email, target);
-        let _ = probe
-            .send(
-                &format!("confirm {label}"),
-                verify(&confirmation, callback, &accounts[0]),
-            )
-            .await;
-        let (sent_to, verification_token) = inbox.take();
-        assert_eq!(sent_to, target);
-        if label == "json" {
-            let _ = probe
-                .send(
-                    "verify as other user",
-                    verify(&verification_token, None, &accounts[1]),
-                )
-                .await;
-            let _ = probe
-                .send(
-                    "verify without session",
-                    verify(&verification_token, None, ""),
-                )
-                .await;
-            probe.trace.value(
-                "emails",
-                json!([
-                    db.text("SELECT \"email\" FROM \"user\" WHERE \"name\" = 'Native owner' ORDER BY \"createdAt\" LIMIT 1", &[]).await?,
-                    db.count("session").await?
-                ]),
-            );
+            ),
+            200,
+        )
+        .await;
+        let (old_email, url, confirmation) = inbox.delivery();
+        assert_eq!(old_email, current_email);
+        let url = url::Url::parse(&url)?;
+        assert_eq!(
+            url.query_pairs().find(|(key, _)| key == "token").unwrap().1,
+            confirmation
+        );
+        assert_eq!(
+            url.query_pairs().find(|(key, _)| key == "callbackURL").unwrap().1,
+            "/done"
+        );
+        let status = if callback.is_some() { 302 } else { 200 };
+        let confirmed = call(&auth, verify(&confirmation, callback, &accounts[0]), status).await;
+        if status == 200 {
+            assert_eq!(body(&confirmed), json!({"status":true}));
+            assert!(!confirmed.headers.contains_key("location"));
         } else {
-            let _ = probe
-                .send(
-                    "verify with session and callback",
-                    verify(&verification_token, callback, &accounts[0]),
-                )
-                .await;
+            assert_eq!(
+                confirmed.headers.get("location").map(String::as_str),
+                callback
+            );
         }
+        // Reading an uncached browser session may refresh its data cookie;
+        // confirmation itself must not issue a new session-token cookie.
+        assert!(
+            !confirmed.headers.get_all("set-cookie")
+                .any(|cookie| cookie.starts_with("better-auth.session_token="))
+        );
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification"]).await?,
+            before
+        );
+        let (sent_to, url, verification_token) = inbox.delivery();
+        assert_eq!(sent_to, target);
+        let url = url::Url::parse(&url)?;
+        assert_eq!(
+            url.query_pairs().find(|(key, _)| key == "token").unwrap().1,
+            verification_token
+        );
+        let finish_cookie = if label == "json" { "" } else { &accounts[0] };
+        if label == "json" {
+            let denied = call(&auth, verify(&verification_token, None, &accounts[1]), 401).await;
+            assert_eq!(body(&denied)["code"], "INVALID_USER");
+            assert_eq!(
+                db.tables(&["user", "account", "session", "verification"]).await?,
+                before
+            );
+        }
+        let finished = call(&auth, verify(&verification_token, callback, finish_cookie), status).await;
+        if status == 200 {
+            assert_eq!(body(&finished)["status"], true);
+            assert_eq!(body(&finished)["user"]["email"], target);
+            assert_eq!(body(&finished)["user"]["emailVerified"], true);
+            assert!(!finished.headers.contains_key("location"));
+        } else {
+            assert_eq!(
+                finished.headers.get("location").map(String::as_str),
+                callback
+            );
+        }
+        assert!(finished.headers.contains_key("set-cookie"));
+        assert!(
+            finished.headers.get_all("set-cookie")
+                .any(|cookie| cookie.starts_with("better-auth.session_data=")),
+            "configured email-change completion must publish its cache cookie"
+        );
+        let original: Vec<Value> = serde_json::from_str(&before[0])?;
+        let actual: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
+        assert_eq!(actual.len(), original.len());
+        for (original, actual) in original.iter().zip(&actual) {
+            let mut expected = original.clone();
+            if original["email"] == current_email {
+                expected["email"] = json!(target);
+                expected["updatedAt"] = actual["updatedAt"].clone();
+            }
+            assert_eq!(actual, &expected);
+        }
+        let after = db
+            .tables(&["user", "account", "session", "verification"])
+            .await?;
+        assert_eq!(after[1], before[1]);
+        assert_eq!(after[3], before[3]);
+        let prior_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
+        let sessions: Vec<Value> = serde_json::from_str(&after[2])?;
+        assert_eq!(
+            sessions.len(),
+            prior_sessions.len() + usize::from(label == "json")
+        );
+        assert!(prior_sessions.iter().all(|row| sessions.contains(row)));
+        authenticated(&auth, &cookies(&finished), target).await;
+        authenticated(&auth, &accounts[1], "other@example.test").await;
+        let replay = call(&auth, verify(&verification_token, None, &accounts[0]), 401).await;
+        assert_eq!(body(&replay)["code"], "USER_NOT_FOUND");
+        assert!(!replay.headers.contains_key("location"));
+        assert!(!replay.headers.contains_key("set-cookie"));
+        assert_eq!(
+            db.tables(&["user", "account", "session", "verification"]).await?,
+            after
+        );
+        accounts[0] = cookies(&finished);
+        current_email = target;
     }
-    probe
-        .trace
-        .assert("email-verification/change-confirmation-chain");
     B::close(connection).await
 }
 
