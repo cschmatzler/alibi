@@ -4,7 +4,6 @@
     clippy::panic_in_result_fn,
     reason = "tests assert independently specified wire fields and fixtures"
 )]
-use alibi::config::{BaseUrlProtocol, DynamicBaseUrl};
 use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
@@ -398,22 +397,6 @@ async fn handler_and_after_hook_failures_follow_throw_api_errors_policy() {
     let mut api = get("/api/auth/echo");
     drop(api.headers.insert("x-mode".into(), "api".into()));
     assert_eq!(loud.handle_request(api).await.unwrap().status, 403);
-}
-
-#[tokio::test]
-async fn unresolvable_dynamic_authority_yields_plain_500() {
-    let mut config = AuthConfig::new(SECRET);
-    config.dynamic_base_url = Some(DynamicBaseUrl {
-        allowed_hosts: vec!["allowed.test".into()],
-        protocol: Some(BaseUrlProtocol::Http),
-        fallback: None,
-    });
-    let auth = edge_auth(config).await;
-    let mut request = get("/api/auth/echo");
-    drop(request.headers.insert("host".into(), "other.test".into()));
-    let response = auth.handle_request(request).await.unwrap();
-    assert_eq!(response.status, 500);
-    assert_eq!(response.body, b"Something went wrong!");
 }
 
 #[tokio::test]

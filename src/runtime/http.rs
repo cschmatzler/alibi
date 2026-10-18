@@ -39,9 +39,9 @@ impl<S: AuthSchema> Alibi<S> {
                 metadata: self.context.metadata.clone(),
                 extensions: self.context.extensions.clone(),
             },
-            Err(AuthError::Config(_)) if self.config.dynamic_base_url.is_some() => {
+            Err(error @ AuthError::Config(_)) if self.config.dynamic_base_url.is_some() => {
                 // Authority resolution fails outside the API router in the pinned host.
-                return Ok(AuthResponse::text(500, "Something went wrong!"));
+                return Ok(AuthError::CallbackFailure(Box::new(error)).to_auth_response());
             }
             Err(error) => return Ok(error.to_auth_response()),
         };

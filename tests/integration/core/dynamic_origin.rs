@@ -147,6 +147,55 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
+    let mut no_fallback = config();
+    no_fallback.dynamic_base_url.as_mut().unwrap().fallback = None;
+    let restricted = AuthBuilder::<B::Schema>::new(no_fallback.clone())
+        .store(B::store(Arc::new(no_fallback), &connection))
+        .plugin(OriginContextProbe)
+        .plugin(EmailPasswordPlugin::new())
+        .build()
+        .await?;
+    let before = db
+        .tables(&["user", "account", "session", "verification"])
+        .await?;
+    // A trusted direct call still receives the intentional API error and cause,
+    // rather than inheriting the public host's ordinary-exception transport.
+    let private = restricted.dispatch_endpoint(
+        alibi::endpoint::ServerEndpoint::<serde_json::Value>::new("email-password", "signUpEmail")
+            .with_body(&json!({"email":"unadmitted@fixture.test","password":"password123","name":"Blocked"}))?,
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("host".into(), "evil.test".into())].into()),
+            ..Default::default()
+        },
+    ).await.unwrap_err();
+    assert!(
+        matches!(private.error, alibi::AuthError::Api { status: 500, code: None, ref message }
+        if message.contains("Host \"evil.test\" is not in the allowed hosts list"))
+    );
+    assert!(private.headers.is_none());
+    let denied = restricted
+        .handle_request(request(
+            HttpMethod::Post,
+            "/sign-up/email",
+            "evil.test",
+            Some("https://evil.test"),
+            json!({"email":"unadmitted@fixture.test","password":"password123","name":"Blocked"}),
+        ))
+        .await?;
+    assert_eq!(denied.status, 500);
+    assert!(
+        denied.body.is_empty(),
+        "ordinary authority failure: {denied:?}"
+    );
+    assert!(!denied.headers.contains_key("content-type"));
+    assert!(!denied.headers.contains_key("set-cookie"));
+    assert!(!denied.headers.contains_key("location"));
+    assert_eq!(
+        db.tables(&["user", "account", "session", "verification"])
+            .await?,
+        before
+    );
+    assert_eq!(restricted.config().base_url, "http://localhost:3000");
     for (mode, status) in [("ordinary", 500), ("api", 403)] {
         let mut req = request(
             HttpMethod::Post,
