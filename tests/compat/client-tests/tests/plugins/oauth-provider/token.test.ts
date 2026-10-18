@@ -17,17 +17,14 @@ compatScenario(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mode: "response-fields", ...input }),
       });
-    // Keep the existing server-API success/persistence owner. Every callback
-    // failure uses the actual public router, whose complete headers and body
-    // must agree (not the private control route's shape-only trace).
-    const tokenRequest = (input: Record<string, string>, outcome: string) =>
-      outcome === "success"
-        ? control({ action: "token", body: input })
-        : publicActor.fetch(tokenEndpoint, {
-            method: "POST",
-            headers: { "content-type": "application/x-www-form-urlencoded" },
-            body: new URLSearchParams(input),
-          });
+    // Success, callback failures and pre-callback denials all use the actual
+    // public router; control routes only arrange and inspect genuine authority.
+    const tokenRequest = (input: Record<string, string>) =>
+      publicActor.fetch(tokenEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams(input),
+      });
     const state = async (value: string, reset = false) =>
       (await control({ action: "response-fields-state", value, reset })).json() as Promise<any>;
     await state("success", true);
@@ -78,7 +75,41 @@ compatScenario(
     const counts = async () =>
       (await control({ action: "authority-counts", sessionId: session.session.id })).json();
     let issued: any;
-    const errors = [];
+    const errors: {
+      mode: string;
+      status: number;
+      headers: ReturnType<typeof applicationHeaders>;
+      text: string;
+    }[] = [];
+    const recordFailure = async (response: Response, mode: string) => {
+      expect(response.status).toBe(
+        { ordinary: 500, api: 422, forbidden: 403, upstream: 409 }[mode],
+      );
+      const text = await response.text();
+      if (mode === "ordinary") {
+        expect(text).toBe("");
+        for (const name of ["content-type", "cache-control", "pragma"]) {
+          expect(response.headers.get(name)).toBeNull();
+        }
+      } else {
+        expect(JSON.parse(text)).toEqual(
+          {
+            api: { code: "RESPONSE_REJECTED", message: "Operator response denied" },
+            forbidden: { message: "Operator response forbidden" },
+            upstream: { code: "RESPONSE_CONFLICT", message: "Operator response conflict" },
+          }[mode],
+        );
+        expect(response.headers.get("content-type")).toBe("application/json");
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(response.headers.get("pragma")).toBe("no-cache");
+      }
+      errors.push({
+        mode,
+        status: response.status,
+        headers: applicationHeaders(response.headers),
+        text,
+      });
+    };
     for (const mode of ["ordinary", "api", "forbidden", "upstream", "success"]) {
       await state(mode);
       const grant = await control({
@@ -98,38 +129,41 @@ compatScenario(
       expect(grant.status).toBe(200);
       const code = new URL(((await grant.json()) as any).url).searchParams.get("code");
       expect(code).toBeTruthy();
-      const response = await tokenRequest(
-        {
-          grant_type: "authorization_code",
-          client_id: client.client_id,
-          code: code!,
-          code_verifier: verifier,
-          redirect_uri: "https://app.fixture.test/callback",
-        },
-        mode,
-      );
+      const input = {
+        grant_type: "authorization_code",
+        client_id: client.client_id,
+        code: code!,
+        code_verifier: verifier,
+        redirect_uri: "https://app.fixture.test/callback",
+      };
+      const priorCalls = (await state(mode)).calls.length;
+      if (mode === "ordinary") {
+        const { code_verifier: _, ...invalid } = input;
+        const denied = await tokenRequest(invalid);
+        expect(denied.status).toBe(400);
+        expect(await denied.json()).toEqual({
+          error: "invalid_request",
+          error_description: "Either code_verifier or client_secret is required",
+        });
+        expect((await state(mode)).calls).toHaveLength(priorCalls);
+        expect(await counts()).toEqual({ access: 0, refresh: 0 });
+      }
+      const response = await tokenRequest(input);
+      expect((await state(mode)).calls).toHaveLength(priorCalls + 1);
       if (mode === "success") {
         expect(response.status).toBe(200);
         issued = await response.json();
         expect(issued.application_metadata).toEqual({ service: "billing", plan: "pro" });
       } else {
-        expect(response.status).toBe(
-          { ordinary: 500, api: 422, forbidden: 403, upstream: 409 }[mode],
-        );
-        const text = await response.text();
-        if (mode === "api") {
-          expect(JSON.parse(text)).toEqual({
-            code: "RESPONSE_REJECTED",
-            message: "Operator response denied",
-          });
-        }
-        errors.push({
-          mode,
-          status: response.status,
-          headers: applicationHeaders(response.headers),
-          text,
-        });
+        await recordFailure(response, mode);
         expect(await counts()).toEqual({ access: 0, refresh: 0 });
+        const replay = await tokenRequest(input);
+        expect(replay.status).toBe(400);
+        expect(await replay.json()).toEqual({
+          error: "invalid_grant",
+          error_description: "invalid code",
+        });
+        expect((await state(mode)).calls).toHaveLength(priorCalls + 1);
       }
     }
     const receipt = {
@@ -150,42 +184,40 @@ compatScenario(
     };
     expect((await state("success")).calls).toEqual(Array(5).fill(receipt));
     const original = issued.refresh_token;
+    const originalRow = (await (
+      await control({ action: "token-row", kind: "refresh", token: original })
+    ).json()) as any;
     for (const mode of ["ordinary", "api", "forbidden", "upstream", "success"]) {
       await state(mode);
-      const response = await tokenRequest(
-        {
-          grant_type: "refresh_token",
-          client_id: client.client_id,
-          refresh_token: original,
-          scope: "email",
-        },
-        mode,
-      );
+      const input = {
+        grant_type: "refresh_token",
+        client_id: client.client_id,
+        refresh_token: original,
+        scope: "email",
+      };
+      const priorCalls = (await state(mode)).calls.length;
+      if (mode === "ordinary") {
+        const denied = await tokenRequest({ ...input, scope: "profile" });
+        expect(denied.status).toBe(400);
+        expect(await denied.json()).toEqual({
+          error: "invalid_scope",
+          error_description: "unable to issue scope profile",
+        });
+        expect((await state(mode)).calls).toHaveLength(priorCalls);
+      }
+      const response = await tokenRequest(input);
+      expect((await state(mode)).calls).toHaveLength(priorCalls + 1);
       if (mode === "success") {
         expect(response.status).toBe(200);
         issued = await response.json();
       } else {
-        expect(response.status).toBe(
-          { ordinary: 500, api: 422, forbidden: 403, upstream: 409 }[mode],
-        );
-        const text = await response.text();
-        if (mode === "api") {
-          expect(JSON.parse(text)).toEqual({
-            code: "RESPONSE_REJECTED",
-            message: "Operator response denied",
-          });
-        }
-        errors.push({
-          mode,
-          status: response.status,
-          headers: applicationHeaders(response.headers),
-          text,
-        });
+        await recordFailure(response, mode);
         expect(await counts()).toEqual({ access: 1, refresh: 1 });
         const row = (await (
           await control({ action: "token-row", kind: "refresh", token: original })
         ).json()) as any;
         expect(row.revoked).toBeNull();
+        expect(row).toEqual(originalRow);
       }
     }
     const refreshReceipt = {
@@ -207,6 +239,11 @@ compatScenario(
     expect(issued.expires_in).toBe(3600);
     expect(issued.id_token).toBeUndefined();
     expect(issued.refresh_token).not.toBe(original);
+    const rotated = (await (
+      await control({ action: "token-row", kind: "refresh", token: original })
+    ).json()) as any;
+    expect(rotated.revoked).not.toBeNull();
+    expect(rotated.rotatedAt).not.toBeNull();
     for (const [key, kind] of [
       ["access_token", "access"],
       ["refresh_token", "refresh"],
@@ -217,7 +254,10 @@ compatScenario(
       ).json()) as any;
       expect(row.clientId).toBe(client.client_id);
       expect(row.userId).toBe(owner.user.id);
+      expect(row.sessionId).toBe(session.session.id);
+      expect(row.authorizationCodeId).toBe(originalRow.authorizationCodeId);
       expect(row.scopes).toEqual(["email"]);
+      if (kind === "refresh") expect(row.resources).toEqual([resource]);
       if (kind === "access") expect(Date.parse(row.expiresAt) / 1000).toBe(issued.expires_at);
     }
     const response = await control({

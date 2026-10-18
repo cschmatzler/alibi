@@ -53,8 +53,8 @@ mod refresh_format;
 pub use refresh_format::{
     OAuthDecodedRefreshToken, OAuthRefreshTokenEncryption, OAuthRefreshTokenFormatter,
 };
-mod resource_policy;
 mod resource_cache;
+mod resource_policy;
 mod resource_seed;
 pub use resource_seed::{OAuthResourceIdentifierValidator, OAuthResourceSeedMode};
 mod resources;
@@ -1055,10 +1055,28 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                     .to_response()?,
             ));
         }
-        if matches!(
-            req.path(),
-            "/oauth2/token" | "/oauth2/introspect" | "/oauth2/revoke"
-        ) && *req.method() == HttpMethod::Post
+        if req.path() == "/oauth2/token" && *req.method() == HttpMethod::Post {
+            // Dispatch has already decoded the admitted form body. Endpoint
+            // context patches may rewrite its bytes as JSON, so reparsing those
+            // bytes as a form loses the grant and every credential binding.
+            let body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
+            // Credential duplicate/method checks still need the original form
+            // Request retained by the call, not the rewritten dispatch bytes.
+            let call = alibi_core::endpoint::current_endpoint_call_context().unwrap_or_else(|| {
+                EndpointCall::from_http_request(
+                    req,
+                    &AuthRoute::post("/oauth2/token", "oauth2Token"),
+                )
+            });
+            let call = call.handler_context(Some(body.clone()), call.query().cloned());
+            return Ok(Some(
+                Box::pin(self.token(Some(&body), &call, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if matches!(req.path(), "/oauth2/introspect" | "/oauth2/revoke")
+            && *req.method() == HttpMethod::Post
         {
             let mut fields = indexmap::IndexMap::new();
             for (key, value) in url::form_urlencoded::parse(req.body.as_deref().unwrap_or_default())
@@ -1090,15 +1108,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                     .to_response()?,
                 ));
             }
-            return Ok(Some(
-                Box::pin(self.token(
-                    Some(&alibi_core::utils::json::JsValue::Object(fields)),
-                    req,
-                    ctx,
-                ))
-                .await?
-                .to_response()?,
-            ));
         }
         if req.path() == "/oauth2/authorize"
             && matches!(req.method(), HttpMethod::Get | HttpMethod::Post)

@@ -14,9 +14,9 @@ backend_tests!(
 async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use alibi::AuthSession as _;
     use alibi::plugins::{OAuthProviderConfig, OAuthTokenIssueParams};
     use alibi::store::OAuthTokenKind;
+    use alibi::{AuthSession as _, AuthVerification as _};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let fields = Arc::new(token_response_fields::TokenResponseFields::default());
     let provider = OAuthProviderPlugin::with_config(OAuthProviderConfig {
@@ -116,7 +116,14 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
             ),
             _ => (500, Value::Null),
         };
-        assert_eq!(response.status, status);
+        assert_eq!(
+            response.status,
+            status,
+            "{mode}: body={}, headers={:?}, calls={:?}",
+            String::from_utf8_lossy(&response.body),
+            response.headers,
+            fields.calls.lock().unwrap()
+        );
         if mode == "ordinary" {
             assert!(response.body.is_empty());
             for name in ["content-type", "cache-control", "pragma"] {
@@ -159,7 +166,41 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
             .1
             .into_owned();
         let input = json!({"grant_type":"authorization_code","client_id":client_id,"code":code,"code_verifier":verifier,"redirect_uri":"https://app.fixture.test/callback"});
+        let code_hash = provider.hash_token(&code, "authorization_code").await?;
+        let proof = auth
+            .store()
+            .get_verification_by_identifier(&code_hash)
+            .await?
+            .unwrap();
+        let value: Value = serde_json::from_str(proof.value())?;
+        assert_eq!(value["query"], query);
+        assert_eq!(value["sessionId"], session.id().as_ref());
+        let prior_calls = fields.calls.lock().unwrap().len();
+        if mode == "ordinary" {
+            let mut invalid = input.clone();
+            _ = invalid.as_object_mut().unwrap().remove("code_verifier");
+            let denied = Box::pin(auth.handle_request(public_request(&invalid))).await?;
+            assert_eq!(denied.status, 400);
+            assert_eq!(
+                body(&denied),
+                json!({"error":"invalid_request","error_description":"Either code_verifier or client_secret is required"})
+            );
+            assert_eq!(fields.calls.lock().unwrap().len(), prior_calls);
+            assert!(
+                auth.store()
+                    .get_verification_by_identifier(&code_hash)
+                    .await?
+                    .is_some()
+            );
+        }
         let response = Box::pin(auth.handle_request(public_request(&input))).await?;
+        assert_eq!(fields.calls.lock().unwrap().len(), prior_calls + 1);
+        assert!(
+            auth.store()
+                .get_verification_by_identifier(&code_hash)
+                .await?
+                .is_none()
+        );
         if mode == "success" {
             assert_eq!(response.status, 200);
             issued = body(&response);
@@ -177,6 +218,13 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
                         .is_empty()
                 );
             }
+            let replay = Box::pin(auth.handle_request(public_request(&input))).await?;
+            assert_eq!(replay.status, 400);
+            assert_eq!(
+                body(&replay),
+                json!({"error":"invalid_grant","error_description":"invalid code"})
+            );
+            assert_eq!(fields.calls.lock().unwrap().len(), prior_calls + 1);
         }
     }
     let receipt = json!({"grant":"authorization_code","userId":user_id,"email":"response-owner@example.test",
@@ -185,10 +233,29 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
             "scope":"profile email offline_access","state":"response-state","clientId":client_id,"challenge":challenge}});
     assert_eq!(*fields.calls.lock().unwrap(), vec![receipt; 5]);
     let original = issued["refresh_token"].as_str().unwrap().to_owned();
+    let original_hash = provider.hash_token(&original, "refresh_token").await?;
+    let original_row = auth
+        .store()
+        .get_oauth_token(OAuthTokenKind::Refresh, &original_hash)
+        .await?
+        .unwrap();
     for mode in ["ordinary", "api", "forbidden", "upstream", "success"] {
         *fields.mode.lock().unwrap() = mode.into();
         let input = json!({"grant_type":"refresh_token","client_id":client_id,"refresh_token":original,"scope":"email"});
+        let prior_calls = fields.calls.lock().unwrap().len();
+        if mode == "ordinary" {
+            let mut invalid = input.clone();
+            invalid["scope"] = json!("profile");
+            let denied = Box::pin(auth.handle_request(public_request(&invalid))).await?;
+            assert_eq!(denied.status, 400);
+            assert_eq!(
+                body(&denied),
+                json!({"error":"invalid_scope","error_description":"unable to issue scope profile"})
+            );
+            assert_eq!(fields.calls.lock().unwrap().len(), prior_calls);
+        }
         let response = Box::pin(auth.handle_request(public_request(&input))).await?;
+        assert_eq!(fields.calls.lock().unwrap().len(), prior_calls + 1);
         if mode == "success" {
             assert_eq!(response.status, 200);
             issued = body(&response);
@@ -210,6 +277,7 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
                 .await?
                 .unwrap();
             assert!(row.metadata.get("revoked").is_none_or(Value::is_null));
+            assert_eq!(row.metadata, original_row.metadata);
         }
     }
     assert_eq!(
@@ -233,6 +301,13 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
     assert_eq!(issued["expires_in"], 3600);
     assert!(issued.get("id_token").is_none());
     assert_ne!(issued["refresh_token"], original);
+    let rotated = auth
+        .store()
+        .get_oauth_token(OAuthTokenKind::Refresh, &original_hash)
+        .await?
+        .unwrap();
+    assert!(!rotated.metadata["revoked"].is_null());
+    assert!(!rotated.metadata["rotatedAt"].is_null());
     for (key, kind) in [
         ("access_token", OAuthTokenKind::Access),
         ("refresh_token", OAuthTokenKind::Refresh),
@@ -242,7 +317,15 @@ async fn oauth_configured_token_response_fields_follow_real_grant_lifecycle<B: B
         let row = auth.store().get_oauth_token(kind, &hash).await?.unwrap();
         assert_eq!(row.client_id, client_id);
         assert_eq!(row.user_id.as_deref(), Some(user_id.as_str()));
+        assert_eq!(row.session_id.as_deref(), Some(session.id().as_ref()));
+        assert_eq!(
+            row.authorization_code_id,
+            original_row.authorization_code_id
+        );
         assert_eq!(row.metadata["scopes"], json!(["email"]));
+        if key == "refresh_token" {
+            assert_eq!(row.metadata["resources"], json!([resource]));
+        }
         if key == "access_token" {
             assert_eq!(
                 row.expires_at.timestamp(),
