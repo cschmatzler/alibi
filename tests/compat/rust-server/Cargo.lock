@@ -95,7 +95,7 @@ checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
 
 [[package]]
 name = "alibi"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-core",
  "alibi-plugins",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-core"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "aes-gcm",
  "alibi-macros",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-entity-codegen"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-schema-registry",
  "proc-macro2",
@@ -165,7 +165,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-macros"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-plugins"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-core",
  "alibi-schema-registry",
@@ -234,11 +234,11 @@ dependencies = [
 
 [[package]]
 name = "alibi-schema-registry"
-version = "0.9.0"
+version = "0.10.0"
 
 [[package]]
 name = "alibi-seaorm"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-core",
  "alibi-schema-registry",
@@ -257,7 +257,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-seaorm-macros"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-entity-codegen",
  "proc-macro-crate",
@@ -268,7 +268,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-sqlx"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-core",
  "alibi-schema-registry",
@@ -286,7 +286,7 @@ dependencies = [
 
 [[package]]
 name = "alibi-sqlx-macros"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "alibi-entity-codegen",
  "proc-macro-crate",
