@@ -329,38 +329,38 @@ pub(crate) async fn project_http<S: AuthSchema>(
         .ok_or_else(|| AuthError::internal("Custom session projection is not installed"))?;
     let transform = &transform.0;
     let prior_headers = req.take_response_headers();
-    let mut response = match super::session_management::SessionManagementPlugin::new()
+    let mut response = super::session_management::SessionManagementPlugin::new()
         .handle_base_get_session(req, ctx)
-        .await
-    {
-        Ok(response) => response,
-        Err(_) => AuthResponse::json(200, &Value::Null)?,
-    };
-    let session: Value = if response.status >= 400 {
-        Value::Null
-    } else {
-        serde_json::from_slice(&response.body)?
-    };
+        .await?;
     let core_headers = req.take_response_headers();
     for (name, value) in prior_headers {
         req.queue_response_header(name, value);
     }
     let (issued_cookies, _) =
         alibi_core::session::cookie_cache::runtime::take_issuance(req.extensions());
-    if session.is_null() {
-        // The replaced endpoint does not forward headers from a missing or
-        // failed core response. Preserve headers emitted before that read.
-        return Ok(AuthResponse::json(200, &Value::Null)?);
+    if response.status >= 400 {
+        // Since 1.7.12 a failed core read propagates. The thrown error leaves
+        // the core read's headers behind, like the replaced endpoint's.
+        let mut failure = AuthResponse::new(response.status);
+        failure.body = response.body;
+        if let Some(content_type) = response.headers.get("content-type") {
+            failure = failure.with_header("content-type", content_type.to_owned());
+        }
+        return Ok(failure);
     }
-    let transformed = transform
-        .transform(
-            session,
-            &SessionTransformContext::Http(Box::new(req.clone())),
-            ctx,
-        )
-        .await
-        .map_err(crate::helpers::callback_failure)?;
-    response.body = serde_json::to_vec(&transformed)?;
+    let session: Value = serde_json::from_slice(&response.body)?;
+    // A null session still forwards the core read's headers and cookie cleanup.
+    if !session.is_null() {
+        let transformed = transform
+            .transform(
+                session,
+                &SessionTransformContext::Http(Box::new(req.clone())),
+                ctx,
+            )
+            .await
+            .map_err(crate::helpers::callback_failure)?;
+        response.body = serde_json::to_vec(&transformed)?;
+    }
     for (name, value) in core_headers {
         response.headers.append(name, value);
     }
@@ -386,26 +386,25 @@ pub(crate) async fn project_endpoint<S: AuthSchema>(
     .apply(&mut read);
     let session = super::session_management::SessionManagementPlugin::new()
         .get_session_response(&read, ctx)
-        .await
-        .ok()
-        .flatten();
+        .await?;
     let core_headers = read.take_response_headers();
     for (name, value) in prior {
         call.queue_response_header(name, value);
     }
     let (cookies, _) = alibi_core::session::cookie_cache::runtime::take_issuance(read.extensions());
-    let Some(session) = session else {
-        return EndpointResponse::json(&Value::Null);
+    // A null session still forwards the core read's headers and cookie cleanup.
+    let value = match session {
+        Some(session) => transform
+            .0
+            .transform(
+                serde_json::to_value(session)?,
+                &SessionTransformContext::Endpoint(Box::new(call.clone())),
+                ctx,
+            )
+            .await
+            .map_err(crate::helpers::callback_failure)?,
+        None => Value::Null,
     };
-    let value = transform
-        .0
-        .transform(
-            serde_json::to_value(session)?,
-            &SessionTransformContext::Endpoint(Box::new(call.clone())),
-            ctx,
-        )
-        .await
-        .map_err(crate::helpers::callback_failure)?;
     let mut response = EndpointResponse::json(&value)?
         .with_header("cache-control", "no-store")
         .with_header("pragma", "no-cache");
