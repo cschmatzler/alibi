@@ -22,6 +22,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     for mode in [
         "serializer-valid",
         "serializer-host",
+        "serializer-lower-host",
         "serializer-age-boundary",
         "serializer-age-limit",
         "serializer-expiry-limit",
@@ -113,7 +114,11 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             config.advanced.cookies.insert(
                 "session_token".into(),
                 CookieOverride {
-                    name: (mode == "serializer-host").then(|| "__Host-policy".into()),
+                    name: match mode {
+                        "serializer-host" => Some("__Host-policy".into()),
+                        "serializer-lower-host" => Some("__host-policy".into()),
+                        _ => None,
+                    },
                     attributes: CookieAttributes {
                         secure: Some(true),
                         partitioned: Some(true),

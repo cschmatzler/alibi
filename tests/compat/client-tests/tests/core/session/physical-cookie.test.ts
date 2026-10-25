@@ -199,7 +199,8 @@ for (const mode of [
       );
       expect(signupCookie.domain).toBe(mode === "attributes" ? "localhost" : null);
       expect(signupCookie.httpOnly).toBe(mode !== "attributes");
-      expect(signupCookie.secure).toBe(mode === "secure" || prefixed);
+      // Better Call 1.4.4 forces Secure for SameSite=None even when secure is false.
+      expect(signupCookie.secure).toBe(mode === "secure" || mode === "none" || prefixed);
       expect(signupCookie.sameSite).toBe(
         mode === "attributes" ? "strict" : mode === "none" ? "none" : "lax",
       );

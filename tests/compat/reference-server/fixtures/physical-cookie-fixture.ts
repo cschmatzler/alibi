@@ -7,6 +7,7 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
   for (const mode of [
     "serializer-valid",
     "serializer-host",
+    "serializer-lower-host",
     "serializer-age-boundary",
     "serializer-age-limit",
     "serializer-expiry-limit",
@@ -122,6 +123,7 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
                 cookies: {
                   session_token: {
                     ...(mode === "serializer-host" ? { name: "__Host-policy" } : {}),
+                    ...(mode === "serializer-lower-host" ? { name: "__host-policy" } : {}),
                     attributes: {
                       secure: true,
                       partitioned: true,
