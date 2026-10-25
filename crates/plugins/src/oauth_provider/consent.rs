@@ -217,7 +217,10 @@ impl OAuthProviderPlugin {
             .into_iter()
             .find(|consent| {
                 consent.client_id == client_id
-                    && super::post_login::consent_matches_reference(&consent.metadata, reference_id.as_deref())
+                    && super::post_login::consent_matches_reference(
+                        &consent.metadata,
+                        reference_id.as_deref(),
+                    )
             });
         if let Some(existing) = existing {
             let mut updated = existing

@@ -92,7 +92,10 @@ impl super::OAuthProviderPlugin {
 }
 /// Whether stored consent belongs to exactly this reference. Without one, only
 /// consent stored without a reference (missing, null or empty) matches.
-pub(super) fn consent_matches_reference(metadata: &serde_json::Value, reference: Option<&str>) -> bool {
+pub(super) fn consent_matches_reference(
+    metadata: &serde_json::Value,
+    reference: Option<&str>,
+) -> bool {
     let stored = metadata
         .get("referenceId")
         .and_then(serde_json::Value::as_str)

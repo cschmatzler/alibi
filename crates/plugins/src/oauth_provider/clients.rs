@@ -138,7 +138,10 @@ impl OAuthProviderPlugin {
         }
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        if let Some(response) = self.require_client_privileges("create", None, req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("create", None, req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         let metadata: serde_json::Map<String, Value> =
@@ -688,7 +691,10 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("read", Some(&input.client_id), req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("read", Some(&input.client_id), req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
@@ -811,7 +817,10 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("list", None, req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("list", None, req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         let clients = ctx
@@ -839,7 +848,10 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("delete", Some(&input.client_id), req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("delete", Some(&input.client_id), req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         if self
@@ -902,7 +914,10 @@ impl OAuthProviderPlugin {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        if let Some(response) = self.require_client_privileges("rotate", Some(&input.client_id), req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("rotate", Some(&input.client_id), req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         if self
@@ -1343,7 +1358,10 @@ impl OAuthProviderPlugin {
                 .await?
                 .0
         };
-        if let Some(response) = self.require_client_privileges("update", Some(&input.client_id), req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("update", Some(&input.client_id), req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         if self
@@ -1619,7 +1637,9 @@ impl OAuthProviderPlugin {
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
         if session.is_some()
-            && let Some(response) = self.require_client_privileges("create", None, req, ctx).await?
+            && let Some(response) = self
+                .require_client_privileges("create", None, req, ctx)
+                .await?
         {
             return Ok(response);
         }
@@ -1953,7 +1973,10 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         };
-        if let Some(response) = self.require_client_privileges("create", None, req, ctx).await? {
+        if let Some(response) = self
+            .require_client_privileges("create", None, req, ctx)
+            .await?
+        {
             return Ok(response);
         }
         let scopes = metadata
@@ -2328,8 +2351,7 @@ fn validate_rotate_keys(
         return status_protocol_error(400, "invalid_client", &description).map(Err);
     }
     if field("jwks").is_none() {
-        return status_protocol_error(400, "invalid_client_metadata", "jwks is required")
-            .map(Err);
+        return status_protocol_error(400, "invalid_client_metadata", "jwks is required").map(Err);
     }
     if let Err(error) = validate_metadata(body, "body", &[("jwks", FieldKind::Jwks)]) {
         let message = error.error_payload().2;
@@ -2435,10 +2457,7 @@ impl OAuthProviderPlugin {
             ctx.config.base_url.trim_end_matches('/'),
             ctx.config.base_path
         );
-        let audience = format!(
-            "{}/oauth2/client/rotate-keys",
-            base.trim_end_matches('/')
-        );
+        let audience = format!("{}/oauth2/client/rotate-keys", base.trim_end_matches('/'));
         let credentials = json!({
             "client_assertion": assertion,
             "client_assertion_type": assertion_type,
@@ -2468,7 +2487,12 @@ impl OAuthProviderPlugin {
         let now = chrono::Utc::now();
         if ctx
             .database
-            .replace_oauth_client_jwks(&client.client_id, &expected, serde_json::to_string(&jwks)?, now)
+            .replace_oauth_client_jwks(
+                &client.client_id,
+                &expected,
+                serde_json::to_string(&jwks)?,
+                now,
+            )
             .await?
             .is_none()
         {

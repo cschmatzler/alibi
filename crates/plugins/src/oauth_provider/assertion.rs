@@ -32,9 +32,11 @@ pub(super) async fn verify<S: AuthSchema>(
     provider: &OAuthProviderPlugin,
     endpoint_url: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
-    Ok(verify_client(body, ctx, provider, endpoint_url, false, None)
-        .await?
-        .map(|(credentials, _)| credentials))
+    Ok(
+        verify_client(body, ctx, provider, endpoint_url, false, None)
+            .await?
+            .map(|(credentials, _)| credentials),
+    )
 }
 /// Verify a client assertion and return the client record the signature was
 /// checked against. With `endpoint_only`, the issuer is not an accepted

@@ -469,8 +469,7 @@ pub(in crate::oauth) async fn callback_core(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    if !super::grant_id_token_verified(provider, &tokens, payload.id_token_nonce.as_deref()).await
-    {
+    if !super::grant_id_token_verified(provider, &tokens, payload.id_token_nonce.as_deref()).await {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 

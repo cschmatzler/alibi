@@ -723,7 +723,10 @@ impl OAuthProviderPlugin {
                 .into_iter()
                 .find(|consent| {
                     consent.client_id == client_id
-                        && super::post_login::consent_matches_reference(&consent.metadata, reference_id.as_deref())
+                        && super::post_login::consent_matches_reference(
+                            &consent.metadata,
+                            reference_id.as_deref(),
+                        )
                 })
                 .is_some_and(|consent| {
                     requested_user_info_claims.iter().all(|name| {

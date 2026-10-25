@@ -156,9 +156,7 @@ impl OneTapPlugin {
             sign_cookie_value, verify_cookie_value,
         };
         let oauth = ctx.extensions.get::<OAuthConfig>();
-        let provider = oauth
-            .as_ref()
-            .and_then(|config| config.provider("google"));
+        let provider = oauth.as_ref().and_then(|config| config.provider("google"));
         let audiences = match &self.config.client_id {
             Some(OneTapClientId::Single(value)) if !value.is_empty() => vec![value.clone()],
             Some(OneTapClientId::Multiple(values)) => values.clone(),
@@ -247,7 +245,8 @@ impl OneTapPlugin {
         };
         let policy = OAuthProcessPolicy {
             user_validation_method: None,
-            override_user_info: provider.is_some_and(|provider| provider.override_user_info_on_sign_in),
+            override_user_info: provider
+                .is_some_and(|provider| provider.override_user_info_on_sign_in),
             require_email_verification: provider
                 .is_some_and(|provider| provider.require_email_verification),
             callback_url: None,

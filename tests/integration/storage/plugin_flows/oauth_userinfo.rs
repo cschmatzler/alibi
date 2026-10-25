@@ -547,8 +547,8 @@ async fn oauth_userinfo_resolves_scoped_claims_from_real_access_authority<B: Bac
             expected.clone(),
         ),
     ] {
-        let mut physical =
-            request("/oauth2/userinfo", None, "").with_url(format!("{request_uri}?ignored=1").parse()?);
+        let mut physical = request("/oauth2/userinfo", None, "")
+            .with_url(format!("{request_uri}?ignored=1").parse()?);
         physical.method = method;
         physical.headers.extend([
             (

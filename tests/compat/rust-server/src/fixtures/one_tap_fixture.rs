@@ -3,8 +3,8 @@ use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
-    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
 use alibi::plugins::{
@@ -245,29 +245,24 @@ pub(crate) async fn router(
         if name == "one-tap-required-no-mail" {
             verification = verification.send_on_sign_up(false);
         }
-        let mut builder =
-            AuthBuilder::<TestSchema>::new(profile_config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    profile_config,
-                    database.clone(),
-                ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new())
-                .plugin(SessionManagementPlugin::new())
-                .plugin(AdminPlugin::new())
-                .plugin(OrganizationPlugin::new())
-                .plugin(TwoFactorPlugin::new())
-                .plugin(verification)
-                .plugin(oauth)
-                .plugin(OneTapPlugin::with_config(one_tap));
+        let mut builder = AuthBuilder::<TestSchema>::new(profile_config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                profile_config,
+                database.clone(),
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(AdminPlugin::new())
+            .plugin(OrganizationPlugin::new())
+            .plugin(TwoFactorPlugin::new())
+            .plugin(verification)
+            .plugin(oauth)
+            .plugin(OneTapPlugin::with_config(one_tap));
         if name == "one-tap-last-login" {
             builder = builder.plugin(LastLoginMethodPlugin::new());
         }
-        let auth = Arc::new(
-            builder
-                .build()
-                .await?,
-        );
+        let auth = Arc::new(builder.build().await?);
         let server_auth = auth.clone();
         let instance = auth.clone().axum_router().with_state(auth).route(
             "/__test/server-callback",

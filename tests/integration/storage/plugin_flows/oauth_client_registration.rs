@@ -1120,11 +1120,7 @@ async fn oauth_registration_pkce_policy_controls_genuine_code_exchanges<B: Backe
                         assert_eq!(stored.client_id, id);
                     } else {
                         let error = output.unwrap_err();
-                        assert_eq!(
-                            error.error.status_code(),
-                            400,
-                            "{policy:?}:{source}:{name}"
-                        );
+                        assert_eq!(error.error.status_code(), 400, "{policy:?}:{source}:{name}");
                         // A verifier that does not match its challenge is an
                         // invalid grant; a missing or unsolicited one is a
                         // malformed request.

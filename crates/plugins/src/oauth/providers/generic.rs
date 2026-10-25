@@ -559,7 +559,9 @@ impl DiscoveryVerifier {
                 .ok()?,
         )
         .ok()?;
-        if REQUIRED_CLAIMS.iter().any(|claim| claims.get(claim).is_none())
+        if REQUIRED_CLAIMS
+            .iter()
+            .any(|claim| claims.get(claim).is_none())
             || claims.get("iss").and_then(Value::as_str) != Some(self.issuer.as_str())
         {
             return Some(false);
