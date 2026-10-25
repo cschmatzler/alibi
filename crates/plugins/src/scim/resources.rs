@@ -743,7 +743,6 @@ impl ScimPlugin {
     /// Replace a SCIM User's writable state in place, keeping its resource ID
     /// and Better Auth User link. `reprovision` requires the locked source to be
     /// the inactive owner of the submitted `externalId`.
-    #[allow(clippy::too_many_arguments)]
     async fn replace_in_place<S: AuthSchema>(
         &self,
         ctx: &AuthContext<S>,

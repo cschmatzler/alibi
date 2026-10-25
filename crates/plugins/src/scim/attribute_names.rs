@@ -13,7 +13,7 @@ pub(super) struct Attribute {
     pub(super) complex: bool,
     pub(super) multi_valued: bool,
     pub(super) read_only: bool,
-    pub(super) sub_attributes: Vec<Attribute>,
+    pub(super) sub_attributes: Vec<Self>,
 }
 struct Schemas {
     user: Vec<Attribute>,
@@ -94,7 +94,7 @@ fn record(
             .then_some(ENTERPRISE_SCHEMA)
             .filter(|id| id.eq_ignore_ascii_case(key));
         let common = resource
-            .and(COMMON.iter().find(|name| name.eq_ignore_ascii_case(key)))
+            .and_then(|_| COMMON.iter().find(|name| name.eq_ignore_ascii_case(key)))
             .copied();
         let attribute = if extension.is_some() || common.is_some() {
             None

@@ -272,14 +272,15 @@ mod tests {
             group_target,
         )
         .unwrap();
-        assert_eq!(operations.len(), 2);
-        assert_eq!(
-            operations[0].value,
-            Some(parse(
-                r#"{"displayName":"Platform","members":[{"value":"u"}]}"#
-            ))
-        );
-        assert!(operations[1].op == Kind::Remove);
-        assert_eq!(operations[1].path.as_deref(), Some("externalId"));
+        let kept = Some(parse(
+            r#"{"displayName":"Platform","members":[{"value":"u"}]}"#,
+        ));
+        assert!(matches!(
+            operations.as_slice(),
+            [operation, removal]
+                if operation.value == kept
+                    && removal.op == Kind::Remove
+                    && removal.path.as_deref() == Some("externalId")
+        ));
     }
 }

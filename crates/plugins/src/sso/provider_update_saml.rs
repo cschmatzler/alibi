@@ -4,8 +4,8 @@ use super::{AuthResult, SsoProvider, Value, api, json};
 pub(super) struct PreparedSamlUpdate {
     pub(super) config: String,
     pub(super) identity_changed: bool,
-    /// Signing certificates change who can sign assertions, not which IdP
-    /// identities linked accounts belong to.
+    /// Signing certificates change who can sign assertions, not which
+    /// identity-provider identities linked accounts belong to.
     pub(super) trust_anchors_changed: bool,
 }
 pub(super) fn prepare(
