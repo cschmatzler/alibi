@@ -139,49 +139,9 @@ where
         // PostgreSQL locks the selected row; the affected-row gate still
         // protects against another consumer using a separate store/process.
         let transaction = self.scoped_connection().begin_immediate().await?;
-        let outcome = async {
-            let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
-                .filter(S::Verification::identifier_column().eq(identifier))
-                .order_by_desc(S::Verification::created_at_column())
-                .lock_exclusive()
-                .one(&transaction)
-                .await
-                .map_err(map_db_err)?
-            else {
-                return Ok(None);
-            };
-            if expected_value.is_some_and(|expected| model.value() != expected) {
-                return Ok(None);
-            }
-            let hook_context = self.hook_context(Some(&transaction));
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_verification(&model, &hook_context)
-                    .await?
-                    .is_cancelled()
-                {
-                    // The upstream consume hook returns null when cancelled.
-                    return Ok(None);
-                }
-            }
-            let id = S::Verification::parse_id(model.id().as_ref())?;
-            let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(S::Verification::id_column().eq(id))
-                .filter(S::Verification::value_column().eq(model.value()))
-                .exec(&transaction)
-                .await
-                .map_err(map_db_err)?;
-            if deleted.rows_affected != 1 {
-                return Ok(None);
-            }
-            _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-                .filter(S::Verification::identifier_column().eq(identifier))
-                .exec(&transaction)
-                .await
-                .map_err(map_db_err)?;
-            Ok(Some(model))
-        }
-        .await;
+        let outcome = self
+            .consume_generation_in(&transaction, identifier, expected_value)
+            .await;
         let consumed = match outcome {
             Ok(consumed) => {
                 transaction.commit().await.map_err(map_db_err)?;
@@ -201,6 +161,56 @@ where
         // Even an expired generation is removed. Older generations cannot
         // become valid again when the newest token expires.
         Ok(consumed)
+    }
+
+    /// Lock, gate and delete the newest generation on `transaction`. The
+    /// caller commits and runs delete after-hooks.
+    pub(crate) async fn consume_generation_in(
+        &self,
+        transaction: &ScopedTransaction,
+        identifier: &str,
+        expected_value: Option<&str>,
+    ) -> AuthResult<Option<S::Verification>> {
+        let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            .order_by_desc(S::Verification::created_at_column())
+            .lock_exclusive()
+            .one(transaction)
+            .await
+            .map_err(map_db_err)?
+        else {
+            return Ok(None);
+        };
+        if expected_value.is_some_and(|expected| model.value() != expected) {
+            return Ok(None);
+        }
+        let hook_context = self.hook_context(Some(transaction));
+        for hook in self.hooks() {
+            if hook
+                .before_delete_verification(&model, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                // The upstream consume hook returns null when cancelled.
+                return Ok(None);
+            }
+        }
+        let id = S::Verification::parse_id(model.id().as_ref())?;
+        let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(S::Verification::id_column().eq(id))
+            .filter(S::Verification::value_column().eq(model.value()))
+            .exec(transaction)
+            .await
+            .map_err(map_db_err)?;
+        if deleted.rows_affected != 1 {
+            return Ok(None);
+        }
+        _ = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
+            .filter(S::Verification::identifier_column().eq(identifier))
+            .exec(transaction)
+            .await
+            .map_err(map_db_err)?;
+        Ok(Some(model))
     }
 }
 

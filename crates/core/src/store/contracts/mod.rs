@@ -25,7 +25,7 @@ pub use session::SessionStore;
 pub use transaction::{
     AfterCommitErrorPolicy, AuthTransaction, BoxedTransactionValue, TransactionFuture,
     TransactionStore, TransactionWork, TypedTransactionFuture, transaction,
-    transaction_with_policy,
+    transaction_with_policy, write_transaction,
 };
 pub use two_factor::TwoFactorStore;
 pub use user::{NumericTextInput, UserStore};

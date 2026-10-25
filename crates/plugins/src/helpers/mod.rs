@@ -6,7 +6,7 @@ mod sessions;
 use alibi_core::error::codes;
 use alibi_core::{AuthContext, AuthError, CreateUser};
 pub use api_key_authorization::{get_owned_api_key, require_org_api_key_permission};
-pub(crate) use credentials::reset_credential_password;
+pub(crate) use credentials::{ResetProof, reset_credential_password};
 pub use credentials::{get_credential_account, get_credential_password_hash, user_has_password};
 pub use sessions::{
     admin_banned_user_message, admin_plugin_enabled, delete_session_cookie_headers,

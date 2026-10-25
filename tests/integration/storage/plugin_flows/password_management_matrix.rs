@@ -20,7 +20,8 @@ backend_tests!(
     zero_password_options_enforce_default_bounds_and_reset_expiry,
     reset_body_proof_wins_over_conflicting_live_query_proof,
     verify_password_uses_initialized_callback_and_utf16_maximum,
-    reset_delivery_failures_retain_genuine_redeemable_proof_and_principals
+    reset_delivery_failures_retain_genuine_redeemable_proof_and_principals,
+    reset_revocation_failure_rolls_back_proof_sessions_and_password
 );
 
 #[derive(Default)]
@@ -1738,4 +1739,98 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn reset_revocation_failure_rolls_back_proof_sessions_and_password<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+    struct RefuseRevocation(Arc<AtomicBool>);
+    #[async_trait]
+    impl<S: AuthSchema, H: HookBackend> DatabaseHooks<S, H> for RefuseRevocation {
+        async fn before_delete_session(
+            &self,
+            _: &S::Session,
+            _: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<HookControl> {
+            if self.0.swap(false, Ordering::SeqCst) {
+                return Err(AuthError::internal("revocation refused"));
+            }
+            Ok(HookControl::Continue)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let refuse_revocation = Arc::new(AtomicBool::new(false));
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::hook(
+            B::store(Arc::new(config), &connection),
+            RefuseRevocation(refuse_revocation.clone()),
+        ))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            true,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "reset-rollback-owner@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"reset-rollback-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db.tables(&["account", "session", "verification"]).await?;
+    refuse_revocation.store(true, Ordering::SeqCst);
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"rolled-back-password"})),
+            "",
+        ),
+        500,
+    )
+    .await;
+    // Since 1.7.12 the proof, revocation and password write share one
+    // transaction: a failed revocation leaves all three unchanged.
+    assert_eq!(
+        db.tables(&["account", "session", "verification"]).await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "reset-rollback-owner@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"durable-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(
+        db.text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
+            &[body(&owner)["user"]["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$durable-new-password")
+    );
+    let revoked = call(&auth, request("/get-session", None, &cookies(&owner)), 200).await;
+    assert!(body(&revoked).is_null());
+    B::close(connection).await
 }

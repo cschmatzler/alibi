@@ -580,6 +580,20 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Verification creation in a transaction is not supported by this store".to_owned(),
         ))
     }
+    /// Spend the newest generation for `identifier` on this transaction's
+    /// connection, as [`VerificationStore::consume_verification_snapshot`]
+    /// does: the row is locked, deleted with its siblings, and returned even
+    /// when expired. Delete after-hooks run once the transaction commits.
+    ///
+    /// [`VerificationStore::consume_verification_snapshot`]: crate::store::VerificationStore::consume_verification_snapshot
+    async fn consume_verification_snapshot(
+        &self,
+        _identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        Err(AuthError::NotImplemented(
+            "Verification consumption in a transaction is not supported by this store".to_owned(),
+        ))
+    }
 }
 
 /// How to handle callback errors after the database has committed.
@@ -607,6 +621,15 @@ pub trait TransactionStore<S: AuthSchema>: Send + Sync {
             ))
         }
     }
+    /// Run `work` holding the database write lock from its first statement
+    /// (SQLite `BEGIN IMMEDIATE`), so a read-then-write gate cannot deadlock
+    /// concurrent writers. PostgreSQL row locks need no different start.
+    async fn write_transaction_boxed(
+        &self,
+        work: Box<TransactionWork<S>>,
+    ) -> AuthResult<BoxedTransactionValue> {
+        self.transaction_boxed(work).await
+    }
 }
 
 /// # Errors
@@ -622,6 +645,32 @@ where
 {
     transaction_with_policy(store, AfterCommitErrorPolicy::Propagate, work).await
 }
+/// Run typed work in a [`TransactionStore::write_transaction_boxed`] transaction.
+///
+/// # Errors
+/// Propagates transaction errors and rejects an unexpected result type.
+pub async fn write_transaction<S, T, F>(store: &dyn AuthStore<S>, work: F) -> AuthResult<T>
+where
+    S: AuthSchema,
+    T: Send + 'static,
+    F: for<'tx> FnOnce(&'tx dyn AuthTransaction<S>) -> TypedTransactionFuture<'tx, T>
+        + Send
+        + 'static,
+{
+    let value = store
+        .write_transaction_boxed(Box::new(move |tx| {
+            Box::pin(async move {
+                let result: BoxedTransactionValue = Box::new(work(tx).await?);
+                Ok(result)
+            })
+        }))
+        .await?;
+    value
+        .downcast::<T>()
+        .map(|boxed| *boxed)
+        .map_err(|_| AuthError::internal("store returned an invalid transaction payload"))
+}
+
 /// Run typed work while selecting the treatment of errors after commit.
 ///
 /// # Errors

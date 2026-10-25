@@ -814,6 +814,21 @@ where
             .await;
         Ok(verification)
     }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let consumed = self
+            .store
+            .consume_generation_in(self.tx, identifier, None)
+            .await?;
+        if let Some(verification) = &consumed {
+            self.pending_after
+                .push(AfterHook::VerificationDeleted(verification.clone()))
+                .await;
+        }
+        Ok(consumed)
+    }
 }
 
 #[async_trait]
@@ -840,7 +855,36 @@ where
         work: Box<TransactionWork<S>>,
         policy: alibi_core::store::AfterCommitErrorPolicy,
     ) -> AuthResult<BoxedTransactionValue> {
-        let tx = self.begin(false).await?;
+        self.run_transaction(work, policy, false).await
+    }
+    async fn write_transaction_boxed(
+        &self,
+        work: Box<TransactionWork<S>>,
+    ) -> AuthResult<BoxedTransactionValue> {
+        self.run_transaction(
+            work,
+            alibi_core::store::AfterCommitErrorPolicy::Propagate,
+            true,
+        )
+        .await
+    }
+}
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::User: SqlxUserModel,
+    S::Session: SqlxSessionModel,
+    S::Account: SqlxAccountModel,
+    S::Verification: SqlxVerificationModel,
+{
+    async fn run_transaction(
+        &self,
+        work: Box<TransactionWork<S>>,
+        policy: alibi_core::store::AfterCommitErrorPolicy,
+        immediate: bool,
+    ) -> AuthResult<BoxedTransactionValue> {
+        let tx = self.begin(immediate).await?;
         let tx_store = SqlxStoreTransaction {
             store: self,
             tx: &tx,

@@ -123,19 +123,34 @@ pub(crate) async fn reset_password_core(
         .or(config.password_hasher.as_ref());
     let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
+    // Consuming is the single-winner gate between concurrent resets.
+    let proof = if let Some(consumption) = ctx
+        .verifications()
+        .transactional_consumption(&identifier)
+        .await?
+    {
+        crate::helpers::ResetProof::InTransaction {
+            consumption,
+            check: Box::new(|consumed| {
+                consumed
+                    .map(|_| ())
+                    .ok_or_else(|| AuthError::bad_request("Invalid token"))
+            }),
+        }
+    } else {
+        _ = ctx
+            .verifications()
+            .consume(&identifier)
+            .await?
+            .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
+        crate::helpers::ResetProof::Spent
+    };
     crate::helpers::reset_credential_password(
         ctx,
         &user_id,
         password_hash,
         config.revoke_sessions_on_password_reset,
-        async {
-            // Consuming is the single-winner gate between concurrent resets.
-            ctx.verifications()
-                .consume(&identifier)
-                .await?
-                .map(|_| ())
-                .ok_or_else(|| AuthError::bad_request("Invalid token"))
-        },
+        proof,
     )
     .await?;
 
@@ -225,22 +240,29 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         .map_err(|_error| AuthError::bad_request("Invalid password"))?;
     }
 
-    // Revoke before writing, as upstream does inside its transaction, so a
-    // failure never stores the new password while other sessions stay valid.
+    // Revocation and the password write commit together, as upstream's
+    // transaction does. The replacement session is created after commit.
     let revoke = body.revoke_other_sessions == Some(true);
-    if revoke {
-        ctx.database.delete_user_sessions(&user.id()).await?;
-    }
-    _ = ctx
-        .database
-        .update_account_record(
-            &credential_account.id(),
-            UpdateAccount {
-                password: Some(password_hash),
-                ..Default::default()
-            },
-        )
-        .await?;
+    let user_id = user.id().into_owned();
+    let account_id = credential_account.id().into_owned();
+    alibi_core::store::write_transaction(ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            if revoke {
+                tx.delete_user_sessions(&user_id).await?;
+            }
+            _ = tx
+                .update_account_record(
+                    &account_id,
+                    UpdateAccount {
+                        password: Some(password_hash),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+            Ok(())
+        })
+    })
+    .await?;
 
     let new_token = if revoke {
         let session = ctx

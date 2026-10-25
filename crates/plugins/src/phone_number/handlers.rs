@@ -223,6 +223,46 @@ impl PhoneNumberPlugin {
         }
         Ok(())
     }
+    /// Spend a checked reset code inside the reset transaction when codes live
+    /// in the database, otherwise now. A code another reset spent or changed
+    /// meanwhile no longer matches and rolls the reset back.
+    async fn reset_proof(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        identifier: &str,
+        provided_code: &str,
+    ) -> AuthResult<crate::helpers::ResetProof> {
+        let Some(consumption) = ctx
+            .verifications()
+            .transactional_consumption(identifier)
+            .await?
+        else {
+            self.consume_local(ctx, identifier, provided_code).await?;
+            return Ok(crate::helpers::ResetProof::Spent);
+        };
+        let provided_code = provided_code.to_owned();
+        let allowed_attempts = self.config.allowed_attempts;
+        Ok(crate::helpers::ResetProof::InTransaction {
+            consumption,
+            check: Box::new(move |consumed| {
+                let consumed = consumed
+                    .ok_or_else(|| phone_error(400, codes::OTP_NOT_FOUND, "OTP not found"))?;
+                let (code, attempts) = split_code(consumed.value()?);
+                if super::super::passwordless_numeric::attempts_number(attempts) >= allowed_attempts
+                {
+                    return Err(phone_error(
+                        403,
+                        codes::TOO_MANY_ATTEMPTS,
+                        "Too many attempts",
+                    ));
+                }
+                if code != provided_code {
+                    return Err(invalid_otp());
+                }
+                Ok(())
+            }),
+        })
+    }
     pub(super) async fn send_otp(
         &self,
         req: &AuthRequest,
@@ -688,14 +728,13 @@ impl PhoneNumberPlugin {
         let hash = ctx
             .hash_password(settings.hasher.as_ref(), &body.new_password)
             .await?;
-        crate::helpers::reset_credential_password(ctx, &user.id(), hash, settings.revoke, async {
-            if consumed {
-                Ok(())
-            } else {
-                self.consume_local(ctx, &identifier, &body.otp).await
-            }
-        })
-        .await?;
+        let proof = if consumed {
+            crate::helpers::ResetProof::Spent
+        } else {
+            self.reset_proof(ctx, &identifier, &body.otp).await?
+        };
+        crate::helpers::reset_credential_password(ctx, &user.id(), hash, settings.revoke, proof)
+            .await?;
         if let Some(callback) = settings.on_reset {
             callback(serde_json::to_value(ctx.user_view(&user))?).await?;
         }

@@ -221,6 +221,39 @@ impl EmailOtpPlugin {
         Ok(())
     }
 
+    /// Spend a checked reset code inside the reset transaction when codes live
+    /// in the database, otherwise now. A code another reset spent or changed
+    /// meanwhile no longer matches and rolls the reset back.
+    async fn reset_proof(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        key: &str,
+        otp: &str,
+    ) -> AuthResult<super::super::helpers::ResetProof> {
+        let Some(consumption) = ctx.verifications().transactional_consumption(key).await? else {
+            self.consume_code(ctx, key, otp).await?;
+            return Ok(super::super::helpers::ResetProof::Spent);
+        };
+        let existing = find_verification(ctx, key).await?.ok_or_else(invalid_otp)?;
+        let checked = split_value(existing.value()?).0.to_owned();
+        let allowed_attempts = self.allowed_attempts();
+        Ok(super::super::helpers::ResetProof::InTransaction {
+            consumption,
+            check: Box::new(move |consumed| {
+                let consumed = consumed.ok_or_else(invalid_otp)?;
+                let (stored, attempts) = split_value(consumed.value()?);
+                if super::super::passwordless_numeric::attempts_number(attempts) >= allowed_attempts
+                {
+                    return Err(too_many_attempts());
+                }
+                if stored != checked {
+                    return Err(invalid_otp());
+                }
+                Ok(())
+            }),
+        })
+    }
+
     /// Whether `otp` matches a stored, unexpired code with attempts left,
     /// without spending it or counting an attempt.
     async fn matches_usable_code(
@@ -578,18 +611,17 @@ impl EmailOtpPlugin {
         let password = ctx
             .hash_password(settings.hasher.as_ref(), &body.password)
             .await?;
+        let proof = if consumed {
+            super::super::helpers::ResetProof::Spent
+        } else {
+            self.reset_proof(ctx, &key, &body.otp).await?
+        };
         super::super::helpers::reset_credential_password(
             ctx,
             &user.id(),
             password,
             settings.revoke_sessions,
-            async {
-                if consumed {
-                    Ok(())
-                } else {
-                    self.consume_code(ctx, &key, &body.otp).await
-                }
-            },
+            proof,
         )
         .await?;
         if let Some(hook) = &settings.on_reset {

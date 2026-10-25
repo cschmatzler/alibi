@@ -47,6 +47,7 @@ Where Rust needs a different shape, behavior stays observably the same on the wi
 - All bundled plugins: admin, anonymous, bearer, CAPTCHA, custom session, device authorization, email OTP, Have I Been Pwned, JWT, last login method, magic link, multi-session, OAuth popup, OAuth proxy, One Tap, one-time token, OpenAPI, organization (teams, dynamic roles), passkey, phone number, SIWE, two-factor, username — plus the API-key and passkey packages.
 - All 36 built-in social providers and generic OAuth/OIDC with discovery.
 - Cross-cutting behavior: managed secrets, dynamic base URL and trusted origins, cookie caches (compact, JWT, JWE), stateless sessions, secondary storage, rate limiting with shared backends, background tasks, database and endpoint hooks, additional fields.
+- Separately published packages: `@better-auth/oauth-provider` (acting as an OAuth 2.1/OIDC authorization server, including client ID metadata documents from `@better-auth/cimd`), `@better-auth/sso` (OIDC and SAML provider management) and `@better-auth/scim` (SCIM 2.0 provisioning). Their differential scenarios live under `tests/compat/client-tests/tests/plugins/`; their routes are outside the core route inventory above.
 
 ## Out of scope
 
@@ -54,25 +55,23 @@ These upstream packages are explicitly **not** implemented and have no planned w
 
 | Package | What it is |
 | --- | --- |
-| `@better-auth/oauth-provider`, `@better-auth/mcp`, `@better-auth/cimd` | Acting as an OAuth authorization server, MCP, client-ID metadata documents |
-| `@better-auth/sso` | Enterprise SSO (OIDC/SAML provider management) |
-| `@better-auth/scim` | SCIM provisioning |
+| `@better-auth/mcp` | MCP resource-server helpers on top of the OAuth provider |
 | `@better-auth/stripe` | Stripe subscriptions |
 | `@better-auth/i18n` | Translated error messages |
 | `@better-auth/expo`, `@better-auth/electron` | Mobile and desktop client integrations |
 
-Alibi can *consume* OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/)); it does not act as one. Redis storage and native framework integrations are covered separately from the upstream profiles.
+Alibi both consumes OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/) and SSO) and, with the OAuth provider plugin, acts as one. Redis storage and native framework integrations are covered separately from the upstream profiles.
 
 ## Known boundaries
 
 - **Token encoding.** Only current-format ciphertext is supported. Earlier Rust encodings and plaintext imports are rejected; no conversion API is provided.
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged through 1.7.12, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
-- **Password reset atomicity.** Resets spend the proof, revoke sessions and write the password in 1.7.12's order, but not inside one database transaction. A storage failure partway through leaves the proof spent and the revoked sessions revoked; a new password is never stored while old sessions remain valid.
+- **Change-password session replacement.** With `revokeOtherSessions`, revocation and the password write commit in one transaction as upstream's do, but the replacement session is created after that commit rather than inside it.
 
 ## Upgrading from 1.7.7
 
-1.7.12 tightens ID-token verification for social, One Tap, OAuth proxy and OIDC SSO sign-in: tokens must carry `iss`, `sub`, `aud`, `exp` and `iat`, 30 seconds of clock skew is accepted, and a provider without a client ID rejects every ID token. Set `client_id` on every provider used for ID-token sign-in. `SameSite=None` and `Partitioned` cookies are now always `Secure`. A failed password reset no longer spends its link or OTP. No database migration is needed; the schema is unchanged.
+1.7.12 tightens ID-token verification for social, One Tap, OAuth proxy and OIDC SSO sign-in: tokens must carry `iss`, `sub`, `aud`, `exp` and `iat`, 30 seconds of clock skew is accepted, and a provider without a client ID rejects every ID token. Set `client_id` on every provider used for ID-token sign-in. `SameSite=None` and `Partitioned` cookies are now always `Secure`. A failed password reset no longer spends its link or OTP: the proof, session revocation and password write share one database transaction (verification values kept only in secondary storage are still spent up front). No database migration is needed; the schema is unchanged.
 
 ## Upgrading from 1.7.6
 
