@@ -1600,7 +1600,11 @@ mod tests {
         assert!(plugin.handle_reset_password(&req, &ctx).await.is_err());
         assert_eq!(*observed.lock().unwrap(), Some(0));
         assert_eq!(
-            ctx.database.get_user_sessions(&user.id).await.unwrap().len(),
+            ctx.database
+                .get_user_sessions(&user.id)
+                .await
+                .unwrap()
+                .len(),
             0
         );
         let hash = crate::helpers::get_credential_account(&ctx, &user.id)
