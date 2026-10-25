@@ -50,6 +50,8 @@ curl -i -c cookies.txt http://localhost:3000/api/auth/one-tap/callback \
 
 The server verifies signature, issuer, expiry and audience, requires an email claim, and applies the same account rules as the social callback: it links to an existing user only when the email is verified or `google` is a [trusted provider](/concepts/users-accounts/#linking-policy), and respects `disable_sign_up`.
 
+When the Google provider is registered, the user is built the way its redirect sign-in builds it: through the provider's `map_user_info` or custom `get_user_info`, with `override_user_info_on_sign_in` refreshing returning users. The account is always keyed by the verified token's `sub`. Without a Google provider, the token's `name`, `email`, `email_verified` and `picture` claims are used.
+
 ## Configuration
 
 `OneTapConfig` (via `OneTapPlugin::with_config`):

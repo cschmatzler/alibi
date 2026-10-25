@@ -2,7 +2,8 @@ import { readFile as readFixtureFile } from "node:fs/promises";
 
 /** Actual pinned One Tap configuration profiles with a local Google JWKS transport. */
 import { type BetterAuthOptions, betterAuth } from "better-auth";
-import { oneTap } from "better-auth/plugins";
+import { lastLoginMethod, oneTap } from "better-auth/plugins";
+import { decodeJwt } from "jose";
 
 const jwks: unknown = JSON.parse(
   await readFixtureFile(new URL("../../../fixtures/one-tap/jwks.json", import.meta.url), "utf8"),
@@ -45,6 +46,9 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
     "one-tap-update-link",
     "one-tap-encrypted",
     "one-tap-retain-account",
+    "one-tap-mapped",
+    "one-tap-custom-userinfo",
+    "one-tap-last-login",
   ]) {
     const google = {
       clientId:
@@ -58,6 +62,29 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
       disableSignUp: name === "one-tap-provider-disabled",
       overrideUserInfoOnSignIn: name === "one-tap-no-override",
       requireEmailVerification: name.startsWith("one-tap-required"),
+      ...(name === "one-tap-mapped"
+        ? {
+            mapProfileToUser: (profile: { name?: string }) => ({
+              name: `Mapped ${profile.name}`,
+              image: "https://fixture.test/mapped.png",
+            }),
+          }
+        : {}),
+      ...(name === "one-tap-custom-userinfo"
+        ? {
+            getUserInfo: async (token: { idToken?: string }) => {
+              const claims = decodeJwt(token.idToken!);
+              return {
+                user: {
+                  name: "From Custom User Info",
+                  email: `custom-${claims.email}`,
+                  emailVerified: false,
+                },
+                data: { ...claims, sub: "custom-data-subject" },
+              };
+            },
+          }
+        : {}),
     };
     profiles.set(
       name,
@@ -151,6 +178,7 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
                 }),
             disableSignup: name === "one-tap-disabled",
           }),
+          ...(name === "one-tap-last-login" ? [lastLoginMethod()] : []),
         ],
       }),
     );

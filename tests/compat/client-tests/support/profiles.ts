@@ -55,6 +55,7 @@ export const FIXTURE_PROFILES = [
     "logout-disabled",
     "logout-invalid",
     "logout-no-return",
+    "flaky",
   ] as const),
   ...variants("generic-token-", [
     "base-http",
@@ -317,6 +318,7 @@ export const FIXTURE_PROFILES = [
     "implicit-disabled",
     "signup-disabled",
     "fields",
+    "custom-userinfo",
   ] as const),
   ...variants("social-facebook-jwt-", [
     "no-iat",
@@ -1056,6 +1058,9 @@ export const FIXTURE_PROFILES = [
   "one-tap-required",
   "one-tap-required-no-mail",
   "one-tap-no-override",
+  "one-tap-mapped",
+  "one-tap-custom-userinfo",
+  "one-tap-last-login",
   "one-tap-account-cookie",
   "one-tap-account-cookie-account-fractional",
   "one-tap-account-cookie-account-zero",
