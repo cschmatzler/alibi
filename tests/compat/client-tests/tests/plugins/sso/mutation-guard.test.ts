@@ -1,3 +1,5 @@
+import { readFile as readFixtureFile } from "node:fs/promises";
+
 import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
@@ -169,6 +171,109 @@ compatScenario(
           },
         },
       },
+    }));
+  },
+);
+
+compatScenario(
+  "SSO mutation guards classify SAML redirect and signing certificate changes",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: Record<string, unknown>) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/sso`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "mutation-guard", ...input }),
+      });
+    expect((await control({ action: "mutation-policy", denied: false, clear: true })).status).toBe(
+      200,
+    );
+    const owner = await control({
+      action: "signup",
+      body: {
+        email: ctx.uniqueEmail("saml-mutation-owner"),
+        name: "Mutation owner",
+        password: "password123",
+      },
+    });
+    expect(owner.status).toBe(200);
+    const user = ((await owner.clone().json()) as any).user;
+    const headers = {
+      cookie: owner.headers
+        .getSetCookie()
+        .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+        .map((raw) => raw.split(";")[0])
+        .join("; "),
+    };
+    const fixture = (path: string) =>
+      readFixtureFile(new URL(`../../../../fixtures/${path}`, import.meta.url), "utf8");
+    const cert = await fixture("salesforce-transport/leaf.pem");
+    const rotatedCert = await fixture("passkey-attestation/ca.pem");
+    const providerId = "saml-guard-provider";
+    const created = await control({
+      headers,
+      body: {
+        providerId,
+        issuer: "https://sp.example.test/entity",
+        domain: "saml-guard.test",
+        samlConfig: {
+          entryPoint: "https://idp.example.test/sso",
+          cert,
+          callbackUrl: `${ctx.baseURL}/complete`,
+          idpMetadata: { entityID: "https://idp.example.test/entity" },
+        },
+      },
+    });
+    expect(created.status).toBe(200);
+    expect(
+      (
+        await control({
+          action: "create-account",
+          body: { userId: user.id, providerId, accountId: "linked-saml-subject" },
+        })
+      ).status,
+    ).toBe(200);
+    // The post-login redirect and signing certificates do not decide which IdP
+    // identities linked accounts belong to; only certificates cross the guard boundary.
+    for (const samlConfig of [
+      { callbackUrl: `${ctx.baseURL}/changed-complete` },
+      { cert: [cert, rotatedCert] },
+      { idpMetadata: { cert: rotatedCert } },
+    ]) {
+      const updated = await control({
+        action: "update",
+        headers,
+        body: { providerId, samlConfig },
+      });
+      expect(updated.status, await updated.clone().text()).toBe(200);
+    }
+    const stored = JSON.parse(
+      ((await (await control({ action: "row", providerId })).json()) as any).samlConfig,
+    );
+    expect(stored.callbackUrl).toBe(`${ctx.baseURL}/changed-complete`);
+    expect(stored.cert).toEqual([cert, rotatedCert]);
+    expect(stored.idpMetadata.cert).toBe(rotatedCert);
+    expect((await control({ action: "mutation-policy", denied: true })).status).toBe(200);
+    const refused = await control({
+      action: "update",
+      headers,
+      body: { providerId, samlConfig: { idpMetadata: { cert } } },
+    });
+    expect(refused.status).toBe(409);
+    expect(await refused.json()).toEqual({
+      code: "SSO_PROVIDER_MUTATION_REJECTED",
+      message: "SSO provider mutation is not allowed",
+    });
+    const events = (await (await control({ action: "mutation-events" })).json()) as any[];
+    expect(events.map((event) => event.mutation.isAuthenticationBoundaryChange)).toEqual([
+      false,
+      true,
+      true,
+      true,
+    ]);
+    return events.map((event) => ({
+      action: event.mutation.action,
+      isAuthenticationBoundaryChange: event.mutation.isAuthenticationBoundaryChange,
     }));
   },
 );

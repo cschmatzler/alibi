@@ -1,11 +1,19 @@
 //! Manual SAML configuration merge and effective authentication authority.
 use super::{AuthResult, SsoProvider, Value, api, json};
+/// A merged SAML configuration and the boundaries its update crosses.
+pub(super) struct PreparedSamlUpdate {
+    pub(super) config: String,
+    pub(super) identity_changed: bool,
+    /// Signing certificates change who can sign assertions, not which IdP
+    /// identities linked accounts belong to.
+    pub(super) trust_anchors_changed: bool,
+}
 pub(super) fn prepare(
     existing: &SsoProvider,
     updates: &Value,
     issuer: Option<&str>,
     max_metadata_size: usize,
-) -> AuthResult<(String, bool)> {
+) -> AuthResult<PreparedSamlUpdate> {
     let current: Value = existing
         .saml_config
         .as_deref()
@@ -72,9 +80,15 @@ pub(super) fn prepare(
             "SAML manual IdP configuration requires idpMetadata.entityID; issuer identifies the service provider and cannot identify the IdP",
         ));
     }
-    Ok((raw, identity(&current)? != identity(&updated)?))
+    let (current_identity, current_anchors) = boundary(&current)?;
+    let (updated_identity, updated_anchors) = boundary(&updated)?;
+    Ok(PreparedSamlUpdate {
+        config: raw,
+        identity_changed: current_identity != updated_identity,
+        trust_anchors_changed: current_anchors != updated_anchors,
+    })
 }
-fn identity(config: &Value) -> AuthResult<Value> {
+fn boundary(config: &Value) -> AuthResult<(Value, Vec<String>)> {
     let effective = super::idp_metadata_xml::effective(config)?;
     let config = &effective;
     let certs = config
@@ -101,14 +115,14 @@ fn identity(config: &Value) -> AuthResult<Value> {
     let sp = config.get("spMetadata");
     let metadata = super::sp_metadata_xml::from_config(config).ok().flatten();
     Ok(
-        json!({"audience":config.get("audience"), "callbackUrl":config.get("callbackUrl"),
+        (json!({"audience":config.get("audience"),
         "idpEntityId":config.get("idpMetadata").and_then(|idp|idp.get("entityID")),
         "idpRedirectService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"),
         "idpPostService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
         "spEntityId":metadata.as_ref().map(|sp|json!(sp.entity_id)).or_else(||sp.and_then(|sp|sp.get("entityID")).or_else(||config.get("issuer")).cloned()),
         "spNameIDFormat":metadata.as_ref().and_then(|sp|sp.name_id_formats.first().map(|name|json!(name))).or_else(||config.get("identifierFormat").cloned()),
-        "spPostServices":metadata.as_ref().map_or_else(||config.get("callbackUrl").and_then(Value::as_str).map(|url|vec![url.to_owned()]).unwrap_or_default(), |sp|sp.post_services.clone()),
-        "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed),
-        "trustAnchors":anchors}),
+        // Without SP metadata, the ACS is always the providerId-derived route.
+        "spPostServices":metadata.as_ref().map_or_else(Vec::new, |sp|sp.post_services.clone()),
+        "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed)}), anchors),
     )
 }
