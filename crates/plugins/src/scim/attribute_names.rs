@@ -112,8 +112,7 @@ fn record(
         }
         let entry = if extension.is_some() {
             canonicalize(entry, enterprise())?
-        } else if let Some(attribute) = attribute.filter(|value| !value.sub_attributes.is_empty())
-        {
+        } else if let Some(attribute) = attribute.filter(|value| !value.sub_attributes.is_empty()) {
             canonicalize(entry, &attribute.sub_attributes)?
         } else {
             entry.clone()

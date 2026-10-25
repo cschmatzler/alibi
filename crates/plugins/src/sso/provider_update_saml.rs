@@ -114,8 +114,8 @@ fn boundary(config: &Value) -> AuthResult<(Value, Vec<String>)> {
     anchors.sort();
     let sp = config.get("spMetadata");
     let metadata = super::sp_metadata_xml::from_config(config).ok().flatten();
-    Ok(
-        (json!({"audience":config.get("audience"),
+    Ok((
+        json!({"audience":config.get("audience"),
         "idpEntityId":config.get("idpMetadata").and_then(|idp|idp.get("entityID")),
         "idpRedirectService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect"),
         "idpPostService":super::idp_services::identity(config,"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"),
@@ -123,6 +123,7 @@ fn boundary(config: &Value) -> AuthResult<(Value, Vec<String>)> {
         "spNameIDFormat":metadata.as_ref().and_then(|sp|sp.name_id_formats.first().map(|name|json!(name))).or_else(||config.get("identifierFormat").cloned()),
         // Without SP metadata, the ACS is always the providerId-derived route.
         "spPostServices":metadata.as_ref().map_or_else(Vec::new, |sp|sp.post_services.clone()),
-        "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed)}), anchors),
-    )
+        "wantAssertionsSigned":metadata.as_ref().map_or_else(||config.get("wantAssertionsSigned")==Some(&json!(true)),|sp|sp.want_assertions_signed)}),
+        anchors,
+    ))
 }

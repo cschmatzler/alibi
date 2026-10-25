@@ -40,9 +40,12 @@ fn strip(value: &JsValue, depth: usize) -> JsValue {
         return value.clone();
     }
     match value {
-        JsValue::Array(entries) => {
-            JsValue::Array(entries.iter().map(|entry| strip(entry, depth + 1)).collect())
-        }
+        JsValue::Array(entries) => JsValue::Array(
+            entries
+                .iter()
+                .map(|entry| strip(entry, depth + 1))
+                .collect(),
+        ),
         JsValue::Object(entries) => {
             let mut output = IndexMap::new();
             for (key, entry) in entries {

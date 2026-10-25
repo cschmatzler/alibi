@@ -596,8 +596,7 @@ pub(super) fn canonicalize_value(path: Option<&str>, value: &Value) -> Result<Va
     if let Some(path) = path {
         return canonicalize_path_value(path, value);
     }
-    let resource =
-        attribute_names::canonicalize_resource(attribute_names::Resource::User, value)?;
+    let resource = attribute_names::canonicalize_resource(attribute_names::Resource::User, value)?;
     let Value::Object(entries) = resource else {
         return Ok(resource);
     };

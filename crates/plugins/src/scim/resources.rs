@@ -808,9 +808,7 @@ impl ScimPlugin {
                         && (locked.source.active
                             || locked.source.external_id != attributes.external_id)
                     {
-                        return Err(user_uniqueness(
-                            "SCIM User externalId already exists",
-                        ));
+                        return Err(user_uniqueness("SCIM User externalId already exists"));
                     }
                     if locked.manage_profile {
                         let user =
@@ -963,7 +961,12 @@ impl ScimPlugin {
         if let Some(key) = &external_key
             && let Some(retained) = ctx
                 .database
-                .list_scim_users(&connection.id, &[("externalIdKey".into(), key.clone())], 0, 1)
+                .list_scim_users(
+                    &connection.id,
+                    &[("externalIdKey".into(), key.clone())],
+                    0,
+                    1,
+                )
                 .await?
                 .users
                 .into_iter()
