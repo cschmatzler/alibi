@@ -237,20 +237,6 @@
   },
   {
     "malformed escape": {
-      "status": 500,
-      "headers": {},
-      "body": ""
-    }
-  },
-  {
-    "malformed escape pair": {
-      "status": 500,
-      "headers": {},
-      "body": ""
-    }
-  },
-  {
-    "encoded callback": {
       "status": 302,
       "headers": {
         "location": [
@@ -264,6 +250,34 @@
         ]
       },
       "body": ""
+    }
+  },
+  {
+    "malformed escape pair": {
+      "status": 302,
+      "headers": {
+        "location": [
+          "http://localhost:43219/a%zz?error=INVALID_TOKEN"
+        ],
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "encoded callback": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_CALLBACK_URL",
+        "message": "Invalid callbackURL"
+      }
     }
   },
   {

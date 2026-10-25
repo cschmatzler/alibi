@@ -375,7 +375,7 @@ type ResetFuture = std::pin::Pin<Box<dyn std::future::Future<Output = AuthResult
 async fn latest_reset_code(db: &Db, phone: &str) -> TestResult<String> {
     Ok(db
         .text(
-            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" = $1",
+            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" = $1 ORDER BY \"createdAt\" DESC LIMIT 1",
             &[&format!("{phone}-request-password-reset")],
         )
         .await?
