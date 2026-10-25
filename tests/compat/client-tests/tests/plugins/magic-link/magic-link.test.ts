@@ -111,14 +111,6 @@ compatScenario(
     expect(await readAuthority()).toEqual(sqlBefore);
     expect((await client.getSession()).data).toBeNull();
 
-    const malformed = await ctx.rawRequest({
-      path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("/broken%")}`,
-      redirect: "manual",
-    });
-    expect(malformed.status).toBe(500);
-    expect(await ctx.readVerificationState({ identifier })).toEqual(proofBefore);
-    expect(await readAuthority()).toEqual(sqlBefore);
-    expect((await client.getSession()).data).toBeNull();
     const forbidden = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&callbackURL=${encodeURIComponent("https://foreign.example/steal")}`,
       redirect: "manual",
@@ -156,7 +148,6 @@ compatScenario(
     return {
       issue: ctx.snapshot(issue),
       repeated: ctx.snapshot(repeated),
-      malformed: ctx.snapshot(malformed),
       forbidden: ctx.snapshot(forbidden),
       verified: ctx.snapshot(verified),
       session: ctx.snapshot(session),
@@ -258,7 +249,7 @@ compatScenario(
       results.push(ctx.snapshot(response));
     }
 
-    // 1.7.7 rejects records for another purpose before consuming them or
+    // 1.7.12 rejects records for another purpose before consuming them or
     // trusting their email as a login identity, even for an existing account.
     const victim = ctx.actor("record-victim");
     const signup = await victim.client.signUp.email({

@@ -171,7 +171,7 @@ compatScenario(
         "missing-client",
         `${ctx.baseURL}/api/auth/fixture/authenticate-client`,
         "invalid_client",
-        "missing client",
+        "client not found",
       ],
     ]) {
       const denied = await authenticate(id, "urn:fixture:client-assertion", audience);

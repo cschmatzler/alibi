@@ -393,7 +393,8 @@ for (const variant of [
             ? "OAUTH_LINK_ERROR"
             : variant.endsWith("email")
               ? "USER_EMAIL_NOT_FOUND"
-              : variant.endsWith("subject")
+              : // Since 1.7.12 every ID token must carry `sub`.
+                variant.endsWith("subject") && variant !== "missing-subject"
                 ? "FAILED_TO_GET_USER_INFO"
                 : "INVALID_TOKEN",
       );

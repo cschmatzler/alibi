@@ -844,6 +844,21 @@ where
             .await;
         Ok(verification)
     }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let consumed = self
+            .store
+            .consume_generation_in(self.tx, identifier, None)
+            .await?;
+        if let Some(verification) = &consumed {
+            self.pending_after
+                .push(AfterHook::VerificationDeleted(verification.clone()))
+                .await;
+        }
+        Ok(consumed)
+    }
 }
 
 #[async_trait]
@@ -871,6 +886,36 @@ where
         policy: alibi_core::store::AfterCommitErrorPolicy,
     ) -> AuthResult<BoxedTransactionValue> {
         let tx = self.db.begin().await.map_err(map_db_err)?;
+        self.run_transaction(tx, work, policy).await
+    }
+    async fn write_transaction_boxed(
+        &self,
+        work: Box<TransactionWork<S>>,
+    ) -> AuthResult<BoxedTransactionValue> {
+        let tx = self.db.begin_immediate().await?;
+        self.run_transaction(
+            tx,
+            work,
+            alibi_core::store::AfterCommitErrorPolicy::Propagate,
+        )
+        .await
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::User: SeaOrmUserModel,
+    S::Account: SeaOrmAccountModel,
+    S::Session: SeaOrmSessionModel,
+    S::Verification: SeaOrmVerificationModel,
+{
+    async fn run_transaction(
+        &self,
+        tx: ScopedTransaction,
+        work: Box<TransactionWork<S>>,
+        policy: alibi_core::store::AfterCommitErrorPolicy,
+    ) -> AuthResult<BoxedTransactionValue> {
         let tx_store = SeaOrmStoreTransaction {
             store: self,
             tx: &tx,

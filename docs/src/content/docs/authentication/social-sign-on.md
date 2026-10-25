@@ -85,7 +85,7 @@ An unknown provider id returns `404 PROVIDER_NOT_FOUND`.
 
 ### Sign in with an ID token
 
-Native and mobile clients often obtain an ID token from the provider SDK. Post it instead of starting a redirect; the server verifies signature, issuer, audience and (when given) nonce, and issues the session in the same response:
+Native and mobile clients often obtain an ID token from the provider SDK. Post it instead of starting a redirect; the server verifies signature, issuer, audience and (when given) nonce, and issues the session in the same response. Every provider applies one policy: the token must carry `iss`, `sub`, `aud`, `exp` and `iat`, time claims allow 30 seconds of clock skew, the signing algorithm is pinned by the provider (RS256 for Google, Apple, Microsoft, Cognito and Facebook), and a provider without a client ID rejects every token:
 
 ```bash
 curl -i http://localhost:3000/api/auth/sign-in/social \
@@ -251,7 +251,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-With `encrypt_oauth_tokens` the access and refresh tokens are encrypted at rest (XChaCha20-Poly1305 with a key derived from the [secret](/reference/secrets/), versioned for rotation); ID tokens are stored as issued — the same layout as Better Auth 1.7.7. Rows written by older versions of this library use a different format; convert them with current-format token encryption.
+With `encrypt_oauth_tokens` the access and refresh tokens are encrypted at rest (XChaCha20-Poly1305 with a key derived from the [secret](/reference/secrets/), versioned for rotation); ID tokens are stored as issued — the same layout as Better Auth 1.7.12. Rows written by older versions of this library use a different format; convert them with current-format token encryption.
 
 ## State and cookies
 

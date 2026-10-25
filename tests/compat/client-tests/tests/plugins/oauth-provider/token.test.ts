@@ -492,17 +492,17 @@ compatScenario(
                 : name === "secret"
                   ? [400, "invalid_client", "invalid client_secret"]
                   : name === "malformed"
-                    ? [
-                        401,
-                        "invalid_request",
-                        bound
-                          ? "code verification failed"
-                          : "code_verifier provided but PKCE was not used in authorization",
-                      ]
+                    ? bound
+                      ? [400, "invalid_grant", "code verification failed"]
+                      : [
+                          400,
+                          "invalid_request",
+                          "code_verifier provided but PKCE was not used in authorization",
+                        ]
                     : pkceRequired
                       ? [400, "invalid_request", "PKCE is required for this client"]
                       : [
-                          401,
+                          400,
                           "invalid_request",
                           "code_verifier required because PKCE was used in authorization",
                         ];
@@ -512,7 +512,9 @@ compatScenario(
         expect(response.headers.get("content-type")).toBe("application/json");
         const value = (await response.json()) as any;
         if (!success) expect(value).toEqual({ error, error_description: description });
-        const retained = early || name === "code";
+        // Client authentication precedes the code lookup, so a rejected secret
+        // leaves the one-time code unconsumed.
+        const retained = early || name === "code" || name === "secret";
         let issued = success ? value : null;
         if (!success) {
           const retry = await exchange(valid);
@@ -588,5 +590,68 @@ compatScenario(
       replay: replay.status,
       removed: true,
     });
+  },
+);
+compatScenario(
+  "Unknown token-endpoint clients are invalid_client before code or refresh-token lookup",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: unknown) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    const results = [];
+    for (const [name, body, authorization, status, challenge] of [
+      [
+        "code-post",
+        {
+          grant_type: "authorization_code",
+          client_id: "unknown-client",
+          client_secret: "secret",
+          code: "not-a-real-code",
+          redirect_uri: "https://app.fixture.test/callback",
+        },
+        undefined,
+        400,
+        null,
+      ],
+      [
+        "refresh-public",
+        {
+          grant_type: "refresh_token",
+          client_id: "unknown-client",
+          refresh_token: "not-a-real-refresh-token",
+        },
+        undefined,
+        400,
+        null,
+      ],
+      [
+        "refresh-basic",
+        { grant_type: "refresh_token", refresh_token: "not-a-real-refresh-token" },
+        `Basic ${Buffer.from("unknown-client:secret").toString("base64")}`,
+        401,
+        "Basic",
+      ],
+    ] as const) {
+      const response = await control({
+        action: "protocol-http",
+        path: "/oauth2/token",
+        method: "POST",
+        body,
+        headers: authorization ? { authorization } : {},
+      });
+      expect(response.status, name).toBe(status);
+      expect(response.headers.get("www-authenticate"), name).toBe(challenge);
+      const value = await response.json();
+      expect(value, name).toEqual({
+        error: "invalid_client",
+        error_description: "client not found",
+      });
+      results.push({ name, status: response.status, value });
+    }
+    return ctx.snapshot({ results });
   },
 );

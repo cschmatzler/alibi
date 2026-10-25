@@ -34,6 +34,8 @@ function comparable(value: unknown, key = ""): unknown {
 for (const mode of [
   "serializer-valid",
   "serializer-host",
+  // Better Call 1.4.4 applies the host-prefix rules case-insensitively.
+  "serializer-lower-host",
   "serializer-age-boundary",
   "serializer-age-limit",
   "serializer-expiry-limit",
@@ -95,9 +97,14 @@ for (const mode of [
         expect(rows.accounts).toHaveLength(1);
         expect(rows.sessions).toHaveLength(1);
         const raw = issued.raw[0]!;
-        const name = mode === "serializer-host" ? "__Host-policy" : "better-auth.session_token";
+        const name =
+          mode === "serializer-host"
+            ? "__Host-policy"
+            : mode === "serializer-lower-host"
+              ? "__host-policy"
+              : "better-auth.session_token";
         const ttl = mode === "serializer-age-boundary" ? 34560000 : 604800;
-        const scope = mode === "serializer-host" ? "; Path=/" : `; Domain=localhost; Path=${path}`;
+        const scope = mode.endsWith("host") ? "; Path=/" : `; Domain=localhost; Path=${path}`;
         expect(raw.slice(raw.indexOf(";"))).toBe(
           `; Max-Age=${ttl}${scope}; Expires=Fri, 01 Jan 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=Strict; Partitioned`,
         );

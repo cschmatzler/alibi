@@ -11,16 +11,17 @@ backend_tests!(
     password_reset_token_matrix,
     change_and_verify_password_matrix,
     disabled_reset_rejects_before_lookup_without_changing_principals,
-    reset_callback_failure_keeps_new_password_and_existing_sessions,
+    reset_callback_failure_follows_revocation_and_keeps_new_password,
     expired_delivered_reset_redirect_replaces_error_and_preserves_fragment,
     change_password_invalid_revocation_flag_never_runs_crypto,
-    reset_hash_failure_consumes_proof_without_changing_credentials,
-    invalid_stored_reset_proofs_consume_before_crypto_or_callback,
-    concurrent_reset_proof_is_consumed_before_hashing_and_callback,
+    reset_hash_failure_keeps_proof_without_changing_credentials,
+    invalid_stored_reset_proofs_reject_before_crypto_or_callback,
+    concurrent_reset_proof_is_spent_by_the_first_writer,
     zero_password_options_enforce_default_bounds_and_reset_expiry,
     reset_body_proof_wins_over_conflicting_live_query_proof,
     verify_password_uses_initialized_callback_and_utf16_maximum,
-    reset_delivery_failures_retain_genuine_redeemable_proof_and_principals
+    reset_delivery_failures_retain_genuine_redeemable_proof_and_principals,
+    reset_revocation_failure_rolls_back_proof_sessions_and_password
 );
 
 #[derive(Default)]
@@ -446,7 +447,7 @@ async fn disabled_reset_rejects_before_lookup_without_changing_principals<B: Bac
     Ok(())
 }
 
-async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Backend>(
+async fn reset_callback_failure_follows_revocation_and_keeps_new_password<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -479,7 +480,7 @@ async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Back
     )
     .await;
     let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
-    let before = db.tables(&["user", "session"]).await?;
+    let before_users = db.tables(&["user"]).await?;
     let response = call(
         &auth,
         request(
@@ -490,8 +491,19 @@ async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Back
         403,
     )
     .await;
+    // Since 1.7.12 the callback runs after revocation and the password write,
+    // so its failure no longer leaves the owner's sessions in place.
     assert!(!response.headers.contains_key("set-cookie"));
-    assert_eq!(db.tables(&["user", "session"]).await?, before);
+    assert_eq!(db.tables(&["user"]).await?, before_users);
+    assert_eq!(
+        db.text(
+            "SELECT CAST(COUNT(*) AS TEXT) FROM \"session\" WHERE \"userId\" = $1",
+            &[body(&owner)["user"]["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some("0")
+    );
     assert_eq!(db.count("verification").await?, 0);
     assert_eq!(
         db.text(
@@ -513,7 +525,8 @@ async fn reset_callback_failure_keeps_new_password_and_existing_sessions<B: Back
     )
     .await;
     assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
-    authenticated(&auth, &cookies(&owner), "reset-callback-owner@example.test").await;
+    let revoked = call(&auth, request("/get-session", None, &cookies(&owner)), 200).await;
+    assert!(body(&revoked).is_null());
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -807,7 +820,7 @@ async fn change_password_invalid_revocation_flag_never_runs_crypto<B: Backend>(
     Ok(())
 }
 
-async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backend>(
+async fn reset_hash_failure_keeps_proof_without_changing_credentials<B: Backend>(
     db: Db,
 ) -> TestResult {
     struct CountingHasher {
@@ -884,36 +897,39 @@ async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backe
         500,
     )
     .await;
+    // Since 1.7.12 the token is only looked up before hashing, so a hash
+    // failure leaves it redeemable and every principal unchanged.
     assert!(!failed.headers.contains_key("set-cookie"));
     assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
     assert_eq!(callbacks.load(Ordering::SeqCst), 0);
-    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
-    let replay = call(
+    authenticated(&auth, &cookies(&owner), "hash-failure-owner@example.test").await;
+    hasher.fail.store(false, Ordering::SeqCst);
+    let _ = call(
         &auth,
         request(
             "/reset-password",
             Some(json!({"token":token,"newPassword":"hash-failure-replacement"})),
             "",
         ),
-        400,
+        200,
     )
     .await;
-    assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
-    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
-    hasher.fail.store(false, Ordering::SeqCst);
+    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 2);
+    assert_eq!(callbacks.load(Ordering::SeqCst), 1);
+    assert_eq!(db.count("verification").await?, 0);
     let login = call(
         &auth,
         request(
             "/sign-in/email",
-            Some(json!({"email":"hash-failure-owner@example.test","password":PASSWORD})),
+            Some(json!({"email":"hash-failure-owner@example.test","password":"hash-failure-replacement"})),
             "",
         ),
         200,
     )
     .await;
     assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
-    authenticated(&auth, &cookies(&owner), "hash-failure-owner@example.test").await;
     authenticated(
         &auth,
         &cookies(&foreign),
@@ -923,7 +939,7 @@ async fn reset_hash_failure_consumes_proof_without_changing_credentials<B: Backe
     Ok(())
 }
 
-async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backend>(
+async fn invalid_stored_reset_proofs_reject_before_crypto_or_callback<B: Backend>(
     db: Db,
 ) -> TestResult {
     for missing_owner in [false, true] {
@@ -1038,8 +1054,17 @@ async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backen
             400,
         )
         .await;
-        assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
-        assert_eq!(db.count("verification").await?, 0);
+        // Since 1.7.12 a proof whose owner is missing is not spent; an expired
+        // one is still removed by lookup cleanup.
+        assert_eq!(
+            body(&replay)["code"],
+            if missing_owner {
+                "USER_NOT_FOUND"
+            } else {
+                "INVALID_TOKEN"
+            }
+        );
+        assert_eq!(db.count("verification").await?, i64::from(missing_owner));
         assert_eq!(hasher.hashes.load(Ordering::SeqCst), 0);
         assert_eq!(hasher.verifies.load(Ordering::SeqCst), 0);
         assert_eq!(callbacks.load(Ordering::SeqCst), 0);
@@ -1055,9 +1080,7 @@ async fn invalid_stored_reset_proofs_consume_before_crypto_or_callback<B: Backen
     Ok(())
 }
 
-async fn concurrent_reset_proof_is_consumed_before_hashing_and_callback<B: Backend>(
-    db: Db,
-) -> TestResult {
+async fn concurrent_reset_proof_is_spent_by_the_first_writer<B: Backend>(db: Db) -> TestResult {
     use std::sync::atomic::AtomicUsize;
     struct GatedHasher {
         entered: tokio::sync::Notify,
@@ -1131,31 +1154,44 @@ async fn concurrent_reset_proof_is_consumed_before_hashing_and_callback<B: Backe
                 Some(json!({"token":first_token,"newPassword":"race-replacement-password"})),
                 "",
             ),
-            200,
+            400,
         )
         .await
     });
     tokio::time::timeout(std::time::Duration::from_secs(2), hasher.entered.notified()).await?;
-    assert_eq!(db.count("verification").await?, 0);
+    // Since 1.7.12 hashing does not spend the token: a second reset that
+    // reaches the write first wins, and the held request then cannot spend it.
+    assert_eq!(db.count("verification").await?, 1);
     assert_eq!(db.tables(&["account", "session"]).await?, before);
-    let replay = call(
+    let _ = call(
         &auth,
         request(
             "/reset-password",
-            Some(json!({"token":token,"newPassword":"race-replacement-password"})),
+            Some(json!({"token":token,"newPassword":"race-winning-password"})),
             "",
         ),
-        400,
+        200,
     )
     .await;
-    assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
-    assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
-    assert_eq!(callbacks.load(Ordering::SeqCst), 0);
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(callbacks.load(Ordering::SeqCst), 1);
     hasher.release.notify_one();
-    let _ = first.await?;
+    let held = first.await?;
+    assert_eq!(body(&held)["code"], "INVALID_TOKEN");
     assert_eq!(callbacks.load(Ordering::SeqCst), 1);
     assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
-    let login = call(&auth, request("/sign-in/email", Some(json!({"email":"reset-race-owner@example.test","password":"race-replacement-password"})), ""), 200).await;
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(
+                json!({"email":"reset-race-owner@example.test","password":"race-winning-password"}),
+            ),
+            "",
+        ),
+        200,
+    )
+    .await;
     assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     authenticated(&auth, &cookies(&foreign), "reset-race-foreign@example.test").await;
     Ok(())
@@ -1703,4 +1739,98 @@ async fn reset_delivery_failures_retain_genuine_redeemable_proof_and_principals<
         B::close(connection).await?;
     }
     Ok(())
+}
+
+async fn reset_revocation_failure_rolls_back_proof_sessions_and_password<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+    struct RefuseRevocation(Arc<AtomicBool>);
+    #[async_trait]
+    impl<S: AuthSchema, H: HookBackend> DatabaseHooks<S, H> for RefuseRevocation {
+        async fn before_delete_session(
+            &self,
+            _: &S::Session,
+            _: &DatabaseHookContext<'_, H>,
+        ) -> AuthResult<HookControl> {
+            if self.0.swap(false, Ordering::SeqCst) {
+                return Err(AuthError::internal("revocation refused"));
+            }
+            Ok(HookControl::Continue)
+        }
+    }
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mailbox = Arc::new(Mailbox::default());
+    let refuse_revocation = Arc::new(AtomicBool::new(false));
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::hook(
+            B::store(Arc::new(config), &connection),
+            RefuseRevocation(refuse_revocation.clone()),
+        ))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(super::auth_probe::fast_password())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(management(
+            &mailbox,
+            &Arc::new(AtomicBool::new(false)),
+            true,
+            true,
+        ))
+        .build()
+        .await?;
+    let owner = signup(&auth, "reset-rollback-owner@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/request-password-reset",
+            Some(json!({"email":"reset-rollback-owner@example.test"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let (_, token) = mailbox.0.lock().unwrap().pop().unwrap();
+    let before = db.tables(&["account", "session", "verification"]).await?;
+    refuse_revocation.store(true, Ordering::SeqCst);
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"rolled-back-password"})),
+            "",
+        ),
+        500,
+    )
+    .await;
+    // Since 1.7.12 the proof, revocation and password write share one
+    // transaction: a failed revocation leaves all three unchanged.
+    assert_eq!(
+        db.tables(&["account", "session", "verification"]).await?,
+        before
+    );
+    authenticated(&auth, &cookies(&owner), "reset-rollback-owner@example.test").await;
+    let _ = call(
+        &auth,
+        request(
+            "/reset-password",
+            Some(json!({"token":token,"newPassword":"durable-new-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(db.count("verification").await?, 0);
+    assert_eq!(
+        db.text(
+            "SELECT \"password\" FROM \"account\" WHERE \"userId\" = $1",
+            &[body(&owner)["user"]["id"].as_str().unwrap()]
+        )
+        .await?
+        .as_deref(),
+        Some("fast$durable-new-password")
+    );
+    let revoked = call(&auth, request("/get-session", None, &cookies(&owner)), 200).await;
+    assert!(body(&revoked).is_null());
+    B::close(connection).await
 }

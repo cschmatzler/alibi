@@ -37,6 +37,15 @@ impl<S: AuthSchema> PluginStore<S> {
             && (self.secondary().is_none() || self.config.session.store_in_database)
     }
 
+    /// Secondary storage with database sessions that are deleted on revocation:
+    /// the database then holds every session and can serve cache misses.
+    pub(super) fn database_session_fallback(&self) -> bool {
+        self.secondary().is_some()
+            && !self.config.session.stateless
+            && self.config.session.store_in_database
+            && !self.config.session.preserve_in_database
+    }
+
     pub(super) fn remember_ephemeral_session(&self, session: &S::Session) -> AuthResult<()> {
         if self.config.session.stateless {
             _ = self

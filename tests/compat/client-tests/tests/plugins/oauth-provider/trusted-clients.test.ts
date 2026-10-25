@@ -70,7 +70,7 @@ compatScenario(
               ...(action === "update" ? { update: { client_name: "Forbidden" } } : {}),
             },
           });
-          expect(response.status, `${role}/${id}/${action}`).toBe(500);
+          expect(response.status, `${role}/${id}/${action}`).toBe(400);
           const body = await response.json();
           expect(body).toEqual({
             error: "invalid_client",

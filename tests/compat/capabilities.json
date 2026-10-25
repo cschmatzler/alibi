@@ -1,5 +1,5 @@
 {
-  "upstreamVersion": "1.7.7",
+  "upstreamVersion": "1.7.12",
   "capabilities": [
     {
       "route": "GET /account-info",
@@ -4874,18 +4874,18 @@
       "evidence": {
         "success": [
           "email OTP password reset and deprecated request alias update credentials and verification",
-          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised email-otp reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
         "rejection": [
           "email OTP password reset and deprecated request alias update credentials and verification",
-          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised email-otp reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
         "authorization": {
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
         },
         "state": [
           "email OTP password reset and deprecated request alias update credentials and verification",
-          "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised email-otp reset keeps actual delivered proof through rejection and retains foreign credentials"
         ]
       }
     },
@@ -6150,19 +6150,19 @@
       "evidence": {
         "success": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
-          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
         "rejection": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
           "phone endpoint schemas reject every malformed field before any state transition",
-          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
         "authorization": {
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
         },
         "state": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
-          "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
+          "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ]
       }
     },
@@ -6581,9 +6581,9 @@
         "success": [
           "request password reset then reset password updates credentials",
           "request password reset masks nonexistent email",
-          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+          "password reset compromised keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation"
         ],
         "rejection": [
           "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
@@ -6596,9 +6596,9 @@
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
         },
         "state": [
-          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
+          "password reset compromised keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
           "CAPTCHA captcha-turnstile-wildcard path and early rejection ordering preserve unchanged physical principals",
           "CAPTCHA captcha-turnstile-no-secret path and early rejection ordering preserve unchanged physical principals",
           "CAPTCHA captcha-turnstile-empty path and early rejection ordering preserve unchanged physical principals",
@@ -6615,24 +6615,24 @@
       "evidence": {
         "success": [
           "request password reset then reset password updates credentials",
-          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+          "password reset compromised keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation"
         ],
         "rejection": [
           "reset password rejects invalid token",
-          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+          "password reset compromised keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation"
         ],
         "authorization": {
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
         },
         "state": [
           "request password reset then reset password updates credentials",
-          "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
-          "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
+          "password reset compromised keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset malformed keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation",
+          "password reset provider-error keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation"
         ]
       }
     },

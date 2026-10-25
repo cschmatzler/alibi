@@ -104,12 +104,12 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool, scopes: bool) ->
                 "[body.oidcConfig.mapping] Invalid input: expected object, received number",
             ),
             (
-                json!({"email":"mail"}),
-                "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",
+                json!({"email":"mail","name":null}),
+                "[body.oidcConfig.mapping.name] Invalid input: expected string, received null",
             ),
             (
-                json!({"name":"label"}),
-                "[body.oidcConfig.mapping.email] Invalid input: expected string, received undefined",
+                json!({"name":"label","email":null}),
+                "[body.oidcConfig.mapping.email] Invalid input: expected string, received null",
             ),
             (
                 json!({"email":3,"name":"label"}),
@@ -180,6 +180,42 @@ async fn mapping_admission_flow<B: Backend>(db: Db, saml: bool, scopes: bool) ->
             store.get_sso_provider("mapping-provider").await?.unwrap(),
             row
         );
+    }
+    if !scopes {
+        // Omitted identity fields fall back to their defaults, and a supplied
+        // mapping replaces the stored one entirely.
+        for mapping in [
+            json!({"extraFields":{"department":"dept"}}),
+            json!({"email":"mail"}),
+            json!({}),
+        ] {
+            let updated = Box::pin(auth.dispatch_endpoint(
+                SsoPlugin::update_sso_provider_endpoint(
+                    &json!({"providerId":"mapping-provider",(protocol):{"mapping":mapping}}),
+                )?,
+                owned.clone(),
+            ))
+            .await?
+            .into_response()?;
+            assert_eq!(updated.status, 200);
+            let persisted = store.get_sso_provider("mapping-provider").await?.unwrap();
+            let config: Value = serde_json::from_str(if saml {
+                persisted.saml_config.as_deref().unwrap()
+            } else {
+                persisted.oidc_config.as_deref().unwrap()
+            })?;
+            assert_eq!(config["mapping"], mapping);
+        }
+        let mut partial = input.clone();
+        partial["providerId"] = json!("partial-mapping-provider");
+        partial[protocol]["mapping"] = json!({"name":"label"});
+        let registered = Box::pin(auth.dispatch_endpoint(
+            SsoPlugin::register_sso_provider_endpoint(&partial)?,
+            owned.clone(),
+        ))
+        .await?
+        .into_response()?;
+        assert_eq!(registered.status, 200);
     }
     if scopes {
         for values in [json!([]), json!(["openid", "", "email", "openid"])] {

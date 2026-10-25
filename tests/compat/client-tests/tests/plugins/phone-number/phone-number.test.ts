@@ -1078,7 +1078,7 @@ compatScenario(
 passwordlessNumericScenarios("phone");
 
 compatScenario(
-  "external phone verifier leaves password reset bound to actual local OTP",
+  "external phone verifier decides password reset after password length checks and drops the local OTP",
   async (ctx) => {
     const profile = "phone-custom";
     const owner = phoneClient(ctx, profile, "owner");
@@ -1098,10 +1098,14 @@ compatScenario(
       { headers: { "x-callback-probe": "issue207" } },
     );
     expect(verified.error).toBeNull();
-    const verifierReceipt = await ctx.rawRequest({
-      path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
-    });
-    expect(verifierReceipt.body).toMatchObject({ context: { marker: "issue207" } });
+    const readVerifier = async () =>
+      (
+        await ctx.rawRequest({
+          path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
+        })
+      ).body;
+    const verifierReceipt = await readVerifier();
+    expect(verifierReceipt).toMatchObject({ context: { marker: "issue207" } });
     const before = await readPhoneState(ctx, profile, signup.data!.user.id);
     const issued = await owner.phoneNumber.requestPasswordReset({ phoneNumber });
     expect(issued.error).toBeNull();
@@ -1112,53 +1116,56 @@ compatScenario(
       .parse(await ctx.readVerificationState({ identifier }));
     expect(proof).toHaveLength(1);
     expect(proof[0]!.value).toBe(`${local}:0`);
-    // Re-arm a genuine provider-approved verification challenge, while retaining the
-    // independently issued local password-reset proof.
+    // Arm a genuine provider-approved challenge beside the local reset OTP.
     expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
     const approved = await readPhoneOtp(ctx, phoneNumber);
     expect(approved).not.toBe(local);
-    const wrong = await owner.phoneNumber.resetPassword(
+    // Since 1.7.12 the custom verifier spends the code, so an invalid password
+    // length is rejected before the provider is asked.
+    const short = await owner.phoneNumber.resetPassword(
+      { phoneNumber, otp: approved, newPassword: "short" },
+      { headers: { "x-callback-probe": "short" } },
+    );
+    expect(short.error).toMatchObject({ code: "PASSWORD_TOO_SHORT", status: 400 });
+    expect(await readVerifier()).toEqual(verifierReceipt);
+    // The local code no longer authorizes the reset: the provider decides.
+    const localAttempt = await owner.phoneNumber.resetPassword(
+      { phoneNumber, otp: local, newPassword: "replacementPassword123" },
+      { headers: { "x-callback-probe": "local" } },
+    );
+    expect(localAttempt.error).toMatchObject({ code: "INVALID_OTP", status: 400 });
+    expect(await readVerifier()).toMatchObject({ context: { marker: "local" } });
+    expect(await ctx.readVerificationState({ identifier })).toHaveLength(1);
+    expect(await readPhoneState(ctx, profile, signup.data!.user.id)).toEqual(before);
+    const reset = await owner.phoneNumber.resetPassword(
       { phoneNumber, otp: approved, newPassword: "replacementPassword123" },
       { headers: { "x-callback-probe": "issue207" } },
     );
-    expect(wrong.error).toMatchObject({ code: "INVALID_OTP", status: 400 });
-    const restored = z
-      .array(z.object({ value: z.string(), expiresAt: z.string() }))
-      .parse(await ctx.readVerificationState({ identifier }));
-    expect(restored).toHaveLength(1);
-    expect(restored[0]).toEqual({ value: `${local}:1`, expiresAt: proof[0]!.expiresAt });
-    expect(await readPhoneState(ctx, profile, signup.data!.user.id)).toEqual(before);
-    expect(
-      (
-        await ctx.rawRequest({
-          path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
-        })
-      ).body,
-    ).toEqual(verifierReceipt.body);
-    const reset = await owner.phoneNumber.resetPassword(
-      { phoneNumber, otp: local, newPassword: "replacementPassword123" },
-      { headers: { "x-callback-probe": "issue207" } },
-    );
     expect(reset.error).toBeNull();
+    expect(await readVerifier()).toMatchObject({ context: { marker: "issue207" } });
     expect(await ctx.readVerificationState({ identifier })).toEqual([]);
-    expect(
-      (
-        await ctx.rawRequest({
-          path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
-        })
-      ).body,
-    ).toEqual(verifierReceipt.body);
     const replay = await owner.phoneNumber.resetPassword({
       phoneNumber,
-      otp: local,
+      otp: approved,
       newPassword: "mustNotCommit123",
     });
-    expect(replay.error?.code).toBe("OTP_NOT_FOUND");
+    expect(replay.error?.code).toBe("INVALID_OTP");
     const fresh = phoneClient(ctx, profile, "fresh");
     const login = await fresh.signIn.email({ email, password: "replacementPassword123" });
     expect(login.data?.user.id).toBe(signup.data!.user.id);
+    const stale = await fresh.signIn.email({ email, password: "mustNotCommit123" });
+    expect(stale.error?.status).toBe(401);
     expect((await owner.getSession()).data?.user.id).toBe(signup.data!.user.id);
-    return ctx.snapshot({ verified, issued, wrong, reset, replay, login });
+    return ctx.snapshot({
+      verified,
+      issued,
+      short,
+      local: localAttempt,
+      reset,
+      replay,
+      login,
+      stale,
+    });
   },
   ["POST /phone-number/reset-password", "POST /phone-number/verify"],
 );

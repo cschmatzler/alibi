@@ -1,8 +1,9 @@
 //! Google One Tap authentication with verified Google ID tokens.
 use crate::authentication_helpers::{JsonField, RequestBody, parse_body};
+use crate::oauth::handlers::fetch_user_info_from_provider;
 use crate::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
-    process_oauth_sign_in,
+    OAuthUserInfoRequest, process_oauth_sign_in,
 };
 use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
@@ -155,9 +156,7 @@ impl OneTapPlugin {
             sign_cookie_value, verify_cookie_value,
         };
         let oauth = ctx.extensions.get::<OAuthConfig>();
-        let provider = oauth
-            .as_ref()
-            .and_then(|config| config.providers.get("google"));
+        let provider = oauth.as_ref().and_then(|config| config.provider("google"));
         let audiences = match &self.config.client_id {
             Some(OneTapClientId::Single(value)) if !value.is_empty() => vec![value.clone()],
             Some(OneTapClientId::Multiple(values)) => values.clone(),
@@ -194,13 +193,43 @@ impl OneTapPlugin {
                 return message(400, "invalid id token");
             }
         }
-        let Some(email) = payload
-            .get("email")
-            .and_then(JsValue::as_str)
-            .filter(|value| !value.is_empty())
-        else {
-            return message(400, "Email not available in token");
+        // Map the verified token the way the redirect and `signIn.social` flows
+        // do, so the Google provider's mapping or user-info handler applies.
+        let (provider_user, profile) = if let Some(provider) = provider {
+            match fetch_user_info_from_provider(
+                provider,
+                OAuthUserInfoRequest {
+                    id_token: Some(body.id_token.clone()),
+                    ..OAuthUserInfoRequest::default()
+                },
+            )
+            .await
+            {
+                Ok(info) => (info.user, info.data),
+                Err(_) => return message(400, "invalid id token"),
+            }
+        } else {
+            let text = |claim: &str| {
+                payload
+                    .get(claim)
+                    .and_then(JsValue::as_str)
+                    .map(str::to_owned)
+            };
+            let user = OAuthUserInfo {
+                additional_fields: Map::default(),
+                id: String::new(),
+                email: text("email").unwrap_or_default(),
+                name: text("name"),
+                image: text("picture"),
+                email_verified: payload.get("email_verified").is_some_and(|value| {
+                    value.as_bool() == Some(true) || value.as_str() == Some("true")
+                }),
+            };
+            (user, payload.to_json_value()?)
         };
+        if provider_user.email.is_empty() {
+            return message(400, "Email not available in token");
+        }
         let Some(sub) = payload
             .get("sub")
             .and_then(JsValue::as_str)
@@ -209,27 +238,15 @@ impl OneTapPlugin {
             return message(400, "invalid id token");
         };
         let user = OAuthUserInfo {
-            additional_fields: Map::default(),
             id: sub.into(),
-            email: email.to_lowercase(),
-            name: Some(
-                payload
-                    .get("name")
-                    .and_then(JsValue::as_str)
-                    .unwrap_or_default()
-                    .into(),
-            ),
-            image: payload
-                .get("picture")
-                .and_then(JsValue::as_str)
-                .map(str::to_owned),
-            email_verified: payload.get("email_verified").is_some_and(|value| {
-                value.as_bool() == Some(true) || value.as_str() == Some("true")
-            }),
+            email: provider_user.email.to_lowercase(),
+            name: Some(provider_user.name.unwrap_or_default()),
+            ..provider_user
         };
         let policy = OAuthProcessPolicy {
             user_validation_method: None,
-            override_user_info: false,
+            override_user_info: provider
+                .is_some_and(|provider| provider.override_user_info_on_sign_in),
             require_email_verification: provider
                 .is_some_and(|provider| provider.require_email_verification),
             callback_url: None,
@@ -259,7 +276,7 @@ impl OneTapPlugin {
             super::oauth::handlers::OAuthIdentity {
                 provider_name: "google",
                 user: &user,
-                profile: &payload.to_json_value()?,
+                profile: &profile,
             },
             &policy,
             &tokens,

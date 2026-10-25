@@ -346,7 +346,9 @@ fn render_encoded_cookie(
     value: &str,
     attributes: &CookieAttributes,
 ) -> AuthResult<String> {
-    let host = name.starts_with("__Host-");
+    // Better Call 1.4.4 matches both prefixes case-insensitively.
+    let lower = name.to_ascii_lowercase();
+    let host = lower.starts_with("__host-");
     let mut header = format!("{name}={value}");
     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
         if age > 34_560_000.0 {
@@ -393,7 +395,13 @@ fn render_encoded_cookie(
     if attributes.http_only == Some(true) {
         header.push_str("; HttpOnly");
     }
-    if attributes.secure == Some(true) || host || name.starts_with("__Secure-") {
+    // SameSite=None and Partitioned force Secure, even over an explicit false.
+    if attributes.secure == Some(true)
+        || host
+        || lower.starts_with("__secure-")
+        || attributes.partitioned == Some(true)
+        || attributes.same_site == Some(SameSite::None)
+    {
         header.push_str("; Secure");
     }
     if let Some(same_site) = &attributes.same_site {
@@ -403,8 +411,7 @@ fn render_encoded_cookie(
             SameSite::None => "; SameSite=None",
         });
     }
-    // Published Better Call appends Partitioned last. It does not retroactively
-    // append Secure when an explicit secure=false attribute was serialized.
+    // Published Better Call appends Partitioned last.
     if attributes.partitioned == Some(true) {
         header.push_str("; Partitioned");
     }

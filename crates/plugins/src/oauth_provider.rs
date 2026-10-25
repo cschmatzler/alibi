@@ -88,7 +88,9 @@ pub use client_jwks::{
     OAuthClientMetadataAbortSignal, OAuthClientMetadataFetchOptions,
     OAuthClientMetadataFetchResponse, OAuthClientMetadataResourceFetch,
 };
-pub use clients::{CreateOAuthClientInput, RegisterOAuthClientInput};
+pub use clients::{
+    CreateOAuthClientInput, OAuthClientRegistrationApplicationType, RegisterOAuthClientInput,
+};
 pub use discovery::OAuthClientDiscovery;
 use serde_json::{Value, json};
 
@@ -100,6 +102,10 @@ pub struct OAuthClientPrivilegeContext {
     pub headers: alibi_core::Headers,
     pub user: Value,
     pub session: Value,
+    /// The requested `client_id` for actions on an existing client; absent for
+    /// creation and listing. The client may not exist, and this value does not
+    /// establish ownership.
+    pub client_id: Option<String>,
 }
 #[async_trait]
 pub trait OAuthClientPrivileges: Send + Sync + std::fmt::Debug {
@@ -251,6 +257,14 @@ pub struct OAuthProviderConfig {
     /// Dynamic confidential clients may omit PKCE only when explicitly false.
     /// Public and managed clients retain their existing PKCE policy.
     pub client_registration_require_pkce: Option<bool>,
+    /// Let confidential `private_key_jwt` clients replace their own inline
+    /// `jwks` at `/oauth2/client/rotate-keys`, authenticated by a client
+    /// assertion signed with a current key. Refused with serial ids, which
+    /// cannot keep the single-use assertion marker.
+    pub allow_client_key_rotation: bool,
+    /// `application_type` for dynamic registrations that omit it. A sent value
+    /// is never overridden; managed clients and metadata documents are unaffected.
+    pub client_registration_default_application_type: OAuthClientRegistrationApplicationType,
     /// Baseline dynamic-registration capabilities. `None` uses provider scopes;
     /// `Some(vec![])` deliberately supplies no baseline capabilities.
     pub client_registration_default_scopes: Option<Vec<String>>,
@@ -329,6 +343,9 @@ impl Default for OAuthProviderConfig {
                 .into(),
             allow_dynamic_client_registration: false,
             client_registration_require_pkce: None,
+            allow_client_key_rotation: false,
+            client_registration_default_application_type:
+                OAuthClientRegistrationApplicationType::default(),
             client_registration_default_scopes: None,
             client_registration_allowed_scopes: None,
             client_registration_default_resources: None,
@@ -597,6 +614,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             AuthRoute::get("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/authorize", "oauth2Authorize"),
             AuthRoute::post("/oauth2/client/rotate-secret", "rotateClientSecret"),
+            AuthRoute::post("/oauth2/client/rotate-keys", "rotateClientKeys"),
         ]
     }
     fn server_endpoints(&self) -> Vec<EndpointDefinition> {
@@ -755,6 +773,12 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 "rotateClientSecret",
                 "rotateClientSecret",
                 Some("/oauth2/client/rotate-secret"),
+                HttpMethod::Post,
+            ),
+            crate::endpoint::definition(
+                "rotateClientKeys",
+                "rotateClientKeys",
+                Some("/oauth2/client/rotate-keys"),
                 HttpMethod::Post,
             ),
             crate::endpoint::definition(
@@ -964,6 +988,9 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
         if call.operation_id() == "rotateClientSecret" {
             return Box::pin(self.rotate_client_secret(call.body_as()?, call, ctx)).await;
         }
+        if call.operation_id() == "rotateClientKeys" {
+            return Box::pin(self.rotate_client_keys(call.body(), call, ctx)).await;
+        }
         if call.operation_id() == "deleteOAuthClient" {
             return Box::pin(self.delete_client(call.body_as()?, call, ctx)).await;
         }
@@ -1134,6 +1161,14 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
             let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
             return Ok(Some(
                 Box::pin(self.register_client(Some(&body), req, ctx))
+                    .await?
+                    .to_response()?,
+            ));
+        }
+        if req.path() == "/oauth2/client/rotate-keys" && *req.method() == HttpMethod::Post {
+            let body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+            return Ok(Some(
+                Box::pin(self.rotate_client_keys(Some(&body), req, ctx))
                     .await?
                     .to_response()?,
             ));
@@ -1379,7 +1414,18 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {
                 )));
             }
         }
-        self.seed_resources(ctx.database.as_ref()).await?;
+        // A replayed rotation assertion would hand over a client's keys, so
+        // rotation needs single-use assertion markers, which serial ids lose.
+        if self.config.allow_client_key_rotation && ctx.config.advanced.database.serial_ids() {
+            return Err(AuthError::config(
+                "`allowClientKeyRotation` requires single-use client assertions, which `advanced.database.generateId: \"serial\"` does not enforce",
+            ));
+        }
+        // A failed startup seed must not reject initialization; the first
+        // resource lookup retries it.
+        if let Err(error) = self.seed_resources(ctx.database.as_ref()).await {
+            resource_seed::log_startup_seed_failure(&error);
+        }
         ctx.extensions.insert(resource_seed::SeedState::default());
         ctx.extensions.insert(discovery::TrustedClients {
             ids: self.config.cached_trusted_clients.clone(),

@@ -4,7 +4,7 @@ import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
 import { signUpAndPromoteAdmin } from "../admin/helpers";
-// In pinned 1.7.7 USER_BANNED belongs to deletion, not server verify;
+// In pinned 1.7.12 USER_BANNED belongs to deletion, not server verify;
 // KEY_NOT_RECOVERABLE is exported but has no endpoint throw site.
 compatScenario(
   "API-key banned owner retains server verification but cannot delete through its synthetic principal",

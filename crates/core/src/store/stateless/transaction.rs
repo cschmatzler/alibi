@@ -2,13 +2,14 @@ use crate::field_policy::FieldValues;
 use crate::store::stateless::{StatelessSchema, StatelessStore};
 use crate::store::{
     AccountStore, BoxedTransactionValue, MemberStore, SessionStore, TeamStore, TransactionStore,
-    TransactionWork, UserStore,
+    TransactionWork, UserStore, VerificationStore,
 };
 use crate::types::AddTeamMemberResult;
 use crate::user_validation::PreparedUserCreation;
 use crate::{
     AccountView, AuthError, AuthResult, AuthTransaction, CreateAccount, CreateMember,
-    CreateSession, CreateUser, Member, SessionView, Team, UserView,
+    CreateSession, CreateUser, Member, SessionView, Team, UpdateAccount, UserView,
+    VerificationView,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -144,5 +145,18 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
     }
     async fn create_session(&self, data: CreateSession) -> AuthResult<SessionView> {
         SessionStore::<StatelessSchema>::create_session(self.live, data).await
+    }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        SessionStore::<StatelessSchema>::delete_user_sessions(self.live, user_id).await
+    }
+    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<AccountView> {
+        AccountStore::<StatelessSchema>::update_account(self.live, id, update).await
+    }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        VerificationStore::<StatelessSchema>::consume_verification_snapshot(self.live, identifier)
+            .await
     }
 }

@@ -1,6 +1,6 @@
 # Better Auth database schemas
 
-These assets come from Better Auth TypeScript 1.7.7, pinned by the compatibility reference server. SQLx and SeaORM bundled migrations and CLI-generated migrations share the same source SQL. `better-auth-1.7.7.json` records field requirements, physical names, defaults, indexes, and references from the upstream schema API.
+These assets come from Better Auth TypeScript 1.7.12, pinned by the compatibility reference server. SQLx and SeaORM bundled migrations and CLI-generated migrations share the same source SQL. `better-auth-1.7.12.json` records field requirements, physical names, defaults, indexes, and references from the upstream schema API.
 
 The probe enables the schema-bearing plugins supported by Alibi, including organization teams and dynamic roles, stored last-login method, OAuth provider, and database rate limiting. OAuth, SSO and rate-limit migrations are separate opt-in groups. Application-specific additional fields are supplied by application migrations.
 

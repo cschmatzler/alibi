@@ -151,7 +151,7 @@ impl MultiSessionPlugin {
         let now = Utc::now();
         let mut seen_users = std::collections::HashSet::new();
         let mut listed = Vec::new();
-        for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
+        for session in Self::held_sessions(&tokens, ctx).await? {
             if session.expires_at() > now
                 && let Some(user) = ctx.session_user(&session).await?
                 && seen_users.insert(user.id().to_string())
@@ -169,10 +169,29 @@ impl MultiSessionPlugin {
         req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> Vec<String> {
-        Self::signed_tokens(req, ctx)
-            .into_iter()
-            .map(|(_, token)| token)
-            .collect()
+        let mut tokens: Vec<String> = Vec::new();
+        for (_, token) in Self::signed_tokens(req, ctx) {
+            if !tokens.contains(&token) {
+                tokens.push(token);
+            }
+        }
+        tokens
+    }
+
+    /// The held sessions in cookie order, as upstream 1.7.12 `findSessions`
+    /// returns them, rather than in storage order.
+    async fn held_sessions<S: AuthSchema>(
+        tokens: &[String],
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Vec<alibi_core::AdapterRecord<S::Session>>> {
+        let mut sessions = ctx.database.get_sessions_by_tokens_record(tokens).await?;
+        sessions.sort_by_key(|session| {
+            tokens
+                .iter()
+                .position(|token| token == session.token())
+                .unwrap_or(usize::MAX)
+        });
+        Ok(sessions)
     }
 
     async fn emit_selected_snapshot<S: AuthSchema>(
@@ -282,7 +301,7 @@ impl MultiSessionPlugin {
         }
         let tokens = Self::session_tokens(req, ctx);
         let mut next = None;
-        for session in ctx.database.get_sessions_by_tokens_record(&tokens).await? {
+        for session in Self::held_sessions(&tokens, ctx).await? {
             if session.expires_at() > Utc::now() && ctx.session_user(&session).await?.is_some() {
                 next = Some(session);
                 break;
@@ -604,8 +623,9 @@ mod tests {
         let listed = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
         let body: serde_json::Value = serde_json::from_slice(&listed.body).unwrap();
         assert_eq!(body.as_array().unwrap().len(), 2);
-        assert_eq!(body[0]["user"]["id"], alice.id);
-        assert_eq!(body[1]["user"]["id"], bob.id);
+        // Since 1.7.12 held sessions follow cookie order, not storage order.
+        assert_eq!(body[0]["user"]["id"], bob.id);
+        assert_eq!(body[1]["user"]["id"], alice.id);
         let duplicate = request_with_cookies(
             HttpMethod::Get,
             "/multi-session/list-device-sessions",

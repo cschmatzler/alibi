@@ -1,5 +1,7 @@
 //! Ordered SCIM User changes, evaluated against a transaction-owned resource.
 use super::{
+    attribute_names::{self, Attribute},
+    null_attributes::Target,
     user_attributes::{self, ENTERPRISE_SCHEMA, USER_SCHEMA},
     user_profile::{self, Profile},
 };
@@ -484,6 +486,130 @@ impl State {
         Ok(())
     }
 }
+/// A User PATCH path resolved against the declared attributes.
+enum ResolvedPath {
+    EnterpriseRoot,
+    Attribute {
+        attribute: &'static Attribute,
+        sub: Option<&'static Attribute>,
+        selected: bool,
+    },
+}
+fn resolve_path(path: &str) -> Option<ResolvedPath> {
+    let canonical = relative(path);
+    if canonical.eq_ignore_ascii_case("enterprise") {
+        return Some(ResolvedPath::EnterpriseRoot);
+    }
+    let enterprise = prefix(&canonical, "enterprise.");
+    let attributes = if enterprise.is_some() {
+        attribute_names::enterprise()
+    } else {
+        attribute_names::user()
+    };
+    let relative = enterprise.unwrap_or(&canonical);
+    let (root, selected, sub) = if let Some((root, _, sub)) = filtered(relative) {
+        (root, true, sub)
+    } else {
+        let segments = relative.split('.').collect::<Vec<_>>();
+        if segments.len() > 2 || segments.iter().any(|segment| segment.is_empty()) {
+            return None;
+        }
+        (
+            segments.first().copied().unwrap_or("").to_owned(),
+            false,
+            segments.get(1).map(|segment| (*segment).to_owned()),
+        )
+    };
+    let attribute = attribute_names::find(attributes, &root)?;
+    let sub = match sub {
+        Some(name) => Some(attribute_names::find(&attribute.sub_attributes, &name)?),
+        None => None,
+    };
+    if selected && !attribute.multi_valued {
+        return None;
+    }
+    Some(ResolvedPath::Attribute {
+        attribute,
+        sub,
+        selected,
+    })
+}
+/// How a null value at a User PATCH path applies.
+pub(super) fn null_target(path: &str) -> Target {
+    if relative(path).eq_ignore_ascii_case("active") {
+        return Target::NotNullable;
+    }
+    match resolve_path(path) {
+        // Unsupported paths keep their original operation, which reports the error.
+        None => Target::Value,
+        // The URN joins its attributes with ":", and the `enterprise` alias with ".".
+        Some(ResolvedPath::EnterpriseRoot) => Target::Merge {
+            path: path.to_owned(),
+            separator: if trim(path).eq_ignore_ascii_case("enterprise") {
+                '.'
+            } else {
+                ':'
+            },
+        },
+        Some(ResolvedPath::Attribute {
+            attribute,
+            sub,
+            selected,
+        }) => {
+            if attribute.read_only || sub.is_some_and(|sub| sub.read_only) {
+                Target::ReadOnly
+            } else if sub.is_some() || !attribute.complex || selected {
+                // Selected entries handle their own null keys, because a merged
+                // value can change what the selector matches.
+                Target::Value
+            } else if attribute.multi_valued {
+                Target::Entries
+            } else {
+                Target::Merge {
+                    path: path.to_owned(),
+                    separator: '.',
+                }
+            }
+        }
+    }
+}
+fn canonicalize_path_value(path: &str, value: &Value) -> Result<Value, String> {
+    match resolve_path(path) {
+        None => Ok(value.clone()),
+        Some(ResolvedPath::EnterpriseRoot) => {
+            attribute_names::canonicalize(value, attribute_names::enterprise())
+        }
+        Some(ResolvedPath::Attribute { attribute, sub, .. }) => {
+            let attributes = sub.map_or(&attribute.sub_attributes, |sub| &sub.sub_attributes);
+            if attributes.is_empty() {
+                Ok(value.clone())
+            } else {
+                attribute_names::canonicalize(value, attributes)
+            }
+        }
+    }
+}
+/// Rewrite a User PATCH value's keys to the names its target declares.
+/// Pathless keys may be aliases or qualified paths, such as `manager` or
+/// `name.givenName`, so each entry resolves through its own path.
+pub(super) fn canonicalize_value(path: Option<&str>, value: &Value) -> Result<Value, String> {
+    if let Some(path) = path {
+        return canonicalize_path_value(path, value);
+    }
+    let resource = attribute_names::canonicalize_resource(attribute_names::Resource::User, value)?;
+    let Value::Object(entries) = resource else {
+        return Ok(resource);
+    };
+    entries
+        .into_iter()
+        .map(|(key, entry)| canonicalize_path_value(&key, &entry).map(|entry| (key, entry)))
+        .collect::<Result<Map<_, _>, _>>()
+        .map(Value::Object)
+}
+/// A null key in a value merged into a selected entry removes that sub-attribute.
+fn without_nulls(value: &mut Map<String, Value>) {
+    value.retain(|_, item| !matches!(item, Value::Null));
+}
 #[derive(Clone)]
 enum Selector {
     Type(String),
@@ -683,7 +809,24 @@ fn multivalue(
                 [(sub.into(), value.clone())].into_iter().collect(),
             )]
         } else {
-            additions(value)
+            // Clearing fields of an entry that does not exist is a no-op, like a remove.
+            let added = additions(value)
+                .into_iter()
+                .filter_map(|mut item| {
+                    if let Some(fields) = item.as_object_mut() {
+                        let assigned = fields.len();
+                        without_nulls(fields);
+                        if fields.is_empty() && assigned > 0 {
+                            return None;
+                        }
+                    }
+                    Some(item)
+                })
+                .collect::<Vec<_>>();
+            if added.is_empty() {
+                return Ok(());
+            }
+            added
         };
         for item in &mut added {
             if let Some(item) = item.as_object_mut() {
@@ -749,9 +892,11 @@ fn multivalue(
         .ok_or_else(|| invalid(format!("User PATCH path {path} requires one complex value")))?;
         for (item, matches) in current.iter_mut().zip(matches.iter()) {
             if *matches {
-                item.as_object_mut()
-                    .ok_or_else(|| invalid(format!("{root} must contain objects")))?
-                    .extend(replacement.clone());
+                let item = item
+                    .as_object_mut()
+                    .ok_or_else(|| invalid(format!("{root} must contain objects")))?;
+                item.extend(replacement.clone());
+                without_nulls(item);
             }
         }
         normalize_primary(
@@ -968,7 +1113,7 @@ pub(super) fn apply(
         external_id: source.external_id.clone(),
         active: source.active,
     };
-    for operation in operations {
+    for operation in &super::null_attributes::expand(operations, null_target)? {
         let value = operation
             .value
             .as_ref()

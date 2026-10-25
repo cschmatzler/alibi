@@ -267,7 +267,6 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
         json!({"idpMetadata":{"singleSignOnService":[{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect","Location":"https://idp.example.test/sso"},{"Binding":"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST","Location":"https://other-idp.example.test/post-sso"}]}}),
         json!({"audience":"urn:other:audience"}),
         json!({"idpMetadata":{"entityID":"https://other-idp.example.test/entity"}}),
-        json!({"cert":"different-trust-anchor"}),
         json!({"spMetadata":{"entityID":"https://other-sp.example.test/entity"}}),
         json!({"wantAssertionsSigned":false}),
     ] {
@@ -288,6 +287,16 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
             row
         );
     }
+    let rotated_cert = Box::pin(auth.dispatch_endpoint(
+        SsoPlugin::update_sso_provider_endpoint(&json!({
+            "providerId":"saml-update-provider",
+            "samlConfig":{"cert":[cert, include_str!("../../../compat/fixtures/passkey-attestation/ca.pem")]}
+        }))?,
+        owned.clone(),
+    ))
+    .await?
+    .into_response()?;
+    assert_eq!(rotated_cert.status, 200);
     let unused = Box::pin(auth.dispatch_endpoint(SsoPlugin::update_sso_provider_endpoint(&json!({"providerId":"saml-update-provider","samlConfig":{"entryPoint":"https://unused.example.test/changed"}}))?,owned)).await?.into_response()?;
     assert_eq!(unused.status, 200);
     let started = Box::pin(auth.dispatch_endpoint(SsoPlugin::sign_in_sso_endpoint(&json!({"providerId":"saml-update-provider","callbackURL":format!("{ORIGIN}/complete")}))?,EndpointOptions::default())).await?.into_response()?;

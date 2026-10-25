@@ -67,6 +67,7 @@ pub enum AfterHook<S: AuthSchema> {
     },
     VerificationCreated(S::Verification),
     VerificationRecordCreated(VerificationSnapshot),
+    VerificationDeleted(S::Verification),
 }
 
 impl<S: AuthSchema> AfterHook<S> {
@@ -103,6 +104,9 @@ impl<S: AuthSchema> AfterHook<S> {
             }
             Self::VerificationRecordCreated(snapshot) => {
                 hook.after_create_verification_record(snapshot, ctx).await
+            }
+            Self::VerificationDeleted(verification) => {
+                hook.after_delete_verification(verification, ctx).await
             }
         }
     }

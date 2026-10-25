@@ -54,32 +54,34 @@ impl OAuthProviderPlugin {
                 .and_then(|header| URL_SAFE_NO_PAD.decode(header).ok())
                 .and_then(|header| serde_json::from_slice::<Value>(&header).ok())
                 .is_none_or(|header| !header.is_object());
-        if !self.config.disable_jwt_plugin
+        let now = serde_json::Number::from(chrono::Utc::now().timestamp())
+            .as_f64()
+            .ok_or_else(|| AuthError::internal("Invalid token validation time"))?;
+        let expected_issuer = issuer(ctx, self.config.disable_jwt_plugin);
+        // A JWT this server cannot verify (bad signature, unknown key, or a
+        // failed `iss`, `iat` or `nbf` check) may still be a stored opaque
+        // token, so it falls through to the opaque lookup below. Only an
+        // expired, otherwise valid JWT is recognized as inactive.
+        let verified = if !self.config.disable_jwt_plugin
             && !prefixed_opaque
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
-            && let Some(mut claims) = jwt
-                .verify_signed_payload_with_optional_kid(token, None, ctx)
-                .await?
         {
-            let now = serde_json::Number::from(chrono::Utc::now().timestamp())
-                .as_f64()
-                .ok_or_else(|| AuthError::internal("Invalid token validation time"))?;
-            let issuer = issuer(ctx, self.config.disable_jwt_plugin);
-            if claims.get("iss").and_then(Value::as_str) != Some(issuer.as_str()) {
-                return Err(AuthError::internal("unexpected \"iss\" claim value").into());
-            }
-            for field in ["exp", "nbf", "iat"] {
-                if claims.get(field).is_some_and(|value| !value.is_number()) {
-                    return Ok(json!({"active":false}).into());
-                }
-            }
-            if claims
-                .get("nbf")
-                .and_then(Value::as_f64)
-                .is_some_and(|nbf| nbf > now)
-            {
-                return Err(AuthError::internal("unexpected \"nbf\" claim value").into());
-            }
+            Box::pin(jwt.verify_signed_payload_with_optional_kid(token, None, ctx))
+                .await?
+                .filter(|claims| {
+                    claims.get("iss").and_then(Value::as_str) == Some(expected_issuer.as_str())
+                        && ["iat", "nbf", "exp"]
+                            .iter()
+                            .all(|field| claims.get(*field).is_none_or(Value::is_number))
+                        && claims
+                            .get("nbf")
+                            .and_then(Value::as_f64)
+                            .is_none_or(|nbf| nbf <= now)
+                })
+        } else {
+            None
+        };
+        if let Some(mut claims) = verified {
             if claims
                 .get("exp")
                 .and_then(Value::as_f64)
@@ -134,9 +136,6 @@ impl OAuthProviderPlugin {
                 }),
             );
             return Ok(Value::Object(claims).into());
-        }
-        if !self.config.disable_jwt_plugin && compact_jwt(token) && !prefixed_opaque {
-            return Err(AuthError::internal("JWT verification failed").into());
         }
         let Some(token) = decoded else {
             return Err(invalid_access_token());
@@ -396,21 +395,4 @@ fn invalid_access_token() -> EndpointError {
         ))),
         body_absent: false,
     }
-}
-
-fn compact_jwt(token: &str) -> bool {
-    use base64::Engine as _;
-    let parts = token.split('.').collect::<Vec<_>>();
-    let [header, payload, signature] = parts.as_slice() else {
-        return false;
-    };
-    let decode = |text: &str| {
-        base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(text)
-            .ok()
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-    };
-    decode(header).is_some_and(|value| value.get("alg").is_some_and(Value::is_string))
-        && decode(payload).is_some_and(|value| value.is_object())
-        && !signature.is_empty()
 }

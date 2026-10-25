@@ -357,6 +357,19 @@ pub trait OAuthClientStore: Send + Sync {
             "OAuth client persistence is not supported by this store",
         ))
     }
+    /// Replace a client's serialized inline JWK Set only while it still holds
+    /// `expected_jwks`. `None` means the client or its key set changed.
+    async fn replace_oauth_client_jwks(
+        &self,
+        _client_id: &str,
+        _expected_jwks: &str,
+        _jwks: String,
+        _updated_at: DateTime<Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        Err(AuthError::config(
+            "OAuth client persistence is not supported by this store",
+        ))
+    }
 }
 
 /// RFC client metadata names mapped to the TypeScript persistence schema.

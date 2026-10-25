@@ -1,4 +1,4 @@
-//! Compare adapter migrations with databases installed by Better Auth 1.7.7.
+//! Compare adapter migrations with databases installed by Better Auth 1.7.12.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use alibi::store::SchemaMigrator;
@@ -14,12 +14,12 @@ async fn all_tables_match_pinned_typescript_defaults<B: Backend>(db: Db) -> Test
     let (query, oracle) = if db.is_postgres() {
         (
             include_str!("../../fixtures/schema/postgres-inspect.sql"),
-            include_str!("../../fixtures/schema/postgres-1.7.7.json"),
+            include_str!("../../fixtures/schema/postgres-1.7.12.json"),
         )
     } else {
         (
             include_str!("../../fixtures/schema/sqlite-inspect.sql"),
-            include_str!("../../fixtures/schema/sqlite-1.7.7.json"),
+            include_str!("../../fixtures/schema/sqlite-1.7.12.json"),
         )
     };
     let actual: serde_json::Value = serde_json::from_str(

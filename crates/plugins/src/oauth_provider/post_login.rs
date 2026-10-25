@@ -11,7 +11,19 @@ pub struct OAuthInteractionContext<'a> {
     pub scopes: &'a [String],
 }
 
-pub type OAuthPostLoginContext<'a> = OAuthInteractionContext<'a>;
+/// Post-login policy input: the interaction context plus whether the user is
+/// returning from the post-login page.
+pub struct OAuthPostLoginContext<'a> {
+    pub headers: &'a HashMap<String, String>,
+    pub user: &'a UserView,
+    pub session: &'a SessionView,
+    pub scopes: &'a [String],
+    /// `true` when the user returns from the post-login page through
+    /// `/oauth2/continue`. The client chooses to send that request, so it does
+    /// not prove a selection was made: validate the session before returning
+    /// `false`.
+    pub is_continuation: bool,
+}
 
 #[async_trait]
 pub trait OAuthPostLoginPolicy: Send + Sync + std::fmt::Debug {
@@ -40,8 +52,9 @@ pub struct OAuthPostLoginConfig {
     pub page: String,
     pub should_redirect: Arc<dyn OAuthPostLoginPolicy>,
     /// Select an additional consent partition within the authenticated user's
-    /// grants. `None` or an empty returned string omits the reference filter;
-    /// neither changes user ownership of consent-management operations.
+    /// grants. Consent is stored per reference; `None` or an empty returned
+    /// string uses consent given without one. Neither changes user ownership of
+    /// consent-management operations.
     pub consent_reference_id: Option<Arc<dyn OAuthConsentReference>>,
 }
 
@@ -67,6 +80,7 @@ impl super::OAuthProviderPlugin {
                 scopes,
             })
             .await
+            .map(|reference| reference.filter(|reference| !reference.is_empty()))
             .map_err(|error| {
                 if alibi_core::endpoint::is_endpoint_api_error(&error) {
                     error
@@ -75,4 +89,16 @@ impl super::OAuthProviderPlugin {
                 }
             })
     }
+}
+/// Whether stored consent belongs to exactly this reference. Without one, only
+/// consent stored without a reference (missing, null or empty) matches.
+pub(super) fn consent_matches_reference(
+    metadata: &serde_json::Value,
+    reference: Option<&str>,
+) -> bool {
+    let stored = metadata
+        .get("referenceId")
+        .and_then(serde_json::Value::as_str)
+        .filter(|stored| !stored.is_empty());
+    stored == reference
 }

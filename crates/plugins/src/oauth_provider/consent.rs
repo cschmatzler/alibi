@@ -193,6 +193,7 @@ impl OAuthProviderPlugin {
                 req,
                 ctx,
                 super::continuation::post_login_clearance(supplied),
+                false,
             ))
             .await;
         }
@@ -216,12 +217,10 @@ impl OAuthProviderPlugin {
             .into_iter()
             .find(|consent| {
                 consent.client_id == client_id
-                    && reference_id
-                        .as_deref()
-                        .filter(|id| !id.is_empty())
-                        .is_none_or(|id| {
-                            consent.metadata.get("referenceId").and_then(Value::as_str) == Some(id)
-                        })
+                    && super::post_login::consent_matches_reference(
+                        &consent.metadata,
+                        reference_id.as_deref(),
+                    )
             });
         if let Some(existing) = existing {
             let mut updated = existing
@@ -283,6 +282,7 @@ impl OAuthProviderPlugin {
             req,
             ctx,
             super::continuation::post_login_clearance(supplied),
+            false,
         ))
         .await
     }
@@ -292,6 +292,7 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
         post_login_cleared_for_session: Option<String>,
+        post_login_continuation: bool,
     ) -> AuthResult<EndpointResponse> {
         let Some(mut request) = req.physical_request().cloned() else {
             return super::clients::status_protocol_error(
@@ -310,6 +311,7 @@ impl OAuthProviderPlugin {
         let settings = super::authorization::AuthorizationSettings {
             initial: false,
             post_login_cleared_for_session,
+            post_login_continuation,
         };
         // Preserve the original physical callback headers while changing only
         // the continuation's logical response negotiation/session credentials.

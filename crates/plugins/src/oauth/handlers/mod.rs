@@ -209,6 +209,55 @@ pub async fn resolve_oauth_account_key(
     Ok(())
 }
 
+/// Checks that a provider callback answers this authorization request before
+/// its code is exchanged. Every route completing a provider callback runs it.
+pub(crate) fn callback_binding_error(
+    provider: &OAuthProvider,
+    issuer: Option<&str>,
+    id_token_nonce: Option<&str>,
+) -> Option<&'static str> {
+    let policy = provider.authorization.as_ref();
+    // RFC 9207: only validated when the provider sends `iss`.
+    if let Some(issuer) = issuer.filter(|issuer| !issuer.is_empty())
+        && let Some(expected) = policy
+            .and_then(|policy| policy.issuer.as_deref())
+            .filter(|expected| !expected.is_empty())
+        && issuer != expected
+    {
+        return Some("issuer_mismatch");
+    }
+    // Fail closed: a provider that binds its ID token to a nonce cannot enforce
+    // the binding when state carries no expected nonce.
+    if policy.is_some_and(|policy| policy.id_token_nonce_binding)
+        && id_token_nonce.is_none_or(str::is_empty)
+    {
+        return Some("nonce_binding_missing");
+    }
+    None
+}
+
+/// Verifies a grant's ID token, and its expected nonce, when the provider
+/// requires grant verification. An absent ID token is left to user info.
+pub(crate) async fn grant_id_token_verified(
+    provider: &OAuthProvider,
+    tokens: &OAuthTokenSet,
+    id_token_nonce: Option<&str>,
+) -> bool {
+    if !provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.verify_grant_id_token)
+    {
+        return true;
+    }
+    match tokens.id_token.as_deref().filter(|token| !token.is_empty()) {
+        Some(token) => {
+            crate::oauth::id_token::verify_provider_token(provider, token, id_token_nonce).await
+        }
+        None => true,
+    }
+}
+
 pub fn oauth_callback_path(provider_id: &str, provider: &OAuthProvider) -> String {
     match provider
         .authorization

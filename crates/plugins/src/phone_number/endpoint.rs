@@ -245,7 +245,8 @@ impl PhoneNumberPlugin {
                         .await?
                 }
                 "resetPasswordPhoneNumber" => {
-                    self.reset_password_core(ctx, call.body_as()?).await?
+                    self.reset_password_core(ctx, call.request(), call.body_as()?)
+                        .await?
                 }
                 _ => {
                     self.request_password_reset_core(

@@ -219,6 +219,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         self.inner.get_user_sessions(user_id).await
     }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        self.inner.consume_verification_snapshot(identifier).await
+    }
     async fn list_oauth_tokens_for_session(
         &self,
         kind: crate::store::OAuthTokenKind,
@@ -754,6 +760,24 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         work: Box<TransactionWork<S>>,
         policy: crate::store::AfterCommitErrorPolicy,
     ) -> AuthResult<BoxedTransactionValue> {
+        self.decorated_transaction(work, policy, false).await
+    }
+    async fn write_transaction_boxed(
+        &self,
+        work: Box<TransactionWork<S>>,
+    ) -> AuthResult<BoxedTransactionValue> {
+        self.decorated_transaction(work, crate::store::AfterCommitErrorPolicy::Propagate, true)
+            .await
+    }
+}
+
+impl<S: AuthSchema> PluginStore<S> {
+    async fn decorated_transaction(
+        &self,
+        work: Box<TransactionWork<S>>,
+        policy: crate::store::AfterCommitErrorPolicy,
+        write: bool,
+    ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
         let adapter_defaults = self.transforms.adapter_defaults.clone();
         let config = Arc::clone(&self.config);
@@ -766,29 +790,30 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         let record_store = self.clone();
         let pending_records = Arc::new(std::sync::Mutex::new(Vec::new()));
         let records_in_transaction = Arc::clone(&pending_records);
-        let value = self
-            .inner
-            .transaction_boxed_with_policy(
-                Box::new(move |inner| {
-                    Box::pin(async move {
-                        let transaction = PluginTransaction {
-                            inner,
-                            config,
-                            creates,
-                            adapter_defaults,
-                            pending_sessions: pending_in_transaction,
-                            pending_scopes: scopes_in_transaction,
-                            session_fields,
-                            adapter_fields,
-                            record_store,
-                            pending_records: records_in_transaction,
-                        };
-                        work(&transaction).await
-                    })
-                }),
-                policy,
-            )
-            .await?;
+        let work: Box<TransactionWork<S>> = Box::new(move |inner| {
+            Box::pin(async move {
+                let transaction = PluginTransaction {
+                    inner,
+                    config,
+                    creates,
+                    adapter_defaults,
+                    pending_sessions: pending_in_transaction,
+                    pending_scopes: scopes_in_transaction,
+                    session_fields,
+                    adapter_fields,
+                    record_store,
+                    pending_records: records_in_transaction,
+                };
+                work(&transaction).await
+            })
+        });
+        let value = if write {
+            self.inner.write_transaction_boxed(work).await?
+        } else {
+            self.inner
+                .transaction_boxed_with_policy(work, policy)
+                .await?
+        };
         // Publish scope updates only after adapter success. Concurrent logout wins.
         {
             let scopes = std::mem::take(

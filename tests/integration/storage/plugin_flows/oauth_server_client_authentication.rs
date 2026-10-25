@@ -209,7 +209,7 @@ async fn oauth_server_client_authentication_checks_credentials_scope_grant_and_e
             None,
             400,
             "invalid_client",
-            "missing client",
+            "client not found",
             "",
             Value::Null,
         ),

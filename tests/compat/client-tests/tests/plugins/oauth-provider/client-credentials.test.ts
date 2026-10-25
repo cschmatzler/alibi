@@ -63,7 +63,7 @@ compatScenario(
       [
         { grant_type: "client_credentials", client_id: "missing", client_secret: secret },
         "invalid_client",
-        "missing client",
+        "client not found",
       ],
       [
         { grant_type: "client_credentials", client_id: id, client_secret: "wrong" },

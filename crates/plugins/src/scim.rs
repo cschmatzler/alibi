@@ -6,10 +6,12 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde_json::{Value, json};
+mod attribute_names;
 mod authentication;
 mod collection;
 mod compatibility;
 mod managed;
+mod null_attributes;
 mod projection;
 mod resources;
 mod user_attributes;
@@ -217,7 +219,7 @@ impl ScimPlugin {
         ServerEndpoint::new("scim", "getSCIMSchemas")
     }
     fn schemas<S: AuthSchema>(ctx: &AuthContext<S>) -> AuthResult<Value> {
-        // Runtime protocol descriptors match @better-auth/scim 1.7.7; keep them
+        // Runtime protocol descriptors match @better-auth/scim 1.7.12; keep them
         // independent of test fixtures and resolve locations for this application.
         let mut schemas: Vec<Value> = serde_json::from_str(include_str!("scim/schemas.json"))?;
         let base = format!(
@@ -309,6 +311,26 @@ impl ScimPlugin {
         })
     }
 }
+/// The User or Group a SCIM create, replace, or PATCH request body describes.
+fn mutated_resource(path: &str, method: &HttpMethod) -> Option<attribute_names::Resource> {
+    [
+        ("/scim/v2/Users", attribute_names::Resource::User),
+        ("/scim/v2/Groups", attribute_names::Resource::Group),
+    ]
+    .into_iter()
+    .find_map(|(collection, resource)| {
+        let (_, suffix) = path.rsplit_once(collection)?;
+        let item = suffix
+            .strip_prefix('/')
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'));
+        let mutation = match method {
+            HttpMethod::Post => suffix.is_empty(),
+            HttpMethod::Put | HttpMethod::Patch => item,
+            _ => false,
+        };
+        mutation.then_some(resource)
+    })
+}
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
     async fn on_http_request_action(
@@ -362,14 +384,40 @@ impl<S: AuthSchema> AuthPlugin<S> for ScimPlugin {
                 ))?,
             )));
         };
+        let original = body.clone();
+        if let Some(resource) = mutated_resource(path, req.method()) {
+            let normalized = if req.method() == &HttpMethod::Patch {
+                attribute_names::canonicalize_patch(&body, |path, value| match resource {
+                    attribute_names::Resource::User => user_patch::canonicalize_value(path, value),
+                    attribute_names::Resource::Group => {
+                        attribute_names::canonicalize_group_patch_value(path, value)
+                    }
+                })
+            } else {
+                attribute_names::canonicalize_resource(resource, &body)
+                    .map(|body| null_attributes::strip_resource(&body))
+            };
+            match normalized {
+                Ok(normalized) => body = normalized,
+                Err(detail) => {
+                    return Ok(Some(alibi_core::HttpRequestAction::Respond(
+                        resources::to_http_response(&resources::error(
+                            400,
+                            &detail,
+                            Some("invalidSyntax"),
+                        ))?,
+                    )));
+                }
+            }
+        }
         match compatibility::normalize_group(
             path,
             req.method(),
             &mut body,
             self.accept_legacy_group_schema,
         ) {
-            Ok(false) => Ok(None),
-            Ok(true) => {
+            Ok(false) if body == original => Ok(None),
+            Ok(_) => {
                 let mut replacement = req.clone();
                 replacement
                     .headers

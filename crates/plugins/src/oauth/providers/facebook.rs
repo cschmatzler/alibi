@@ -33,6 +33,9 @@ pub struct FacebookOptions {
     pub token_inspection_endpoint: Option<String>,
     pub user_info_endpoint: Option<String>,
     pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    /// Application user-info resolution. A client-submitted access token, or an
+    /// opaque ID token, must first be bound to a configured app.
+    pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
 }
 impl FacebookOptions {
     #[must_use]
@@ -51,6 +54,7 @@ impl FacebookOptions {
             token_inspection_endpoint: None,
             user_info_endpoint: None,
             map_profile_to_user: None,
+            get_user_info: None,
         }
     }
 }
@@ -92,6 +96,8 @@ impl OAuthProvider {
             max_age_secs: None,
             allow_opaque_token: true,
             algorithm: Some(jsonwebtoken::Algorithm::RS256),
+            algorithms: Some(vec![jsonwebtoken::Algorithm::RS256]),
+            default_key_algorithm: None,
             selection: OAuthJwksSelection::RemoteRs256,
             nonce_comparison: OAuthNonceComparison::Exact,
             verify_claims: None,
@@ -138,6 +144,7 @@ impl OAuthProvider {
                 endpoint,
                 fields: options.fields,
                 mapper: options.map_profile_to_user,
+                custom: options.get_user_info,
             })),
             refresh_access_token: None,
             verify_id_token: None,
@@ -158,6 +165,7 @@ struct FacebookUserInfo {
     endpoint: String,
     fields: Vec<String>,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    custom: Option<Arc<dyn OAuthUserInfoHandler>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for FacebookUserInfo {
@@ -165,6 +173,24 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
+        if let Some(custom) = &self.custom {
+            // On the client sign-in path the access token, or an opaque ID token,
+            // arrives unverified, so bind it to this app before the application
+            // resolves identity from it.
+            let opaque_id_token = request
+                .id_token
+                .as_deref()
+                .filter(|token| !token.is_empty() && token.split('.').count() != 3);
+            if let Some(token) = request
+                .access_token
+                .as_deref()
+                .filter(|token| !token.is_empty())
+                .or(opaque_id_token)
+            {
+                _ = self.inspect(token).await?;
+            }
+            return custom.get_user_info(request).await;
+        }
         let limited_login = request
             .id_token
             .as_deref()
@@ -230,12 +256,33 @@ impl FacebookUserInfo {
         let access_token = access_token
             .filter(|token| !token.is_empty())
             .ok_or("Missing Facebook access token")?;
+        let user_id = self.inspect(access_token).await?;
+        let mut fields = vec!["id", "name", "email", "picture"];
+        fields.extend(self.fields.iter().map(String::as_str));
+        let profile: Value = reqwest::Client::new()
+            .get(&self.endpoint)
+            .query(&[("fields", fields.join(","))])
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .map_err(http_error)?
+            .error_for_status()
+            .map_err(http_error)?
+            .json()
+            .await
+            .map_err(http_error)?;
+        if profile.get("id") != Some(&user_id) {
+            return Err("Facebook profile does not match inspected identity".into());
+        }
+        Ok(profile)
+    }
+    /// Binds `access_token` to a configured app and returns its user ID.
+    async fn inspect(&self, access_token: &str) -> Result<Value, String> {
         if self.client_id.is_empty() || self.client_secret.is_empty() {
             return Err("Facebook client ID and secret are required".into());
         }
-        let client = reqwest::Client::new();
         let app_access_token = format!("{}|{}", self.client_id, self.client_secret);
-        let inspected: Value = client
+        let inspected: Value = reqwest::Client::new()
             .get(&self.inspection_endpoint)
             .query(&[
                 ("input_token", access_token),
@@ -268,24 +315,7 @@ impl FacebookUserInfo {
                     && truthy(value)
             })
             .ok_or("Facebook inspection returned no user")?;
-        let mut fields = vec!["id", "name", "email", "picture"];
-        fields.extend(self.fields.iter().map(String::as_str));
-        let profile: Value = client
-            .get(&self.endpoint)
-            .query(&[("fields", fields.join(","))])
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(http_error)?
-            .error_for_status()
-            .map_err(http_error)?
-            .json()
-            .await
-            .map_err(http_error)?;
-        if profile.get("id") != Some(user_id) {
-            return Err("Facebook profile does not match inspected identity".into());
-        }
-        Ok(profile)
+        Ok(user_id.clone())
     }
 }
 fn http_error(error: reqwest::Error) -> String {

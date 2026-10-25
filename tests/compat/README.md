@@ -1,6 +1,6 @@
 # Compatibility testing
 
-The published TypeScript `better-auth@1.7.7` runtime is the behavioral reference.
+The published TypeScript `better-auth@1.7.12` runtime is the behavioral reference.
 The client, reference server, passkey plugin and API-key plugin are pinned to
 that version with committed `nub.lock` files. `capabilities.json` carries the single
 committed `upstreamVersion`; `tests/compat/upstream_pin.rs` fails when any
@@ -217,7 +217,7 @@ behavior is not claimed by that test. Structural route evidence is also not a
 claim that every behavior of an endpoint has been tested.
 
 The OAuth resource policy owner also exercises configured `cachedResources`
-membership. The pinned 1.7.7 cache is module-global **by identifier**, even across
+membership. The pinned 1.7.12 cache is module-global **by identifier**, even across
 independently initialized databases: another store can consume the first store's
 cached policy. This quirk is intentionally preserved, not isolated per plugin.
 Nonmembers remain live; misses are not cached; there is no TTL or size policy.

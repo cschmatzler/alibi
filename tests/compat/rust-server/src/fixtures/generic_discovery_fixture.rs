@@ -127,6 +127,7 @@ pub(crate) async fn router(
         "logout-disabled",
         "logout-invalid",
         "logout-no-return",
+        "flaky",
     ] {
         let path = format!("/__test/profiles/generic-discovery-{mode}/api/auth");
         let settings = config.clone().base_path(&path);
@@ -198,7 +199,12 @@ pub(crate) async fn router(
             }
         }
         let mut plugin = OAuthPlugin::new();
-        if let Some(resolved) = generic
+        if mode != "logout" {
+            plugin = plugin
+                .add_generic_provider("discovery", generic)
+                .await
+                .map_err(|e| alibi::AuthError::config(e.to_string()))?;
+        } else if let Some(resolved) = generic
             .resolve()
             .await
             .map_err(|e| alibi::AuthError::config(e.to_string()))?
@@ -260,7 +266,9 @@ async fn metadata(
     headers: HeaderMap,
 ) -> (StatusCode, Json<Value>) {
     f.receipts.lock().await.push(json!({"path":"/metadata","mode":mode,"header":headers.get("x-discovery").and_then(|v|v.to_str().ok())}));
-    if ["failed", "fallback", "required"].contains(&mode.as_str()) {
+    if ["failed", "fallback", "required"].contains(&mode.as_str())
+        || mode == "flaky" && f.control.lock().await["discoveryUp"] != json!(true)
+    {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"error":"metadata failed"})),

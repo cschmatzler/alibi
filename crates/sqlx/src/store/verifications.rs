@@ -7,7 +7,7 @@ use crate::value::SqlValue;
 use alibi_core::entity::AuthVerification;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::adapter::cancelled_by_hook;
-use alibi_core::store::{VerificationStore, verification_reservation_key};
+use alibi_core::store::{VerificationStore, verification_reservation_id};
 use alibi_core::types::{CreateVerification, UpdateVerification};
 use alibi_core::verification::{
     VerificationCreation, VerificationPublication, VerificationSnapshot,
@@ -177,63 +177,9 @@ where
         // PostgreSQL locks the selected row; the affected-row gate still
         // protects against another consumer using a separate store/process.
         let transaction = self.begin(true).await?;
-        let outcome = async {
-            let exec = Exec::tx(&transaction);
-            let mut select = Self::newest_generation(
-                exec,
-                &[(
-                    S::Verification::identifier_column(),
-                    " = ",
-                    identifier.into(),
-                )],
-            );
-            lock_exclusive(&mut select);
-            let Some(model) = exec.fetch_optional::<S::Verification>(select).await? else {
-                return Ok(None);
-            };
-            if expected_value.is_some_and(|expected| model.value() != expected) {
-                return Ok(None);
-            }
-            let hook_context = self.hook_context(Some(&transaction));
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_verification(&model, &hook_context)
-                    .await?
-                    .is_cancelled()
-                {
-                    // The upstream consume hook returns null when cancelled.
-                    return Ok(None);
-                }
-            }
-            let table = Self::verification_table();
-            let id = S::Verification::parse_id(model.id().as_ref())?;
-            let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
-            delete.ident(table);
-            delete.push(" WHERE ");
-            delete.compare_model::<S::Verification>(table, S::Verification::id_column(), " = ", id);
-            delete.push(" AND ");
-            delete.compare_model::<S::Verification>(
-                table,
-                S::Verification::value_column(),
-                " = ",
-                model.value(),
-            );
-            if exec.execute(delete).await? != 1 {
-                return Ok(None);
-            }
-            let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
-            siblings.ident(table);
-            siblings.push(" WHERE ");
-            siblings.compare_model::<S::Verification>(
-                table,
-                S::Verification::identifier_column(),
-                " = ",
-                identifier,
-            );
-            _ = exec.execute(siblings).await?;
-            Ok(Some(model))
-        }
-        .await;
+        let outcome = self
+            .consume_generation_in(&transaction, identifier, expected_value)
+            .await;
         let consumed = match outcome {
             Ok(consumed) => {
                 transaction.commit().await?;
@@ -253,6 +199,70 @@ where
         // Even an expired generation is removed. Older generations cannot
         // become valid again when the newest token expires.
         Ok(consumed)
+    }
+
+    /// Lock, gate and delete the newest generation on `transaction`. The
+    /// caller commits and runs delete after-hooks.
+    pub(crate) async fn consume_generation_in(
+        &self,
+        transaction: &SqlxTransaction,
+        identifier: &str,
+        expected_value: Option<&str>,
+    ) -> AuthResult<Option<S::Verification>> {
+        let exec = Exec::tx(transaction);
+        let mut select = Self::newest_generation(
+            exec,
+            &[(
+                S::Verification::identifier_column(),
+                " = ",
+                identifier.into(),
+            )],
+        );
+        lock_exclusive(&mut select);
+        let Some(model) = exec.fetch_optional::<S::Verification>(select).await? else {
+            return Ok(None);
+        };
+        if expected_value.is_some_and(|expected| model.value() != expected) {
+            return Ok(None);
+        }
+        let hook_context = self.hook_context(Some(transaction));
+        for hook in self.hooks() {
+            if hook
+                .before_delete_verification(&model, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                // The upstream consume hook returns null when cancelled.
+                return Ok(None);
+            }
+        }
+        let table = Self::verification_table();
+        let id = S::Verification::parse_id(model.id().as_ref())?;
+        let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
+        delete.ident(table);
+        delete.push(" WHERE ");
+        delete.compare_model::<S::Verification>(table, S::Verification::id_column(), " = ", id);
+        delete.push(" AND ");
+        delete.compare_model::<S::Verification>(
+            table,
+            S::Verification::value_column(),
+            " = ",
+            model.value(),
+        );
+        if exec.execute(delete).await? != 1 {
+            return Ok(None);
+        }
+        let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
+        siblings.ident(table);
+        siblings.push(" WHERE ");
+        siblings.compare_model::<S::Verification>(
+            table,
+            S::Verification::identifier_column(),
+            " = ",
+            identifier,
+        );
+        _ = exec.execute(siblings).await?;
+        Ok(Some(model))
     }
 
     /// `UPDATE ... RETURNING` every verification column; the winning snapshot
@@ -519,7 +529,8 @@ where
         logical_identifier: &str,
         verification: CreateVerification,
     ) -> AuthResult<Option<S::Verification>> {
-        let (encoded, digest) = verification_reservation_key(logical_identifier);
+        let (encoded, digest) =
+            verification_reservation_id(logical_identifier, &self.config.advanced.database);
         let id = S::Verification::parse_reservation_id(&encoded, digest)?;
         let active = S::Verification::new_active(Some(id.clone()), verification, Utc::now());
         match model::insert::<S::Verification>(self.exec(), &active).await {

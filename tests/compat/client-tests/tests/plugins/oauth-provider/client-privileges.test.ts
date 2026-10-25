@@ -104,7 +104,14 @@ compatScenario(
         expect(observed[0].session.id).toBeTruthy();
         expect(observed[0].session.token).toBeTruthy();
         expect(await row()).toEqual(before);
-        results.push({ operation, decision, status, body: text ? JSON.parse(text) : null });
+        results.push({
+          operation,
+          decision,
+          status,
+          body: text ? JSON.parse(text) : null,
+          // Actions on an existing client receive its requested client_id.
+          clientId: observed[0].clientId ?? null,
+        });
       }
     }
     const ordering = [];

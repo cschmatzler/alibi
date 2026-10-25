@@ -229,6 +229,18 @@ impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
     ) -> AuthResult<VerificationView> {
         self.store.create_verification(verification).await
     }
+    async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        self.store.delete_user_sessions(user_id).await
+    }
+    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<AccountView> {
+        self.store.update_account(id, update).await
+    }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        self.store.consume_verification_snapshot(identifier).await
+    }
 }
 
 #[async_trait]

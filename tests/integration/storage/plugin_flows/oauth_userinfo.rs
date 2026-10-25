@@ -476,9 +476,12 @@ async fn oauth_userinfo_resolves_scoped_claims_from_real_access_authority<B: Bac
         original.metadata["confirmation"]["jkt"],
         "yAJQz9pEsZrW3t2ISLq2eQ2bDNmV0AHCGdbF-8RSbko"
     );
-    // Deliberately differs from configured base URL: proof binding must use the
-    // actual retained Request URL (and ignore only its query).
-    let uri = "https://userinfo.fixture.test/api/auth/oauth2/userinfo";
+    // The request URL deliberately differs from the configured base URL, as
+    // behind a rewriting proxy: proofs bind the public URL built from the base
+    // URL and the request's own path below the base path.
+    let public = format!("{ORIGIN}/api/auth/oauth2/userinfo");
+    let uri = public.as_str();
+    let request_uri = "https://userinfo.fixture.test/api/auth/oauth2/userinfo";
     let proof = |method: &str, url: &str, jti: &str| {
         super::oauth_dpop_proof::proof(
             json!({"htm":method,"htu":url,"jti":jti,"iat":chrono::Utc::now().timestamp(),"ath":base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&bound))}),
@@ -544,8 +547,8 @@ async fn oauth_userinfo_resolves_scoped_claims_from_real_access_authority<B: Bac
             expected.clone(),
         ),
     ] {
-        let mut physical =
-            request("/oauth2/userinfo", None, "").with_url(format!("{uri}?ignored=1").parse()?);
+        let mut physical = request("/oauth2/userinfo", None, "")
+            .with_url(format!("{request_uri}?ignored=1").parse()?);
         physical.method = method;
         physical.headers.extend([
             (

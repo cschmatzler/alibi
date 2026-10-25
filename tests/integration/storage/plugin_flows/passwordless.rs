@@ -417,6 +417,18 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
         400,
     )
     .await;
+    // Since 1.7.12 a matching code is spent only with the password write, so
+    // the rejected password leaves it redeemable.
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
+            &[&format!("{phone}-request-password-reset")]
+        )
+        .await?,
+        1
+    );
+    assert_eq!(db.table("account").await?, accounts);
+    let _ = call(&auth, request("/phone-number/reset-password", Some(json!({"phoneNumber":phone,"otp":code.code,"newPassword":"replacement-password123"})), ""), 200).await;
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
@@ -425,20 +437,6 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
         .await?,
         0
     );
-    let _ = call(&auth, request("/phone-number/reset-password", Some(json!({"phoneNumber":phone,"otp":code.code,"newPassword":"replacement-password123"})), ""), 400).await;
-    assert_eq!(db.table("account").await?, accounts);
-    let _ = call(
-        &auth,
-        request(
-            "/phone-number/request-password-reset",
-            Some(json!({"phoneNumber":phone})),
-            "",
-        ),
-        200,
-    )
-    .await;
-    let code = reset.take();
-    let _ = call(&auth, request("/phone-number/reset-password", Some(json!({"phoneNumber":phone,"otp":code.code,"newPassword":"replacement-password123"})), ""), 200).await;
     let _ = call(
         &auth,
         request(

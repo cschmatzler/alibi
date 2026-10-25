@@ -2,11 +2,14 @@
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
+use alibi::plugins::oauth::{
+    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
+};
 use alibi::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
 use alibi::plugins::{
-    AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
-    SessionManagementPlugin, TwoFactorPlugin,
+    AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, LastLoginMethodPlugin, OAuthPlugin,
+    OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
 use alibi::seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use alibi::seaorm::store::entities::{account, session, user};
@@ -47,6 +50,39 @@ impl OAuthJwksSource for LocalKeys {
             .and_then(Value::as_array)
             .cloned()
             .ok_or_else(|| "Missing fixture keys".into())
+    }
+}
+/// Application user info that replaces the token's profile but not its subject.
+struct CustomUserInfo;
+#[async_trait]
+impl OAuthUserInfoHandler for CustomUserInfo {
+    async fn get_user_info(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        use base64::Engine;
+        let token = request.id_token.ok_or("missing ID token")?;
+        let payload = token.split('.').nth(1).ok_or("malformed ID token")?;
+        let mut claims: Value = serde_json::from_slice(
+            &base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(payload)
+                .map_err(|error| error.to_string())?,
+        )
+        .map_err(|error| error.to_string())?;
+        let email = claims["email"].as_str().unwrap_or_default().to_owned();
+        claims["sub"] = json!("custom-data-subject");
+        Ok(OAuthUserInfoResponse {
+            user_output: None,
+            user: OAuthUserInfo {
+                additional_fields: Default::default(),
+                id: String::new(),
+                email: format!("custom-{email}"),
+                name: Some("From Custom User Info".into()),
+                image: None,
+                email_verified: false,
+            },
+            data: claims,
+        })
     }
 }
 struct RejectProviderVerifier;
@@ -90,6 +126,9 @@ pub(crate) async fn router(
         "one-tap-update-link",
         "one-tap-encrypted",
         "one-tap-retain-account",
+        "one-tap-mapped",
+        "one-tap-custom-userinfo",
+        "one-tap-last-login",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut profile_config = config.clone().base_path(&path);
@@ -160,6 +199,23 @@ pub(crate) async fn router(
         provider.disable_sign_up = name == "one-tap-provider-disabled";
         provider.override_user_info_on_sign_in = name == "one-tap-no-override";
         provider.require_email_verification = name.starts_with("one-tap-required");
+        if name == "one-tap-mapped" {
+            provider.map_user_info = Some(|profile| {
+                let text = |key: &str| profile.get(key).and_then(Value::as_str).map(str::to_owned);
+                Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
+                    id: text("sub").unwrap_or_default(),
+                    email: text("email").unwrap_or_default(),
+                    name: Some(format!("Mapped {}", text("name").unwrap_or_default())),
+                    image: Some("https://fixture.test/mapped.png".into()),
+                    email_verified: profile.get("email_verified").and_then(Value::as_bool)
+                        == Some(true),
+                })
+            });
+        }
+        if name == "one-tap-custom-userinfo" {
+            provider.get_user_info = Some(Arc::new(CustomUserInfo));
+        }
         let mut one_tap = OneTapConfig {
             client_id: Some(OneTapClientId::Single("one-tap-plugin-client".into())),
             disable_signup: name == "one-tap-disabled",
@@ -189,24 +245,24 @@ pub(crate) async fn router(
         if name == "one-tap-required-no-mail" {
             verification = verification.send_on_sign_up(false);
         }
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(profile_config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    profile_config,
-                    database.clone(),
-                ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new())
-                .plugin(SessionManagementPlugin::new())
-                .plugin(AdminPlugin::new())
-                .plugin(OrganizationPlugin::new())
-                .plugin(TwoFactorPlugin::new())
-                .plugin(verification)
-                .plugin(oauth)
-                .plugin(OneTapPlugin::with_config(one_tap))
-                .build()
-                .await?,
-        );
+        let mut builder = AuthBuilder::<TestSchema>::new(profile_config.clone())
+            .store(crate::backend::store::<TestSchema>(
+                profile_config,
+                database.clone(),
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new())
+            .plugin(SessionManagementPlugin::new())
+            .plugin(AdminPlugin::new())
+            .plugin(OrganizationPlugin::new())
+            .plugin(TwoFactorPlugin::new())
+            .plugin(verification)
+            .plugin(oauth)
+            .plugin(OneTapPlugin::with_config(one_tap));
+        if name == "one-tap-last-login" {
+            builder = builder.plugin(LastLoginMethodPlugin::new());
+        }
+        let auth = Arc::new(builder.build().await?);
         let server_auth = auth.clone();
         let instance = auth.clone().axum_router().with_state(auth).route(
             "/__test/server-callback",

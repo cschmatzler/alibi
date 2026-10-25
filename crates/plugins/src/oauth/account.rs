@@ -240,7 +240,7 @@ async fn valid_access_token(
     req: &impl AccountRequest,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(OAuthTokenSet, bool)> {
-    let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
+    let provider = config.provider(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
             "Provider {} is not supported.",
             account.provider_id
@@ -385,7 +385,7 @@ pub(super) async fn refresh_token_for_selection(
     selection: OAuthAccountSelection,
 ) -> AuthResult<(OAuthTokenSet, AccountCookiePayload, Vec<String>)> {
     let mut account = selection.resolve(req, user_id, ctx).await?;
-    let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
+    let provider = config.provider(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
             "Provider {} is not supported.",
             account.provider_id
@@ -449,8 +449,7 @@ pub(super) fn refresh_token_body(
     account: &AccountCookiePayload,
 ) -> AuthResult<serde_json::Value> {
     let policy = config
-        .providers
-        .get(&account.provider_id)
+        .provider(&account.provider_id)
         .and_then(|provider| provider.authorization.as_ref());
     let response = RefreshTokenResponse {
         access_token: tokens.access_token.clone(),
@@ -544,8 +543,7 @@ pub(super) async fn account_info_for_selection(
 ) -> AuthResult<(AccountInfoResponse, Vec<String>)> {
     let mut account = selection.resolve(req, user_id, ctx).await?;
     let provider = config
-        .providers
-        .get(&account.provider_id)
+        .provider(&account.provider_id)
         .ok_or(AuthError::Upstream {
             status: 400,
             code: codes::PROVIDER_NOT_CONFIGURED,

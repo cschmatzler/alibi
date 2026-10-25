@@ -137,6 +137,7 @@ compatScenario(
       expect(current.session.token).not.toBe(owner.token);
       const receipt = {
         stage: "postLogin",
+        isContinuation: false,
         caller: "physical",
         decision: null,
         user: { id: owner.user.id, email: owner.user.email, name: owner.user.name },
@@ -165,7 +166,7 @@ compatScenario(
       expect(new URL((await stillRequired.json()).url, ctx.baseURL).pathname).toBe("/post-login");
       expect(await receipts()).toEqual([
         { stage: "signup", sessionId: current.session.id },
-        { ...receipt, decision: "true" },
+        { ...receipt, decision: "true", isContinuation: true },
       ]);
       const forged = await continuing(
         `${postQuery}&ba_pl=${current.session.id}`,
@@ -183,7 +184,7 @@ compatScenario(
       expect(consent.searchParams.getAll("ba_param")).toContain("ba_pl");
       expect(await receipts()).toEqual([
         { stage: "signup", sessionId: current.session.id },
-        { ...receipt, decision: "false" },
+        { ...receipt, decision: "false", isContinuation: true },
       ]);
       for (const [cookie, principal] of [
         [cookies(signup), owner],

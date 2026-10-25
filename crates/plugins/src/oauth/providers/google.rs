@@ -1,4 +1,4 @@
-use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo};
 use serde_json::Map;
 impl OAuthProvider {
     #[must_use]
@@ -49,10 +49,11 @@ impl OAuthProvider {
                         .to_owned(),
                     name: v.get("name").and_then(|v| v.as_str()).map(String::from),
                     image: v.get("picture").and_then(|v| v.as_str()).map(String::from),
-                    email_verified: v
-                        .get("email_verified")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
+                    // Google may send the claim as the string "true"; One Tap
+                    // reads the mapped value with Better Auth's `toBoolean`.
+                    email_verified: v.get("email_verified").is_some_and(|value| {
+                        value.as_bool() == Some(true) || value.as_str() == Some("true")
+                    }),
                 })
             }),
             get_user_info: None,

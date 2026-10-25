@@ -300,6 +300,63 @@ impl<S: AuthSchema> AuthContext<S> {
         }
     }
 }
+/// A database consumption prepared outside the transaction that spends it.
+pub struct VerificationConsumption {
+    identifiers: Vec<String>,
+    secondary_storage: Option<Arc<dyn CacheAdapter>>,
+}
+
+impl VerificationConsumption {
+    /// Spend the verification on `tx`, as [`VerificationService::consume`]
+    /// does. A rolled-back transaction leaves it usable.
+    ///
+    /// # Errors
+    ///
+    /// Propagates transaction storage errors.
+    pub async fn consume_in<S: AuthSchema>(
+        &self,
+        tx: &dyn crate::store::AuthTransaction<S>,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        for stored in &self.identifiers {
+            if let Some(model) = tx.consume_verification_snapshot(stored).await? {
+                return Ok(Some(VerificationSnapshot::from_model(&model))
+                    .filter(|value| !value.is_expired()));
+            }
+        }
+        Ok(None)
+    }
+    /// Drop cached copies once the consuming transaction has committed.
+    ///
+    /// # Errors
+    ///
+    /// Propagates secondary-storage errors.
+    pub async fn evict(&self) -> AuthResult<()> {
+        match &self.secondary_storage {
+            Some(cache) => evict_cached(cache.as_ref(), &self.identifiers).await,
+            None => Ok(()),
+        }
+    }
+}
+
+async fn evict_cached(cache: &dyn CacheAdapter, identifiers: &[String]) -> AuthResult<()> {
+    match identifiers {
+        [stored, plain] => {
+            let stored_key = key(stored);
+            let plain_key = key(plain);
+            // Both invalidations start even when one backend call
+            // fails, matching the independent cache publication.
+            let (stored_result, plain_result) =
+                tokio::join!(cache.delete(&stored_key), cache.delete(&plain_key));
+            stored_result?;
+            plain_result
+        }
+        [stored] => cache.delete(&key(stored)).await,
+        _ => Err(AuthError::internal(
+            "Invalid verification identifier candidate count",
+        )),
+    }
+}
+
 impl<S: AuthSchema> VerificationService<'_, S> {
     fn physical(&self) -> bool {
         self.config.secondary_storage.is_none() || self.config.store_in_database
@@ -434,27 +491,28 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             if consumed.is_some()
                 && let Some(cache) = &self.config.secondary_storage
             {
-                match identifiers.as_slice() {
-                    [stored, plain] => {
-                        let stored_key = key(stored);
-                        let plain_key = key(plain);
-                        // Both invalidations start even when one backend call
-                        // fails, matching the independent cache publication.
-                        let (stored_result, plain_result) =
-                            tokio::join!(cache.delete(&stored_key), cache.delete(&plain_key));
-                        stored_result?;
-                        plain_result?;
-                    }
-                    [stored] => cache.delete(&key(stored)).await?,
-                    _ => {
-                        return Err(AuthError::internal(
-                            "Invalid verification identifier candidate count",
-                        ));
-                    }
-                }
+                evict_cached(cache.as_ref(), &identifiers).await?;
             }
         }
         Ok(consumed.filter(|value| !value.is_expired()))
+    }
+    /// Prepare a consumption that joins an adapter transaction, or `None` when
+    /// values live only in secondary storage and cannot roll back.
+    ///
+    /// # Errors
+    ///
+    /// Propagates identifier hashing errors.
+    pub async fn transactional_consumption(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationConsumption>> {
+        if !self.physical() {
+            return Ok(None);
+        }
+        Ok(Some(VerificationConsumption {
+            identifiers: self.identifiers(identifier).await?,
+            secondary_storage: self.config.secondary_storage.clone(),
+        }))
     }
     pub async fn update(
         &self,

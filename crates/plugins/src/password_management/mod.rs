@@ -1566,5 +1566,55 @@ mod tests {
             "Sessions should be revoked when revoke_sessions_on_password_reset=true"
         );
     }
+
+    // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: "still revokes sessions when onPasswordReset throws".
+    #[tokio::test]
+    async fn failing_reset_callback_runs_after_revocation_and_the_password_write() {
+        let observed = Arc::new(std::sync::Mutex::new(None));
+        let (ctx, user, _session) = create_test_context_with_user().await;
+        let database = Arc::clone(&ctx.database);
+        let user_id = user.id.clone();
+        let seen = Arc::clone(&observed);
+        let callback: Arc<OnPasswordResetCallback> = Arc::new(move |_user_value| {
+            let database = Arc::clone(&database);
+            let user_id = user_id.clone();
+            let seen = Arc::clone(&seen);
+            Box::pin(async move {
+                let sessions = database.get_user_sessions(&user_id).await?;
+                *seen.lock().unwrap() = Some(sessions.len());
+                Err(AuthError::internal("hook failed"))
+            })
+        });
+        let plugin = PasswordManagementPlugin::new()
+            .revoke_sessions_on_password_reset(true)
+            .on_password_reset(callback);
+        let reset_token = create_reset_token(&ctx, &user.id).await;
+        let body = serde_json::json!({ "newPassword": "NewPassword123!", "token": reset_token });
+        let req = test_helpers::create_auth_request_no_query(
+            HttpMethod::Post,
+            "/reset-password",
+            None,
+            Some(body.to_string().into_bytes()),
+        );
+
+        assert!(plugin.handle_reset_password(&req, &ctx).await.is_err());
+        assert_eq!(*observed.lock().unwrap(), Some(0));
+        assert_eq!(
+            ctx.database
+                .get_user_sessions(&user.id)
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+        let hash = crate::helpers::get_credential_account(&ctx, &user.id)
+            .await
+            .unwrap()
+            .and_then(|account| account.password)
+            .unwrap();
+        verify_password(None, "NewPassword123!", &hash)
+            .await
+            .unwrap();
+    }
 }
 // LCOV_EXCL_STOP

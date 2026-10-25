@@ -203,21 +203,20 @@ impl OAuthProviderPlugin {
         // Canonical persistence explicitly clears applicationType; other absent
         // remote fields stay undefined and the initialized adapter filters them out.
         _ = metadata.entry("application_type").or_insert(Value::Null);
-        _ = metadata.insert(
-            "client_credentials_scopes".into(),
-            existing
-                .and_then(|client| client.metadata.get("client_credentials_scopes"))
-                .cloned()
-                .unwrap_or_else(|| json!([])),
-        );
-        if let Some(existing) = existing {
-            for name in ["disabled", "skip_consent", "enable_end_session"] {
+        if existing.is_some() {
+            // Server-owned fields (disabled, consent and logout settings, the
+            // client_credentials ceiling) can change while a refresh fetches
+            // metadata, so the refresh never writes them.
+            for name in [
+                "client_credentials_scopes",
+                "disabled",
+                "skip_consent",
+                "enable_end_session",
+            ] {
                 _ = metadata.remove(name);
-                if let Some(value) = existing.metadata.get(name) {
-                    _ = metadata.insert(name.into(), value.clone());
-                }
             }
         } else {
+            _ = metadata.insert("client_credentials_scopes".into(), json!([]));
             _ = metadata.insert("disabled".into(), json!(false));
             _ = metadata
                 .entry("dpop_bound_access_tokens")

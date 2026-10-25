@@ -129,7 +129,7 @@ impl OAuthPopupPlugin {
         let Some(config) = ctx
             .extensions
             .get::<OAuthConfig>()
-            .filter(|config| config.providers.contains_key(provider))
+            .filter(|config| config.provider(provider).is_some())
         else {
             return fail(
                 "provider_not_found",

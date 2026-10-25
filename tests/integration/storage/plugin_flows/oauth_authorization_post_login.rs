@@ -154,7 +154,7 @@ async fn assert_cases<S: AuthSchema>(
                 calls,
                 vec![
                     json!({"stage":"signup","sessionId":session_id}),
-                    json!({"stage":"postLogin","caller":"physical","decision":decision,"user":{"id":body(owner)["user"]["id"],"email":body(owner)["user"]["email"],"name":body(owner)["user"]["name"]},"session":{"id":session_id,"userId":body(owner)["user"]["id"],"token":body(owner)["token"]},"scopes":["email","email"]})
+                    json!({"stage":"postLogin","isContinuation":false,"caller":"physical","decision":decision,"user":{"id":body(owner)["user"]["id"],"email":body(owner)["user"]["email"],"name":body(owner)["user"]["name"]},"session":{"id":session_id,"userId":body(owner)["user"]["id"],"token":body(owner)["token"]},"scopes":["email","email"]})
                 ]
             );
         }

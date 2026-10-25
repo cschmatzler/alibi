@@ -528,7 +528,7 @@ compatScenario(
 
 for (const mode of ["compromised", "malformed", "provider-error"] as const) {
   compatScenario(
-    `password reset ${mode} burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation`,
+    `password reset ${mode} keeps its genuine proof through hash rejection and preserves credentials sessions and callback isolation`,
     async (ctx) => {
       const other = await foreign(ctx);
       await range(ctx);
@@ -578,40 +578,31 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const) {
               : RETRY_MESSAGE,
       });
 
+      // Since 1.7.12 the token is only looked up before hashing and spent with
+      // the password write, so a rejected password leaves the link usable.
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
-      expect(after.verifications).toEqual(
-        before.verifications.filter((row) => row.id !== proof.id),
-      );
+      expect(after.verifications).toEqual(before.verifications);
       expect(stages(after)).toEqual(["range"]);
 
       receipt(after, password);
-      const replay = await owner.client.resetPassword({ token, newPassword: password });
-      expect(replay.error?.code).toBe("INVALID_TOKEN");
-      expect(await state(ctx)).toEqual(after);
-
       const session = await owner.client.getSession();
       expect(session.data?.user.id).toBe(signup.data!.user.id);
 
-      const clean = await range(ctx);
-      const freshRequest = await owner.client.requestPasswordReset({
-        email,
-        redirectTo: "/pwned-reset",
-      });
-      expect(freshRequest.error).toBeNull();
-
-      const freshState = await state(ctx);
-      const fresh = String(
-        freshState.events.find((event) => event.stage === "reset-delivery")!.token,
-      );
       const clear = await range(ctx, `${suffix(password)}:0`);
-      const accepted = await owner.client.resetPassword({ token: fresh, newPassword: password });
+      const accepted = await owner.client.resetPassword({ token, newPassword: password });
       expect(accepted.error).toBeNull();
 
       const admitted = await state(ctx);
       expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result", "password-reset"]);
+      expect(admitted.verifications).toEqual(
+        before.verifications.filter((row) => row.id !== proof.id),
+      );
+      const replay = await owner.client.resetPassword({ token, newPassword: password });
+      expect(replay.error?.code).toBe("INVALID_TOKEN");
+      expect(await state(ctx)).toEqual(admitted);
 
       receipt(admitted, password);
       expect(admitted.sessions.filter((row) => row.userId === signup.data!.user.id)).toEqual([]);
@@ -630,14 +621,11 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const) {
         before: observed(before),
         rejected,
         after: observed(after),
-        replay,
         session,
-        clean,
-        freshRequest,
-        freshState: observed(freshState),
         clear,
         accepted,
         admitted: observed(admitted),
+        replay,
       };
     },
     ["POST /request-password-reset", "POST /reset-password"],
@@ -891,7 +879,7 @@ compatScenario(
 
 for (const method of ["email-otp", "phone-number"] as const) {
   compatScenario(
-    `compromised ${method} reset consumes actual delivered proof before checking and retains foreign credentials`,
+    `compromised ${method} reset keeps actual delivered proof through rejection and retains foreign credentials`,
     async (ctx) => {
       const other = await foreign(ctx);
       await range(ctx);
@@ -955,28 +943,17 @@ for (const method of ["email-otp", "phone-number"] as const) {
         expect(rejected.body).toMatchObject({ code: "PASSWORD_COMPROMISED" });
       }
 
+      // Since 1.7.12 a matching code is spent only with the password write.
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
-      expect(after.verifications).toHaveLength(before.verifications.length - 1);
+      expect(after.verifications).toEqual(before.verifications);
       expect(stages(after)).toEqual(["range"]);
 
       receipt(after, password);
-      const replay = await reset(issued.proof);
-
-      if ("error" in replay) {
-        expect(replay.error?.status).toBe(400);
-      } else {
-        expect(replay.status).toBe(400);
-      }
-
-      expect(await state(ctx)).toEqual(after);
-
-      const clean = await range(ctx);
-      const fresh = await issue();
       const clear = await range(ctx, `${suffix(password)}:0`);
-      const accepted = await reset(fresh.proof);
+      const accepted = await reset(issued.proof);
 
       if ("error" in accepted) {
         expect(accepted.error).toBeNull();
@@ -986,6 +963,14 @@ for (const method of ["email-otp", "phone-number"] as const) {
 
       const admitted = await state(ctx);
       expect(stages(admitted)).toEqual(["range", "hash-enter", "hash-result", "password-reset"]);
+      expect(admitted.verifications).toHaveLength(before.verifications.length - 1);
+      const replay = await reset(issued.proof);
+
+      if ("error" in replay) {
+        expect(replay.error?.status).toBe(400);
+      } else {
+        expect(replay.status).toBe(400);
+      }
 
       receipt(admitted, password);
       expect(admitted.sessions.filter((row) => row.userId === signup.data!.user.id)).toEqual([]);
@@ -1007,12 +992,10 @@ for (const method of ["email-otp", "phone-number"] as const) {
         before: observed(before),
         rejected,
         after: observed(after),
-        replay,
-        clean,
-        fresh: { ...fresh, state: observed(fresh.state), proof: { token: fresh.proof, length: 6 } },
         clear,
         accepted,
         admitted: observed(admitted),
+        replay,
       };
     },
     [`POST /${method}/reset-password`],
@@ -1020,7 +1003,7 @@ for (const method of ["email-otp", "phone-number"] as const) {
 }
 
 compatScenario(
-  "concurrent compromised reset consumes one physical proof and sends exactly one range request",
+  "concurrent compromised resets keep the physical proof and each send one range request",
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
@@ -1063,20 +1046,24 @@ compatScenario(
     );
     ctx.recordTransport(outcomes.flatMap((outcome) => outcome.entries));
     const results = outcomes.map((outcome) => outcome.result);
+    // Since 1.7.12 neither racer spends the token before its password check.
     expect(results[0]!.error?.code).toBe("PASSWORD_COMPROMISED");
-    expect(results[1]!.error?.code).toBe("INVALID_TOKEN");
+    expect(results[1]!.error?.code).toBe("PASSWORD_COMPROMISED");
 
     const after = await state(ctx);
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
-    expect(after.verifications).toEqual(before.verifications.filter((row) => row.id !== proof.id));
-    expect(stages(after)).toEqual(["range"]);
+    expect(after.verifications).toEqual(before.verifications);
+    expect(stages(after)).toEqual(["range", "range"]);
 
-    receipt(after, password);
+    receipt(after, password, 2);
+    await range(ctx, `${suffix(password)}:0`);
     const replay = await owner.client.resetPassword({ token, newPassword: password });
-    expect(replay.error?.code).toBe("INVALID_TOKEN");
-    expect(await state(ctx)).toEqual(after);
+    expect(replay.error).toBeNull();
+    expect((await state(ctx)).verifications).toEqual(
+      before.verifications.filter((row) => row.id !== proof.id),
+    );
 
     await unchanged(ctx, other);
     return {
@@ -1225,7 +1212,7 @@ compatScenario(
 );
 
 compatScenario(
-  "clean range result preserves real original hash callback rejection after reset proof consumption",
+  "clean range result preserves real original hash callback rejection and keeps the reset proof",
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
@@ -1266,15 +1253,18 @@ compatScenario(
     expect(after.users).toEqual(before.users);
     expect(after.accounts).toEqual(before.accounts);
     expect(after.sessions).toEqual(before.sessions);
-    expect(after.verifications).toEqual(before.verifications.filter((row) => row.id !== proof.id));
+    expect(after.verifications).toEqual(before.verifications);
     expect(stages(after)).toEqual(["range", "hash-enter", "hash-result"]);
 
     receipt(after, password);
     expect(await verifyPassword({ hash: String(after.events[2]!.hash), password })).toBe(true);
 
+    await range(ctx, `${suffix(password)}:0`);
     const replay = await owner.client.resetPassword({ token, newPassword: password });
-    expect(replay.error?.code).toBe("INVALID_TOKEN");
-    expect(await state(ctx)).toEqual(after);
+    expect(replay.error).toBeNull();
+    expect((await state(ctx)).verifications).toEqual(
+      before.verifications.filter((row) => row.id !== proof.id),
+    );
 
     await unchanged(ctx, other);
     return {

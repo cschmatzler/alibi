@@ -151,9 +151,8 @@ pub(super) async fn resolve<S: AuthSchema>(
         .get("issuer")
         .and_then(Value::as_str)
         .ok_or_else(|| AuthError::internal("Invalid discovery issuer"))?;
-    if discovered.strip_suffix('/').unwrap_or(discovered)
-        != issuer.strip_suffix('/').unwrap_or(issuer)
-    {
+    // OIDC Discovery 1.0 section 4.3 requires exact equality, trailing slash included.
+    if discovered != issuer {
         return Err(failure(
             400,
             "issuer_mismatch",

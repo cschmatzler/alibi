@@ -1,4 +1,4 @@
--- Generated from Better Auth 1.7.7 by the schema parity probe.
+-- Generated from Better Auth 1.7.12 by the schema parity probe.
 
 create table "user" ("id" text not null primary key, "name" text not null, "email" text not null unique, "emailVerified" integer not null, "image" text, "createdAt" date not null, "updatedAt" date not null, "role" text, "banned" integer, "banReason" text, "banExpires" date, "isAnonymous" integer, "phoneNumber" text unique, "phoneNumberVerified" integer, "lastLoginMethod" text, "username" text unique, "displayUsername" text, "twoFactorEnabled" integer);
 

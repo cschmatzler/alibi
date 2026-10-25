@@ -79,9 +79,10 @@ compatScenario(
         headers: { "x-custom-session": "error" },
       },
     });
+    // Since 1.7.12 a failed core session read propagates instead of reading as null.
     const coreError = await broken.getSession();
     expect(coreError.data).toBeNull();
-    expect(coreError.error).toBeNull();
+    expect(coreError.error).toMatchObject({ status: 500, code: "FAILED_TO_GET_SESSION" });
     expect(await ctx.readUserState({ userId: alice.data.user.id })).toEqual(before);
 
     const filtered = await client(ctx, "browser", "filtered").getSession();
@@ -159,9 +160,20 @@ compatScenario(
     });
     expect(expire.status).toBe(200);
 
-    const expired = await auth.getSession();
+    // Since 1.7.12 the null read forwards the core read's cookie cleanup.
+    let expiredCookies: string[] = [];
+    const expired = await auth.getSession({
+      fetchOptions: {
+        onResponse(context) {
+          expiredCookies = context.response.headers.getSetCookie();
+        },
+      },
+    });
     expect(expired.error).toBeNull();
     expect(expired.data).toBeNull();
+    expect(expiredCookies.some((cookie) => cookie.startsWith("better-auth.session_token=;"))).toBe(
+      true,
+    );
 
     const logout = await auth.signOut();
     expect(logout.error).toBeNull();

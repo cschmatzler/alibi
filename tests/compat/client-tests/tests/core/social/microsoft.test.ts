@@ -2,7 +2,7 @@ import { readFile as readFixtureFile } from "node:fs/promises";
 
 import { expect } from "vitest";
 
-import { credential, issuedAt } from "../../../support/id-token";
+import { credential, issuedAt, signedRawToken } from "../../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
@@ -59,6 +59,7 @@ async function proof(ctx: ScenarioContext, claims: Row = {}, header: Row = {}, w
       tid: "fixture-tenant",
       aud: "fixture-social-client",
       oid: ctx.uniqueToken("microsoft-subject"),
+      sub: ctx.uniqueToken("microsoft-pairwise-subject"),
       email: ctx.uniqueEmail("microsoft"),
       email_verified: true,
       name: "Microsoft JWT Name",
@@ -430,6 +431,59 @@ for (const variant of [
         stored,
         receipts: await receipts(ctx),
       };
+    },
+    ["POST /sign-in/social"],
+  );
+}
+
+for (const variant of ["keys-without-alg", "pinned-algorithm"] as const) {
+  compatScenario(
+    `microsoft signed ${variant} verification imports keys as RS256 and pins the token algorithm`,
+    async (ctx) => {
+      const other = await foreign(ctx);
+      const keys = JSON.parse(
+        await readFixtureFile(
+          new URL("../../../../../fixtures/one-tap/jwks.json", import.meta.url),
+          "utf8",
+        ),
+      ) as { keys: Row[] };
+      await control(ctx, { keys: { keys: keys.keys.map(({ alg: _alg, ...key }) => key) } });
+      const claims = {
+        tid: "fixture-tenant",
+        iss: ctx.baseURL + "/fixture-tenant/v2.0",
+        aud: "fixture-social-client",
+        oid: ctx.uniqueToken("microsoft-subject"),
+        sub: ctx.uniqueToken("microsoft-pairwise-subject"),
+        email: ctx.uniqueEmail("microsoft"),
+        email_verified: true,
+        name: "Microsoft JWT Name",
+      };
+      const token =
+        variant === "pinned-algorithm"
+          ? signedRawToken(
+              claims,
+              { alg: "RS384", kid: "one-tap-local-rs256", typ: "JWT" },
+              "RSA-SHA384",
+            )
+          : await proof(ctx, claims);
+      const actor = ctx.actor("microsoft", "social-microsoft-public");
+      const result = await actor.client.signIn.social({
+        provider: "microsoft",
+        idToken: { token },
+      });
+      const stored = await state(ctx);
+      const requests = (await receipts(ctx)).map((row) => row.path);
+      if (variant === "pinned-algorithm") {
+        expect(result.error?.code).toBe("INVALID_TOKEN");
+        expect(stored).toEqual(other.before);
+        expect(requests).toEqual([]);
+      } else {
+        expect(result.error).toBeNull();
+        unchangedForeign(other.before, stored);
+        expect(stored.users).toHaveLength(other.before.users.length + 1);
+        expect(requests).toEqual(["/common/discovery/v2.0/keys"]);
+      }
+      return { result: ctx.snapshot(result), before: other.before, stored, requests };
     },
     ["POST /sign-in/social"],
   );
@@ -843,12 +897,7 @@ for (const variant of [
   );
 }
 
-for (const variant of [
-  "missing-key",
-  "missing-algorithm",
-  "mismatched-algorithm",
-  "first-duplicate-import",
-] as const) {
+for (const variant of ["missing-key", "mismatched-algorithm", "first-duplicate-import"] as const) {
   compatScenario(
     `microsoft selected JWK ${variant} rejects genuine signed admission at configured trusted tenant`,
     async (ctx) => {
@@ -860,7 +909,6 @@ for (const variant of [
         ),
       );
       const key = { ...jwks.keys[0] };
-      if (variant === "missing-algorithm") delete key.alg;
       if (variant === "mismatched-algorithm") key.alg = "RS384";
       await control(ctx, {
         keys: {

@@ -29,18 +29,25 @@ pub struct OAuthProviderRateLimits {
     pub register: OAuthEndpointRateLimit,
     /// Defaults to 60 requests per 60 seconds, shared by GET and POST.
     pub userinfo: OAuthEndpointRateLimit,
+    /// Defaults to 5 requests per 60 seconds.
+    pub rotate_client_keys: OAuthEndpointRateLimit,
 }
 
 type RoutePolicy<'a> = (fn(&str) -> bool, &'a OAuthEndpointRateLimit, f64);
 
 impl OAuthProviderRateLimits {
     pub(super) fn rules(&self) -> Vec<PluginRateLimit> {
-        let routes: [RoutePolicy<'_>; 6] = [
+        let routes: [RoutePolicy<'_>; 7] = [
             (|path| path == "/oauth2/token", &self.token, 20.0),
             (|path| path == "/oauth2/authorize", &self.authorize, 30.0),
             (|path| path == "/oauth2/introspect", &self.introspect, 100.0),
             (|path| path == "/oauth2/revoke", &self.revoke, 30.0),
             (|path| path == "/oauth2/register", &self.register, 5.0),
+            (
+                |path| path == "/oauth2/client/rotate-keys",
+                &self.rotate_client_keys,
+                5.0,
+            ),
             (|path| path == "/oauth2/userinfo", &self.userinfo, 60.0),
         ];
         routes

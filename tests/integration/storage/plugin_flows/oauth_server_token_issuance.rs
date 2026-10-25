@@ -384,18 +384,9 @@ async fn oauth_jwt_introspection_uses_live_resource_peer_authority<B: Backend>(
         parts[1],
         URL_SAFE_NO_PAD.encode(signature)
     );
-    let failure=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":tampered,"token_type_hint":"access_token"}))?,EndpointOptions::default())).await.unwrap_err();
-    assert_eq!(failure.error.status_code(), 500);
-    assert!(failure.body_absent);
-    assert!(
-        failure
-            .headers
-            .as_ref()
-            .unwrap()
-            .iter()
-            .any(|(name, value)| name.eq_ignore_ascii_case("content-type")
-                && value == "application/json")
-    );
+    // A JWT that fails verification is reported like any unknown token.
+    let failure=Box::pin(auth.dispatch_endpoint(OAuthProviderPlugin::oauth2_introspect_endpoint(&json!({"client_id":clients[0]["client_id"],"client_secret":clients[0]["client_secret"],"token":tampered,"token_type_hint":"access_token"}))?,EndpointOptions::default())).await?;
+    assert_eq!(failure.value().to_json_value()?, json!({"active":false}));
     let unlinked = Box::pin(
         auth.dispatch_endpoint(
             ServerEndpoint::<Value>::new("oauth-provider", "adminUnlinkClientResource")

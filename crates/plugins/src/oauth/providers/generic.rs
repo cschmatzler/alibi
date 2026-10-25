@@ -7,16 +7,22 @@ use super::{
     OAuthScopeOrder, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
     OAuthUserInfoResponse,
 };
+use crate::oauth::id_token::{CLOCK_TOLERANCE_SECS, REQUIRED_CLAIMS};
 use crate::oauth::{HttpOAuthJwksSource, OAuthJwksSource};
 use async_trait::async_trait;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey};
 use serde_json::Map;
 use serde_json::Value;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
+use std::time::Duration;
 
 /// Discovery is an operator-configured authority, never a request-selected URL.
-/// Resolve once before registering the provider with `OAuthPlugin`.
+/// Resolve once before registering the provider with `OAuthPlugin`, or register
+/// the configuration with `OAuthPlugin::add_generic_provider` to retry discovery
+/// that fails at startup.
+#[derive(Clone)]
 pub struct GenericOAuthConfig {
     pub provider: OAuthProvider,
     pub discovery_url: Option<String>,
@@ -117,11 +123,17 @@ impl GenericOAuthConfig {
     }
     /// Failed discovery falls back to configured endpoints. `Ok(None)` skips an
     /// unusable discovered provider, as the published initialization does.
-    pub async fn resolve(mut self) -> Result<Option<GenericOAuthResolved>, GenericOAuthError> {
+    pub async fn resolve(self) -> Result<Option<GenericOAuthResolved>, GenericOAuthError> {
+        self.resolve_within(None).await
+    }
+    async fn resolve_within(
+        mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<GenericOAuthResolved>, GenericOAuthError> {
         let mut metadata = GenericOAuthMetadata::default();
         let mut is_oidc = false;
         let discovered = if let Some(url) = &self.discovery_url {
-            fetch_discovery(url, &self.discovery_headers).await
+            fetch_discovery(url, &self.discovery_headers, timeout).await
         } else {
             None
         };
@@ -252,11 +264,67 @@ impl GenericOAuthConfig {
         }))
     }
 }
+/// A request waits on a discovery retry, so bound it.
+const DISCOVERY_RETRY_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// A generic provider skipped because its startup discovery left it unusable.
+pub(crate) struct DeferredDiscovery {
+    config: GenericOAuthConfig,
+    provider: OnceLock<OAuthProvider>,
+    attempts: AtomicU64,
+    attempt: tokio::sync::Mutex<()>,
+}
+impl Clone for DeferredDiscovery {
+    fn clone(&self) -> Self {
+        let clone = Self::new(self.config.clone());
+        if let Some(provider) = self.provider.get() {
+            _ = clone.provider.set(provider.clone());
+        }
+        clone
+    }
+}
+impl DeferredDiscovery {
+    pub(crate) fn new(config: GenericOAuthConfig) -> Self {
+        Self {
+            config,
+            provider: OnceLock::new(),
+            attempts: AtomicU64::new(0),
+            attempt: tokio::sync::Mutex::new(()),
+        }
+    }
+    pub(crate) fn provider(&self) -> Option<&OAuthProvider> {
+        self.provider.get()
+    }
+    pub(crate) async fn retry(&self) {
+        let seen = self.attempts.load(Ordering::SeqCst);
+        let _attempt = self.attempt.lock().await;
+        // A request that waited on another request's attempt shares its outcome.
+        if self.provider.get().is_some() || self.attempts.load(Ordering::SeqCst) != seen {
+            return;
+        }
+        if let Ok(Some(resolved)) = self
+            .config
+            .clone()
+            .resolve_within(Some(DISCOVERY_RETRY_TIMEOUT))
+            .await
+        {
+            _ = self.provider.set(resolved.provider);
+        }
+        _ = self.attempts.fetch_add(1, Ordering::SeqCst);
+    }
+}
 fn string(value: &Value, key: &str) -> Option<String> {
     value.get(key).and_then(Value::as_str).map(str::to_owned)
 }
-async fn fetch_discovery(url: &str, headers: &[(String, String)]) -> Option<Value> {
+async fn fetch_discovery(
+    url: &str,
+    headers: &[(String, String)],
+    timeout: Option<Duration>,
+) -> Option<Value> {
     let mut request = reqwest::Client::new().get(url);
+    if let Some(timeout) = timeout {
+        request = request.timeout(timeout);
+    }
     for (key, value) in headers {
         request = request.header(key, value);
     }
@@ -491,7 +559,11 @@ impl DiscoveryVerifier {
                 .ok()?,
         )
         .ok()?;
-        if claims.get("iss").and_then(Value::as_str) != Some(self.issuer.as_str()) {
+        if REQUIRED_CLAIMS
+            .iter()
+            .any(|claim| claims.get(claim).is_none())
+            || claims.get("iss").and_then(Value::as_str) != Some(self.issuer.as_str())
+        {
             return Some(false);
         }
         let audience = claims.get("aud")?;
@@ -512,12 +584,12 @@ impl DiscoveryVerifier {
             .ok()?
             .as_secs_f64();
         if let Some(exp) = claims.get("exp")
-            && exp.as_f64()? <= now
+            && exp.as_f64()? <= now - CLOCK_TOLERANCE_SECS
         {
             return Some(false);
         }
         if let Some(nbf) = claims.get("nbf")
-            && nbf.as_f64()? > now
+            && nbf.as_f64()? > now + CLOCK_TOLERANCE_SECS
         {
             return Some(false);
         }

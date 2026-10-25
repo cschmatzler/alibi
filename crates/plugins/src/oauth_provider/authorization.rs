@@ -26,6 +26,8 @@ struct AuthorizationAdmission {
 pub(super) struct AuthorizationSettings {
     pub initial: bool,
     pub post_login_cleared_for_session: Option<String>,
+    /// The user returned from the post-login page through `/oauth2/continue`.
+    pub post_login_continuation: bool,
 }
 impl<R: SessionRequest> SessionRequest for AuthorizationRequest<'_, R> {
     fn endpoint_call(&self) -> Option<&alibi_core::endpoint::EndpointCall> {
@@ -380,7 +382,7 @@ impl OAuthProviderPlugin {
                 &error_url(
                     &server_error,
                     "invalid_client",
-                    "client_id is required",
+                    "client not found",
                     None,
                     None,
                 )?,
@@ -665,6 +667,7 @@ impl OAuthProviderPlugin {
                     user: &user,
                     session,
                     scopes: &scopes,
+                    is_continuation: settings.post_login_continuation,
                 })
                 .await
                 .map_err(|error| {
@@ -720,13 +723,10 @@ impl OAuthProviderPlugin {
                 .into_iter()
                 .find(|consent| {
                     consent.client_id == client_id
-                        && reference_id
-                            .as_deref()
-                            .filter(|id| !id.is_empty())
-                            .is_none_or(|id| {
-                                consent.metadata.get("referenceId").and_then(Value::as_str)
-                                    == Some(id)
-                            })
+                        && super::post_login::consent_matches_reference(
+                            &consent.metadata,
+                            reference_id.as_deref(),
+                        )
                 })
                 .is_some_and(|consent| {
                     requested_user_info_claims.iter().all(|name| {

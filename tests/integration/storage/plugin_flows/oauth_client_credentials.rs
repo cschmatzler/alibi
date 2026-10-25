@@ -55,7 +55,7 @@ async fn oauth_client_credentials_issues_unbound_scope_limited_access<B: Backend
         (
             json!({"grant_type":"client_credentials","client_id":"missing","client_secret":secret}),
             "invalid_client",
-            "missing client",
+            "client not found",
         ),
         (
             json!({"grant_type":"client_credentials","client_id":id,"client_secret":"wrong"}),

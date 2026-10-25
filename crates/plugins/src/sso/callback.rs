@@ -344,9 +344,17 @@ impl SsoPlugin {
                 id: text("id", "sub")
                     .filter(|value| !value.is_empty())
                     .ok_or_else(|| AuthError::internal("missing_user_info"))?,
-                email: text("email", "email")
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| AuthError::internal("missing_user_info"))?,
+                // Some IdPs send a list of addresses, such as Azure AD B2C's `emails`.
+                email: match profile.get(field("email", "email")) {
+                    Some(Value::Array(values)) => values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .find(|value| !value.is_empty()),
+                    value => value.and_then(Value::as_str),
+                }
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+                .ok_or_else(|| AuthError::internal("missing_user_info"))?,
                 name: text("name", "name"),
                 image: text("image", "picture"),
                 email_verified: self.config.trust_email_verified

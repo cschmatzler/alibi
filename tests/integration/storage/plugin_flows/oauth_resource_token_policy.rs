@@ -234,6 +234,9 @@ async fn configured_resource_lifecycle<B: Backend>(connection: &B::Connection) -
         let extra = [
             format!("urn:fixture:{mode:?}"),
             format!("http://api.fixture.test/{mode:?}"),
+        ];
+        // Seeded identifiers follow the token endpoint's `resource` rules.
+        let rejected = [
             format!("javascript:seed-{mode:?}"),
             format!("{identifier}/empty-fragment#"),
         ];
@@ -245,7 +248,7 @@ async fn configured_resource_lifecycle<B: Backend>(connection: &B::Connection) -
             json!({"identifier":duplicate,"name":"First","accessTokenTtl":10,"refreshTokenTtl":20,"signingAlgorithm":"RS256","signingKeyId":"configured-key","allowedScopes":["profile"],"customClaims":{"first":true},"dpopBoundAccessTokensRequired":true,"disabled":true,"metadata":{"first":true},"policyVersion":99}),
             json!({"identifier":duplicate,"name":"Last","allowedScopes":[],"customClaims":null,"metadata":null}),
         ]);
-        resources.extend(extra.iter().map(|id| json!(id)));
+        resources.extend(extra.iter().chain(&rejected).map(|id| json!(id)));
         resources.extend([json!("relative"), json!(format!("{identifier}#fragment"))]);
         let provider = OAuthProviderPlugin::with_config(config(resources));
         let auth = super::auth_probe::fast_builder::<B>(connection)
@@ -282,6 +285,9 @@ async fn configured_resource_lifecycle<B: Backend>(connection: &B::Connection) -
             assert_eq!(row.metadata["policyVersion"], 1);
         }
         assert!(auth.store().get_oauth_resource("relative").await?.is_none());
+        for id in &rejected {
+            assert!(auth.store().get_oauth_resource(id).await?.is_none(), "{id}");
+        }
         assert!(
             auth.store()
                 .get_oauth_resource(&format!("{identifier}#fragment"))

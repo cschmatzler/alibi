@@ -380,6 +380,9 @@ pub(crate) async fn router(
         "registration-scopes-default-only",
         "registration-scopes-union",
         "registration-scopes-allowed-fallback",
+        "registration-application-infer",
+        "registration-application-native",
+        "registration-key-rotation",
         "prelogin",
         "expired",
         "resources-open",
@@ -488,6 +491,16 @@ pub(crate) async fn router(
         if mode=="claims-opaque" {provider.extensions=extension_claims::extensions_with_live(Some(live_claims.clone()));}
         if mode=="response-fields" {provider.custom_token_response_fields=Some(response_fields.clone());provider.disable_jwt_plugin=true;}
         if mode=="issuance-expiry" {provider=issuance_expiry_config();}
+        if matches!(mode, "registration-application-infer" | "registration-application-native" | "registration-key-rotation") {
+            provider.allow_dynamic_client_registration=true;
+            provider.allow_unauthenticated_client_registration=true;
+            provider.client_registration_default_application_type=match mode {
+                "registration-application-infer"=>alibi::plugins::OAuthClientRegistrationApplicationType::Infer,
+                "registration-application-native"=>alibi::plugins::OAuthClientRegistrationApplicationType::Native,
+                _=>alibi::plugins::OAuthClientRegistrationApplicationType::Web,
+            };
+            provider.allow_client_key_rotation=mode=="registration-key-rotation";
+        }
         if mode.starts_with("registration-scopes-") {
             if mode=="registration-scopes-custom-provider" {provider.scopes=vec!["email".into(),"profile".into(),"openid".into(),"email".into(),String::new()];}
             provider.allow_dynamic_client_registration=true;
