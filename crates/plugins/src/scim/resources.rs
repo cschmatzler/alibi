@@ -671,7 +671,6 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        use alibi_core::AuthUser;
         if let Some(detail) =
             super::user_input::validation_error(call.body().unwrap_or(&JsValue::Null))
         {
