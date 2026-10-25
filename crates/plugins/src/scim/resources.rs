@@ -529,6 +529,12 @@ impl ScimPlugin {
         let cid = connection.id;
         let domain = connection.domain;
         let id = id.to_owned();
+        let retry_id = id.clone();
+        let retry_connection = cid.clone();
+        // The keys the update tried to claim, so a storage failure can be
+        // rechecked against committed state.
+        let attempted = std::sync::Arc::new(std::sync::Mutex::new(None));
+        let tried = attempted.clone();
         let key = scoped_key(&["scim-connection", &cid])?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
@@ -543,6 +549,12 @@ impl ScimPlugin {
                         return Ok(locked.source);
                     };
                     let attributes = profile.prepare(&cid)?;
+                    if let Ok(mut keys) = attempted.lock() {
+                        *keys = Some((
+                            attributes.user_name_key.clone(),
+                            attributes.external_id_key.clone(),
+                        ));
+                    }
                     database
                         .check_scim_user_attributes(&id, &cid, &attributes)
                         .await?;
@@ -628,7 +640,16 @@ impl ScimPlugin {
                     None,
                 ));
             }
-            Err(error) => return Err(error),
+            Err(cause) => {
+                let keys = tried.lock().ok().and_then(|keys| keys.clone());
+                if let Some(keys) = keys
+                    && let Some(response) =
+                        committed_key_conflict(ctx, &retry_connection, &retry_id, &keys).await?
+                {
+                    return Ok(response);
+                }
+                return Err(cause);
+            }
         };
         let location = resource_url(
             &format!(
@@ -698,6 +719,42 @@ impl ScimPlugin {
             }) => return Ok(error(status, &message, None)),
             Err(error) => return Err(error),
         };
+        let source = match self
+            .replace_in_place(ctx, &connection, id, attributes, profile, false)
+            .await?
+        {
+            Ok(source) => source,
+            Err(response) => return Ok(*response),
+        };
+        let location = resource_url(
+            &format!(
+                "{}{}",
+                ctx.config.base_url.trim_end_matches('/'),
+                ctx.config.base_path.trim_end_matches('/')
+            ),
+            "Users",
+            &source.id,
+        )?;
+        Ok(
+            EndpointResponse::json(&Self::render_user(ctx, source, &projection)?)?
+                .with_header("location", location)
+                .with_header(MARKER, "1"),
+        )
+    }
+    /// Replace a SCIM User's writable state in place, keeping its resource ID
+    /// and Better Auth User link. `reprovision` requires the locked source to be
+    /// the inactive owner of the submitted `externalId`.
+    #[allow(clippy::too_many_arguments)]
+    async fn replace_in_place<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        connection: &ResolvedConnection,
+        id: &str,
+        attributes: alibi_core::store::ScimUserAttributes,
+        profile: super::user_profile::Profile,
+        reprovision: bool,
+    ) -> AuthResult<Result<alibi_core::store::ScimUserRecord, Box<EndpointResponse>>> {
+        use alibi_core::AuthUser;
         for (field, key, label) in [
             (
                 "userNameKey",
@@ -716,11 +773,11 @@ impl ScimPlugin {
                     .list_scim_users(&connection.id, &[(field.into(), key)], 0, 1)
                     .await?;
                 if existing.users.iter().any(|source| source.id != id) {
-                    return Ok(error(
+                    return Ok(Err(Box::new(error(
                         409,
                         &format!("SCIM User {label} already exists"),
                         Some("uniqueness"),
-                    ));
+                    ))));
                 }
             }
         }
@@ -731,8 +788,13 @@ impl ScimPlugin {
         let identity = ctx
             .extensions
             .get::<super::projection::ScimIdentityHandle<S>>();
-        let cid = connection.id;
-        let domain = connection.domain;
+        let retry_id = id.to_owned();
+        let retry_keys = (
+            attributes.user_name_key.clone(),
+            attributes.external_id_key.clone(),
+        );
+        let cid = connection.id.clone();
+        let domain = connection.domain.clone();
         let id = id.to_owned();
         let key = scoped_key(&["scim-connection", &cid])?;
         let result =
@@ -742,6 +804,16 @@ impl ScimPlugin {
                     let locked = database
                         .lock_scim_user(&id, &cid, &domain, Some(&attributes), now)
                         .await?;
+                    // A reprovisioned source must still be inactive under the same
+                    // externalId; an active owner keeps it unique.
+                    if reprovision
+                        && (locked.source.active
+                            || locked.source.external_id != attributes.external_id)
+                    {
+                        return Err(user_uniqueness(
+                            "SCIM User externalId already exists",
+                        ));
+                    }
                     if locked.manage_profile {
                         let user =
                             database
@@ -813,33 +885,28 @@ impl ScimPlugin {
                 status,
                 code,
                 message,
-            }) => return Ok(error(status, &message, code.as_deref())),
+            }) => return Ok(Err(Box::new(error(status, &message, code.as_deref())))),
+            Err(cause) if !matches!(cause, AuthError::CallbackFailure(_)) => {
+                return match committed_key_conflict(ctx, &connection.id, &retry_id, &retry_keys)
+                    .await?
+                {
+                    Some(response) => Ok(Err(Box::new(response))),
+                    None => Err(cause),
+                };
+            }
             Err(AuthError::CallbackFailure(cause)) => {
-                return Ok(error(
+                return Ok(Err(Box::new(error(
                     500,
                     match cause.as_ref() {
                         AuthError::Api { message, .. } => message,
                         _ => "SCIM identity reconciliation failed",
                     },
                     None,
-                ));
+                ))));
             }
             Err(error) => return Err(error),
         };
-        let location = resource_url(
-            &format!(
-                "{}{}",
-                ctx.config.base_url.trim_end_matches('/'),
-                ctx.config.base_path.trim_end_matches('/')
-            ),
-            "Users",
-            &source.id,
-        )?;
-        Ok(
-            EndpointResponse::json(&Self::render_user(ctx, source, &projection)?)?
-                .with_header("location", location)
-                .with_header(MARKER, "1"),
-        )
+        Ok(Ok(source))
     }
     pub(super) async fn create_user<S: AuthSchema>(
         &self,
@@ -893,6 +960,49 @@ impl ScimPlugin {
         };
         let name_key = attributes.user_name_key.clone();
         let external_key = attributes.external_id_key.clone();
+        // An inactive SCIM User that owns the submitted externalId is
+        // reprovisioned in place without consulting the identity resolver.
+        if let Some(key) = &external_key
+            && let Some(retained) = ctx
+                .database
+                .list_scim_users(&connection.id, &[("externalIdKey".into(), key.clone())], 0, 1)
+                .await?
+                .users
+                .into_iter()
+                .next()
+            && !retained.active
+        {
+            if retained.provisioning_domain_id != connection.domain {
+                return Ok(error(
+                    409,
+                    "The connection provisioningDomainId changed after resources were created",
+                    None,
+                ));
+            }
+            let source = match self
+                .replace_in_place(ctx, &connection, &retained.id, attributes, profile, true)
+                .await?
+            {
+                Ok(source) => source,
+                Err(response) => return Ok(*response),
+            };
+            let location = resource_url(
+                &format!(
+                    "{}{}",
+                    ctx.config.base_url.trim_end_matches('/'),
+                    ctx.config.base_path.trim_end_matches('/')
+                ),
+                "Users",
+                &source.id,
+            )?;
+            return Ok(
+                EndpointResponse::json(&Self::render_user(ctx, source, &projection)?)?
+                    .with_status(201)
+                    .with_header("location", location.clone())
+                    .with_header("content-location", location)
+                    .with_header(MARKER, "1"),
+            );
+        }
         for (field, value, label) in [
             ("userNameKey", Some(name_key.clone()), "userName"),
             ("externalIdKey", external_key.clone(), "externalId"),
@@ -2466,6 +2576,37 @@ fn patch_body(
     }
 }
 
+/// Recheck a failed User write against committed state, so a concurrent
+/// `userName` or `externalId` claim surfaces as SCIM uniqueness instead of a
+/// storage error.
+async fn committed_key_conflict<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    connection: &str,
+    id: &str,
+    (user_name_key, external_id_key): &(String, Option<String>),
+) -> AuthResult<Option<EndpointResponse>> {
+    for (field, key, label) in [
+        ("userNameKey", Some(user_name_key), "userName"),
+        ("externalIdKey", external_id_key.as_ref(), "externalId"),
+    ] {
+        if let Some(key) = key
+            && ctx
+                .database
+                .list_scim_users(connection, &[(field.into(), key.clone())], 0, 1)
+                .await?
+                .users
+                .iter()
+                .any(|source| source.id != id)
+        {
+            return Ok(Some(error(
+                409,
+                &format!("SCIM User {label} already exists"),
+                Some("uniqueness"),
+            )));
+        }
+    }
+    Ok(None)
+}
 fn user_uniqueness(detail: &str) -> AuthError {
     AuthError::Api {
         status: 409,
