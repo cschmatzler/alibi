@@ -290,15 +290,13 @@ compatScenario(
       (await authorizeResource({ cookie: secondCookie }, "none")).searchParams.has("code"),
     ).toBe(true);
     const fallbackReferences = [];
+    // Without a reference, only consent given without one applies, so
+    // referenced consent does not satisfy a silent authorization.
     for (const fallback of ["", undefined]) {
       await choose(fallback);
       const target = await authorizeResource({ cookie }, "none");
-      expect(target.searchParams.has("code")).toBe(true);
-      const grant = (await (
-        await control({ action: "grant-row", token: target.searchParams.get("code") })
-      ).json()) as any;
-      expect(grant.value.referenceId).toBe(fallback);
-      fallbackReferences.push(grant.value.referenceId ?? null);
+      expect(target.searchParams.get("error")).toBe("consent_required");
+      fallbackReferences.push(target.searchParams.get("error"));
     }
     // Management endpoints use user ownership, irrespective of selected reference.
     await choose("team-b");
@@ -400,7 +398,8 @@ compatScenario(
     expect(
       (await authorizeResource({ cookie: foreignCookie }, "none")).searchParams.get("error"),
     ).toBe("consent_required");
-    // A falsy selection updates the first row without overwriting its reference.
+    // A falsy selection stores its own unreferenced consent and leaves the
+    // referenced rows alone.
     for (const fallback of ["", undefined]) {
       await choose(fallback);
       const accepted = await control({
@@ -412,11 +411,11 @@ compatScenario(
       const persisted = (await (
         await control({ action: "consent-row", clientId: id })
       ).json()) as any[];
-      expect(persisted).toHaveLength(2);
+      expect(persisted).toHaveLength(3);
+      expect(persisted.filter((row) => !row.referenceId)).toHaveLength(1);
       expect(persisted.find((row) => row.id === a.id)).toMatchObject({
         referenceId: "team-a",
-        resources: [resource],
-        scopes: ["email", "profile"],
+        scopes: ["email"],
       });
     }
     // Accepted UserInfo claims are bound to the selected consent, not borrowed
@@ -471,7 +470,7 @@ compatScenario(
       if (claim === "name") expect(target.searchParams.get("error")).toBe("consent_required");
       claimDecisions.push({ claim, error: target.searchParams.get("error") });
     }
-    // A fresh empty reference is persisted as empty, not treated as undefined.
+    // An empty reference is the same as no reference.
     await choose("", foreignSession.session.id);
     const emptyAccept = await control({
       action: "consent",
@@ -483,7 +482,7 @@ compatScenario(
       await control({ action: "consents", headers: { cookie: foreignCookie } })
     ).json()) as any[];
     expect(foreignConsents).toHaveLength(1);
-    expect(foreignConsents[0].referenceId).toBe("");
+    expect(foreignConsents[0].referenceId ?? null).toBe(null);
     await choose(undefined, foreignSession.session.id);
     expect(
       (
@@ -500,11 +499,16 @@ compatScenario(
           await control({ action: "consents", headers: { cookie: foreignCookie } })
         ).json()) as any[]
       )[0],
-    ).toMatchObject({ id: foreignConsents[0].id, referenceId: "" });
+    ).toMatchObject({ id: foreignConsents[0].id });
     const listed = (await (
       await control({ action: "consents", headers: { cookie } })
     ).json()) as any[];
-    expect(listed.map((row) => row.referenceId).sort()).toEqual(["team-a", "team-b"]);
+    expect(
+      listed
+        .map((row) => row.referenceId)
+        .filter(Boolean)
+        .sort(),
+    ).toEqual(["team-a", "team-b"]);
     const removed = await control({
       action: "consent-delete",
       headers: { cookie },
@@ -512,9 +516,9 @@ compatScenario(
     });
     expect(removed.status).toBe(200);
     expect(
-      ((await (await control({ action: "consents", headers: { cookie } })).json()) as any[]).map(
-        (row) => row.id,
-      ),
+      ((await (await control({ action: "consents", headers: { cookie } })).json()) as any[])
+        .filter((row) => row.referenceId)
+        .map((row) => row.id),
     ).toEqual([b.id]);
     return ctx.snapshot({
       authorizationSession: session,

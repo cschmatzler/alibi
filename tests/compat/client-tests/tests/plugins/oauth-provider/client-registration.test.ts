@@ -1077,3 +1077,122 @@ compatScenario(
     };
   },
 );
+compatScenario(
+  "Dynamic registration keeps mutually supported grants and applies the default application type",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: unknown) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    const results = [];
+    for (const [mode, body, status] of [
+      [
+        "public",
+        {
+          redirect_uris: ["https://app.fixture.test/callback"],
+          token_endpoint_auth_method: "none",
+          grant_types: [
+            "authorization_code",
+            "refresh_token",
+            "urn:ietf:params:oauth:grant-type:jwt-bearer",
+          ],
+        },
+        201,
+      ],
+      [
+        "public",
+        {
+          redirect_uris: ["https://app.fixture.test/callback"],
+          token_endpoint_auth_method: "none",
+          grant_types: ["urn:ietf:params:oauth:grant-type:jwt-bearer", "implicit"],
+        },
+        400,
+      ],
+      ["public", { redirect_uris: ["cursor://anysphere.cursor-mcp/oauth/callback"] }, 400],
+      [
+        "public",
+        {
+          application_type: "native",
+          token_endpoint_auth_method: "none",
+          redirect_uris: [
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+            "com.example.app:/callback",
+          ],
+        },
+        201,
+      ],
+      [
+        "public",
+        {
+          application_type: "native",
+          token_endpoint_auth_method: "none",
+          redirect_uris: ["cursor://anysphere.cursor-mcp"],
+        },
+        400,
+      ],
+      [
+        "public",
+        {
+          application_type: "native",
+          token_endpoint_auth_method: "none",
+          redirect_uris: ["wss://socket.fixture.test/callback"],
+        },
+        400,
+      ],
+      [
+        "registration-application-infer",
+        {
+          token_endpoint_auth_method: "none",
+          redirect_uris: [
+            "cursor://anysphere.cursor-mcp/oauth/callback",
+            "http://127.0.0.1:33418/",
+          ],
+        },
+        201,
+      ],
+      [
+        "registration-application-infer",
+        { token_endpoint_auth_method: "none", redirect_uris: ["http://localhost:8123/callback"] },
+        201,
+      ],
+      [
+        "registration-application-infer",
+        {
+          token_endpoint_auth_method: "none",
+          redirect_uris: ["https://app.fixture.test/callback"],
+        },
+        201,
+      ],
+      [
+        "registration-application-infer",
+        {
+          application_type: "web",
+          token_endpoint_auth_method: "none",
+          redirect_uris: ["cursor://anysphere.cursor-mcp/oauth/callback"],
+        },
+        400,
+      ],
+      [
+        "registration-application-native",
+        {
+          token_endpoint_auth_method: "none",
+          redirect_uris: ["https://app.fixture.test/callback"],
+        },
+        201,
+      ],
+    ] as const) {
+      const response = await control({ action: "register", mode, body });
+      expect(response.status, JSON.stringify(body)).toBe(status);
+      const value = (await response.json()) as any;
+      const row =
+        response.status === 201
+          ? await (await control({ action: "row", clientId: value.client_id })).json()
+          : null;
+      results.push({ mode, status: response.status, value, row });
+    }
+    return ctx.snapshot({ results });
+  },
+);

@@ -149,6 +149,7 @@ for (const [explicitRefresh, customHash, serverValidation] of [
           ["expired", { exp: now - 10 }],
           ["issuer", { iss: "https://foreign.test" }],
           ["future", { nbf: now + 90 }],
+          ["string-exp", { exp: String(now + 60) }],
           ["audience", { aud: "https://foreign.test" }],
           ["missing-client", { azp: "missing-client" }],
           ["no-sub", { sub: undefined }],
@@ -201,10 +202,15 @@ for (const [explicitRefresh, customHash, serverValidation] of [
               action: "validate-access",
               body: { token: value, clientId, requireActive },
             });
-            if (["issuer", "future", "bad-signature", "bad-signature-without-kid"].includes(name)) {
-              expect(response.status).toBe(200);
-              expect(await response.json()).toEqual({ ordinary_error: true });
-            } else if (missing || (requireActive && !active)) {
+            // A JWT that fails verification falls through to the opaque lookup.
+            const unverifiable = [
+              "issuer",
+              "future",
+              "string-exp",
+              "bad-signature",
+              "bad-signature-without-kid",
+            ].includes(name);
+            if (missing || unverifiable || (requireActive && !active)) {
               expect(response.status).toBe(401);
               expect(response.headers.get("www-authenticate")).toBe(
                 'Bearer error="invalid_token", error_description="Invalid access token"',

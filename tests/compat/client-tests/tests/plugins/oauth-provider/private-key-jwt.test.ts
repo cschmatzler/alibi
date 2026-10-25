@@ -172,7 +172,29 @@ compatScenario(
           }
           claimsResults.push({ name, status: result.status, body: resultBody });
         }
-        results.push({ claims: claimsResults });
+        // An assertion naming an unregistered client reports it as not found.
+        const unknown = await control({
+          action: "introspect",
+          body: {
+            ...body,
+            client_id: undefined,
+            client_assertion: await sign({
+              iss: "unknown-client",
+              sub: "unknown-client",
+              aud: `${ctx.baseURL}/api/auth/oauth2/introspect`,
+              iat: now,
+              exp: now + 90,
+              jti: randomUUID(),
+            }),
+          },
+        });
+        expect(unknown.status).toBe(400);
+        const unknownBody = await unknown.json();
+        expect(unknownBody).toEqual({
+          error: "invalid_client",
+          error_description: "client not found",
+        });
+        results.push({ claims: claimsResults, unknown: unknownBody });
       }
       results.push({
         algorithm,
