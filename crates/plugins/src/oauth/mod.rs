@@ -87,6 +87,41 @@ impl OAuthPlugin {
         _ = self.config.providers.insert(name.to_owned(), provider);
         self
     }
+
+    /// Resolve a generic provider's discovery now and register it. When
+    /// discovery leaves it unusable, the provider is skipped and discovery is
+    /// retried by the next request that names it, until it succeeds.
+    /// # Errors
+    /// Returns a configuration error that discovery cannot fix.
+    pub async fn add_generic_provider(
+        mut self,
+        name: &str,
+        config: GenericOAuthConfig,
+    ) -> Result<Self, GenericOAuthError> {
+        if let Some(resolved) = config.clone().resolve().await? {
+            return Ok(self.add_provider(name, resolved.provider));
+        }
+        _ = std::sync::Arc::make_mut(&mut self.config.deferred)
+            .insert(name.to_owned(), providers::DeferredDiscovery::new(config));
+        Ok(self)
+    }
+}
+
+/// The provider an endpoint call names, read as the generic plugin's retry
+/// matcher does: `body.provider`, `body.providerId`, `query.provider`, then the
+/// path's `id`.
+fn requested_provider(call: &alibi_core::endpoint::EndpointCall) -> Option<&str> {
+    use alibi_core::utils::json::JsValue;
+    fn field<'a>(input: Option<&'a JsValue>, key: &str) -> Option<&'a JsValue> {
+        input
+            .and_then(|input| input.get(key))
+            .filter(|value| !matches!(value, JsValue::Null))
+    }
+    field(call.body(), "provider")
+        .or_else(|| field(call.body(), "providerId"))
+        .or_else(|| field(call.query(), "provider"))
+        .or_else(|| field(call.params(), "id"))
+        .and_then(JsValue::as_str)
 }
 
 impl Default for OAuthPlugin {
@@ -290,6 +325,23 @@ impl OAuthPlugin {
 
 #[async_trait]
 impl<S: alibi_core::AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthPlugin {
+    fn matches_before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<bool> {
+        Ok(requested_provider(call).is_some_and(|name| self.config.awaits_discovery(name)))
+    }
+    async fn before(
+        &self,
+        call: &alibi_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
+        if let Some(name) = requested_provider(call) {
+            self.config.retry_discovery(name).await;
+        }
+        Ok(None)
+    }
     async fn after(
         &self,
         call: &alibi_core::endpoint::EndpointCall,

@@ -4,6 +4,7 @@ mod github;
 mod gitlab;
 mod google;
 pub(super) mod remaining_profile;
+pub(crate) use generic::DeferredDiscovery;
 pub use generic::{
     GenericOAuthConfig, GenericOAuthError, GenericOAuthMetadata, GenericOAuthResolved,
 };
@@ -86,6 +87,36 @@ pub struct OAuthEndSessionConfig {
 #[derive(Clone, Default)]
 pub struct OAuthConfig {
     pub providers: HashMap<String, OAuthProvider>,
+    /// Generic providers whose startup discovery left them unusable. Shared by
+    /// every clone, so a provider recovered by one request serves all later ones.
+    pub(crate) deferred: Arc<HashMap<String, generic::DeferredDiscovery>>,
+}
+
+impl OAuthConfig {
+    /// The provider registered as `name`. A generic provider recovered after
+    /// failed startup discovery takes precedence, as it was registered first.
+    #[must_use]
+    pub fn provider(&self, name: &str) -> Option<&OAuthProvider> {
+        self.deferred
+            .get(name)
+            .and_then(generic::DeferredDiscovery::provider)
+            .or_else(|| self.providers.get(name))
+    }
+
+    /// Whether `name` is a generic provider still waiting for discovery.
+    pub(crate) fn awaits_discovery(&self, name: &str) -> bool {
+        self.deferred
+            .get(name)
+            .is_some_and(|deferred| deferred.provider().is_none())
+    }
+
+    /// Retries discovery for a provider skipped at startup. Concurrent requests
+    /// share one attempt, and a failed attempt leaves the provider pending.
+    pub(crate) async fn retry_discovery(&self, name: &str) {
+        if let Some(deferred) = self.deferred.get(name) {
+            deferred.retry().await;
+        }
+    }
 }
 
 /// A provider grant, and the typed result of [`OAuthAccountApi`](crate::oauth::OAuthAccountApi)'s

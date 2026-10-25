@@ -7,7 +7,7 @@ The [built-in providers](/authentication/social-sign-on/#provider-catalog) cover
 
 ## Connect an OIDC provider
 
-Discovery is performed **once, at startup**, from operator-supplied configuration — never from request input. Resolve the configuration, then register the provider:
+Discovery is performed at startup from operator-supplied configuration — never from request input. Resolve the configuration, then register the provider:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
@@ -50,6 +50,21 @@ The redirect URI to register at the IdP is `{base_url}/api/auth/callback/keycloa
 | `Err(error)` | Contradictory configuration, for example required ID-token verification without JWKS metadata, or secretless public-client auth with a secret set |
 
 If discovery fails to download, the explicit endpoints you configured are used as a fallback.
+
+### Recover from discovery that fails at startup
+
+An identity provider that is still starting when your server boots would otherwise leave the provider skipped until a restart. Register the configuration with `add_generic_provider` instead; it resolves discovery at startup and, when that leaves the provider unusable, retries discovery on the next sign-in, callback or account-linking request that names the provider:
+
+```rust
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{GenericOAuthConfig, GenericOAuthError};
+
+async fn oauth(keycloak: GenericOAuthConfig) -> Result<OAuthPlugin, GenericOAuthError> {
+    OAuthPlugin::new().add_generic_provider("keycloak", keycloak).await
+}
+```
+
+Concurrent requests share one retry, and each retry waits at most 10 seconds for the discovery document. Until discovery succeeds, sign-in and account linking answer `PROVIDER_NOT_FOUND` and callbacks redirect with `error=oauth_provider_not_found`. Configuration errors that discovery cannot fix are still returned at startup.
 
 ## Configuration reference
 

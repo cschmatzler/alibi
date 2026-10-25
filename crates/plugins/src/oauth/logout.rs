@@ -22,7 +22,7 @@ pub(crate) async fn provider_logout_url<S: AuthSchema>(
         .ok()?;
     let mut seen = HashSet::new();
     for account in accounts {
-        let Some(provider) = config.providers.get(account.provider_id()) else {
+        let Some(provider) = config.provider(account.provider_id()) else {
             continue;
         };
         let Some(logout) = provider

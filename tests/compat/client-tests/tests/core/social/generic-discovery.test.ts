@@ -52,6 +52,11 @@ async function evidence(
   }
   return result;
 }
+async function metadataFetches(ctx: ScenarioContext, mode: string) {
+  return (await receipts(ctx)).filter(
+    (r) => r.path === "/metadata" && (r as { mode?: string }).mode === mode,
+  ).length;
+}
 function observed(rows: Receipt[]) {
   return rows
     .filter((r) => r.path !== "/metadata")
@@ -208,6 +213,7 @@ for (const mode of ["failed", "invalid-jwks", "required"] as const) {
     name,
     async (ctx) => {
       const before = await state(ctx);
+      const discoveries = await metadataFetches(ctx, mode);
       const actor = ctx.actor("owner", `generic-discovery-${mode}`);
       const start = await actor.client.signIn.social({
         provider: "discovery",
@@ -216,11 +222,51 @@ for (const mode of ["failed", "invalid-jwks", "required"] as const) {
       expect(start.error?.code).toBe("PROVIDER_NOT_FOUND");
       expect(await state(ctx)).toEqual(before);
       expect((await receipts(ctx)).filter((r) => r.path !== "/metadata")).toHaveLength(0);
+      // A provider skipped at startup retries discovery when a request names it.
+      expect(await metadataFetches(ctx, mode)).toBe(discoveries + 1);
       return evidence(ctx, name, { before, after: await state(ctx), start: ctx.snapshot(start) });
     },
     ["POST /sign-in/social"],
   );
 }
+compatScenario(
+  "generic discovery retries a provider skipped at startup until discovery recovers",
+  async (ctx) => {
+    const before = await state(ctx);
+    const profile = "generic-discovery-flaky";
+    const actor = ctx.actor("owner", profile);
+    const signIn = () =>
+      actor.client.signIn.social({ provider: "discovery", callbackURL: "/dashboard" });
+    const discoveries = await metadataFetches(ctx, "flaky");
+    const down = await signIn();
+    expect(down.error?.code).toBe("PROVIDER_NOT_FOUND");
+    const callback = await actor.fetch(
+      ctx.baseURL + authProfilePath(profile) + "/callback/discovery?code=early&state=early",
+      { redirect: "manual" },
+    );
+    expect(callback.status).toBe(302);
+    expect(new URL(callback.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
+      "oauth_provider_not_found",
+    );
+    expect(await metadataFetches(ctx, "flaky")).toBe(discoveries + 2);
+    await control(ctx, { discoveryUp: true });
+    const recovered = await signIn();
+    expect(recovered.error).toBeNull();
+    expect(new URL(recovered.data!.url!).origin + new URL(recovered.data!.url!).pathname).toBe(
+      "https://discovered.example.invalid/authorize",
+    );
+    const again = await signIn();
+    expect(again.error).toBeNull();
+    expect(await metadataFetches(ctx, "flaky")).toBe(discoveries + 3);
+    expect(await state(ctx)).toEqual(before);
+    return evidence(ctx, "generic discovery retry", {
+      down: ctx.snapshot(down),
+      callback: { status: callback.status, location: callback.headers.get("location") },
+      recovered: new URL(recovered.data!.url!).searchParams.get("client_id"),
+    });
+  },
+  ["POST /sign-in/social", "GET /callback/{}"],
+);
 for (const failure of ["token", "userinfo"] as const) {
   const name = `generic discovery ${failure} failure cannot persist account or session`;
   compatScenario(
