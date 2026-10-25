@@ -100,7 +100,8 @@ async fn oidc_discovery_signed_grants_assertions_refresh_and_logout<B: Backend>(
             "issuer" => claims["iss"] = json!("https://wrong-issuer.example.test"),
             "audience" => claims["aud"] = json!("wrong-client"),
             "nonce" => claims["nonce"] = json!("wrong-nonce"),
-            "expired" => claims["exp"] = json!(now - 1),
+            // ID tokens allow 30 seconds of clock skew on `exp`.
+            "expired" => claims["exp"] = json!(now - 60),
             "future" => claims["nbf"] = json!(now + 3600),
             _ => {}
         }
