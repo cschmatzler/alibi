@@ -87,6 +87,20 @@ for (const mode of ["default", "shared", "default-pkce", "discovery", "runtime-d
           ).json(),
         ).toBe(null);
         await control({ action: "idp", discoveryCase: "valid" });
+        // Discovery issuers must match exactly; a trailing slash is a different issuer.
+        const slashed = await control({
+          ...registration,
+          body: {
+            ...registration.body,
+            providerId: "slashed-issuer-provider",
+            issuer: `${idp.base}/`,
+          },
+        });
+        expect(slashed.status).toBe(400);
+        expect(((await slashed.json()) as any).code).toBe("issuer_mismatch");
+        expect(
+          await (await control({ action: "row", providerId: "slashed-issuer-provider" })).json(),
+        ).toBe(null);
       }
       const created = await control(registration);
       expect(created.status).toBe(200);

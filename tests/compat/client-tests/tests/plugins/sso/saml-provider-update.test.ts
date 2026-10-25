@@ -174,7 +174,6 @@ compatScenario("SAML updates merge nested credentials and protect linked identit
     },
     { audience: "urn:other:audience" },
     { idpMetadata: { entityID: "https://other-idp.example.test/entity" } },
-    { cert: "different-trust-anchor" },
     { spMetadata: { entityID: "https://other-sp.example.test/entity" } },
     { wantAssertionsSigned: false },
   ]) {

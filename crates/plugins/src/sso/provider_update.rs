@@ -77,7 +77,7 @@ impl SsoPlugin {
                         guard.as_ref(),
                         &existing,
                         super::SsoMutationAction::Update,
-                        Some(update.identity_changed),
+                        Some(update.authentication_boundary_changed),
                         verified,
                         database,
                     )
@@ -107,6 +107,7 @@ fn prepare_update(
 ) -> AuthResult<SsoProviderUpdate> {
     let mut provider = existing.clone();
     let mut identity_changed = false;
+    let mut trust_anchors_changed = false;
     if let Some(issuer) = body.get("issuer").and_then(Value::as_str) {
         identity_changed = issuer != existing.issuer;
         provider.issuer = issuer.into();
@@ -123,10 +124,11 @@ fn prepare_update(
             .get("issuer")
             .and_then(Value::as_str)
             .filter(|issuer| !issuer.is_empty());
-        let (config, changed) =
+        let prepared =
             super::provider_update_saml::prepare(existing, updates, issuer, max_metadata_size)?;
-        provider.saml_config = Some(config);
-        identity_changed |= changed;
+        provider.saml_config = Some(prepared.config);
+        identity_changed |= prepared.identity_changed;
+        trust_anchors_changed = prepared.trust_anchors_changed;
     }
     if let Some(updates) = body.get("oidcConfig") {
         let current: Value = existing
@@ -198,6 +200,7 @@ fn prepare_update(
     Ok(SsoProviderUpdate {
         provider,
         identity_changed,
+        authentication_boundary_changed: identity_changed || trust_anchors_changed,
         additional_field_changes: serde_json::Map::new(),
     })
 }

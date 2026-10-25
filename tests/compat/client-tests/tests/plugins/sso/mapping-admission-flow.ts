@@ -97,12 +97,12 @@ export async function mappingAdmissionFlow(ctx: ScenarioContext, saml = false, s
         ["mapping", "[body.oidcConfig.mapping] Invalid input: expected object, received string"],
         [12, "[body.oidcConfig.mapping] Invalid input: expected object, received number"],
         [
-          { email: "mail" },
-          "[body.oidcConfig.mapping.name] Invalid input: expected string, received undefined",
+          { email: "mail", name: null },
+          "[body.oidcConfig.mapping.name] Invalid input: expected string, received null",
         ],
         [
-          { name: "label" },
-          "[body.oidcConfig.mapping.email] Invalid input: expected string, received undefined",
+          { name: "label", email: null },
+          "[body.oidcConfig.mapping.email] Invalid input: expected string, received null",
         ],
         [
           { email: 3, name: "label" },
@@ -145,6 +145,37 @@ export async function mappingAdmissionFlow(ctx: ScenarioContext, saml = false, s
       row,
     );
     observations.push({ message, rejected: true });
+  }
+  if (!scopes) {
+    // Omitted identity fields fall back to their defaults, and a supplied mapping
+    // replaces the stored one entirely.
+    for (const mapping of [{ extraFields: { department: "dept" } }, { email: "mail" }, {}]) {
+      const updated = await control({
+        action: "update",
+        headers,
+        body: { providerId: input.providerId, [protocol]: { mapping } },
+      });
+      expect(updated.status).toBe(200);
+      const persisted = (await (
+        await control({ action: "row", providerId: input.providerId })
+      ).json()) as any;
+      expect(JSON.parse(persisted[protocol]).mapping).toEqual(mapping);
+      observations.push({ mapping, updated: true });
+    }
+    const partial = await control({
+      headers,
+      body: {
+        ...registration,
+        providerId: "partial-mapping-provider",
+        [protocol]: { ...config, mapping: { name: "label" } },
+      },
+    });
+    expect(partial.status).toBe(200);
+    const partialRow = (await (
+      await control({ action: "row", providerId: "partial-mapping-provider" })
+    ).json()) as any;
+    expect(JSON.parse(partialRow[protocol]).mapping).toEqual({ name: "label" });
+    observations.push({ registered: true });
   }
   if (scopes) {
     for (const values of [[], ["openid", "", "email", "openid"]]) {
