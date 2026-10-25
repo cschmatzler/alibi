@@ -122,6 +122,7 @@ export async function facebookProviderFixture(base: BetterAuthOptions) {
     "implicit-disabled",
     "signup-disabled",
     "fields",
+    "custom-userinfo",
     ...[
       "no-iat",
       "old",
@@ -205,6 +206,21 @@ export async function facebookProviderFixture(base: BetterAuthOptions) {
                       email: "mapped-facebook@example.invalid",
                       emailVerified: false,
                       image: "https://images.example.invalid/mapped-facebook.png",
+                    };
+                  },
+                }
+              : {}),
+            ...(mode === "custom-userinfo"
+              ? {
+                  getUserInfo: async (token: { accessToken?: string; idToken?: string }) => {
+                    mapperReceipts.push({
+                      accessToken: token.accessToken ?? null,
+                      idToken: token.idToken ?? null,
+                    });
+                    const custom = control.profile as Record<string, string>;
+                    return {
+                      user: { name: custom.name, email: custom.email, emailVerified: true },
+                      data: { id: custom.id },
                     };
                   },
                 }

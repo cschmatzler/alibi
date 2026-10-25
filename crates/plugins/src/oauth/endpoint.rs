@@ -401,8 +401,7 @@ impl OAuthPlugin {
         if let Some(token) = &body.id_token {
             let provider = self
                 .config
-                .providers
-                .get(&body.provider)
+                .provider(&body.provider)
                 .ok_or_else(|| AuthError::not_found("Provider not found"))?;
             return EndpointResponse::json(
                 &Box::pin(super::handlers::link_with_id_token_core(
@@ -459,8 +458,7 @@ impl OAuthPlugin {
         if let Some(token) = &body.id_token {
             let provider = self
                 .config
-                .providers
-                .get(&body.provider)
+                .provider(&body.provider)
                 .ok_or_else(|| AuthError::not_found("Provider not found"))?;
             let value =
                 super::handlers::sign_in_with_id_token_core(&body, token, provider, &meta, ctx)

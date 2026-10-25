@@ -85,7 +85,7 @@ An unknown provider id returns `404 PROVIDER_NOT_FOUND`.
 
 ### Sign in with an ID token
 
-Native and mobile clients often obtain an ID token from the provider SDK. Post it instead of starting a redirect; the server verifies signature, issuer, audience and (when given) nonce, and issues the session in the same response:
+Native and mobile clients often obtain an ID token from the provider SDK. Post it instead of starting a redirect; the server verifies signature, issuer, audience and (when given) nonce, and issues the session in the same response. Every provider applies one policy: the token must carry `iss`, `sub`, `aud`, `exp` and `iat`, time claims allow 30 seconds of clock skew, the signing algorithm is pinned by the provider (RS256 for Google, Apple, Microsoft, Cognito and Facebook), and a provider without a client ID rejects every token:
 
 ```bash
 curl -i http://localhost:3000/api/auth/sign-in/social \

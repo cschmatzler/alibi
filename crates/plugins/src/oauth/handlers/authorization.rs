@@ -332,8 +332,7 @@ pub(in crate::oauth) async fn social_sign_in_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
-        .providers
-        .get(&body.provider)
+        .provider(&body.provider)
         .ok_or_else(|| AuthError::not_found("Provider not found"))?;
 
     let callback_url = body
@@ -380,8 +379,7 @@ pub(in crate::oauth) async fn link_social_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
-        .providers
-        .get(&body.provider)
+        .provider(&body.provider)
         .ok_or_else(|| AuthError::not_found("Provider not found"))?;
 
     let callback_url = body

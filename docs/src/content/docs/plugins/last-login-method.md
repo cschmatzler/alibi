@@ -37,6 +37,7 @@ The recorded values are:
 | --- | --- |
 | `email` | `/sign-in/email`, `/sign-up/email` |
 | `<provider id>` | OAuth callbacks, e.g. `google`, `github` |
+| `google` | `/one-tap/callback` (Google One Tap) |
 | `email-otp` | `/sign-in/email-otp` |
 | `magic-link` | `/magic-link/verify` |
 | `passkey` | `/passkey/verify-authentication` |

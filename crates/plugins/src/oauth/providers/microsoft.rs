@@ -155,6 +155,9 @@ impl OAuthProvider {
             max_age_secs: Some(3600),
             allow_opaque_token: false,
             algorithm: None,
+            algorithms: Some(vec![jsonwebtoken::Algorithm::RS256]),
+            // Microsoft's key set omits `alg`; Entra ID signs ID tokens with RS256.
+            default_key_algorithm: Some(jsonwebtoken::Algorithm::RS256),
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::Exact,
             verify_claims: Some(Arc::new(MicrosoftClaims {

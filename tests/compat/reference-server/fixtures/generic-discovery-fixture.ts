@@ -20,7 +20,10 @@ export async function genericDiscoveryFixture(base: BetterAuthOptions) {
       if (path.startsWith("/metadata/")) {
         const mode = path.split("/").at(-1)!;
         receipts.push({ path: "/metadata", mode, header: request.headers.get("x-discovery") });
-        if (["failed", "fallback", "required"].includes(mode)) {
+        if (
+          ["failed", "fallback", "required"].includes(mode) ||
+          (mode === "flaky" && control.discoveryUp !== true)
+        ) {
           return Response.json({ error: "metadata failed" }, { status: 503 });
         }
         return Response.json({
@@ -98,6 +101,7 @@ export async function genericDiscoveryFixture(base: BetterAuthOptions) {
     "logout-disabled",
     "logout-invalid",
     "logout-no-return",
+    "flaky",
   ]) {
     const path = `/__test/profiles/generic-discovery-${mode}/api/auth`;
     profiles.set(

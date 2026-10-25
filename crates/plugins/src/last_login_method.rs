@@ -142,6 +142,8 @@ impl LastLoginMethodPlugin {
                 .get("id")
                 .map(String::as_str)
                 .or_else(|| path.rsplit('/').next())
+        } else if path == "/one-tap/callback" {
+            Some("google")
         } else if matches!(path.as_str(), "/sign-in/email" | "/sign-up/email") {
             Some("email")
         } else if path.contains("siwe") {

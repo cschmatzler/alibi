@@ -1796,3 +1796,50 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{id}"],
 );
+
+for (const issuer of ["mismatched", "matching"] as const) {
+  compatScenario(
+    `OAuth proxy production callback with a ${issuer} iss runs the standard issuer check`,
+    async (ctx) => {
+      const owner = ctx.actor("issuer-check", "oauth-proxy");
+      const issued = await issue(ctx, owner);
+      const approved = await response(
+        await owner.fetch(issued.authorization, { redirect: "manual" }),
+      );
+      expect(approved.status).toBe(302);
+      const callback = new URL(approved.location!);
+      callback.searchParams.set(
+        "iss",
+        issuer === "matching"
+          ? `${ctx.baseURL}/__test/oauth-proxy/provider`
+          : "https://attacker.example",
+      );
+      const forwarded = await response(
+        await owner.fetch(callback, { redirect: "manual", credentials: "omit" }),
+      );
+      expect(forwarded.status).toBe(302);
+      const location = new URL(forwarded.location!);
+      const stored = await state(ctx);
+      if (issuer === "mismatched") {
+        expect(location.origin + location.pathname).toBe(`${ctx.baseURL}/proxy-error`);
+        expect(location.searchParams.get("error")).toBe("issuer_mismatch");
+        expect(stored.receipts.map((receipt) => receipt.stage)).toEqual(["authorize"]);
+      } else {
+        expect(location.pathname).toBe(`${path}/callback/gitlab/oauth-proxy`);
+        expect(stored.receipts.map((receipt) => receipt.stage)).toEqual([
+          "authorize",
+          "token",
+          "userinfo",
+        ]);
+      }
+      return {
+        issuedState: issued.issuedState,
+        forwarded: { status: forwarded.status, error: location.searchParams.get("error") },
+        stored: observations(stored),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{id}"],
+    undefined,
+    comparison,
+  );
+}

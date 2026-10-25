@@ -88,8 +88,13 @@ pub struct OAuthIdTokenConfig {
     /// Permits opaque candidates; the provider must independently authenticate
     /// the access token in its actual user-info operation before admission.
     pub allow_opaque_token: bool,
-    /// Fixed import algorithm, or the JWK's declared algorithm for Apple.
+    /// Fixed import algorithm, or the JWK's declared algorithm when absent.
     pub algorithm: Option<Algorithm>,
+    /// Permitted token algorithms, checked before keys are fetched. When
+    /// absent, any algorithm the selected key supports is accepted.
+    pub algorithms: Option<Vec<Algorithm>>,
+    /// Import algorithm for a key that declares none when `algorithm` is absent.
+    pub default_key_algorithm: Option<Algorithm>,
     pub selection: OAuthJwksSelection,
     pub nonce_comparison: OAuthNonceComparison,
     /// A trusted additional policy, including tenant binding for multi-tenant
@@ -112,6 +117,8 @@ impl OAuthIdTokenConfig {
             max_age_secs: Some(3600),
             allow_opaque_token: false,
             algorithm: Some(Algorithm::RS256),
+            algorithms: Some(vec![Algorithm::RS256]),
+            default_key_algorithm: None,
             selection: OAuthJwksSelection::First,
             nonce_comparison: OAuthNonceComparison::Exact,
             verify_claims: None,
@@ -129,6 +136,8 @@ impl OAuthIdTokenConfig {
             max_age_secs: Some(3600),
             allow_opaque_token: false,
             algorithm: None,
+            algorithms: Some(vec![Algorithm::RS256]),
+            default_key_algorithm: None,
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::ExactOrSha256,
             verify_claims: None,
@@ -144,6 +153,8 @@ impl std::fmt::Debug for OAuthIdTokenConfig {
             .field("max_age_secs", &self.max_age_secs)
             .field("allow_opaque_token", &self.allow_opaque_token)
             .field("algorithm", &self.algorithm)
+            .field("algorithms", &self.algorithms)
+            .field("default_key_algorithm", &self.default_key_algorithm)
             .field("selection", &self.selection)
             .field("nonce_comparison", &self.nonce_comparison)
             .field("verify_claims", &self.verify_claims.is_some())
@@ -173,17 +184,16 @@ pub(super) async fn verify_provider_token(
     }
     let mut audiences = vec![provider.client_id.clone()];
     audiences.extend(provider.additional_client_ids.clone());
-    let verified = verify_jwks_token(
-        token,
-        config
-            .audience
-            .as_deref()
-            .or(config.client_ids.as_deref())
-            .unwrap_or(&audiences),
-        nonce,
-        config,
-    )
-    .await;
+    let audiences = config
+        .audience
+        .as_deref()
+        .or(config.client_ids.as_deref())
+        .unwrap_or(&audiences);
+    // An empty audience would skip the audience check entirely.
+    if audiences.iter().all(String::is_empty) {
+        return false;
+    }
+    let verified = verify_jwks_token(token, audiences, nonce, config).await;
     verified.is_some_and(|claims| {
         hosted_domain_allowed(provider, claims.get("hd").and_then(JsValue::as_str))
     })
@@ -217,6 +227,15 @@ pub(crate) async fn verify_jwks_token(
     _ = header.as_object()?;
     let algorithm: Algorithm =
         serde_json::from_value(header.get("alg")?.to_json_value().ok()?).ok()?;
+    // Pinned algorithms come from trusted configuration, never from the token
+    // header, and are enforced before any key is fetched.
+    if config
+        .algorithms
+        .as_ref()
+        .is_some_and(|allowed| !allowed.contains(&algorithm))
+    {
+        return None;
+    }
     if matches!(
         config.selection,
         OAuthJwksSelection::AllMatching | OAuthJwksSelection::RemoteRs256
@@ -253,7 +272,10 @@ pub(crate) async fn verify_jwks_token(
     let mut public_keys = Vec::new();
     for key in selected {
         if config.algorithm.is_none() {
-            let imported: Algorithm = serde_json::from_value(key.get("alg")?.clone()).ok()?;
+            let imported: Algorithm = match key.get("alg").filter(|alg| !alg.is_null()) {
+                Some(alg) => serde_json::from_value(alg.clone()).ok()?,
+                None => config.default_key_algorithm?,
+            };
             if imported != algorithm {
                 return None;
             }
@@ -368,12 +390,25 @@ pub(super) fn remote_rsa_public_key(key: &Value) -> bool {
         .is_some_and(|bits| bits >= 2048)
 }
 
+/// Clock skew allowed on `exp`, `nbf`, and `iat`, matching openid-client and oauth4webapi.
+pub(crate) const CLOCK_TOLERANCE_SECS: f64 = 30.0;
+/// Claims every ID token must contain, whatever their value.
+///
+/// See <https://openid.net/specs/openid-connect-core-1_0.html#IDToken>.
+pub(crate) const REQUIRED_CLAIMS: [&str; 5] = ["iss", "sub", "aud", "exp", "iat"];
+
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "JWT numeric dates deliberately retain JavaScript floating point comparison"
 )]
 fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenConfig) -> bool {
+    if REQUIRED_CLAIMS
+        .iter()
+        .any(|claim| payload.get(claim).is_none())
+    {
+        return false;
+    }
     if (config.issuers.is_empty() && config.verify_claims.is_none())
         || (!config.issuers.is_empty()
             && !payload
@@ -396,32 +431,24 @@ fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenCo
         return false;
     }
     let now = Utc::now().timestamp() as f64;
-    let iat = match payload.get("iat") {
-        None => None,
-        Some(value) => match value.as_f64() {
-            Some(date) => Some(date),
-            None => return false,
-        },
-    };
-    if let Some(max_age) = config.max_age_secs {
-        let Some(iat) = iat else {
-            return false;
-        };
-        if iat > now || now - iat > max_age as f64 {
-            return false;
+    let mut dates = [0.0; 3];
+    for (date, claim) in dates.iter_mut().zip(["iat", "exp", "nbf"]) {
+        match payload.get(claim) {
+            None => *date = f64::NAN,
+            Some(value) => match value.as_f64() {
+                Some(value) => *date = value,
+                None => return false,
+            },
         }
     }
-    for (claim, lower_bound) in [("exp", true), ("nbf", false)] {
-        if let Some(value) = payload.get(claim) {
-            let Some(date) = value.as_f64() else {
-                return false;
-            };
-            if lower_bound && date <= now || !lower_bound && date > now {
-                return false;
-            }
-        }
+    let [iat, exp, nbf] = dates;
+    if nbf > now + CLOCK_TOLERANCE_SECS || exp <= now - CLOCK_TOLERANCE_SECS {
+        return false;
     }
-    true
+    config.max_age_secs.is_none_or(|max_age| {
+        let age = now - iat;
+        age - CLOCK_TOLERANCE_SECS <= max_age as f64 && age >= -CLOCK_TOLERANCE_SECS
+    })
 }
 fn js_truthy(value: &JsValue) -> bool {
     match value {

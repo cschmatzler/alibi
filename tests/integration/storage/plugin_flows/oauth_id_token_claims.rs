@@ -93,6 +93,30 @@ async fn id_token_policy_decides_admission_from_header_keys_and_claims<B: Backen
         Case::new("missing issued-at").claims(|claims| {
             drop(claims.as_object_mut().unwrap().remove("iat"));
         }),
+        Case::new("missing expiry").claims(|claims| {
+            drop(claims.as_object_mut().unwrap().remove("exp"));
+        }),
+        Case::new("missing subject").claims(|claims| {
+            drop(claims.as_object_mut().unwrap().remove("sub"));
+        }),
+        Case::new("null subject").claims(|claims| claims["sub"] = Value::Null),
+        Case::new("expired within clock skew").claims(|claims| shift(claims, "exp", -25)),
+        Case::new("expired beyond clock skew").claims(|claims| shift(claims, "exp", -35)),
+        Case::new("not before within clock skew").claims(|claims| shift(claims, "nbf", 25)),
+        Case::new("not before beyond clock skew").claims(|claims| shift(claims, "nbf", 35)),
+        Case::new("issued within clock skew").claims(|claims| shift(claims, "iat", 25)),
+        Case::new("issued beyond clock skew").claims(|claims| shift(claims, "iat", 35)),
+        Case::new("token age within clock skew").claims(|claims| shift(claims, "iat", -3625)),
+        Case::new("token age beyond clock skew").claims(|claims| shift(claims, "iat", -3635)),
+        Case::new("empty client id")
+            .provider(|provider| provider.client_id = String::new())
+            .claims(|claims| claims["aud"] = json!("")),
+        Case::new("key without algorithm uses default")
+            .provider(|provider| {
+                id_token(provider).algorithm = None;
+                id_token(provider).default_key_algorithm = Some(Algorithm::RS256);
+            })
+            .keys(|key| drop(key.as_object_mut().unwrap().remove("alg"))),
         Case::new("truthy numeric key id").header(json!({"alg":"RS256","kid":7})),
         Case::new("truthy boolean key id").header(json!({"alg":"RS256","kid":true})),
         Case::new("truthy array key id").header(json!({"alg":"RS256","kid":[1]})),
@@ -182,6 +206,11 @@ async fn id_token_policy_decides_admission_from_header_keys_and_claims<B: Backen
     }
     trace.assert("social/id-token-claims");
     B::close(connection).await
+}
+
+/// Places a time claim `offset` seconds from now.
+fn shift(claims: &mut Value, claim: &str, offset: i64) {
+    claims[claim] = json!(chrono::Utc::now().timestamp() + offset);
 }
 
 fn remote(provider: &mut OAuthProvider) {

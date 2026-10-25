@@ -61,8 +61,7 @@ pub(crate) async fn handle_social_sign_in(
     let meta = alibi_core::RequestMeta::from_request(req);
     if let Some(id_token) = &body.id_token {
         let provider = config
-            .providers
-            .get(&body.provider)
+            .provider(&body.provider)
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
         let response = match sign_in_with_id_token_core(&body, id_token, provider, &meta, ctx).await
         {
@@ -219,8 +218,7 @@ pub(in crate::oauth) async fn callback_core(
         if !merged_2.contains_key("state")
             && merged_2.get("code").is_some_and(|code| !code.is_empty())
             && config
-                .providers
-                .get(provider_name)
+                .provider(provider_name)
                 .is_some_and(|provider| provider.allow_idp_initiated)
         {
             let mut body = SocialSignInRequest::new(provider_name);
@@ -439,19 +437,16 @@ pub(in crate::oauth) async fn callback_core(
     else {
         return Ok(redirect_on_error("no_code", None));
     };
-    let Some(provider) = config.providers.get(provider_name) else {
+    let Some(provider) = config.provider(provider_name) else {
         return Ok(redirect_on_error("oauth_provider_not_found", None));
     };
 
-    if let Some(issuer) = merged_2.get("iss").filter(|issuer| !issuer.is_empty())
-        && let Some(expected) = provider
-            .authorization
-            .as_ref()
-            .and_then(|policy| policy.issuer.as_deref())
-            .filter(|issuer| !issuer.is_empty())
-        && issuer != expected
-    {
-        return Ok(redirect_on_error("issuer_mismatch", None));
+    if let Some(error) = super::callback_binding_error(
+        provider,
+        merged_2.get("iss").map(String::as_str),
+        payload.id_token_nonce.as_deref(),
+    ) {
+        return Ok(redirect_on_error(error, None));
     }
 
     let Ok(tokens) = validate_authorization_code_via_provider(
@@ -474,17 +469,7 @@ pub(in crate::oauth) async fn callback_core(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    if provider
-        .authorization
-        .as_ref()
-        .is_some_and(|policy| policy.verify_grant_id_token)
-        && let Some(token) = tokens.id_token.as_deref().filter(|token| !token.is_empty())
-        && !crate::oauth::id_token::verify_provider_token(
-            provider,
-            token,
-            payload.id_token_nonce.as_deref(),
-        )
-        .await
+    if !super::grant_id_token_verified(provider, &tokens, payload.id_token_nonce.as_deref()).await
     {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
@@ -679,8 +664,7 @@ pub(in crate::oauth) async fn handle_link_social(
     validate_authorization_params(body.additional_params.as_ref())?;
     if let Some(id_token) = &body.id_token {
         let provider = config
-            .providers
-            .get(&body.provider)
+            .provider(&body.provider)
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
         let response = match link_with_id_token_core(&body, id_token, provider, &session, ctx).await
         {

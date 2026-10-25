@@ -1,6 +1,7 @@
 import { expect } from "vitest";
 
 import { credential, issuedAt, signedRawToken } from "../../../support/id-token";
+import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 import { oneTap, responseSchema, state, successful } from "./helpers";
 
@@ -115,23 +116,26 @@ compatScenario(
     });
     expect(other.error).toBeNull();
 
+    const changedEmail = ctx.uniqueEmail("changed-google-email");
     const repeat = await invoke(
       "foreign",
       "one-tap-no-override",
       await credential({
         sub,
-        email: ctx.uniqueEmail("changed-google-email"),
+        email: changedEmail,
         email_verified: true,
         name: "Provider Replacement",
         picture: "https://fixture.test/new.png",
       }),
       foreignCookie,
     );
+    // The profile's Google provider sets overrideUserInfoOnSignIn, which One Tap
+    // applies since 1.7.12, so the returning owner is refreshed from the token.
     expect(repeat.data?.user).toMatchObject({
       id: user.id,
-      email,
-      name: "Google Owner",
-      image: "https://fixture.test/owner.png",
+      email: changedEmail.toLowerCase(),
+      name: "Provider Replacement",
+      image: "https://fixture.test/new.png",
     });
     expect(repeat.data?.user.id).not.toBe(other.data?.user.id);
 
@@ -308,6 +312,90 @@ compatScenario(
         jwksFetches: persisted.jwksFetches - baseline.jwksFetches,
       },
     };
+  },
+  ["POST /one-tap/callback"],
+);
+
+compatScenario(
+  "One Tap builds the user with the Google provider mapping or user info, keyed by the verified sub",
+  async (ctx) => {
+    const baseline = await state(ctx);
+    const mappedSub = ctx.uniqueToken("mapped-google");
+    const mappedEmail = ctx.uniqueEmail("mapped-google");
+    const mapped = await successful(
+      ctx,
+      await credential({
+        sub: mappedSub,
+        email: mappedEmail,
+        email_verified: true,
+        name: "Source Name",
+        picture: "https://fixture.test/source.png",
+      }),
+      "one-tap-mapped",
+    );
+    expect(mapped.response.data?.user).toMatchObject({
+      email: mappedEmail,
+      name: "Mapped Source Name",
+      image: "https://fixture.test/mapped.png",
+      emailVerified: true,
+    });
+
+    const customSub = ctx.uniqueToken("custom-google");
+    const customEmail = ctx.uniqueEmail("custom-google");
+    const custom = await successful(
+      ctx,
+      await credential({
+        sub: customSub,
+        email: customEmail,
+        email_verified: true,
+        name: "Token Name",
+      }),
+      "one-tap-custom-userinfo",
+    );
+    expect(custom.response.data?.user).toMatchObject({
+      email: `custom-${customEmail}`,
+      name: "From Custom User Info",
+      emailVerified: false,
+    });
+
+    const persisted = await state(ctx);
+    expect(persisted.accounts.slice(baseline.accounts.length)).toMatchObject([
+      { providerId: "google", accountId: mappedSub, userId: mapped.response.data?.user.id },
+      { providerId: "google", accountId: customSub, userId: custom.response.data?.user.id },
+    ]);
+    return {
+      mapped,
+      custom,
+      persisted: { ...persisted, jwksFetches: persisted.jwksFetches - baseline.jwksFetches },
+    };
+  },
+  ["POST /one-tap/callback"],
+);
+
+compatScenario(
+  "One Tap sign-in records google as the last login method",
+  async (ctx) => {
+    const response = await ctx
+      .actor("last-login", "one-tap-last-login")
+      .fetch(`${ctx.baseURL}${authProfilePath("one-tap-last-login")}/one-tap/callback`, {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: ctx.baseURL },
+        body: JSON.stringify({
+          idToken: await credential({
+            sub: ctx.uniqueToken("last-login-google"),
+            email: ctx.uniqueEmail("last-login-google"),
+            email_verified: true,
+            name: "Last Login",
+          }),
+        }),
+      });
+    expect(response.status).toBe(200);
+    const cookies = response.headers
+      .getSetCookie()
+      .filter((cookie) => cookie.startsWith("better-auth.last_used_login_method="));
+    expect(cookies).toHaveLength(1);
+    expect(cookies[0]).toMatch(/^better-auth\.last_used_login_method=google;/);
+    return { status: response.status, cookies };
   },
   ["POST /one-tap/callback"],
 );
