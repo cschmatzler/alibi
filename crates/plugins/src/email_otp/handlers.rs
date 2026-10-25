@@ -564,11 +564,12 @@ impl EmailOtpPlugin {
         // counts the attempt and fails; a correct one is spent just before the
         // password is written.
         let key = identifier(EmailOtpType::ForgetPassword, &email);
-        let mut consumed = false;
-        if !self.matches_usable_code(ctx, &key, &body.otp).await? {
+        let consumed = if self.matches_usable_code(ctx, &key, &body.otp).await? {
+            false
+        } else {
             self.consume_code(ctx, &key, &body.otp).await?;
-            consumed = true;
-        }
+            true
+        };
         let user = ctx
             .database
             .get_user_by_email_record(&email)
