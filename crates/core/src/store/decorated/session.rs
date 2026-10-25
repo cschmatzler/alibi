@@ -207,10 +207,18 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         }
         if self.secondary().is_some() {
             let mut sessions = Vec::new();
+            let mut missing = Vec::new();
             for token in tokens {
                 if let Some((session, _)) = self.cached_session(token).await? {
                     sessions.push(session);
+                } else {
+                    missing.push(token.clone());
                 }
+            }
+            // Since 1.7.12 tokens missing from the cache fall back to the
+            // database when it holds every session.
+            if !missing.is_empty() && self.database_session_fallback() {
+                sessions.extend(self.inner.get_sessions_by_tokens(&missing).await?);
             }
             return Ok(sessions);
         }
@@ -223,6 +231,18 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 .values()
                 .filter(|session| session.user_id().as_ref() == user_id)
                 .cloned()
+                .collect());
+        }
+        if self.database_session_fallback() {
+            // Since 1.7.12 the database lists every live session, including
+            // one whose cached copy failed to write.
+            let now = chrono::Utc::now();
+            return Ok(self
+                .inner
+                .get_user_sessions(user_id)
+                .await?
+                .into_iter()
+                .filter(|session| session.expires_at() > now)
                 .collect());
         }
         if self.secondary().is_some() {
