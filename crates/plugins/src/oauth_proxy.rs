@@ -1,8 +1,8 @@
 //! OAuth code exchange on a production host, followed by stateful completion on
 //! the originating preview host with database or authenticated cookie state.
 use super::oauth::handlers::{
-    OAuthSignInError, complete_link_social, create_account_cookie_headers,
-    fetch_user_info_from_provider, parse_callback_user_payload,
+    OAuthSignInError, callback_binding_error, complete_link_social, create_account_cookie_headers,
+    fetch_user_info_from_provider, grant_id_token_verified, parse_callback_user_payload,
     validate_authorization_code_via_provider,
 };
 use super::oauth::state::{
@@ -458,13 +458,21 @@ impl OAuthProxyPlugin {
             .extensions
             .get::<OAuthConfig>()
             .ok_or_else(|| AuthError::config("OAuth proxy requires OAuthPlugin"))?;
-        let Some(provider) = oauth.providers.get(provider_id) else {
+        let Some(provider) = oauth.provider(provider_id) else {
             return Ok(Some(error_redirect(
                 &error_url,
                 "oauth_provider_not_found",
                 None,
             )?));
         };
+        // Proxied callbacks run the standard callback checks.
+        if let Some(error) = callback_binding_error(
+            provider,
+            params.get("iss").map(String::as_str),
+            state.id_token_nonce.as_deref(),
+        ) {
+            return Ok(Some(error_redirect(&error_url, error, None)?));
+        }
         let Ok(tokens) = validate_authorization_code_via_provider(
             provider,
             code,
@@ -484,6 +492,13 @@ impl OAuthProxyPlugin {
         else {
             return Ok(Some(error_redirect(&error_url, "invalid_code", None)?));
         };
+        if !grant_id_token_verified(provider, &tokens, state.id_token_nonce.as_deref()).await {
+            return Ok(Some(error_redirect(
+                &error_url,
+                "unable_to_get_user_info",
+                None,
+            )?));
+        }
         // Like the source proxy middleware, application/profile lookup errors
         // propagate; only an absent profile is a redirect-level failure.
         let mut info = fetch_user_info_from_provider(
@@ -501,9 +516,6 @@ impl OAuthProxyPlugin {
             },
         )
         .await?;
-        if info.user.email.is_empty() {
-            return Ok(Some(error_redirect(&error_url, "email_not_found", None)?));
-        }
         if resolve_oauth_account_key(provider, &tokens, &mut info)
             .await
             .is_err()
@@ -513,6 +525,9 @@ impl OAuthProxyPlugin {
                 "unable_to_get_user_info",
                 None,
             )?));
+        }
+        if info.user.email.is_empty() {
+            return Ok(Some(error_redirect(&error_url, "email_not_found", None)?));
         }
         let mut callback = url::Url::parse(&state.callback_url)
             .map_err(|_error| AuthError::internal("Invalid proxy callback URL"))?;
