@@ -66,8 +66,13 @@ Alibi can *consume* OAuth/OIDC providers (including enterprise IdPs through [Gen
 ## Known boundaries
 
 - **Token encoding.** Only current-format ciphertext is supported. Earlier Rust encodings and plaintext imports are rejected; no conversion API is provided.
-- **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged by the 1.7.7 delta, including its edge cases.
+- **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged through 1.7.12, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
+- **Password reset atomicity.** Resets spend the proof, revoke sessions and write the password in 1.7.12's order, but not inside one database transaction. A storage failure partway through leaves the proof spent and the revoked sessions revoked; a new password is never stored while old sessions remain valid.
+
+## Upgrading from 1.7.7
+
+1.7.12 tightens ID-token verification for social, One Tap, OAuth proxy and OIDC SSO sign-in: tokens must carry `iss`, `sub`, `aud`, `exp` and `iat`, 30 seconds of clock skew is accepted, and a provider without a client ID rejects every ID token. Set `client_id` on every provider used for ID-token sign-in. `SameSite=None` and `Partitioned` cookies are now always `Secure`. A failed password reset no longer spends its link or OTP. No database migration is needed; the schema is unchanged.
 
 ## Upgrading from 1.7.6
 

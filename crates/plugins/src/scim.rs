@@ -219,7 +219,7 @@ impl ScimPlugin {
         ServerEndpoint::new("scim", "getSCIMSchemas")
     }
     fn schemas<S: AuthSchema>(ctx: &AuthContext<S>) -> AuthResult<Value> {
-        // Runtime protocol descriptors match @better-auth/scim 1.7.7; keep them
+        // Runtime protocol descriptors match @better-auth/scim 1.7.12; keep them
         // independent of test fixtures and resolve locations for this application.
         let mut schemas: Vec<Value> = serde_json::from_str(include_str!("scim/schemas.json"))?;
         let base = format!(

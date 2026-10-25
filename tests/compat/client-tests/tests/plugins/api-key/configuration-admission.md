@@ -1,4 +1,4 @@
-# Configuration error coverage in Better Auth 1.7.7
+# Configuration error coverage in Better Auth 1.7.12
 
 The named-only configuration scenario owns `NO_DEFAULT_API_KEY_CONFIGURATION_FOUND`: absent, unknown, and literal default selectors reject before persistence; the explicit named selector creates and retrieves the key.
 

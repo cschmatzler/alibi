@@ -249,7 +249,7 @@ compatScenario(
       results.push(ctx.snapshot(response));
     }
 
-    // 1.7.7 rejects records for another purpose before consuming them or
+    // 1.7.12 rejects records for another purpose before consuming them or
     // trusting their email as a login identity, even for an existing account.
     const victim = ctx.actor("record-victim");
     const signup = await victim.client.signUp.email({

@@ -1,6 +1,6 @@
 import { hkdfSync } from "node:crypto";
 
-// Independent byte-level reproduction of the published 1.7.7 key derivation.
+// Independent byte-level reproduction of the published 1.7.12 key derivation.
 export function oauthPurposeSecret(
   secret: string,
   purpose:

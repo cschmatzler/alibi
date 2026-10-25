@@ -5,7 +5,7 @@ use std::{future::Future, pin::Pin};
 
 /// A synchronous value or an asynchronous encryption callback result.
 ///
-/// Pinned Better Auth 1.7.7 concatenates the result without awaiting it. A
+/// Pinned Better Auth 1.7.12 concatenates the result without awaiting it. A
 /// `Promise` therefore runs detached and presents as `[object Promise]`, not its
 /// resolved ciphertext. Use `Immediate` for usable encrypted credentials.
 /// Detached failures do not propagate to the response; this API does not emulate
@@ -15,7 +15,7 @@ pub enum OAuthRefreshTokenEncryption {
     Promise(Pin<Box<dyn Future<Output = AuthResult<String>> + Send + 'static>>),
 }
 
-/// Decoded storage preimage. In 1.7.7 consumers use the persisted session binding,
+/// Decoded storage preimage. In 1.7.12 consumers use the persisted session binding,
 /// not this optional callback-supplied session ID.
 #[derive(Debug, Clone)]
 pub struct OAuthDecodedRefreshToken {
@@ -51,7 +51,7 @@ impl super::OAuthProviderPlugin {
                 OAuthRefreshTokenEncryption::Promise(future) => {
                     // JS promises are eager; dropping a Rust future would suppress
                     // application work. Neither its value nor rejection affects
-                    // the already-coerced wire value in pinned 1.7.7.
+                    // the already-coerced wire value in pinned 1.7.12.
                     drop(tokio::spawn(future));
                     "[object Promise]".to_owned()
                 }
