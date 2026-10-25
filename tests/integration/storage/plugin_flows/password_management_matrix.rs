@@ -1079,9 +1079,7 @@ async fn invalid_stored_reset_proofs_reject_before_crypto_or_callback<B: Backend
     Ok(())
 }
 
-async fn concurrent_reset_proof_is_spent_by_the_first_writer<B: Backend>(
-    db: Db,
-) -> TestResult {
+async fn concurrent_reset_proof_is_spent_by_the_first_writer<B: Backend>(db: Db) -> TestResult {
     use std::sync::atomic::AtomicUsize;
     struct GatedHasher {
         entered: tokio::sync::Notify,
@@ -1181,7 +1179,18 @@ async fn concurrent_reset_proof_is_spent_by_the_first_writer<B: Backend>(
     assert_eq!(body(&held)["code"], "INVALID_TOKEN");
     assert_eq!(callbacks.load(Ordering::SeqCst), 1);
     assert_eq!(hasher.hashes.load(Ordering::SeqCst), 1);
-    let login = call(&auth, request("/sign-in/email", Some(json!({"email":"reset-race-owner@example.test","password":"race-winning-password"})), ""), 200).await;
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(
+                json!({"email":"reset-race-owner@example.test","password":"race-winning-password"}),
+            ),
+            "",
+        ),
+        200,
+    )
+    .await;
     assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     authenticated(&auth, &cookies(&foreign), "reset-race-foreign@example.test").await;
     Ok(())

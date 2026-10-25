@@ -809,11 +809,7 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
     let foreign = signup(&auth, "foreign@example.test").await;
     // Since 1.7.12 held sessions follow the request's cookie order. This jar
     // sends cookies sorted by name, and each name carries the lowercased token.
-    let mut held: Vec<(usize, &str)> = tokens
-        .iter()
-        .map(String::as_str)
-        .enumerate()
-        .collect();
+    let mut held: Vec<(usize, &str)> = tokens.iter().map(String::as_str).enumerate().collect();
     held.sort_by_key(|(_, token)| token.to_lowercase());
     let listed = body(
         &call(
@@ -889,7 +885,10 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
             .iter()
             .map(|row| row["session"]["token"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        remaining.iter().map(|(_, token)| *token).collect::<Vec<_>>()
+        remaining
+            .iter()
+            .map(|(_, token)| *token)
+            .collect::<Vec<_>>()
     );
     let logout = call(&auth, request("/sign-out", Some(json!({})), &jar), 200).await;
     jar = apply(&jar, &logout);
