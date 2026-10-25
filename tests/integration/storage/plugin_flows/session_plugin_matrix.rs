@@ -807,6 +807,14 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
         jar = apply(&jar, &issued);
     }
     let foreign = signup(&auth, "foreign@example.test").await;
+    // Since 1.7.12 held sessions follow the request's cookie order. This jar
+    // sends cookies sorted by name, and each name carries the lowercased token.
+    let mut held: Vec<(usize, &str)> = tokens
+        .iter()
+        .map(String::as_str)
+        .enumerate()
+        .collect();
+    held.sort_by_key(|(_, token)| token.to_lowercase());
     let listed = body(
         &call(
             &auth,
@@ -823,8 +831,14 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
         .collect();
     assert_eq!(
         ordered,
-        tokens.iter().map(String::as_str).collect::<Vec<_>>()
+        held.iter().map(|(_, token)| *token).collect::<Vec<_>>()
     );
+    let remaining: Vec<(usize, &str)> = held
+        .iter()
+        .copied()
+        .filter(|(index, _)| *index != 0)
+        .collect();
+    let (next_index, next_token) = remaining[0];
     _ = call(
         &auth,
         request(
@@ -858,7 +872,7 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
     )
     .await;
     jar = apply(&jar, &revoked);
-    authenticated(&auth, &jar, "no-db-1@example.test").await;
+    authenticated(&auth, &jar, &format!("no-db-{next_index}@example.test")).await;
     let captured = cookies(&revoked);
     let listed = body(
         &call(
@@ -875,7 +889,7 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
             .iter()
             .map(|row| row["session"]["token"].as_str().unwrap())
             .collect::<Vec<_>>(),
-        vec![tokens[1].as_str(), tokens[2].as_str()]
+        remaining.iter().map(|(_, token)| *token).collect::<Vec<_>>()
     );
     let logout = call(&auth, request("/sign-out", Some(json!({})), &jar), 200).await;
     jar = apply(&jar, &logout);
@@ -893,7 +907,7 @@ async fn multi_session_without_database_preserves_order_fallback_and_cache_repla
         json!([])
     );
     let replay = call(&auth, request("/get-session", None, &captured), 200).await;
-    assert_eq!(body(&replay)["session"]["token"], tokens[1]);
+    assert_eq!(body(&replay)["session"]["token"], next_token);
     let mut physical = request("/get-session", None, &captured);
     _ = physical
         .query
