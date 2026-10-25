@@ -373,7 +373,11 @@ async fn sso_callback_verifies_id_token_authority_claims_and_userinfo_subject<B:
         ("signature", Some("token_not_verified")),
         ("authorized-party", Some("token_not_verified")),
         ("multi-audience", Some("token_not_verified")),
-        ("subject", Some("id_token_subject_missing")),
+        ("subject", Some("token_not_verified")),
+        ("empty-subject", Some("id_token_subject_missing")),
+        ("missing-exp", Some("token_not_verified")),
+        ("missing-iat", Some("token_not_verified")),
+        ("skewed-expiry", None),
         (
             "userinfo-mismatch",
             Some("id_token_userinfo_subject_mismatch"),

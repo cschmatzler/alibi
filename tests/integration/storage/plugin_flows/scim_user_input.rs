@@ -143,9 +143,10 @@ async fn scim_user_input_reports_reference_field_errors_before_authentication<B:
             request.method = HttpMethod::Put;
         }
         let response = call(&auth, request, 400).await;
+        // HTTP ingress omits null attributes, so a null required attribute is missing.
         assert_eq!(
             body(&response)["detail"],
-            "[body.userName] Invalid input: expected string, received null"
+            "[body.userName] Invalid input: expected string, received undefined"
         );
         assert_eq!(body(&response)["scimType"], "invalidValue");
     }

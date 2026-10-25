@@ -162,14 +162,9 @@ async fn scim_group_patch_handles_noops_nulls_and_transactional_member_changes<B
             "invalidPath",
         ),
         (
-            json!([{"path":"externalId","value":null}]),
-            "externalId must be a non-empty string",
-            "invalidValue",
-        ),
-        (
-            json!([{"path":"members","value":null}]),
-            "members must be an array",
-            "invalidValue",
+            json!([{"path":"displayName","value":null}]),
+            "displayName is required and cannot be removed",
+            "mutability",
         ),
     ] {
         let denied = patch(&configured, id, operations, Some("group-reader")).await?;
