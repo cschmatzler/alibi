@@ -20,7 +20,7 @@ pub struct SsoProvider {
 /// A provider update prepared from the actual row locked by its adapter.
 pub struct SsoProviderUpdate {
     pub provider: SsoProvider,
-    /// Fields that decide which IdP identities linked accounts belong to changed.
+    /// Fields that decide which identity-provider identities linked accounts belong to changed.
     pub identity_changed: bool,
     /// Identity or signing trust changed; reported to the provider mutation guard.
     pub authentication_boundary_changed: bool,
