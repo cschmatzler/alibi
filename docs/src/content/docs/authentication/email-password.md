@@ -166,12 +166,12 @@ The flow:
 | --- | --- | --- |
 | `send_reset_password(…)` | none | Required to enable `/request-password-reset` |
 | `reset_token_expiry(Duration)` | 1 hour | Token lifetime; takes precedence over `reset_token_expiry_hours` |
-| `revoke_sessions_on_password_reset(bool)` | `false` | Delete every session of the user after a reset |
-| `on_password_reset(callback)` | none | Runs after the new password is stored (before revocation); an error propagates |
+| `revoke_sessions_on_password_reset(bool)` | `false` | Delete every session of the user before the new password is stored |
+| `on_password_reset(callback)` | none | Runs after sessions are revoked and the new password is stored; an error is returned, but the reset has already taken effect |
 | `require_current_password(bool)` | `true` | Verify `currentPassword` on `/change-password` |
 | `password_hasher(…)` | scrypt | Hasher for `/change-password`; `/reset-password` prefers the email/password plugin's hasher |
 
-The token is single-use and stored as a verification row (`reset-password:<token>`). Delivery follows the [notification policy](/concepts/notifications/).
+The token is single-use and stored as a verification row (`reset-password:<token>`). It is only looked up before the new password is hashed, so a rejected password (for example by the [compromised-password check](/plugins/have-i-been-pwned/)) leaves the link usable. The token is spent just before sessions are revoked and the password is written. Better Auth runs those three steps in one database transaction; Alibi runs them in the same order without one, so a storage failure after the token is spent leaves it spent, and a failed write after revocation leaves the sessions revoked, but the new password is never stored while the old sessions remain valid. `/change-password` with `revokeOtherSessions` likewise revokes before writing. Delivery follows the [notification policy](/concepts/notifications/).
 
 ## Change or verify a password
 

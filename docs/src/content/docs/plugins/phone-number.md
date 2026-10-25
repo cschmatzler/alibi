@@ -140,7 +140,7 @@ fn config() -> PhoneNumberConfig {
 
 ### Password reset by phone
 
-`POST /phone-number/request-password-reset` sends a code through `send_password_reset_otp` (or `send_otp`), and `POST /phone-number/reset-password` with `{"phoneNumber","otp","newPassword"}` stores the new password. It inherits the password hasher and length limits of the [email and password](/authentication/email-password/) plugin and revokes sessions when `PasswordManagementPlugin::revoke_sessions_on_password_reset` is on.
+`POST /phone-number/request-password-reset` sends a code through `send_password_reset_otp` (or `send_otp`), and `POST /phone-number/reset-password` with `{"phoneNumber","otp","newPassword"}` stores the new password. It inherits the password hasher and length limits of the [email and password](/authentication/email-password/) plugin and revokes sessions when `PasswordManagementPlugin::revoke_sessions_on_password_reset` is on. A matching code is spent only just before the password is written, so a password rejected later (for example as compromised) leaves it usable; a wrong code still counts toward `allowed_attempts`. With a custom `verify_otp`, the provider checks the reset code and usually spends it: a password that is too short or too long is rejected before the provider is called, the stored reset code is dropped after the provider accepts, and a password rejected later needs a new code. If `send_password_reset_otp` sends the code Alibi generates, `verify_otp` must accept that code too.
 
 ## Server-only helper
 
