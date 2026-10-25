@@ -1,6 +1,8 @@
 //! Verified OIDC identity claims from the configured JWKS authority.
 use super::{AuthContext, AuthResult, AuthSchema, Value, api};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
+/// Clock skew allowed on `exp` and `nbf`, matching the shared upstream ID token policy.
+const ID_TOKEN_CLOCK_TOLERANCE: f64 = 30.0;
 pub(super) async fn verify<S: AuthSchema>(
     token: &str,
     endpoint: &str,
@@ -9,6 +11,10 @@ pub(super) async fn verify<S: AuthSchema>(
     ctx: &AuthContext<S>,
 ) -> AuthResult<Value> {
     let invalid = || api(400, "token_not_verified");
+    // An empty audience would accept tokens issued to any client.
+    if client_id.is_empty() {
+        return Err(invalid());
+    }
     let header = jsonwebtoken::decode_header(token).map_err(|_| invalid())?;
     let key_type = match header.alg {
         Algorithm::RS256
@@ -101,10 +107,20 @@ pub(super) async fn verify<S: AuthSchema>(
         .map_err(|_| invalid())?
         .as_secs_f64()
         .floor();
+    // Every ID token carries `sub`, `exp` and `iat`; time claims allow the same
+    // 30-second clock skew as social sign-in.
+    if ["sub", "exp", "iat"]
+        .iter()
+        .any(|field| claims.get(field).is_none())
+    {
+        return Err(invalid());
+    }
     for field in ["iat", "exp", "nbf"] {
         if let Some(value) = claims.get(field) {
             let value = value.as_f64().ok_or_else(invalid)?;
-            if (field == "exp" && value <= now) || (field == "nbf" && value > now) {
+            if (field == "exp" && value <= now - ID_TOKEN_CLOCK_TOLERANCE)
+                || (field == "nbf" && value > now + ID_TOKEN_CLOCK_TOLERANCE)
+            {
                 return Err(invalid());
             }
         }

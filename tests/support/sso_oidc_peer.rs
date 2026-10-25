@@ -234,6 +234,14 @@ fn signed_id_token(issuer: &str, email: &str, case: &str, profile: &serde_json::
         "subject" => {
             let _ = claims.as_object_mut().unwrap().remove("sub");
         }
+        "empty-subject" => claims["sub"] = serde_json::json!(""),
+        "missing-exp" => {
+            let _ = claims.as_object_mut().unwrap().remove("exp");
+        }
+        "missing-iat" => {
+            let _ = claims.as_object_mut().unwrap().remove("iat");
+        }
+        "skewed-expiry" => claims["exp"] = serde_json::json!(now - 10),
         "userinfo-mismatch" => claims["sub"] = serde_json::json!("other-subject"),
         _ => {}
     }

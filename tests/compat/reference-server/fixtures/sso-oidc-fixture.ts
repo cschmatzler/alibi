@@ -170,6 +170,10 @@ async function signedIdToken(
     if (tokenCase === "valid-multi-audience") claims.azp = "enterprise-client";
   }
   if (tokenCase === "subject") delete claims.sub;
+  if (tokenCase === "empty-subject") claims.sub = "";
+  if (tokenCase === "missing-exp") delete claims.exp;
+  if (tokenCase === "missing-iat") delete claims.iat;
+  if (tokenCase === "skewed-expiry") claims.exp = now - 10;
   if (tokenCase === "userinfo-mismatch") claims.sub = "other-subject";
   const privateKey = await readFixtureFile(
     new URL(

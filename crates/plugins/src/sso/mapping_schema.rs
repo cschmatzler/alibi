@@ -14,9 +14,9 @@ fn validate(mapping: &JsValue, saml: bool) -> AuthResult<JsValue> {
         "body.oidcConfig.mapping"
     };
     let mut fields = vec![
-        JsonField::string("email", true),
+        JsonField::string("email", false),
         JsonField::string("emailVerified", false),
-        JsonField::string("name", true),
+        JsonField::string("name", false),
     ];
     if saml {
         fields.extend([
