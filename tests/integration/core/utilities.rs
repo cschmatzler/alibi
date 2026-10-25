@@ -72,8 +72,10 @@ fn default_attributes_override_every_field_and_cookie_entries_win() {
     assert!(
         cookie.starts_with("plain=v; Max-Age=5; Domain=default.example.test; Path=/auth; Expires=")
     );
-    assert!(cookie.ends_with("; SameSite=Strict; Partitioned"));
-    assert!(!cookie.contains("HttpOnly") && !cookie.contains("Secure"));
+    // Better Call 1.4.4 forces Secure for a Partitioned cookie, even over an
+    // explicit `secure: false`.
+    assert!(cookie.ends_with("; Secure; SameSite=Strict; Partitioned"));
+    assert!(!cookie.contains("HttpOnly"));
 
     drop(config.advanced.cookies.insert(
         "plain".into(),
@@ -127,6 +129,33 @@ fn host_prefixed_cookies_ignore_domain_and_path_overrides() {
     assert_eq!(
         create_cookie("__Host-token", "v", 1, &config).unwrap(),
         "__Host-token=v; Max-Age=1; Path=/; HttpOnly; Secure; SameSite=Lax"
+    );
+}
+
+// Better Call 1.4.4: lowercase prefixes and SameSite=None also force Secure.
+#[test]
+fn prefixes_match_case_insensitively_and_same_site_none_forces_secure() {
+    let config = with_advanced(|advanced| {
+        advanced.default_cookie_attributes.domain = Some("example.test".into());
+        advanced.default_cookie_attributes.path = Some("/x".into());
+    });
+    assert_eq!(
+        create_cookie("__host-token", "v", 1, &config).unwrap(),
+        "__host-token=v; Max-Age=1; Path=/; HttpOnly; Secure; SameSite=Lax"
+    );
+    assert!(
+        create_cookie("__secure-token", "v", 1, &config)
+            .unwrap()
+            .contains("; Secure;")
+    );
+    let none = with_advanced(|advanced| {
+        advanced.default_cookie_attributes.secure = Some(false);
+        advanced.default_cookie_attributes.same_site = Some(SameSite::None);
+    });
+    assert!(
+        create_cookie("c", "v", 1, &none)
+            .unwrap()
+            .ends_with("; HttpOnly; Secure; SameSite=None")
     );
 }
 

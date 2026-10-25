@@ -568,12 +568,11 @@ mod secondary {
                 auth.store().get_session(&token).await.unwrap().is_some(),
                 stored && !preserved
             );
-            assert!(
-                auth.store()
-                    .get_user_sessions(&owner)
-                    .await
-                    .unwrap()
-                    .is_empty()
+            // Since 1.7.12 the combined mode lists sessions from the database,
+            // so an evicted cache entry is still listed there.
+            assert_eq!(
+                auth.store().get_user_sessions(&owner).await.unwrap().len(),
+                usize::from(stored && !preserved)
             );
             // Revocation cannot leave an audit row usable as fallback authority.
             auth.store().delete_session(&token).await.unwrap();

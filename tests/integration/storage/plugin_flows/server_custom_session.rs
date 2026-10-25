@@ -114,7 +114,14 @@ async fn server_custom_session_overrides_core_get_session_with_real_callback_con
         .await?;
         assert_eq!(missing.status, 200);
         assert_eq!(body(&missing), Value::Null);
-        assert!(missing.headers.get("cache-control").is_none());
+        // Since 1.7.12 a null session still forwards the core read's headers.
+        assert_eq!(
+            missing
+                .headers
+                .get("cache-control")
+                .map(|value| value.as_str()),
+            Some("no-store")
+        );
         let headers = [
             ("cookie".into(), cookie.clone()),
             ("x-custom-marker".into(), "sdk".into()),
