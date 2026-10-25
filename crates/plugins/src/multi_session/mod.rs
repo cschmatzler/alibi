@@ -623,8 +623,9 @@ mod tests {
         let listed = plugin.on_request(&request, &ctx).await.unwrap().unwrap();
         let body: serde_json::Value = serde_json::from_slice(&listed.body).unwrap();
         assert_eq!(body.as_array().unwrap().len(), 2);
-        assert_eq!(body[0]["user"]["id"], alice.id);
-        assert_eq!(body[1]["user"]["id"], bob.id);
+        // Since 1.7.12 held sessions follow cookie order, not storage order.
+        assert_eq!(body[0]["user"]["id"], bob.id);
+        assert_eq!(body[1]["user"]["id"], alice.id);
         let duplicate = request_with_cookies(
             HttpMethod::Get,
             "/multi-session/list-device-sessions",
