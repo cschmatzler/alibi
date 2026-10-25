@@ -89,9 +89,5 @@ compatScenario(
       ownedSessions,
     });
   },
-  [
-    "GET /multi-session/list-device-sessions",
-    "POST /multi-session/revoke",
-    "GET /list-sessions",
-  ],
+  ["GET /multi-session/list-device-sessions", "POST /multi-session/revoke", "GET /list-sessions"],
 );

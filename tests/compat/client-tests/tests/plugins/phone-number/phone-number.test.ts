@@ -1156,7 +1156,16 @@ compatScenario(
     const stale = await fresh.signIn.email({ email, password: "mustNotCommit123" });
     expect(stale.error?.status).toBe(401);
     expect((await owner.getSession()).data?.user.id).toBe(signup.data!.user.id);
-    return ctx.snapshot({ verified, issued, short, local: localAttempt, reset, replay, login, stale });
+    return ctx.snapshot({
+      verified,
+      issued,
+      short,
+      local: localAttempt,
+      reset,
+      replay,
+      login,
+      stale,
+    });
   },
   ["POST /phone-number/reset-password", "POST /phone-number/verify"],
 );
