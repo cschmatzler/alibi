@@ -57,7 +57,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-`CookieAttributes` accepts `secure`, `http_only`, `same_site`, `path`, `domain`, `max_age` (seconds, may be fractional), `expires` (UTC) and `partitioned`. Values are validated when a cookie is emitted: the published 400-day cap on `Max-Age`/`Expires` applies, and clearing a cookie sets `Max-Age=0` while keeping its other attributes. Reserved prefixes are enforced — a `__Secure-` or `__Host-` cookie is always `Secure`.
+`CookieAttributes` accepts `secure`, `http_only`, `same_site`, `path`, `domain`, `max_age` (seconds, may be fractional), `expires` (UTC) and `partitioned`. Values are validated when a cookie is emitted: the published 400-day cap on `Max-Age`/`Expires` applies, and clearing a cookie sets `Max-Age=0` while keeping its other attributes. Reserved prefixes are enforced case-insensitively — a `__Secure-` or `__Host-` cookie is always `Secure`, and a `__Host-` cookie always uses `Path=/` without a domain. A cookie with `SameSite=None` or `Partitioned` is also always `Secure`, even when `secure` is `false`.
 
 Session-token cookies use the real session lifetime, or no `Max-Age` for a browser-session ("remember me" off). The session-cache cookie uses its own age (below). Neither changes how long the server-side session is valid or when it is refreshed.
 
