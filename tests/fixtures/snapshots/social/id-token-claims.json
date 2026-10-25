@@ -196,6 +196,272 @@
     }
   },
   {
+    "missing expiry": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "missing subject": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "null subject": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g7>",
+        "user": {
+          "id": "<v8>",
+          "name": "Provider claims-sub-13",
+          "email": "claims-13@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-13",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "expired within clock skew": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g9>",
+        "user": {
+          "id": "<v10>",
+          "name": "Provider claims-sub-14",
+          "email": "claims-14@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-14",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "expired beyond clock skew": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "not before within clock skew": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g11>",
+        "user": {
+          "id": "<v12>",
+          "name": "Provider claims-sub-16",
+          "email": "claims-16@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-16",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "not before beyond clock skew": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "issued within clock skew": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g13>",
+        "user": {
+          "id": "<v14>",
+          "name": "Provider claims-sub-18",
+          "email": "claims-18@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-18",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "issued beyond clock skew": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "token age within clock skew": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g15>",
+        "user": {
+          "id": "<v16>",
+          "name": "Provider claims-sub-20",
+          "email": "claims-20@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-20",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "token age beyond clock skew": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "empty client id": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_TOKEN",
+        "message": "Invalid token"
+      }
+    }
+  },
+  {
+    "key without algorithm uses default": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "redirect": false,
+        "token": "<g17>",
+        "user": {
+          "id": "<v18>",
+          "name": "Provider claims-sub-23",
+          "email": "claims-23@example.com",
+          "emailVerified": true,
+          "image": "https://images.example/claims-sub-23",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
     "truthy numeric key id": {
       "status": 401,
       "headers": {
@@ -264,13 +530,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g7>",
+        "token": "<g19>",
         "user": {
-          "id": "<v8>",
-          "name": "Provider claims-sub-15",
-          "email": "claims-15@example.com",
+          "id": "<v20>",
+          "name": "Provider claims-sub-28",
+          "email": "claims-28@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-15",
+          "image": "https://images.example/claims-sub-28",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
@@ -292,13 +558,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g9>",
+        "token": "<g21>",
         "user": {
-          "id": "<v10>",
-          "name": "Provider claims-sub-16",
-          "email": "claims-16@example.com",
+          "id": "<v22>",
+          "name": "Provider claims-sub-29",
+          "email": "claims-29@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-16",
+          "image": "https://images.example/claims-sub-29",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
@@ -320,13 +586,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g11>",
+        "token": "<g23>",
         "user": {
-          "id": "<v12>",
-          "name": "Provider claims-sub-17",
-          "email": "claims-17@example.com",
+          "id": "<v24>",
+          "name": "Provider claims-sub-30",
+          "email": "claims-30@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-17",
+          "image": "https://images.example/claims-sub-30",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
@@ -376,13 +642,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g13>",
+        "token": "<g25>",
         "user": {
-          "id": "<v14>",
-          "name": "Provider claims-sub-20",
-          "email": "claims-20@example.com",
+          "id": "<v26>",
+          "name": "Provider claims-sub-33",
+          "email": "claims-33@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-20",
+          "image": "https://images.example/claims-sub-33",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
@@ -404,13 +670,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g15>",
+        "token": "<g27>",
         "user": {
-          "id": "<v16>",
-          "name": "Provider claims-sub-21",
-          "email": "claims-21@example.com",
+          "id": "<v28>",
+          "name": "Provider claims-sub-34",
+          "email": "claims-34@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-21",
+          "image": "https://images.example/claims-sub-34",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
@@ -488,13 +754,13 @@
       },
       "body": {
         "redirect": false,
-        "token": "<g17>",
+        "token": "<g29>",
         "user": {
-          "id": "<v18>",
-          "name": "Provider claims-sub-26",
-          "email": "claims-26@example.com",
+          "id": "<v30>",
+          "name": "Provider claims-sub-39",
+          "email": "claims-39@example.com",
           "emailVerified": true,
-          "image": "https://images.example/claims-sub-26",
+          "image": "https://images.example/claims-sub-39",
           "createdAt": "<date>",
           "updatedAt": "<date>",
           "displayUsername": null,
