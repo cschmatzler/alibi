@@ -11,10 +11,9 @@ use crate::authentication_helpers::{
     revoke_unproven_access, session_response,
 };
 use alibi_core::error::codes;
-use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
-    CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+    CreateUser, CreateVerification, UpdateUser,
 };
 use serde_json::{Value, json};
 
@@ -220,6 +219,28 @@ impl EmailOtpPlugin {
             return Err(invalid_otp());
         }
         Ok(())
+    }
+
+    /// Whether `otp` matches a stored, unexpired code with attempts left,
+    /// without spending it or counting an attempt.
+    async fn matches_usable_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        key: &str,
+        otp: &str,
+    ) -> AuthResult<bool> {
+        let Some(existing) = find_verification(ctx, key).await? else {
+            return Ok(false);
+        };
+        if existing.is_expired() {
+            return Ok(false);
+        }
+        let (stored, attempts) = split_value(existing.value()?);
+        if super::super::passwordless_numeric::attempts_number(attempts) >= self.allowed_attempts()
+        {
+            return Ok(false);
+        }
+        self.config.storage.verify(stored, otp, &ctx.config).await
     }
 
     pub(super) async fn send_verification(
@@ -530,7 +551,6 @@ impl EmailOtpPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         body: PasswordRequest,
     ) -> AuthResult<AuthResponse> {
-        use alibi_core::AuthAccount;
         let email = body.email.to_lowercase();
         let settings = self.password_settings(ctx);
         alibi_core::utils::password::validate_password(
@@ -539,12 +559,16 @@ impl EmailOtpPlugin {
             settings.maximum,
             ctx,
         )?;
-        self.consume_code(
-            ctx,
-            &identifier(EmailOtpType::ForgetPassword, &email),
-            &body.otp,
-        )
-        .await?;
+        // Check the code without spending it, so a rejected password leaves it
+        // usable. A wrong or unusable code goes through consume_code, which
+        // counts the attempt and fails; a correct one is spent just before the
+        // password is written.
+        let key = identifier(EmailOtpType::ForgetPassword, &email);
+        let mut consumed = false;
+        if !self.matches_usable_code(ctx, &key, &body.otp).await? {
+            self.consume_code(ctx, &key, &body.otp).await?;
+            consumed = true;
+        }
         let user = ctx
             .database
             .get_user_by_email_record(&email)
@@ -553,36 +577,20 @@ impl EmailOtpPlugin {
         let password = ctx
             .hash_password(settings.hasher.as_ref(), &body.password)
             .await?;
-        if let Some(account) = super::super::helpers::get_credential_account(ctx, user.id()).await?
-        {
-            _ = ctx
-                .database
-                .update_account_record(
-                    &account.id(),
-                    UpdateAccount {
-                        password: Some(password),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-        } else {
-            _ = ctx
-                .database
-                .create_account_record(CreateAccount {
-                    additional_fields: FieldValues::default(),
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".to_owned(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(password),
-                })
-                .await?;
-        }
+        super::super::helpers::reset_credential_password(
+            ctx,
+            &user.id(),
+            password,
+            settings.revoke_sessions,
+            async {
+                if consumed {
+                    Ok(())
+                } else {
+                    self.consume_code(ctx, &key, &body.otp).await
+                }
+            },
+        )
+        .await?;
         if let Some(hook) = &settings.on_reset {
             hook(serde_json::to_value(ctx.user_view(&user))?).await?;
         }
@@ -597,9 +605,6 @@ impl EmailOtpPlugin {
                     },
                 )
                 .await?;
-        }
-        if settings.revoke_sessions {
-            ctx.database.delete_user_sessions(&user.id()).await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }

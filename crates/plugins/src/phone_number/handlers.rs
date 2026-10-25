@@ -13,10 +13,9 @@ use crate::{
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
 use alibi_core::error::codes;
-use alibi_core::field_policy::FieldValues;
 use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
-    AuthUser, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+    AuthUser, CreateUser, CreateVerification, UpdateUser,
 };
 use serde_json::json;
 use std::sync::Arc;
@@ -115,23 +114,62 @@ impl PhoneNumberPlugin {
         code: &str,
     ) -> AuthResult<()> {
         if let Some(verifier) = &self.config.verify_otp {
-            if !verifier
-                .verify(
-                    &PhoneOtpDelivery {
-                        phone_number: phone_number.into(),
-                        code: code.into(),
-                    },
-                    &alibi_core::CallbackContext::new(ctx, request),
-                )
-                .await
-                .map_err(crate::helpers::callback_failure)?
-            {
-                return Err(invalid_otp());
-            }
-            ctx.verifications().delete(phone_number).await?;
-            return Ok(());
+            return Self::verify_with_custom_verifier(
+                verifier.as_ref(),
+                ctx,
+                request,
+                phone_number,
+                code,
+                phone_number,
+            )
+            .await;
         }
         self.consume_local(ctx, phone_number, code).await
+    }
+    /// Check the code with `verify_otp`, then drop the code stored under `identifier`.
+    async fn verify_with_custom_verifier(
+        verifier: &dyn super::PhoneOtpVerifier,
+        ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
+        phone_number: &str,
+        code: &str,
+        identifier: &str,
+    ) -> AuthResult<()> {
+        if !verifier
+            .verify(
+                &PhoneOtpDelivery {
+                    phone_number: phone_number.into(),
+                    code: code.into(),
+                },
+                &alibi_core::CallbackContext::new(ctx, request),
+            )
+            .await
+            .map_err(crate::helpers::callback_failure)?
+        {
+            return Err(invalid_otp());
+        }
+        ctx.verifications().delete(identifier).await
+    }
+    /// Whether `provided_code` matches a stored, unexpired code with attempts
+    /// left, without spending it or counting an attempt.
+    async fn matches_usable_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        identifier: &str,
+        provided_code: &str,
+    ) -> AuthResult<bool> {
+        let Some(existing) = find_verification(ctx, identifier).await? else {
+            return Ok(false);
+        };
+        if existing.is_expired() {
+            return Ok(false);
+        }
+        let (code, attempts) = split_code(existing.value()?);
+        Ok(
+            super::super::passwordless_numeric::attempts_number(attempts)
+                < self.config.allowed_attempts
+                && code == provided_code,
+        )
     }
     async fn consume_local(
         &self,
@@ -595,28 +633,52 @@ impl PhoneNumberPlugin {
             Ok(body) => body,
             Err(response) => return Ok(response),
         };
-        self.reset_password_core(ctx, body).await
+        self.reset_password_core(ctx, Some(req), body).await
     }
 
     pub(super) async fn reset_password_core(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
+        request: Option<&AuthRequest>,
         body: ResetRequest,
     ) -> AuthResult<AuthResponse> {
-        // The phone reset consumes proof before looking up the account or
-        // checking password policy. A policy rejection therefore burns the OTP.
-        self.consume_local(
-            ctx,
-            &format!("{}-request-password-reset", body.phone_number),
-            &body.otp,
-        )
-        .await?;
+        let identifier = format!("{}-request-password-reset", body.phone_number);
+        let settings = password_settings(ctx);
+        // Check the code without spending it, so a rejected password leaves it
+        // usable. A wrong or unusable code goes through consume_local, which
+        // counts the attempt and fails; a correct one is spent just before the
+        // password is written. A custom verifier spends the code itself, so a
+        // password with an invalid length is rejected before calling it.
+        let mut consumed = false;
+        if let Some(verifier) = &self.config.verify_otp {
+            alibi_core::utils::password::validate_password(
+                &body.new_password,
+                settings.minimum,
+                settings.maximum,
+                ctx,
+            )?;
+            Self::verify_with_custom_verifier(
+                verifier.as_ref(),
+                ctx,
+                request,
+                &body.phone_number,
+                &body.otp,
+                &identifier,
+            )
+            .await?;
+            consumed = true;
+        } else if !self
+            .matches_usable_code(ctx, &identifier, &body.otp)
+            .await?
+        {
+            self.consume_local(ctx, &identifier, &body.otp).await?;
+            consumed = true;
+        }
         let user = ctx
             .database
             .get_user_by_phone_number_record(&body.phone_number)
             .await?
             .ok_or_else(|| phone_error(400, codes::UNEXPECTED_ERROR, "Unexpected error"))?;
-        let settings = password_settings(ctx);
         alibi_core::utils::password::validate_password(
             &body.new_password,
             settings.minimum,
@@ -626,40 +688,16 @@ impl PhoneNumberPlugin {
         let hash = ctx
             .hash_password(settings.hasher.as_ref(), &body.new_password)
             .await?;
-        if let Some(account) = crate::helpers::get_credential_account(ctx, user.id()).await? {
-            _ = ctx
-                .database
-                .update_account_record(
-                    &account.id(),
-                    UpdateAccount {
-                        password: Some(hash),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-        } else {
-            _ = ctx
-                .database
-                .create_account_record(CreateAccount {
-                    additional_fields: FieldValues::default(),
-                    user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
-                    provider_id: "credential".into(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                    password: Some(hash),
-                })
-                .await?;
-        }
+        crate::helpers::reset_credential_password(ctx, &user.id(), hash, settings.revoke, async {
+            if consumed {
+                Ok(())
+            } else {
+                self.consume_local(ctx, &identifier, &body.otp).await
+            }
+        })
+        .await?;
         if let Some(callback) = settings.on_reset {
             callback(serde_json::to_value(ctx.user_view(&user))?).await?;
-        }
-        if settings.revoke {
-            ctx.database.delete_user_sessions(&user.id()).await?;
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }

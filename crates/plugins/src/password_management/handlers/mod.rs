@@ -9,8 +9,8 @@ use alibi_core::error::codes;
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
 use alibi_core::{
-    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, CreateAccount,
-    RequestMeta, UpdateAccount,
+    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, RequestMeta,
+    UpdateAccount,
 };
 use chrono::{Duration, Utc};
 use url::Url;
@@ -97,10 +97,14 @@ pub(crate) async fn reset_password_core(
     password_utils::validate_password(&body.new_password, minimum, maximum, ctx)?;
     let policy = ctx.extensions.get::<crate::EmailPasswordConfig>();
 
+    // Look the token up without spending it, so a rejected password (including
+    // a compromised-password rejection while hashing) leaves the link usable.
+    let identifier = format!("reset-password:{token}");
     let verification = ctx
         .verifications()
-        .consume(&format!("reset-password:{token}"))
+        .find(&identifier)
         .await?
+        .filter(|verification| !verification.is_expired())
         .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
     let user_id = verification.value()?.to_owned();
     let user = ctx
@@ -119,42 +123,24 @@ pub(crate) async fn reset_password_core(
         .or(config.password_hasher.as_ref());
     let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
-    if let Some(account) = get_credential_account(ctx, &user_id).await? {
-        _ = ctx
-            .database
-            .update_account_record(
-                &account.id(),
-                UpdateAccount {
-                    password: Some(password_hash),
-                    ..Default::default()
-                },
-            )
-            .await?;
-    } else {
-        _ = ctx
-            .database
-            .create_account_record(CreateAccount {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
-                user_id: user_id.clone(),
-                account_id: user_id.clone(),
-                provider_id: "credential".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: Some(password_hash),
-            })
-            .await?;
-    }
+    crate::helpers::reset_credential_password(
+        ctx,
+        &user_id,
+        password_hash,
+        config.revoke_sessions_on_password_reset,
+        async {
+            // Consuming is the single-winner gate between concurrent resets.
+            ctx.verifications()
+                .consume(&identifier)
+                .await?
+                .map(|_| ())
+                .ok_or_else(|| AuthError::bad_request("Invalid token"))
+        },
+    )
+    .await?;
 
     if let Some(callback) = &config.on_password_reset {
         callback(password_utils::serialize_to_value(&ctx.user_view(&user))?).await?;
-    }
-
-    if config.revoke_sessions_on_password_reset {
-        ctx.database.delete_user_sessions(&user_id).await?;
     }
 
     Ok(StatusResponse { status: true })
@@ -239,6 +225,12 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         .map_err(|_error| AuthError::bad_request("Invalid password"))?;
     }
 
+    // Revoke before writing, as upstream does inside its transaction, so a
+    // failure never stores the new password while other sessions stay valid.
+    let revoke = body.revoke_other_sessions == Some(true);
+    if revoke {
+        ctx.database.delete_user_sessions(&user.id()).await?;
+    }
     _ = ctx
         .database
         .update_account_record(
@@ -250,8 +242,7 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         )
         .await?;
 
-    let new_token = if body.revoke_other_sessions == Some(true) {
-        ctx.database.delete_user_sessions(&user.id()).await?;
+    let new_token = if revoke {
         let session = ctx
             .session_manager()
             .create_session_record(user, meta.ip_address.clone(), meta.user_agent.clone())
