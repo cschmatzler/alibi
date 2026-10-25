@@ -1268,6 +1268,8 @@ impl ScimPlugin {
                 None,
             ));
         }
+        let operations =
+            super::null_attributes::expand(&operations, super::null_attributes::group_target)?;
         let patch = match alibi_core::store::prepare_scim_group_patch(operations) {
             Ok(value) => value,
             Err(AuthError::Api {
