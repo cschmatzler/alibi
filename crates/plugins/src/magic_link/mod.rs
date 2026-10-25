@@ -248,9 +248,11 @@ impl MagicLinkPlugin {
         query: MagicLinkVerifyInput,
     ) -> AuthResult<AuthResponse> {
         let token = &query.token;
-        let callback = decode_callback(query.callback_url.as_deref())?;
-        let error_callback = decode_callback(query.error_callback_url.as_deref())?;
-        let new_user_callback = decode_callback(query.new_user_callback_url.as_deref())?;
+        // The query is already decoded once; 1.7.12 no longer decodes it again.
+        let non_empty = |value: &Option<String>| value.clone().filter(|value| !value.is_empty());
+        let callback = non_empty(&query.callback_url);
+        let error_callback = non_empty(&query.error_callback_url);
+        let new_user_callback = non_empty(&query.new_user_callback_url);
         // Each pinned originCheck closure labels its input callbackURL,
         // including the new-user and error callbacks.
         for value in [&callback, &new_user_callback, &error_callback] {
@@ -442,34 +444,6 @@ impl RequestBody for SignInRequest {
             required: false,
         },
     ];
-}
-
-fn decode_callback(value: Option<&str>) -> AuthResult<Option<String>> {
-    value
-        .filter(|value| !value.is_empty())
-        .map(|value| {
-            let bytes = value.as_bytes();
-            for (index, byte) in bytes.iter().enumerate() {
-                if *byte == b'%'
-                    && (bytes
-                        .get(index + 1)
-                        .is_none_or(|byte| !byte.is_ascii_hexdigit())
-                        || bytes
-                            .get(index + 2)
-                            .is_none_or(|byte| !byte.is_ascii_hexdigit()))
-                {
-                    return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
-                        "Malformed callback encoding",
-                    ))));
-                }
-            }
-            urlencoding::decode(value)
-                .map(std::borrow::Cow::into_owned)
-                .map_err(|error| {
-                    AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
-                })
-        })
-        .transpose()
 }
 
 fn error_redirect(mut url: Url, error: &str, description: Option<&str>) -> AuthResponse {
