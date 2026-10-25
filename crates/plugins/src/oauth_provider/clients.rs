@@ -2462,14 +2462,14 @@ impl OAuthProviderPlugin {
             "client_assertion": assertion,
             "client_assertion_type": assertion_type,
         });
-        let (_, client) = match super::assertion::verify_client(
+        let (_, client) = match Box::pin(super::assertion::verify_client(
             &credentials,
             ctx,
             self,
             &audience,
             true,
             Some(rotatable),
-        )
+        ))
         .await?
         {
             Ok(verified) => verified,

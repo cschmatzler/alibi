@@ -66,7 +66,7 @@ impl OAuthProviderPlugin {
             && !prefixed_opaque
             && let Some(jwt) = ctx.extensions.get::<crate::jwt::JwtPlugin>()
         {
-            jwt.verify_signed_payload_with_optional_kid(token, None, ctx)
+            Box::pin(jwt.verify_signed_payload_with_optional_kid(token, None, ctx))
                 .await?
                 .filter(|claims| {
                     claims.get("iss").and_then(Value::as_str) == Some(expected_issuer.as_str())

@@ -12,10 +12,11 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let credentials = match super::credentials::extract(body, req, ctx, self, "token").await? {
-            Ok(credentials) => credentials,
-            Err(response) => return Ok(no_store(response)),
-        };
+        let credentials =
+            match Box::pin(super::credentials::extract(body, req, ctx, self, "token")).await? {
+                Ok(credentials) => credentials,
+                Err(response) => return Ok(no_store(response)),
+            };
         if credentials.client_id.is_empty() {
             return error("invalid_request", "Missing required client_id");
         }
@@ -42,14 +43,15 @@ impl OAuthProviderPlugin {
                 "client is not authorized to use grant type refresh_token",
             );
         }
-        let Some(decoded) = self.decode_refresh_token(token).await? else {
+        let Some(decoded) = Box::pin(self.decode_refresh_token(token)).await? else {
             return error("invalid_token", "refresh token not found");
         };
-        let protected = self.hash_token(&decoded.token, "refresh_token").await?;
-        let Some(original) = ctx
-            .database
-            .get_oauth_token(OAuthTokenKind::Refresh, &protected)
-            .await?
+        let protected = Box::pin(self.hash_token(&decoded.token, "refresh_token")).await?;
+        let Some(original) = Box::pin(
+            ctx.database
+                .get_oauth_token(OAuthTokenKind::Refresh, &protected),
+        )
+        .await?
         else {
             return error("invalid_grant", "session not found");
         };
@@ -127,9 +129,13 @@ impl OAuthProviderPlugin {
                 let resource = requested_resource_value
                     .as_ref()
                     .or_else(|| original.metadata.get("resources"));
-                let policy = match self
-                    .admit_resources(ctx, &original.client_id, &scopes, resource)
-                    .await
+                let policy = match Box::pin(self.admit_resources(
+                    ctx,
+                    &original.client_id,
+                    &scopes,
+                    resource,
+                ))
+                .await
                 {
                     Ok(policy) => policy,
                     Err(error) => {
@@ -144,19 +150,19 @@ impl OAuthProviderPlugin {
                 let mut replay_params =
                     super::OAuthTokenIssueParams::new(client.clone(), policy.scopes.clone());
                 replay_params.refresh_token = Some(original.clone());
-                let confirmation = match self
-                    .resolve_dpop_binding(ctx, req, &replay_params, &policy)
-                    .await
-                {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let mut response = EndpointResponse::error(error.error);
-                        if let Some(body) = error.body {
-                            response = response.with_error_body(*body);
+                let confirmation =
+                    match Box::pin(self.resolve_dpop_binding(ctx, req, &replay_params, &policy))
+                        .await
+                    {
+                        Ok(value) => value,
+                        Err(error) => {
+                            let mut response = EndpointResponse::error(error.error);
+                            if let Some(body) = error.body {
+                                response = response.with_error_body(*body);
+                            }
+                            return Ok(no_store(response));
                         }
-                        return Ok(no_store(response));
-                    }
-                };
+                    };
 
                 if let Some(ciphertext) = original
                     .metadata
@@ -196,35 +202,36 @@ impl OAuthProviderPlugin {
                 return error("invalid_grant", "invalid refresh token");
             }
             if let Some(user) = &original.user_id {
-                ctx.database
-                    .delete_oauth_refresh_family(&original.client_id, user)
-                    .await?;
+                Box::pin(
+                    ctx.database
+                        .delete_oauth_refresh_family(&original.client_id, user),
+                )
+                .await?;
             }
             return error("invalid_grant", "invalid refresh token");
         }
         let Some(user_id) = original.user_id.as_deref() else {
             return error("invalid_request", "user not found");
         };
-        let Some(user) = ctx.database.get_user_by_id(user_id).await? else {
+        let Some(user) = Box::pin(ctx.database.get_user_by_id(user_id)).await? else {
             return error("invalid_request", "user not found");
         };
         let requested_scopes = scopes.clone();
         let resource = requested_resource_value
             .as_ref()
             .or_else(|| original.metadata.get("resources"));
-        let admission = match self
-            .admit_resources(ctx, &original.client_id, &scopes, resource)
-            .await
-        {
-            Ok(policy) => policy,
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
+        let admission =
+            match Box::pin(self.admit_resources(ctx, &original.client_id, &scopes, resource)).await
+            {
+                Ok(policy) => policy,
+                Err(error) => {
+                    let mut response = EndpointResponse::error(error.error);
+                    if let Some(body) = error.body {
+                        response = response.with_error_body(*body);
+                    }
+                    return Ok(no_store(response));
                 }
-                return Ok(no_store(response));
-            }
-        };
+            };
         let scopes = admission
             .scopes
             .iter()
@@ -260,63 +267,59 @@ impl OAuthProviderPlugin {
             });
         let resources = super::resource_policy::resource_list(resource);
         params.resources = (!resources.is_empty()).then_some(resources);
-        self.extend_id_token_claims(ctx, req, &mut params, "refresh_token")
-            .await?;
-        if let Err(error) = self
-            .extend_token_response_fields(ctx, req, &mut params, "refresh_token")
-            .await
+        Box::pin(self.extend_id_token_claims(ctx, req, &mut params, "refresh_token")).await?;
+        if let Err(error) =
+            Box::pin(self.extend_token_response_fields(ctx, req, &mut params, "refresh_token"))
+                .await
         {
             return super::issuance::error_response(error);
         }
-        params.confirmation = match self
-            .resolve_dpop_binding(ctx, req, &params, &admission)
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
+        params.confirmation =
+            match Box::pin(self.resolve_dpop_binding(ctx, req, &params, &admission)).await {
+                Ok(value) => value,
+                Err(error) => {
+                    let mut response = EndpointResponse::error(error.error);
+                    if let Some(body) = error.body {
+                        response = response.with_error_body(*body);
+                    }
+                    return Ok(no_store(response));
                 }
-                return Ok(no_store(response));
-            }
-        };
+            };
         if !self.config.disable_jwt_plugin && !admission.audiences.is_empty() {
-            self.extend_access_token_claims(ctx, req, &mut params, "refresh_token")
+            Box::pin(self.extend_access_token_claims(ctx, req, &mut params, "refresh_token"))
                 .await?;
         }
         let issued = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| alibi_core::AuthError::internal("Invalid token issuance time"))?;
         let rotate =
             original_scopes.contains(&"offline_access") || scopes.contains(&"offline_access");
-        let next_refresh = match self
-            .create_refresh_token(ctx, &params, &admission, issued, rotate)
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
+        let next_refresh =
+            match Box::pin(self.create_refresh_token(ctx, &params, &admission, issued, rotate))
+                .await
+            {
+                Ok(value) => value,
+                Err(error) => {
+                    let mut response = EndpointResponse::error(error.error);
+                    if let Some(body) = error.body {
+                        response = response.with_error_body(*body);
+                    }
+                    return Ok(no_store(response));
                 }
-                return Ok(no_store(response));
-            }
-        };
+            };
         let expires_claim = self.access_expiration(issued.timestamp(), true, &requested_scopes)?;
         let expires_claim = admission.access_expiration(issued.timestamp(), &expires_claim)?;
-        let access = match self
-            .create_access_token(
-                ctx,
-                req,
-                super::issuance::AccessTokenIssuance {
-                    params: &params,
-                    issued,
-                    expires: &expires_claim,
-                    policy: &admission,
-                    refresh_id: next_refresh.as_ref().map(|(id, _)| id.as_str()),
-                },
-            )
-            .await
+        let access = match Box::pin(self.create_access_token(
+            ctx,
+            req,
+            super::issuance::AccessTokenIssuance {
+                params: &params,
+                issued,
+                expires: &expires_claim,
+                policy: &admission,
+                refresh_id: next_refresh.as_ref().map(|(id, _)| id.as_str()),
+            },
+        ))
+        .await
         {
             Ok(token) => token,
             Err(error) => {
@@ -380,8 +383,7 @@ impl OAuthProviderPlugin {
                 original.metadata.get("resources"),
                 original.metadata.get("confirmation"),
             );
-            self.store_rotation_replay(ctx, &original, request, &response)
-                .await;
+            Box::pin(self.store_rotation_replay(ctx, &original, request, &response)).await;
         }
         Ok(no_store(EndpointResponse::json(&response)?))
     }

@@ -53,14 +53,15 @@ impl OAuthProviderPlugin {
                 &format!("unsupported grant_type {grant}"),
             );
         }
-        let credentials = match super::credentials::extract(&body, req, ctx, self, "token").await? {
-            Ok(credentials) => credentials,
-            Err(response) => {
-                return Ok(response
-                    .with_header("Cache-Control", "no-store")
-                    .with_header("Pragma", "no-cache"));
-            }
-        };
+        let credentials =
+            match Box::pin(super::credentials::extract(&body, req, ctx, self, "token")).await? {
+                Ok(credentials) => credentials,
+                Err(response) => {
+                    return Ok(response
+                        .with_header("Cache-Control", "no-store")
+                        .with_header("Pragma", "no-cache"));
+                }
+            };
         let client_id = credentials.client_id.clone();
         let secret = &credentials.secret;
         if client_id.is_empty() {
@@ -107,11 +108,9 @@ impl OAuthProviderPlugin {
                 "client is not authorized to use grant type authorization_code",
             );
         }
-        let identifier = self.hash_token(code, "authorization_code").await?;
-        let Some(proof) = ctx.verifications().consume(&identifier).await? else {
-            ctx.database
-                .delete_oauth_tokens_for_code(&identifier)
-                .await?;
+        let identifier = Box::pin(self.hash_token(code, "authorization_code")).await?;
+        let Some(proof) = Box::pin(ctx.verifications().consume(&identifier)).await? else {
+            Box::pin(ctx.database.delete_oauth_tokens_for_code(&identifier)).await?;
             return error(400, "invalid_grant", "invalid code");
         };
         let Ok(value) = serde_json::from_str::<Value>(proof.value()?) else {
@@ -272,13 +271,11 @@ impl OAuthProviderPlugin {
                     })
                     .or_else(|| v.as_str().map(|v| vec![v.into()]))
             });
-        let response = match self
-            .mint_tokens(ctx, req, &params, "authorization_code")
-            .await
-        {
-            Ok(value) => value,
-            Err(error) => return super::issuance::error_response(error),
-        };
+        let response =
+            match Box::pin(self.mint_tokens(ctx, req, &params, "authorization_code")).await {
+                Ok(value) => value,
+                Err(error) => return super::issuance::error_response(error),
+            };
         Ok(EndpointResponse::json(&response)?
             .with_header("Cache-Control", "no-store")
             .with_header("Pragma", "no-cache"))
