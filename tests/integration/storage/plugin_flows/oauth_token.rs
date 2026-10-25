@@ -660,20 +660,20 @@ async fn oauth_token_exchanges_bound_code_and_revokes_on_replay<B: Backend>(db: 
             } else if case == "secret" {
                 (400, "invalid_client", "invalid client_secret")
             } else if case == "malformed" {
-                (
-                    401,
-                    "invalid_request",
-                    if bound {
-                        "code verification failed"
-                    } else {
-                        "code_verifier provided but PKCE was not used in authorization"
-                    },
-                )
+                if bound {
+                    (400, "invalid_grant", "code verification failed")
+                } else {
+                    (
+                        400,
+                        "invalid_request",
+                        "code_verifier provided but PKCE was not used in authorization",
+                    )
+                }
             } else if pkce_required {
                 (400, "invalid_request", "PKCE is required for this client")
             } else {
                 (
-                    401,
+                    400,
                     "invalid_request",
                     "code_verifier required because PKCE was used in authorization",
                 )
@@ -698,7 +698,9 @@ async fn oauth_token_exchanges_bound_code_and_revokes_on_replay<B: Backend>(db: 
             );
             let hash = base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .encode(sha2::Sha256::digest(&code));
-            let retained = early || case == "code";
+            // Client authentication precedes the code lookup, so a rejected
+            // secret leaves the one-time code unconsumed.
+            let retained = early || matches!(case, "code" | "secret");
             assert_eq!(
                 auth.store()
                     .get_verification_by_identifier(&hash)

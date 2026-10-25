@@ -427,3 +427,77 @@ compatScenario(
     return ctx.snapshot({ initialCalls, trace, allowed, after });
   },
 );
+compatScenario(
+  "Administrative client creation links requested resources and validates resource identifiers",
+  async (ctx) => {
+    const actor = ctx.actor();
+    const control = (input: unknown) =>
+      actor.fetch(`${ctx.baseURL}/__test/server-api/oauth-provider-clients`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(input),
+      });
+    const signup = await control({
+      action: "signup",
+      body: {
+        email: ctx.uniqueEmail("resource-admin-create"),
+        name: "Owner",
+        password: "password123",
+      },
+    });
+    expect(signup.status).toBe(200);
+    const cookie = signup.headers
+      .getSetCookie()
+      .filter((raw) => Boolean(Cookie.parse(raw)?.value))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const identifiers = [];
+    for (const identifier of [
+      "https://api.fixture.test/admin-linked",
+      "https://api.fixture.test/#",
+      "javascript:alert(1)",
+      "relative",
+    ]) {
+      const response = await control({
+        action: "resource-create",
+        headers: { cookie },
+        body: { identifier },
+      });
+      identifiers.push({ identifier, status: response.status, body: await response.json() });
+    }
+    expect(identifiers.map(({ status }) => status)).toEqual([200, 400, 400, 400]);
+    const disabled = await control({
+      action: "resource-create",
+      headers: { cookie },
+      body: { identifier: "https://api.fixture.test/admin-disabled", disabled: true },
+    });
+    expect(disabled.status).toBe(200);
+    const created = [];
+    for (const resources of [
+      ["https://api.fixture.test/admin-linked", "https://api.fixture.test/admin-linked"],
+      ["https://api.fixture.test/admin-missing"],
+      ["https://api.fixture.test/admin-disabled"],
+      ["https://api.fixture.test/#"],
+      [],
+    ]) {
+      const response = await control({
+        action: "admin-create",
+        headers: { cookie },
+        body: {
+          client_name: "Linked at creation",
+          redirect_uris: ["https://app.fixture.test/callback"],
+          token_endpoint_auth_method: "none",
+          resources,
+        },
+      });
+      const value = (await response.json()) as any;
+      const links =
+        response.status === 201
+          ? await (await control({ action: "resource-links", clientId: value.client_id })).json()
+          : null;
+      created.push({ resources, status: response.status, value, links });
+    }
+    expect(created.map(({ status }) => status)).toEqual([201, 400, 400, 400, 201]);
+    return ctx.snapshot({ identifiers, created });
+  },
+);

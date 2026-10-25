@@ -136,6 +136,6 @@ impl OAuthProviderPlugin {
                 }
             }
         }
-        Box::pin(self.resume_authorization(query, req, ctx, clearance)).await
+        Box::pin(self.resume_authorization(query, req, ctx, clearance, remove.is_none())).await
     }
 }

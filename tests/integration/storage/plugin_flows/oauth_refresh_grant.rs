@@ -347,13 +347,12 @@ async fn refresh_lifecycle<B: Backend>(
                         .validate_access_token(auth.context(), &value, bound.as_deref())
                         .await
                 };
-                if matches!(
+                // A JWT that fails verification falls through to the opaque lookup.
+                let unverifiable = matches!(
                     name.as_str(),
                     "issuer" | "future" | "bad-signature" | "bad-signature-without-kid"
-                ) {
-                    let error = result.expect_err(&name);
-                    assert_eq!(error.error.status_code(), 500, "{name}");
-                } else if missing || (require_active && !active) {
+                );
+                if missing || unverifiable || (require_active && !active) {
                     let error = result.expect_err(&name);
                     assert_eq!(error.error.status_code(), 401, "{name}");
                     assert_eq!(
@@ -417,8 +416,8 @@ async fn refresh_lifecycle<B: Backend>(
         ),
         (
             json!({"grant_type":"refresh_token","client_id":"foreign","refresh_token":refresh}),
-            "invalid_grant",
-            "invalid refresh token",
+            "invalid_client",
+            "client not found",
         ),
         (
             json!({"grant_type":"refresh_token","client_id":id,"refresh_token":refresh,"scope":"profile"}),

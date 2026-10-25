@@ -169,7 +169,7 @@ async fn oauth_client_privileges_gate_management_before_lookup_and_writes<B: Bac
             json!({"client_id":"cached-client","update":{}}),
             cookies(&owner),
             "true",
-            500,
+            400,
             true,
         ),
         (
@@ -323,7 +323,7 @@ async fn oauth_client_privileges_gate_management_before_lookup_and_writes<B: Bac
         "rotateClientSecret",
         "deleteOAuthClient",
     ] {
-        for (decision, status) in [("false", 401), ("true", 500)] {
+        for (decision, status) in [("false", 401), ("true", 400)] {
             let error = Box::pin(
                 cached_auth.dispatch_endpoint(
                     ServerEndpoint::<Value>::new("oauth-provider", operation)

@@ -12,23 +12,41 @@ pub(super) fn proof_header(req: &impl SessionRequest) -> Option<&str> {
         .map(|(_, value)| value.trim_matches([' ', '\t', '\r', '\n']))
         .filter(|value| !value.is_empty())
 }
+/// The endpoint's public URL, which clients use as the `DPoP` `htu`: the origin
+/// and base path of the configured base URL (not the request URL, whose host
+/// proxies and dev servers can rewrite) plus the request's own path below the
+/// base path, so route parameters and a trailing slash match what the client
+/// called. `path` is used when there is no HTTP request.
 pub(super) fn endpoint_url<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &impl SessionRequest,
     path: &str,
 ) -> String {
-    req.physical_request()
-        .and_then(|value| value.url())
-        .map_or_else(
-            || {
-                format!(
-                    "{}{}{path}",
-                    ctx.config.base_url.trim_end_matches('/'),
-                    ctx.config.base_path
-                )
-            },
-            ToString::to_string,
-        )
+    let configured = format!(
+        "{}{}",
+        ctx.config.base_url.trim_end_matches('/'),
+        ctx.config.base_path
+    );
+    let base = configured.trim_end_matches('/');
+    let Some(request_path) = req
+        .physical_request()
+        .and_then(|request| request.url())
+        .map(url::Url::path)
+        .filter(|_| !base.is_empty())
+    else {
+        return format!("{base}{path}");
+    };
+    let base_path = url::Url::parse(base)
+        .map(|url| {
+            let path = url.path();
+            path.strip_suffix('/').unwrap_or(path).to_owned()
+        })
+        .unwrap_or_default();
+    let endpoint_path = request_path
+        .strip_prefix(base_path.as_str())
+        .filter(|rest| rest.starts_with('/'))
+        .unwrap_or(path);
+    format!("{base}{endpoint_path}")
 }
 impl OAuthProviderPlugin {
     pub(super) async fn resolve_dpop_binding<S: AuthSchema>(

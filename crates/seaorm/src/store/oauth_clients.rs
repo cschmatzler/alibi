@@ -784,6 +784,29 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .try_into()
             .map(Some)
     }
+    async fn replace_oauth_client_jwks(
+        &self,
+        client_id: &str,
+        expected_jwks: &str,
+        jwks: String,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let result = Entity::update_many()
+            .col_expr(Column::Jwks, sea_orm::sea_query::Expr::value(jwks))
+            .col_expr(
+                Column::UpdatedAt,
+                sea_orm::sea_query::Expr::value(updated_at),
+            )
+            .filter(Column::ClientId.eq(client_id))
+            .filter(Column::Jwks.eq(expected_jwks))
+            .exec(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
+        if result.rows_affected == 0 {
+            return Ok(None);
+        }
+        self.get_oauth_client(client_id).await
+    }
     async fn update_oauth_client_metadata(
         &self,
         client_id: &str,

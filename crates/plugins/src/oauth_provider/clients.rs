@@ -71,6 +71,7 @@ impl OAuthProviderPlugin {
     async fn require_client_privileges<S: AuthSchema>(
         &self,
         action: &'static str,
+        client_id: Option<&str>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<EndpointResponse>> {
@@ -102,6 +103,7 @@ impl OAuthProviderPlugin {
                 headers,
                 user: serde_json::to_value(user)?,
                 session: serde_json::to_value(session)?,
+                client_id: client_id.map(str::to_owned),
             };
             for policy in self.config.client_privileges.iter().chain(scope_policy) {
                 if !policy.allowed(&input).await? {
@@ -136,7 +138,7 @@ impl OAuthProviderPlugin {
         }
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        if let Some(response) = self.require_client_privileges("create", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("create", None, req, ctx).await? {
             return Ok(response);
         }
         let metadata: serde_json::Map<String, Value> =
@@ -145,7 +147,7 @@ impl OAuthProviderPlugin {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
         };
-        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)
+        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), false, ctx)
             .await
     }
 }
@@ -203,21 +205,82 @@ fn redirect_error(uri: &str, application: &str) -> Option<String> {
         let raw_host = raw_http_host(uri);
         return (!raw_host.as_deref().is_some_and(|host|["localhost","127.0.0.1","[::1]"].contains(&host))).then(||format!("native clients may use http only on the exact loopback hosts localhost, 127.0.0.1, or [::1]: {uri}"));
     }
+    (!native_private_use(&url, uri)).then(|| format!("native private-use redirect URI schemes must not use a reserved scheme; they must be an authority-free reverse-domain URI or a custom-scheme URI with a host and a path: {uri}"))
+}
+/// RFC 8252 §7.1's authority-free reverse-domain form, or a host-bearing
+/// custom scheme with a path such as `cursor://anysphere.cursor-mcp/oauth/callback`.
+pub(super) fn native_private_use(url: &url::Url, uri: &str) -> bool {
     let scheme = url.scheme();
-    let labels = scheme.split('.').collect::<Vec<_>>();
-    let reverse = labels.len() > 1
-        && labels.iter().all(|label| {
-            !label.is_empty()
-                && !label.starts_with('-')
-                && !label.ends_with('-')
-                && label
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
-        });
-    let private = uri
-        .strip_prefix(&format!("{scheme}:"))
-        .is_some_and(|path| path.starts_with('/') && !path.starts_with("//"));
-    (!reverse||!private||["file","ftp","mailto","javascript","data","vbscript"].contains(&scheme)).then(||format!("native private-use redirect URI schemes must be well-formed reverse-domain names, omit the naming authority, and must not use a reserved scheme: {uri}"))
+    if ["http", "https"].contains(&scheme) {
+        return false;
+    }
+    if url.host_str().is_none_or(str::is_empty) {
+        let labels = scheme.split('.').collect::<Vec<_>>();
+        return labels.len() > 1
+            && labels.iter().all(|label| {
+                !label.is_empty()
+                    && !label.starts_with('-')
+                    && !label.ends_with('-')
+                    && label
+                        .bytes()
+                        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+            })
+            && uri
+                .get(scheme.len() + 1..)
+                .is_some_and(|path| path.starts_with('/') && !path.starts_with("//"));
+    }
+    // Bare-authority forms (`cursor://host`, `cursor://host?x=1`) parse an
+    // empty path and stay rejected, as do web, script and browser schemes.
+    ![
+        "ws",
+        "wss",
+        "file",
+        "ftp",
+        "mailto",
+        "javascript",
+        "data",
+        "vbscript",
+        "blob",
+        "about",
+        "view-source",
+    ]
+    .contains(&scheme)
+        && url.path().starts_with('/')
+}
+/// Server default for dynamic registrations that omit `application_type`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum OAuthClientRegistrationApplicationType {
+    /// The OIDC Registration §2 default.
+    #[default]
+    Web,
+    Native,
+    /// `native` when any redirect URI uses a non-HTTP(S) scheme or HTTP on an
+    /// exact loopback host, because a web client can register neither.
+    Infer,
+}
+impl OAuthClientRegistrationApplicationType {
+    fn resolve(self, redirects: Option<&Value>) -> &'static str {
+        match self {
+            Self::Web => "web",
+            Self::Native => "native",
+            Self::Infer => {
+                let native = redirects
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .any(|uri| {
+                        url::Url::parse(uri)
+                            .is_ok_and(|url| !["http", "https"].contains(&url.scheme()))
+                            || raw_http_host(uri).is_some_and(|host| {
+                                ["localhost", "127.0.0.1", "[::1]"].contains(&host.as_str())
+                            })
+                    });
+                if native { "native" } else { "web" }
+            }
+        }
+    }
 }
 fn raw_http_host(uri: &str) -> Option<String> {
     if !uri
@@ -337,6 +400,7 @@ enum FieldKind {
     Subject,
     Expiration,
     Record,
+    Resources,
 }
 const FIELDS: &[(&str, FieldKind)] = &[
     ("redirect_uris", FieldKind::Uris),
@@ -464,7 +528,8 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
         | FieldKind::Contacts
         | FieldKind::Grants
         | FieldKind::Responses
-        | FieldKind::Scopes => {
+        | FieldKind::Scopes
+        | FieldKind::Resources => {
             let JsValue::Array(values) = value else {
                 add(format!(
                     "Invalid input: expected array, received {}",
@@ -472,7 +537,12 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                 ));
                 return;
             };
-            if values.is_empty() && !matches!(kind, FieldKind::Responses | FieldKind::Scopes) {
+            if values.is_empty()
+                && !matches!(
+                    kind,
+                    FieldKind::Responses | FieldKind::Scopes | FieldKind::Resources
+                )
+            {
                 add("Too small: expected array to have >=1 items".into());
             }
             for (index, value) in values.iter().enumerate() {
@@ -502,6 +572,11 @@ fn validate_field(kind: FieldKind, value: &JsValue, path: &str, issues: &mut Vec
                         for issue in safe_uri_issues(text) {
                             issues.push(format!("[{item_path}] {issue}"));
                         }
+                    }
+                    if matches!(kind, FieldKind::Resources)
+                        && let Some(issue) = super::resources::resource_uri_issue(text)
+                    {
+                        issues.push(format!("[{item_path}] {issue}"));
                     }
                 }
             }
@@ -613,7 +688,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("read", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("read", Some(&input.client_id), req, ctx).await? {
             return Ok(response);
         }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
@@ -736,7 +811,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("list", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("list", None, req, ctx).await? {
             return Ok(response);
         }
         let clients = ctx
@@ -764,7 +839,7 @@ impl OAuthProviderPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
-        if let Some(response) = self.require_client_privileges("delete", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("delete", Some(&input.client_id), req, ctx).await? {
             return Ok(response);
         }
         if self
@@ -773,7 +848,7 @@ impl OAuthProviderPlugin {
             .contains(&input.client_id)
         {
             return status_protocol_error(
-                500,
+                400,
                 "invalid_client",
                 "trusted clients must be updated manually",
             );
@@ -827,7 +902,7 @@ impl OAuthProviderPlugin {
         let (user, _) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         req.queue_response_header("Cache-Control", "no-store");
         req.queue_response_header("Pragma", "no-cache");
-        if let Some(response) = self.require_client_privileges("rotate", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("rotate", Some(&input.client_id), req, ctx).await? {
             return Ok(response);
         }
         if self
@@ -836,7 +911,7 @@ impl OAuthProviderPlugin {
             .contains(&input.client_id)
         {
             return status_protocol_error(
-                500,
+                400,
                 "invalid_client",
                 "trusted clients must be updated manually",
             );
@@ -1063,6 +1138,20 @@ impl OAuthProviderPlugin {
                 )
                 .map(Err);
             }
+            // The pairwise sector is the redirect URI host. Any app can register
+            // a custom scheme, so its host does not identify the client.
+            if redirects.iter().filter_map(Value::as_str).any(|uri| {
+                url::Url::parse(uri).is_ok_and(|url| {
+                    !["http", "https"].contains(&url.scheme())
+                        && url.host_str().is_some_and(|host| !host.is_empty())
+                })
+            }) {
+                return protocol_error(
+                    "invalid_client_metadata",
+                    "pairwise clients cannot use custom-scheme redirect URIs that include a host",
+                )
+                .map(Err);
+            }
             let mut hosts = Vec::new();
             for redirect in &redirects {
                 if let Some(uri) = redirect.as_str()
@@ -1254,7 +1343,7 @@ impl OAuthProviderPlugin {
                 .await?
                 .0
         };
-        if let Some(response) = self.require_client_privileges("update", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("update", Some(&input.client_id), req, ctx).await? {
             return Ok(response);
         }
         if self
@@ -1263,7 +1352,7 @@ impl OAuthProviderPlugin {
             .contains(&input.client_id)
         {
             return status_protocol_error(
-                500,
+                400,
                 "invalid_client",
                 "trusted clients must be updated manually",
             );
@@ -1284,7 +1373,12 @@ impl OAuthProviderPlugin {
         }
         if cross_owner_scopes
             && let Some(response) = self
-                .require_client_privileges("configure-client-credentials-scopes", req, ctx)
+                .require_client_privileges(
+                    "configure-client-credentials-scopes",
+                    Some(&input.client_id),
+                    req,
+                    ctx,
+                )
                 .await?
         {
             return Ok(response);
@@ -1302,7 +1396,14 @@ impl OAuthProviderPlugin {
         merged.extend(updates);
         if let Some(scopes) = scopes.and_then(|value| value.as_array().cloned()) {
             if let Some(response) = self
-                .admit_credential_scopes(&scopes, &merged, req, ctx, !cross_owner_scopes)
+                .admit_credential_scopes(
+                    &scopes,
+                    &merged,
+                    Some(&input.client_id),
+                    req,
+                    ctx,
+                    !cross_owner_scopes,
+                )
                 .await?
             {
                 return Ok(response);
@@ -1373,6 +1474,7 @@ impl OAuthProviderPlugin {
         &self,
         mut metadata: serde_json::Map<String, Value>,
         user_id: Option<String>,
+        dynamic: bool,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
         let auth = metadata
@@ -1396,8 +1498,10 @@ impl OAuthProviderPlugin {
         };
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid client creation timestamp"))?;
-        // Only dynamic registration passes this extension through admission. It is
-        // response/relation data, never a field of the oauthClient model.
+        // Dynamic and administrative registration pass this extension through
+        // admission. It is response/relation data, never a field of the
+        // oauthClient model; only dynamic requests are limited to the
+        // configured registration resources.
         let requested = metadata
             .remove("resources")
             .map(serde_json::from_value::<Vec<String>>)
@@ -1408,7 +1512,7 @@ impl OAuthProviderPlugin {
             .client_registration_default_resources
             .as_deref()
             .unwrap_or_default();
-        for identifier in &requested {
+        for identifier in requested.iter().filter(|_| dynamic) {
             if !defaults.contains(identifier)
                 && !self
                     .config
@@ -1515,7 +1619,7 @@ impl OAuthProviderPlugin {
         }
         let session = Box::pin(ctx.require_cached_session(req)).await.ok();
         if session.is_some()
-            && let Some(response) = self.require_client_privileges("create", req, ctx).await?
+            && let Some(response) = self.require_client_privileges("create", None, req, ctx).await?
         {
             return Ok(response);
         }
@@ -1581,6 +1685,46 @@ impl OAuthProviderPlugin {
             )?)
             .with_header("WWW-Authenticate", "Bearer"));
         }
+        // RFC 7591 §3.2.1 lets the server replace requested metadata: register
+        // the supported grants and return them instead of rejecting the request.
+        if let Some(requested) = metadata
+            .get("grant_types")
+            .and_then(Value::as_array)
+            .filter(|grants| !grants.is_empty())
+            .cloned()
+        {
+            let supported = self.supported_grant_types();
+            let mutual = requested
+                .iter()
+                .filter(|grant| {
+                    grant
+                        .as_str()
+                        .is_some_and(|grant| supported.iter().any(|value| value == grant))
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            if mutual.is_empty() {
+                return status_protocol_error(
+                    400,
+                    "invalid_client_metadata",
+                    &format!(
+                        "no mutually supported grant_type among {}",
+                        requested
+                            .iter()
+                            .map(|grant| grant.as_str().unwrap_or_default())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                );
+            }
+            // `code`, the only response type, goes with `authorization_code`;
+            // admission derives response_types from the registered grants.
+            let code = json!("authorization_code");
+            if requested.contains(&code) && !mutual.contains(&code) {
+                _ = metadata.remove("response_types");
+            }
+            _ = metadata.insert("grant_types".into(), Value::Array(mutual));
+        }
         if session.is_none()
             && token_authorization.is_none()
             && metadata
@@ -1625,6 +1769,15 @@ impl OAuthProviderPlugin {
                 .cloned()
                 .collect(),
         );
+        if !metadata.contains_key("application_type") {
+            let application = self
+                .config
+                .client_registration_default_application_type
+                .resolve(metadata.get("redirect_uris"));
+            if application != "web" {
+                _ = metadata.insert("application_type".into(), json!(application));
+            }
+        }
         let mut metadata = match self.admit_metadata(metadata, &registration_scopes, ctx)? {
             Ok(metadata) => metadata,
             Err(response) => return Ok(response),
@@ -1652,7 +1805,7 @@ impl OAuthProviderPlugin {
             _ = metadata.insert("reference_id".into(), json!(reference));
         }
         let user_id = session.map(|(user, _)| user.id().as_ref().to_owned());
-        self.persist_client(metadata, user_id, ctx).await
+        self.persist_client(metadata, user_id, true, ctx).await
     }
 }
 fn registration_metadata(
@@ -1731,18 +1884,7 @@ fn registration_metadata(
                 )
                 .map(Err);
             };
-            let error = match url::Url::parse(uri) {
-                Err(_) => Some("resource must be an absolute URI"),
-                Ok(url) => {
-                    if uri.contains('#') {
-                        Some("resource must not contain a fragment")
-                    } else if ["javascript", "data", "vbscript"].contains(&url.scheme()) {
-                        Some("resource cannot use javascript:, data:, or vbscript: scheme")
-                    } else {
-                        None
-                    }
-                }
-            };
+            let error = super::resources::resource_uri_issue(uri);
             if let Some(error) = error {
                 return status_protocol_error(
                     400,
@@ -1772,6 +1914,7 @@ pub(super) fn validate_admin_create(body: Option<&JsValue>) -> AuthResult<JsValu
         }
         if name == "response_types" {
             fields.push(("client_credentials_scopes", FieldKind::Scopes));
+            fields.push(("resources", FieldKind::Resources));
         }
         fields.push((name, kind));
     }
@@ -1810,7 +1953,7 @@ impl OAuthProviderPlugin {
             .without_error_body()
             .with_header("Content-Type", "application/json"));
         };
-        if let Some(response) = self.require_client_privileges("create", req, ctx).await? {
+        if let Some(response) = self.require_client_privileges("create", None, req, ctx).await? {
             return Ok(response);
         }
         let scopes = metadata
@@ -1818,10 +1961,30 @@ impl OAuthProviderPlugin {
             .and_then(|value| value.as_array().cloned())
             .unwrap_or_default();
         if let Some(response) = self
-            .admit_credential_scopes(&scopes, &metadata, req, ctx, true)
+            .admit_credential_scopes(&scopes, &metadata, None, req, ctx, true)
             .await?
         {
             return Ok(response);
+        }
+        // Linking a requested resource needs the `link` resource privilege.
+        let resources = metadata.remove("resources");
+        let mut linked = Vec::new();
+        for identifier in resources
+            .as_ref()
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            if linked.contains(&identifier) {
+                continue;
+            }
+            linked.push(identifier);
+            if let Some(response) =
+                Box::pin(self.resource_admission(req, ctx, "link", Some(identifier))).await?
+            {
+                return Ok(response);
+            }
         }
         _ = metadata.remove("client_secret_expires_at");
         let extensions = metadata
@@ -1840,7 +2003,10 @@ impl OAuthProviderPlugin {
             _ = metadata.insert("metadata".into(), Value::Object(extensions));
         }
         _ = metadata.insert("client_credentials_scopes".into(), json!(scopes));
-        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), ctx)
+        if let Some(resources) = resources {
+            _ = metadata.insert("resources".into(), resources);
+        }
+        self.persist_client(metadata, Some(user.id().as_ref().to_owned()), false, ctx)
             .await
     }
 }
@@ -1922,6 +2088,7 @@ impl OAuthProviderPlugin {
         &self,
         scopes: &[Value],
         metadata: &serde_json::Map<String, Value>,
+        client_id: Option<&str>,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
         require_privileges: bool,
@@ -1972,7 +2139,12 @@ impl OAuthProviderPlugin {
             }
             if require_privileges {
                 return self
-                    .require_client_privileges("configure-client-credentials-scopes", req, ctx)
+                    .require_client_privileges(
+                        "configure-client-credentials-scopes",
+                        client_id,
+                        req,
+                        ctx,
+                    )
                     .await;
             }
         }
@@ -2039,6 +2211,7 @@ pub(super) fn validate_admin_update(body: Option<&JsValue>) -> AuthResult<JsValu
         ("client_secret_expires_at", FieldKind::Expiration),
         ("skip_consent", FieldKind::Boolean),
         ("enable_end_session", FieldKind::Boolean),
+        ("disabled", FieldKind::Boolean),
         ("dpop_bound_access_tokens", FieldKind::Boolean),
         ("metadata", FieldKind::Record),
     ]);
@@ -2135,5 +2308,176 @@ impl OAuthProviderPlugin {
             )?));
         }
         Box::pin(self.public_client_projection(&input.client_id, ctx)).await
+    }
+}
+
+/// The rotation body in schema order: two strings and a JWK Set. Each issue
+/// maps to its field's protocol error, as the reference OAuth endpoint wrapper
+/// reports the first schema issue.
+fn validate_rotate_keys(
+    body: Option<&JsValue>,
+) -> AuthResult<Result<(String, String, Value), EndpointResponse>> {
+    let field = |name: &str| body.and_then(|body| body.get(name));
+    for name in ["client_assertion", "client_assertion_type"] {
+        let description = match field(name) {
+            Some(JsValue::String(_)) => continue,
+            None => format!("{name} is required"),
+            Some(JsValue::Array(_)) => format!("{name} must not appear more than once"),
+            Some(_) => format!("{name} must be a string"),
+        };
+        return status_protocol_error(400, "invalid_client", &description).map(Err);
+    }
+    if field("jwks").is_none() {
+        return status_protocol_error(400, "invalid_client_metadata", "jwks is required")
+            .map(Err);
+    }
+    if let Err(error) = validate_metadata(body, "body", &[("jwks", FieldKind::Jwks)]) {
+        let message = error.error_payload().2;
+        let first = message.split("; ").next().unwrap_or(&message);
+        let (path, issue) = first
+            .strip_prefix("[body.")
+            .and_then(|text| text.split_once("] "))
+            .unwrap_or(("jwks", first));
+        let description = if let Some(expected) = issue
+            .strip_prefix("Invalid input: expected ")
+            .and_then(|text| text.split_once(','))
+        {
+            if expected.1.trim() == "received array" {
+                format!("{path} must not appear more than once")
+            } else {
+                format!("{path} must be a {}", expected.0)
+            }
+        } else {
+            format!("{path}: {issue}")
+        };
+        return status_protocol_error(400, "invalid_client_metadata", &description).map(Err);
+    }
+    let text = |name: &str| {
+        field(name)
+            .and_then(JsValue::as_str)
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let jwks = field("jwks")
+        .map(JsValue::to_json_value)
+        .transpose()?
+        .unwrap_or(Value::Null);
+    Ok(Ok((
+        text("client_assertion"),
+        text("client_assertion_type"),
+        jwks,
+    )))
+}
+/// Only inline keys of a client this server manages can be rotated here.
+fn rotatable(
+    provider: &OAuthProviderPlugin,
+    client: &alibi_core::store::OAuthClient,
+) -> Option<(u16, &'static str)> {
+    if provider
+        .config
+        .cached_trusted_clients
+        .contains(&client.client_id)
+    {
+        return Some((400, "trusted clients must be updated manually"));
+    }
+    let present = |name: &str| {
+        client
+            .metadata
+            .get(name)
+            .is_some_and(|value| !value.is_null())
+    };
+    (present("client_discovery_id") || present("jwks_uri") || !present("jwks")).then_some((
+        400,
+        "client keys are not stored inline; rotate them where the client publishes them",
+    ))
+}
+impl OAuthProviderPlugin {
+    /// Replace a `private_key_jwt` client's inline signing keys, authenticated
+    /// by a client assertion signed with one of its current keys.
+    pub fn rotate_client_keys_endpoint(
+        input: &impl Serialize,
+    ) -> AuthResult<ServerEndpoint<Value>> {
+        ServerEndpoint::new("oauth-provider", "rotateClientKeys").with_body(input)
+    }
+    pub(super) async fn rotate_client_keys<S: AuthSchema>(
+        &self,
+        body: Option<&JsValue>,
+        req: &impl SessionRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<EndpointResponse> {
+        req.queue_response_header("Cache-Control", "no-store");
+        req.queue_response_header("Pragma", "no-cache");
+        let (assertion, assertion_type, jwks) = match validate_rotate_keys(body)? {
+            Ok(input) => input,
+            Err(response) => return Ok(response),
+        };
+        if !self.config.allow_client_key_rotation {
+            return status_protocol_error(403, "access_denied", "Client key rotation is disabled");
+        }
+        if !jwks
+            .get("keys")
+            .and_then(Value::as_array)
+            .is_some_and(|keys| !keys.is_empty() && keys.iter().all(Value::is_object))
+        {
+            return status_protocol_error(
+                400,
+                "invalid_client_metadata",
+                "jwks must be an RFC 7517 JWK Set object with a non-empty keys array",
+            );
+        }
+        if let Some(error) = public_jwks_error(&jwks) {
+            return status_protocol_error(400, "invalid_client_metadata", error);
+        }
+        // Without a request URL, the audience is the fixed endpoint path below
+        // the configured base URL, without its trailing slash.
+        let base = format!(
+            "{}{}",
+            ctx.config.base_url.trim_end_matches('/'),
+            ctx.config.base_path
+        );
+        let audience = format!(
+            "{}/oauth2/client/rotate-keys",
+            base.trim_end_matches('/')
+        );
+        let credentials = json!({
+            "client_assertion": assertion,
+            "client_assertion_type": assertion_type,
+        });
+        let (_, client) = match super::assertion::verify_client(
+            &credentials,
+            ctx,
+            self,
+            &audience,
+            true,
+            Some(rotatable),
+        )
+        .await?
+        {
+            Ok(verified) => verified,
+            Err(response) => return Ok(response),
+        };
+        // Guard the write on the key set the assertion was verified against,
+        // so a concurrent rotation wins instead of being overwritten.
+        let expected = alibi_core::store::oauth_clients::metadata_to_columns(
+            json!({"jwks": client.metadata.get("jwks")}),
+        )?
+        .get("jwks")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_owned();
+        let now = chrono::Utc::now();
+        if ctx
+            .database
+            .replace_oauth_client_jwks(&client.client_id, &expected, serde_json::to_string(&jwks)?, now)
+            .await?
+            .is_none()
+        {
+            return status_protocol_error(
+                409,
+                "invalid_request",
+                "client keys changed while rotating; retry with a fresh client assertion",
+            );
+        }
+        EndpointResponse::json(&json!({"client_id": client.client_id, "jwks": jwks}))
     }
 }

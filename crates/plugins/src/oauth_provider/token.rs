@@ -78,6 +78,35 @@ impl OAuthProviderPlugin {
                 "Either code_verifier or client_secret is required",
             );
         }
+        // RFC 6749 §5.2: an unknown or unauthenticated client is
+        // `invalid_client`, so resolve it before the code lookup can report
+        // `invalid_grant` and before a one-time code is consumed.
+        let client = match Box::pin(credentials.authenticate(ctx, self)).await? {
+            Ok(client) => client,
+            Err(response) => {
+                return Ok(response
+                    .with_header("Cache-Control", "no-store")
+                    .with_header("Pragma", "no-cache"));
+            }
+        };
+        let registered = client
+            .metadata
+            .get("token_endpoint_auth_method")
+            .and_then(Value::as_str)
+            .unwrap_or("client_secret_basic");
+        if client
+            .metadata
+            .get("grant_types")
+            .unwrap_or(&Value::Null)
+            .as_array()
+            .is_some_and(|grants| !grants.iter().any(|g| g == grant))
+        {
+            return error(
+                400,
+                "unauthorized_client",
+                "client is not authorized to use grant type authorization_code",
+            );
+        }
         let identifier = self.hash_token(code, "authorization_code").await?;
         let Some(proof) = ctx.verifications().consume(&identifier).await? else {
             ctx.database
@@ -111,32 +140,6 @@ impl OAuthProviderPlugin {
         let Some(scope) = query.get("scope").unwrap_or(&Value::Null).as_str() else {
             return error(500, "invalid_scope", "verification scope unset");
         };
-        let client = match credentials.authenticate(ctx, self).await? {
-            Ok(client) => client,
-            Err(response) => {
-                return Ok(response
-                    .with_header("Cache-Control", "no-store")
-                    .with_header("Pragma", "no-cache"));
-            }
-        };
-        let registered = client
-            .metadata
-            .get("token_endpoint_auth_method")
-            .and_then(Value::as_str)
-            .unwrap_or("client_secret_basic");
-        if client
-            .metadata
-            .get("grant_types")
-            .unwrap_or(&Value::Null)
-            .as_array()
-            .is_some_and(|grants| !grants.iter().any(|g| g == grant))
-        {
-            return error(
-                400,
-                "unauthorized_client",
-                "client is not authorized to use grant type authorization_code",
-            );
-        }
         let ceiling = client
             .metadata
             .get("scope")
@@ -177,14 +180,14 @@ impl OAuthProviderPlugin {
         }
         if !challenge.is_empty() && verifier.is_empty() {
             return error(
-                401,
+                400,
                 "invalid_request",
                 "code_verifier required because PKCE was used in authorization",
             );
         }
         if challenge.is_empty() && !verifier.is_empty() {
             return error(
-                401,
+                400,
                 "invalid_request",
                 "code_verifier provided but PKCE was not used in authorization",
             );
@@ -193,7 +196,7 @@ impl OAuthProviderPlugin {
             && (query.get("code_challenge_method").unwrap_or(&Value::Null) != "S256"
                 || URL_SAFE_NO_PAD.encode(Sha256::digest(verifier)) != challenge)
         {
-            return error(401, "invalid_request", "code verification failed");
+            return error(400, "invalid_grant", "code verification failed");
         }
         let user_id = value
             .get("userId")

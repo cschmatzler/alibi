@@ -811,6 +811,17 @@ impl<S: AuthSchema> crate::store::OAuthClientStore for PluginStore<S> {
             .update_oauth_client_metadata(client_id, metadata, updated_at)
             .await
     }
+    async fn replace_oauth_client_jwks(
+        &self,
+        client_id: &str,
+        expected_jwks: &str,
+        jwks: String,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::store::OAuthClient>> {
+        self.inner
+            .replace_oauth_client_jwks(client_id, expected_jwks, jwks, updated_at)
+            .await
+    }
 }
 
 #[async_trait]

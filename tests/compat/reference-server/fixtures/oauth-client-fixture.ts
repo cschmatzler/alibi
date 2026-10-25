@@ -1613,11 +1613,12 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
                 page: mode === "postlogin-empty-page" ? "" : "/post-login",
                 consentReferenceId:
                   mode === "consent-reference" ? consentReferenceId : () => undefined,
-                shouldRedirect: async ({ headers, user, session, scopes }) => {
+                shouldRedirect: async ({ headers, user, session, scopes, isContinuation }) => {
                   if (mode === "consent-reference") return false;
                   const decision = headers.get("x-postlogin-decision");
                   postLoginCalls.push({
                     stage: "postLogin",
+                    isContinuation,
                     caller: headers.get("x-policy-caller"),
                     decision,
                     user: { id: user.id, email: user.email, name: user.name },
@@ -1945,10 +1946,11 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
           scopes: ["api:read", "api:write"],
           allowDynamicClientRegistration: true,
           allowUnauthenticatedClientRegistration: true,
-          clientPrivileges: ({ action, headers, user, session }) => {
+          clientPrivileges: ({ action, headers, user, session, clientId }) => {
             const decision = headers.get("x-client-decision");
             clientPolicyCalls.push({
               action,
+              clientId,
               decision,
               caller: headers.get("x-policy-caller"),
               user: { id: user?.id, email: user?.email },
@@ -2181,6 +2183,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
         "registration-scopes-default-only",
         "registration-scopes-union",
         "registration-scopes-allowed-fallback",
+        "registration-application-infer",
+        "registration-application-native",
+        "registration-key-rotation",
       ].map((mode) => [
         mode,
         betterAuth({
@@ -2198,6 +2203,13 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
               allowUnauthenticatedClientRegistration:
                 mode.endsWith("public") || mode.startsWith("registration-"),
               ...(mode === "registration-pkce-true" ? { clientRegistrationRequirePKCE: true } : {}),
+              ...(mode === "registration-application-infer"
+                ? { clientRegistrationDefaultApplicationType: "infer" as const }
+                : {}),
+              ...(mode === "registration-application-native"
+                ? { clientRegistrationDefaultApplicationType: "native" as const }
+                : {}),
+              ...(mode === "registration-key-rotation" ? { allowClientKeyRotation: true } : {}),
               ...(mode === "registration-pkce-false"
                 ? { clientRegistrationRequirePKCE: false }
                 : {}),

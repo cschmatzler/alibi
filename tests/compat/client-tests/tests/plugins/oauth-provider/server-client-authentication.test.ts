@@ -107,7 +107,7 @@ compatScenario(
         undefined,
         400,
         "invalid_client",
-        "missing client",
+        "client not found",
         null,
         null,
       ],

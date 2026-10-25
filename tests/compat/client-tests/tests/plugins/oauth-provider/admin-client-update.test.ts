@@ -118,6 +118,27 @@ compatScenario(
       headers: { cookie: owner },
     });
     expect(await physical.json()).toEqual({ status: 404 });
-    return { rejected, updated: ctx.snapshot(value), row: ctx.snapshot(row) };
+    // Owners pause and resume a client through the administrative update.
+    const toggled = [];
+    for (const disabled of [true, false]) {
+      const response = await control({
+        action: "admin-update",
+        body: { client_id: original.client_id, update: { disabled } },
+        headers: { cookie: owner },
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as any;
+      expect(body.disabled).toBe(disabled);
+      const stored = (await (
+        await control({ action: "row", clientId: original.client_id })
+      ).json()) as any;
+      toggled.push({ body, stored });
+    }
+    return {
+      rejected,
+      updated: ctx.snapshot(value),
+      row: ctx.snapshot(row),
+      toggled: ctx.snapshot(toggled),
+    };
   },
 );

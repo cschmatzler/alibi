@@ -1,6 +1,7 @@
 //! RFC 7523 authentication using registered asymmetric client keys and durable replay claims.
 use super::{OAuthProviderPlugin, credentials::Credentials};
 use alibi_core::endpoint::{EndpointError, EndpointResponse};
+use alibi_core::store::OAuthClient;
 use alibi_core::utils::json::{JsValue, parse_value};
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -9,7 +10,7 @@ use sha2::{Digest as _, Sha256};
 
 const ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
 const SIGNATURE_ERROR: &str = "client assertion signature verification failed";
-fn denied(status: u16, description: &str) -> AuthResult<Result<Credentials, EndpointResponse>> {
+fn denied<T>(status: u16, description: &str) -> AuthResult<Result<T, EndpointResponse>> {
     Ok(Err(super::clients::status_protocol_error(
         status,
         "invalid_client",
@@ -22,12 +23,30 @@ fn decode(value: &str) -> Option<JsValue> {
     let parsed = parse_value(text.strip_prefix('\u{feff}').unwrap_or(&text)).ok()?;
     parsed.is_object().then_some(parsed)
 }
+/// Admission hook run on the looked-up client before any key is fetched or
+/// the `jti` is consumed.
+pub(super) type ClientCheck = fn(&OAuthProviderPlugin, &OAuthClient) -> Option<(u16, &'static str)>;
 pub(super) async fn verify<S: AuthSchema>(
     body: &Value,
     ctx: &AuthContext<S>,
     provider: &OAuthProviderPlugin,
     endpoint_url: &str,
 ) -> AuthResult<Result<Credentials, EndpointResponse>> {
+    Ok(verify_client(body, ctx, provider, endpoint_url, false, None)
+        .await?
+        .map(|(credentials, _)| credentials))
+}
+/// Verify a client assertion and return the client record the signature was
+/// checked against. With `endpoint_only`, the issuer is not an accepted
+/// audience, so an assertion minted for another endpoint cannot be redirected.
+pub(super) async fn verify_client<S: AuthSchema>(
+    body: &Value,
+    ctx: &AuthContext<S>,
+    provider: &OAuthProviderPlugin,
+    endpoint_url: &str,
+    endpoint_only: bool,
+    check: Option<ClientCheck>,
+) -> AuthResult<Result<(Credentials, OAuthClient), EndpointResponse>> {
     let assertion = body
         .get("client_assertion")
         .and_then(Value::as_str)
@@ -97,7 +116,7 @@ pub(super) async fn verify<S: AuthSchema>(
         return denied(400, "client_id in body does not match assertion sub/iss");
     }
     let Some(client) = provider.get_client(ctx, client_id).await? else {
-        return denied(400, "unknown client");
+        return denied(400, "client not found");
     };
     if client.metadata.get("disabled") == Some(&Value::Bool(true)) {
         return denied(400, "client is disabled");
@@ -113,18 +132,23 @@ pub(super) async fn verify<S: AuthSchema>(
             "client is not registered for private_key_jwt authentication",
         );
     }
+    if let Some((status, description)) = check.and_then(|check| check(provider, &client)) {
+        return denied(status, description);
+    }
     let mut jwks = match super::client_jwks::get(ctx, provider, &client).await? {
         Ok(jwks) => jwks,
         Err(description) => return denied(400, description),
     };
     let metadata = provider.metadata(ctx)?;
-    let audiences = [
-        endpoint_url,
-        metadata
-            .get("issuer")
-            .and_then(Value::as_str)
-            .unwrap_or_default(),
-    ];
+    let mut audiences = vec![endpoint_url];
+    if !endpoint_only {
+        audiences.push(
+            metadata
+                .get("issuer")
+                .and_then(Value::as_str)
+                .unwrap_or_default(),
+        );
+    }
     let mut signature = signature_result(&header, &jwks, alg, assertion);
     if signature == SignatureResult::NoMatchingKey
         && let Some(refreshed) = super::client_jwks::refetch(provider, &client).await?
@@ -156,13 +180,16 @@ pub(super) async fn verify<S: AuthSchema>(
         }
         return Err(error.error);
     }
-    Ok(Ok(Credentials {
-        client_id: client_id.into(),
-        secret: String::new(),
-        method: "private_key_jwt".into(),
-        pre_verified: true,
-        confirmation: None,
-    }))
+    Ok(Ok((
+        Credentials {
+            client_id: client_id.into(),
+            secret: String::new(),
+            method: "private_key_jwt".into(),
+            pre_verified: true,
+            confirmation: None,
+        },
+        client,
+    )))
 }
 /// Check assertion hygiene and atomically consume its durable replay identifier.
 ///
@@ -200,7 +227,7 @@ pub async fn consume_client_assertion<S: AuthSchema>(
         return Err(consumption_error("client assertion must include jti claim"));
     }
     let digest = Sha256::digest(format!("{namespace}:{jti}"));
-    let id = URL_SAFE_NO_PAD.encode(digest.iter().take(24).copied().collect::<Vec<_>>());
+    let id = deterministic_id(digest.get(..24).unwrap_or_default(), ctx);
     #[expect(
         clippy::cast_possible_truncation,
         reason = "ECMAScript Date truncates fractional milliseconds"
@@ -217,6 +244,45 @@ pub async fn consume_client_assertion<S: AuthSchema>(
         ));
     }
     Ok(())
+}
+/// Encode a digest as a primary key the configured id strategy keeps: a
+/// version 5 UUID under `uuid`, otherwise the unpadded base64url digest.
+/// Serial ids cannot hold a derived id, so single use is not enforced there.
+fn deterministic_id<S: AuthSchema>(digest: &[u8], ctx: &AuthContext<S>) -> String {
+    if matches!(
+        ctx.config.advanced.database.generate_id,
+        Some(alibi_core::config::DatabaseIdStrategy::Uuid)
+    ) {
+        let mut bytes = digest.get(..16).unwrap_or_default().to_vec();
+        if let Some(byte) = bytes.get_mut(6) {
+            *byte = (*byte & 0x0f) | 0x50;
+        }
+        if let Some(byte) = bytes.get_mut(8) {
+            *byte = (*byte & 0x3f) | 0x80;
+        }
+        let hex = bytes.iter().fold(String::new(), |mut hex, byte| {
+            use std::fmt::Write as _;
+            _ = write!(hex, "{byte:02x}");
+            hex
+        });
+        return format!(
+            "{}-{}-{}-{}-{}",
+            hex.get(..8).unwrap_or_default(),
+            hex.get(8..12).unwrap_or_default(),
+            hex.get(12..16).unwrap_or_default(),
+            hex.get(16..20).unwrap_or_default(),
+            hex.get(20..).unwrap_or_default()
+        );
+    }
+    if ctx.config.advanced.database.serial_ids() {
+        static WARNED: std::sync::Once = std::sync::Once::new();
+        WARNED.call_once(|| {
+            tracing::warn!(
+                "Single-use checks (such as SAML assertion IDs, DPoP proofs, and private_key_jwt assertions) need string ids and are not enforced with `advanced.database.generateId: \"serial\"`."
+            );
+        });
+    }
+    URL_SAFE_NO_PAD.encode(digest)
 }
 fn consumption_error(description: &str) -> EndpointError {
     EndpointError {

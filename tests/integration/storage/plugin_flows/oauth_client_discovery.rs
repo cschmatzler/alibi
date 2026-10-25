@@ -566,7 +566,7 @@ async fn oauth_trusted_client_cache_preserves_shared_authority_and_blocks_mutati
                 };
                 assert_eq!(
                     response.status,
-                    500,
+                    400,
                     "{operation} {id}: {}",
                     body(&response)
                 );
