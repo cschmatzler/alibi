@@ -99,13 +99,28 @@ impl SeedFailure {
 fn missing_table(error: &AuthError) -> bool {
     static PATTERN: std::sync::LazyLock<Option<regex::Regex>> = std::sync::LazyLock::new(|| {
         regex::Regex::new(
-            r"(?i)no such table|relation.*does not exist|table.*does(?: not|n[''’]?t) exist",
+            r"(?i)no such table|relation.*does not exist|table.*does(?: not|n'?t) exist|model.*(?:does not exist|was not found in the schema)",
         )
         .ok()
     });
     PATTERN
         .as_ref()
         .is_some_and(|pattern| pattern.is_match(&error.to_string()))
+}
+
+/// Missing tables are expected before migrations and stay quiet; any other
+/// startup seed failure is an error worth seeing.
+pub(super) fn log_startup_seed_failure(error: &AuthError) {
+    if missing_table(error) {
+        tracing::debug!(
+            "oauth-provider: oauthResource table not yet created; deferring resource seed to first access."
+        );
+    } else {
+        tracing::error!(
+            %error,
+            "oauth-provider: could not seed `resources` at startup; retrying on first resource access."
+        );
+    }
 }
 
 fn seed_row(input: &serde_json::Map<String, Value>, identifier: &str) -> Value {
@@ -147,13 +162,7 @@ impl OAuthProviderPlugin {
                 .and_then(Value::as_str)
                 .ok_or_else(|| AuthError::config("Resource seed requires an identifier"))?
                 .to_owned();
-            let valid = if let Some(validator) = &self.config.identifier_validator {
-                validator.validate(&identifier).await?
-            } else {
-                url::Url::parse(&identifier)
-                    .is_ok_and(|url| url.fragment().is_none_or(str::is_empty))
-            };
-            if !valid {
+            if self.identifier_error(&identifier).await?.is_some() {
                 tracing::warn!(%identifier, "Skipping invalid configured OAuth resource");
                 continue;
             }
@@ -166,14 +175,33 @@ impl OAuthProviderPlugin {
                 tracing::warn!(%identifier, "Dropping unsupported configured resource signingAlgorithm");
                 _ = input.remove("signingAlgorithm");
             }
-            let existing = match store.get_oauth_resource(&identifier).await {
-                Ok(existing) => existing,
-                Err(error) if missing_table(&error) => return Ok(()),
-                Err(error) => return Err(error),
-            };
+            // Storage errors, including a missing table, propagate so the lazy
+            // seed resets and the next resource access retries.
+            let mut existing = store.get_oauth_resource(&identifier).await?;
             let now =
                 chrono::DateTime::from_timestamp_millis(chrono::Utc::now().timestamp_millis())
                     .ok_or_else(|| AuthError::internal("Invalid resource seed timestamp"))?;
+            if existing.is_none() {
+                match store
+                    .create_oauth_resource(alibi_core::store::CreateOAuthResource {
+                        identifier: identifier.clone(),
+                        metadata: seed_row(&input, &identifier),
+                        created_at: now,
+                    })
+                    .await
+                {
+                    Ok(_) => continue,
+                    // A concurrent boot inserted the row between the lookup and
+                    // the insert. Re-read it so merge and overwrite still apply;
+                    // without a row, the insert error is the one to report.
+                    Err(error) => {
+                        existing = store.get_oauth_resource(&identifier).await.ok().flatten();
+                        if existing.is_none() {
+                            return Err(error);
+                        }
+                    }
+                }
+            }
             if let Some(existing) = existing {
                 if self.config.resource_seed_mode == OAuthResourceSeedMode::InsertOnly {
                     continue;
@@ -193,22 +221,6 @@ impl OAuthProviderPlugin {
                     Value::Object(row)
                 };
                 _ = store.update_oauth_resource(&identifier, row, now).await?;
-            } else if let Err(error) = store
-                .create_oauth_resource(alibi_core::store::CreateOAuthResource {
-                    identifier: identifier.clone(),
-                    metadata: seed_row(&input, &identifier),
-                    created_at: now,
-                })
-                .await
-            {
-                let message = error.to_string().to_lowercase();
-                if message.contains("unique") || message.contains("duplicate") {
-                    continue;
-                }
-                if missing_table(&error) {
-                    return Ok(());
-                }
-                return Err(error);
             }
         }
         Ok(())

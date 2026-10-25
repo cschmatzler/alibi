@@ -147,21 +147,8 @@ impl OAuthProviderPlugin {
             .get("identifier")
             .and_then(Value::as_str)
             .unwrap_or("");
-        let Ok(uri) = url::Url::parse(identifier) else {
-            return super::clients::status_protocol_error(
-                400,
-                "invalid_target",
-                &format!("resource identifier {identifier} must be an absolute URI (RFC 8707 §2)"),
-            );
-        };
-        if uri.fragment().is_some_and(|fragment| !fragment.is_empty()) {
-            return super::clients::status_protocol_error(
-                400,
-                "invalid_target",
-                &format!(
-                    "resource identifier {identifier} must not contain a URI fragment (RFC 8707 §2)"
-                ),
-            );
+        if let Some(reason) = self.identifier_error(identifier).await? {
+            return super::clients::status_protocol_error(400, "invalid_target", &reason);
         }
         let mut metadata = input
             .as_object()
@@ -213,7 +200,17 @@ impl OAuthProviderPlugin {
         super::resource_cache::invalidate(&row.identifier).await;
         EndpointResponse::json(&resource_value(row)?)
     }
-    async fn resource_admission<S: AuthSchema>(
+    /// Validate a resource identifier like the token endpoint's `resource`
+    /// parameter, unless an application identifier validator replaces it.
+    pub(super) async fn identifier_error(&self, identifier: &str) -> AuthResult<Option<String>> {
+        if let Some(validator) = &self.config.identifier_validator {
+            return Ok((!validator.validate(identifier).await?)
+                .then(|| format!("resource identifier {identifier} failed validation")));
+        }
+        Ok(resource_uri_issue(identifier)
+            .map(|issue| format!("resource identifier {identifier} is invalid: {issue}")))
+    }
+    pub(super) async fn resource_admission<S: AuthSchema>(
         &self,
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
@@ -546,5 +543,19 @@ impl OAuthProviderPlugin {
             .delete_oauth_client_resource(&client_id, &identifier)
             .await?;
         EndpointResponse::json(&json!({"unlinked":true}))
+    }
+}
+/// The first RFC 8707 `resource` parameter issue: an absolute URI without a
+/// fragment and without a script scheme.
+pub(super) fn resource_uri_issue(uri: &str) -> Option<&'static str> {
+    let Ok(url) = url::Url::parse(uri) else {
+        return Some("resource must be an absolute URI");
+    };
+    if uri.contains('#') {
+        Some("resource must not contain a fragment")
+    } else if ["javascript", "data", "vbscript"].contains(&url.scheme()) {
+        Some("resource cannot use javascript:, data:, or vbscript: scheme")
+    } else {
+        None
     }
 }

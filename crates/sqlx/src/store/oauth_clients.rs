@@ -885,6 +885,28 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             .map(TryInto::try_into)
             .transpose()
     }
+    async fn replace_oauth_client_jwks(
+        &self,
+        client_id: &str,
+        expected_jwks: &str,
+        jwks: String,
+        updated_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<OAuthClient>> {
+        let mut sql = crate::sql::Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
+        sql.assign("jwks", jwks);
+        sql.push(", ");
+        sql.assign("updatedAt", updated_at);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "clientId", " = ", client_id);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "jwks", " = ", expected_jwks);
+        if self.exec().execute(sql).await? == 0 {
+            return Ok(None);
+        }
+        self.get_oauth_client(client_id).await
+    }
     async fn update_oauth_client_metadata(
         &self,
         client_id: &str,

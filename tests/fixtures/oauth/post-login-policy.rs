@@ -18,7 +18,7 @@ impl OAuthPostLoginPolicy for PostLoginPolicy {
             .get("x-postlogin-decision")
             .map(String::as_str);
         self.calls.lock().unwrap().push(json!({
-            "stage":"postLogin", "caller":input.headers.get("x-policy-caller"), "decision":decision,
+            "stage":"postLogin", "isContinuation":input.is_continuation, "caller":input.headers.get("x-policy-caller"), "decision":decision,
             "user":{"id":input.user.id,"email":input.user.email,"name":input.user.name},
             "session":{"id":input.session.id,"userId":input.session.user_id,"token":input.session.token},
             "scopes":input.scopes,

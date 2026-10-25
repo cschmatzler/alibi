@@ -477,11 +477,15 @@ async fn assert_reference_partitions<S: AuthSchema>(
         .insert(second_id.clone(), "team-a".into());
     let reused = Box::pin(authorize_http(auth, &silent, &cookies(&signed_in))).await?;
     assert!(reused.query_pairs().any(|(key, _)| key == "code"));
-    // Empty and undefined fall back to the first matching user/client row.
+    // Empty and undefined match only consent given without a reference.
     for fallback in [Some(""), None] {
         choose(fallback);
-        let reused = Box::pin(authorize_http(auth, &silent, &cookies(owner))).await?;
-        assert!(reused.query_pairs().any(|(key, _)| key == "code"));
+        let denied = Box::pin(authorize_http(auth, &silent, &cookies(owner))).await?;
+        assert!(
+            denied
+                .query_pairs()
+                .any(|(key, value)| key == "error" && value == "consent_required")
+        );
     }
     // Management remains user-scoped even while a different reference is selected.
     choose(Some("team-b"));
@@ -628,7 +632,8 @@ async fn assert_reference_claims<S: AuthSchema>(
         .iter()
         .find(|row| row.metadata["referenceId"] == "team-b")
         .unwrap();
-    // Empty/undefined consent updates preserve the first row's reference.
+    // Empty/undefined consent is stored apart from referenced rows, which keep
+    // their reference and scopes.
     let mut forced = query.clone();
     forced["prompt"] = json!("consent");
     let consent = Box::pin(authorize_http(auth, &forced, &cookies(owner))).await?;
@@ -650,7 +655,15 @@ async fn assert_reference_claims<S: AuthSchema>(
         .await?;
         let updated = auth.store().get_oauth_consent(&a.id).await?.unwrap();
         assert_eq!(updated.metadata["referenceId"], "team-a");
-        assert_eq!(updated.metadata["resources"], json!([query["resource"]]));
+        assert_eq!(updated.metadata["scopes"], a.metadata["scopes"]);
+        let rows = auth.store().list_oauth_consents_by_user(&user_id).await?;
+        assert_eq!(rows.len(), 3);
+        assert_eq!(
+            rows.iter()
+                .filter(|row| row.metadata["referenceId"].is_null())
+                .count(),
+            1
+        );
     }
     _ = references
         .references
@@ -728,7 +741,7 @@ async fn assert_reference_claims<S: AuthSchema>(
         .list_oauth_consents_by_user(body(&foreign)["user"]["id"].as_str().unwrap())
         .await?;
     assert_eq!(foreign_rows.len(), 1);
-    assert_eq!(foreign_rows[0].metadata["referenceId"], "");
+    assert!(foreign_rows[0].metadata["referenceId"].is_null());
     // A user's selected reference does not restrict their own revocation authority.
     _ = Box::pin(reference_call(
         auth,
@@ -739,8 +752,9 @@ async fn assert_reference_claims<S: AuthSchema>(
     ))
     .await?;
     let rows = auth.store().list_oauth_consents_by_user(&user_id).await?;
-    assert_eq!(rows.len(), 1);
-    assert_eq!(rows[0].id, b.id);
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().any(|row| row.id == b.id));
+    assert!(rows.iter().all(|row| row.id != a.id));
     Ok(())
 }
 

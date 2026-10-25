@@ -307,7 +307,7 @@ impl Credentials {
     ) -> AuthResult<Result<OAuthClient, EndpointResponse>> {
         let config = &provider.config;
         let Some(client) = provider.get_client(ctx, &self.client_id).await? else {
-            return Ok(Err(self.denied("missing client")?));
+            return Ok(Err(self.denied("client not found")?));
         };
         if client.metadata.get("disabled") == Some(&Value::Bool(true)) {
             return Ok(Err(self.denied("client is disabled")?));

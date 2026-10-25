@@ -724,10 +724,16 @@ async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
             }
         }
         if mode == "union" {
-            // Managed endpoint schema strips requested resources; only defaults are linked.
+            // The ordinary managed schema strips requested resources; the
+            // administrative one links them after the defaults.
             for operation in ["createOAuthClient", "adminCreateOAuthClient"] {
+                let expected = if operation == "adminCreateOAuthClient" {
+                    vec![a, b, c]
+                } else {
+                    vec![a]
+                };
                 let created=Box::pin(auth.dispatch_endpoint(ServerEndpoint::<Value>::new("oauth-provider",operation).with_body(&json!({"redirect_uris":["https://app.fixture.test/callback"],"scope":"email","resources":[b,c],"token_endpoint_auth_method":"none"}))?,EndpointOptions{headers:Some([("cookie".into(),cookie.clone())].into_iter().collect()),..Default::default()})).await?.into_response()?;
-                assert_eq!(body(&created)["resources"], json!([a]));
+                assert_eq!(body(&created)["resources"], json!(expected));
                 let id = body(&created)["client_id"].as_str().unwrap().to_owned();
                 assert_eq!(
                     auth.store()
@@ -736,7 +742,7 @@ async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
                         .iter()
                         .map(|row| row.resource_id.as_str())
                         .collect::<Vec<_>>(),
-                    vec![a]
+                    expected
                 );
             }
         }
@@ -820,7 +826,15 @@ async fn oauth_registration_resources_persist_only_admitted_links<B: Backend>(
         .into_response()?;
         assert_eq!(created.status, 201);
         let value = body(&created);
-        assert_eq!(value["resources"], json!([a, b]));
+        // The administrative schema also links its requested resources.
+        assert_eq!(
+            value["resources"],
+            if operation == "adminCreateOAuthClient" {
+                json!([a, b, c])
+            } else {
+                json!([a, b])
+            }
+        );
         let client = auth
             .store()
             .get_oauth_client(value["client_id"].as_str().unwrap())
@@ -1108,13 +1122,12 @@ async fn oauth_registration_pkce_policy_controls_genuine_code_exchanges<B: Backe
                         let error = output.unwrap_err();
                         assert_eq!(
                             error.error.status_code(),
-                            if public && name == "missing-verifier" {
-                                400
-                            } else {
-                                401
-                            },
+                            400,
                             "{policy:?}:{source}:{name}"
                         );
+                        // A verifier that does not match its challenge is an
+                        // invalid grant; a missing or unsolicited one is a
+                        // malformed request.
                         assert_eq!(
                             error
                                 .body
@@ -1122,7 +1135,11 @@ async fn oauth_registration_pkce_policy_controls_genuine_code_exchanges<B: Backe
                                 .unwrap()
                                 .get("error")
                                 .and_then(alibi::utils::json::JsValue::as_str),
-                            Some("invalid_request")
+                            Some(if matches!(name, "malformed" | "wrong-verifier") {
+                                "invalid_grant"
+                            } else {
+                                "invalid_request"
+                            })
                         );
                     }
                 }

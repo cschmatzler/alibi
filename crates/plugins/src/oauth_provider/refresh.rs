@@ -29,6 +29,19 @@ impl OAuthProviderPlugin {
                 "Missing a required refresh_token for refresh_token grant",
             );
         }
+        // RFC 6749 §5.2: an unknown or unauthenticated client is
+        // `invalid_client`, so resolve it before the refresh token lookup can
+        // report `invalid_grant`.
+        let client = match Box::pin(credentials.authenticate(ctx, self)).await? {
+            Ok(client) => client,
+            Err(response) => return Ok(no_store(response)),
+        };
+        if !super::authentication::client_allows_grant(&client, "refresh_token") {
+            return error(
+                "unauthorized_client",
+                "client is not authorized to use grant type refresh_token",
+            );
+        }
         let Some(decoded) = self.decode_refresh_token(token).await? else {
             return error("invalid_token", "refresh token not found");
         };
@@ -77,10 +90,6 @@ impl OAuthProviderPlugin {
                 return error("invalid_scope", &format!("unable to issue scope {scope}"));
             }
         }
-        let client = match credentials.authenticate(ctx, self).await? {
-            Ok(client) => client,
-            Err(response) => return Ok(no_store(response)),
-        };
         let ceiling = client
             .metadata
             .get("scope")
@@ -97,12 +106,6 @@ impl OAuthProviderPlugin {
             return error(
                 "invalid_scope",
                 &format!("The following scopes are invalid: {}", invalid.join(", ")),
-            );
-        }
-        if !super::authentication::client_allows_grant(&client, "refresh_token") {
-            return error(
-                "unauthorized_client",
-                "client is not authorized to use grant type refresh_token",
             );
         }
         if original

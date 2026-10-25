@@ -28,6 +28,8 @@ pub(crate) fn policies(mode: &str) -> (OAuthProviderRateLimits, RateLimitConfig)
             revoke: OAuthEndpointRateLimit::Disabled,
             register: OAuthEndpointRateLimit::Disabled,
             userinfo: OAuthEndpointRateLimit::Disabled,
+            // The reference fixture omits key rotation, which keeps its default.
+            rotate_client_keys: OAuthEndpointRateLimit::Default,
         };
     }
     if mode == "rate-global-disabled" {
