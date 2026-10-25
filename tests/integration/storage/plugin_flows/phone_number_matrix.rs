@@ -22,9 +22,9 @@ backend_tests!(
     phone_number_signup_and_update_inputs,
     phone_signin_distinguishes_missing_null_and_empty_credentials,
     phone_self_update_consumes_proof_without_changing_owner_or_callbacks,
-    phone_reset_callback_rejection_precedes_configured_session_revocation,
+    phone_reset_callback_rejection_follows_configured_session_revocation,
     phone_missing_otp_sender_precedes_application_validation,
-    phone_external_verifier_cannot_authorize_local_password_reset,
+    phone_external_verifier_authorizes_password_reset_and_drops_local_code,
     phone_verifier_rejection_preserves_local_proof_until_successful_retry,
     phone_callback_context_preserves_proof_consumption_and_committed_owner,
     revoked_compact_owner_consumes_local_phone_proof_without_recreating_browser,
@@ -943,7 +943,7 @@ async fn phone_self_update_consumes_proof_without_changing_owner_or_callbacks<B:
     B::close(connection).await
 }
 
-async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B: Backend>(
+async fn phone_reset_callback_rejection_follows_configured_session_revocation<B: Backend>(
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -998,10 +998,15 @@ async fn phone_reset_callback_rejection_precedes_configured_session_revocation<B
     )
     .await;
     _=call(&auth,request("/phone-number/reset-password",Some(json!({"phoneNumber":phone,"otp":outbox.last().code,"newPassword":"committed-phone-password"})),""),403).await;
+    // Since 1.7.12 the callback runs after revocation and the password write,
+    // so its rejection leaves only the foreign session.
     assert_eq!(db.count("verification").await?, 0);
-    assert_eq!(db.table("session").await?, sessions);
-    authenticated(&auth, &cookies(&owner), "reset-phone@example.test").await;
-    authenticated(&auth, &cookies(&sibling), "reset-phone@example.test").await;
+    assert_ne!(db.table("session").await?, sessions);
+    assert_eq!(db.count("session").await?, 1);
+    for revoked in [&owner, &sibling] {
+        let read = call(&auth, request("/get-session", None, &cookies(revoked)), 200).await;
+        assert!(body(&read).is_null());
+    }
     authenticated(&auth, &cookies(&foreign), "foreign@example.test").await;
     _ = call(
         &auth,
@@ -1085,7 +1090,7 @@ async fn phone_missing_otp_sender_precedes_application_validation<B: Backend>(
     B::close(connection).await
 }
 
-async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backend>(
+async fn phone_external_verifier_authorizes_password_reset_and_drops_local_code<B: Backend>(
     db: Db,
 ) -> TestResult {
     struct ProviderCount(std::sync::atomic::AtomicUsize);
@@ -1160,28 +1165,21 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
         200,
     )
     .await;
-    let wrong = if code == "000000" { "999999" } else { "000000" };
-    let denied = call(
+    // Since 1.7.12 a custom verifier checks the reset code too: the provider
+    // accepts a code that is not the stored one, and the local code is dropped.
+    let other = if code == "000000" { "999999" } else { "000000" };
+    let short = call(
         &auth,
         request(
             "/phone-number/reset-password",
-            Some(json!({"phoneNumber":phone,"otp":wrong,"newPassword":"new-local-password"})),
+            Some(json!({"phoneNumber":phone,"otp":other,"newPassword":"short"})),
             "",
         ),
         400,
     )
     .await;
-    assert_eq!(body(&denied)["code"], "INVALID_OTP");
+    assert_eq!(body(&short)["code"], "PASSWORD_TOO_SHORT");
     assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
-    assert_eq!(
-        db.text(
-            "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
-            &[&identifier]
-        )
-        .await?
-        .as_deref(),
-        Some(format!("{code}:1").as_str())
-    );
     assert_eq!(
         db.text(
             "SELECT \"expiresAt\" FROM \"verification\" WHERE \"identifier\"=$1",
@@ -1195,13 +1193,13 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
         &auth,
         request(
             "/phone-number/reset-password",
-            Some(json!({"phoneNumber":phone,"otp":code,"newPassword":"new-local-password"})),
+            Some(json!({"phoneNumber":phone,"otp":other,"newPassword":"new-provider-password"})),
             "",
         ),
         200,
     )
     .await;
-    assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(provider.0.load(std::sync::atomic::Ordering::SeqCst), 2);
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
@@ -1218,6 +1216,17 @@ async fn phone_external_verifier_cannot_authorize_local_password_reset<B: Backen
         .await?,
         1
     );
+    let login = call(
+        &auth,
+        request(
+            "/sign-in/phone-number",
+            Some(json!({"phoneNumber":phone,"password":"new-provider-password"})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    assert_eq!(body(&login)["user"]["id"], body(&owner)["user"]["id"]);
     authenticated(&auth, &cookies(&owner), "provider-reset@example.test").await;
     B::close(connection).await
 }
