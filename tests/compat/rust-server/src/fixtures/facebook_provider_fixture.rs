@@ -2,7 +2,10 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::{FacebookOptions, HttpOAuthJwksSource, OAuthProvider, OAuthUserInfo};
+use alibi::plugins::oauth::{
+    FacebookOptions, HttpOAuthJwksSource, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
+};
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
@@ -50,6 +53,7 @@ pub(crate) async fn router(
         "implicit-disabled",
         "signup-disabled",
         "fields",
+        "custom-userinfo",
     ]
     .map(String::from)
     .to_vec();
@@ -149,6 +153,9 @@ pub(crate) async fn router(
                 })
             });
         }
+        if mode == "custom-userinfo" {
+            options.get_user_info = Some(Arc::new(CustomUserInfo(fixture.control.clone())));
+        }
         let mut provider = OAuthProvider::facebook_with_options(options);
         provider.token_url = format!("{}/__test/facebook/token", config.base_url);
         provider.disable_id_token_sign_in = mode == "disabled-idtoken";
@@ -195,6 +202,39 @@ pub(crate) async fn router(
         .route("/__test/facebook/userinfo", get(profile))
         .with_state(fixture.clone());
     Ok((router.merge(controls), fixture))
+}
+/// Application user-info resolution that records the tokens it was given.
+struct CustomUserInfo(Arc<Mutex<Value>>);
+#[async_trait::async_trait]
+impl OAuthUserInfoHandler for CustomUserInfo {
+    async fn get_user_info(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        MAPPER_RECEIPTS
+            .lock()
+            .expect("mapper receipt lock")
+            .push(json!({"accessToken":request.access_token,"idToken":request.id_token}));
+        let control = self.0.lock().await;
+        let field = |key: &str| {
+            control["profile"][key]
+                .as_str()
+                .unwrap_or_default()
+                .to_owned()
+        };
+        Ok(OAuthUserInfoResponse {
+            user_output: None,
+            user: OAuthUserInfo {
+                additional_fields: Default::default(),
+                id: field("id"),
+                name: Some(field("name")),
+                email: field("email"),
+                email_verified: true,
+                image: None,
+            },
+            data: json!({"id":field("id")}),
+        })
+    }
 }
 fn receipt(
     path: &str,

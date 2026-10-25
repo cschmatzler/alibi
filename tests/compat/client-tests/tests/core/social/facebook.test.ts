@@ -476,7 +476,6 @@ for (const variant of [
   "default",
   "client-array",
   "mapped",
-  "no-iat",
   "old",
   "future",
   "raw-positive-iat",
@@ -492,19 +491,17 @@ for (const variant of [
       const claims: Row =
         variant === "client-array"
           ? { aud: ["foreign-client", "fixture-facebook-secondary"] }
-          : variant === "no-iat"
-            ? { iat: undefined }
-            : variant === "old"
-              ? { iat: issuedAt - 7200 }
-              : variant === "future"
-                ? { iat: issuedAt + 7200 }
-                : variant === "numeric-name"
-                  ? { name: 7 }
-                  : variant === "null-name"
-                    ? { name: null }
-                    : variant === "empty-image"
-                      ? { picture: "" }
-                      : {};
+          : variant === "old"
+            ? { iat: issuedAt - 7200 }
+            : variant === "future"
+              ? { iat: issuedAt + 7200 }
+              : variant === "numeric-name"
+                ? { name: 7 }
+                : variant === "null-name"
+                  ? { name: null }
+                  : variant === "empty-image"
+                    ? { picture: "" }
+                    : {};
       const token = await proof(
         ctx,
         {
@@ -524,7 +521,7 @@ for (const variant of [
       const decoded = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString());
       const fixture: FixtureProfile = ["default", "client-array", "mapped"].includes(variant)
         ? `social-facebook-${variant as "default" | "client-array" | "mapped"}`
-        : `social-facebook-jwt-${variant as "no-iat" | "old" | "future" | "raw-positive-iat" | "raw-negative-iat" | "numeric-name" | "null-name" | "empty-image"}`;
+        : `social-facebook-jwt-${variant as "old" | "future" | "raw-positive-iat" | "raw-negative-iat" | "numeric-name" | "null-name" | "empty-image"}`;
       const actor = ctx.actor("facebook", fixture);
       const result = await actor.client.signIn.social({
         provider: "facebook",
@@ -583,6 +580,7 @@ for (const variant of [
 }
 
 for (const variant of [
+  "no-iat",
   "issuer",
   "audience",
   "expired",
@@ -619,23 +617,25 @@ for (const variant of [
                 ? { nbf: issuedAt + 7200 }
                 : variant === "iat-type"
                   ? { iat: "not-a-number" }
-                  : variant === "nonce"
-                    ? { nonce: "wrong-nonce" }
-                    : variant === "hashed-nonce"
-                      ? { nonce: hash }
-                      : variant === "missing-subject"
-                        ? { sub: undefined }
-                        : variant === "null-subject"
-                          ? { sub: null }
-                          : variant === "blank-subject"
-                            ? { sub: "\uFEFF " }
-                            : variant === "missing-email"
-                              ? { email: undefined }
-                              : variant === "null-email"
-                                ? { email: null }
-                                : variant === "empty-email"
-                                  ? { email: "" }
-                                  : {};
+                  : variant === "no-iat"
+                    ? { iat: undefined }
+                    : variant === "nonce"
+                      ? { nonce: "wrong-nonce" }
+                      : variant === "hashed-nonce"
+                        ? { nonce: hash }
+                        : variant === "missing-subject"
+                          ? { sub: undefined }
+                          : variant === "null-subject"
+                            ? { sub: null }
+                            : variant === "blank-subject"
+                              ? { sub: "\uFEFF " }
+                              : variant === "missing-email"
+                                ? { email: undefined }
+                                : variant === "null-email"
+                                  ? { email: null }
+                                  : variant === "empty-email"
+                                    ? { email: "" }
+                                    : {};
       const token = await proof(
         ctx,
         claims,
@@ -656,7 +656,7 @@ for (const variant of [
           ? "ID_TOKEN_NOT_SUPPORTED"
           : variant.endsWith("email")
             ? "USER_EMAIL_NOT_FOUND"
-            : variant.endsWith("subject")
+            : variant.endsWith("subject") && variant !== "missing-subject"
               ? "FAILED_TO_GET_USER_INFO"
               : "INVALID_TOKEN",
       );
@@ -854,6 +854,70 @@ for (const mapping of graphMappings) {
         result: ctx.snapshot(result),
         stored,
         receipts: await receipts(ctx),
+      };
+    },
+    ["POST /sign-in/social"],
+  );
+}
+
+for (const variant of ["foreign-access", "opaque-only", "bound-access"] as const) {
+  compatScenario(
+    `facebook custom getUserInfo receives a client ${variant} token only after app inspection`,
+    async (ctx) => {
+      const other = await foreign(ctx);
+      const custom = profile(ctx);
+      await control(ctx, {
+        profile: custom,
+        ...(variant === "bound-access"
+          ? {}
+          : {
+              inspection: {
+                data: { is_valid: true, app_id: "someone-elses-app", user_id: "victim" },
+              },
+            }),
+      });
+      const actor = ctx.actor("facebook", "social-facebook-custom-userinfo");
+      const result = await actor.client.signIn.social({
+        provider: "facebook",
+        idToken: {
+          token: "opaque-facebook-candidate",
+          ...(variant === "opaque-only" ? {} : { accessToken: "client-facebook-access" }),
+        },
+      });
+      const requests = await receipts(ctx);
+      expect(requests.map((row) => [row.path, row.query.input_token])).toEqual([
+        [
+          "/debug",
+          variant === "opaque-only" ? "opaque-facebook-candidate" : "client-facebook-access",
+        ],
+      ]);
+      const calls = await mapperReceipts(ctx);
+      const stored = await state(ctx);
+      if (variant !== "bound-access") {
+        expect(result.error?.code).toBe("FAILED_TO_GET_USER_INFO");
+        expect(calls).toEqual([]);
+        expect(stored).toEqual(other.before);
+      } else {
+        expect(result.error).toBeNull();
+        expect(calls).toEqual([
+          { accessToken: "client-facebook-access", idToken: "opaque-facebook-candidate" },
+        ]);
+        unchangedForeign(other.before, stored);
+        const user = stored.users.find(
+          (row) => !other.before.users.some((old) => old.id === row.id),
+        )!;
+        expect(user).toMatchObject({ name: custom.name, email: custom.email });
+        expect(stored.accounts.find((row) => row.userId === user.id)).toMatchObject({
+          providerId: "facebook",
+          accountId: custom.id,
+        });
+      }
+      return {
+        before: other.before,
+        result: ctx.snapshot(result),
+        stored,
+        calls,
+        receipts: requests,
       };
     },
     ["POST /sign-in/social"],
