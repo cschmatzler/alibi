@@ -129,3 +129,52 @@ pub fn verification_reservation_key(identifier: &str) -> (String, [u8; 32]) {
         digest,
     )
 }
+
+/// The reservation key under the configured ID strategy, as upstream's
+/// `encodeDeterministicId` (1.7.12) encodes it. Under `generateId: "uuid"`
+/// the first 16 digest bytes become a version 5, RFC 9562 variant UUID so
+/// the forced ID survives; other strategies keep the base64url digest.
+#[must_use]
+pub fn verification_reservation_id(
+    identifier: &str,
+    database: &crate::config::AdvancedDatabaseConfig,
+) -> (String, [u8; 32]) {
+    let (encoded, digest) = verification_reservation_key(identifier);
+    if !matches!(
+        database.generate_id,
+        Some(crate::config::DatabaseIdStrategy::Uuid)
+    ) {
+        return (encoded, digest);
+    }
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest[..16]);
+    bytes[6] = (bytes[6] & 0x0f) | 0x50;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    (uuid::Uuid::from_bytes(bytes).to_string(), digest)
+}
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Upstream reference: packages/core/src/db/adapter/get-id-field.test.ts :: encodeDeterministicId (1.7.12).
+    #[test]
+    fn uuid_strategy_reserves_a_version_5_uuid_from_the_digest() {
+        let mut database = crate::config::AdvancedDatabaseConfig::default();
+        let (plain, digest) = verification_reservation_id("siwe-email-claim-a@b.c", &database);
+        assert_eq!(
+            (plain.clone(), digest),
+            verification_reservation_key("siwe-email-claim-a@b.c")
+        );
+        database.generate_id = Some(crate::config::DatabaseIdStrategy::Uuid);
+        let (id, same) = verification_reservation_id("siwe-email-claim-a@b.c", &database);
+        assert_eq!(same, digest);
+        let parsed = uuid::Uuid::parse_str(&id).unwrap();
+        assert_eq!(parsed.get_version_num(), 5);
+        assert_eq!(parsed.get_variant(), uuid::Variant::RFC4122);
+        assert_eq!(parsed.as_bytes()[..6], digest[..6]);
+        assert_ne!(id, plain);
+    }
+}
+// LCOV_EXCL_STOP

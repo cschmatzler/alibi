@@ -3,7 +3,7 @@ use crate::schema::{AuthSchema, SeaOrmVerificationModel};
 use alibi_core::entity::AuthVerification;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::adapter::cancelled_by_hook;
-use alibi_core::store::{VerificationStore, verification_reservation_key};
+use alibi_core::store::{VerificationStore, verification_reservation_id};
 use alibi_core::types::{CreateVerification, UpdateVerification};
 use alibi_core::verification::{
     VerificationCreation, VerificationPublication, VerificationSnapshot,
@@ -463,7 +463,8 @@ where
         logical_identifier: &str,
         verification: CreateVerification,
     ) -> AuthResult<Option<S::Verification>> {
-        let (encoded, digest) = verification_reservation_key(logical_identifier);
+        let (encoded, digest) =
+            verification_reservation_id(logical_identifier, &self.config().advanced.database);
         let id = S::Verification::parse_reservation_id(&encoded, digest)?;
         let insert = S::Verification::new_active(Some(id.clone()), verification, Utc::now())
             .insert(self.scoped_connection())

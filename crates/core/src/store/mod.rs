@@ -28,7 +28,7 @@ pub use contracts::{
     MemberStore, NumericTextInput, OrganizationStore, PasskeyStore, SessionCreatedHook,
     SessionStore, TransactionFuture, TransactionStore, TransactionWork, TwoFactorStore,
     TypedTransactionFuture, UserCreationDefaults, UserStore, VerificationStore, transaction,
-    transaction_with_policy, verification_reservation_key,
+    transaction_with_policy, verification_reservation_id, verification_reservation_key,
 };
 pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 pub(crate) use decorated::{
