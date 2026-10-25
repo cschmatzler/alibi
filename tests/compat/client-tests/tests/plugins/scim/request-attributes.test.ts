@@ -63,7 +63,10 @@ compatScenario("SCIM HTTP requests match attribute names case-insensitively", as
   for (const [method, body] of [
     ["PUT", { schemas: [USER], userName, Active: null }],
     ["PUT", { schemas: [USER], userName, active: false, Active: true }],
-    ["PATCH", { schemas: [PATCH], Operations: [{ op: "Replace", value: { title: "A", Title: "B" } }] }],
+    [
+      "PATCH",
+      { schemas: [PATCH], Operations: [{ op: "Replace", value: { title: "A", Title: "B" } }] },
+    ],
     [
       "PATCH",
       {
@@ -169,10 +172,18 @@ compatScenario("SCIM HTTP requests treat JSON null as an unassigned attribute", 
   const patched = await patch(`Users/${id}`, [
     { op: "Replace", path: "title", value: null },
     { op: "Add", path: "externalId", value: null },
-    { op: "Replace", path: "name", value: { familyName: "King", middleName: null, formatted: null } },
+    {
+      op: "Replace",
+      path: "name",
+      value: { familyName: "King", middleName: null, formatted: null },
+    },
     { op: "Replace", path: `${ENTERPRISE}:manager`, value: { displayName: null } },
     { op: "Replace", path: 'addresses[type eq "work"].country', value: null },
-    { op: "Replace", path: 'addresses[type eq "home"]', value: { locality: "Bristol", region: null } },
+    {
+      op: "Replace",
+      path: 'addresses[type eq "home"]',
+      value: { locality: "Bristol", region: null },
+    },
     { op: "Replace", path: 'addresses[type eq "other"]', value: { country: null } },
     { op: "Replace", path: "emails", value: [{ value: userName, type: null, primary: null }] },
     { op: "Replace", path: "enterprise", value: { department: null } },
@@ -247,45 +258,51 @@ compatScenario("SCIM HTTP requests treat JSON null as an unassigned attribute", 
   return observed;
 });
 
-compatScenario("SCIM create reprovisions an inactive User with the same externalId", async (ctx) => {
-  const { send } = client(ctx);
-  const externalId = ctx.uniqueToken("okta");
-  const first = await send("POST", "Users", {
-    schemas: [USER],
-    userName: ctx.uniqueEmail("okta-first"),
-    externalId,
-    active: false,
-  });
-  expect(first.status).toBe(201);
-  const reprovisioned = await send("POST", "Users", {
-    schemas: [USER],
-    userName: ctx.uniqueEmail("okta-again"),
-    externalId,
-    displayName: "Reprovisioned",
-  });
-  expect(reprovisioned.status, JSON.stringify(reprovisioned.resource)).toBe(201);
-  expect(reprovisioned.resource.id).toBe(first.resource.id);
-  expect(reprovisioned.resource.active).toBe(true);
-  const duplicate = await send("POST", "Users", {
-    schemas: [USER],
-    userName: ctx.uniqueEmail("okta-duplicate"),
-    externalId,
-  });
-  expect(duplicate.status).toBe(409);
-  const other = await send("POST", "Users", {
-    schemas: [USER],
-    userName: ctx.uniqueEmail("okta-other"),
-    externalId: ctx.uniqueToken("okta-other"),
-    active: false,
-  });
-  expect(other.status).toBe(201);
-  const taken = await send("POST", "Users", {
-    schemas: [USER],
-    userName: reprovisioned.resource.userName,
-    externalId: other.resource.externalId,
-  });
-  expect(taken.status).toBe(409);
-  const listed = await send("GET", `Users?filter=${encodeURIComponent(`externalId eq "${externalId}"`)}`);
-  expect(listed.resource.totalResults).toBe(1);
-  return [first, reprovisioned, duplicate, other, taken, listed];
-});
+compatScenario(
+  "SCIM create reprovisions an inactive User with the same externalId",
+  async (ctx) => {
+    const { send } = client(ctx);
+    const externalId = ctx.uniqueToken("okta");
+    const first = await send("POST", "Users", {
+      schemas: [USER],
+      userName: ctx.uniqueEmail("okta-first"),
+      externalId,
+      active: false,
+    });
+    expect(first.status).toBe(201);
+    const reprovisioned = await send("POST", "Users", {
+      schemas: [USER],
+      userName: ctx.uniqueEmail("okta-again"),
+      externalId,
+      displayName: "Reprovisioned",
+    });
+    expect(reprovisioned.status, JSON.stringify(reprovisioned.resource)).toBe(201);
+    expect(reprovisioned.resource.id).toBe(first.resource.id);
+    expect(reprovisioned.resource.active).toBe(true);
+    const duplicate = await send("POST", "Users", {
+      schemas: [USER],
+      userName: ctx.uniqueEmail("okta-duplicate"),
+      externalId,
+    });
+    expect(duplicate.status).toBe(409);
+    const other = await send("POST", "Users", {
+      schemas: [USER],
+      userName: ctx.uniqueEmail("okta-other"),
+      externalId: ctx.uniqueToken("okta-other"),
+      active: false,
+    });
+    expect(other.status).toBe(201);
+    const taken = await send("POST", "Users", {
+      schemas: [USER],
+      userName: reprovisioned.resource.userName,
+      externalId: other.resource.externalId,
+    });
+    expect(taken.status).toBe(409);
+    const listed = await send(
+      "GET",
+      `Users?filter=${encodeURIComponent(`externalId eq "${externalId}"`)}`,
+    );
+    expect(listed.resource.totalResults).toBe(1);
+    return [first, reprovisioned, duplicate, other, taken, listed];
+  },
+);
