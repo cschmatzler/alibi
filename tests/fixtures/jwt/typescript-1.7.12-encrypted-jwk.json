@@ -1,0 +1,22 @@
+{
+  "referenceVersion": "better-auth@1.7.12",
+  "origin": "http://jwt-interoperability.fixture.test",
+  "secret": "jwt-interoperability-fixture-secret-at-least-32chars",
+  "payload": {
+    "sub": "cipher-import-owner",
+    "iat": 100,
+    "exp": 4102444800,
+    "iss": "http://jwt-interoperability.fixture.test",
+    "aud": "http://jwt-interoperability.fixture.test"
+  },
+  "key": {
+    "publicKey": "{\"crv\":\"Ed25519\",\"x\":\"r1w1b2DfakLLZzFY0bHK61klUvB3fjDS9TRoNg9_LEI\",\"kty\":\"OKP\"}",
+    "privateKey": "\"5d8d080cc8b658c3007d52af019814972d72cb8fe4e887f00b7ce572ceaa6266ce86883ef9176d871e676e859f127e4d73fa7d0904ff317fdcbccc6bf76d1fd97d6e980e37dd3e4a002723df0b179e04f40d978b3584c5a5c239a6f187eba4a4a181009217fd04172e3973cad55896d15252235f0f66e4f14d48cdc1aa2e6b205d68c8e206e8fe9544429fd5318ebffa63c9cf3795ec74c561e191842b5309b87bf0f24fdd599fd393\"",
+    "createdAt": "2026-10-25T11:21:19.001Z",
+    "expiresAt": null,
+    "alg": "EdDSA",
+    "crv": "Ed25519",
+    "id": "CRTBQRo8w2jy1Wou5Z0TKDJV9lsxbafe"
+  },
+  "token": "eyJhbGciOiJFZERTQSIsImtpZCI6IkNSVEJRUm84dzJqeTFXb3U1WjBUS0RKVjlsc3hiYWZlIn0.eyJzdWIiOiJjaXBoZXItaW1wb3J0LW93bmVyIiwiaWF0IjoxMDAsImV4cCI6NDEwMjQ0NDgwMCwiaXNzIjoiaHR0cDovL2p3dC1pbnRlcm9wZXJhYmlsaXR5LmZpeHR1cmUudGVzdCIsImF1ZCI6Imh0dHA6Ly9qd3QtaW50ZXJvcGVyYWJpbGl0eS5maXh0dXJlLnRlc3QifQ.4JDVUlHywdg8GP8GLn3-mm43VxwjEEiup81u5y170KrUpy87YqKN7B_yLgayHiB5zwQ7R70SNkonh9ffcpU9Ag"
+}

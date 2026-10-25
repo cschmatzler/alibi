@@ -2,7 +2,7 @@
 
 The current task is to finish, review, validate and merge existing work, and file
 remaining behavior for triage. No new capability families are being started.
-This is not a full-parity claim. The oracle targets Better Auth **1.7.7**, Rust
+This is not a full-parity claim. The oracle targets Better Auth **1.7.12**, Rust
 interfaces remain native, passwords use **scrypt only**, and the raw comparison
 exception list is empty. The source line coverage floor remains **75%**.
 

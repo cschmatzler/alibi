@@ -1,5 +1,5 @@
 // Run with the repository's pinned Nub after installing the frozen reference lockfile.
-// This uses only Better Auth 1.7.7's published implementation and actual SQLite.
+// This uses only Better Auth 1.7.12's published implementation and actual SQLite.
 const runtime = new URL(
   "../../compat/reference-server/node_modules/better-auth/dist/",
   import.meta.url,
@@ -23,7 +23,7 @@ const probe = {
       const verified = await verifyJWT(token);
       if (JSON.stringify(verified) !== JSON.stringify(payload))
         throw Error("upstream-produced signature must verify");
-      return { referenceVersion: "better-auth@1.7.7", origin, secret, payload, key, token };
+      return { referenceVersion: "better-auth@1.7.12", origin, secret, payload, key, token };
     }),
   },
 };

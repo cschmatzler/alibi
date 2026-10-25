@@ -1,6 +1,6 @@
 # Compatibility testing
 
-The published TypeScript `better-auth@1.7.7` runtime is the behavioral reference.
+The published TypeScript `better-auth@1.7.12` runtime is the behavioral reference.
 The client, reference server, passkey plugin and API-key plugin are pinned to
 that version with committed `nub.lock` files. `capabilities.json` carries the single
 committed `upstreamVersion`; `tests/compat/upstream_pin.rs` fails when any

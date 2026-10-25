@@ -2,7 +2,7 @@
 
 Status: implementation is wrapping up at the user's request. Finish the existing
 reviewed stack; further capability work is tracked for triage. The reference
-targets Better Auth **1.7.7** and scrypt is the sole built-in password algorithm.
+targets Better Auth **1.7.12** and scrypt is the sole built-in password algorithm.
 
 The [GitHub triage index](https://github.com/cschmatzler/better-auth-rs/issues/234)
 tracks the open issues. Each distinguishes a confirmed runtime/code

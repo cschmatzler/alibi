@@ -5,9 +5,9 @@ description: "Which Better Auth version this implementation tracks, how parity i
 
 ## The contract
 
-HTTP behavior targets **better-auth@1.7.7**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
+HTTP behavior targets **better-auth@1.7.12**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
 
-Newer upstream documentation may describe behavior added after 1.7.7; it is outside the target until the pin moves.
+Newer upstream documentation may describe behavior added after 1.7.12; it is outside the target until the pin moves.
 
 Rust releases use independent Semantic Versioning and record the exact upstream target separately, so fixes can ship independently while retaining the upstream contract. See the [release policy](/guides/releases/) for versioning and compatibility rules.
 
