@@ -129,9 +129,10 @@ impl OAuthUserInfoHandler for GoogleUserInfo {
             ("picture", "image"),
             ("email_verified", "emailVerified"),
         ] {
-            if let Some(value) = profile.get(source) {
-                output.insert(target.into(), value.clone());
-            }
+            output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         if let Some(mapper) = &self.mapper {
             output.extend(
@@ -178,6 +179,58 @@ mod tests {
         }
     }
     #[tokio::test]
+    async fn google_default_user_retains_own_undefined_fields_before_json_encoding() {
+        let provider = OAuthProvider::google("client", "secret");
+        let response =
+            crate::oauth::handlers::fetch_user_info_from_provider(&provider, request(json!({})))
+                .await
+                .unwrap();
+        assert_eq!(response.data, json!({}));
+        assert_eq!(response.user.len(), 4);
+        for name in ["name", "email", "image", "emailVerified"] {
+            assert_eq!(response.user.get(name), Some(&Value::Undefined), "{name}");
+        }
+        assert!(!response.user.contains_key("id"));
+        assert_eq!(
+            alibi_core::utils::json::to_string(&response.user).unwrap(),
+            "{}"
+        );
+
+        struct Overrides;
+        #[async_trait::async_trait]
+        impl OAuthProfileMapper for Overrides {
+            async fn map_profile(&self, profile: Value) -> Result<Map, String> {
+                assert_eq!(profile, json!({"sub": "subject", "name": "Original"}));
+                Ok([
+                    ("name".into(), Value::Undefined),
+                    ("email".into(), Value::Null),
+                    ("image".into(), Value::Bool(false)),
+                    ("emailVerified".into(), Value::Number(0.0)),
+                ]
+                .into_iter()
+                .collect())
+            }
+        }
+        let response = crate::oauth::handlers::fetch_user_info_from_provider(
+            &provider.with_profile_mapper(Arc::new(Overrides)),
+            request(json!({"sub": "subject", "name": "Original"})),
+        )
+        .await
+        .unwrap();
+        assert_eq!(response.user.get("name"), Some(&Value::Undefined));
+        assert_eq!(response.user.get("email"), Some(&Value::Null));
+        assert_eq!(response.user.get("image"), Some(&Value::Bool(false)));
+        assert_eq!(
+            response.user.get("emailVerified"),
+            Some(&Value::Number(0.0))
+        );
+        assert_eq!(
+            alibi_core::utils::json::to_string(&response.user).unwrap(),
+            r#"{"email":null,"image":false,"emailVerified":0}"#,
+        );
+    }
+
+    #[tokio::test]
     async fn google_mapping_preserves_raw_nulls_and_hosted_domain_builder_order() {
         for provider in [
             OAuthProvider::google("client", "secret")
@@ -219,7 +272,10 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(response.user.is_empty());
+        assert_eq!(
+            alibi_core::utils::json::to_string(&response.user).unwrap(),
+            "{}"
+        );
     }
     #[tokio::test]
     async fn google_invalid_tokens_throw_but_absent_tokens_and_domain_rejections_do_not() {
