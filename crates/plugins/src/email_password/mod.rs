@@ -943,6 +943,49 @@ mod tests {
         assert_eq!(verify_calls.load(Ordering::SeqCst), 1);
     }
 
+    #[tokio::test]
+    async fn username_sign_in_rejects_oversized_password_before_hashing() {
+        struct CountingHasher(Arc<AtomicUsize>);
+
+        #[async_trait]
+        impl PasswordHasher for CountingHasher {
+            async fn hash(&self, _: &str) -> AuthResult<String> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok("unused".into())
+            }
+
+            async fn verify(&self, _: &str, _: &str) -> AuthResult<bool> {
+                panic!("oversized password must not be verified")
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let plugin = EmailPasswordPlugin::new()
+            .password_max_length(8)
+            .password_hasher(Arc::new(CountingHasher(Arc::clone(&calls))));
+        let ctx = create_test_context().await;
+        for password in ["x".repeat(9), "😀".repeat(5)] {
+            let body = serde_json::json!({
+                "username": "missing_user",
+                "password": password,
+            });
+            let req = AuthRequest::from_parts(
+                HttpMethod::Post,
+                "/sign-in/username".into(),
+                HashMap::new(),
+                Some(body.to_string().into_bytes()),
+                HashMap::new(),
+            );
+            let error = plugin
+                .handle_sign_in_username(&req, &ctx)
+                .await
+                .unwrap_err();
+            assert_eq!(error.status_code(), 400);
+            assert!(error.to_string().contains("Password too long"));
+        }
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+
     // Rust-specific surface: route-table registration for the endpoint declared in
     // packages/better-auth/src/plugins/username/index.ts :: isUsernameAvailable.
     #[tokio::test]

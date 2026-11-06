@@ -247,6 +247,9 @@ impl EmailPasswordPlugin {
         if let Err(error) = policy.validate_value(&validation_input, 422).await {
             return Ok(error.to_auth_response());
         }
+        if signin_req.password.encode_utf16().count() > self.config.effective_max_length() {
+            return Err(alibi_core::AuthError::bad_request("Password too long"));
+        }
         let username = policy.normalize(&signin_req.username)?;
         alibi_core::session::cookie_cache::runtime::set_issuance_preference(
             req,
