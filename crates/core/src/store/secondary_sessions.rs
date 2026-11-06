@@ -198,7 +198,16 @@ impl<S: AuthSchema> PluginStore<S> {
         let user = if snapshot.user.is_null() {
             None
         } else {
-            let Ok(user) = S::User::from_secondary_snapshot_record(snapshot.user) else {
+            let registered = self
+                .projection_context
+                .extensions
+                .get::<crate::field_policy::UserFields>();
+            let fields = registered
+                .as_ref()
+                .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+            let Ok(user) =
+                S::User::from_secondary_snapshot_record_with_fields(snapshot.user, fields)
+            else {
                 return Ok(None);
             };
             Some(user)

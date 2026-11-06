@@ -88,7 +88,13 @@ impl UserView {
             phone_number_verified: None,
             last_login_method: None,
             metadata: Value::Null,
-            extension_fields: BTreeMap::new(),
+            extension_fields: source
+                .iter()
+                .filter(|(name, _)| {
+                    name.as_str() != "id" && !NATIVE_FIELDS.contains(&name.as_str())
+                })
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
             omitted_fields: Default::default(),
         };
         user.retain_native_user_fields(

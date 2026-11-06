@@ -35,7 +35,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             else {
                 return Err(AuthError::internal("User output must be an object"));
             };
-            let mut output = AdapterOutput::from_values(values);
+            let mut output = user.raw_snapshot().clone();
+            output.extend(AdapterOutput::from_values(values));
             for field in ["createdAt", "updatedAt"] {
                 output.insert(
                     field.into(),

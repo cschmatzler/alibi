@@ -162,3 +162,131 @@ async fn custom_user_codecs_reject_unsupported_native_corrections() {
         Err(AuthError::NotImplemented(_))
     ));
 }
+
+#[tokio::test]
+async fn cached_user_fields_use_effective_config_without_database_or_transforms() {
+    use crate::store::stateless::{StatelessSchema, StatelessStore};
+    use crate::store::{CacheAdapter, SessionStore};
+    use crate::{AuthSession, CreateSession};
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+
+    for registered in [false, true] {
+        let cache = Arc::new(crate::MemoryCacheAdapter::new());
+        let mut config = crate::AuthConfig::default();
+        config.session.secondary_storage = Some(cache.clone());
+        let configured_fields = |marker: &str| {
+            [
+                (
+                    marker.into(),
+                    FieldConfig::new(json!({"type": "json"})).transform_output(|_| async {
+                        panic!("cached reads must not rerun adapter output transforms")
+                    }),
+                ),
+                (
+                    "cachedNull".into(),
+                    FieldConfig::new(json!({"type": "string"})),
+                ),
+                (
+                    "cachedMissing".into(),
+                    FieldConfig::new(json!({"type": "string"})),
+                ),
+                (
+                    "hiddenMarker".into(),
+                    FieldConfig::new(json!({"type": "json"})).hidden(),
+                ),
+            ]
+            .into_iter()
+            .collect()
+        };
+        config.user.additional_fields = configured_fields("fallbackMarker");
+        let config = Arc::new(config);
+        let inner = Arc::new(StatelessStore::default());
+        let user = inner
+            .create_user(CreateUser::new().with_email("cached-fields@fixture.test"))
+            .await
+            .unwrap();
+        let session = inner
+            .create_session(CreateSession {
+                user_id: user.id.clone(),
+                token: Some(format!("cached-fields-{registered}")),
+                expires_at: Utc::now() + Duration::hours(1),
+                ip_address: None,
+                user_agent: None,
+                impersonated_by: None,
+                active_organization_id: None,
+                active_team_id: None,
+                additional_fields: Default::default(),
+            })
+            .await
+            .unwrap();
+        let mut snapshot = user.secondary_snapshot().unwrap();
+        snapshot["fallbackMarker"] = json!({"selected": "fallback"});
+        snapshot["registeredMarker"] = json!({"selected": "registered"});
+        snapshot["cachedNull"] = json!(null);
+        snapshot["unconfigured"] = json!({"retained": [null, true]});
+        snapshot["hiddenMarker"] = json!({"secret": "retained in cache only"});
+        cache
+            .set(
+                session.token(),
+                &json!({
+                    "session": session.secondary_snapshot().unwrap(),
+                    "user": snapshot,
+                })
+                .to_string(),
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+        inner.delete_user(&user.id).await.unwrap();
+        let mut context = AuthContext::<StatelessSchema>::new(config.clone(), inner.clone());
+        if registered {
+            context.extensions.insert(crate::field_policy::UserFields(
+                crate::field_policy::SessionFields(configured_fields("registeredMarker")),
+            ));
+        }
+        let store = PluginStore::new(
+            inner.clone(),
+            config,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            context,
+        );
+        let (selected, rejected) = if registered {
+            ("registeredMarker", "fallbackMarker")
+        } else {
+            ("fallbackMarker", "registeredMarker")
+        };
+        for _ in 0..2 {
+            let record = store
+                .get_session_user_record(session.token())
+                .await
+                .unwrap()
+                .unwrap();
+            let wire = serde_json::to_value(UserView::from(&record)).unwrap();
+            assert_eq!(wire[selected], snapshot[selected]);
+            assert!(wire["cachedNull"].is_null());
+            assert!(record.raw_snapshot().field_is_undefined("cachedMissing"));
+            assert!(wire.get("cachedMissing").is_none());
+            assert_eq!(wire[rejected], snapshot[rejected]);
+            assert_eq!(wire["unconfigured"], snapshot["unconfigured"]);
+            assert!(wire.get("hiddenMarker").is_none());
+        }
+        store
+            .update_session_fields(session.token(), Default::default())
+            .await
+            .unwrap()
+            .unwrap();
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(session.token()).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["user"][selected], snapshot[selected]);
+        assert!(cached["user"]["cachedNull"].is_null());
+        assert!(cached["user"].get("cachedMissing").is_none());
+        assert_eq!(cached["user"][rejected], snapshot[rejected]);
+        assert_eq!(cached["user"]["unconfigured"], snapshot["unconfigured"]);
+        assert_eq!(cached["user"]["hiddenMarker"], snapshot["hiddenMarker"]);
+        assert!(inner.get_user_by_id(&user.id).await.unwrap().is_none());
+    }
+}
