@@ -575,23 +575,33 @@ impl OAuthUserInfoHandler for PublishedProfile {
             user_output: Some(output),
             user,
             data: if matches!(self.kind, ProfileKind::Roblox | ProfileKind::Zoom) {
-                match profile {
-                    Value::Object(_) => profile,
-                    Value::Array(values) => Value::Object(
-                        values.into_iter().enumerate()
-                            .map(|(index, value)| (index.to_string(), value)).collect(),
-                    ),
-                    Value::String(value) => Value::Object(
-                        value.encode_utf16().enumerate().map(|(index, unit)| {
-                            (index.to_string(), Value::String(String::from_utf16_lossy(&[unit])))
-                        }).collect(),
-                    ),
-                    _ => Value::Object(Map::new()),
-                }
+                Value::Object(object_spread(profile))
             } else {
                 profile
             },
         })
+    }
+}
+
+pub(super) fn object_spread(value: Value) -> Map<String, Value> {
+    match value {
+        Value::Object(object) => object,
+        Value::Array(values) => values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| (index.to_string(), value))
+            .collect(),
+        Value::String(value) => value
+            .encode_utf16()
+            .enumerate()
+            .map(|(index, unit)| {
+                (
+                    index.to_string(),
+                    Value::String(String::from_utf16_lossy(&[unit])),
+                )
+            })
+            .collect(),
+        _ => Map::new(),
     }
 }
 
@@ -619,16 +629,31 @@ mod tests {
             for (profile, expected) in [
                 (serde_json::json!(42), serde_json::json!({})),
                 (serde_json::json!(false), serde_json::json!({})),
-                (serde_json::json!(["a", 2]), serde_json::json!({"0":"a","1":2})),
-                (serde_json::json!("ab"), serde_json::json!({"0":"a","1":"b"})),
-                (serde_json::json!({"sub":"one", "id":"two"}), serde_json::json!({"sub":"one", "id":"two"})),
+                (
+                    serde_json::json!(["a", 2]),
+                    serde_json::json!({"0":"a","1":2}),
+                ),
+                (
+                    serde_json::json!("ab"),
+                    serde_json::json!({"0":"a","1":"b"}),
+                ),
+                (
+                    serde_json::json!({"sub":"one", "id":"two"}),
+                    serde_json::json!({"sub":"one", "id":"two"}),
+                ),
             ] {
                 let handler = PublishedProfile {
-                    kind, endpoint: Some(serve_profile(profile).await),
-                    email_endpoint: None, client_id: "client".into(),
-                    mapper: None, application_mapper: None,
+                    kind,
+                    endpoint: Some(serve_profile(profile).await),
+                    email_endpoint: None,
+                    client_id: "client".into(),
+                    mapper: None,
+                    application_mapper: None,
                 };
-                let response = handler.get_user_info(OAuthUserInfoRequest::default()).await.unwrap();
+                let response = handler
+                    .get_user_info(OAuthUserInfoRequest::default())
+                    .await
+                    .unwrap();
                 assert_eq!(response.data, expected);
             }
         }

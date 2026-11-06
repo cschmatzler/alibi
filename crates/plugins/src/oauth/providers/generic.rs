@@ -455,7 +455,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .as_deref()
                 .filter(|token| !token.is_empty())
                 .ok_or("Generic OAuth user info unavailable")?;
-            let mut profile: Value = reqwest::Client::new()
+            let profile: Value = reqwest::Client::new()
                 .get(url)
                 .bearer_auth(access_token)
                 .send()
@@ -469,18 +469,17 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             if !super::remaining_profile::truthy(&profile) {
                 return Err("Generic OAuth user info unavailable".into());
             }
-            if let Some(object) = profile.as_object_mut() {
-                _ = object.insert(
-                    "emailVerified".into(),
-                    Value::Bool(super::email_verified_claim(object.get("email_verified"))),
-                );
-                if let Some(image) = object.get("picture").cloned() {
-                    _ = object.insert("image".into(), image);
-                } else {
-                    _ = object.remove("image");
-                }
+            let mut object = super::remaining_profile::object_spread(profile);
+            _ = object.insert(
+                "emailVerified".into(),
+                Value::Bool(super::email_verified_claim(object.get("email_verified"))),
+            );
+            if let Some(image) = object.get("picture").cloned() {
+                _ = object.insert("image".into(), image);
+            } else {
+                _ = object.remove("image");
             }
-            profile
+            Value::Object(object)
         };
         if let Some(expected) = expected_sub
             && raw
@@ -719,6 +718,24 @@ mod tests {
     impl OAuthProfileMapper for ImageMapper {
         async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
             Ok(Map::from_iter([("image".into(), self.0.clone())]))
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_profiles_spread_truthy_payloads() {
+        for (profile, expected) in [
+            (serde_json::json!(42), serde_json::json!({"emailVerified":false})),
+            (serde_json::json!(true), serde_json::json!({"emailVerified":false})),
+            (serde_json::json!(["a", 2]), serde_json::json!({"0":"a", "1":2, "emailVerified":false})),
+            (serde_json::json!("ab"), serde_json::json!({"0":"a", "1":"b", "emailVerified":false})),
+        ] {
+            let handler = GenericUserInfo {
+                url: Some(serve_profile(profile).await), mapper: None, custom: None, verified_oidc: false,
+            };
+            let response = handler.get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()), ..Default::default()
+            }).await.unwrap();
+            assert_eq!(response.data, expected);
         }
     }
 
