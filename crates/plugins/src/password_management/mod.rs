@@ -1,5 +1,7 @@
 pub(super) mod handlers;
 mod set_password;
+#[cfg(test)]
+mod transaction_tests;
 pub(super) mod types;
 
 use super::StatusResponse;

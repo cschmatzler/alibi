@@ -238,24 +238,21 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
     let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
     if let Some(stored_hash) = stored_hash {
-        password_utils::verify_password(
-            hasher,
-            &body.current_password,
-            &stored_hash,
-        )
-        .await
-        .map_err(|error| match error {
-            AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
-            other => other,
-        })?;
+        password_utils::verify_password(hasher, &body.current_password, &stored_hash)
+            .await
+            .map_err(|error| match error {
+                AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
+                other => other,
+            })?;
     }
 
-    // Revocation and the password write commit together, as upstream's
-    // transaction does. The replacement session is created after commit.
     let revoke = body.revoke_other_sessions == Some(true);
     let user_id = user.id().into_owned();
     let account_id = credential_account.id().into_owned();
-    alibi_core::store::write_transaction(ctx.database.as_ref(), move |tx| {
+    let session_user = user.clone();
+    let session_manager = ctx.session_manager();
+    let meta = meta.clone();
+    let new_session = alibi_core::store::write_transaction(ctx.database.as_ref(), move |tx| {
         Box::pin(async move {
             if revoke {
                 tx.delete_user_sessions(&user_id).await?;
@@ -269,16 +266,31 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
                     },
                 )
                 .await?;
-            Ok(())
+            if !revoke {
+                return Ok(None);
+            }
+            let session = session_manager
+                .create_session_record_in_transaction(
+                    &session_user,
+                    meta.ip_address,
+                    meta.user_agent,
+                    tx,
+                )
+                .await
+                .map_err(|error| match error {
+                    AuthError::SessionCreationCancelled => AuthError::Upstream {
+                        status: 500,
+                        code: codes::FAILED_TO_GET_SESSION,
+                        message: "Failed to get session",
+                    },
+                    other => other,
+                })?;
+            Ok(Some(session))
         })
     })
     .await?;
 
-    let new_token = if revoke {
-        let session = ctx
-            .session_manager()
-            .create_session_record(user, meta.ip_address.clone(), meta.user_agent.clone())
-            .await?;
+    let new_token = if let Some(session) = new_session {
         let user = ctx.filter_user_record(user.clone());
         alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session).await?;
         crate::helpers::record_completed_session_record::<S>(&user, &session);
