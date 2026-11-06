@@ -243,6 +243,9 @@ impl TryFrom<UserViewInput> for UserView {
 
 impl<T: AuthUser> From<&T> for UserView {
     fn from(user: &T) -> Self {
+        if let Some(view) = user.retained_user_view() {
+            return view.clone();
+        }
         let mut view = Self {
             id: user.id().into_owned(),
             name: user.name().map(str::to_owned),
@@ -302,6 +305,32 @@ impl<T: AuthUser> From<&T> for UserView {
 }
 
 impl AuthUser for UserView {
+    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+        serde_json::to_value(self).map_err(Into::into)
+    }
+
+    fn secondary_snapshot_with_native_output(
+        &self,
+        native: &crate::AdapterOutput,
+    ) -> crate::AuthResult<serde_json::Value> {
+        self.secondary_native_snapshot(native)
+    }
+
+    fn from_secondary_snapshot(snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+        Self::from_secondary_native_snapshot(snapshot)
+    }
+
+    fn from_secondary_snapshot_record(
+        snapshot: serde_json::Value,
+    ) -> crate::AuthResult<crate::AdapterRecord<Self>> {
+        let user = Self::from_secondary_native_snapshot(snapshot)?;
+        let mut native = crate::AdapterOutput::default();
+        for name in &user.omitted_fields {
+            native.insert(name.clone(), None);
+        }
+        crate::AdapterRecord::with_native_output(user, native)
+    }
+
     fn retained_user_view(&self) -> Option<&UserView> {
         Some(self)
     }

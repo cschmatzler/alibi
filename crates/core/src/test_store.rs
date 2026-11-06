@@ -258,13 +258,18 @@ impl UserStore<BundledSchema> for MemoryStore {
         prepared: crate::user_validation::PreparedUserCreation,
     ) -> AuthResult<UserView> {
         let (create_user, defaults) = prepared.into_parts();
-        let create_user = defaults.apply(create_user)?;
+        let mut create_user = defaults.apply(create_user)?;
+        create_user
+            .additional_fields
+            .apply_adapter_transforms_async()
+            .await?;
         let now = Utc::now();
         let id = create_user
             .id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let username = create_user.username.map(|username| username.to_lowercase());
-        let user = UserView {
+        let native_fields = create_user.adapter_native_fields;
+        let mut user = UserView {
             omitted_fields: std::collections::BTreeSet::default(),
             id: id.clone(),
             name: create_user.name,
@@ -287,10 +292,25 @@ impl UserStore<BundledSchema> for MemoryStore {
             phone_number: create_user.phone_number,
             phone_number_verified: create_user.phone_number_verified,
             last_login_method: create_user.last_login_method,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: create_user
+                .additional_fields
+                .into_iter()
+                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
+                .collect::<Result<_, _>>()?,
         };
+        user.retain_native_user_fields(native_fields);
         self.lock().users.insert(id, user.clone());
         Ok(user)
+    }
+
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(self
+            .get_user_by_id(id)
+            .await?
+            .map_or_else(Default::default, |user| user.native_user_fields()))
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
@@ -333,9 +353,14 @@ impl UserStore<BundledSchema> for MemoryStore {
             .cloned())
     }
 
-    async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<UserView> {
+    async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<UserView> {
+        update
+            .additional_fields
+            .apply_adapter_transforms_async()
+            .await?;
         let mut state = self.lock();
         let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
+        user.clear_native_user_update(&update)?;
         if let Some(email) = update.email {
             user.email = Some(email.to_lowercase());
         }
@@ -386,7 +411,11 @@ impl UserStore<BundledSchema> for MemoryStore {
         if let Some(last_login_method) = update.last_login_method {
             user.last_login_method = last_login_method;
         }
+        for (name, value) in update.additional_fields {
+            _ = user.extension_fields.insert(name, value.to_json_value()?);
+        }
         user.updated_at = Utc::now();
+        user.retain_native_user_fields(update.adapter_native_fields);
         let locked_result = Ok(user.clone());
         drop(state);
         locked_result

@@ -90,6 +90,57 @@ async fn cached_native_user_projection_preserves_values_without_database_lookup(
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
 }
 
+#[derive(Clone, Debug, serde::Serialize)]
+struct UnsupportedUser(UserView);
+
+impl AuthUser for UnsupportedUser {
+    fn id(&self) -> std::borrow::Cow<'_, str> {
+        self.0.id()
+    }
+    fn email(&self) -> Option<&str> {
+        self.0.email()
+    }
+    fn name(&self) -> Option<&str> {
+        self.0.name()
+    }
+    fn email_verified(&self) -> bool {
+        self.0.email_verified()
+    }
+    fn image(&self) -> Option<&str> {
+        self.0.image()
+    }
+    fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+        self.0.created_at()
+    }
+    fn updated_at(&self) -> chrono::DateTime<chrono::Utc> {
+        self.0.updated_at()
+    }
+    fn username(&self) -> Option<&str> {
+        self.0.username()
+    }
+    fn display_username(&self) -> Option<&str> {
+        self.0.display_username()
+    }
+    fn two_factor_enabled(&self) -> bool {
+        self.0.two_factor_enabled()
+    }
+    fn role(&self) -> Option<&str> {
+        self.0.role()
+    }
+    fn banned(&self) -> bool {
+        self.0.banned()
+    }
+    fn ban_reason(&self) -> Option<&str> {
+        self.0.ban_reason()
+    }
+    fn ban_expires(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        self.0.ban_expires()
+    }
+    fn metadata(&self) -> &serde_json::Value {
+        self.0.metadata()
+    }
+}
+
 #[tokio::test]
 async fn custom_user_codecs_reject_unsupported_native_corrections() {
     let store = MemoryStore::default();
@@ -97,6 +148,7 @@ async fn custom_user_codecs_reject_unsupported_native_corrections() {
         .create_user(CreateUser::new().with_email("native-unsupported@fixture.test"))
         .await
         .unwrap();
+    let user = UnsupportedUser(user);
     let mut native = AdapterOutput::default();
     native.insert("createdAt".into(), Some(serde_json::json!(1e20)));
     assert!(matches!(

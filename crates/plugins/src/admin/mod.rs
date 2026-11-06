@@ -197,6 +197,10 @@ fn ban_expired_at(user: &impl alibi_core::AuthUser, now: chrono::DateTime<chrono
     if let Some(value) = user
         .adapter_snapshot()
         .and_then(|output| output.values().get("banExpires"))
+        .or_else(|| {
+            user.retained_user_view()
+                .and_then(|view| view.extension_fields.get("banExpires"))
+        })
     {
         if !alibi_core::utils::json::JsValue::from(value.clone()).is_truthy() {
             return false;

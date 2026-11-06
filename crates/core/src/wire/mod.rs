@@ -7,6 +7,9 @@ mod account;
 mod plugins;
 mod session;
 mod user;
+mod user_native;
+#[cfg(test)]
+mod user_native_tests;
 mod verification;
 
 pub use account::AccountView;

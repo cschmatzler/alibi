@@ -141,7 +141,8 @@ impl UserStore<StatelessSchema> for StatelessStore {
             }
         }
         let username = create_user.username.map(|username| username.to_lowercase());
-        let user = UserView {
+        let native_fields = create_user.adapter_native_fields;
+        let mut user = UserView {
             omitted_fields,
             id: id.clone(),
             name: create_user.name,
@@ -170,6 +171,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
                 .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
                 .collect::<Result<_, _>>()?,
         };
+        user.retain_native_user_fields(native_fields);
         let mut state = self.lock()?;
         if state.users.contains_key(&id)
             || state
@@ -181,6 +183,16 @@ impl UserStore<StatelessSchema> for StatelessStore {
         }
         _ = state.users.insert(id, user.clone());
         Ok(user)
+    }
+
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(self
+            .get_user_by_id(id)
+            .await?
+            .map_or_else(Default::default, |user| user.native_user_fields()))
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
@@ -246,6 +258,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             .await?;
         let mut state = self.lock()?;
         let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
+        user.clear_native_user_update(&update)?;
         if let Some(email) = update.email {
             user.email = Some(email.to_lowercase());
         }
@@ -314,6 +327,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             }
         }
         user.updated_at = Utc::now();
+        user.retain_native_user_fields(update.adapter_native_fields);
         Ok(user.clone())
     }
 

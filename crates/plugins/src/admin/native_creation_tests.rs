@@ -654,3 +654,36 @@ async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
         assert_eq!(row.try_get::<String>("", "kind").unwrap(), expected_kind);
     }
 }
+
+#[tokio::test]
+async fn stateless_ban_expiry_comparisons_keep_native_truthiness_and_timeclip() {
+    use alibi_core::store::UserStore;
+    let store = alibi_core::store::stateless::StatelessStore::default();
+    for (index, (expiry, expired)) in [
+        (serde_json::json!(0), false),
+        (serde_json::json!(-0.5), true),
+        (serde_json::json!(1.9), true),
+        (serde_json::json!(1e20), false),
+        (serde_json::json!(-1e20), false),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let user = store
+            .create_user(alibi_core::CreateUser {
+                email: Some(format!("stateless-ban-{index}@fixture.test")),
+                banned: Some(true),
+                adapter_native_fields: [("banExpires".into(), expiry.clone())].into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            super::super::ban_expired_at(&user, Utc::now()),
+            expired,
+            "{expiry}"
+        );
+        let stored = store.get_user_by_id(&user.id).await.unwrap().unwrap();
+        assert_eq!(serde_json::to_value(stored).unwrap()["banExpires"], expiry);
+    }
+}
