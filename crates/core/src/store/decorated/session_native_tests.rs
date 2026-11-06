@@ -435,14 +435,20 @@ async fn cached_session_unknown_objects_survive_and_only_declared_hidden_fields_
         .unwrap()
         .unwrap();
     assert_eq!(cached.secondary_snapshot().unwrap(), snapshot["session"]);
-    let trusted =
-        serde_json::to_value(store.projection_context.trusted_session_view(&cached)).unwrap();
+    let trusted = serde_json::to_value(
+        store
+            .projection_context
+            .trusted_session_view(&cached)
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(trusted["unknownTrustedObject"], unknown);
     assert_eq!(
         trusted["privateCacheState"],
         snapshot["session"]["privateCacheState"]
     );
-    let public = serde_json::to_value(store.projection_context.session_view(&cached)).unwrap();
+    let public =
+        serde_json::to_value(store.projection_context.session_view(&cached).unwrap()).unwrap();
     assert_eq!(public["unknownTrustedObject"], unknown);
     assert_eq!(public["custom"], json!({"already": "transformed"}));
     assert!(public.get("privateCacheState").is_none());

@@ -227,7 +227,7 @@ impl OAuthProviderPlugin {
             client,
             scope.split(' ').map(str::to_owned).collect(),
         );
-        params.user = Some(ctx.trusted_user_view(&user));
+        params.user = Some(ctx.trusted_user_view(&user)?);
         params.verification_value = Some(value.clone());
         params.reference_id = value
             .get("referenceId")

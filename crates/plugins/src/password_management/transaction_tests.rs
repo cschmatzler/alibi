@@ -1202,11 +1202,12 @@ async fn session_creation_publishes_index_before_loading_owner_in_ordinary_and_d
         let raw = cache.get(&token).await.unwrap().unwrap();
         let snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
         let owner = <TestSchema as alibi_core::AuthSchema>::User::from_secondary_snapshot(
-            snapshot["user"].clone(),
+            snapshot["user"].clone().into(),
         )
         .unwrap();
         assert_eq!(owner.name(), Some("Changed during index publication"));
-        let cached = TestSession::from_secondary_snapshot(snapshot["session"].clone()).unwrap();
+        let cached =
+            TestSession::from_secondary_snapshot(snapshot["session"].clone().into()).unwrap();
         if deferred {
             let before_hook = fixture.hooks.before_create_clock.lock().unwrap().unwrap();
             assert!(
@@ -1241,7 +1242,11 @@ async fn creation_codec_keeps_rounded_database_session_alive_past_cached_revocat
         .unwrap();
     let raw = cache.get(token).await.unwrap().unwrap();
     let mut snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    snapshot["session"] = rounded.secondary_snapshot().unwrap();
+    snapshot["session"] = rounded
+        .secondary_snapshot()
+        .unwrap()
+        .to_json_value()
+        .unwrap();
     cache
         .set(token, &snapshot.to_string(), Duration::hours(1))
         .await
@@ -1256,7 +1261,11 @@ async fn creation_codec_keeps_rounded_database_session_alive_past_cached_revocat
             .is_none(),
         "rounded clock incorrectly predates revocation"
     );
-    snapshot["session"] = rounded.secondary_snapshot_for_creation(clock).unwrap();
+    snapshot["session"] = rounded
+        .secondary_snapshot_for_creation(clock)
+        .unwrap()
+        .to_json_value()
+        .unwrap();
     cache
         .set(token, &snapshot.to_string(), Duration::hours(1))
         .await
@@ -1321,7 +1330,8 @@ async fn session_creation_publishes_null_owner_after_index_triggered_deletion_wi
         let raw = cache.get(&token).await.unwrap().unwrap();
         let snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
         assert!(snapshot["user"].is_null());
-        let session = TestSession::from_secondary_snapshot(snapshot["session"].clone()).unwrap();
+        let session =
+            TestSession::from_secondary_snapshot(snapshot["session"].clone().into()).unwrap();
         assert_eq!(session.token(), token);
         for error in [
             fixture.ctx.database.get_session(&token).await.unwrap_err(),
@@ -1600,7 +1610,7 @@ async fn cached_session_owner_retains_raw_scalars_and_absence_without_database_r
     snapshot["user"].as_object_mut().unwrap().remove("image");
     snapshot["user"]["name"] = serde_json::Value::Null;
     alibi_seaorm::store::entities::user::Model::from_secondary_snapshot_record(
-        snapshot["user"].clone(),
+        snapshot["user"].clone().into(),
     )
     .expect("cached native owner must decode without losing null name or absent image");
     cache
@@ -1636,14 +1646,14 @@ async fn cached_session_owner_retains_raw_scalars_and_absence_without_database_r
         };
         assert_eq!(
             record.raw_snapshot().values().get(wire),
-            Some(&expected),
+            Some(&alibi_core::utils::json::JsValue::from(expected)),
             "{wire}"
         );
     }
     assert!(!record.raw_snapshot().values().contains_key("image"));
     assert_eq!(
         record.raw_snapshot().values().get("name"),
-        Some(&serde_json::Value::Null)
+        Some(&alibi_core::utils::json::JsValue::Null)
     );
     fixture
         .ctx
@@ -2092,7 +2102,7 @@ async fn session_creation_projects_database_output_once_before_ordinary_inline_a
             if persist { "new:input:output" } else { "new" }
         );
         let cached_model = <TestSession as alibi_core::AuthSession>::from_secondary_snapshot(
-            cached["session"].clone(),
+            cached["session"].clone().into(),
         )
         .unwrap();
         assert!(alibi_core::AuthSession::created_at(&cached_model).timestamp_millis() >= before);

@@ -195,7 +195,7 @@ impl OAuthProviderPlugin {
             } else {
                 None
             };
-            let user_view = user.as_ref().map(|user| ctx.user_view(user));
+            let user_view = user.as_ref().map(|user| ctx.user_view(user)).transpose()?;
             let mut session_id = row.session_id.clone();
             if let Some(id) = session_id.as_deref() {
                 let sessions = if let Some(user) = row.user_id.as_deref() {

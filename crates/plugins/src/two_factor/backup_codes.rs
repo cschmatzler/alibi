@@ -131,7 +131,7 @@ pub(in crate::two_factor) async fn verify_backup_code_core(
                 Ok((
                     BackupVerificationResponse {
                         token: Some(session.token().to_owned()),
-                        user: ctx.user_view(&user),
+                        user: ctx.user_view(&user)?,
                     },
                     Vec::new(),
                 ))
@@ -149,7 +149,7 @@ pub(in crate::two_factor) async fn verify_backup_code_core(
                 return Ok((
                     BackupVerificationResponse {
                         token: None,
-                        user: ctx.user_view(&pending_2.user),
+                        user: ctx.user_view(&pending_2.user)?,
                     },
                     Vec::new(),
                 ));

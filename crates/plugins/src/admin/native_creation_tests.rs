@@ -8,7 +8,7 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
     let mut input = alibi_core::CreateUser::new().with_email("raw-username@fixture.test");
     input
         .adapter_native_fields
-        .insert("username".into(), serde_json::json!(42));
+        .insert("username".into(), serde_json::json!(42).into());
     let user = ctx.database.create_user(input).await.unwrap();
     let found = ctx
         .database
@@ -34,7 +34,7 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
                 alibi_core::CreateUser::new().with_email("transaction-username@fixture.test");
             input
                 .adapter_native_fields
-                .insert("username".into(), serde_json::json!(73));
+                .insert("username".into(), serde_json::json!(73).into());
             let created = tx.create_user(input).await?;
             let found = tx
                 .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(73.0))
@@ -54,7 +54,7 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
 #[tokio::test]
 async fn false_ban_patch_preserves_omissions_and_honors_explicit_values() {
     let (ctx, admin, _, user, _) = create_admin_context().await;
-    let expiry = Utc::now() + Duration::hours(1);
+    let expiry = chrono::DateTime::from_timestamp_millis(4_102_444_800_123).unwrap();
     ctx.database
         .update_user_record(
             &user.id,
@@ -363,21 +363,21 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
     .enumerate()
     {
         let mut snapshot = user.secondary_snapshot().unwrap();
-        snapshot["created_at"] = created_at.clone();
-        snapshot["updated_at"] = serde_json::json!(-1e20);
-        snapshot["ban_expires"] = serde_json::json!(-0.5);
-        snapshot["email_verified"] = serde_json::json!("false");
-        snapshot["two_factor_enabled"] = serde_json::json!("false");
-        snapshot["banned"] = serde_json::json!(false);
-        snapshot["is_anonymous"] = serde_json::Value::Null;
+        snapshot["created_at"] = created_at.clone().into();
+        snapshot["updated_at"] = serde_json::json!(-1e20).into();
+        snapshot["ban_expires"] = serde_json::json!(-0.5).into();
+        snapshot["email_verified"] = serde_json::json!("false").into();
+        snapshot["two_factor_enabled"] = serde_json::json!("false").into();
+        snapshot["banned"] = serde_json::json!(false).into();
+        snapshot["is_anonymous"] = serde_json::Value::Null.into();
         snapshot
             .as_object_mut()
             .unwrap()
-            .remove("phone_number_verified");
-        snapshot.as_object_mut().unwrap().remove("image");
-        snapshot["username"] = serde_json::Value::Null;
-        snapshot["name"] = serde_json::Value::Null;
-        snapshot["unknownNative"] = serde_json::json!("must not retain");
+            .shift_remove("phone_number_verified");
+        snapshot.as_object_mut().unwrap().shift_remove("image");
+        snapshot["username"] = serde_json::Value::Null.into();
+        snapshot["name"] = serde_json::Value::Null.into();
+        snapshot["unknownNative"] = serde_json::json!("must not retain").into();
         cache
             .set(
                 &format!("native-user-{index}"),
@@ -397,7 +397,7 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
                 .unwrap(),
         )
         .unwrap();
-        let decoded = User::from_secondary_snapshot_record(source.clone()).unwrap();
+        let decoded = User::from_secondary_snapshot_record(source.clone().into()).unwrap();
         let wire = serde_json::to_value(alibi_core::UserView::from(&decoded)).unwrap();
         assert_eq!(wire["createdAt"], source["created_at"]);
         assert_eq!(wire["updatedAt"], source["updated_at"]);
@@ -432,8 +432,14 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
         }
         assert!(encoded.get("phone_number_verified").is_none());
         assert!(encoded.get("image").is_none());
-        assert_eq!(encoded.get("username"), Some(&serde_json::Value::Null));
-        assert_eq!(encoded.get("name"), Some(&serde_json::Value::Null));
+        assert_eq!(
+            encoded.get("username"),
+            Some(&alibi_core::utils::json::JsValue::Null)
+        );
+        assert_eq!(
+            encoded.get("name"),
+            Some(&alibi_core::utils::json::JsValue::Null)
+        );
     }
 }
 
@@ -571,11 +577,11 @@ async fn native_secondary_nonidentity_texts_keep_raw_cache_values() {
     let cache = alibi_core::MemoryCacheAdapter::new();
     type User = <TestSchema as AuthSchema>::User;
     let mut source = user.secondary_snapshot().unwrap();
-    source["name"] = serde_json::json!(42);
-    source["email"] = serde_json::Value::Null;
-    source["image"] = serde_json::json!({"cached": true});
-    source["display_username"] = serde_json::json!(false);
-    source["unknownText"] = serde_json::json!("not declared");
+    source["name"] = serde_json::json!(42).into();
+    source["email"] = serde_json::Value::Null.into();
+    source["image"] = serde_json::json!({"cached": true}).into();
+    source["display_username"] = serde_json::json!(false).into();
+    source["unknownText"] = serde_json::json!("not declared").into();
     cache
         .set(
             "native-text-user",
@@ -723,7 +729,7 @@ async fn stateless_ban_expiry_comparisons_keep_native_truthiness_and_timeclip() 
             .create_user(alibi_core::CreateUser {
                 email: Some(format!("stateless-ban-{index}@fixture.test")),
                 banned: Some(true),
-                adapter_native_fields: [("banExpires".into(), expiry.clone())].into(),
+                adapter_native_fields: [("banExpires".into(), expiry.clone().into())].into(),
                 ..Default::default()
             })
             .await
@@ -763,8 +769,8 @@ async fn stateless_structured_ban_expiry_uses_date_primitive_conversion_and_erro
                 email: Some(format!("structured-expiry-{index}@fixture.test")),
                 banned: Some(true),
                 adapter_native_fields: [
-                    ("banExpires".into(), expiry.clone()),
-                    ("banReason".into(), serde_json::json!("retained")),
+                    ("banExpires".into(), expiry.clone().into()),
+                    ("banReason".into(), serde_json::json!("retained").into()),
                 ]
                 .into(),
                 ..Default::default()

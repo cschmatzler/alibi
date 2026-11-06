@@ -3,66 +3,56 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
 /// Public user response shape.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(try_from = "UserViewInput")]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UserView {
     pub id: String,
     pub name: Option<String>,
     pub email: Option<String>,
-    #[serde(rename = "emailVerified")]
     pub email_verified: bool,
     pub image: Option<String>,
-    #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
     pub updated_at: DateTime<Utc>,
-    #[serde(default)]
     pub username: Option<String>,
-    #[serde(rename = "displayUsername", default)]
     pub display_username: Option<String>,
-    #[serde(rename = "twoFactorEnabled", default)]
     pub two_factor_enabled: Option<bool>,
-    #[serde(default)]
     pub role: Option<String>,
-    #[serde(default)]
     pub banned: Option<bool>,
-    #[serde(rename = "banReason", default)]
     pub ban_reason: Option<String>,
-    #[serde(rename = "banExpires", default)]
     pub ban_expires: Option<DateTime<Utc>>,
-    #[serde(rename = "isAnonymous", default)]
     pub is_anonymous: Option<bool>,
-    #[serde(rename = "phoneNumber", default)]
     pub phone_number: Option<String>,
-    #[serde(rename = "phoneNumberVerified", default)]
     pub phone_number_verified: Option<bool>,
-    #[serde(rename = "lastLoginMethod", default)]
     pub last_login_method: Option<String>,
     /// Nullable fields contributed by an enabled plugin's output schema.
-    #[serde(
-        flatten,
-        default,
-        deserialize_with = "crate::utils::json::deserialize_btree_map"
-    )]
-    pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
-    #[serde(skip)]
-    pub metadata: serde_json::Value,
+    pub extension_fields: crate::utils::json::JsObject,
+    pub metadata: crate::utils::json::JsValue,
     /// Fields absent from an authenticated cache projection.
-    #[serde(skip)]
     pub omitted_fields: std::collections::BTreeSet<String>,
+}
+
+impl<'de> Deserialize<'de> for UserView {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Self::from_secondary_native_snapshot(crate::utils::json::JsValue::deserialize(
+            deserializer,
+        )?)
+        .map_err(serde::de::Error::custom)
+    }
 }
 
 impl Serialize for UserView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = crate::utils::json::JsObject::new();
         macro_rules! entry {
             ($name:literal, $value:expr) => {
                 if !self.omitted_fields.contains($name) {
                     if let Some(value) = self.extension_fields.get($name) {
-                        map.serialize_entry($name, value)?;
+                        _ = map.insert($name.into(), value.clone());
                     } else {
-                        map.serialize_entry($name, $value)?;
+                        _ = map.insert(
+                            $name.into(),
+                            crate::utils::json::to_js_value($value)
+                                .map_err(serde::ser::Error::custom)?,
+                        );
                     }
                 }
             };
@@ -127,122 +117,50 @@ impl Serialize for UserView {
             entry!("lastLoginMethod", &self.last_login_method);
         }
         for (name, value) in &self.extension_fields {
-            if !matches!(
-                name.as_str(),
-                "emailVerified"
-                    | "banned"
-                    | "twoFactorEnabled"
-                    | "isAnonymous"
-                    | "phoneNumberVerified"
-                    | "createdAt"
-                    | "updatedAt"
-                    | "banExpires"
-                    | "name"
-                    | "email"
-                    | "image"
-                    | "username"
-                    | "displayUsername"
-                    | "role"
-                    | "banReason"
-                    | "phoneNumber"
-                    | "lastLoginMethod"
-            ) && !self.omitted_fields.contains(name)
+            if !name.as_str().is_some_and(|name| {
+                matches!(
+                    name,
+                    "emailVerified"
+                        | "banned"
+                        | "twoFactorEnabled"
+                        | "isAnonymous"
+                        | "phoneNumberVerified"
+                        | "createdAt"
+                        | "updatedAt"
+                        | "banExpires"
+                        | "name"
+                        | "email"
+                        | "image"
+                        | "username"
+                        | "displayUsername"
+                        | "role"
+                        | "banReason"
+                        | "phoneNumber"
+                        | "lastLoginMethod"
+                )
+            }) && !name
+                .as_str()
+                .is_some_and(|name| self.omitted_fields.contains(name))
             {
-                map.serialize_entry(name, value)?;
+                _ = map.insert(name.clone(), value.clone());
             }
         }
-        map.end()
-    }
-}
-
-#[derive(Deserialize)]
-pub(in crate::wire) struct UserViewInput {
-    pub(in crate::wire) id: String,
-    pub(in crate::wire) name: Option<String>,
-    pub(in crate::wire) email: Option<String>,
-    #[serde(rename = "emailVerified")]
-    pub(in crate::wire) email_verified: serde_json::Value,
-    pub(in crate::wire) image: Option<String>,
-    #[serde(rename = "createdAt")]
-    pub(in crate::wire) created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
-    pub(in crate::wire) updated_at: DateTime<Utc>,
-    #[serde(default)]
-    pub(in crate::wire) username: Option<String>,
-    #[serde(rename = "displayUsername", default)]
-    pub(in crate::wire) display_username: Option<String>,
-    #[serde(rename = "twoFactorEnabled", default)]
-    pub(in crate::wire) two_factor_enabled: Option<bool>,
-    #[serde(default)]
-    pub(in crate::wire) role: Option<String>,
-    #[serde(default)]
-    pub(in crate::wire) banned: Option<bool>,
-    #[serde(rename = "banReason", default)]
-    pub(in crate::wire) ban_reason: Option<String>,
-    #[serde(rename = "banExpires", default)]
-    pub(in crate::wire) ban_expires: Option<DateTime<Utc>>,
-    #[serde(rename = "isAnonymous", default)]
-    pub(in crate::wire) is_anonymous: Option<bool>,
-    #[serde(rename = "phoneNumber", default)]
-    pub(in crate::wire) phone_number: Option<String>,
-    #[serde(rename = "phoneNumberVerified", default)]
-    pub(in crate::wire) phone_number_verified: Option<bool>,
-    #[serde(rename = "lastLoginMethod", default)]
-    pub(in crate::wire) last_login_method: Option<String>,
-    /// Nullable fields contributed by an enabled plugin's output schema.
-    #[serde(
-        flatten,
-        default,
-        deserialize_with = "crate::utils::json::deserialize_btree_map"
-    )]
-    pub(in crate::wire) extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
-    #[serde(skip)]
-    pub(in crate::wire) metadata: serde_json::Value,
-}
-
-impl TryFrom<UserViewInput> for UserView {
-    type Error = &'static str;
-    fn try_from(mut input: UserViewInput) -> Result<Self, Self::Error> {
-        let email_verified = match &input.email_verified {
-            serde_json::Value::Bool(value) => *value,
-            serde_json::Value::String(value) => !value.is_empty(),
-            _ => {
-                return Err("User verification output must be a boolean or retained SQLite string");
-            }
-        };
-        if !input.email_verified.is_boolean() {
-            _ = input
-                .extension_fields
-                .insert("emailVerified".into(), input.email_verified);
-        }
-        Ok(Self {
-            email_verified,
-            extension_fields: input.extension_fields,
-            id: input.id,
-            name: input.name,
-            email: input.email,
-            image: input.image,
-            created_at: input.created_at,
-            updated_at: input.updated_at,
-            username: input.username,
-            display_username: input.display_username,
-            two_factor_enabled: input.two_factor_enabled,
-            role: input.role,
-            banned: input.banned,
-            ban_reason: input.ban_reason,
-            ban_expires: input.ban_expires,
-            is_anonymous: input.is_anonymous,
-            phone_number: input.phone_number,
-            phone_number_verified: input.phone_number_verified,
-            last_login_method: input.last_login_method,
-            metadata: input.metadata,
-            omitted_fields: std::collections::BTreeSet::default(),
-        })
+        crate::utils::json::JsValue::Object(map).serialize(serializer)
     }
 }
 
 impl<T: AuthUser> From<&T> for UserView {
     fn from(user: &T) -> Self {
+        Self::from_user(user, true)
+    }
+}
+
+impl UserView {
+    pub(crate) fn without_private_metadata(user: &impl AuthUser) -> Self {
+        Self::from_user(user, false)
+    }
+
+    fn from_user(user: &impl AuthUser, include_metadata: bool) -> Self {
         if let Some(view) = user.retained_user_view() {
             return view.clone();
         }
@@ -265,38 +183,18 @@ impl<T: AuthUser> From<&T> for UserView {
             phone_number: user.phone_number().map(str::to_owned),
             phone_number_verified: user.phone_number_verified(),
             last_login_method: user.last_login_method().map(str::to_owned),
-            extension_fields: std::collections::BTreeMap::default(),
-            metadata: user.metadata().clone(),
+            extension_fields: Default::default(),
+            metadata: if include_metadata {
+                user.metadata()
+            } else {
+                crate::utils::json::JsValue::Undefined
+            },
             omitted_fields: std::collections::BTreeSet::default(),
         };
-        for field in [
-            "emailVerified",
-            "banned",
-            "twoFactorEnabled",
-            "isAnonymous",
-            "phoneNumberVerified",
-            "createdAt",
-            "updatedAt",
-            "banExpires",
-            "name",
-            "email",
-            "image",
-            "username",
-            "displayUsername",
-            "role",
-            "banReason",
-            "phoneNumber",
-            "lastLoginMethod",
-        ]
-        .into_iter()
-        .map(str::to_owned)
-        .chain(user.additional_fields().into_iter().map(|(name, _)| name))
-        {
-            if let Some(output) = user.adapter_snapshot() {
-                if output.field_is_undefined(&field) {
-                    _ = view.omitted_fields.insert(field.into());
-                } else if let Some(value) = output.values().get(&field) {
-                    _ = view.extension_fields.insert(field.into(), value.clone());
+        if let Some(output) = user.adapter_snapshot() {
+            for (name, value) in output.values() {
+                if name != "id" {
+                    _ = view.extension_fields.insert(name.clone(), value.clone());
                 }
             }
         }
@@ -305,29 +203,29 @@ impl<T: AuthUser> From<&T> for UserView {
 }
 
 impl AuthUser for UserView {
-    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
-        serde_json::to_value(self).map_err(Into::into)
+    fn secondary_snapshot(&self) -> crate::AuthResult<crate::utils::json::JsValue> {
+        crate::utils::json::to_js_value(self).map_err(Into::into)
     }
 
     fn secondary_snapshot_with_native_output(
         &self,
         native: &crate::AdapterOutput,
-    ) -> crate::AuthResult<serde_json::Value> {
+    ) -> crate::AuthResult<crate::utils::json::JsValue> {
         self.secondary_native_snapshot(native)
     }
 
-    fn from_secondary_snapshot(snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+    fn from_secondary_snapshot(snapshot: crate::utils::json::JsValue) -> crate::AuthResult<Self> {
         Self::from_secondary_native_snapshot(snapshot)
     }
 
     fn from_secondary_snapshot_record(
-        snapshot: serde_json::Value,
+        snapshot: crate::utils::json::JsValue,
     ) -> crate::AuthResult<crate::AdapterRecord<Self>> {
         Self::secondary_native_record(snapshot, &Default::default())
     }
 
     fn from_secondary_snapshot_record_with_fields(
-        snapshot: serde_json::Value,
+        snapshot: crate::utils::json::JsValue,
         allowed: &crate::field_policy::FieldConfigs,
     ) -> crate::AuthResult<crate::AdapterRecord<Self>> {
         Self::secondary_native_record(snapshot, allowed)
@@ -336,8 +234,8 @@ impl AuthUser for UserView {
     fn retained_user_view(&self) -> Option<&UserView> {
         Some(self)
     }
-    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
-        self.extension_fields.clone().into_iter().collect()
+    fn additional_js_fields(&self) -> crate::AuthResult<crate::utils::json::JsObject> {
+        Ok(self.extension_fields.clone())
     }
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
@@ -401,7 +299,7 @@ impl AuthUser for UserView {
     fn last_login_method(&self) -> Option<&str> {
         self.last_login_method.as_deref()
     }
-    fn metadata(&self) -> &serde_json::Value {
-        &self.metadata
+    fn metadata(&self) -> crate::utils::json::JsValue {
+        self.metadata.clone()
     }
 }

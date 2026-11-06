@@ -12,7 +12,10 @@ impl From<&entities::organization::Model> for Organization {
             name: model.name.clone(),
             slug: model.slug.clone(),
             logo: model.logo.clone(),
-            metadata: model.metadata.as_ref().map(|metadata| (**metadata).clone()),
+            metadata: model
+                .metadata
+                .as_ref()
+                .map(alibi_core::utils::json::JsValue::from),
             created_at: model.created_at,
         }
     }

@@ -10,9 +10,9 @@ use std::collections::BTreeSet;
 
 #[derive(Serialize, Deserialize)]
 struct CachedSession {
-    session: serde_json::Value,
+    session: crate::utils::json::JsValue,
     #[serde(default)]
-    user: serde_json::Value,
+    user: crate::utils::json::JsValue,
     #[serde(default)]
     absent_fields: BTreeSet<String>,
 }
@@ -68,7 +68,7 @@ impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublic
 
 impl CachedSession {
     fn absent_fields(raw: &str) -> BTreeSet<String> {
-        serde_json::from_str::<Self>(raw)
+        crate::utils::json::from_storage_str::<Self>(raw)
             .map(|cached| cached.absent_fields)
             .unwrap_or_default()
     }
@@ -164,7 +164,7 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(raw) = cache.get(&format!("active-sessions-{user_id}")).await? else {
             return Ok(Vec::new());
         };
-        Ok(serde_json::from_str(&raw).unwrap_or_default())
+        Ok(crate::utils::json::from_str(&raw).unwrap_or_default())
     }
 
     async fn write_references(
@@ -183,7 +183,7 @@ impl<S: AuthSchema> PluginStore<S> {
             let ttl = Duration::seconds((last.expires_at - now).num_seconds());
             if ttl > Duration::zero() {
                 return cache
-                    .set(&key, &serde_json::to_string(&references)?, ttl)
+                    .set(&key, &crate::utils::json::to_string(&references)?, ttl)
                     .await;
             }
         }
@@ -200,7 +200,7 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(raw) = cache.get(token).await? else {
             return Ok(None);
         };
-        let Ok(snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+        let Ok(snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw) else {
             return Ok(None);
         };
         let Ok(session) = S::Session::from_secondary_snapshot(snapshot.session) else {
@@ -263,14 +263,14 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) async fn secondary_session_for_update(
         &self,
         token: &str,
-    ) -> AuthResult<Option<(S::Session, serde_json::Value)>> {
+    ) -> AuthResult<Option<(S::Session, crate::utils::json::JsValue)>> {
         let Some(cache) = self.secondary() else {
             return Ok(None);
         };
         let Some(raw) = cache.get(token).await? else {
             return Ok(None);
         };
-        let Ok(snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+        let Ok(snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw) else {
             return Ok(None);
         };
         let session = S::Session::from_secondary_snapshot(snapshot.session)?;
@@ -281,7 +281,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
         session: &S::Session,
-        user: serde_json::Value,
+        user: crate::utils::json::JsValue,
         updated_fields: Option<&FieldValues>,
     ) -> AuthResult<()> {
         if self.secondary().is_none() {
@@ -308,7 +308,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
         session: &S::Session,
-        user: serde_json::Value,
+        user: crate::utils::json::JsValue,
         updated_fields: Option<&FieldValues>,
         created_at: Option<DateTime<Utc>>,
         native: Option<&AdapterOutput>,
@@ -330,16 +330,19 @@ impl<S: AuthSchema> PluginStore<S> {
                     _ = absent.insert(name.to_owned());
                 }
             }
-            for (name, value) in session.additional_fields() {
+            for (name, value) in session.additional_js_fields()? {
+                let Some(name) = name.as_str() else {
+                    continue;
+                };
                 if value.is_null()
                     && self
                         .config
                         .session
                         .additional_fields
-                        .get(&name)
+                        .get(name)
                         .is_none_or(|field| field.default.is_none())
                 {
-                    _ = absent.insert(name);
+                    _ = absent.insert(name.to_owned());
                 }
             }
             absent
@@ -369,18 +372,18 @@ impl<S: AuthSchema> PluginStore<S> {
         };
         let session_snapshot = if created_at.is_none() {
             let mut merged = if let Some(raw) = cache.get(token).await? {
-                serde_json::from_str::<CachedSession>(&raw)?.session
+                crate::utils::json::from_storage_str::<CachedSession>(&raw)?.session
             } else {
-                serde_json::Value::Object(serde_json::Map::new())
+                crate::utils::json::JsValue::Object(crate::utils::json::JsObject::new())
             };
-            let (Some(merged), serde_json::Value::Object(updated)) =
+            let (Some(merged), crate::utils::json::JsValue::Object(updated)) =
                 (merged.as_object_mut(), &session_snapshot)
             else {
                 return Err(AuthError::internal("Invalid secondary session snapshot"));
             };
             merged.extend(updated.clone());
             let mut output = S::Session::output_from_secondary_snapshot(
-                serde_json::Value::Object(merged.clone()),
+                crate::utils::json::JsValue::Object(merged.clone()),
             )?;
             for name in &absent_fields {
                 output.insert(name.clone(), None);
@@ -408,7 +411,7 @@ impl<S: AuthSchema> PluginStore<S> {
             absent_fields,
         };
         cache
-            .set(token, &serde_json::to_string(&snapshot)?, ttl)
+            .set(token, &crate::utils::json::to_string(&snapshot)?, ttl)
             .await?;
         Ok(())
     }
@@ -418,7 +421,7 @@ impl<S: AuthSchema> PluginStore<S> {
             .secondary()
             .ok_or_else(|| AuthError::internal("No secondary session storage"))?;
         let raw = cache.get(token).await?.ok_or(AuthError::SessionNotFound)?;
-        let snapshot: CachedSession = serde_json::from_str(&raw)?;
+        let snapshot: CachedSession = crate::utils::json::from_storage_str(&raw)?;
         let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
         for name in snapshot.absent_fields {
             output.insert(name, None);
@@ -504,7 +507,7 @@ impl<S: AuthSchema> PluginStore<S> {
                     )
                     .await?
                     .secondary_snapshot()?,
-                None => serde_json::Value::Null,
+                None => crate::utils::json::JsValue::Null,
             };
             self.write_session_snapshot(
                 session.token(),
@@ -532,7 +535,7 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(raw) = cache.get(token).await? else {
             return Ok(None);
         };
-        let Ok(snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+        let Ok(snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw) else {
             return Ok(None);
         };
         // findSessions reads user dates; listSessions never reads the owner.
@@ -553,8 +556,9 @@ impl<S: AuthSchema> PluginStore<S> {
         let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
         output.insert(
             "expiresAt".into(),
-            Some(serde_json::Value::String(
-                crate::utils::datetime::json_date_millis(session.expires_at().timestamp_millis()),
+            Some(crate::utils::json::JsValue::String(
+                crate::utils::datetime::json_date_millis(session.expires_at().timestamp_millis())
+                    .into(),
             )),
         );
         for name in snapshot.absent_fields {
@@ -701,12 +705,13 @@ impl<S: AuthSchema> PluginStore<S> {
             return Ok(());
         };
         let now = Utc::now();
-        let mut user_snapshot: Option<serde_json::Value> = None;
+        let mut user_snapshot: Option<crate::utils::json::JsValue> = None;
         for session in self.cached_user_sessions(user.id().as_ref()).await? {
             let Some(raw) = cache.get(session.token()).await? else {
                 continue;
             };
-            let Ok(mut snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+            let Ok(mut snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw)
+            else {
                 continue;
             };
             let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
@@ -714,11 +719,12 @@ impl<S: AuthSchema> PluginStore<S> {
                 snapshot.user = match &user_snapshot {
                     Some(snapshot) => snapshot.clone(),
                     None => {
-                        let native = AdapterOutput::from_values(
+                        let native = AdapterOutput::from_js_values(
                             self.inner
                                 .native_user_output_for(user)
                                 .await?
                                 .into_iter()
+                                .map(|(name, value)| (name.into(), value))
                                 .collect(),
                         );
                         let snapshot = self
@@ -730,7 +736,11 @@ impl<S: AuthSchema> PluginStore<S> {
                     }
                 };
                 cache
-                    .set(session.token(), &serde_json::to_string(&snapshot)?, ttl)
+                    .set(
+                        session.token(),
+                        &crate::utils::json::to_string(&snapshot)?,
+                        ttl,
+                    )
                     .await?;
             }
         }

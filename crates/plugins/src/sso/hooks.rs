@@ -90,7 +90,7 @@ impl SsoPlugin {
         providers.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
         if let Some(provider) = providers.first() {
             self.provision_organization(
-                &ctx.trusted_user_view(&user),
+                &ctx.trusted_user_view(&user)?,
                 provider,
                 ctx,
                 &serde_json::json!({}).into(),

@@ -120,7 +120,12 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         self.record_store
             .user_record_with_native_output(
                 user,
-                crate::AdapterOutput::from_values(scalars.into_iter().collect()),
+                crate::AdapterOutput::from_js_values(
+                    scalars
+                        .into_iter()
+                        .map(|(name, value)| (name.into(), value))
+                        .collect(),
+                ),
             )
             .await
     }
@@ -516,14 +521,14 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn native_user_output_for(
         &self,
         user: &S::User,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         self.inner.native_user_output_for(user).await
     }
 
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         self.inner.native_user_output(id).await
     }
 

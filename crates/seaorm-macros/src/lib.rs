@@ -30,20 +30,35 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
     let ident = &input.ident;
     let secondary = attributes.secondary_storage;
     let core_root = &roots.core;
+    let adapter_output = crate::entities::adapter_output(&model_fields, attributes.role, &roots);
     Ok(match attributes.role {
         EntityRole::User => {
-            let auth = codegen::auth_user_impl(ident, fields, &entity_fields, secondary, core_root);
+            let auth = codegen::auth_user_impl(
+                ident,
+                fields,
+                &entity_fields,
+                secondary,
+                core_root,
+                &adapter_output,
+            );
             let model = user_impl(ident, fields, &model_fields, &roots);
             quote! { #auth #model }
         }
         EntityRole::Session => {
-            let auth =
-                codegen::auth_session_impl(ident, fields, &entity_fields, secondary, core_root);
+            let auth = codegen::auth_session_impl(
+                ident,
+                fields,
+                &entity_fields,
+                secondary,
+                core_root,
+                &adapter_output,
+            );
             let model = session_impl(ident, fields, &model_fields, &roots);
             quote! { #auth #model }
         }
         EntityRole::Account => {
-            let auth = codegen::auth_account_impl(ident, &entity_fields, core_root);
+            let auth =
+                codegen::auth_account_impl(ident, &entity_fields, core_root, &adapter_output);
             let model = account_impl(ident, fields, &model_fields, &roots);
             quote! { #auth #model }
         }

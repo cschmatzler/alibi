@@ -5,75 +5,89 @@ use chrono::{DateTime, Utc};
 use serde::{Serialize, Serializer};
 use std::borrow::Cow;
 
-/// Declared adapter values retain JavaScript undefined presence for trusted
-/// observers. Serialization omits undefined values, as public JSON does.
-#[derive(Clone, Debug, Default, Serialize)]
-#[serde(transparent)]
+/// Trusted adapter output retains all own JavaScript properties in one map.
+#[derive(Clone, Debug, Default)]
 pub struct AdapterOutput {
-    values: FieldOutput,
-    #[serde(skip)]
-    undefined_fields: std::collections::BTreeSet<String>,
+    values: crate::utils::json::JsObject,
+}
+
+impl Serialize for AdapterOutput {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        crate::utils::json::JsValue::Object(self.values.clone()).serialize(serializer)
+    }
 }
 
 impl AdapterOutput {
-    /// Construct trusted, defined adapter output values.
     pub fn from_values(values: FieldOutput) -> Self {
-        Self {
-            values,
-            undefined_fields: std::collections::BTreeSet::new(),
-        }
+        Self::from_js_values(
+            values
+                .into_iter()
+                .map(|(name, value)| (name.into(), value.into()))
+                .collect(),
+        )
     }
 
-    /// Retain a declared value, or its JavaScript undefined presence.
-    pub fn insert(&mut self, name: String, value: Option<serde_json::Value>) {
-        if let Some(value) = value {
-            _ = self.undefined_fields.remove(&name);
-            _ = self.values.insert(name, value);
-        } else {
-            _ = self.values.remove(&name);
-            _ = self.undefined_fields.insert(name);
-        }
+    pub const fn from_js_values(values: crate::utils::json::JsObject) -> Self {
+        Self { values }
+    }
+
+    /// None denotes an own undefined property, not absence.
+    pub fn insert(&mut self, name: String, value: Option<crate::utils::json::JsValue>) {
+        self.insert_js(
+            name.into(),
+            value.unwrap_or(crate::utils::json::JsValue::Undefined),
+        );
+    }
+
+    pub fn insert_js(
+        &mut self,
+        name: crate::utils::json::JsString,
+        value: crate::utils::json::JsValue,
+    ) {
+        _ = self.values.insert(name, value);
     }
 
     pub(crate) fn extend(&mut self, output: Self) {
-        for (name, value) in output.values {
-            self.insert(name, Some(value));
-        }
-        for name in output.undefined_fields {
-            self.insert(name, None);
-        }
+        self.values.extend(output.values);
     }
 
-    /// Whether any defined or undefined properties are retained.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.values.is_empty() && self.undefined_fields.is_empty()
+        self.values.is_empty()
     }
 
-    /// Whether this is an own declared output property, including undefined.
     #[must_use]
     pub fn contains_field(&self, name: &str) -> bool {
-        self.values.contains_key(name) || self.undefined_fields.contains(name)
+        self.values.contains_key(name)
     }
 
     #[must_use]
     pub fn field_is_undefined(&self, name: &str) -> bool {
-        self.undefined_fields.contains(name)
+        self.values
+            .get(name)
+            .is_some_and(crate::utils::json::JsValue::is_undefined)
     }
 
-    /// JSON-representable values. Undefined remains observable through the
-    /// presence accessors and is intentionally absent from this map.
     #[must_use]
-    pub const fn values(&self) -> &FieldOutput {
+    pub const fn values(&self) -> &crate::utils::json::JsObject {
         &self.values
+    }
+
+    /// Explicit ordinary-JSON projection omits undefined and rejects ill-formed UTF-16.
+    pub fn to_field_output(&self) -> AuthResult<FieldOutput> {
+        let serde_json::Value::Object(fields) =
+            crate::utils::json::JsValue::Object(self.values.clone()).to_json_value()?
+        else {
+            unreachable!("an object projection remains an object");
+        };
+        Ok(fields)
     }
 
     pub(crate) fn filter_returned(&self, fields: &crate::field_policy::FieldConfigs) -> Self {
         let mut output = self.clone();
         for (name, field) in fields {
             if !field.returned {
-                _ = output.values.remove(name);
-                _ = output.undefined_fields.remove(name);
+                _ = output.values.shift_remove(name);
             }
         }
         output
@@ -96,14 +110,15 @@ impl<M: Serialize> AdapterRecord<M> {
     /// # Errors
     /// Returns an error if the model cannot serialize to an object.
     pub fn physical(stored: M) -> AuthResult<Self> {
-        let serde_json::Value::Object(output) = serde_json::to_value(&stored)? else {
+        let crate::utils::json::JsValue::Object(output) = crate::utils::json::to_js_value(&stored)?
+        else {
             return Err(crate::AuthError::internal(
                 "An adapter model must serialize to an object",
             ));
         };
         Ok(Self {
             stored,
-            output: AdapterOutput::from_values(output),
+            output: AdapterOutput::from_js_values(output),
         })
     }
 
@@ -122,10 +137,10 @@ impl<M> AdapterRecord<M> {
 
     pub(crate) fn retain_native_scalars(
         &mut self,
-        values: std::collections::BTreeMap<String, serde_json::Value>,
+        values: std::collections::BTreeMap<String, crate::utils::json::JsValue>,
     ) {
         for (field, value) in values {
-            self.output.insert(field, Some(value));
+            self.output.insert(field, Some(value.into()));
         }
     }
 
@@ -166,14 +181,14 @@ macro_rules! delegate {
 }
 
 impl<M: AuthUser> AuthUser for AdapterRecord<M> {
-    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
+    fn secondary_snapshot(&self) -> AuthResult<crate::utils::json::JsValue> {
         self.stored
             .secondary_snapshot_with_native_output(&self.output)
     }
     fn secondary_snapshot_with_native_output(
         &self,
         native: &AdapterOutput,
-    ) -> AuthResult<serde_json::Value> {
+    ) -> AuthResult<crate::utils::json::JsValue> {
         let mut retained = self.output.clone();
         retained.extend(native.clone());
         self.stored.secondary_snapshot_with_native_output(&retained)
@@ -181,7 +196,16 @@ impl<M: AuthUser> AuthUser for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }
-    delegate!(additional_fields, FieldOutput);
+    delegate!(
+        additional_js_fields,
+        AuthResult<crate::utils::json::JsObject>
+    );
+    fn adapter_js_fields(
+        &self,
+        exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        self.stored.adapter_js_fields(exact)
+    }
     delegate!(id, Cow<'_, str>);
     delegate!(email, Option<&str>);
     delegate!(name, Option<&str>);
@@ -198,7 +222,7 @@ impl<M: AuthUser> AuthUser for AdapterRecord<M> {
     delegate!(banned_value, Option<bool>);
     delegate!(ban_reason, Option<&str>);
     delegate!(ban_expires, Option<DateTime<Utc>>);
-    delegate!(metadata, &serde_json::Value);
+    delegate!(metadata, crate::utils::json::JsValue);
     delegate!(is_anonymous, Option<bool>);
     delegate!(phone_number, Option<&str>);
     delegate!(phone_number_verified, Option<bool>);
@@ -209,7 +233,16 @@ impl<M: AuthSession> AuthSession for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }
-    delegate!(additional_fields, FieldOutput);
+    delegate!(
+        additional_js_fields,
+        AuthResult<crate::utils::json::JsObject>
+    );
+    fn adapter_js_fields(
+        &self,
+        exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        self.stored.adapter_js_fields(exact)
+    }
     delegate!(id, Cow<'_, str>);
     delegate!(expires_at, DateTime<Utc>);
     delegate!(token, &str);
@@ -227,7 +260,16 @@ impl<M: AuthAccount> AuthAccount for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }
-    delegate!(additional_fields, FieldOutput);
+    delegate!(
+        additional_js_fields,
+        AuthResult<crate::utils::json::JsObject>
+    );
+    fn adapter_js_fields(
+        &self,
+        exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        self.stored.adapter_js_fields(exact)
+    }
     delegate!(id, Cow<'_, str>);
     delegate!(account_id, crate::utils::json::JsString);
     delegate!(provider_id, &str);

@@ -19,7 +19,7 @@ async fn physical_primitives<S: AuthSchema<User = UserView>>(
             .create_user(CreateUser {
                 name: Some(label.to_owned()),
                 email: Some(format!("{label}@example.test")),
-                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                adapter_native_fields: [("id".to_owned(), raw.into())].into(),
                 ..Default::default()
             })
             .await
@@ -185,12 +185,24 @@ async fn memory_physical_primitive_ids_do_not_alias_string_ids() {
 #[test]
 fn primitive_identity_keys_use_javascript_number_values() {
     assert_eq!(
-        MemoryUserId::supplied(Some(&json!(2))).unwrap().0,
-        MemoryUserId::supplied(Some(&json!(2.0))).unwrap().0
+        MemoryUserId::supplied(Some(&crate::utils::json::JsValue::from(json!(2))))
+            .unwrap()
+            .unwrap()
+            .0,
+        MemoryUserId::supplied(Some(&crate::utils::json::JsValue::from(json!(2.0))))
+            .unwrap()
+            .unwrap()
+            .0
     );
     assert_ne!(
-        MemoryUserId::supplied(Some(&json!(1))).unwrap().0,
-        MemoryUserId::supplied(Some(&json!(true))).unwrap().0
+        MemoryUserId::supplied(Some(&crate::utils::json::JsValue::from(json!(1))))
+            .unwrap()
+            .unwrap()
+            .0,
+        MemoryUserId::supplied(Some(&crate::utils::json::JsValue::from(json!(true))))
+            .unwrap()
+            .unwrap()
+            .0
     );
     for raw in [
         json!(0),
@@ -201,7 +213,7 @@ fn primitive_identity_keys_use_javascript_number_values() {
         json!([]),
         json!({}),
     ] {
-        assert!(MemoryUserId::supplied(Some(&raw)).is_none());
+        assert!(MemoryUserId::supplied(Some(&raw.into())).unwrap().is_none());
     }
 }
 
@@ -218,7 +230,7 @@ async fn physical_relational_filters<S: AuthSchema<User = UserView>>(store: &imp
             .create_user(CreateUser {
                 name: Some(label.into()),
                 email: Some(format!("{label}@example.test")),
-                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                adapter_native_fields: [("id".to_owned(), raw.into())].into(),
                 ..Default::default()
             })
             .await
@@ -453,7 +465,7 @@ async fn physical_relational_utf16<S: AuthSchema<User = UserView>>(store: &impl 
             .create_user(CreateUser {
                 name: Some(label.into()),
                 email: Some(format!("{label}@example.test")),
-                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                adapter_native_fields: [("id".to_owned(), raw.into())].into(),
                 ..Default::default()
             })
             .await
@@ -518,7 +530,7 @@ async fn typed_filter_operands<S: AuthSchema<User = UserView>>(store: &impl User
             .create_user(CreateUser {
                 name: Some(label.into()),
                 email: Some(format!("{label}@example.test")),
-                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                adapter_native_fields: [("id".to_owned(), raw.into())].into(),
                 ..Default::default()
             })
             .await

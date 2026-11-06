@@ -157,8 +157,8 @@ impl MultiSessionPlugin {
                 && seen_users.insert(user.id().to_string())
             {
                 listed.push(json!({
-                    "session": ctx.session_view(&session),
-                    "user": ctx.user_view(&user),
+                    "session": ctx.session_view(&session)?,
+                    "user": ctx.user_view(&user)?,
                 }));
             }
         }
@@ -199,8 +199,8 @@ impl MultiSessionPlugin {
         user: &S::User,
         session: &impl AuthSession,
     ) -> AuthResult<()> {
-        let user_view = ctx.user_view(user);
-        let session_view = ctx.session_view(session);
+        let user_view = ctx.user_view(user)?;
+        let session_view = ctx.session_view(session)?;
         alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
             ctx,
             alibi_core::CacheVersionContext::created(
@@ -262,7 +262,7 @@ impl MultiSessionPlugin {
             .ok_or_else(invalid_token)?;
         let mut response = AuthResponse::json(
             200,
-            &json!({"session":ctx.session_view(&session),"user":ctx.user_view(&user)}),
+            &json!({"session":ctx.session_view(&session)?,"user":ctx.user_view(&user)?}),
         )?;
         Self::emit_selected_snapshot(ctx, &user, &session).await?;
         Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
@@ -567,22 +567,44 @@ mod tests {
     #[tokio::test]
     async fn issuance_budget_only_counts_a_session_cookie_when_present() {
         let ctx = create_test_context().await;
-        let plugin = MultiSessionPlugin::with_config(MultiSessionConfig { maximum_sessions: 0.0 });
+        let plugin = MultiSessionPlugin::with_config(MultiSessionConfig {
+            maximum_sessions: 0.0,
+        });
         let (user, session) = create_user_and_session(
-            &ctx, CreateUser::new().with_email("budget@example.test"), Duration::days(1),
-        ).await;
+            &ctx,
+            CreateUser::new().with_email("budget@example.test"),
+            Duration::days(1),
+        )
+        .await;
         let req = request_with_cookies(HttpMethod::Post, "/custom-login", &[], None);
         alibi_core::hooks::with_request_hook_context(&req, async {
-            alibi_core::session::cookie_cache::runtime::emit_issuance(&ctx, &user, &session).await.unwrap();
-        }).await;
+            alibi_core::session::cookie_cache::runtime::emit_issuance(&ctx, &user, &session)
+                .await
+                .unwrap();
+        })
+        .await;
         let mut headers = alibi_core::Headers::new();
         headers.append("set-cookie", "application=ready; Path=/");
-        let proof = plugin.session_hook_headers(&req, req.path(), &ctx, &headers).await.unwrap();
-        assert!(proof.get_all("set-cookie").any(|value| value.starts_with(
-            &format!("{}=", MultiSessionPlugin::cookie_name(&session.token, &ctx))
-        )));
-        headers.append("set-cookie", create_session_cookie(&session.token, &ctx.config).unwrap());
-        let suppressed = plugin.session_hook_headers(&req, req.path(), &ctx, &headers).await.unwrap();
+        let proof = plugin
+            .session_hook_headers(&req, req.path(), &ctx, &headers)
+            .await
+            .unwrap();
+        assert!(
+            proof
+                .get_all("set-cookie")
+                .any(|value| value.starts_with(&format!(
+                    "{}=",
+                    MultiSessionPlugin::cookie_name(&session.token, &ctx)
+                )))
+        );
+        headers.append(
+            "set-cookie",
+            create_session_cookie(&session.token, &ctx.config).unwrap(),
+        );
+        let suppressed = plugin
+            .session_hook_headers(&req, req.path(), &ctx, &headers)
+            .await
+            .unwrap();
         assert!(suppressed.get_all("set-cookie").next().is_none());
     }
 

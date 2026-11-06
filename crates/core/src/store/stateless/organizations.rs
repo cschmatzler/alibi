@@ -15,7 +15,7 @@ fn patch(row: &mut Organization, update: UpdateOrganization) {
         row.logo = logo;
     }
     if let Some(metadata) = update.metadata {
-        row.metadata = Some(metadata);
+        row.metadata = Some(metadata.into());
     }
 }
 
@@ -29,7 +29,7 @@ impl OrganizationStore for StatelessStore {
             name: data.name,
             slug: data.slug,
             logo: data.logo,
-            metadata: data.metadata,
+            metadata: data.metadata.map(Into::into),
             created_at: now,
         };
         _ = self

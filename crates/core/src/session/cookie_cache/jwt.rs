@@ -3,7 +3,7 @@ use super::CompactCache;
 use crate::{AuthError, AuthResult, utils::json::JsValue};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
-use serde_json::{Value, json};
+use serde_json::Value;
 use sha2::{Sha256, Sha384, Sha512};
 
 /// Complete session payload before a configured signer adds protected claims.
@@ -12,15 +12,24 @@ pub(crate) fn payload(
     session: &crate::SessionView,
     version: &str,
     now_ms: i64,
-) -> Value {
-    json!({"session":session,"user":user,"updatedAt":now_ms,"version":version})
+) -> AuthResult<JsValue> {
+    Ok(JsValue::Object(
+        [
+            ("session".into(), crate::utils::json::to_js_value(session)?),
+            ("user".into(), crate::utils::json::to_js_value(user)?),
+            ("updatedAt".into(), JsValue::from(now_ms)),
+            ("version".into(), JsValue::String(version.into())),
+        ]
+        .into_iter()
+        .collect(),
+    ))
 }
 
 /// Add issued-at and expiry claims with fractional seconds retained.
 ///
 /// # Errors
 /// Rejects nonfinite expiry or a nonobject payload.
-pub fn time_claims(mut payload: Value, max_age: f64) -> AuthResult<Value> {
+pub fn time_claims(mut payload: JsValue, max_age: f64) -> AuthResult<JsValue> {
     let now = chrono::Utc::now().timestamp();
     let expiry = serde_json::Number::from(now)
         .as_f64()
@@ -32,12 +41,12 @@ pub fn time_claims(mut payload: Value, max_age: f64) -> AuthResult<Value> {
     let claims = payload
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Invalid cookie-cache payload"))?;
-    _ = claims.insert("iat".into(), json!(now));
-    _ = claims.insert("exp".into(), json!(expiry));
+    _ = claims.insert("iat".into(), JsValue::from(now));
+    _ = claims.insert("exp".into(), JsValue::Number(expiry));
     Ok(payload)
 }
 
-pub(crate) fn encode(payload: Value, secret: &str, max_age: f64) -> AuthResult<String> {
+pub(crate) fn encode(payload: JsValue, secret: &str, max_age: f64) -> AuthResult<String> {
     let input = format!(
         "{}.{}",
         URL_SAFE_NO_PAD.encode(br#"{"alg":"HS256"}"#),
@@ -117,14 +126,15 @@ pub trait CookieCacheSigner<S: crate::AuthSchema>: Send + Sync {
     /// Propagates managed key resolution and signing failures.
     async fn sign(
         &self,
-        payload: Value,
+        payload: JsValue,
         max_age: f64,
         ctx: &crate::AuthContext<S>,
         transaction: Option<&dyn crate::store::AuthTransaction<S>>,
     ) -> AuthResult<String>;
     /// # Errors
     /// Invalid tokens and unavailable verification keys return `None`.
-    async fn verify(&self, token: &str, ctx: &crate::AuthContext<S>) -> AuthResult<Option<Value>>;
+    async fn verify(&self, token: &str, ctx: &crate::AuthContext<S>)
+    -> AuthResult<Option<JsValue>>;
 }
 
 /// A signer installed by the locally managed JWT plugin during initialization.

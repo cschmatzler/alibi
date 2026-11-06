@@ -64,7 +64,7 @@ async fn admin_username_updates_use_actual_actor_and_keep_falsy_display_without_
         result
             .values()
             .get("username")
-            .and_then(serde_json::Value::as_str),
+            .and_then(alibi_core::utils::json::JsValue::as_str),
         Some("existing")
     );
     let other_call = update_call(acting.clone(), session.clone(), "/admin/update-user");
@@ -91,14 +91,14 @@ async fn admin_username_updates_use_actual_actor_and_keep_falsy_display_without_
         changed
             .values()
             .get("username")
-            .and_then(serde_json::Value::as_str),
+            .and_then(alibi_core::utils::json::JsValue::as_str),
         Some("new_name")
     );
     assert_eq!(
         changed
             .values()
             .get("displayUsername")
-            .and_then(serde_json::Value::as_str),
+            .and_then(alibi_core::utils::json::JsValue::as_str),
         Some("0")
     );
     let nulled = handlers::update_user_core(
@@ -148,7 +148,7 @@ async fn admin_username_updates_use_actual_actor_and_keep_falsy_display_without_
         skipped
             .values()
             .get("username")
-            .and_then(serde_json::Value::as_str),
+            .and_then(alibi_core::utils::json::JsValue::as_str),
         Some("x")
     );
 }
@@ -274,14 +274,14 @@ async fn admin_username_updates_preserve_scalars_and_observe_current_transaction
             changed
                 .values()
                 .get("username")
-                .and_then(serde_json::Value::as_str),
+                .and_then(alibi_core::utils::json::JsValue::as_str),
             Some(expected.as_str())
         );
         assert_eq!(
             changed
                 .values()
                 .get("displayUsername")
-                .and_then(serde_json::Value::as_str),
+                .and_then(alibi_core::utils::json::JsValue::as_str),
             Some("0")
         );
     }

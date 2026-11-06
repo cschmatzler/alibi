@@ -260,9 +260,14 @@ pub async fn project_sso_provider(
 ) -> AuthResult<SsoProvider> {
     let policy = crate::field_policy::SessionAdapterFields(std::sync::Arc::new(fields.0.clone()));
     let output = policy
-        .output(std::mem::take(&mut provider.additional_fields))
+        .output(
+            std::mem::take(&mut provider.additional_fields)
+                .into_iter()
+                .map(|(name, value)| (name.into(), value.into()))
+                .collect(),
+        )
         .await?;
-    provider.additional_fields.clone_from(output.values());
+    provider.additional_fields = output.to_field_output()?;
     // The reference normalizes database date strings after output transforms.
     for (name, field) in &fields.0 {
         if SsoFieldType::from_config(field) == SsoFieldType::Date

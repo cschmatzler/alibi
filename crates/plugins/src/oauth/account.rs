@@ -103,7 +103,8 @@ impl OAuthAccountSelection {
                 .await?
                 .iter()
                 .find(|account| account.id().as_ref() == account_id.as_str())
-                .map(AccountCookiePayload::from_account),
+                .map(AccountCookiePayload::from_account)
+                .transpose()?,
             Self::Cookie if ctx.config.account.store_account_cookie => {
                 decode_account_cookie(req, &ctx.config)?
                     .filter(|account| account.user_id == user_id)
@@ -223,7 +224,7 @@ async fn persist_tokens(
     if let Some(id) = account.id.as_deref() {
         *account = AccountCookiePayload::from_account(
             &ctx.database.update_account_record(id, update).await?,
-        );
+        )?;
     } else {
         account.access_token = update.access_token;
         account.refresh_token = update.refresh_token;

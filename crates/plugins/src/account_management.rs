@@ -81,7 +81,7 @@ alibi_core::impl_auth_plugin! {
             }
         })?;
         call.record_authenticated_session(match &user {
-            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
             alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
         }, session);
         alibi_core::endpoint::EndpointResponse::json(&list_accounts_core(&user, ctx).await?)
@@ -153,23 +153,29 @@ impl std::fmt::Debug for AccountManagementPlugin {
 pub(crate) async fn list_accounts_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<Vec<serde_json::Map<String, serde_json::Value>>> {
+) -> AuthResult<Vec<alibi_core::utils::json::JsObject>> {
     let accounts = ctx.database.get_user_accounts_record(&user.id()).await?;
     accounts
         .iter()
         .map(|account| {
             let mut output = ctx.account_view(account)?;
-            let scopes = match output.remove("scope") {
-                None | Some(serde_json::Value::Null) => Vec::new(),
-                Some(serde_json::Value::String(scope)) => scope
-                    .split(',')
-                    .map(str::trim)
+            let scopes = match output.shift_remove("scope") {
+                None | Some(alibi_core::utils::json::JsValue::Null) => Vec::new(),
+                Some(alibi_core::utils::json::JsValue::String(scope)) => scope
+                    .code_units()
+                    .split(|unit| *unit == u16::from(b','))
+                    .map(|scope| {
+                        alibi_core::utils::json::JsString::from_code_units(scope.to_vec())
+                            .trim_matches(char::is_whitespace)
+                    })
                     .filter(|scope| !scope.is_empty())
-                    .map(str::to_owned)
                     .collect(),
                 Some(_) => return Err(AuthError::internal("Account scope must be a string")),
             };
-            _ = output.insert("scopes".into(), serde_json::to_value(scopes)?);
+            _ = output.insert(
+                "scopes".into(),
+                alibi_core::utils::json::to_js_value(&scopes)?.into(),
+            );
             Ok(output)
         })
         .collect()
@@ -192,7 +198,7 @@ async fn unlink_session<S: alibi_core::AuthSchema>(
     if let Some(call) = request.endpoint_call() {
         call.record_authenticated_session(
             match &user {
-                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                 alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
             },
             session.clone(),

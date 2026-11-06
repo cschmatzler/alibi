@@ -15,6 +15,7 @@ pub fn auth_user_impl(
     entity_fields: &[EntityField],
     secondary: bool,
     core_root: &TokenStream,
+    adapter_output: &TokenStream,
 ) -> TokenStream {
     let has = |name: &str| has_field(fields, name);
     let optional = |name: &str| optional_field(fields, name);
@@ -74,12 +75,10 @@ pub fn auth_user_impl(
         quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { None } }
     };
     let metadata_impl = if has("metadata") {
-        quote! { fn metadata(&self) -> &::serde_json::Value { &self.metadata } }
+        quote! { fn metadata(&self) -> #core_root::utils::json::JsValue { (&self.metadata).into() } }
     } else {
-        quote! { fn metadata(&self) -> &::serde_json::Value {
-            static EMPTY: ::std::sync::LazyLock<::serde_json::Value> =
-                ::std::sync::LazyLock::new(|| ::serde_json::json!({}));
-            &EMPTY
+        quote! { fn metadata(&self) -> #core_root::utils::json::JsValue {
+            #core_root::utils::json::JsValue::Object(Default::default())
         } }
     };
     let mut optional_user_getters = Vec::new();
@@ -100,6 +99,7 @@ pub fn auth_user_impl(
         impl #core_root::entity::AuthUser for #ident {
             #secondary_codec
             #additional_output
+            #adapter_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             #email_impl
             #name_impl
@@ -128,6 +128,7 @@ pub fn auth_session_impl(
     entity_fields: &[EntityField],
     secondary: bool,
     core_root: &TokenStream,
+    adapter_output: &TokenStream,
 ) -> TokenStream {
     let has = |name: &str| has_field(fields, name);
     let secondary_codec = if secondary {
@@ -153,7 +154,7 @@ pub fn auth_session_impl(
             fn secondary_snapshot_for_creation(
                 &self,
                 created_at: ::chrono::DateTime<::chrono::Utc>,
-            ) -> #core_root::AuthResult<::serde_json::Value> {
+            ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
                 let mut model = self.clone();
                 model.created_at = <#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at);
                 model.secondary_snapshot()
@@ -162,10 +163,10 @@ pub fn auth_session_impl(
                 &self,
                 created_at: ::chrono::DateTime<::chrono::Utc>,
                 native: &#core_root::AdapterOutput,
-            ) -> #core_root::AuthResult<::serde_json::Value> {
+            ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
                 let mut snapshot = self.secondary_snapshot_with_native_output(native)?;
-                snapshot[#created_at_key] = ::serde_json::to_value(
-                    <#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at),
+                snapshot[#created_at_key] = #core_root::utils::json::to_js_value(
+                    &<#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at),
                 )?;
                 Ok(snapshot)
             }
@@ -185,6 +186,7 @@ pub fn auth_session_impl(
         impl #core_root::entity::AuthSession for #ident {
             #secondary_codec
             #additional_output
+            #adapter_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.expires_at) }
             fn token(&self) -> &str { &self.token }
@@ -206,11 +208,13 @@ pub fn auth_account_impl(
     ident: &Ident,
     entity_fields: &[EntityField],
     core_root: &TokenStream,
+    adapter_output: &TokenStream,
 ) -> TokenStream {
     let additional_output = additional_output(EntityRole::Account, entity_fields, core_root);
     quote! {
         impl #core_root::entity::AuthAccount for #ident {
             #additional_output
+            #adapter_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn account_id(&self) -> #core_root::utils::json::JsString { self.account_id.clone().into() }
             fn provider_id(&self) -> &str { &self.provider_id }

@@ -60,7 +60,10 @@ macro_rules! delegate {
 impl<S: AuthSchema> AuthUser for AuthenticatedUser<S> {
     delegate!(adapter_snapshot, Option<&crate::AdapterOutput>);
     delegate!(retained_user_view, Option<&crate::UserView>);
-    delegate!(additional_fields, crate::field_policy::FieldOutput);
+    delegate!(
+        additional_js_fields,
+        crate::AuthResult<crate::utils::json::JsObject>
+    );
     delegate!(id, Cow<'_, str>);
     delegate!(email, Option<&str>);
     delegate!(name, Option<&str>);
@@ -77,7 +80,7 @@ impl<S: AuthSchema> AuthUser for AuthenticatedUser<S> {
     delegate!(banned_value, Option<bool>);
     delegate!(ban_reason, Option<&str>);
     delegate!(ban_expires, Option<DateTime<Utc>>);
-    delegate!(metadata, &serde_json::Value);
+    delegate!(metadata, crate::utils::json::JsValue);
     delegate!(is_anonymous, Option<bool>);
     delegate!(phone_number, Option<&str>);
     delegate!(phone_number_verified, Option<bool>);

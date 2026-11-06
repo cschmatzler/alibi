@@ -337,10 +337,17 @@ pub async fn issue_user_session_with_overrides_record<S: alibi_core::AuthSchema>
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     let overrides = SessionOverrides {
         additional_fields: current_session
-            .additional_fields()
+            .additional_js_fields()?
             .into_iter()
-            .map(|(name, value)| (name, alibi_core::utils::json::JsValue::from(value)))
-            .collect(),
+            .map(|(name, value)| {
+                let name = name.to_utf8().map_err(|_| {
+                    AuthError::not_implemented(
+                        "UTF-16 session field name requires a canonical binding API",
+                    )
+                })?;
+                Ok((name, value))
+            })
+            .collect::<AuthResult<_>>()?,
         impersonated_by: current_session.impersonated_by().map(str::to_owned),
         active_organization_id: current_session.active_organization_id().map(str::to_owned),
         active_team_id: current_session.active_team_id().map(str::to_owned),

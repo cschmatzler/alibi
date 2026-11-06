@@ -84,7 +84,7 @@ async fn read_cache<S: AuthSchema>(
                     .0
                     .verify(&value, ctx)
                     .await?
-                    .and_then(|claims| cache::jwt::decode_payload(&claims.into(), 15.0))
+                    .and_then(|claims| cache::jwt::decode_payload(&claims, 15.0))
             } else {
                 cache::jwt::decode(&value, ctx.config.current_secret())
             }
@@ -93,9 +93,9 @@ async fn read_cache<S: AuthSchema>(
             .config
             .verification_secrets()
             .find_map(|secret| {
-                crate::utils::jwe::decode(secret, "better-auth-session", &value).ok()
+                crate::utils::jwe::decode_native(secret, "better-auth-session", &value).ok()
             })
-            .and_then(|claims| cache::jwt::decode_payload(&claims.into(), 15.0)),
+            .and_then(|claims| cache::jwt::decode_payload(&claims, 15.0)),
     };
     if let Some(cache) = decoded
         && let CacheValidation::Hit(cache) = cache::validate_compact(
@@ -230,7 +230,7 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
             };
             user
         };
-        request.set_session_hook_snapshot(ctx.user_view(&user), session.clone());
+        request.set_session_hook_snapshot(ctx.user_view(&user)?, session.clone());
         return Ok(Some(establish(
             ctx,
             request,
@@ -281,7 +281,7 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
         cleanup(ctx, request)?;
         return Ok(None);
     };
-    request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original));
+    request.set_session_hook_snapshot(ctx.user_view(&user)?, ctx.session_view(&original)?);
     let suppressed = manager.request_disables_refresh(request);
     let skip = request
         .extensions()
@@ -335,7 +335,7 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
         request,
         AuthenticatedRead {
             user: crate::AuthenticatedUser::Stored(user),
-            session: ctx.session_view(&session),
+            session: ctx.session_view(&session)?,
             needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh && !skip),
         },
     )))

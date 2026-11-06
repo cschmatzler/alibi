@@ -26,7 +26,7 @@ where
             .metadata
             .map(|metadata| {
                 JsonMetadata::for_backend(
-                    alibi_core::utils::json::to_value(&metadata)?,
+                    alibi_core::utils::json::to_js_value(&metadata)?,
                     self.exec().engine(),
                 )
             })
@@ -171,8 +171,10 @@ where
             assignments.push(("logo", logo.into()));
         }
         if let Some(metadata) = update.metadata {
-            let metadata =
-                JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
+            let metadata = JsonMetadata::for_backend(
+                alibi_core::utils::json::to_js_value(&metadata)?,
+                backend,
+            )?;
             assignments.push(("metadata", metadata.into_sql_value()));
         }
         let mut additional = ActiveRow::new();
@@ -336,7 +338,7 @@ fn apply_organization_update(
         active.set(
             "metadata",
             Some(JsonMetadata::for_backend(
-                alibi_core::utils::json::to_value(&metadata)?,
+                alibi_core::utils::json::to_js_value(&metadata)?,
                 backend,
             )?)
             .into_sql_value(),

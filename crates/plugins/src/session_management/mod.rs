@@ -283,7 +283,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
                 .map_err(unauthorized_if_unauthenticated)?;
             call.record_authenticated_session(
                 match &user {
-                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                     alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                 },
                 session.clone(),
@@ -322,7 +322,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
                     code: codes::UNAUTHORIZED,
                     message: "Unauthorized",
                 })?;
-            call.record_authenticated_session(ctx.user_view(&user), session.clone());
+            call.record_authenticated_session(ctx.user_view(&user)?, session.clone());
             let response = if call.operation_id() == "revokeSession" {
                 let input: RevokeSessionRequest = call.body_as()?;
                 revoke_session_core(&user, &input.token, ctx).await?
@@ -467,7 +467,7 @@ impl SessionManagementPlugin {
             .map_err(unauthorized_if_unauthenticated)?;
         call.record_authenticated_session(
             match &user {
-                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                 alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
             },
             session.clone(),
@@ -638,7 +638,7 @@ impl SessionManagementPlugin {
         with_session_cookies(
             AuthResponse::json(
                 200,
-                &serde_json::json!({"session":ctx.session_view(&updated)}),
+                &serde_json::json!({"session":ctx.session_view(&updated)?}),
             )?,
             &ctx.config,
             updated.token(),
@@ -704,7 +704,7 @@ impl SessionManagementPlugin {
         Ok(Some(GetSessionResponse {
             session: read.session,
             user: match read.user {
-                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user)?,
                 alibi_core::AuthenticatedUser::Cached(user) => *user,
             },
             needs_refresh: read.needs_refresh,
@@ -880,7 +880,7 @@ pub(crate) async fn list_sessions_core(
         .iter()
         .filter(|session| session.expires_at() > now)
         .map(|session| ctx.session_view(session))
-        .collect();
+        .collect::<AuthResult<_>>()?;
     if admin_plugin_enabled(ctx) {
         sessions.retain(|listed| listed.impersonated_by.as_deref().is_none_or(str::is_empty));
     }

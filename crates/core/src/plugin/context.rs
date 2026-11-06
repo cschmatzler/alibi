@@ -6,7 +6,6 @@ use crate::{
     AuthResult, AuthSchema, AuthSession, AuthStore, AuthUser, AuthenticatedUser, ContextExtensions,
     EmailProvider, SessionManager, VerificationEmailOverrideHandle,
 };
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Context passed to plugin methods.
@@ -61,8 +60,8 @@ impl<R: SessionRequest> SessionRequest for AuthoritativeSessionInput<'_, R> {
     }
 }
 
-fn insert_null(fields: &mut BTreeMap<String, serde_json::Value>, name: &str) {
-    _ = fields.insert(name.to_owned(), serde_json::Value::Null);
+fn insert_null(fields: &mut crate::utils::json::JsObject, name: &str) {
+    _ = fields.insert(name.into(), crate::utils::json::JsValue::Null);
 }
 
 impl<S: AuthSchema> Clone for AuthContext<S> {
@@ -198,21 +197,29 @@ impl<S: AuthSchema> AuthContext<S> {
         self.extensions.get()
     }
 
-    pub fn user_view(&self, user: &impl AuthUser) -> UserView {
-        self.project_user_view(user, true)
+    pub fn user_view(&self, user: &impl AuthUser) -> AuthResult<UserView> {
+        self.project_user_view(user, true, true)
     }
 
     /// Project trusted adapter output without removing declared hidden fields.
     /// Canonical identity accessors still refer to the physical model.
-    pub fn trusted_user_view(&self, user: &impl AuthUser) -> UserView {
-        self.project_user_view(user, false)
+    pub fn trusted_user_view(&self, user: &impl AuthUser) -> AuthResult<UserView> {
+        self.project_user_view(user, false, true)
+    }
+
+    pub(crate) fn trusted_user_view_without_metadata(
+        &self,
+        user: &impl AuthUser,
+    ) -> AuthResult<UserView> {
+        self.project_user_view(user, false, false)
     }
 
     pub(in crate::plugin) fn project_user_view(
         &self,
         user: &impl AuthUser,
         public: bool,
-    ) -> UserView {
+        include_metadata: bool,
+    ) -> AuthResult<UserView> {
         if let Some(view) = user.retained_user_view() {
             let mut view = view.clone();
             if public {
@@ -220,12 +227,19 @@ impl<S: AuthSchema> AuthContext<S> {
                 let fields = registered
                     .as_ref()
                     .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
-                view.extension_fields
-                    .retain(|name, _| fields.get(name).is_none_or(|field| field.returned));
+                view.extension_fields.retain(|name, _| {
+                    name.as_str()
+                        .and_then(|name| fields.get(name))
+                        .is_none_or(|field| field.returned)
+                });
             }
-            return view;
+            return Ok(view);
         }
-        let mut view = UserView::from(user);
+        let mut view = if include_metadata {
+            UserView::from(user)
+        } else {
+            UserView::without_private_metadata(user)
+        };
         if self.feature_enabled("username.enabled") {
             for (key, absent) in [
                 ("username", view.username.is_none()),
@@ -293,12 +307,27 @@ impl<S: AuthSchema> AuthContext<S> {
         let fields = registered
             .as_ref()
             .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
-        let physical = user.additional_fields();
+        let physical = if !include_metadata && !self.database.supports_native_json() {
+            let registered = self
+                .extensions
+                .get::<crate::field_policy::AdapterFieldPolicies>();
+            let adapter_fields = registered.as_ref().map_or_else(
+                || {
+                    crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.user.additional_fields.clone(),
+                    ))
+                },
+                |fields| fields.user.clone(),
+            );
+            user.adapter_js_fields(&adapter_fields.exact_json_fields())?
+        } else {
+            user.additional_js_fields()?
+        };
         let values = user
             .adapter_snapshot()
             .map_or(&physical, AdapterOutput::values);
         for (name, field) in fields {
-            _ = view.extension_fields.remove(name);
+            _ = view.extension_fields.shift_remove(name);
             if (!public || field.returned)
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -307,7 +336,9 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                _ = view.extension_fields.insert(name.clone(), value.clone());
+                _ = view
+                    .extension_fields
+                    .insert(name.clone().into(), value.clone());
             }
         }
         if let Some(snapshot) = user.adapter_snapshot() {
@@ -333,7 +364,7 @@ impl<S: AuthSchema> AuthContext<S> {
                 "phoneNumberVerified",
                 "lastLoginMethod",
             ] {
-                if !snapshot.contains_field(name) || snapshot.field_is_undefined(name) {
+                if !snapshot.contains_field(name) {
                     _ = view.omitted_fields.insert(name.into());
                 }
             }
@@ -350,13 +381,13 @@ impl<S: AuthSchema> AuthContext<S> {
                     && view
                         .extension_fields
                         .get(name)
-                        .is_none_or(serde_json::Value::is_null)
+                        .is_none_or(crate::utils::json::JsValue::is_null)
                 {
                     _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
-        view
+        Ok(view)
     }
 
     /// Retain configured output for an already authenticated physical user.
@@ -375,15 +406,19 @@ impl<S: AuthSchema> AuthContext<S> {
             },
             |fields| fields.user.clone(),
         );
+        let supports_json = self.database.supports_native_json();
+        let base = UserView::without_private_metadata(&user);
+        let additional = if supports_json {
+            user.additional_js_fields()?
+        } else {
+            user.adapter_js_fields(&fields.exact_json_fields())?
+        };
         let output = fields
             .record_output(
-                serde_json::to_value(
-                    user.retained_user_view()
-                        .cloned()
-                        .unwrap_or_else(|| UserView::from(&user)),
-                )?,
-                user.additional_fields(),
-                serde_json::to_value(self.trusted_user_view(&user))?,
+                crate::utils::json::to_js_value(&base)?,
+                additional,
+                crate::utils::json::to_js_value(&self.trusted_user_view(&base)?)?,
+                supports_json,
             )
             .await?;
         Ok(AdapterRecord::with_output(user, output))
@@ -409,9 +444,9 @@ impl<S: AuthSchema> AuthContext<S> {
     pub fn account_view(
         &self,
         account: &impl AuthAccount,
-    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
-        let serde_json::Value::Object(mut view) =
-            serde_json::to_value(crate::wire::AccountView::from(account))?
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        let crate::utils::json::JsValue::Object(mut view) =
+            crate::utils::json::to_js_value(&crate::wire::AccountView::from(account))?
         else {
             return Err(AuthError::internal("Account view must be an object"));
         };
@@ -419,12 +454,12 @@ impl<S: AuthSchema> AuthContext<S> {
         let fields = registered
             .as_ref()
             .map_or(&self.config.account.additional_fields, |fields| &fields.0.0);
-        let physical = account.additional_fields();
+        let physical = account.additional_js_fields()?;
         let values = account
             .adapter_snapshot()
             .map_or(&physical, AdapterOutput::values);
         for (name, field) in fields {
-            _ = view.remove(name);
+            _ = view.shift_remove(name);
             if field.returned
                 && let Some(value) = values.get(name).or_else(|| {
                     field
@@ -433,7 +468,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .and_then(|physical| values.get(physical))
                 })
             {
-                _ = view.insert(name.clone(), value.clone());
+                _ = view.insert(name.clone().into(), value.clone());
             }
         }
         for credential in [
@@ -444,16 +479,16 @@ impl<S: AuthSchema> AuthContext<S> {
             "refreshTokenExpiresAt",
             "password",
         ] {
-            _ = view.remove(credential);
+            _ = view.shift_remove(credential);
         }
         Ok(view)
     }
 
-    pub fn session_view(&self, session: &impl AuthSession) -> SessionView {
+    pub fn session_view(&self, session: &impl AuthSession) -> AuthResult<SessionView> {
         self.project_session_view(session, true)
     }
 
-    pub fn trusted_session_view(&self, session: &impl AuthSession) -> SessionView {
+    pub fn trusted_session_view(&self, session: &impl AuthSession) -> AuthResult<SessionView> {
         self.project_session_view(session, false)
     }
 
@@ -461,7 +496,7 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         session: &impl AuthSession,
         public: bool,
-    ) -> SessionView {
+    ) -> AuthResult<SessionView> {
         if let Some(view) = session.retained_session_view() {
             let mut view = view.clone();
             if public {
@@ -475,7 +510,7 @@ impl<S: AuthSchema> AuthContext<S> {
                     }
                 }
             }
-            return view;
+            return Ok(view);
         }
         let mut view = SessionView::from(session);
         let registered = self.extensions.get::<crate::field_policy::SessionFields>();
@@ -483,12 +518,14 @@ impl<S: AuthSchema> AuthContext<S> {
             .as_ref()
             .map_or(&self.config.session.additional_fields, |fields| &fields.0);
         view.extension_fields
-            .retain(|name, _| fields.contains_key(name));
+            .retain(|name, _| name.as_str().is_some_and(|name| fields.contains_key(name)));
         if let Some(output) = session.adapter_snapshot().map(AdapterOutput::values) {
             for name in fields.keys() {
-                _ = view.extension_fields.remove(name);
+                _ = view.extension_fields.shift_remove(name);
                 if let Some(value) = output.get(name) {
-                    _ = view.extension_fields.insert(name.clone(), value.clone());
+                    _ = view
+                        .extension_fields
+                        .insert(name.clone().into(), value.clone());
                 } else {
                     _ = view.omitted_fields.insert(name.clone());
                 }
@@ -534,20 +571,22 @@ impl<S: AuthSchema> AuthContext<S> {
                     && view
                         .extension_fields
                         .get(name)
-                        .is_none_or(serde_json::Value::is_null)
+                        .is_none_or(crate::utils::json::JsValue::is_null)
                 {
                     _ = view.omitted_fields.insert(name.into());
                 }
             }
         }
-        view
+        Ok(view)
     }
 
     pub fn invitation_view(&self, invitation: &impl AuthInvitation) -> InvitationView {
         let mut view = InvitationView::from(invitation);
         if self.feature_enabled("organization.teams.enabled") {
             if view.team_id.is_none() {
-                insert_null(&mut view.extension_fields, "teamId");
+                _ = view
+                    .extension_fields
+                    .insert("teamId".into(), serde_json::Value::Null);
             }
         } else {
             view.team_id = None;
@@ -840,7 +879,7 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         Ok((
             user,
-            self.session_view(&session),
+            self.session_view(&session)?,
             (self.config.session.defer_session_refresh && !suppressed)
                 .then_some(read.needs_refresh && !skip),
         ))
@@ -910,7 +949,7 @@ impl<S: AuthSchema> AuthContext<S> {
         let Some(user) = user else {
             return Ok(None);
         };
-        Ok(Some((user, self.session_view(&session))))
+        Ok(Some((user, self.session_view(&session)?)))
     }
 }
 

@@ -17,12 +17,14 @@ pub(super) fn encode(
 }
 
 pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePayload> {
-    let payload = jwe::decode_parsed(secret, "better-auth-account", token)
+    let payload = jwe::decode_parsed_native(secret, "better-auth-account", token)
         .map_err(|_error| AuthError::bad_request("Account not found"))?;
     let snapshot = payload.as_object().cloned();
-    let mut account: AccountCookiePayload = serde_json::from_value(payload)
+    let mut account: AccountCookiePayload = alibi_core::utils::json::from_value(payload)
         .map_err(|_error| AuthError::bad_request("Account not found"))?;
-    account.original = serde_json::to_value(&account)?.as_object().cloned();
+    account.original = alibi_core::utils::json::to_js_value(&account)?
+        .as_object()
+        .cloned();
     account.snapshot = snapshot;
     Ok(account)
 }
@@ -30,6 +32,35 @@ pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePaylo
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn account_cookie_keeps_canonical_subject_and_rich_snapshot_through_real_jwe() {
+        use alibi_core::utils::json::{self, JsValue};
+        let payload = json::parse_value(r#"{"id":"a","userId":"u","providerId":"native","accountId":"\ud800","metadata":{"\ud800":"\udfff","alibi::JsValue/v1":"literal","null":null}}"#).unwrap();
+        let mut account: super::AccountCookiePayload = json::from_value(payload).unwrap();
+        let fields = account
+            .additional
+            .get_mut("metadata")
+            .unwrap()
+            .as_object_mut()
+            .unwrap();
+        _ = fields.insert("undefined".into(), JsValue::Undefined);
+        _ = fields.insert(
+            "date".into(),
+            JsValue::Date(chrono::DateTime::from_timestamp(1_700_000_000, 123_456_789).unwrap()),
+        );
+        let expected = json::parse_value(
+            &json::to_string(&account.wire_value().unwrap()["metadata"]).unwrap(),
+        )
+        .unwrap();
+        let token = super::encode("native-account-cookie", &account, 300.0).unwrap();
+        let mut decoded = super::decode("native-account-cookie", &token).unwrap();
+        assert_eq!(decoded.account_id.code_units(), &[0xd800]);
+        assert_eq!(decoded.wire_value().unwrap()["metadata"], expected);
+        decoded.scope = Some("changed".into());
+        let output = decoded.wire_value().unwrap();
+        assert_eq!(output["scope"], "changed");
+        assert_eq!(output["metadata"], expected);
+    }
     use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD as BASE64};
 
     #[test]

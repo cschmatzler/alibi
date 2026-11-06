@@ -401,9 +401,9 @@ pub(in crate::two_factor) async fn verify_existing_session_factor(
                 // TOTP retains its original response snapshot; OTP returns the
                 // updated user and newly issued token.
                 user: if return_updated_snapshot {
-                    ctx.user_view(&updated_user)
+                    ctx.user_view(&updated_user)?
                 } else {
-                    ctx.user_view(&user)
+                    ctx.user_view(&user)?
                 },
             },
             vec![create_session_cookie(issued.session.token(), &ctx.config)?],
@@ -413,7 +413,7 @@ pub(in crate::two_factor) async fn verify_existing_session_factor(
     Ok((
         SessionTokenResponse {
             token: session.token().to_owned(),
-            user: ctx.user_view(&user),
+            user: ctx.user_view(&user)?,
         },
         Vec::new(),
     ))
@@ -517,7 +517,7 @@ pub(in crate::two_factor) async fn finalize_pending_two_factor<S: alibi_core::Au
     Ok((
         SessionTokenResponse {
             token: issued.session.token().to_owned(),
-            user: ctx.user_view(&issued.user),
+            user: ctx.user_view(&issued.user)?,
         },
         set_cookie_headers,
     ))

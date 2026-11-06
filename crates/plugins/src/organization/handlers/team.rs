@@ -108,7 +108,7 @@ impl OrganizationPlugin {
             .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
             .collect();
         let (user, current) = session(&resolution, ctx).await?;
-        let user = ctx.user_view(&user);
+        let user = ctx.user_view(&user)?;
         create_team_core(data, Some((&user, &current)), None, ctx, &self.config).await
     }
 
@@ -136,7 +136,7 @@ impl OrganizationPlugin {
             .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
             .collect();
         let (user, current) = session(&resolution, ctx).await?;
-        let user = ctx.user_view(&user);
+        let user = ctx.user_view(&user)?;
         remove_team_core(
             organization_id,
             team_id,
@@ -393,7 +393,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
     if !config.teams.enabled {
         return Err(org_error(404, codes::TEAMS_DISABLED));
     }
-    let user_view = ctx.user_view(&user);
+    let user_view = ctx.user_view(&user)?;
     macro_rules! body {
         ($ty:ty) => {
             if let Some(request) = request.filter(|_| http_input) {
@@ -571,7 +571,10 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .get("teamId")
                 .filter(|id| !id.is_empty())
                 .map(String::as_str)
-                .or(current.active_team_id.as_deref().filter(|id| !id.is_empty()))
+                .or(current
+                    .active_team_id
+                    .as_deref()
+                    .filter(|id| !id.is_empty()))
                 .ok_or_else(|| org_error(400, codes::YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM))?;
             let team = ctx
                 .database
@@ -610,7 +613,11 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
             .filter(|id| !id.is_empty());
             if team_id.is_none() {
                 let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
-                if current.active_team_id.as_deref().is_some_and(|id| !id.is_empty()) {
+                if current
+                    .active_team_id
+                    .as_deref()
+                    .is_some_and(|id| !id.is_empty())
+                {
                     let updated = ctx
                         .database
                         .update_session_active_team_record(&current.token, None)
@@ -699,7 +706,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .get_user_by_id(&body.user_id)
                 .await?
                 .ok_or_else(|| alibi_core::AuthError::bad_request("User not found"))?;
-            let target = ctx.user_view(&target);
+            let target = ctx.user_view(&target)?;
             let hooks = hook_context(ctx, &org, Some(user_view)).await?;
             if add {
                 if let Some(callback) = &config.teams.hooks {

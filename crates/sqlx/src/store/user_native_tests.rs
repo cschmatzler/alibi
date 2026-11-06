@@ -16,7 +16,7 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
     let mut input = CreateUser::new().with_email("raw-username@fixture.test");
     _ = input
         .adapter_native_fields
-        .insert("username".into(), json!(42));
+        .insert("username".into(), json!(42).into());
     let user = store.create_user(input).await.unwrap();
     let found = store
         .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(42.0))
@@ -32,7 +32,7 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
             let mut input = CreateUser::new().with_email("transaction-username@fixture.test");
             _ = input
                 .adapter_native_fields
-                .insert("username".into(), json!(73));
+                .insert("username".into(), json!(73).into());
             let created = tx.create_user(input).await?;
             let found = tx
                 .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(73.0))
@@ -98,7 +98,7 @@ fn native_secondary_optional_fields_retain_declared_wire_presence() {
         "updated_at": "2020-01-01T00:00:00.000Z", "favorite_color": null,
         "unknown_extra": "ignored"
     });
-    let record = OptionalNativeUser::from_secondary_snapshot_record(source).unwrap();
+    let record = OptionalNativeUser::from_secondary_snapshot_record(source.into()).unwrap();
     assert_eq!(record.stored().name, "");
     assert_eq!(record.stored().image, None);
     assert_eq!(record.stored().absent_marker, None);
@@ -115,12 +115,15 @@ fn native_secondary_optional_fields_retain_declared_wire_presence() {
     assert!(wire.get("absentMarker").is_none());
     assert_eq!(wire.get("favoriteColor"), Some(&serde_json::Value::Null));
     let encoded = record.secondary_snapshot().unwrap();
-    assert_eq!(encoded.get("name"), Some(&serde_json::Value::Null));
+    assert_eq!(
+        encoded.get("name"),
+        Some(&alibi_core::utils::json::JsValue::Null)
+    );
     assert!(encoded.get("image").is_none());
     assert!(encoded.get("absent_marker").is_none());
     assert_eq!(
         encoded.get("favorite_color"),
-        Some(&serde_json::Value::Null)
+        Some(&alibi_core::utils::json::JsValue::Null)
     );
     assert!(encoded.get("physical_color").is_none());
     assert!(encoded.get("unknown_extra").is_none());
@@ -134,7 +137,8 @@ fn native_secondary_custom_texts_keep_raw_values() {
             "email_verified": false, "created_at": "2020-01-01T00:00:00.000Z",
             "updated_at": "2020-01-01T00:00:00.000Z", "favorite_color": value
         });
-        let record = OptionalNativeUser::from_secondary_snapshot_record(source.clone()).unwrap();
+        let record =
+            OptionalNativeUser::from_secondary_snapshot_record(source.clone().into()).unwrap();
         assert_eq!(record.stored().favorite_color, None);
         let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
         assert_eq!(wire["favoriteColor"], value);
@@ -151,7 +155,7 @@ fn native_secondary_custom_texts_keep_raw_values() {
         "created_at": "2020-01-01T00:00:00.000Z",
         "updated_at": "2020-01-01T00:00:00.000Z"
     });
-    let record = OptionalNativeUser::from_secondary_snapshot_record(source).unwrap();
+    let record = OptionalNativeUser::from_secondary_snapshot_record(source.into()).unwrap();
     assert_eq!(record.stored().name, "");
     assert_eq!(record.stored().email, "");
     let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
@@ -253,7 +257,7 @@ async fn native_creation_persists_sqlite_scalars_and_retains_boolean_output() {
         ("banExpires", json!("2099-01-01T00:00:00.000Z")),
     ]
     .into_iter()
-    .map(|(name, value)| (name.to_owned(), value))
+    .map(|(name, value)| (name.to_owned(), value.into()))
     .collect();
     let created = store.create_user_record(input).await.unwrap();
     assert_eq!(created.image(), Some("42"));
@@ -302,7 +306,7 @@ async fn native_creation_numeric_dates_preserve_storage_type_and_wire_scalars() 
         for field in ["createdAt", "updatedAt", "banExpires"] {
             _ = input
                 .adapter_native_fields
-                .insert(field.to_owned(), value.clone());
+                .insert(field.to_owned(), value.clone().into());
         }
         let created = store.create_user_record(input).await.unwrap();
         let expected = if value.is_boolean() { json!(1) } else { value };
@@ -353,7 +357,7 @@ async fn native_creation_rejects_structured_scalar_parameters_without_persistenc
         };
         _ = input
             .adapter_native_fields
-            .insert(field.to_owned(), json!({"unsupported": true}));
+            .insert(field.to_owned(), json!({"unsupported": true}).into());
         assert!(store.create_user(input).await.is_err());
         assert!(
             store
@@ -385,7 +389,7 @@ async fn unrelated_user_update_retains_native_sqlite_scalars() {
         ("banExpires", json!(-0.5)),
     ]
     .into_iter()
-    .map(|(key, value)| (key.to_owned(), value))
+    .map(|(key, value)| (key.to_owned(), value.into()))
     .collect();
     let created = store.create_user_record(input).await.unwrap();
     let updated = store
@@ -431,7 +435,7 @@ async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
     for field in ["createdAt", "updatedAt", "banExpires"] {
         _ = input
             .adapter_native_fields
-            .insert(field.into(), json!(expanded));
+            .insert(field.into(), json!(expanded).into());
     }
     let created = store.create_user_record(input).await.unwrap();
     let wire = serde_json::to_value(alibi_core::UserView::from(&created)).unwrap();
@@ -452,7 +456,7 @@ async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
             .update_user_record(
                 &created.id(),
                 alibi_core::UpdateUser {
-                    adapter_native_fields: [("banExpires".into(), value.clone())]
+                    adapter_native_fields: [("banExpires".into(), value.clone().into())]
                         .into_iter()
                         .collect(),
                     ..Default::default()
@@ -521,7 +525,7 @@ async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults()
         .enumerate()
     {
         let mut input = CreateUser::new().with_email(format!("native-id-{index}@fixture.test"));
-        _ = input.adapter_native_fields.insert("id".into(), raw);
+        _ = input.adapter_native_fields.insert("id".into(), raw.into());
         let user = store.create_user(input).await.unwrap();
         assert_eq!(user.id(), expected);
         let row = store.get_user_by_id(expected).await.unwrap().unwrap();
@@ -537,7 +541,9 @@ async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults()
     {
         let email = format!("invalid-id-{index}@fixture.test");
         let mut input = CreateUser::new().with_email(&email);
-        _ = input.adapter_native_fields.insert("id".into(), raw.clone());
+        _ = input
+            .adapter_native_fields
+            .insert("id".into(), raw.clone().into());
         let error = store.create_user(input).await.unwrap_err();
         assert_eq!(error.status_code(), 500, "{raw:?}: {error:?}");
         assert!(
@@ -552,7 +558,9 @@ async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults()
     for index in 0..2 {
         let mut input = CreateUser::new().with_email(format!("default-id-{index}@fixture.test"));
         if index == 0 {
-            _ = input.adapter_native_fields.insert("id".into(), json!(null));
+            _ = input
+                .adapter_native_fields
+                .insert("id".into(), json!(null).into());
         }
         let user = store.create_user(input).await.unwrap();
         assert_eq!(user.id(), format!("generated-{index}"));
@@ -584,8 +592,8 @@ async fn native_username_updates_use_sqlite_affinity_without_unconditional_lower
                 created.id().as_ref(),
                 alibi_core::UpdateUser {
                     adapter_native_fields: [
-                        ("username".into(), raw),
-                        ("displayUsername".into(), json!(false)),
+                        ("username".into(), raw.into()),
+                        ("displayUsername".into(), json!(false).into()),
                     ]
                     .into(),
                     ..Default::default()
@@ -622,7 +630,7 @@ async fn native_username_updates_use_sqlite_affinity_without_unconditional_lower
             created.id().as_ref(),
             alibi_core::UpdateUser {
                 name: Some("NotStored".into()),
-                adapter_native_fields: [("username".into(), json!({}))].into(),
+                adapter_native_fields: [("username".into(), json!({}).into())].into(),
                 ..Default::default()
             },
         )

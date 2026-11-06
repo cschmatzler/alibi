@@ -206,18 +206,20 @@ pub enum JwtAudience {
 }
 
 impl JwtAudience {
-    pub(in crate::jwt) fn matches(&self, value: &Value) -> bool {
+    pub(in crate::jwt) fn matches_native(&self, value: &alibi_core::utils::json::JsValue) -> bool {
         let expected: Vec<&str> = match self {
             Self::One(value_2) => vec![value_2],
             Self::Many(values) => values.iter().map(String::as_str).collect(),
         };
         match value {
-            Value::String(value) => expected.contains(&value.as_str()),
-            Value::Array(values) => values
+            alibi_core::utils::json::JsValue::String(value) => value
+                .as_str()
+                .is_some_and(|value| expected.contains(&value)),
+            alibi_core::utils::json::JsValue::Array(values) => values
                 .iter()
-                .filter_map(Value::as_str)
-                .any(|value_3| expected.contains(&value_3)),
-            Value::Null | Value::Bool(_) | Value::Number(_) | Value::Object(_) => false,
+                .filter_map(alibi_core::utils::json::JsValue::as_str)
+                .any(|value| expected.contains(&value)),
+            _ => false,
         }
     }
 }

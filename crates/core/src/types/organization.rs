@@ -1,7 +1,7 @@
 use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
 use crate::field_policy::FieldValues;
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
 
 /// Organization entity - matches `OpenAPI` schema
@@ -15,10 +15,9 @@ pub struct Organization {
     pub logo: Option<String>,
     #[serde(
         serialize_with = "serialize_json_option_as_string",
-        deserialize_with = "deserialize_json_option_from_string",
         skip_serializing_if = "Option::is_none"
     )]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<crate::utils::json::JsValue>,
     #[serde(rename = "createdAt")]
     #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
@@ -225,7 +224,7 @@ impl<T: AuthOrganization> From<&T> for Organization {
             name: organization.name().to_owned(),
             slug: organization.slug().to_owned(),
             logo: organization.logo().map(str::to_owned),
-            metadata: organization.metadata().cloned(),
+            metadata: organization.metadata(),
             created_at: organization.created_at(),
         }
     }
@@ -247,8 +246,8 @@ impl AuthOrganization for Organization {
     fn logo(&self) -> Option<&str> {
         self.logo.as_deref()
     }
-    fn metadata(&self) -> Option<&serde_json::Value> {
-        self.metadata.as_ref()
+    fn metadata(&self) -> Option<crate::utils::json::JsValue> {
+        self.metadata.clone()
     }
     fn created_at(&self) -> DateTime<Utc> {
         self.created_at
@@ -442,41 +441,17 @@ pub enum OrganizationRoleSelector {
     clippy::ref_option,
     reason = "Serde field serializers receive a reference to the declared Option field type"
 )]
-fn serialize_json_option_as_string<S>(
-    value: &Option<serde_json::Value>,
+fn serialize_json_option_as_string<T: Serialize, S>(
+    value: &Option<T>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     match value {
-        Some(inner) => serializer
-            .serialize_some(&serde_json::to_string(inner).map_err(serde::ser::Error::custom)?),
+        Some(inner) => serializer.serialize_some(
+            &crate::utils::json::to_string(inner).map_err(serde::ser::Error::custom)?,
+        ),
         None => serializer.serialize_none(),
     }
-}
-
-fn deserialize_json_option_from_string<'de, D>(
-    deserializer: D,
-) -> Result<Option<serde_json::Value>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum MetadataValue {
-        Json(
-            #[serde(deserialize_with = "crate::utils::json::deserialize_value")] serde_json::Value,
-        ),
-        String(String),
-    }
-
-    let value = Option::<MetadataValue>::deserialize(deserializer)?;
-    value
-        .map(|inner| match inner {
-            MetadataValue::Json(value) => Ok(value),
-            MetadataValue::String(text) => crate::utils::json::from_slice(text.as_bytes())
-                .map_or_else(|_| Ok(serde_json::Value::String(text)), Ok),
-        })
-        .transpose()
 }

@@ -227,10 +227,13 @@ impl LastLoginMethodPlugin {
         let new_session = request
             .extensions
             .get::<super::helpers::CompletedSession<S>>()
-            .map(|completed| LastLoginMethodSession {
-                user: completed.callback_user(ctx),
-                session: completed.callback_session(ctx),
-            });
+            .map(|completed| -> AuthResult<_> {
+                Ok(LastLoginMethodSession {
+                    user: completed.callback_user(ctx)?,
+                    session: completed.callback_session(ctx)?,
+                })
+            })
+            .transpose()?;
         let endpoint = request
             .extensions
             .get::<alibi_core::plugin::ResolvedEndpoint>();
@@ -409,10 +412,13 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
         let new_session = super::helpers::completed_response_session(req, ctx, &response)
-            .map(|completed| LastLoginMethodSession {
-                user: completed.callback_user(ctx),
-                session: completed.callback_session(ctx),
+            .map(|completed| -> AuthResult<_> {
+                Ok(LastLoginMethodSession {
+                    user: completed.callback_user(ctx)?,
+                    session: completed.callback_session(ctx)?,
+                })
             })
+            .transpose()?
             .or_else(|| {
                 alibi_core::session::cookie_cache::runtime::published_session(req)
                     .map(|(user, session)| LastLoginMethodSession { user, session })

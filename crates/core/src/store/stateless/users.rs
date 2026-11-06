@@ -151,7 +151,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         let now = Utc::now();
         let supplied_id = crate::store::memory_user_id::MemoryUserId::supplied(
             create_user.adapter_native_fields.get("id"),
-        );
+        )?;
         let (physical_id, id) = supplied_id.unwrap_or_else(|| {
             let id = create_user
                 .id
@@ -190,7 +190,8 @@ impl UserStore<StatelessSchema> for StatelessStore {
             ban_expires: None,
             metadata: create_user
                 .metadata
-                .unwrap_or_else(|| serde_json::json!({})),
+                .unwrap_or_else(|| serde_json::json!({}))
+                .into(),
             is_anonymous: create_user.is_anonymous,
             phone_number: create_user.phone_number,
             phone_number_verified: create_user.phone_number_verified,
@@ -198,8 +199,8 @@ impl UserStore<StatelessSchema> for StatelessStore {
             extension_fields: create_user
                 .additional_fields
                 .into_iter()
-                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
-                .collect::<Result<_, _>>()?,
+                .map(|(key, value)| (key.into(), value))
+                .collect(),
         };
         user.retain_native_user_fields(native_fields);
         let mut state = self.lock()?;
@@ -218,14 +219,14 @@ impl UserStore<StatelessSchema> for StatelessStore {
     async fn native_user_output_for(
         &self,
         user: &UserView,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(user.native_user_fields())
     }
 
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(self
             .get_user_by_id(id)
             .await?
@@ -310,7 +311,11 @@ impl UserStore<StatelessSchema> for StatelessStore {
                 user.extension_fields
                     .get("username")
                     .cloned()
-                    .or_else(|| user.username.clone().map(serde_json::Value::String))
+                    .or_else(|| {
+                        user.username
+                            .clone()
+                            .map(|value| crate::utils::json::JsValue::String(value.into()))
+                    })
                     .map(crate::utils::json::JsValue::from)
                     .as_ref()
                     == Some(username)
@@ -377,7 +382,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             user.two_factor_enabled = Some(two_factor_enabled);
         }
         if let Some(metadata) = update.metadata {
-            user.metadata = metadata;
+            user.metadata = metadata.into();
         }
         if let Some(is_anonymous) = update.is_anonymous {
             user.is_anonymous = Some(is_anonymous);
@@ -392,7 +397,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             user.last_login_method = last_login_method;
         }
         for (key, value) in update.additional_fields {
-            _ = user.extension_fields.insert(key, value.to_json_value()?);
+            _ = user.extension_fields.insert(key.into(), value);
         }
         for (name, present) in [
             ("name", user.name.is_some()),

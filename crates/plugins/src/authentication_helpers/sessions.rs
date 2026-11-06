@@ -120,8 +120,8 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     .await
     .map_err(crate::helpers::SessionIssueError::into_auth_error)?;
     let token = issued.session.token();
-    let user = serde_json::to_value(ctx.user_view(&issued.user))?;
-    let session = serde_json::to_value(ctx.session_view(&issued.session))?;
+    let user = serde_json::to_value(ctx.user_view(&issued.user)?)?;
+    let session = serde_json::to_value(ctx.session_view(&issued.session)?)?;
     let payload = serde_json::json!({"token":token,"user":user,"session":session});
     let response = with_session_cookies(
         AuthResponse::json(200, &serde_json::json!({"token":token,"user":user}))?,

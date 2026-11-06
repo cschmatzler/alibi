@@ -200,7 +200,7 @@ pub(crate) async fn invite_member_core(
         .await?
         .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let organization = OrganizationResponse::from_stored_organization(&organization)?;
-    let user_view = ctx.user_view(user);
+    let user_view = ctx.user_view(user)?;
     let member_view = alibi_core::Member {
         id: member.id().into_owned(),
         organization_id: member.organization_id().into_owned(),
@@ -260,7 +260,7 @@ pub(crate) async fn invite_member_core(
                 .get_user_by_id(&member.user_id())
                 .await?
                 .ok_or_else(|| super::extension_common::org_error(400, codes::MEMBER_NOT_FOUND))?,
-        ),
+        )?,
     };
     let limit = match &config.invitation_limit {
         Some(InvitationLimit::Fixed(value)) => *value,
@@ -317,8 +317,8 @@ pub(crate) async fn invite_member_core(
         let limit_context = crate::organization::extensions::TeamLimitContext {
             organization_id: org_id.clone(),
             team_id: Some(team.id.clone()),
-            session: Some(ctx.session_view(session)),
-            user: Some(ctx.user_view(user)),
+            session: Some(ctx.session_view(session)?),
+            user: Some(ctx.user_view(user)?),
             request: alibi_core::hooks::current_request_hook_context()
                 .map(|context| context.request),
         };
@@ -609,7 +609,7 @@ pub(crate) async fn reject_invitation_core(
         .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let mut hook_context = OrganizationInvitationContext {
         invitation: ctx.invitation_view(&invitation),
-        user: ctx.user_view(user),
+        user: ctx.user_view(user)?,
         organization: OrganizationResponse::from_stored_organization(&organization)?,
     };
     if let Some(hooks) = &config.invitation_hooks {
@@ -672,7 +672,7 @@ pub(crate) async fn cancel_invitation_core(
         .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
     let mut hook_context = OrganizationInvitationContext {
         invitation: ctx.invitation_view(&invitation),
-        user: ctx.user_view(user),
+        user: ctx.user_view(user)?,
         organization: OrganizationResponse::from_stored_organization(&organization)?,
     };
     if let Some(hooks) = &config.invitation_hooks {

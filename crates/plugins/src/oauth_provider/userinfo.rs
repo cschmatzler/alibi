@@ -170,7 +170,7 @@ impl OAuthProviderPlugin {
         let Some(user) = ctx.database.get_user_by_id(id).await? else {
             return error(400, "invalid_request", "user not found");
         };
-        let user = ctx.user_view(&user);
+        let user = ctx.user_view(&user)?;
         let client_id = payload
             .get("client_id")
             .or_else(|| payload.get("azp"))

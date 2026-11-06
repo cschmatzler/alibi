@@ -24,7 +24,7 @@ where
             .metadata
             .map(|metadata| {
                 JsonMetadata::for_backend(
-                    alibi_core::utils::json::to_value(&metadata)?,
+                    alibi_core::utils::json::to_js_value(&metadata)?,
                     self.scoped_connection().get_database_backend(),
                 )
             })
@@ -126,8 +126,10 @@ where
             _ = query.value(Column::Logo, logo);
         }
         if let Some(metadata) = update.metadata {
-            let metadata =
-                JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
+            let metadata = JsonMetadata::for_backend(
+                alibi_core::utils::json::to_js_value(&metadata)?,
+                backend,
+            )?;
             _ = query.value(Column::Metadata, metadata);
         }
         if self.scoped_connection().support_returning() {
@@ -243,7 +245,7 @@ fn apply_organization_update(
     }
     if let Some(metadata) = update.metadata {
         active.metadata = Set(Some(JsonMetadata::for_backend(
-            alibi_core::utils::json::to_value(&metadata)?,
+            alibi_core::utils::json::to_js_value(&metadata)?,
             backend,
         )?));
     }

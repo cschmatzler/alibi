@@ -249,7 +249,8 @@ pub enum RawFieldValue {
     Integer(i64),
     Number(f64),
     Text(crate::utils::json::JsString),
-    Json(serde_json::Value),
+    Json(JsValue),
+    Date(DateTime<Utc>),
 }
 
 impl RawFieldValue {
@@ -277,12 +278,22 @@ impl RawFieldValue {
             }
             JsValue::Number(value) => Self::Number(*value),
             JsValue::String(value) => Self::Text(value.clone()),
-            JsValue::Date(value) => Self::Text(
-                value
-                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-                    .into(),
-            ),
-            JsValue::Array(_) | JsValue::Object(_) => Self::Json(value.to_json_value()?),
+            JsValue::Date(value) => Self::Date(*value),
+            JsValue::Array(_) | JsValue::Object(_) => Self::Json(value.clone()),
         })
+    }
+}
+
+impl From<RawFieldValue> for JsValue {
+    fn from(value: RawFieldValue) -> Self {
+        match value {
+            RawFieldValue::Null => Self::Null,
+            RawFieldValue::Bool(value) => Self::Bool(value),
+            RawFieldValue::Integer(value) => Self::from(value),
+            RawFieldValue::Number(value) => Self::Number(value),
+            RawFieldValue::Text(value) => Self::String(value),
+            RawFieldValue::Json(value) => value,
+            RawFieldValue::Date(value) => Self::Date(value),
+        }
     }
 }

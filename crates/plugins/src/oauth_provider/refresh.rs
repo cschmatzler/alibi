@@ -239,7 +239,7 @@ impl OAuthProviderPlugin {
             .collect::<Vec<_>>();
         let mut params =
             super::OAuthTokenIssueParams::new(client.clone(), admission.scopes.clone());
-        params.user = Some(ctx.trusted_user_view(&user));
+        params.user = Some(ctx.trusted_user_view(&user)?);
         params.session_id = original.session_id.clone();
         params.refresh_token = Some(original.clone());
         params.auth_time = original

@@ -68,7 +68,7 @@ impl<T: AuthTimestamp> AuthTimestamp for Option<T> {
 pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
-    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
+    fn secondary_snapshot(&self) -> AuthResult<crate::utils::json::JsValue> {
         Err(AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
@@ -78,7 +78,7 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     /// Unrepresentable dates and null nonoptional names use typed surrogates;
     /// use `from_secondary_snapshot_record` to retain the observable value.
     /// A surrogate name is not an authoritative adapter value.
-    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
+    fn from_secondary_snapshot(_snapshot: crate::utils::json::JsValue) -> AuthResult<Self> {
         Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
@@ -90,7 +90,7 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     fn secondary_snapshot_with_native_output(
         &self,
         native: &AdapterOutput,
-    ) -> AuthResult<serde_json::Value> {
+    ) -> AuthResult<crate::utils::json::JsValue> {
         if !native.is_empty() {
             return Err(AuthError::NotImplemented(
                 "Native user secondary encoding is unsupported".into(),
@@ -103,7 +103,7 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     /// The default supports typed-only codecs; native-aware codecs must override
     /// both this method and `secondary_snapshot_with_native_output`.
     fn from_secondary_snapshot_record(
-        snapshot: serde_json::Value,
+        snapshot: crate::utils::json::JsValue,
     ) -> AuthResult<crate::AdapterRecord<Self>> {
         crate::AdapterRecord::physical(Self::from_secondary_snapshot(snapshot)?)
     }
@@ -112,7 +112,7 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     /// Declared entity codecs already know their fields; dynamic wire views use
     /// the effective registered field set supplied by the initialized store.
     fn from_secondary_snapshot_record_with_fields(
-        snapshot: serde_json::Value,
+        snapshot: crate::utils::json::JsValue,
         _allowed: &crate::field_policy::FieldConfigs,
     ) -> AuthResult<crate::AdapterRecord<Self>> {
         Self::from_secondary_snapshot_record(snapshot)
@@ -127,8 +127,21 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
         None
     }
     /// Physical application/plugin values; public policy is applied separately.
-    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
-        crate::field_policy::FieldOutput::new()
+    fn additional_js_fields(&self) -> AuthResult<crate::utils::json::JsObject> {
+        Ok(Default::default())
+    }
+    /// Physical JSON cells for the unsupported-JSON adapter output stage.
+    fn adapter_js_fields(
+        &self,
+        _exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        Err(crate::AuthError::not_implemented(
+            "The model does not expose physical JSON fields",
+        ))
+    }
+    /// Explicit fallible UTF-8/ordinary JSON projection.
+    fn additional_fields(&self) -> AuthResult<crate::field_policy::FieldOutput> {
+        AdapterOutput::from_js_values(self.additional_js_fields()?).to_field_output()
     }
     fn id(&self) -> Cow<'_, str>;
     fn email(&self) -> Option<&str>;
@@ -152,7 +165,7 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     }
     fn ban_reason(&self) -> Option<&str>;
     fn ban_expires(&self) -> Option<DateTime<Utc>>;
-    fn metadata(&self) -> &serde_json::Value;
+    fn metadata(&self) -> crate::utils::json::JsValue;
     /// Anonymous-plugin state; `None` means the field is absent or unset.
     fn is_anonymous(&self) -> Option<bool> {
         None
@@ -176,7 +189,7 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn secondary_snapshot_for_creation(
         &self,
         created_at: DateTime<Utc>,
-    ) -> AuthResult<serde_json::Value> {
+    ) -> AuthResult<crate::utils::json::JsValue> {
         if self.created_at() == created_at {
             self.secondary_snapshot()
         } else {
@@ -190,7 +203,7 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn secondary_snapshot_with_native_output(
         &self,
         native: &AdapterOutput,
-    ) -> AuthResult<serde_json::Value> {
+    ) -> AuthResult<crate::utils::json::JsValue> {
         if native.is_empty() {
             self.secondary_snapshot()
         } else {
@@ -205,7 +218,7 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
         &self,
         created_at: DateTime<Utc>,
         native: &AdapterOutput,
-    ) -> AuthResult<serde_json::Value> {
+    ) -> AuthResult<crate::utils::json::JsValue> {
         if native.is_empty() {
             self.secondary_snapshot_for_creation(created_at)
         } else {
@@ -217,20 +230,22 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
-    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
+    fn secondary_snapshot(&self) -> AuthResult<crate::utils::json::JsValue> {
         Err(AuthError::NotImplemented(
             "Secondary model encoding is unsupported".into(),
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
-    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
+    fn from_secondary_snapshot(_snapshot: crate::utils::json::JsValue) -> AuthResult<Self> {
         Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
     }
 
     /// Recover logical adapter properties from a trusted physical cache snapshot.
-    fn output_from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<AdapterOutput> {
+    fn output_from_secondary_snapshot(
+        _snapshot: crate::utils::json::JsValue,
+    ) -> AuthResult<AdapterOutput> {
         Err(AuthError::not_implemented(
             "Secondary session output decoding is unsupported",
         ))
@@ -242,8 +257,21 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn retained_session_view(&self) -> Option<&crate::SessionView> {
         None
     }
-    fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
-        serde_json::Map::new()
+    fn additional_js_fields(&self) -> AuthResult<crate::utils::json::JsObject> {
+        Ok(Default::default())
+    }
+    /// Physical JSON cells for the unsupported-JSON adapter output stage.
+    fn adapter_js_fields(
+        &self,
+        _exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        Err(crate::AuthError::not_implemented(
+            "The model does not expose physical JSON fields",
+        ))
+    }
+    /// Explicit fallible UTF-8/ordinary JSON projection.
+    fn additional_fields(&self) -> AuthResult<crate::field_policy::FieldOutput> {
+        AdapterOutput::from_js_values(self.additional_js_fields()?).to_field_output()
     }
     fn id(&self) -> Cow<'_, str>;
     fn expires_at(&self) -> DateTime<Utc>;
@@ -265,8 +293,21 @@ pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         None
     }
-    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
-        crate::field_policy::FieldOutput::new()
+    fn additional_js_fields(&self) -> AuthResult<crate::utils::json::JsObject> {
+        Ok(Default::default())
+    }
+    /// Physical JSON cells for the unsupported-JSON adapter output stage.
+    fn adapter_js_fields(
+        &self,
+        _exact: &std::collections::BTreeSet<String>,
+    ) -> AuthResult<crate::utils::json::JsObject> {
+        Err(crate::AuthError::not_implemented(
+            "The model does not expose physical JSON fields",
+        ))
+    }
+    /// Explicit fallible UTF-8/ordinary JSON projection.
+    fn additional_fields(&self) -> AuthResult<crate::field_policy::FieldOutput> {
+        AdapterOutput::from_js_values(self.additional_js_fields()?).to_field_output()
     }
     fn id(&self) -> Cow<'_, str>;
     fn account_id(&self) -> crate::utils::json::JsString;
@@ -292,7 +333,8 @@ pub trait AuthOrganization: Clone + Send + Sync + Serialize + std::fmt::Debug + 
     fn name(&self) -> &str;
     fn slug(&self) -> &str;
     fn logo(&self) -> Option<&str>;
-    fn metadata(&self) -> Option<&serde_json::Value>;
+    /// Decoded logical metadata, not the adapter's encoded JSON storage cell.
+    fn metadata(&self) -> Option<crate::utils::json::JsValue>;
     fn created_at(&self) -> DateTime<Utc>;
 }
 

@@ -396,7 +396,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
             _ = ctx
                 .hash_password(config.password_hasher.as_ref(), &body.password)
                 .await?;
-            signup::notify_existing(ctx.user_view(&user), request, config, ctx).await?;
+            signup::notify_existing(ctx.user_view(&user)?, request, config, ctx).await?;
             return signup::synthetic_response(body, &additional_fields, config, ctx);
         }
         // TS returns 422 UNPROCESSABLE_ENTITY for duplicate email
@@ -568,7 +568,9 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                 Ok((
                     SignUpResponse {
                         token: Some(token.clone()),
-                        user: password_utils::serialize_to_value(&signup_context.user_view(&user))?,
+                        user: password_utils::serialize_to_value(
+                            &signup_context.user_view(&user)?,
+                        )?,
                     },
                     Some(cookies),
                 ))
@@ -576,7 +578,9 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                 Ok((
                     SignUpResponse {
                         token: None,
-                        user: password_utils::serialize_to_value(&signup_context.user_view(&user))?,
+                        user: password_utils::serialize_to_value(
+                            &signup_context.user_view(&user)?,
+                        )?,
                     },
                     None,
                 ))
@@ -666,7 +670,7 @@ async fn finalize_sign_in_with_user_core<S: alibi_core::AuthSchema>(
         redirect: callback_url.is_some_and(|url| !url.is_empty()),
         token: token.clone(),
         url: callback_url.map(str::to_owned),
-        user: ctx.user_view(&issued.user),
+        user: ctx.user_view(&issued.user)?,
     };
     Ok(SignInCoreResult::Success {
         response,

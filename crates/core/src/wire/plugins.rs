@@ -2,7 +2,7 @@ use crate::{AuthApiKey, AuthInvitation, AuthOrganization, AuthPasskey, Invitatio
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
 /// Public organization response shape.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct OrganizationView {
     #[serde(default, flatten)]
     pub additional_fields: std::collections::BTreeMap<String, serde_json::Value>,
@@ -14,11 +14,8 @@ pub struct OrganizationView {
         serialize_with = "serialize_json_option_as_string",
         skip_serializing_if = "Option::is_none"
     )]
-    #[serde(
-        default,
-        deserialize_with = "crate::utils::json::deserialize_optional_value"
-    )]
-    pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub metadata: Option<crate::utils::json::JsValue>,
     #[serde(rename = "createdAt")]
     #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
@@ -32,7 +29,7 @@ impl<T: AuthOrganization> From<&T> for OrganizationView {
             name: org.name().to_owned(),
             slug: org.slug().to_owned(),
             logo: org.logo().map(str::to_owned),
-            metadata: org.metadata().cloned(),
+            metadata: org.metadata(),
             created_at: org.created_at(),
         }
     }
@@ -261,16 +258,17 @@ pub(in crate::wire) fn normalize_api_key_permission_dates(value: &mut serde_json
     clippy::ref_option,
     reason = "Serde field serializers receive a reference to the declared Option field type"
 )]
-pub(in crate::wire) fn serialize_json_option_as_string<S>(
-    value: &Option<serde_json::Value>,
+pub(in crate::wire) fn serialize_json_option_as_string<T: Serialize, S>(
+    value: &Option<T>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     match value {
-        Some(inner) => serializer
-            .serialize_some(&serde_json::to_string(inner).map_err(serde::ser::Error::custom)?),
+        Some(inner) => serializer.serialize_some(
+            &crate::utils::json::to_string(inner).map_err(serde::ser::Error::custom)?,
+        ),
         None => serializer.serialize_none(),
     }
 }

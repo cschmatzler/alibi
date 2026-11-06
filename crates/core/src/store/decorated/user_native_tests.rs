@@ -5,6 +5,56 @@ use crate::test_store::{BundledSchema, MemoryStore};
 use crate::{AdapterOutput, AuthContext, CreateUser, UserView};
 
 #[tokio::test]
+async fn memory_json_output_keeps_native_input_and_does_not_parse_callback_strings() {
+    use crate::utils::json::{self, JsValue};
+    let mut value =
+        json::parse_value(r#"{"\ud800":"\udfff","nested":{"iso":"2020-01-01T00:00:00.123456Z"}}"#)
+            .unwrap();
+    _ = value
+        .as_object_mut()
+        .unwrap()
+        .insert("undefined".into(), JsValue::Undefined);
+    _ = value.as_object_mut().unwrap().insert(
+        "date".into(),
+        JsValue::Date(chrono::DateTime::from_timestamp(1_700_000_000, 123_456_789).unwrap()),
+    );
+    let observed_input = value.clone();
+    let observed_output = value.clone();
+    let result = JsValue::String(json::to_string(&value).unwrap().into());
+    let returned = result.clone();
+    let mut config = crate::AuthConfig::default();
+    _ = config.user.additional_fields.insert(
+        "metadata".into(),
+        FieldConfig::new(serde_json::json!({"type":"json"}))
+            .transform_adapter_input(move |value| {
+                assert_eq!(value.as_ref(), Some(&observed_input));
+                async move { Ok(value) }
+            })
+            .transform_output(move |value| {
+                assert_eq!(value.as_ref(), Some(&observed_output));
+                let returned = returned.clone();
+                async move { Ok(Some(returned)) }
+            }),
+    );
+    let config = Arc::new(config);
+    let inner = Arc::new(MemoryStore::new(config.clone()));
+    let store = crate::plugin::AuthInitContext::<BundledSchema>::new(config, inner.clone())
+        .database_with_registered_transforms();
+    let mut input = CreateUser::new().with_email("native-json-memory@fixture.test");
+    _ = input
+        .additional_fields
+        .insert("metadata".into(), value.clone());
+    let record = store.create_user_record(input).await.unwrap();
+    assert_eq!(record.raw_snapshot().values()["metadata"], result);
+    let stored = inner
+        .get_user_by_id(record.id().as_ref())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.extension_fields["metadata"], value);
+}
+
+#[tokio::test]
 async fn cached_native_user_projection_preserves_values_without_database_lookup() {
     let mut config = crate::AuthConfig::default();
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
@@ -57,11 +107,14 @@ async fn cached_native_user_projection_preserves_values_without_database_lookup(
         .await
         .unwrap();
     let mut native = AdapterOutput::default();
-    native.insert("emailVerified".into(), Some(serde_json::json!("false")));
-    native.insert("createdAt".into(), Some(serde_json::json!(1e20)));
-    native.insert("updatedAt".into(), Some(serde_json::json!(-0.5)));
-    native.insert("banExpires".into(), Some(serde_json::json!(0)));
-    native.insert("isAnonymous".into(), Some(serde_json::Value::Null));
+    native.insert(
+        "emailVerified".into(),
+        Some(serde_json::json!("false").into()),
+    );
+    native.insert("createdAt".into(), Some(serde_json::json!(1e20).into()));
+    native.insert("updatedAt".into(), Some(serde_json::json!(-0.5).into()));
+    native.insert("banExpires".into(), Some(serde_json::json!(0).into()));
+    native.insert("isAnonymous".into(), Some(serde_json::Value::Null.into()));
     native.insert("banned".into(), None);
     let context = AuthContext::<BundledSchema>::new(config.clone(), inner.clone());
     let store = PluginStore::new(
@@ -136,7 +189,7 @@ impl AuthUser for UnsupportedUser {
     fn ban_expires(&self) -> Option<chrono::DateTime<chrono::Utc>> {
         self.0.ban_expires()
     }
-    fn metadata(&self) -> &serde_json::Value {
+    fn metadata(&self) -> crate::utils::json::JsValue {
         self.0.metadata()
     }
 }
@@ -150,7 +203,7 @@ async fn custom_user_codecs_reject_unsupported_native_corrections() {
         .unwrap();
     let user = UnsupportedUser(user);
     let mut native = AdapterOutput::default();
-    native.insert("createdAt".into(), Some(serde_json::json!(1e20)));
+    native.insert("createdAt".into(), Some(serde_json::json!(1e20).into()));
     assert!(matches!(
         user.secondary_snapshot_with_native_output(&native),
         Err(AuthError::NotImplemented(_))
@@ -221,11 +274,11 @@ async fn cached_user_fields_use_effective_config_without_database_or_transforms(
             .await
             .unwrap();
         let mut snapshot = user.secondary_snapshot().unwrap();
-        snapshot["fallbackMarker"] = json!({"selected": "fallback"});
-        snapshot["registeredMarker"] = json!({"selected": "registered"});
-        snapshot["cachedNull"] = json!(null);
-        snapshot["unconfigured"] = json!({"retained": [null, true]});
-        snapshot["hiddenMarker"] = json!({"secret": "retained in cache only"});
+        snapshot["fallbackMarker"] = json!({"selected": "fallback"}).into();
+        snapshot["registeredMarker"] = json!({"selected": "registered"}).into();
+        snapshot["cachedNull"] = json!(null).into();
+        snapshot["unconfigured"] = json!({"retained": [null, true]}).into();
+        snapshot["hiddenMarker"] = json!({"secret": "retained in cache only"}).into();
         cache
             .set(
                 session.token(),
@@ -342,10 +395,10 @@ async fn physical_identity_projection<S: AuthSchema<User = UserView>>(
             name: Some(marker.into()),
             email: Some(format!("{marker}@identity.test")),
             adapter_native_fields: [
-                ("id".into(), id),
-                ("emailVerified".into(), serde_json::json!(marker)),
-                ("createdAt".into(), created.clone()),
-                ("image".into(), image.clone()),
+                ("id".into(), id.into()),
+                ("emailVerified".into(), serde_json::json!(marker).into()),
+                ("createdAt".into(), created.clone().into()),
+                ("image".into(), image.clone().into()),
             ]
             .into(),
             ..Default::default()

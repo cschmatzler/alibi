@@ -42,8 +42,8 @@ impl SessionStore<StatelessSchema> for StatelessStore {
             extension_fields: input
                 .additional_fields
                 .into_iter()
-                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
-                .collect::<Result<_, _>>()?,
+                .map(|(key, value)| (key.into(), value))
+                .collect(),
             omitted_fields: std::collections::BTreeSet::default(),
         })
     }
@@ -64,17 +64,17 @@ impl SessionStore<StatelessSchema> for StatelessStore {
                     };
                     *destination = value.as_str().map(str::to_owned);
                     _ = session.omitted_fields.remove(key);
-                    _ = session.extension_fields.remove(key);
+                    _ = session.extension_fields.shift_remove(key);
                     if value.is_null() {
                         _ = session
                             .extension_fields
-                            .insert(key.clone(), serde_json::Value::Null);
+                            .insert(key.clone().into(), crate::utils::json::JsValue::Null);
                     }
                 }
                 _ => {
                     _ = session
                         .extension_fields
-                        .insert(key.clone(), value.to_json_value()?);
+                        .insert(key.clone().into(), value.clone());
                 }
             }
         }

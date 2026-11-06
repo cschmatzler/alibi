@@ -110,10 +110,17 @@ pub(in crate::jwt) fn decode_compact_json(
     value: &str,
     allow_whitespace: bool,
 ) -> AuthResult<Value> {
+    Ok(decode_compact_native_json(value, allow_whitespace)?.to_json_value()?)
+}
+
+pub(in crate::jwt) fn decode_compact_native_json(
+    value: &str,
+    allow_whitespace: bool,
+) -> AuthResult<alibi_core::utils::json::JsValue> {
     let bytes = decode_compact_part(value, allow_whitespace)?;
     let text = std::str::from_utf8(&bytes)
         .map_err(|_error| AuthError::bad_request("Invalid JWT JSON UTF8"))?;
-    Ok(alibi_core::utils::json::parse_value(text)?.to_json_value()?)
+    Ok(alibi_core::utils::json::parse_value(text)?)
 }
 
 pub(in crate::jwt) fn validate_numeric_date(field: &str, number: Option<f64>) -> AuthResult<()> {

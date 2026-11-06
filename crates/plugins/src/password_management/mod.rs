@@ -257,7 +257,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
                 code: codes::UNAUTHORIZED,
                 message: "Unauthorized",
             })?;
-        call.record_authenticated_session(ctx.user_view(&user), session);
+        call.record_authenticated_session(ctx.user_view(&user)?, session);
         if call.operation_id() == "setPassword" {
             let body: SetPasswordRequest = call.body_as()?;
             set_password::set_password_for_user(&user, &body.new_password, ctx).await?;

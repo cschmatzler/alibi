@@ -198,7 +198,7 @@ impl OAuthProviderPlugin {
             .await;
         }
         let reference_id = self
-            .consent_reference_id(&ctx.user_view(&user), &session, &accepted)
+            .consent_reference_id(&ctx.user_view(&user)?, &session, &accepted)
             .await?;
         let now = chrono::DateTime::from_timestamp(chrono::Utc::now().timestamp(), 0)
             .ok_or_else(|| AuthError::internal("Invalid consent timestamp"))?;

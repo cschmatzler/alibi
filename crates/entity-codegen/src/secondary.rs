@@ -12,17 +12,17 @@ pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenSt
         .collect();
     let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
     quote! {
-        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
-            let mut snapshot = ::serde_json::Map::new();
-            #(_ = snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?);)*
-            Ok(::serde_json::Value::Object(snapshot))
+        fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
+            let mut snapshot = #core_root::utils::json::JsObject::new();
+            #(_ = snapshot.insert(#keys.into(), #core_root::utils::json::to_js_value(&self.#names)?);)*
+            Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
-        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
-            let ::serde_json::Value::Object(mut fields) = snapshot else {
+        fn from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<Self> {
+            let #core_root::utils::json::JsValue::Object(mut fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary model snapshot"));
             };
             Ok(Self {
-                #(#names: ::serde_json::from_value(fields.remove(#keys).ok_or_else(||
+                #(#names: #core_root::utils::json::from_value(fields.shift_remove(#keys).ok_or_else(||
                     #core_root::AuthError::internal("Incomplete secondary model snapshot"))?)?,)*
             })
         }
@@ -46,16 +46,16 @@ pub(crate) fn session_secondary_codec(
         let name = field.ident.as_ref().expect("named field");
         let key = name.to_string();
         if crate::is_option(&field.ty) {
-            quote! { #name: fields.remove(#key).map(::serde_json::from_value).transpose()?.flatten(), }
+            quote! { #name: fields.shift_remove(#key).map(#core_root::utils::json::from_value).transpose()?.flatten(), }
         } else {
-            quote! { #name: ::serde_json::from_value(fields.remove(#key).ok_or_else(||
+            quote! { #name: #core_root::utils::json::from_value(fields.shift_remove(#key).ok_or_else(||
                 #core_root::AuthError::internal("Incomplete secondary session snapshot"))?)?, }
         }
     });
     let inverse = entity_fields.iter().map(|field| {
         let key = field.ident.to_string();
         let wire = &field.camel;
-        quote! { #key => #wire, }
+        quote! { Some(#key) => #core_root::utils::json::JsString::from(#wire), }
     });
     let absent = entity_fields.iter().map(|field| {
         let key = field.ident.to_string();
@@ -67,34 +67,34 @@ pub(crate) fn session_secondary_codec(
         .map(|field| {
             let key = field.ident.to_string();
             let wire = &field.camel;
-            quote! { #wire => #key, }
+            quote! { Some(#wire) => #core_root::utils::json::JsString::from(#key), }
         })
         .collect::<Vec<_>>();
     let removals = entity_fields.iter().map(|field| {
         let key = field.ident.to_string();
         let wire = &field.camel;
-        quote! { if native.field_is_undefined(#wire) { _ = snapshot.remove(#key); } }
+        quote! { if native.field_is_undefined(#wire) { _ = snapshot.shift_remove(#key); } }
     });
     quote! {
-        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
-            let mut snapshot = ::serde_json::Map::new();
-            #(_ = snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?);)*
-            Ok(::serde_json::Value::Object(snapshot))
+        fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
+            let mut snapshot = #core_root::utils::json::JsObject::new();
+            #(_ = snapshot.insert(#keys.into(), #core_root::utils::json::to_js_value(&self.#names)?);)*
+            Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
-        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
-            let ::serde_json::Value::Object(mut fields) = snapshot else {
+        fn from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<Self> {
+            let #core_root::utils::json::JsValue::Object(mut fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
             Ok(Self { #(#decode)* })
         }
-        fn output_from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<#core_root::AdapterOutput> {
-            let ::serde_json::Value::Object(fields) = snapshot else {
+        fn output_from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<#core_root::AdapterOutput> {
+            let #core_root::utils::json::JsValue::Object(fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
             let mut output = #core_root::AdapterOutput::default();
             for (key, value) in &fields {
-                let wire = match key.as_str() { #(#inverse)* _ => key.as_str() };
-                output.insert(wire.to_owned(), Some(value.clone()));
+                let wire = match key.as_str() { #(#inverse)* _ => key.clone() };
+                output.insert_js(wire, value.clone());
             }
             #(#absent)*
             Ok(output)
@@ -102,22 +102,22 @@ pub(crate) fn session_secondary_codec(
         fn secondary_snapshot_with_native_output(
             &self,
             native: &#core_root::AdapterOutput,
-        ) -> #core_root::AuthResult<::serde_json::Value> {
-            let ::serde_json::Value::Object(mut snapshot) = self.secondary_snapshot()? else {
+        ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
+            let #core_root::utils::json::JsValue::Object(mut snapshot) = self.secondary_snapshot()? else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
             // Unknown trusted properties survive; declared logical names map to
             // actual Rust fields, never to renamed database columns.
             for name in snapshot.keys().cloned().chain(native.values().keys().cloned()).collect::<Vec<_>>() {
-                let key = match name.as_str() { #(#mapping)* _ => name.as_str() };
-                if native.field_is_undefined(&name) {
-                    _ = snapshot.remove(key);
+                let key = match name.as_str() { #(#mapping)* _ => name.clone() };
+                if native.values().get(&name).is_some_and(#core_root::utils::json::JsValue::is_undefined) {
+                    _ = snapshot.shift_remove(&key);
                 } else if let Some(value) = native.values().get(&name) {
-                    _ = snapshot.insert(key.to_owned(), value.clone());
+                    _ = snapshot.insert(key, value.clone());
                 }
             }
             #(#removals)*
-            Ok(::serde_json::Value::Object(snapshot))
+            Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
     }
 }
@@ -153,9 +153,9 @@ pub fn user_secondary_codec(
         let optional = crate::optional_field(fields, key);
         overlay.push(quote! {
             if native.field_is_undefined(#wire) {
-                _ = snapshot.remove(#key);
+                _ = snapshot.shift_remove(#key);
             } else if let Some(value) = native.values().get(#wire) {
-                _ = snapshot.insert(#key.to_owned(), value.clone());
+                _ = snapshot.insert(#key.into(), value.clone());
             }
         });
         capture.push(quote! {
@@ -170,23 +170,24 @@ pub fn user_secondary_codec(
             };
             quote! {
                 let millis = match value {
-                    ::serde_json::Value::String(value) => #core_root::utils::datetime::parse_date_millis(value),
-                    ::serde_json::Value::Number(value) => value.as_f64()
+                    #core_root::utils::json::JsValue::Date(value) => Some(value.timestamp_millis()),
+                    #core_root::utils::json::JsValue::String(value) => value.as_str().and_then(#core_root::utils::datetime::parse_date_millis),
+                    #core_root::utils::json::JsValue::Number(value) => Some(*value)
                         .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
                         .map(|value| value.trunc() as i64),
-                    ::serde_json::Value::Bool(value) => Some(i64::from(*value)),
-                    ::serde_json::Value::Null => Some(0),
+                    #core_root::utils::json::JsValue::Bool(value) => Some(i64::from(*value)),
+                    #core_root::utils::json::JsValue::Null => Some(0),
                     _ => None,
                 };
                 // Unrepresentable native dates remain in the retained output;
                 // the typed model alone cannot represent Invalid Date.
                 let typed = millis.and_then(::chrono::DateTime::<::chrono::Utc>::from_timestamp_millis)
                     .unwrap_or(::chrono::DateTime::<::chrono::Utc>::UNIX_EPOCH);
-                *value = ::serde_json::to_value(<#ty as #core_root::entity::AuthTimestamp>::from_utc(#utc))?;
+                *value = #core_root::utils::json::to_js_value(&<#ty as #core_root::entity::AuthTimestamp>::from_utc(#utc))?;
             }
         } else {
             quote! {
-                *value = ::serde_json::Value::Bool(#core_root::utils::json::JsValue::from(value.clone()).is_truthy());
+                *value = #core_root::utils::json::JsValue::Bool(#core_root::utils::json::JsValue::from(value.clone()).is_truthy());
             }
         };
         normalize.push(quote! {
@@ -217,26 +218,26 @@ pub fn user_secondary_codec(
                 matches!(arguments.args.first(), Some(syn::GenericArgument::Type(syn::Type::Path(inner)))
                     if inner.path.segments.last().is_some_and(|segment| segment.ident == "String"))
             });
-        if optional {
+        if optional || key == "metadata" {
             normalize.push(quote! {
                 if !fields.contains_key(#key) {
-                    _ = fields.insert(#key.to_owned(), ::serde_json::Value::Null);
+                    _ = fields.insert(#key.into(), #core_root::utils::json::JsValue::Null);
                 }
             });
         }
         if text {
             let surrogate = if optional {
-                quote! { ::serde_json::Value::Null }
+                quote! { #core_root::utils::json::JsValue::Null }
             } else {
-                quote! { ::serde_json::Value::String(::std::string::String::new()) }
+                quote! { #core_root::utils::json::JsValue::String(Default::default()) }
             };
             normalize.push(quote! {
-                if fields.get(#key).is_none_or(|value| !value.is_string()) {
-                    _ = fields.insert(#key.to_owned(), #surrogate);
+                if fields.get(#key).is_none_or(|value| value.as_str().is_none()) {
+                    _ = fields.insert(#key.into(), #surrogate);
                 }
             });
         }
-        if !(optional || text)
+        if !(optional || text || key == "metadata")
             || matches!(
                 key.as_str(),
                 "email_verified"
@@ -254,9 +255,9 @@ pub fn user_secondary_codec(
         let wire = &field.camel;
         overlay.push(quote! {
             if native.field_is_undefined(#wire) {
-                _ = snapshot.remove(#key);
+                _ = snapshot.shift_remove(#key);
             } else if let Some(value) = native.values().get(#wire) {
-                _ = snapshot.insert(#key.to_owned(), value.clone());
+                _ = snapshot.insert(#key.into(), value.clone());
             }
         });
         capture.push(quote! {
@@ -270,33 +271,33 @@ pub fn user_secondary_codec(
         .collect();
     let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
     quote! {
-        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
-            let mut snapshot = ::serde_json::Map::new();
-            #(_ = snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?);)*
-            Ok(::serde_json::Value::Object(snapshot))
+        fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
+            let mut snapshot = #core_root::utils::json::JsObject::new();
+            #(_ = snapshot.insert(#keys.into(), #core_root::utils::json::to_js_value(&self.#names)?);)*
+            Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
         fn secondary_snapshot_with_native_output(
             &self,
             native: &#core_root::AdapterOutput,
-        ) -> #core_root::AuthResult<::serde_json::Value> {
-            let ::serde_json::Value::Object(mut snapshot) = self.secondary_snapshot()? else {
+        ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
+            let #core_root::utils::json::JsValue::Object(mut snapshot) = self.secondary_snapshot()? else {
                 return Err(#core_root::AuthError::internal("Invalid secondary user snapshot"));
             };
             #(#overlay)*
-            Ok(::serde_json::Value::Object(snapshot))
+            Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
-        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
-            let ::serde_json::Value::Object(mut fields) = snapshot else {
+        fn from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<Self> {
+            let #core_root::utils::json::JsValue::Object(mut fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary user snapshot"));
             };
             #(#normalize)*
             Ok(Self {
-                #(#names: ::serde_json::from_value(fields.remove(#keys).ok_or_else(||
+                #(#names: #core_root::utils::json::from_value(fields.shift_remove(#keys).ok_or_else(||
                     #core_root::AuthError::internal("Incomplete secondary user snapshot"))?)?,)*
             })
         }
-        fn from_secondary_snapshot_record(snapshot: ::serde_json::Value) -> #core_root::AuthResult<#core_root::AdapterRecord<Self>> {
-            let ::serde_json::Value::Object(source) = &snapshot else {
+        fn from_secondary_snapshot_record(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<#core_root::AdapterRecord<Self>> {
+            let #core_root::utils::json::JsValue::Object(source) = &snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary user snapshot"));
             };
             let mut native = #core_root::AdapterOutput::default();

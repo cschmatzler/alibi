@@ -43,7 +43,7 @@ pub(super) async fn find_user_by_id<M: SqlxUserModel>(
 pub(super) async fn native_user_output<M: SqlxUserModel>(
     exec: Exec<'_>,
     id: &str,
-) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+) -> AuthResult<std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>> {
     let mut output = std::collections::BTreeMap::new();
     if exec.engine() != Engine::Sqlite {
         return Ok(output);
@@ -82,11 +82,13 @@ pub(super) async fn native_user_output<M: SqlxUserModel>(
         sql.compare(M::TABLE, M::id_column(), " = ", M::parse_id(id)?);
         sql.push(" LIMIT 1");
         if let Some(value) = exec.fetch_scalar::<String>(sql).await? {
-            let mut value: serde_json::Value = serde_json::from_str(&value)?;
+            let mut value = alibi_core::utils::json::parse_value(&value)?;
             if date && let Some(text) = value.as_str() {
                 value = alibi_core::utils::datetime::parse_date_millis(text)
                     .map(alibi_core::utils::datetime::json_date_millis)
-                    .map_or(serde_json::Value::Null, serde_json::Value::String);
+                    .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                        alibi_core::utils::json::JsValue::String(value.into())
+                    });
             }
             _ = output.insert(field.to_owned(), value);
         }
@@ -173,7 +175,7 @@ async fn stage_provider_text<M: SqlxUserModel>(
     email: Option<alibi_core::utils::json::JsValue>,
 ) -> AuthResult<()> {
     for (field, raw) in [("name", name), ("image", image), ("email", email)] {
-        let Some(raw) = raw else {
+        let Some(raw) = raw.filter(|value| !value.is_undefined()) else {
             continue;
         };
         if raw.is_array() || raw.is_object() {
@@ -225,13 +227,13 @@ where
         if create_user.id.as_deref() == Some("") {
             _ = create_user
                 .adapter_native_fields
-                .insert("id".into(), serde_json::json!(""));
+                .insert("id".into(), serde_json::json!("").into());
             create_user.id = None;
         }
         if create_user
             .adapter_native_fields
             .get("id")
-            .is_some_and(serde_json::Value::is_null)
+            .is_some_and(alibi_core::utils::json::JsValue::is_null)
         {
             _ = create_user.adapter_native_fields.remove("id");
         }
@@ -283,6 +285,9 @@ where
             S::User::set_additional_field(&mut active, column, value, backend)?;
         }
         for (field, raw) in native_fields {
+            if raw.is_undefined() {
+                continue;
+            }
             let Some(column) = S::User::list_users_column(&field) else {
                 continue;
             };
@@ -296,7 +301,7 @@ where
             let value =
                 crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
             let value = if matches!(field.as_str(), "createdAt" | "updatedAt" | "banExpires") {
-                match value {
+                match crate::additional_fields::bind_scalar(value)? {
                     SqlValue::Text(Some(value)) if backend == Engine::Sqlite => {
                         SqlValue::Text(Some(value))
                     }
@@ -530,10 +535,14 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SqlxUserModel,
 {
+    fn supports_native_json(&self) -> bool {
+        self.exec().engine() != Engine::Sqlite
+    }
+
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>> {
         native_user_output::<S::User>(self.exec(), id).await
     }
 
@@ -838,6 +847,9 @@ where
         S::User::prepare_json_metadata(&mut active, backend)?;
 
         for (field, raw) in native_fields {
+            if raw.is_undefined() {
+                continue;
+            }
             if !matches!(
                 field.as_str(),
                 "banExpires" | "username" | "displayUsername"
@@ -852,23 +864,22 @@ where
             }
             let value =
                 crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
-            let value = match value {
-                SqlValue::Text(Some(value))
-                    if field == "banExpires" && backend != Engine::Sqlite =>
-                {
-                    chrono::DateTime::parse_from_rfc3339(&value)
+            let value = if field == "banExpires" && backend != Engine::Sqlite {
+                match crate::additional_fields::bind_scalar(value)? {
+                    SqlValue::Text(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
                         .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
-                        .map_err(|error| AuthError::internal(error.to_string()))?
+                        .map_err(|error| AuthError::internal(error.to_string()))?,
+                    SqlValue::Text(None) => SqlValue::Timestamp(None),
+                    value => value,
                 }
-                SqlValue::Text(None) if field == "banExpires" => SqlValue::Timestamp(None),
-                value => value,
+            } else {
+                crate::additional_fields::prepare_value(
+                    exec,
+                    <S::User as SqlxModel>::column_kind(column),
+                    value,
+                )
+                .await?
             };
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::User as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
             active.set(column, value);
         }
         let user = model::update::<S::User>(exec, &active)
@@ -905,7 +916,8 @@ where
         ) {
             return Err(AuthError::internal("Unsupported native user SQL parameter"));
         }
-        let value = crate::additional_fields::raw_value(username)?;
+        let value =
+            crate::additional_fields::bind_scalar(crate::additional_fields::raw_value(username)?)?;
         exec.fetch_optional(self.user_lookup(column, value)).await
     }
 

@@ -558,7 +558,7 @@ impl ApiKeyPlugin {
                 if let Some((user, session)) = &session {
                     call.record_authenticated_session(
                         match user {
-                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                             alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                         },
                         session.clone(),
@@ -629,7 +629,7 @@ impl ApiKeyPlugin {
                 if let Some((user, session)) = &session {
                     call.record_authenticated_session(
                         match user {
-                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                             alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                         },
                         session.clone(),
@@ -742,7 +742,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
             )?)));
         };
         let session = Self::virtual_session_from_key(&view, &key, &user, call.request(), ctx)?;
-        let user_view = ctx.user_view(&user);
+        let user_view = ctx.user_view(&user)?;
         call.establish_session::<S>(user, user_view.clone(), session.clone(), ctx);
         if call.path() == Some("/get-session") {
             return Ok(Some(BeforeEndpointAction::Respond(EndpointResponse::json(

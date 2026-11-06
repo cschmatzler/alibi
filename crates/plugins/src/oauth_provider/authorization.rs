@@ -568,7 +568,7 @@ impl OAuthProviderPlugin {
             && let Some(selection) = &self.config.select_account
             && let Some((user, session)) = &session
         {
-            let user = ctx.user_view(user);
+            let user = ctx.user_view(user)?;
             let scopes = requested
                 .iter()
                 .map(|scope| (*scope).to_owned())
@@ -614,7 +614,7 @@ impl OAuthProviderPlugin {
                 .and_then(|signup| signup.should_redirect.as_ref())
             && let Some((user, session)) = &session
         {
-            let user = ctx.user_view(user);
+            let user = ctx.user_view(user)?;
             let scopes = requested
                 .iter()
                 .map(|scope| (*scope).to_owned())
@@ -660,7 +660,7 @@ impl OAuthProviderPlugin {
             && let Some((user, session)) = &session
             && settings.post_login_cleared_for_session.as_deref() != Some(session.id.as_str())
         {
-            let user = ctx.user_view(user);
+            let user = ctx.user_view(user)?;
             let scopes = requested
                 .iter()
                 .map(|scope| (*scope).to_owned())
@@ -714,7 +714,7 @@ impl OAuthProviderPlugin {
                 .iter()
                 .map(|scope| (*scope).to_owned())
                 .collect::<Vec<_>>();
-            self.consent_reference_id(&ctx.user_view(user), session, &scopes)
+            self.consent_reference_id(&ctx.user_view(user)?, session, &scopes)
                 .await?
         } else {
             None

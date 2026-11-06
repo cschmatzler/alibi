@@ -21,14 +21,17 @@ fn snapshot() -> Value {
 #[test]
 fn session_secondary_codec_round_trips_physical_camel_case_fields() {
     let physical = snapshot();
-    let session = SessionView::from_secondary_snapshot(physical.clone()).unwrap();
+    let session = SessionView::from_secondary_snapshot(physical.clone().into()).unwrap();
     assert_eq!(session.id(), "session-physical");
     assert_eq!(session.token(), "issued-token");
     assert_eq!(session.user_id(), "user-physical");
     assert_eq!(session.created_at().timestamp_millis(), 1_767_323_045_678);
     assert_eq!(session.active_organization_id(), Some("org-physical"));
     assert_eq!(session.secondary_snapshot().unwrap(), physical);
-    assert_eq!(session.additional_fields()["custom"], physical["custom"]);
+    assert_eq!(
+        session.additional_js_fields().unwrap()["custom"],
+        physical["custom"]
+    );
     assert_eq!(SessionView::from(&session), session);
 }
 
@@ -44,7 +47,7 @@ fn session_secondary_codec_distinguishes_optional_absence_and_null() {
     ] {
         let mut absent = snapshot();
         absent.as_object_mut().unwrap().remove(name);
-        let session = SessionView::from_secondary_snapshot(absent.clone()).unwrap();
+        let session = SessionView::from_secondary_snapshot(absent.clone().into()).unwrap();
         assert_eq!(
             session.secondary_snapshot().unwrap(),
             absent,
@@ -57,7 +60,7 @@ fn session_secondary_codec_distinguishes_optional_absence_and_null() {
 
         let mut null = absent;
         null[name] = Value::Null;
-        let session = SessionView::from_secondary_snapshot(null.clone()).unwrap();
+        let session = SessionView::from_secondary_snapshot(null.clone().into()).unwrap();
         assert_eq!(session.secondary_snapshot().unwrap(), null, "{name} null");
         assert_eq!(
             serde_json::to_value(SessionView::from(&session)).unwrap(),
@@ -69,7 +72,7 @@ fn session_secondary_codec_distinguishes_optional_absence_and_null() {
 #[test]
 fn session_secondary_creation_clock_correction_does_not_mutate_model() {
     let physical = snapshot();
-    let session = SessionView::from_secondary_snapshot(physical.clone()).unwrap();
+    let session = SessionView::from_secondary_snapshot(physical.clone().into()).unwrap();
     let corrected = session
         .secondary_snapshot_for_creation(Utc.timestamp_millis_opt(1_767_323_045_999).unwrap())
         .unwrap();
@@ -91,7 +94,7 @@ fn session_secondary_codec_rejects_unrepresentable_required_values_without_fabri
                 }
             }
             assert!(
-                SessionView::from_secondary_snapshot(physical).is_err(),
+                SessionView::from_secondary_snapshot(physical.into()).is_err(),
                 "{name}"
             );
         }
@@ -113,7 +116,7 @@ fn session_secondary_codec_rejects_unrepresentable_required_values_without_fabri
                 }
             }
             assert!(
-                SessionView::from_secondary_snapshot(physical).is_err(),
+                SessionView::from_secondary_snapshot(physical.into()).is_err(),
                 "{name}"
             );
         }
@@ -142,7 +145,7 @@ fn session_secondary_codec_revives_representable_javascript_dates() {
         ] {
             let mut physical = snapshot();
             physical[name] = input;
-            let session = SessionView::from_secondary_snapshot(physical.clone()).unwrap();
+            let session = SessionView::from_secondary_snapshot(physical.clone().into()).unwrap();
             physical[name] = json!(expected);
             assert_eq!(session.secondary_snapshot().unwrap(), physical);
         }
@@ -151,11 +154,11 @@ fn session_secondary_codec_revives_representable_javascript_dates() {
 
 #[test]
 fn session_secondary_codec_retains_configured_scope_extension_values() {
-    let mut session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    let mut session = SessionView::from_secondary_snapshot(snapshot().into()).unwrap();
     for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
         session
             .extension_fields
-            .insert(name.into(), json!("configured-scope"));
+            .insert(name.into(), json!("configured-scope").into());
     }
     let encoded = session.secondary_snapshot().unwrap();
     for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
@@ -165,10 +168,10 @@ fn session_secondary_codec_retains_configured_scope_extension_values() {
 
 #[test]
 fn session_secondary_creation_clock_replaces_raw_shadow_without_mutation() {
-    let mut session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    let mut session = SessionView::from_secondary_snapshot(snapshot().into()).unwrap();
     session
         .extension_fields
-        .insert("createdAt".into(), json!("1999-01-01T00:00:00.000Z"));
+        .insert("createdAt".into(), json!("1999-01-01T00:00:00.000Z").into());
     let before = session.clone();
     let corrected = session
         .secondary_snapshot_for_creation(Utc.timestamp_millis_opt(1_767_323_045_999).unwrap())
@@ -183,18 +186,18 @@ fn session_secondary_creation_clock_replaces_raw_shadow_without_mutation() {
 
 #[test]
 fn session_native_output_overlay_keeps_null_undefined_extras_and_original_creation_clock() {
-    let session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    let session = SessionView::from_secondary_snapshot(snapshot().into()).unwrap();
     let clock = chrono::DateTime::from_timestamp_millis(1_800_000_000_789).unwrap();
     let mut native = crate::AdapterOutput::default();
-    native.insert("custom".into(), Some(serde_json::Value::Null));
+    native.insert("custom".into(), Some(serde_json::Value::Null.into()));
     native.insert("ipAddress".into(), None);
     native.insert(
         "unknownTrustedObject".into(),
-        Some(serde_json::json!({"nested":[true,null]})),
+        Some(serde_json::json!({"nested":[true,null]}).into()),
     );
     native.insert(
         "createdAt".into(),
-        Some(serde_json::json!("2001-01-01T00:00:00.000Z")),
+        Some(serde_json::json!("2001-01-01T00:00:00.000Z").into()),
     );
     let projected = session
         .secondary_snapshot_with_native_output(&native)

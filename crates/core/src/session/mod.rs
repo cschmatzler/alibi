@@ -574,7 +574,7 @@ mod tests {
         let session = SessionView {
             omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
@@ -600,7 +600,7 @@ mod tests {
         let session = SessionView {
             omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
@@ -624,7 +624,7 @@ mod tests {
         let session = SessionView {
             omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
             id: "s1".into(),
             expires_at: Utc::now() + Duration::hours(1),
             token: "tok".into(),
@@ -899,8 +899,8 @@ mod publication_contract_tests {
     struct ManualCodecSession(crate::SessionView);
 
     impl crate::AuthSession for ManualCodecSession {
-        fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
-            Ok(serde_json::json!({ "manualCreationClock": self.0.created_at }))
+        fn secondary_snapshot(&self) -> AuthResult<crate::utils::json::JsValue> {
+            Ok(serde_json::json!({ "manualCreationClock": self.0.created_at }).into())
         }
         fn id(&self) -> std::borrow::Cow<'_, str> {
             self.0.id()

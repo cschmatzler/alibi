@@ -48,8 +48,8 @@ mod tests {
             phone_number: None,
             phone_number_verified: None,
             last_login_method: None,
-            extension_fields: std::collections::BTreeMap::default(),
-            metadata: serde_json::json!({}),
+            extension_fields: Default::default(),
+            metadata: serde_json::json!({}).into(),
         };
 
         let json = serde_json::to_value(UserView::from(&user)).expect("serialize user view");
@@ -88,7 +88,7 @@ mod tests {
             impersonated_by: Some("admin-1".to_owned()),
             active_organization_id: Some("org-1".to_owned()),
             active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
         };
 
         let json =

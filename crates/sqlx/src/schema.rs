@@ -22,7 +22,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: Engine,
-    ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
+    ) -> AuthResult<Vec<(&'static str, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
@@ -120,7 +120,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: Engine,
-    ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
+    ) -> AuthResult<Vec<(&'static str, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
@@ -195,7 +195,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: Engine,
-    ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
+    ) -> AuthResult<Vec<(&'static str, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }

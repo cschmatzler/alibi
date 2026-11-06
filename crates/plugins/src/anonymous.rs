@@ -268,7 +268,7 @@ impl AnonymousPlugin {
         record_completed_session_record::<S>(&user, &issued.session);
         let mut response = AuthResponse::json(
             200,
-            &json!({"token":issued.session.token(),"user":ctx.user_view(&user)}),
+            &json!({"token":issued.session.token(),"user":ctx.user_view(&user)?}),
         )?;
 
         let preference_name = related_cookie_name(&ctx.config, "dont_remember");
@@ -542,14 +542,14 @@ impl AnonymousPlugin {
         if let Some(linker) = &self.config.on_link_account {
             // The new-user callback receives the real newly issued session,
             // including adapter fields hidden from public session responses.
-            let mut new_session = issued.callback_session(ctx);
+            let mut new_session = issued.callback_session(ctx)?;
             new_session.omitted_fields.clear();
             linker
                 .link(
                     &AnonymousLink {
                         anonymous_user: old_user.clone(),
-                        anonymous_session: ctx.session_view(&old_session),
-                        new_user: issued.callback_user(ctx),
+                        anonymous_session: ctx.session_view(&old_session)?,
+                        new_user: issued.callback_user(ctx)?,
                         new_session,
                     },
                     &alibi_core::CallbackContext::new(ctx, req.physical_request()),
@@ -668,7 +668,7 @@ async fn resolve_anonymous_session<S: AuthSchema>(
         && user.is_anonymous() == Some(true)
     {
         let user = match user {
-            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user)?,
             alibi_core::AuthenticatedUser::Cached(user) => *user,
         };
         return Ok(Some((user, session)));
@@ -695,7 +695,9 @@ async fn resolve_anonymous_session<S: AuthSchema>(
         .await?
         .into_iter()
         .find(|session| session.expires_at() > chrono::Utc::now());
-    Ok(session.map(|session| (ctx.trusted_user_view(&user), ctx.session_view(&session))))
+    session
+        .map(|session| Ok((ctx.trusted_user_view(&user)?, ctx.session_view(&session)?)))
+        .transpose()
 }
 
 // An ordinary application exception has an empty 500 wire. Explicit typed

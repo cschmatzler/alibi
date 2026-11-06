@@ -8,7 +8,7 @@ use validator::Validate;
 pub struct CreateUser {
     /// Trusted native adapter inputs; HTTP deserialization cannot populate this channel.
     #[serde(skip)]
-    pub adapter_native_fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub adapter_native_fields: std::collections::BTreeMap<String, crate::utils::json::JsValue>,
     /// Trusted provider value before boolean storage conversion. HTTP input
     /// cannot populate this; native accessors retain their boolean interface.
     #[serde(skip)]
@@ -55,7 +55,7 @@ pub struct CreateUser {
 pub struct UpdateUser {
     /// Trusted native adapter updates; HTTP deserialization cannot populate this channel.
     #[serde(skip)]
-    pub adapter_native_fields: std::collections::BTreeMap<String, serde_json::Value>,
+    pub adapter_native_fields: std::collections::BTreeMap<String, crate::utils::json::JsValue>,
     /// Trusted provider value, independent from the typed boolean authority.
     #[serde(skip)]
     pub provider_email_verified: Option<crate::utils::json::JsValue>,

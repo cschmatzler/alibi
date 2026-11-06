@@ -1,11 +1,11 @@
 use crate::AdapterRecord;
+#[cfg(test)]
+use crate::AuthUser;
 use crate::store::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateStep, UserCreationDefaults,
     UserUpdateStep,
 };
 use crate::{AuthAccount, AuthSession};
-#[cfg(test)]
-use crate::AuthUser;
 use crate::{AuthError, AuthResult, AuthSchema, AuthStore};
 use std::sync::Arc;
 mod account;
@@ -146,7 +146,12 @@ impl<S: AuthSchema> PluginStore<S> {
         let scalars = self.inner.native_user_output_for(&user).await?;
         self.user_record_with_native_output(
             user,
-            crate::AdapterOutput::from_values(scalars.into_iter().collect()),
+            crate::AdapterOutput::from_js_values(
+                scalars
+                    .into_iter()
+                    .map(|(name, value)| (name.into(), value))
+                    .collect(),
+            ),
         )
         .await
     }
@@ -157,12 +162,16 @@ impl<S: AuthSchema> PluginStore<S> {
         user: S::User,
         scalars: crate::AdapterOutput,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        let serde_json::Value::Object(base) =
-            serde_json::to_value(self.projection_context.trusted_user_view(&user))?
+        let crate::utils::json::JsValue::Object(base) = crate::utils::json::to_js_value(
+            &self
+                .projection_context
+                .trusted_user_view_without_metadata(&user)?,
+        )?
         else {
             return Err(AuthError::internal("User output must be an object"));
         };
-        let mut source = AdapterRecord::with_output(user, crate::AdapterOutput::from_values(base));
+        let mut source =
+            AdapterRecord::with_output(user, crate::AdapterOutput::from_js_values(base));
         source.retain_native_output(scalars.clone());
         let projected = self.projection_context.user_adapter_record(source).await?;
         let mut output = projected.raw_snapshot().clone();
@@ -221,13 +230,19 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: S::Session,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let public = serde_json::to_value(crate::SessionView::from(&session))?;
+        let public = crate::utils::json::to_js_value(&crate::SessionView::from(&session))?;
+        let base = crate::SessionView::from(&session);
         let physical =
-            serde_json::to_value(self.projection_context.trusted_session_view(&session))?;
-        let additional = session.additional_fields();
+            crate::utils::json::to_js_value(&self.projection_context.trusted_session_view(&base)?)?;
+        let supports_json = self.inner.supports_native_json();
+        let additional = if supports_json {
+            session.additional_js_fields()?
+        } else {
+            session.adapter_js_fields(&self.adapter_fields.exact_json_fields())?
+        };
         let output = self
             .adapter_fields
-            .record_output(public, additional, physical)
+            .record_output(public, additional, physical, supports_json)
             .await?;
         Ok(AdapterRecord::with_output(session, output))
     }
@@ -287,24 +302,32 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         account: S::Account,
     ) -> AuthResult<AdapterRecord<S::Account>> {
-        let serde_json::Value::Object(mut canonical) =
-            serde_json::to_value(crate::AccountView::from(&account))?
+        let crate::utils::json::JsValue::Object(mut canonical) =
+            crate::utils::json::to_js_value(&crate::AccountView::from(&account))?
         else {
             return Err(AuthError::internal("Account output must be an object"));
         };
         _ = canonical.insert(
             "password".into(),
-            account.password().map_or(serde_json::Value::Null, |value| {
-                serde_json::Value::String(value.into())
-            }),
+            account
+                .password()
+                .map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.into())
+                }),
         );
-        let output = self
-            .field_policies()
-            .account
+        let fields = self.field_policies().account.clone();
+        let supports_json = self.inner.supports_native_json();
+        let additional = if supports_json {
+            account.additional_js_fields()?
+        } else {
+            account.adapter_js_fields(&fields.exact_json_fields())?
+        };
+        let output = fields
             .record_output(
-                serde_json::Value::Object(canonical.clone()),
-                account.additional_fields(),
-                serde_json::Value::Object(canonical),
+                crate::utils::json::JsValue::Object(canonical.clone()),
+                additional,
+                crate::utils::json::JsValue::Object(canonical),
+                supports_json,
             )
             .await?;
         Ok(AdapterRecord::with_output(account, output))

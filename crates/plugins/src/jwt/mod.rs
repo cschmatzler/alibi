@@ -269,7 +269,7 @@ const fn unauthorized() -> AuthError {
 impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S> for JwtPlugin {
     async fn sign(
         &self,
-        payload: Value,
+        payload: alibi_core::utils::json::JsValue,
         max_age: f64,
         ctx: &AuthContext<S>,
         transaction: Option<&dyn alibi_core::store::AuthTransaction<S>>,
@@ -298,18 +298,28 @@ impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S>
             .ok_or_else(|| AuthError::internal("Missing session owner"))?;
         _ = claims.insert("sid".into(), sid);
         _ = claims.insert("sub".into(), sub);
-        _ = claims.insert("iss".into(), json!(cache_issuer(ctx)));
-        _ = claims.insert("aud".into(), json!("better-auth:session-cache"));
+        _ = claims.insert(
+            "iss".into(),
+            alibi_core::utils::json::JsValue::String(cache_issuer(ctx).into()),
+        );
+        _ = claims.insert(
+            "aud".into(),
+            alibi_core::utils::json::JsValue::String("better-auth:session-cache".into()),
+        );
         let options = JwtSignOptions {
             header: Some(serde_json::from_value(
                 json!({"typ":"better-auth.session-cache+jwt"}),
             )?),
             ..JwtSignOptions::default()
         };
-        Self::sign_resolved(claims.clone(), &options, &key)
+        Self::sign_prepared_cache_claims(claims, &options, &key)
     }
 
-    async fn verify(&self, token: &str, ctx: &AuthContext<S>) -> AuthResult<Option<Value>> {
+    async fn verify(
+        &self,
+        token: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::utils::json::JsValue>> {
         let Some(header) = token
             .split('.')
             .next()
@@ -328,7 +338,7 @@ impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S>
             require_nonempty_subject: true,
         };
         let Some(payload) = self
-            .verify_internal(token, &policy, None, ctx)
+            .verify_internal_native(token, &policy, None, ctx)
             .await
             .unwrap_or(None)
         else {
@@ -342,7 +352,7 @@ impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S>
         {
             return Ok(None);
         }
-        Ok(Some(Value::Object(payload)))
+        Ok(Some(alibi_core::utils::json::JsValue::Object(payload)))
     }
 }
 
@@ -355,6 +365,8 @@ fn cache_issuer<S: AuthSchema>(ctx: &AuthContext<S>) -> &str {
 }
 
 // LCOV_EXCL_START
+#[cfg(test)]
+mod native_cache_tests;
 #[cfg(test)]
 mod tests {
     #![allow(

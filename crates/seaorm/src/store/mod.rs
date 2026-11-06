@@ -1,5 +1,8 @@
 //! SeaORM-backed persistence implementation for built-in auth tables.
 
+#[cfg(test)]
+mod json_metadata_tests;
+
 mod accounts;
 mod api_key_usage_phases;
 mod api_keys;
@@ -713,7 +716,7 @@ where
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>> {
         users::native_user_output::<S::User, _>(self.tx, id).await
     }
 

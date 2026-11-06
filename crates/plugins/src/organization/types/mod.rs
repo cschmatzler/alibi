@@ -417,7 +417,7 @@ pub struct CreatedOrganizationResponse {
     #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<alibi_core::utils::json::JsValue>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -431,7 +431,7 @@ pub struct OrganizationResponse {
     #[serde(rename = "createdAt")]
     #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub metadata: Option<serde_json::Value>,
+    pub metadata: Option<alibi_core::utils::json::JsValue>,
 }
 
 impl CreatedOrganizationResponse {
@@ -444,7 +444,7 @@ impl CreatedOrganizationResponse {
             slug: organization.slug().to_owned(),
             logo: organization.logo().map(str::to_owned),
             created_at: organization.created_at(),
-            metadata: organization.metadata().cloned(),
+            metadata: organization.metadata(),
         }
     }
 }
@@ -457,14 +457,10 @@ impl OrganizationResponse {
         response.metadata = response
             .metadata
             .map(|value| match value {
-                serde_json::Value::String(value) => Ok(serde_json::Value::String(value)),
-                value @ (serde_json::Value::Null
-                | serde_json::Value::Bool(_)
-                | serde_json::Value::Number(_)
-                | serde_json::Value::Array(_)
-                | serde_json::Value::Object(_)) => {
-                    alibi_core::utils::json::to_string(&value).map(serde_json::Value::String)
-                }
+                value @ (alibi_core::utils::json::JsValue::String(_)
+                | alibi_core::utils::json::JsValue::Undefined) => Ok(value),
+                value => alibi_core::utils::json::to_string(&value)
+                    .map(|text| alibi_core::utils::json::JsValue::String(text.into())),
             })
             .transpose()?;
         Ok(response)
@@ -479,7 +475,7 @@ impl OrganizationResponse {
             slug: organization.slug().to_owned(),
             logo: organization.logo().map(str::to_owned),
             created_at: organization.created_at(),
-            metadata: organization.metadata().cloned(),
+            metadata: organization.metadata(),
         }
     }
 }

@@ -2,15 +2,15 @@ use super::JwtAlgorithm;
 use super::JwtAudience;
 use super::JwtPlugin;
 use super::JwtVerifyPolicy;
-use super::claims::decode_compact_json;
 use super::claims::decode_compact_part;
-use super::claims::js_truthy;
 use super::claims::validate_critical_header;
+use super::claims::{decode_compact_json, decode_compact_native_json};
 use super::crypto;
 use alibi_core::AuthContext;
 use alibi_core::AuthRequest;
 use alibi_core::AuthResult;
 use alibi_core::AuthSchema;
+use alibi_core::utils::json::{JsObject, JsValue};
 use chrono::Utc;
 use serde_json::Map;
 use serde_json::Value;
@@ -57,7 +57,23 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Option<Map<String, Value>>> {
-        let Some(payload) = self.verify_signed_payload(token, request, ctx).await? else {
+        Self::ordinary_signed_payload(
+            self.verify_internal_native(token, policy, request, ctx)
+                .await?,
+        )
+    }
+
+    pub(in crate::jwt) async fn verify_internal_native(
+        &self,
+        token: &str,
+        policy: &JwtVerifyPolicy<'_>,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Option<JsObject>> {
+        let Some(payload) = self
+            .verify_signed_payload_inner(token, request, ctx, true)
+            .await?
+        else {
             return Ok(None);
         };
         let now = Utc::now().timestamp();
@@ -68,19 +84,19 @@ impl JwtPlugin {
         }
         if payload
             .get("exp")
-            .and_then(Value::as_f64)
+            .and_then(JsValue::as_f64)
             .is_some_and(|exp| exp <= (now - policy.tolerance) as f64)
             || payload
                 .get("nbf")
-                .and_then(Value::as_f64)
+                .and_then(JsValue::as_f64)
                 .is_some_and(|nbf| nbf > (now + policy.tolerance) as f64)
-            || payload.get("iss").and_then(Value::as_str) != Some(policy.issuer)
+            || payload.get("iss").and_then(JsValue::as_str) != Some(policy.issuer)
             || !payload
                 .get("aud")
-                .is_some_and(|value| policy.audience.matches(value))
-            || payload.get("aud").is_none_or(|value| !js_truthy(value))
+                .is_some_and(|value| policy.audience.matches_native(value))
+            || payload.get("aud").is_none_or(|value| !value.is_truthy())
             || (policy.require_nonempty_subject
-                && payload.get("sub").is_none_or(|value| !js_truthy(value)))
+                && payload.get("sub").is_none_or(|value| !value.is_truthy()))
         {
             return Ok(None);
         }
@@ -94,8 +110,10 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Option<Map<String, Value>>> {
-        self.verify_signed_payload_inner(token, request, ctx, true)
-            .await
+        Self::ordinary_signed_payload(
+            self.verify_signed_payload_inner(token, request, ctx, true)
+                .await?,
+        )
     }
     /// Resolve algorithm-compatible keys when an OAuth access JWS omits `kid`.
     pub(crate) async fn verify_signed_payload_with_optional_kid(
@@ -104,16 +122,33 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Option<Map<String, Value>>> {
-        self.verify_signed_payload_inner(token, request, ctx, false)
-            .await
+        Self::ordinary_signed_payload(
+            self.verify_signed_payload_inner(token, request, ctx, false)
+                .await?,
+        )
     }
+    fn ordinary_signed_payload(
+        payload: Option<JsObject>,
+    ) -> AuthResult<Option<Map<String, Value>>> {
+        payload
+            .map(|payload| {
+                let Value::Object(payload) = JsValue::Object(payload).to_json_value()? else {
+                    return Err(alibi_core::AuthError::internal(
+                        "Verified JWT claims must be an object",
+                    ));
+                };
+                Ok(payload)
+            })
+            .transpose()
+    }
+
     async fn verify_signed_payload_inner(
         &self,
         token: &str,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
         require_kid: bool,
-    ) -> AuthResult<Option<Map<String, Value>>> {
+    ) -> AuthResult<Option<JsObject>> {
         let parts = token.split('.').collect::<Vec<_>>();
         let [header, payload, signature] = parts.as_slice() else {
             return Ok(None);
@@ -156,7 +191,10 @@ impl JwtPlugin {
         if !verified {
             return Ok(None);
         }
-        let Some(payload) = decode_compact_json(payload, true)?.as_object().cloned() else {
+        let Some(payload) = decode_compact_native_json(payload, true)?
+            .as_object()
+            .cloned()
+        else {
             return Ok(None);
         };
         Ok(Some(payload))

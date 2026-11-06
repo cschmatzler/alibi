@@ -169,7 +169,7 @@ impl OAuthPlugin {
             .ok()
             .flatten();
         let user_id = if let Some(read) = read {
-            let user = ctx.user_view(&read.user);
+            let user = ctx.user_view(&read.user)?;
             call.record_authenticated_session(user.clone(), read.session);
             user.id
         } else {
@@ -396,7 +396,7 @@ impl OAuthPlugin {
                     code: codes::UNAUTHORIZED,
                     message: "Unauthorized",
                 })?;
-        call.record_authenticated_session(ctx.user_view(&user), session.clone());
+        call.record_authenticated_session(ctx.user_view(&user)?, session.clone());
         if let Some(token) = &body.id_token {
             let provider = self
                 .config

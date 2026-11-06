@@ -75,7 +75,7 @@ pub(crate) async fn request_password_reset_core(
     let auth_url = crate::helpers::auth_base_url(&ctx.config);
     let reset_url = format!("{auth_url}/reset-password/{reset_token}?callbackURL={callback_url}");
 
-    let user_value = password_utils::serialize_to_value(&ctx.user_view(&user))?;
+    let user_value = password_utils::serialize_to_value(&ctx.user_view(&user)?)?;
     let sender = std::sync::Arc::clone(sender);
     crate::authentication_helpers::run_owned_notification(
         ctx,
@@ -159,7 +159,7 @@ pub(crate) async fn reset_password_core(
     .await?;
 
     if let Some(callback) = &config.on_password_reset {
-        callback(password_utils::serialize_to_value(&ctx.user_view(&user))?).await?;
+        callback(password_utils::serialize_to_value(&ctx.user_view(&user)?)?).await?;
     }
 
     Ok(StatusResponse { status: true })
@@ -306,7 +306,7 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
 
     let response = ChangePasswordResponse {
         token: new_token.clone(),
-        user: ctx.user_view(user),
+        user: ctx.user_view(user)?,
     };
 
     Ok((response, new_token))

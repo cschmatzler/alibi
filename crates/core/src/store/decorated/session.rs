@@ -30,13 +30,14 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             let Some((_, user)) = self.cached_session_record(token).await? else {
                 return Ok(None);
             };
-            let serde_json::Value::Object(values) =
-                serde_json::to_value(self.projection_context.trusted_user_view(&user))?
+            let crate::utils::json::JsValue::Object(values) = crate::utils::json::to_js_value(
+                &self.projection_context.trusted_user_view(&user)?,
+            )?
             else {
                 return Err(AuthError::internal("User output must be an object"));
             };
             let mut output = user.raw_snapshot().clone();
-            output.extend(AdapterOutput::from_values(values));
+            output.extend(AdapterOutput::from_js_values(values));
             for field in ["createdAt", "updatedAt"] {
                 output.insert(
                     field.into(),
@@ -80,8 +81,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 ] {
                     output.insert(
                         name.into(),
-                        Some(serde_json::Value::String(
-                            crate::utils::datetime::json_date_millis(date.timestamp_millis()),
+                        Some(crate::utils::json::JsValue::String(
+                            crate::utils::datetime::json_date_millis(date.timestamp_millis())
+                                .into(),
                         )),
                     );
                 }
@@ -593,17 +595,18 @@ impl<S: AuthSchema> PluginStore<S> {
         if self.session_uses_database() {
             return self.session_record(session).await;
         }
-        let serde_json::Value::Object(mut values) =
-            serde_json::to_value(self.projection_context.trusted_session_view(&session))?
+        let crate::utils::json::JsValue::Object(mut values) = crate::utils::json::to_js_value(
+            &self.projection_context.trusted_session_view(&session)?,
+        )?
         else {
             return Err(AuthError::internal("Session output must be an object"));
         };
         for name in self.secondary_absent_fields(session.token()).await? {
-            _ = values.remove(&name);
+            _ = values.shift_remove(&name);
         }
         Ok(AdapterRecord::with_output(
             session,
-            AdapterOutput::from_values(values),
+            AdapterOutput::from_js_values(values),
         ))
     }
 
@@ -646,16 +649,22 @@ impl<S: AuthSchema> PluginStore<S> {
     }
 }
 
-fn revive_cached_user_date(value: Option<&serde_json::Value>) -> serde_json::Value {
-    use serde_json::Value;
+fn revive_cached_user_date(
+    value: Option<&crate::utils::json::JsValue>,
+) -> crate::utils::json::JsValue {
+    use crate::utils::json::JsValue as Value;
+    if let Some(Value::Date(date)) = value {
+        return Value::Date(*date);
+    }
     let millis = match value {
         Some(Value::Null) => Some(0),
         Some(Value::Bool(value)) => Some(i64::from(*value)),
-        Some(Value::Number(value)) => value
-            .as_f64()
+        Some(Value::Number(value)) => Some(*value)
             .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
             .map(|value| value.trunc() as i64),
-        Some(Value::String(value)) => crate::utils::datetime::parse_date_millis(value),
+        Some(Value::String(value)) => value
+            .as_str()
+            .and_then(crate::utils::datetime::parse_date_millis),
         Some(Value::Array(_)) => value
             .and_then(|value| {
                 crate::utils::json::JsValue::from(value.clone())
@@ -666,6 +675,6 @@ fn revive_cached_user_date(value: Option<&serde_json::Value>) -> serde_json::Val
         _ => None,
     };
     millis
-        .map(|millis| Value::String(crate::utils::datetime::json_date_millis(millis)))
+        .map(|millis| Value::String(crate::utils::datetime::json_date_millis(millis).into()))
         .unwrap_or(Value::Null)
 }

@@ -184,7 +184,7 @@ impl OAuthProviderPlugin {
         if let Some(user_id) = row.user_id.as_deref()
             && let Some(user) = ctx.database.get_user_by_id(user_id).await?
         {
-            params.user = Some(ctx.trusted_user_view(&user));
+            params.user = Some(ctx.trusted_user_view(&user)?);
         }
         params.reference_id = row
             .metadata

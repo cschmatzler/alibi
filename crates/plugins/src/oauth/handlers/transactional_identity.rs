@@ -284,11 +284,16 @@ pub(crate) async fn publish<S: AuthSchema>(
 ) -> AuthResult<ProcessOAuthUserResult> {
     crate::helpers::publish_committed_session(ctx, &authenticated.issued).await?;
     Ok(ProcessOAuthUserResult {
-        session: ctx.session_view(&authenticated.issued.session),
-        user: ctx.user_view(&authenticated.issued.user),
+        session: ctx.session_view(&authenticated.issued.session)?,
+        user: ctx.user_view(&authenticated.issued.user)?,
         is_register: authenticated.is_register,
-        account_cookie: ctx.config.account.store_account_cookie.then(|| {
-            crate::oauth::state::AccountCookiePayload::from_account(&authenticated.account)
-        }),
+        account_cookie: ctx
+            .config
+            .account
+            .store_account_cookie
+            .then(|| {
+                crate::oauth::state::AccountCookiePayload::from_account(&authenticated.account)
+            })
+            .transpose()?,
     })
 }

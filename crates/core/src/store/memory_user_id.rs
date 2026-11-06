@@ -12,20 +12,27 @@ impl MemoryUserId {
         Self::String(value.to_owned())
     }
 
-    pub(crate) fn supplied(native: Option<&serde_json::Value>) -> Option<(Self, String)> {
-        let value = JsValue::from(native?.clone());
+    pub(crate) fn supplied(native: Option<&JsValue>) -> crate::AuthResult<Option<(Self, String)>> {
+        let Some(value) = native else {
+            return Ok(None);
+        };
         if !value.is_truthy() {
-            return None;
+            return Ok(None);
         }
         let key = match &value {
-            JsValue::String(value) => {
-                Self::String(value.to_utf8().expect("native JSON ID is UTF-8"))
-            }
+            JsValue::String(value) => Self::String(value.to_utf8().map_err(|_| {
+                crate::AuthError::not_implemented(
+                    "UTF-16 user identity requires a canonical identity API",
+                )
+            })?),
             JsValue::Number(value) => Self::Number(if *value == 0.0 { 0 } else { value.to_bits() }),
             JsValue::Bool(value) => Self::Bool(*value),
-            _ => return None,
+            _ => return Ok(None),
         };
-        Some((key, value.coerce_string().expect("primitive ID conversion")))
+        Ok(Some((
+            key,
+            value.coerce_string().expect("primitive ID conversion"),
+        )))
     }
 
     fn native(&self) -> JsValue {

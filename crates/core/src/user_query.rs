@@ -136,10 +136,15 @@ pub(crate) fn matches_native_operand(lhs: &JsValue, rhs: &JsValue, operator: &st
     }
 }
 
-fn matches_typed_filter(user: &impl AuthUser, field: &str, rhs: &JsValue, operator: &str) -> bool {
+fn matches_typed_filter(
+    user: &impl AuthUser,
+    field: &str,
+    rhs: &JsValue,
+    operator: &str,
+) -> crate::AuthResult<bool> {
     // Physical IDs are handled by the store before public UserView projection.
     if matches!(field, "id" | "_id") {
-        return false;
+        return Ok(false);
     }
     let lhs = match field {
         "email" | "name" | "username" | "role" => Some(
@@ -179,13 +184,9 @@ fn matches_typed_filter(user: &impl AuthUser, field: &str, rhs: &JsValue, operat
         "createdAt" | "updatedAt" | "banExpires" => {
             Some(date_field(user, field).map_or(JsValue::Null, JsValue::Date))
         }
-        _ => user
-            .additional_fields()
-            .get(field)
-            .cloned()
-            .map(JsValue::from),
+        _ => user.additional_js_fields()?.get(field).cloned(),
     };
-    let Some(lhs) = lhs else { return false };
+    let Some(lhs) = lhs else { return Ok(false) };
     let rhs = if matches!(lhs, JsValue::Bool(_)) {
         match rhs {
             JsValue::String(value) => JsValue::Bool(value == "true"),
@@ -194,12 +195,12 @@ fn matches_typed_filter(user: &impl AuthUser, field: &str, rhs: &JsValue, operat
     } else {
         rhs.clone()
     };
-    matches_native_operand(&lhs, &rhs, operator)
+    Ok(matches_native_operand(&lhs, &rhs, operator))
 }
 
-fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
+fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> crate::AuthResult<bool> {
     let Some(filter_value) = params.filter_value.as_ref() else {
-        return true;
+        return Ok(true);
     };
     matches_typed_filter(
         user,
@@ -245,11 +246,17 @@ pub fn apply_list_users_presorted<T: AuthUser + Clone>(
 }
 
 fn apply<T: AuthUser + Clone>(
-    mut users: Vec<T>,
+    users: Vec<T>,
     params: &ListUsersParams,
     presorted: bool,
-) -> AuthResult<(Vec<T>, usize)> {
-    users.retain(|user| matches_search(user, params) && matches_filter(user, params));
+) -> crate::AuthResult<(Vec<T>, usize)> {
+    let mut filtered = Vec::new();
+    for user in users {
+        if matches_search(&user, params) && matches_filter(&user, params)? {
+            filtered.push(user);
+        }
+    }
+    let mut users = filtered;
 
     if !presorted && let Some(sort_by) = params.sort_by.as_deref().filter(|field| !field.is_empty())
     {

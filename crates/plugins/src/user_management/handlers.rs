@@ -134,7 +134,7 @@ pub(crate) async fn change_email_core(
         )?;
         return Ok(None);
     }
-    let mut projection = ctx.user_view(user);
+    let mut projection = ctx.user_view(user)?;
     projection.email = Some(new_email.clone());
     if can_update {
         _ = ctx
@@ -183,7 +183,7 @@ pub(crate) async fn change_email_core(
         .filter(|_| can_confirm)
     {
         let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-        run_notification(sender.send(&ctx.user_view(user), &new_email, &url, &token)).await;
+        run_notification(sender.send(&ctx.user_view(user)?, &new_email, &url, &token)).await;
     } else {
         send_verification(&projection, &token, body.callback_url.as_deref(), ctx).await?;
     }
@@ -311,7 +311,7 @@ pub(crate) async fn delete_user_core(
             )
         );
         if let Some(sender) = &config.delete_user.send_delete_account_verification {
-            run_notification(sender.send(&ctx.user_view(user), &url, &token)).await;
+            run_notification(sender.send(&ctx.user_view(user)?, &url, &token)).await;
         } else {
             let email = user
                 .email()
@@ -382,7 +382,7 @@ async fn perform_user_deletion(
     config: &UserManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
-    let snapshot = ctx.user_view(user);
+    let snapshot = ctx.user_view(user)?;
     if let Some(hook) = &config.delete_user.before_delete {
         hook.before_delete(&snapshot).await?;
     }

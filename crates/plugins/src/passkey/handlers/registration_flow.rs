@@ -645,10 +645,10 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     })?;
                 let mut result = registration_value(&passkey)?;
                 if let Some(object) = result.as_object_mut() {
-                    _ = object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?);
+                    _ = object.insert("user".into(), serde_json::to_value(ctx.user_view(&user)?)?);
                     _ = object.insert(
                         "session".into(),
-                        serde_json::to_value(ctx.session_view(&session))?,
+                        serde_json::to_value(ctx.session_view(&session)?)?,
                     );
                 }
                 Ok(result)

@@ -18,6 +18,7 @@ async fn native_state_roundtrip<S: AuthSchema<User = UserView>>(store: &impl Use
     .unwrap()
     .clone()
     .into_iter()
+    .map(|(key, value)| (key, value.into()))
     .collect();
     let user = store
         .create_user(CreateUser {
@@ -65,7 +66,7 @@ async fn native_state_roundtrip<S: AuthSchema<User = UserView>>(store: &impl Use
                 &id,
                 UpdateUser {
                     name: Some("Must not persist".into()),
-                    adapter_native_fields: [("image".into(), json!(42))].into(),
+                    adapter_native_fields: [("image".into(), json!(42).into())].into(),
                     ..Default::default()
                 }
             )
@@ -111,7 +112,7 @@ async fn native_state_roundtrip<S: AuthSchema<User = UserView>>(store: &impl Use
                 email_verified: Some(false),
                 clear_ban_reason: true,
                 banned: Some(false),
-                adapter_native_fields: [("banExpires".into(), json!(-0.5))].into(),
+                adapter_native_fields: [("banExpires".into(), json!(-0.5).into())].into(),
                 ..Default::default()
             },
         )
@@ -170,7 +171,7 @@ fn user_view_secondary_preserves_known_presence_and_rejects_nonstring_identity()
         "emailVerified": null, "createdAt": 1e20, "updatedAt": -0.5,
         "isAnonymous": null, "unknown": "ignored"
     });
-    let record = UserView::from_secondary_snapshot_record(source.clone()).unwrap();
+    let record = UserView::from_secondary_snapshot_record(source.clone().into()).unwrap();
     let wire = serde_json::to_value(UserView::from(&record)).unwrap();
     assert_eq!(wire["name"], 42);
     assert!(wire["email"].is_null());
@@ -185,7 +186,7 @@ fn user_view_secondary_preserves_known_presence_and_rejects_nonstring_identity()
     for id in [Value::Null, json!(42), json!({})] {
         let mut source = source.clone();
         source["id"] = id;
-        assert!(UserView::from_secondary_snapshot_record(source).is_err());
+        assert!(UserView::from_secondary_snapshot_record(source.into()).is_err());
     }
 }
 
@@ -218,7 +219,8 @@ fn configured_user_cache_fields_keep_values_and_presence_without_rerunning_polic
         "image": {"retained": true}
     });
     let record =
-        UserView::from_secondary_snapshot_record_with_fields(source.clone(), &allowed).unwrap();
+        UserView::from_secondary_snapshot_record_with_fields(source.clone().into(), &allowed)
+            .unwrap();
     let wire = serde_json::to_value(UserView::from(&record)).unwrap();
     assert_eq!(wire["id"], "real-owner");
     assert_eq!(wire["name"], 42);
@@ -234,7 +236,8 @@ fn configured_user_cache_fields_keep_values_and_presence_without_rerunning_polic
     let mut invalid_identity = source;
     invalid_identity["id"] = Value::Null;
     assert!(
-        UserView::from_secondary_snapshot_record_with_fields(invalid_identity, &allowed).is_err()
+        UserView::from_secondary_snapshot_record_with_fields(invalid_identity.into(), &allowed)
+            .is_err()
     );
 }
 
@@ -255,8 +258,8 @@ async fn memory_username_updates<S: AuthSchema<User = UserView>>(store: &impl Us
                 &created.id,
                 UpdateUser {
                     adapter_native_fields: [
-                        ("username".into(), raw.clone()),
-                        ("displayUsername".into(), json!(false)),
+                        ("username".into(), raw.clone().into()),
+                        ("displayUsername".into(), json!(false).into()),
                     ]
                     .into(),
                     ..Default::default()

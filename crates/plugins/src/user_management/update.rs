@@ -120,7 +120,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::AuthPlugin<S> for BuiltinUserEndpoin
             .require_cached_session(call)
             .await
             .map_err(crate::helpers::unauthorized_if_session_missing)?;
-        call.record_authenticated_session(context.user_view(&user), session.clone());
+        call.record_authenticated_session(context.user_view(&user)?, session.clone());
         let response = update_user_core(call, body, user, session, context).await?;
         if response.status >= 400 {
             return Err(crate::endpoint::error_response(response));
@@ -320,13 +320,13 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
         Ok(updated_user) => alibi_core::CacheVersionContext::created(
             updated_user.clone(),
             current_session.clone(),
-            context.user_view(&updated_user),
+            context.user_view(&updated_user)?,
             current_session.clone(),
         ),
         Err(AuthError::UserNotFound) => {
             // Source retains the authenticated output snapshot when the
             // adapter no longer has this user. This does not recreate a row.
-            let mut user = context.user_view(&current_user);
+            let mut user = context.user_view(&current_user)?;
             if let Some(name) = update_user.name {
                 user.name = Some(name);
             }
@@ -343,16 +343,16 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
                 user.display_username = Some(display_username);
             }
             if let Some(metadata) = update_user.metadata {
-                user.metadata = metadata;
+                user.metadata = metadata.into();
             }
             for (name, value) in update_user.additional_fields {
-                _ = user.extension_fields.insert(name, value.to_json_value()?);
+                _ = user.extension_fields.insert(name.into(), value);
             }
             if let Some(phone_number) = update_user.phone_number {
                 user.phone_number = phone_number;
                 _ = user
                     .extension_fields
-                    .insert("phoneNumber".into(), serde_json::Value::Null);
+                    .insert("phoneNumber".into(), serde_json::Value::Null.into());
             }
             alibi_core::CacheVersionContext::created(
                 user.clone(),

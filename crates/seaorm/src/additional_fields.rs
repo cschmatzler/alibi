@@ -8,18 +8,35 @@ use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, Statement, Value, sea_que
 /// # Errors
 ///
 /// Returns an error if an object or array cannot be serialized as JSON.
-pub fn raw_value(value: &JsValue) -> AuthResult<Value> {
-    Ok(match RawFieldValue::from_js(value)? {
+pub fn raw_value(value: &JsValue) -> AuthResult<RawFieldValue> {
+    Ok(RawFieldValue::from_js(value)?)
+}
+
+pub(crate) fn bind_scalar(value: RawFieldValue) -> AuthResult<Value> {
+    Ok(match value {
         RawFieldValue::Null => Value::String(None),
         RawFieldValue::Bool(value) => Value::Bool(Some(value)),
         RawFieldValue::Integer(value) => Value::BigInt(Some(value)),
         RawFieldValue::Number(value) => Value::Double(Some(value)),
         RawFieldValue::Text(value) => Value::String(Some(value.to_utf8_binding())),
-        RawFieldValue::Json(value) => Value::Json(Some(Box::new(value))),
+        RawFieldValue::Date(value) => Value::String(Some(
+            alibi_core::utils::datetime::json_date_millis(value.timestamp_millis()),
+        )),
+        RawFieldValue::Json(_) => {
+            return Err(AuthError::internal("object cannot bind to a scalar field"));
+        }
     })
 }
 
 pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
+    db: &C,
+    value: RawFieldValue,
+) -> AuthResult<Option<String>> {
+    let value = bind_scalar(value)?;
+    prepare_bound_string(db, value).await
+}
+
+async fn prepare_bound_string<C: ConnectionTrait>(
     db: &C,
     value: Value,
 ) -> AuthResult<Option<String>> {
@@ -59,23 +76,19 @@ pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
 pub(crate) async fn prepare_value<C: ConnectionTrait>(
     db: &C,
     column: &impl ColumnTrait,
-    value: Value,
+    value: RawFieldValue,
 ) -> AuthResult<Value> {
+    let backend = db.get_database_backend();
+    if matches!(
+        column.def().get_column_type(),
+        ColumnType::Json | ColumnType::JsonBinary
+    ) {
+        return Ok(crate::JsonMetadata::for_backend(JsValue::from(value), backend)?.into());
+    }
+    let value = bind_scalar(value)?;
     match column.def().get_column_type() {
         ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => {
-            Ok(Value::String(prepare_string_value(db, value).await?))
-        }
-        ColumnType::Json | ColumnType::JsonBinary => {
-            let json = match value {
-                Value::Bool(Some(value)) => serde_json::json!(value),
-                Value::BigInt(Some(value)) => serde_json::json!(value),
-                Value::Double(Some(value)) => serde_json::json!(value),
-                Value::String(Some(value)) => serde_json::json!(value),
-                Value::Json(Some(value)) => *value,
-                _ => serde_json::Value::Null,
-            };
-            let backend = db.get_database_backend();
-            Ok(crate::JsonMetadata::for_backend(json, backend)?.into())
+            Ok(Value::String(prepare_bound_string(db, value).await?))
         }
         ColumnType::Double => Ok(match value {
             Value::BigInt(Some(value)) => Value::Double(Some(value as f64)),
@@ -94,4 +107,23 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
         }),
         _ => Ok(value),
     }
+}
+
+pub fn physical_json_value(value: Value, exact: bool) -> AuthResult<JsValue> {
+    Ok(match value {
+        Value::String(Some(text)) => JsValue::String(text.into()),
+        Value::Json(Some(value)) => {
+            if exact {
+                return Err(AuthError::not_implemented(
+                    "Exact SQLite JSON output transforms require a JsonMetadata model field",
+                ));
+            }
+            JsValue::String(alibi_core::utils::json::to_string(&JsValue::from(*value))?.into())
+        }
+        Value::Bool(Some(value)) => JsValue::Bool(value),
+        Value::BigInt(Some(value)) => JsValue::from(value),
+        Value::Double(Some(value)) => JsValue::Number(value),
+        Value::Json(None) | Value::String(None) => JsValue::Null,
+        _ => return Err(AuthError::internal("Unsupported physical JSON parameter")),
+    })
 }

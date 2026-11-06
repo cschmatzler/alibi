@@ -98,7 +98,7 @@ impl PhoneNumberPlugin {
                 .verified(
                     &PhoneNumberVerification {
                         phone_number: phone_number.into(),
-                        user: ctx.user_view(user),
+                        user: ctx.user_view(user)?,
                     },
                     &alibi_core::CallbackContext::new(ctx, req),
                 )
@@ -558,7 +558,7 @@ impl PhoneNumberPlugin {
                 .await?;
             return AuthResponse::json(
                 200,
-                &json!({"status":true,"token":session.token,"user":ctx.user_view(&updated)}),
+                &json!({"status":true,"token":session.token,"user":ctx.user_view(&updated)?}),
             )
             .map_err(AuthError::from);
         }
@@ -632,7 +632,7 @@ impl PhoneNumberPlugin {
         if body.disable_session == Some(true) {
             return AuthResponse::json(
                 200,
-                &json!({"status":true,"token":null,"user":ctx.user_view(&user)}),
+                &json!({"status":true,"token":null,"user":ctx.user_view(&user)?}),
             )
             .map_err(AuthError::from);
         }
@@ -764,7 +764,7 @@ impl PhoneNumberPlugin {
         crate::helpers::reset_credential_password(ctx, &user.id(), hash, settings.revoke, proof)
             .await?;
         if let Some(callback) = settings.on_reset {
-            callback(serde_json::to_value(ctx.user_view(&user))?).await?;
+            callback(serde_json::to_value(ctx.user_view(&user)?)?).await?;
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }

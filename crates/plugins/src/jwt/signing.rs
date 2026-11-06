@@ -222,11 +222,36 @@ impl JwtPlugin {
         options: &JwtSignOptions,
         key: &ResolvedJwtSigningKey,
     ) -> AuthResult<String> {
+        let header = Self::resolved_header(options, key)?;
+        normalize_signing_claims(&mut payload)?;
+        Self::sign_claims(&payload, &header, key)
+    }
+
+    pub(in crate::jwt) fn sign_prepared_cache_claims(
+        payload: &alibi_core::utils::json::JsObject,
+        options: &JwtSignOptions,
+        key: &ResolvedJwtSigningKey,
+    ) -> AuthResult<String> {
+        let header = Self::resolved_header(options, key)?;
+        Self::sign_claims(payload, &header, key)
+    }
+
+    fn resolved_header(
+        options: &JwtSignOptions,
+        key: &ResolvedJwtSigningKey,
+    ) -> AuthResult<Map<String, Value>> {
         let mut header = options.header.clone().unwrap_or_default();
         _ = header.insert("alg".to_owned(), json!(key.algorithm.as_str()));
         _ = header.insert("kid".to_owned(), json!(key.key_id));
         validate_critical_header(&header, true)?;
-        normalize_signing_claims(&mut payload)?;
+        Ok(header)
+    }
+
+    fn sign_claims(
+        payload: &impl serde::Serialize,
+        header: &Map<String, Value>,
+        key: &ResolvedJwtSigningKey,
+    ) -> AuthResult<String> {
         let input = format!(
             "{}.{}",
             URL_SAFE_NO_PAD.encode(alibi_core::utils::json::to_vec(&header)?),

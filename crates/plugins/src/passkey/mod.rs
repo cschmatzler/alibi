@@ -97,7 +97,7 @@ impl PasskeyPlugin {
     ) -> AuthResult<AuthResponse> {
         use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
-        let projected_user = session.as_ref().map(|(user, _)| ctx.user_view(user));
+        let projected_user = session.as_ref().map(|(user, _)| ctx.user_view(user)?);
         let source =
             if !self.config.registration.require_session
                 && ctx.config.session.has_server_session_store()
@@ -304,7 +304,7 @@ impl PasskeyPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
         let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
-        let projected_user = maybe_user.as_ref().map(|user| ctx.user_view(user));
+        let projected_user = maybe_user.as_ref().map(|user| ctx.user_view(user)?);
         let extensions = if let Some(input) = &self.config.authentication.extensions {
             Some(
                 input

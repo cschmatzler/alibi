@@ -218,7 +218,7 @@ pub(super) async fn resume<S: AuthSchema>(
         call.replace_headers(headers.clone());
         call.establish_session::<S>(
             user.clone(),
-            ctx.user_view(&user),
+            ctx.user_view(&user)?,
             session_view.clone(),
             ctx,
         );

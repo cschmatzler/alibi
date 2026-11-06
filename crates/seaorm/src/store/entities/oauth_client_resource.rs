@@ -31,7 +31,9 @@ impl TryFrom<Model> for alibi_core::store::OAuthClientResource {
             resource_id: model.resource_id,
             metadata: model
                 .metadata
-                .map_or(serde_json::Value::Null, |value| (*value).clone()),
+                .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                    alibi_core::utils::json::JsValue::from(&value)
+                }),
             created_at: model.created_at,
         })
     }

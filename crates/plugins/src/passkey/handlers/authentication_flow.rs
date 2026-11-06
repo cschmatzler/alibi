@@ -355,14 +355,14 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     crate::helpers::record_completed_session_user_view::<S>(
         &user,
         &session,
-        &ctx.trusted_user_view(&user),
+        &ctx.trusted_user_view(&user)?,
     );
 
     Ok(PasskeyHandlerOutcome::Success((
         serde_json::to_value(SessionResponse {
-            session: ctx.session_view(&session),
+            session: ctx.session_view(&session)?,
             // The pinned verification endpoint returns the adapter user directly.
-            user: ctx.trusted_user_view(&user),
+            user: ctx.trusted_user_view(&user)?,
         })?,
         session.token().to_owned(),
     )))

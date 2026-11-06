@@ -290,7 +290,7 @@ impl UserManagementPlugin {
                 code: codes::FAILED_TO_GET_USER_INFO,
                 message: "Failed to get user info",
             })?;
-        call.record_authenticated_session(ctx.user_view(&read.user), read.session.clone());
+        call.record_authenticated_session(ctx.user_view(&read.user)?, read.session.clone());
         let response =
             delete_user_callback_core(&query.token, &read.user, call, true, &self.config, ctx)
                 .await?;
@@ -466,7 +466,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
                 code: codes::UNAUTHORIZED,
                 message: "Unauthorized",
             })?;
-        call.record_authenticated_session(ctx.user_view(&user), session.clone());
+        call.record_authenticated_session(ctx.user_view(&user)?, session.clone());
         if call.operation_id() == "changeEmail" {
             if !self.config.change_email.enabled {
                 return Err(AuthError::bad_request("Change email is disabled"));

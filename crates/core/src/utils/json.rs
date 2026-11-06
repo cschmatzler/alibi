@@ -362,6 +362,22 @@ pub fn utf8_keys(value: &JsObject) -> Result<IndexMap<String, JsValue>, serde_js
         .collect()
 }
 
+impl From<i64> for JsValue {
+    fn from(value: i64) -> Self {
+        Self::Number(crate::utils::javascript::number_from_i64(value))
+    }
+}
+impl From<&Value> for JsValue {
+    fn from(value: &Value) -> Self {
+        Self::from(value.clone())
+    }
+}
+impl From<&JsValue> for JsValue {
+    fn from(value: &JsValue) -> Self {
+        value.clone()
+    }
+}
+
 impl From<Value> for JsValue {
     fn from(value: Value) -> Self {
         match value {
@@ -878,6 +894,18 @@ pub fn parse_value(input: &str) -> Result<JsValue, serde_json::Error> {
 /// # Errors
 ///
 /// Returns an error if the input is not valid JSON or cannot be deserialized into the requested type.
+pub fn from_str<T: DeserializeOwned + 'static>(input: &str) -> Result<T, serde_json::Error> {
+    from_value(parse_value(input)?)
+}
+
+/// Decode a secondary-storage value using Better Auth's safeJSONParse date reviver.
+/// Invalid JSON is logged by that utility; decoding its null result remains fallible.
+pub fn from_storage_str<T: DeserializeOwned + 'static>(
+    input: &str,
+) -> Result<T, serde_json::Error> {
+    from_value(parse_adapter_value(input))
+}
+
 pub fn from_slice<T: DeserializeOwned + 'static>(input: &[u8]) -> Result<T, serde_json::Error> {
     let text = std::str::from_utf8(input).map_err(|_| invalid("invalid JSON UTF8"))?;
     from_value(parse_value(text)?)
@@ -976,6 +1004,16 @@ pub fn deserialize_optional_map<'de, D: Deserializer<'de>>(
             | Value::Array(_) => Err(serde::de::Error::custom("expected JSON object")),
         })
         .transpose()
+}
+
+/// Decode a canonical object without an intermediate UTF-8 key map.
+pub fn deserialize_native_map<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<JsObject, D::Error> {
+    match JsValue::deserialize(deserializer)? {
+        JsValue::Object(map) => Ok(map),
+        _ => Err(serde::de::Error::custom("expected JavaScript object")),
+    }
 }
 
 /// Preserve arbitrary values in flattened public view extension fields.
@@ -1219,6 +1257,31 @@ fn array_index(name: &str) -> Option<u32> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn safe_json_reviver_preserves_native_dates_and_only_revives_valid_iso_values() {
+        use super::*;
+        let date = chrono::DateTime::from_timestamp(1_700_000_000, 123_456_789).unwrap();
+        let mut parsed = parse_value(r#"{"nested":[{"iso":"2020-01-01T00:00:00.123456Z","invalid":"2020-99-99T00:00:00Z","offset":"2020-01-01T00:00:00+00:00"}],"2020-01-01T00:00:00Z":"key"}"#).unwrap();
+        _ = parsed
+            .as_object_mut()
+            .unwrap()
+            .insert("date".into(), JsValue::Date(date));
+        _ = parsed
+            .as_object_mut()
+            .unwrap()
+            .insert("undefined".into(), JsValue::Undefined);
+        revive_json_dates(&mut parsed);
+        let JsValue::Date(revived) = parsed["nested"][0]["iso"] else {
+            panic!("nested ISO was not revived");
+        };
+        assert_eq!(revived.timestamp_millis(), 1_577_836_800_123);
+        assert!(parsed["nested"][0]["invalid"].is_string());
+        assert!(parsed["nested"][0]["offset"].is_string());
+        assert_eq!(parsed["date"], JsValue::Date(date));
+        assert_eq!(parsed["undefined"], JsValue::Undefined);
+        assert_eq!(parsed["2020-01-01T00:00:00Z"], "key");
+        assert_eq!(parse_adapter_value("not JSON"), JsValue::Null);
+    }
     use super::*;
     use chrono::{TimeZone, Utc};
 
@@ -1330,6 +1393,76 @@ mod tests {
                 JsValue::Array(vec![date]).coerce_string().unwrap(),
                 expected
             );
+        }
+    }
+}
+
+/// Apply the pinned safeJSONParse date reviver without changing object keys.
+pub fn revive_json_dates(value: &mut JsValue) {
+    match value {
+        JsValue::String(text) => {
+            if let Some(date) = text
+                .as_str()
+                .and_then(crate::session::cookie_cache::date::parse)
+            {
+                *value = JsValue::Date(date);
+            }
+        }
+        JsValue::Array(values) => values.iter_mut().for_each(revive_json_dates),
+        JsValue::Object(values) => values.values_mut().for_each(revive_json_dates),
+        _ => {}
+    }
+}
+
+/// Parse a JavaScript UTF-16 JSON string without replacing isolated surrogates.
+/// Literal unpaired units inside quoted strings are escaped before UTF-8 parsing.
+pub fn parse_js_value(text: &JsString) -> Result<JsValue, serde_json::Error> {
+    let mut json = String::new();
+    let (mut quoted, mut escaped) = (false, false);
+    for unit in char::decode_utf16(text.code_units().iter().copied()) {
+        match unit {
+            Ok(character) => {
+                json.push(character);
+                if quoted {
+                    if escaped {
+                        escaped = false;
+                    } else if character == '\\' {
+                        escaped = true;
+                    } else if character == '"' {
+                        quoted = false;
+                    }
+                } else if character == '"' {
+                    quoted = true;
+                }
+            }
+            Err(error) if quoted && !escaped => {
+                use std::fmt::Write as _;
+                write!(json, "\\u{:04x}", error.unpaired_surrogate())
+                    .expect("String writes are infallible");
+            }
+            Err(_) => return Err(serde::de::Error::custom("invalid UTF-16 JSON token")),
+        }
+    }
+    parse_value(&json)
+}
+
+pub fn parse_adapter_value(text: &str) -> JsValue {
+    adapter_parse_result(parse_value(text))
+}
+
+pub fn parse_adapter_string(text: &JsString) -> JsValue {
+    adapter_parse_result(parse_js_value(text))
+}
+
+fn adapter_parse_result(value: Result<JsValue, serde_json::Error>) -> JsValue {
+    match value {
+        Ok(mut value) => {
+            revive_json_dates(&mut value);
+            value
+        }
+        Err(error) => {
+            tracing::error!(%error, "Error parsing stored JSON");
+            JsValue::Null
         }
     }
 }

@@ -1,48 +1,78 @@
 use crate::AuthSession;
+use crate::utils::json::{JsObject, JsValue as Value};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
 /// Public session response shape.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct SessionView {
     pub id: String,
-    #[serde(rename = "expiresAt")]
     pub expires_at: DateTime<Utc>,
     pub token: String,
-    #[serde(rename = "createdAt")]
     pub created_at: DateTime<Utc>,
-    #[serde(rename = "updatedAt")]
     pub updated_at: DateTime<Utc>,
-    #[serde(rename = "ipAddress")]
     pub ip_address: Option<String>,
-    #[serde(rename = "userAgent")]
     pub user_agent: Option<String>,
-    #[serde(rename = "userId")]
     pub user_id: String,
-    #[serde(rename = "impersonatedBy", default)]
     pub impersonated_by: Option<String>,
-    #[serde(rename = "activeOrganizationId", default)]
     pub active_organization_id: Option<String>,
-    #[serde(rename = "activeTeamId", default)]
     pub active_team_id: Option<String>,
-    #[serde(
-        flatten,
-        default,
-        deserialize_with = "crate::utils::json::deserialize_btree_map"
-    )]
-    pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
-    #[serde(skip)]
+    pub extension_fields: JsObject,
     pub omitted_fields: std::collections::BTreeSet<String>,
+}
+
+impl<'de> Deserialize<'de> for SessionView {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let mut fields = JsObject::deserialize(deserializer)?;
+        macro_rules! field {
+            ($name:literal) => {
+                crate::utils::json::from_value(
+                    fields
+                        .shift_remove($name)
+                        .ok_or_else(|| serde::de::Error::missing_field($name))?,
+                )
+                .map_err(serde::de::Error::custom)?
+            };
+        }
+        macro_rules! optional {
+            ($name:literal) => {
+                fields
+                    .shift_remove($name)
+                    .map(crate::utils::json::from_value)
+                    .transpose()
+                    .map_err(serde::de::Error::custom)?
+                    .flatten()
+            };
+        }
+        Ok(Self {
+            id: field!("id"),
+            expires_at: field!("expiresAt"),
+            token: field!("token"),
+            created_at: field!("createdAt"),
+            updated_at: field!("updatedAt"),
+            ip_address: optional!("ipAddress"),
+            user_agent: optional!("userAgent"),
+            user_id: field!("userId"),
+            impersonated_by: optional!("impersonatedBy"),
+            active_organization_id: optional!("activeOrganizationId"),
+            active_team_id: optional!("activeTeamId"),
+            extension_fields: fields,
+            omitted_fields: Default::default(),
+        })
+    }
 }
 
 impl Serialize for SessionView {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeMap;
-        let mut map = serializer.serialize_map(None)?;
+        let mut map = JsObject::new();
         macro_rules! entry {
             ($name:literal, $value:expr) => {
                 if !self.omitted_fields.contains($name) {
-                    map.serialize_entry($name, $value)?;
+                    _ = map.insert(
+                        $name.into(),
+                        crate::utils::json::to_js_value($value)
+                            .map_err(serde::ser::Error::custom)?,
+                    );
                 }
             };
         }
@@ -79,15 +109,19 @@ impl Serialize for SessionView {
             entry!("activeTeamId", value);
         }
         for (name, value) in &self.extension_fields {
-            if !matches!(
-                name.as_str(),
-                "impersonatedBy" | "activeOrganizationId" | "activeTeamId"
-            ) && !self.omitted_fields.contains(name)
+            if !name.as_str().is_some_and(|name| {
+                matches!(
+                    name,
+                    "impersonatedBy" | "activeOrganizationId" | "activeTeamId"
+                )
+            }) && !name
+                .as_str()
+                .is_some_and(|name| self.omitted_fields.contains(name))
             {
-                map.serialize_entry(name, value)?;
+                _ = map.insert(name.clone(), value.clone());
             }
         }
-        map.end()
+        Value::Object(map).serialize(serializer)
     }
 }
 
@@ -108,43 +142,47 @@ impl<T: AuthSession> From<&T> for SessionView {
             impersonated_by: session.impersonated_by().map(str::to_owned),
             active_organization_id: session.active_organization_id().map(str::to_owned),
             active_team_id: session.active_team_id().map(str::to_owned),
-            extension_fields: session.additional_fields().into_iter().collect(),
+            extension_fields: session
+                .adapter_snapshot()
+                .map(|snapshot| snapshot.values().clone())
+                .unwrap_or_default(),
             omitted_fields: std::collections::BTreeSet::default(),
         }
     }
 }
 
 impl AuthSession for SessionView {
-    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
-        Ok(serde_json::to_value(self)?)
+    fn secondary_snapshot(&self) -> crate::AuthResult<Value> {
+        Ok(crate::utils::json::to_js_value(self)?)
     }
 
     fn secondary_snapshot_with_native_output(
         &self,
         native: &crate::AdapterOutput,
-    ) -> crate::AuthResult<serde_json::Value> {
-        let serde_json::Value::Object(mut snapshot) = self.secondary_snapshot()? else {
+    ) -> crate::AuthResult<Value> {
+        let Value::Object(mut snapshot) = self.secondary_snapshot()? else {
             return Err(crate::AuthError::internal(
                 "Invalid secondary session snapshot",
             ));
         };
-        for name in snapshot.keys().cloned().collect::<Vec<_>>() {
-            if native.field_is_undefined(&name) {
-                _ = snapshot.remove(&name);
+        for (name, value) in native.values() {
+            if value.is_undefined() {
+                _ = snapshot.shift_remove(name);
+            } else {
+                _ = snapshot.insert(name.clone(), value.clone());
             }
         }
-        snapshot.extend(native.values().clone());
-        Ok(serde_json::Value::Object(snapshot))
+        Ok(Value::Object(snapshot))
     }
 
     fn secondary_snapshot_for_creation_with_native_output(
         &self,
         created_at: DateTime<Utc>,
         native: &crate::AdapterOutput,
-    ) -> crate::AuthResult<serde_json::Value> {
+    ) -> crate::AuthResult<Value> {
         let mut snapshot = self.secondary_snapshot_with_native_output(native)?;
-        snapshot["createdAt"] = serde_json::Value::String(
-            crate::utils::datetime::json_date_millis(created_at.timestamp_millis()),
+        snapshot["createdAt"] = Value::String(
+            crate::utils::datetime::json_date_millis(created_at.timestamp_millis()).into(),
         );
         Ok(snapshot)
     }
@@ -152,33 +190,35 @@ impl AuthSession for SessionView {
     fn secondary_snapshot_for_creation(
         &self,
         created_at: DateTime<Utc>,
-    ) -> crate::AuthResult<serde_json::Value> {
+    ) -> crate::AuthResult<Value> {
         let mut session = self.clone();
         session.created_at = created_at;
         _ = session.omitted_fields.remove("createdAt");
-        _ = session.extension_fields.remove("createdAt");
+        _ = session.extension_fields.shift_remove("createdAt");
         session.secondary_snapshot()
     }
 
-    fn from_secondary_snapshot(mut snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+    fn from_secondary_snapshot(mut snapshot: Value) -> crate::AuthResult<Self> {
         for name in ["expiresAt", "createdAt", "updatedAt"] {
             let value = snapshot.get(name).ok_or_else(|| {
                 crate::AuthError::internal(format!("Missing secondary session {name}"))
             })?;
             let milliseconds = match value {
-                serde_json::Value::String(text) => crate::utils::datetime::parse_date_millis(text),
-                serde_json::Value::Array(_) => crate::utils::datetime::parse_date_millis(
+                Value::String(text) => text
+                    .as_str()
+                    .and_then(crate::utils::datetime::parse_date_millis),
+                Value::Array(_) => crate::utils::datetime::parse_date_millis(
                     &crate::utils::json::JsValue::from(value.clone())
                         .coerce_string()
                         .map_err(crate::AuthError::internal)?,
                 ),
-                serde_json::Value::Null => Some(0),
-                serde_json::Value::Bool(value) => Some(i64::from(*value)),
-                serde_json::Value::Number(number) => number
-                    .as_f64()
+                Value::Null => Some(0),
+                Value::Bool(value) => Some(i64::from(*value)),
+                Value::Number(number) => Some(*number)
                     .filter(|value| value.is_finite() && value.abs() <= 8_640_000_000_000_000.0)
                     .map(|value| value.trunc() as i64),
-                serde_json::Value::Object(_) => None,
+                Value::Object(_) | Value::Undefined => None,
+                Value::Date(date) => Some(date.timestamp_millis()),
             };
             let date = milliseconds
                 .and_then(DateTime::<Utc>::from_timestamp_millis)
@@ -187,42 +227,38 @@ impl AuthSession for SessionView {
                         "Unrepresentable secondary session {name}"
                     ))
                 })?;
-            snapshot[name] = serde_json::Value::String(crate::utils::datetime::json_date_millis(
-                date.timestamp_millis(),
-            ));
+            snapshot[name] = Value::String(
+                crate::utils::datetime::json_date_millis(date.timestamp_millis()).into(),
+            );
         }
-        let mut session: Self = serde_json::from_value(snapshot.clone())?;
+        let mut session: Self = crate::utils::json::from_value(snapshot.clone())?;
         for name in ["ipAddress", "userAgent"] {
             if snapshot.get(name).is_none() {
                 _ = session.omitted_fields.insert(name.to_owned());
             }
         }
         for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
-            if snapshot.get(name).is_some_and(serde_json::Value::is_null) {
-                _ = session
-                    .extension_fields
-                    .insert(name.to_owned(), serde_json::Value::Null);
+            if snapshot.get(name).is_some_and(Value::is_null) {
+                _ = session.extension_fields.insert(name.into(), Value::Null);
             }
         }
         Ok(session)
     }
 
-    fn output_from_secondary_snapshot(
-        snapshot: serde_json::Value,
-    ) -> crate::AuthResult<crate::AdapterOutput> {
-        let serde_json::Value::Object(values) = snapshot else {
+    fn output_from_secondary_snapshot(snapshot: Value) -> crate::AuthResult<crate::AdapterOutput> {
+        let Value::Object(values) = snapshot else {
             return Err(crate::AuthError::internal(
                 "Invalid secondary session snapshot",
             ));
         };
-        Ok(crate::AdapterOutput::from_values(values))
+        Ok(crate::AdapterOutput::from_js_values(values))
     }
 
     fn retained_session_view(&self) -> Option<&SessionView> {
         Some(self)
     }
-    fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
-        self.extension_fields.clone().into_iter().collect()
+    fn additional_js_fields(&self) -> crate::AuthResult<JsObject> {
+        Ok(self.extension_fields.clone())
     }
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)

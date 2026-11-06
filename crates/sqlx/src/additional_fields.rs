@@ -12,21 +12,35 @@ use alibi_core::{AuthError, AuthResult, utils::json::JsValue};
 /// # Errors
 ///
 /// Returns an error if an object or array cannot be serialized as JSON.
-pub fn raw_value(value: &JsValue) -> AuthResult<SqlValue> {
-    Ok(match RawFieldValue::from_js(value)? {
+pub fn raw_value(value: &JsValue) -> AuthResult<RawFieldValue> {
+    Ok(RawFieldValue::from_js(value)?)
+}
+
+pub(crate) fn bind_scalar(value: RawFieldValue) -> AuthResult<SqlValue> {
+    Ok(match value {
         RawFieldValue::Null => SqlValue::Text(None),
         RawFieldValue::Bool(value) => SqlValue::Bool(Some(value)),
         RawFieldValue::Integer(value) => SqlValue::BigInt(Some(value)),
         RawFieldValue::Number(value) => SqlValue::Double(Some(value)),
         RawFieldValue::Text(value) => SqlValue::Text(Some(value.to_utf8_binding())),
-        RawFieldValue::Json(value) => SqlValue::Json(Some(Box::new(value))),
+        RawFieldValue::Date(value) => SqlValue::Text(Some(
+            alibi_core::utils::datetime::json_date_millis(value.timestamp_millis()),
+        )),
+        RawFieldValue::Json(_) => {
+            return Err(AuthError::internal("object cannot bind to a scalar field"));
+        }
     })
 }
 
 pub(crate) async fn prepare_string_value(
     exec: Exec<'_>,
-    value: SqlValue,
+    value: RawFieldValue,
 ) -> AuthResult<Option<String>> {
+    let value = bind_scalar(value)?;
+    prepare_bound_string(exec, value).await
+}
+
+async fn prepare_bound_string(exec: Exec<'_>, value: SqlValue) -> AuthResult<Option<String>> {
     if let SqlValue::Text(value) | SqlValue::BpChar(value) = value {
         return Ok(value);
     }
@@ -52,23 +66,16 @@ pub(crate) async fn prepare_string_value(
 pub(crate) async fn prepare_value(
     exec: Exec<'_>,
     kind: ColumnKind,
-    value: SqlValue,
+    value: RawFieldValue,
 ) -> AuthResult<SqlValue> {
     let backend = exec.engine();
+    if kind == ColumnKind::Json {
+        return Ok(JsonMetadata::for_backend(JsValue::from(value), backend)?.into_sql_value());
+    }
+    let value = bind_scalar(value)?;
     match kind {
         ColumnKind::Text | ColumnKind::BpChar => {
-            Ok(SqlValue::Text(prepare_string_value(exec, value).await?))
-        }
-        ColumnKind::Json => {
-            let json = match value {
-                SqlValue::Bool(Some(value)) => serde_json::json!(value),
-                SqlValue::BigInt(Some(value)) => serde_json::json!(value),
-                SqlValue::Double(Some(value)) => serde_json::json!(value),
-                SqlValue::Text(Some(value)) => serde_json::json!(value),
-                SqlValue::Json(Some(value)) => *value,
-                _ => serde_json::Value::Null,
-            };
-            Ok(JsonMetadata::for_backend(json, backend)?.into_sql_value())
+            Ok(SqlValue::Text(prepare_bound_string(exec, value).await?))
         }
         ColumnKind::Double | ColumnKind::Number => Ok(match value {
             SqlValue::BigInt(Some(value)) => SqlValue::Double(Some(value as f64)),
@@ -85,8 +92,29 @@ pub(crate) async fn prepare_value(
             SqlValue::Text(None) => SqlValue::Bool(None),
             other => other,
         }),
-        ColumnKind::Int | ColumnKind::BigInt | ColumnKind::Other | ColumnKind::NaiveTimestamp => {
-            Ok(value)
-        }
+        ColumnKind::Int
+        | ColumnKind::BigInt
+        | ColumnKind::Other
+        | ColumnKind::NaiveTimestamp
+        | ColumnKind::Json => Ok(value),
     }
+}
+
+pub fn physical_json_value(value: SqlValue, exact: bool) -> AuthResult<JsValue> {
+    Ok(match value {
+        SqlValue::Text(Some(text)) => JsValue::String(text.into()),
+        SqlValue::Json(Some(value)) => {
+            if exact {
+                return Err(AuthError::not_implemented(
+                    "Exact SQLite JSON output transforms require a JsonMetadata model field",
+                ));
+            }
+            JsValue::String(alibi_core::utils::json::to_string(&JsValue::from(*value))?.into())
+        }
+        SqlValue::Bool(Some(value)) => JsValue::Bool(value),
+        SqlValue::BigInt(Some(value)) => JsValue::from(value),
+        SqlValue::Double(Some(value)) => JsValue::Number(value),
+        SqlValue::Json(None) | SqlValue::Text(None) => JsValue::Null,
+        _ => return Err(AuthError::internal("Unsupported physical JSON parameter")),
+    })
 }

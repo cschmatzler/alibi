@@ -88,7 +88,7 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
     async fn native_user_output_for(
         &self,
         user: &crate::UserView,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(user.native_user_fields())
     }
 

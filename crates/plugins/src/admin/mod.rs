@@ -209,20 +209,22 @@ fn ban_expired_at(
             return Ok(false);
         }
         let millis = match value {
-            serde_json::Value::Number(value) => value
-                .as_f64()
+            alibi_core::utils::json::JsValue::Date(value) => Some(value.timestamp_millis() as f64),
+            alibi_core::utils::json::JsValue::Number(value) => Some(*value)
                 .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
                 .map(f64::trunc),
-            serde_json::Value::Bool(value) => Some(f64::from(u8::from(*value))),
-            serde_json::Value::String(value) => {
-                alibi_core::utils::datetime::parse_date_millis(value).map(|value| value as f64)
-            }
-            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-                let text = alibi_core::utils::json::JsValue::from(value.clone())
-                    .coerce_string()
-                    .map_err(AuthError::internal)?;
-                alibi_core::utils::datetime::parse_date_millis(&text).map(|value| value as f64)
-            }
+            alibi_core::utils::json::JsValue::Bool(value) => Some(f64::from(u8::from(*value))),
+            alibi_core::utils::json::JsValue::String(value) => value
+                .as_str()
+                .and_then(alibi_core::utils::datetime::parse_date_millis)
+                .map(|value| value as f64),
+            alibi_core::utils::json::JsValue::Array(_)
+            | alibi_core::utils::json::JsValue::Object(_) => value
+                .coerce_js_string()
+                .map_err(AuthError::internal)?
+                .as_str()
+                .and_then(alibi_core::utils::datetime::parse_date_millis)
+                .map(|value| value as f64),
             _ => None,
         };
         return Ok(millis.is_some_and(|value| value < now.timestamp_millis() as f64));
@@ -1655,7 +1657,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(created.role(), Some("user"));
-        assert_eq!(created.metadata(), &serde_json::json!({}));
+        assert_eq!(created.metadata(), serde_json::json!({}));
         assert_eq!(
             json_body(&response)
                 .get("user")

@@ -12,6 +12,11 @@ pub enum NumericTextInput {
 
 #[async_trait]
 pub trait UserStore<S: AuthSchema>: Send + Sync {
+    /// Whether JSON fields reach output transforms as native values rather than encoded cells.
+    fn supports_native_json(&self) -> bool {
+        true
+    }
+
     /// Build an undecorated retained record without discarding physical scalar output.
     async fn native_user_record(&self, user: S::User) -> AuthResult<AdapterRecord<S::User>> {
         let scalars = self.native_user_output_for(&user).await?;
@@ -24,7 +29,7 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn native_user_output_for(
         &self,
         user: &S::User,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         use crate::AuthUser as _;
         self.native_user_output(&user.id()).await
     }
@@ -33,11 +38,11 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(self
             .provider_verification_output(id)
             .await?
-            .map(|value| ("emailVerified".to_owned(), value))
+            .map(|value| ("emailVerified".to_owned(), value.into()))
             .into_iter()
             .collect())
     }

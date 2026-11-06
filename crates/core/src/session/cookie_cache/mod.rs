@@ -6,6 +6,8 @@
 use crate::utils::json::JsValue;
 use crate::{AdapterOutput, AdapterRecord};
 pub(crate) mod date;
+#[cfg(test)]
+mod native_tests;
 
 pub mod jwt;
 pub mod runtime;
@@ -15,7 +17,6 @@ use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{SecondsFormat, Utc};
 use hmac::{Hmac, KeyInit, Mac};
-use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{any::Any, fmt, sync::Arc};
 
@@ -240,7 +241,7 @@ pub fn encode_compact(
     dont_remember: bool,
     secret: &str,
 ) -> AuthResult<String> {
-    let payload = jwt::payload(user, session, version, now_ms);
+    let payload = jwt::payload(user, session, version, now_ms)?;
     let expiry = now_ms as f64
         + if dont_remember {
             60.0
@@ -248,14 +249,25 @@ pub fn encode_compact(
             effective_max_age(max_age)
         } * 1000.0;
     let expiry = if expiry.is_finite() && expiry.abs() <= 8.64e15 {
-        json!(expiry.trunc())
+        JsValue::Number(expiry.trunc())
     } else {
-        Value::Null
+        JsValue::Null
     };
-    let mut signed = payload.as_object().cloned().unwrap_or_default();
+    let mut signed = payload
+        .as_object()
+        .ok_or_else(|| crate::AuthError::internal("Invalid cache payload"))?
+        .clone();
     _ = signed.insert("expiresAt".into(), expiry.clone());
     let signature = signature(secret, crate::utils::json::to_string(&signed)?.as_bytes());
-    let envelope = json!({"session":payload,"expiresAt":expiry,"signature":signature});
+    let envelope = JsValue::Object(
+        [
+            ("session".into(), payload),
+            ("expiresAt".into(), expiry),
+            ("signature".into(), JsValue::String(signature.into())),
+        ]
+        .into_iter()
+        .collect(),
+    );
     Ok(URL_SAFE_NO_PAD.encode(crate::utils::json::to_string(&envelope)?))
 }
 
@@ -397,6 +409,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
     }
     let mut normalized = original_payload.clone();
     date::revive_parsed(&mut normalized);
+    crate::utils::json::revive_json_dates(&mut normalized);
     let payload = normalized.as_object()?;
     let updated_at = payload
         .get("updatedAt")?
@@ -406,12 +419,12 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
         None => None,
         Some(value) => Some(value.as_str()?.to_owned()),
     };
-    let mut user = payload.get("user")?.to_json_value().ok()?;
-    let mut session = payload.get("session")?.to_json_value().ok()?;
+    let mut user = payload.get("user")?.clone();
+    let mut session = payload.get("session")?.clone();
     let user_id = date::coerce_id(original_payload.get("session")?.get("userId")?)?;
     _ = session
         .as_object_mut()?
-        .insert("userId".into(), Value::String(user_id));
+        .insert("userId".into(), JsValue::String(user_id.into()));
     // The source schemas supply absent creation/update dates and a false
     // emailVerified value. Producer dates are canonical JavaScript Date JSON.
     for object in [&mut user, &mut session] {
@@ -420,17 +433,21 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
             if !map.contains_key(key) {
                 _ = map.insert(
                     key.into(),
-                    json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true)),
+                    JsValue::String(
+                        Utc::now()
+                            .to_rfc3339_opts(SecondsFormat::Millis, true)
+                            .into(),
+                    ),
                 );
             }
         }
     }
     let map = user.as_object_mut()?;
     let email = map.get("email")?.as_str()?.to_lowercase();
-    _ = map.insert("email".into(), Value::String(email));
+    _ = map.insert("email".into(), JsValue::String(email.into()));
     _ = map.get("name")?.as_str()?;
     if !map.contains_key("emailVerified") {
-        _ = map.insert("emailVerified".into(), Value::Bool(false));
+        _ = map.insert("emailVerified".into(), JsValue::Bool(false));
     }
     let null_user_extensions: Vec<_> = [
         "username",
@@ -446,27 +463,31 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
         "lastLoginMethod",
     ]
     .into_iter()
-    .filter(|name| user.get(*name).is_some_and(Value::is_null))
+    .filter(|name| user.get(*name).is_some_and(JsValue::is_null))
     .collect();
-    let mut user: UserView = serde_json::from_value(user).ok()?;
+    let mut user: UserView = crate::utils::json::from_value(user).ok()?;
     if original_payload.get("user")?.get("image").is_none() {
         _ = user.omitted_fields.insert("image".into());
     }
     for name in null_user_extensions {
-        _ = user.extension_fields.insert(name.into(), Value::Null);
+        _ = user
+            .extension_fields
+            .insert(name.into(), crate::utils::json::JsValue::Null);
     }
     let null_extensions: Vec<_> = ["activeOrganizationId", "activeTeamId", "impersonatedBy"]
         .into_iter()
-        .filter(|name| session.get(*name).is_some_and(Value::is_null))
+        .filter(|name| session.get(*name).is_some_and(JsValue::is_null))
         .collect();
-    let mut session: SessionView = serde_json::from_value(session).ok()?;
+    let mut session: SessionView = crate::utils::json::from_value(session).ok()?;
     for name in ["ipAddress", "userAgent"] {
         if original_payload.get("session")?.get(name).is_none() {
             _ = session.omitted_fields.insert(name.into());
         }
     }
     for name in null_extensions {
-        _ = session.extension_fields.insert(name.into(), Value::Null);
+        _ = session
+            .extension_fields
+            .insert(name.into(), crate::utils::json::JsValue::Null);
     }
     Some(CompactCache {
         user,

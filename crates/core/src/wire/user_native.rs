@@ -1,7 +1,7 @@
 use super::UserView;
+use crate::utils::json::JsValue as Value;
 use crate::{AuthResult, UpdateUser};
 use chrono::{DateTime, Utc};
-use serde_json::Value;
 use std::collections::BTreeMap;
 
 const NATIVE_FIELDS: &[&str] = &[
@@ -26,9 +26,11 @@ const NATIVE_FIELDS: &[&str] = &[
 
 fn typed_date(value: &Value) -> Option<DateTime<Utc>> {
     let milliseconds = match value {
-        Value::String(text) => crate::utils::datetime::parse_date_millis(text),
-        Value::Number(number) => number
-            .as_f64()
+        Value::Date(date) => Some(date.timestamp_millis()),
+        Value::String(text) => text
+            .as_str()
+            .and_then(crate::utils::datetime::parse_date_millis),
+        Value::Number(number) => Some(*number)
             .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
             .map(|value| value.trunc() as i64),
         Value::Bool(value) => Some(i64::from(*value)),
@@ -42,16 +44,16 @@ impl UserView {
         &self,
         native: &crate::AdapterOutput,
     ) -> AuthResult<Value> {
-        let Value::Object(mut snapshot) = serde_json::to_value(self)? else {
+        let Value::Object(mut snapshot) = crate::utils::json::to_js_value(self)? else {
             return Err(crate::AuthError::internal(
                 "Invalid secondary user snapshot",
             ));
         };
         for name in NATIVE_FIELDS {
             if native.field_is_undefined(name) {
-                _ = snapshot.remove(*name);
+                _ = snapshot.shift_remove(*name);
             } else if let Some(value) = native.values().get(*name) {
-                _ = snapshot.insert((*name).to_owned(), value.clone());
+                _ = snapshot.insert((*name).into(), value.clone());
             }
         }
         Ok(Value::Object(snapshot))
@@ -69,7 +71,9 @@ impl UserView {
             ));
         };
         let mut user = Self {
-            id: id.clone(),
+            id: id
+                .to_utf8()
+                .map_err(|error| crate::AuthError::internal(error.to_string()))?,
             name: None,
             email: None,
             image: None,
@@ -91,7 +95,10 @@ impl UserView {
             extension_fields: source
                 .iter()
                 .filter(|(name, _)| {
-                    name.as_str() != "id" && !NATIVE_FIELDS.contains(&name.as_str())
+                    *name != "id"
+                        && !name
+                            .as_str()
+                            .is_some_and(|name| NATIVE_FIELDS.contains(&name))
                 })
                 .map(|(name, value)| (name.clone(), value.clone()))
                 .collect(),
@@ -100,8 +107,11 @@ impl UserView {
         user.retain_native_user_fields(
             source
                 .iter()
-                .filter(|(name, _)| NATIVE_FIELDS.contains(&name.as_str()))
-                .map(|(name, value)| (name.clone(), value.clone()))
+                .filter_map(|(name, value)| {
+                    name.as_str()
+                        .filter(|name| NATIVE_FIELDS.contains(name))
+                        .map(|name| (name.to_owned(), value.clone()))
+                })
                 .collect(),
         );
         for name in NATIVE_FIELDS {
@@ -124,7 +134,7 @@ impl UserView {
         let mut user = Self::from_secondary_native_snapshot(snapshot)?;
         for (name, value) in extras {
             if let Some(value) = value {
-                _ = user.extension_fields.insert(name, value);
+                _ = user.extension_fields.insert(name.into(), value);
             } else {
                 _ = user.omitted_fields.insert(name);
             }
@@ -137,10 +147,13 @@ impl UserView {
     }
 
     pub(crate) fn native_user_fields(&self) -> BTreeMap<String, Value> {
-        self.extension_fields
+        NATIVE_FIELDS
             .iter()
-            .filter(|(name, _)| NATIVE_FIELDS.contains(&name.as_str()))
-            .map(|(name, value)| (name.clone(), value.clone()))
+            .filter_map(|name| {
+                self.extension_fields
+                    .get(*name)
+                    .map(|value| ((*name).to_owned(), value.clone()))
+            })
             .collect()
     }
 
@@ -180,7 +193,7 @@ impl UserView {
                 _ => continue,
             }
             _ = self.omitted_fields.remove(&name);
-            _ = self.extension_fields.insert(name, value);
+            _ = self.extension_fields.insert(name.into(), value);
         }
     }
 
@@ -228,7 +241,7 @@ impl UserView {
             ("updatedAt", true),
         ] {
             if present {
-                _ = self.extension_fields.remove(name);
+                _ = self.extension_fields.shift_remove(name);
                 _ = self.omitted_fields.remove(name);
             }
         }

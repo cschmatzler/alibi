@@ -356,7 +356,7 @@ impl AdminPlugin {
             Err(error) => return Err(error),
         };
         let user = match &user {
-            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
             alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
         };
         call.record_authenticated_session(user, session.clone());
@@ -465,7 +465,7 @@ impl AdminPlugin {
         })?;
         let read = ctx.require_authoritative_session_record(call).await.ok();
         let (user_id, role) = if let Some((user, session)) = read {
-            let user = ctx.user_view(&user);
+            let user = ctx.user_view(&user)?;
             call.record_authenticated_session(user.clone(), session);
             (Some(user.id), user.role)
         } else {
@@ -486,7 +486,7 @@ impl AdminPlugin {
                     .get_user_by_id_record(id)
                     .await?
                     .ok_or_else(|| message_error("user not found"))?;
-                let user = ctx.user_view(&user);
+                let user = ctx.user_view(&user)?;
                 (Some(user.id), user.role)
             } else {
                 return Err(message_error("user id or role is required"));
@@ -520,7 +520,7 @@ impl AdminPlugin {
         if call.operation_id() == "createUser" {
             let body: CreateUserRequest = call.body_as()?;
             if let Some((user, session)) = read {
-                let principal = ctx.user_view(&user);
+                let principal = ctx.user_view(&user)?;
                 call.record_authenticated_session(principal.clone(), session);
                 self.authorize_create_user(&principal, &body)?;
             } else if call.request().is_some() || call.headers().is_some() {
@@ -541,7 +541,7 @@ impl AdminPlugin {
             })
             .without_error_body());
         };
-        let principal = ctx.user_view(&user);
+        let principal = ctx.user_view(&user)?;
         call.record_authenticated_session(principal.clone(), session.clone());
         if call.operation_id() == "impersonateUser" {
             self.authorize(&principal, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;

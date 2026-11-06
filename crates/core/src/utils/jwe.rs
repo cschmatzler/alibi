@@ -86,10 +86,10 @@ fn authentication(
     Ok(mac)
 }
 
-pub fn encode(
+pub fn encode<T: serde::Serialize + ?Sized>(
     secret: &str,
     salt: &str,
-    payload: &serde_json::Value,
+    payload: &T,
     max_age: f64,
 ) -> AuthResult<String> {
     let key = key(secret, salt)?;
@@ -97,17 +97,20 @@ pub fn encode(
         &json!({"alg":"dir","enc":"A256CBC-HS512","kid":thumbprint(&key)}),
     )?);
     let now = Utc::now().timestamp();
-    let mut claims = serde_json::to_value(payload)?;
+    let mut claims = crate::utils::json::to_js_value(payload)?;
     let claims = claims.as_object_mut().ok_or_else(invalid)?;
-    _ = claims.insert("iat".into(), json!(now));
+    _ = claims.insert("iat".into(), JsValue::from(now));
     let expiry = serde_json::Number::from(now).as_f64().ok_or_else(invalid)? + max_age;
     if !expiry.is_finite() {
         return Err(AuthError::internal(
             "Invalid encrypted-cookie expiration time",
         ));
     }
-    _ = claims.insert("exp".into(), json!(expiry));
-    _ = claims.insert("jti".into(), json!(uuid::Uuid::new_v4().to_string()));
+    _ = claims.insert("exp".into(), JsValue::Number(expiry));
+    _ = claims.insert(
+        "jti".into(),
+        JsValue::String(uuid::Uuid::new_v4().to_string().into()),
+    );
     let mut ciphertext = crate::utils::json::to_vec(claims)?;
     let padding = 16 - ciphertext.len() % 16;
     ciphertext.resize(
@@ -151,11 +154,27 @@ pub fn decode(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::V
     decode_parsed(secret, salt, &token)
 }
 
+/// Decode URI-encoded cookie data without an ordinary JSON projection.
+pub fn decode_native(secret: &str, salt: &str, token: &str) -> AuthResult<JsValue> {
+    let token = percent_encoding::percent_decode_str(token)
+        .decode_utf8()
+        .map_err(|_| invalid())?;
+    decode_parsed_native(secret, salt, &token)
+}
+
 /// Authenticate a compact JWE after the owning cookie parser decoded its value.
 ///
 /// # Errors
 /// Returns an error for malformed, unauthenticated or expired data.
 pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::Value> {
+    decode_parsed_native(secret, salt, token)?
+        .to_json_value()
+        .map_err(|_| invalid())
+}
+
+/// Authenticate and decode without narrowing escaped UTF-16 payload values.
+/// Header, UTF-8, base64url, authentication, and registered-claim checks are shared.
+pub fn decode_parsed_native(secret: &str, salt: &str, token: &str) -> AuthResult<JsValue> {
     let parts: Vec<_> = token.split('.').collect();
     let [header, encrypted_key, iv, ciphertext, tag] = parts.as_slice() else {
         return Err(invalid());
@@ -243,7 +262,7 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
             }
         }
     }
-    crate::utils::json::from_slice(&ciphertext).map_err(|_| invalid())
+    Ok(claims)
 }
 
 // LCOV_EXCL_START

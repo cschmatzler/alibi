@@ -107,7 +107,7 @@ impl OAuthStatePayload {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize)]
 pub(crate) struct AccountCookiePayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -146,16 +146,63 @@ pub(crate) struct AccountCookiePayload {
     )]
     pub updated_at: Option<chrono::DateTime<Utc>>,
     #[serde(flatten)]
-    pub additional: Map<String, Value>,
+    pub additional: alibi_core::utils::json::JsObject,
     #[serde(skip)]
-    pub snapshot: Option<Map<String, Value>>,
+    pub snapshot: Option<alibi_core::utils::json::JsObject>,
     #[serde(skip)]
-    pub original: Option<Map<String, Value>>,
+    pub original: Option<alibi_core::utils::json::JsObject>,
+}
+
+impl<'de> Deserialize<'de> for AccountCookiePayload {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use alibi_core::utils::json::{self, JsObject};
+        let mut fields = JsObject::deserialize(deserializer)?;
+        // Serde's flatten buffer would narrow unknown native JSON values to UTF-8.
+        // Read the declared fields directly and retain the remaining canonical map.
+        macro_rules! field {
+            ($name:literal) => {
+                json::from_value(
+                    fields
+                        .shift_remove($name)
+                        .ok_or_else(|| serde::de::Error::missing_field($name))?,
+                )
+                .map_err(serde::de::Error::custom)?
+            };
+        }
+        macro_rules! optional {
+            ($name:literal) => {
+                fields
+                    .shift_remove($name)
+                    .map(json::from_value)
+                    .transpose()
+                    .map_err(serde::de::Error::custom)?
+                    .flatten()
+            };
+        }
+        Ok(Self {
+            id: optional!("id"),
+            user_id: field!("userId"),
+            provider_id: field!("providerId"),
+            account_id: field!("accountId"),
+            access_token: optional!("accessToken"),
+            refresh_token: optional!("refreshToken"),
+            id_token: optional!("idToken"),
+            access_token_expires_at: optional!("accessTokenExpiresAt"),
+            refresh_token_expires_at: optional!("refreshTokenExpiresAt"),
+            scope: optional!("scope"),
+            password: optional!("password"),
+            created_at: optional!("createdAt"),
+            updated_at: optional!("updatedAt"),
+            additional: fields,
+            snapshot: None,
+            original: None,
+        })
+    }
 }
 
 impl AccountCookiePayload {
     #[must_use]
-    pub(crate) fn from_account(account: &impl AuthAccount) -> Self {
+    pub(crate) fn from_account(account: &impl AuthAccount) -> AuthResult<Self> {
         let mut payload = Self {
             id: Some(account.id().to_string()),
             user_id: account.user_id().to_string(),
@@ -170,24 +217,26 @@ impl AccountCookiePayload {
             password: account.password().map(str::to_owned),
             created_at: Some(account.created_at()),
             updated_at: Some(account.updated_at()),
-            additional: account.additional_fields(),
+            additional: account.additional_js_fields()?,
             snapshot: account
                 .adapter_snapshot()
                 .map(|output| output.values().clone()),
             original: None,
         };
-        payload.original = serde_json::to_value(&payload)
-            .ok()
-            .and_then(|value| value.as_object().cloned());
-        payload
+        payload.original = alibi_core::utils::json::to_js_value(&payload)?
+            .as_object()
+            .cloned();
+        Ok(payload)
     }
 
-    pub(crate) fn wire_value(&self) -> AuthResult<Value> {
-        let Value::Object(current) = serde_json::to_value(self)? else {
+    pub(crate) fn wire_value(&self) -> AuthResult<alibi_core::utils::json::JsValue> {
+        let alibi_core::utils::json::JsValue::Object(current) =
+            alibi_core::utils::json::to_js_value(self)?
+        else {
             return Err(AuthError::internal("Account cookie must be an object"));
         };
         let Some(snapshot) = &self.snapshot else {
-            return Ok(Value::Object(current));
+            return Ok(alibi_core::utils::json::JsValue::Object(current));
         };
         let mut output = snapshot.clone();
         // Retain raw projection values and omissions until a token field is
@@ -202,7 +251,7 @@ impl AccountCookiePayload {
                 _ = output.insert(key, value);
             }
         }
-        Ok(Value::Object(output))
+        Ok(alibi_core::utils::json::JsValue::Object(output))
     }
 }
 

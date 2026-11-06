@@ -16,7 +16,7 @@ async fn raw_username_lookup_keeps_memory_scalar_equality() {
     let store = crate::store::stateless::StatelessStore::default();
     let mut raw = CreateUser::new().with_email("numeric@fixture.test");
     raw.adapter_native_fields
-        .insert("username".into(), serde_json::json!(42));
+        .insert("username".into(), serde_json::json!(42).into());
     let numeric = store.create_user(raw).await.unwrap();
     assert!(
         store
@@ -72,7 +72,7 @@ async fn typed_user_create_transform_invalidates_only_unchanged_raw_shadows() {
     input.provider_email = Some(JsValue::String("original@fixture.test".into()));
     input
         .adapter_native_fields
-        .insert("username".into(), serde_json::json!(42));
+        .insert("username".into(), serde_json::json!(42).into());
     let user = database.create_user(input).await.unwrap();
     assert_eq!(user.name.as_deref(), Some("typed replacement"));
     assert_eq!(user.email.as_deref(), Some("typed@fixture.test"));
@@ -88,12 +88,12 @@ fn raw_user_shadows_keep_explicit_edits_and_preserve_undefined_and_removal() {
     before.provider_image = Some(JsValue::Null);
     before
         .adapter_native_fields
-        .insert("username".into(), serde_json::json!(42));
+        .insert("username".into(), serde_json::json!(42).into());
 
     before.id = Some("original-id".into());
     before
         .adapter_native_fields
-        .insert("id".into(), serde_json::json!(42));
+        .insert("id".into(), serde_json::json!(42).into());
     let mut changed_id = before.clone();
     changed_id.id = Some("typed-id".into());
     changed_id.reconcile_native_shadows(&before);
@@ -102,7 +102,7 @@ fn raw_user_shadows_keep_explicit_edits_and_preserve_undefined_and_removal() {
     explicit_id.id = Some("typed-id".into());
     explicit_id
         .adapter_native_fields
-        .insert("id".into(), serde_json::Value::Null);
+        .insert("id".into(), serde_json::Value::Null.into());
     explicit_id.reconcile_native_shadows(&before);
     assert_eq!(
         explicit_id.adapter_native_fields["id"],
@@ -122,7 +122,7 @@ fn raw_user_shadows_keep_explicit_edits_and_preserve_undefined_and_removal() {
         edited.username = Some("typed-user".into());
         edited
             .adapter_native_fields
-            .insert("username".into(), serde_json::json!("explicit-raw"));
+            .insert("username".into(), serde_json::json!("explicit-raw").into());
         edited.reconcile_native_shadows(&before);
         assert_eq!(edited.provider_name, explicit);
         assert_eq!(
@@ -147,7 +147,7 @@ fn update_raw_shadow_reconciliation_uses_the_same_explicit_edit_precedence() {
     before.provider_image = Some(JsValue::Null);
     before
         .adapter_native_fields
-        .insert("username".into(), serde_json::json!(42));
+        .insert("username".into(), serde_json::json!(42).into());
 
     let mut typed = before.clone();
     typed.name = Some("typed".into());

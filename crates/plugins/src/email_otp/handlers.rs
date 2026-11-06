@@ -399,7 +399,7 @@ impl EmailOtpPlugin {
             .ok_or_else(user_not_found)?;
         let settings = self.verification_settings(ctx);
         if let Some(hook) = &settings.before {
-            hook(&ctx.user_view(&user)).await?;
+            hook(&ctx.user_view(&user)?).await?;
         }
         let updated = ctx
             .database
@@ -413,7 +413,7 @@ impl EmailOtpPlugin {
             )
             .await?;
         if let Some(hook) = &settings.after {
-            hook(&ctx.user_view(&updated)).await?;
+            hook(&ctx.user_view(&updated)?).await?;
         }
         if settings.auto_sign_in {
             let (payload, mut response) = session_response(ctx, req, updated).await?;
@@ -424,7 +424,7 @@ impl EmailOtpPlugin {
         }
         AuthResponse::json(
             200,
-            &json!({"status":true,"token":null,"user":ctx.user_view(&updated)}),
+            &json!({"status":true,"token":null,"user":ctx.user_view(&updated)?}),
         )
         .map_err(AuthError::from)
     }
@@ -615,7 +615,7 @@ impl EmailOtpPlugin {
         )
         .await?;
         if let Some(hook) = &settings.on_reset {
-            hook(serde_json::to_value(ctx.user_view(&user))?).await?;
+            hook(serde_json::to_value(ctx.user_view(&user)?)?).await?;
         }
         if !user.email_verified() {
             _ = ctx
@@ -761,7 +761,7 @@ impl EmailOtpPlugin {
         }
         let settings = self.verification_settings(ctx);
         if let Some(hook) = &settings.before {
-            hook(&ctx.user_view(&current))
+            hook(&ctx.user_view(&current)?)
                 .await
                 .map_err(crate::helpers::callback_failure)?;
         }
@@ -777,7 +777,7 @@ impl EmailOtpPlugin {
             )
             .await?;
         if let Some(hook) = &settings.after {
-            hook(&ctx.user_view(&updated))
+            hook(&ctx.user_view(&updated)?)
                 .await
                 .map_err(crate::helpers::callback_failure)?;
         }

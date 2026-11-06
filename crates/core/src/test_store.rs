@@ -189,7 +189,7 @@ impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
     async fn native_user_output_for(
         &self,
         user: &crate::UserView,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(user.native_user_fields())
     }
 
@@ -273,7 +273,7 @@ impl UserStore<BundledSchema> for MemoryStore {
         let now = Utc::now();
         let supplied_id = crate::store::memory_user_id::MemoryUserId::supplied(
             create_user.adapter_native_fields.get("id"),
-        );
+        )?;
         let (physical_id, id) = supplied_id.unwrap_or_else(|| {
             let id = create_user
                 .id
@@ -300,7 +300,8 @@ impl UserStore<BundledSchema> for MemoryStore {
             ban_expires: None,
             metadata: create_user
                 .metadata
-                .unwrap_or_else(|| serde_json::json!({})),
+                .unwrap_or_else(|| serde_json::json!({}))
+                .into(),
             is_anonymous: create_user.is_anonymous,
             phone_number: create_user.phone_number,
             phone_number_verified: create_user.phone_number_verified,
@@ -308,8 +309,8 @@ impl UserStore<BundledSchema> for MemoryStore {
             extension_fields: create_user
                 .additional_fields
                 .into_iter()
-                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
-                .collect::<Result<_, _>>()?,
+                .map(|(key, value)| (key.into(), value))
+                .collect(),
         };
         user.retain_native_user_fields(native_fields);
         self.lock().users.insert(physical_id, user.clone());
@@ -319,14 +320,14 @@ impl UserStore<BundledSchema> for MemoryStore {
     async fn native_user_output_for(
         &self,
         user: &UserView,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(user.native_user_fields())
     }
 
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(self
             .get_user_by_id(id)
             .await?
@@ -392,7 +393,11 @@ impl UserStore<BundledSchema> for MemoryStore {
                 user.extension_fields
                     .get("username")
                     .cloned()
-                    .or_else(|| user.username.clone().map(serde_json::Value::String))
+                    .or_else(|| {
+                        user.username
+                            .clone()
+                            .map(|value| crate::utils::json::JsValue::String(value.into()))
+                    })
                     .map(crate::utils::json::JsValue::from)
                     .as_ref()
                     == Some(username)
@@ -456,7 +461,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.two_factor_enabled = Some(two_factor_enabled);
         }
         if let Some(metadata) = update.metadata {
-            user.metadata = metadata;
+            user.metadata = metadata.into();
         }
         if let Some(is_anonymous) = update.is_anonymous {
             user.is_anonymous = Some(is_anonymous);
@@ -471,7 +476,7 @@ impl UserStore<BundledSchema> for MemoryStore {
             user.last_login_method = last_login_method;
         }
         for (name, value) in update.additional_fields {
-            _ = user.extension_fields.insert(name, value.to_json_value()?);
+            _ = user.extension_fields.insert(name.into(), value);
         }
         user.updated_at = Utc::now();
         user.retain_native_user_fields(update.adapter_native_fields);
@@ -506,9 +511,7 @@ impl SessionStore<BundledSchema> for MemoryStore {
         };
         fields.apply_adapter_transforms()?;
         for (name, value) in fields {
-            _ = session
-                .extension_fields
-                .insert(name, value.to_json_value()?);
+            _ = session.extension_fields.insert(name.into(), value);
         }
         session.updated_at = Utc::now();
         let locked_result = Ok(Some(session.clone()));
@@ -566,8 +569,8 @@ impl SessionStore<BundledSchema> for MemoryStore {
             extension_fields: create_session
                 .additional_fields
                 .into_iter()
-                .map(|(name, value)| value.to_json_value().map(|value| (name, value)))
-                .collect::<Result<_, _>>()?,
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
         };
         let mut state = self.lock();
         if state.sessions.contains_key(&token) {

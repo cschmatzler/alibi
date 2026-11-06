@@ -200,8 +200,8 @@ impl OneTimeTokenPlugin {
             .await?
             .map_err(AuthError::bad_request)?;
         Ok(OneTimeTokenSession {
-            session: ctx.session_view(&session),
-            user: ctx.user_view(&user),
+            session: ctx.session_view(&session)?,
+            user: ctx.user_view(&user)?,
         })
     }
 
@@ -246,8 +246,8 @@ impl OneTimeTokenPlugin {
         let token = self
             .generate_for_session(
                 &OneTimeTokenSession {
-                    session: ctx.session_view(&session),
-                    user: ctx.user_view(&user),
+                    session: ctx.session_view(&session)?,
+                    user: ctx.user_view(&user)?,
                 },
                 Some(req),
                 ctx,
@@ -370,8 +370,8 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             let token = self
                 .generate_for_session(
                     &OneTimeTokenSession {
-                        session: ctx.session_view(&session.session),
-                        user: ctx.user_view(&session.user),
+                        session: ctx.session_view(&session.session)?,
+                        user: ctx.user_view(&session.user)?,
                     },
                     Some(req),
                     ctx,

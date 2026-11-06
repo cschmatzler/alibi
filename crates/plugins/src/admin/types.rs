@@ -252,12 +252,12 @@ impl<T: alibi_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
 /// Public admin user projection, including returned application fields.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct AdminUserView(serde_json::Map<String, serde_json::Value>);
+pub struct AdminUserView(alibi_core::utils::json::JsObject);
 
 impl AdminUserView {
     /// Access the safe public user fields.
     #[must_use]
-    pub const fn values(&self) -> &serde_json::Map<String, serde_json::Value> {
+    pub const fn values(&self) -> &alibi_core::utils::json::JsObject {
         &self.0
     }
 
@@ -265,8 +265,8 @@ impl AdminUserView {
         ctx: &alibi_core::AuthContext<S>,
         user: &alibi_core::AdapterRecord<S::User>,
     ) -> alibi_core::AuthResult<Self> {
-        let serde_json::Value::Object(mut output) =
-            serde_json::to_value(PhysicalAdminUserView::from(user))?
+        let alibi_core::utils::json::JsValue::Object(mut output) =
+            alibi_core::utils::json::to_js_value(&PhysicalAdminUserView::from(user))?
         else {
             return Err(alibi_core::AuthError::internal(
                 "Admin user output must be an object",
@@ -277,16 +277,19 @@ impl AdminUserView {
             .as_ref()
             .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
         for (name, field) in fields {
-            _ = output.remove(name);
+            _ = output.shift_remove(name);
             if field.returned
                 && let Some(value) = user.raw_snapshot().values().get(name)
             {
-                _ = output.insert(name.clone(), value.clone());
+                _ = output.insert(name.clone().into(), value.clone());
             }
         }
-        let view = ctx.user_view(user);
+        let view = ctx.user_view(user)?;
         if let Some(value) = view.is_anonymous {
-            _ = output.insert("isAnonymous".into(), serde_json::Value::Bool(value));
+            _ = output.insert(
+                "isAnonymous".into(),
+                alibi_core::utils::json::JsValue::Bool(value),
+            );
         }
         output.extend(view.extension_fields);
         Ok(Self(output))

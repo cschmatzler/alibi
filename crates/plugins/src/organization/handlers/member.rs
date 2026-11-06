@@ -308,7 +308,7 @@ pub(crate) async fn remove_member_core(
     let original = if let Some(hooks) = &config.member_removal_hooks {
         let original = super::super::OrganizationMemberRemovalContext {
             member: response.member.clone(),
-            user: ctx.user_view(&target_user),
+            user: ctx.user_view(&target_user)?,
             organization: super::super::types::OrganizationResponse::from_stored_organization(
                 &organization,
             )?,
@@ -463,7 +463,7 @@ pub(crate) async fn update_member_role_core(
             })?;
         let original = super::super::OrganizationMemberRoleContext {
             new_role: new_role.clone(),
-            user: ctx.user_view(&target_user),
+            user: ctx.user_view(&target_user)?,
             organization: super::super::types::OrganizationResponse::from_stored_organization(
                 &organization,
             )?,

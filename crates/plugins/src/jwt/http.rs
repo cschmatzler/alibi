@@ -24,7 +24,7 @@ impl JwtPlugin {
             .ok_or_else(unauthorized)?;
         let session = JwtSession {
             user: match read.user {
-                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user)?,
                 alibi_core::AuthenticatedUser::Cached(user) => *user,
             },
             // A virtual principal already carries its exact runtime snapshot;

@@ -123,15 +123,22 @@ pub(crate) struct CompletedSession<S: alibi_core::AuthSchema> {
     session_record: Option<alibi_core::AdapterRecord<S::Session>>,
 }
 impl<S: alibi_core::AuthSchema> CompletedSession<S> {
-    pub(crate) fn callback_user(&self, ctx: &AuthContext<S>) -> alibi_core::UserView {
-        self.user_view.clone().unwrap_or_else(|| {
-            self.user_record.as_ref().map_or_else(
-                || ctx.trusted_user_view(&self.user),
-                |record| ctx.trusted_user_view(record),
-            )
-        })
+    pub(crate) fn callback_user(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> alibi_core::AuthResult<alibi_core::UserView> {
+        if let Some(view) = &self.user_view {
+            return Ok(view.clone());
+        }
+        self.user_record.as_ref().map_or_else(
+            || ctx.trusted_user_view(&self.user),
+            |record| ctx.trusted_user_view(record),
+        )
     }
-    pub(crate) fn callback_session(&self, ctx: &AuthContext<S>) -> alibi_core::SessionView {
+    pub(crate) fn callback_session(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> alibi_core::AuthResult<alibi_core::SessionView> {
         self.session_record.as_ref().map_or_else(
             || ctx.trusted_session_view(&self.session),
             |record| ctx.trusted_session_view(record),

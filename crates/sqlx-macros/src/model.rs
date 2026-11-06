@@ -113,9 +113,10 @@ pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStrea
         });
     }
     quote! {
-        fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<Vec<(&'static str, #sqlx_root::value::SqlValue)>> {
+        fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<Vec<(&'static str, #core_root::store::adapter::RawFieldValue)>> {
             let mut bindings = Vec::new();
             for (name, value) in fields {
+                if value.is_undefined() { continue; }
                 bindings.push(match fields.binding_name(name) {
                     #(#bindings)*
                     _ => return Err(#core_root::AuthError::internal("configured field has no model column")),
@@ -129,6 +130,47 @@ pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStrea
                 _ => return Err(#core_root::AuthError::internal("configured field has no model column")),
             }
             Ok(())
+        }
+    }
+}
+
+pub(crate) fn adapter_output(
+    fields: &[Column],
+    role: codegen::EntityRole,
+    roots: &Roots,
+) -> TokenStream {
+    let core = &roots.core;
+    let adapter = &roots.sqlx;
+    let mut values = Vec::new();
+    for field in fields {
+        let name = &field.ident;
+        if codegen::is_known_field(role, name)
+            && !(role == codegen::EntityRole::User
+                && (name == "username" || name == "display_username"))
+        {
+            continue;
+        }
+        let wire = &field.camel;
+        let physical = &field.physical;
+        let ty = &field.ty;
+
+        let json = quote! { <#ty as #adapter::value::SqlxValue>::KIND == #adapter::value::ColumnKind::Json };
+        let bound = quote! { #adapter::value::SqlxValue::into_sql_value(self.#name.clone()) };
+        values.push(quote! {
+            let value = if #json {
+                #adapter::additional_fields::physical_json_value(#bound, exact.contains(#wire) || exact.contains(#physical))?
+            } else {
+                #core::utils::json::to_js_value(&self.#name)?
+            };
+            _ = values.insert(#wire.into(), value.clone());
+            if #physical != #wire { _ = values.insert(#physical.into(), value); }
+        });
+    }
+    quote! {
+        fn adapter_js_fields(&self, exact: &::std::collections::BTreeSet<String>) -> #core::AuthResult<#core::utils::json::JsObject> {
+            let mut values = #core::utils::json::JsObject::new();
+            #(#values)*
+            Ok(values)
         }
     }
 }

@@ -80,7 +80,7 @@ impl OneTimeTokenPlugin {
                 .await
                 .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
             let user = match &user {
-                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                 alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
             };
             let session = OneTimeTokenSession {
@@ -113,8 +113,8 @@ impl OneTimeTokenPlugin {
                     message: message.into(),
                 })?;
             let session = OneTimeTokenSession {
-                user: ctx.user_view(&user),
-                session: ctx.session_view(&stored_session),
+                user: ctx.user_view(&user)?,
+                session: ctx.session_view(&stored_session)?,
             };
             if !self.config.disable_set_session_cookie {
                 let dont_remember = call

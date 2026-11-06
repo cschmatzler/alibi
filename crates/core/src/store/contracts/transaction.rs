@@ -377,7 +377,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn native_user_output_for(
         &self,
         user: &S::User,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         use crate::AuthUser as _;
         self.native_user_output(&user.id()).await
     }
@@ -386,11 +386,11 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, crate::utils::json::JsValue>> {
         Ok(self
             .provider_verification_output(id)
             .await?
-            .map(|value| ("emailVerified".to_owned(), value))
+            .map(|value| ("emailVerified".to_owned(), value.into()))
             .into_iter()
             .collect())
     }

@@ -545,7 +545,7 @@ pub struct OAuthClientResource {
     pub id: String,
     pub client_id: String,
     pub resource_id: String,
-    pub metadata: Value,
+    pub metadata: crate::utils::json::JsValue,
     pub created_at: Option<DateTime<Utc>>,
 }
 

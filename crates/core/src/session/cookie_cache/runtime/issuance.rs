@@ -20,10 +20,10 @@ pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     let context = CacheVersionContext::created(
         user.clone(),
         session.clone(),
-        ctx.trusted_user_view(user),
-        ctx.trusted_session_view(session),
+        ctx.trusted_user_view(user)?,
+        ctx.trusted_session_view(session)?,
     )
-    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
+    .with_public_projection(ctx.user_view(user)?, ctx.session_view(session)?);
     build_headers(ctx, context, headers, dont_remember, None).await
 }
 
@@ -42,15 +42,15 @@ pub(in crate::session::cookie_cache::runtime) async fn stored_read_headers<S: Au
         .as_ref()
         .map_or(&ctx.config.session.additional_fields, |fields| &fields.0);
     let context = CacheVersionContext::stored(
-        ctx.user_view(user),
-        ctx.session_view(session),
+        ctx.user_view(user)?,
+        ctx.session_view(session)?,
         user.adapter_snapshot()
             .map(|output| output.filter_returned(user_fields)),
         session
             .adapter_snapshot()
             .map(|output| output.filter_returned(session_fields)),
     )
-    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
+    .with_public_projection(ctx.user_view(user)?, ctx.session_view(session)?);
     build_headers(ctx, context, headers, false, None).await
 }
 
@@ -102,7 +102,7 @@ pub(in crate::session::cookie_cache::runtime) async fn build_headers<
                 context.public_session(),
                 &version,
                 now,
-            );
+            )?;
             let max_age = if dont_remember {
                 300.0
             } else {
@@ -144,10 +144,10 @@ pub async fn emit_issuance<S: AuthSchema>(
         CacheVersionContext::created(
             user.clone(),
             session.clone(),
-            ctx.trusted_user_view(user),
-            ctx.trusted_session_view(session),
+            ctx.trusted_user_view(user)?,
+            ctx.trusted_session_view(session)?,
         )
-        .with_public_projection(ctx.user_view(user), ctx.session_view(session)),
+        .with_public_projection(ctx.user_view(user)?, ctx.session_view(session)?),
     )
     .await
 }
@@ -178,8 +178,8 @@ pub async fn emit_issuance_in_transaction<S: AuthSchema>(
     let context = CacheVersionContext::created(
         user.clone(),
         session.clone(),
-        ctx.trusted_user_view(user),
-        ctx.trusted_session_view(session),
+        ctx.trusted_user_view(user)?,
+        ctx.trusted_session_view(session)?,
     );
     emit_snapshot_inner(ctx, context, Some(transaction)).await
 }
@@ -189,8 +189,8 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
     context: CacheVersionContext,
     transaction: Option<&dyn crate::store::AuthTransaction<S>>,
 ) -> AuthResult<()> {
-    let public_user = ctx.user_view(context.user());
-    let public_session = ctx.session_view(context.session());
+    let public_user = ctx.user_view(context.user())?;
+    let public_session = ctx.session_view(context.session())?;
     let context = context.with_public_projection(public_user, public_session);
     let published = PublishedSessionSnapshot {
         user: context.user().clone(),

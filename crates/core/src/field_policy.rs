@@ -579,13 +579,33 @@ impl SessionAdapterFields {
     /// undeclared fields, so unrelated physical columns never become observable.
     pub(crate) async fn record_output(
         &self,
-        canonical: Value,
-        mut additional: FieldOutput,
-        base: Value,
+        canonical: JsValue,
+        mut additional: crate::utils::json::JsObject,
+        base: JsValue,
+        supports_json: bool,
     ) -> AuthResult<AdapterOutput> {
-        let (Value::Object(canonical), Value::Object(mut base)) = (canonical, base) else {
+        let (JsValue::Object(mut canonical), JsValue::Object(mut base)) = (canonical, base) else {
             return Err(AuthError::internal("Adapter output must be an object"));
         };
+        if !supports_json {
+            for (name, field) in &*self.0 {
+                if field.schema.get("type").and_then(Value::as_str) == Some("json") {
+                    // A retained logical model snapshot is not a physical SQLite cell.
+                    // Leave the exact cell in place until after transform.output.
+                    if additional.contains_key(name)
+                        || field
+                            .field_name
+                            .as_ref()
+                            .is_some_and(|column| additional.contains_key(column))
+                    {
+                        _ = canonical.shift_remove(name);
+                        if let Some(column) = &field.field_name {
+                            _ = canonical.shift_remove(column);
+                        }
+                    }
+                }
+            }
+        }
         additional.extend(canonical);
         for name in self.0.keys() {
             // Typed DTOs omit optional core fields during serialization. The
@@ -594,17 +614,39 @@ impl SessionAdapterFields {
             if !additional.contains_key(name)
                 && let Some(value) = base.get(name)
             {
-                _ = additional.insert(name.clone(), value.clone());
+                _ = additional.insert(name.clone().into(), value.clone());
             }
-            _ = base.remove(name);
+            _ = base.shift_remove(name);
         }
-        let mut output = AdapterOutput::from_values(base);
-        output.extend(self.output(additional).await?);
+        let mut output = AdapterOutput::from_js_values(base);
+        output.extend(
+            self.output_with_json_support(additional, supports_json)
+                .await?,
+        );
         Ok(output)
     }
 
     /// Transform only declared additional fields, retaining their omission.
-    pub(crate) async fn output(&self, values: FieldOutput) -> AuthResult<AdapterOutput> {
+    pub(crate) async fn output(
+        &self,
+        values: crate::utils::json::JsObject,
+    ) -> AuthResult<AdapterOutput> {
+        self.output_with_json_support(values, true).await
+    }
+
+    pub(crate) fn exact_json_fields(&self) -> std::collections::BTreeSet<String> {
+        self.0
+            .iter()
+            .filter(|(_, field)| field.output_transform.is_some())
+            .flat_map(|(name, field)| std::iter::once(name.clone()).chain(field.field_name.clone()))
+            .collect()
+    }
+
+    async fn output_with_json_support(
+        &self,
+        values: crate::utils::json::JsObject,
+        supports_json: bool,
+    ) -> AuthResult<AdapterOutput> {
         let mut output = AdapterOutput::default();
         for (name, field) in &*self.0 {
             let value = values
@@ -616,7 +658,7 @@ impl SessionAdapterFields {
                         .and_then(|physical| values.get(physical))
                 })
                 .cloned()
-                .map(JsValue::from);
+                .filter(|value| !value.is_undefined());
             let value = if let Some(transform) = &field.output_transform {
                 transform(value).await.map_err(|error| match error {
                     AuthError::Api { .. } | AuthError::Upstream { .. } => error,
@@ -625,10 +667,17 @@ impl SessionAdapterFields {
             } else {
                 value
             };
-            output.insert(
-                name.clone(),
-                value.map(|value| value.to_json_value()).transpose()?,
-            );
+            let value = if !supports_json
+                && field.schema.get("type").and_then(Value::as_str) == Some("json")
+            {
+                value.map(|value| match value {
+                    JsValue::String(text) => crate::utils::json::parse_adapter_string(&text),
+                    value => value,
+                })
+            } else {
+                value
+            };
+            output.insert(name.clone(), value);
         }
         Ok(output)
     }

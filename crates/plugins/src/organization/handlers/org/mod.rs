@@ -39,7 +39,7 @@ pub(crate) async fn create_organization_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>> {
-    let callback_user = ctx.user_view(user);
+    let callback_user = ctx.user_view(user)?;
     let allowed = match &config.creation_policy {
         Some(policy) => policy.allow_creation(&callback_user).await?,
         None => None,
@@ -146,7 +146,7 @@ pub(crate) async fn create_organization_core(
         };
         let hooks = crate::organization::extensions::TeamHookContext {
             organization: organization.clone(),
-            user: Some(ctx.user_view(user)),
+            user: Some(ctx.user_view(user)?),
         };
         if let Some(callback) = &config.teams.hooks {
             callback
@@ -158,7 +158,7 @@ pub(crate) async fn create_organization_core(
             Some(factory) => {
                 let factory_context = crate::organization::extensions::DefaultTeamContext {
                     request: request.cloned(),
-                    user: ctx.user_view(user),
+                    user: ctx.user_view(user)?,
                     session: session.cloned(),
                     config: std::sync::Arc::clone(&ctx.config),
                 };
@@ -289,7 +289,7 @@ pub(crate) async fn update_organization_core(
                     .map(|value| alibi_core::utils::json::utf8_keys(&value))
                     .transpose()?,
             },
-            user: ctx.user_view(user),
+            user: ctx.user_view(user)?,
             member,
         };
         if let Some(patch) = hooks.before_update(&original).await? {
@@ -383,8 +383,8 @@ pub(crate) async fn delete_organization_core(
     let original = OrganizationResponse::from_stored_organization(&organization)?;
     let callback = crate::organization::OrganizationDeleteContext {
         organization: original.clone(),
-        user: ctx.user_view(user),
-        session: ctx.session_view(session),
+        user: ctx.user_view(user)?,
+        session: ctx.session_view(session)?,
         headers: invocation.headers.clone(),
         request: invocation.request.map(|request| {
             AuthRequest::from_parts(

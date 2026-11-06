@@ -66,7 +66,7 @@ pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::Auth
                     }
                 } else if let Some(sender) = ctx.email_verification_override() {
                     crate::authentication_helpers::run_notification(sender.0.send(
-                        &ctx.user_view(user),
+                        &ctx.user_view(user).map_err(|error| error.to_string())?,
                         None,
                         ctx,
                     ))
@@ -74,7 +74,7 @@ pub(in crate::oauth::handlers) async fn finish_oauth_session<S: alibi_core::Auth
                 }
             } else if let Some(sender) = ctx.email_verification_override() {
                 crate::authentication_helpers::run_notification(sender.0.send(
-                    &ctx.user_view(user),
+                    &ctx.user_view(user).map_err(|error| error.to_string())?,
                     None,
                     ctx,
                 ))
@@ -415,50 +415,59 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         }
 
         let issued = finish_oauth_session(&user, false, policy, meta, ctx).await?;
-        let account_cookie = ctx.config.account.store_account_cookie.then(|| {
-            if !ctx.config.account.update_account_on_sign_in {
-                return AccountCookiePayload::from_account(&existing_account);
-            }
-            AccountCookiePayload {
-                id: Some(existing_account.id().to_string()),
-                user_id: existing_account.user_id().to_string(),
-                provider_id: provider_name.to_owned(),
-                account_id: existing_account.account_id().to_owned(),
-                access_token: token_bundle.access_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_policy)[0])
-                        .then(|| existing_account.access_token().map(str::to_owned))
-                        .flatten()
-                }),
-                refresh_token: token_bundle.refresh_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_policy)[1])
-                        .then(|| existing_account.refresh_token().map(str::to_owned))
-                        .flatten()
-                }),
-                id_token: token_bundle.id_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_policy)[2])
-                        .then(|| existing_account.id_token().map(str::to_owned))
-                        .flatten()
-                }),
-                access_token_expires_at: tokens
-                    .access_token_expires_at
-                    .or_else(|| existing_account.access_token_expires_at()),
-                refresh_token_expires_at: tokens
-                    .refresh_token_expires_at
-                    .or_else(|| existing_account.refresh_token_expires_at()),
-                scope: existing_account.scope().map(str::to_owned),
-                password: existing_account.password().map(str::to_owned),
-                created_at: Some(existing_account.created_at()),
-                updated_at: Some(existing_account.updated_at()),
-                ..AccountCookiePayload::from_account(&existing_account)
-            }
-        });
+        let account_cookie = ctx
+            .config
+            .account
+            .store_account_cookie
+            .then(|| {
+                if !ctx.config.account.update_account_on_sign_in {
+                    return AccountCookiePayload::from_account(&existing_account);
+                }
+                Ok(AccountCookiePayload {
+                    id: Some(existing_account.id().to_string()),
+                    user_id: existing_account.user_id().to_string(),
+                    provider_id: provider_name.to_owned(),
+                    account_id: existing_account.account_id().to_owned(),
+                    access_token: token_bundle.access_token.or_else(|| {
+                        (!provider_token_nulls(tokens, raw_policy)[0])
+                            .then(|| existing_account.access_token().map(str::to_owned))
+                            .flatten()
+                    }),
+                    refresh_token: token_bundle.refresh_token.or_else(|| {
+                        (!provider_token_nulls(tokens, raw_policy)[1])
+                            .then(|| existing_account.refresh_token().map(str::to_owned))
+                            .flatten()
+                    }),
+                    id_token: token_bundle.id_token.or_else(|| {
+                        (!provider_token_nulls(tokens, raw_policy)[2])
+                            .then(|| existing_account.id_token().map(str::to_owned))
+                            .flatten()
+                    }),
+                    access_token_expires_at: tokens
+                        .access_token_expires_at
+                        .or_else(|| existing_account.access_token_expires_at()),
+                    refresh_token_expires_at: tokens
+                        .refresh_token_expires_at
+                        .or_else(|| existing_account.refresh_token_expires_at()),
+                    scope: existing_account.scope().map(str::to_owned),
+                    password: existing_account.password().map(str::to_owned),
+                    created_at: Some(existing_account.created_at()),
+                    updated_at: Some(existing_account.updated_at()),
+                    ..AccountCookiePayload::from_account(&existing_account)?
+                })
+            })
+            .transpose()
+            .map_err(|error| error.to_string())?;
 
         return Ok(ProcessOAuthUserResult {
-            session: ctx.session_view(&issued.session),
+            session: ctx
+                .session_view(&issued.session)
+                .map_err(|error| error.to_string())?,
             user: if policy.use_updated_user {
                 ctx.user_view(&issued.user)
+                    .map_err(|error| error.to_string())?
             } else {
-                ctx.user_view(&user)
+                ctx.user_view(&user).map_err(|error| error.to_string())?
             },
             is_register: false,
             account_cookie,
@@ -612,14 +621,20 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .config
             .account
             .store_account_cookie
-            .then(|| AccountCookiePayload::from_account(&created_account));
+            .then(|| AccountCookiePayload::from_account(&created_account))
+            .transpose()
+            .map_err(|error| error.to_string())?;
 
         Ok(ProcessOAuthUserResult {
-            session: ctx.session_view(&issued.session),
+            session: ctx
+                .session_view(&issued.session)
+                .map_err(|error| error.to_string())?,
             user: if policy.use_updated_user {
                 ctx.user_view(&issued.user)
+                    .map_err(|error| error.to_string())?
             } else {
                 ctx.user_view(&linked_user)
+                    .map_err(|error| error.to_string())?
             },
             is_register: false,
             account_cookie,
@@ -705,14 +720,20 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .config
             .account
             .store_account_cookie
-            .then(|| AccountCookiePayload::from_account(&persisted_account));
+            .then(|| AccountCookiePayload::from_account(&persisted_account))
+            .transpose()
+            .map_err(|error| error.to_string())?;
 
         Ok(ProcessOAuthUserResult {
-            session: ctx.session_view(&issued.session),
+            session: ctx
+                .session_view(&issued.session)
+                .map_err(|error| error.to_string())?,
             user: if policy.use_updated_user {
                 ctx.user_view(&issued.user)
+                    .map_err(|error| error.to_string())?
             } else {
                 ctx.user_view(&persisted_user)
+                    .map_err(|error| error.to_string())?
             },
             is_register: true,
             account_cookie,

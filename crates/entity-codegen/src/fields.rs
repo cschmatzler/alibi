@@ -80,9 +80,7 @@ pub fn additional_output(
                 && (name == "username" || name == "display_username");
         if physical_output {
             output.push(quote! {
-                if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    _ = fields.insert(#camel.into(), value);
-                }
+                _ = fields.insert(#camel.into(), #core_root::utils::json::to_js_value(&self.#name)?);
             });
         }
         if let Some(physical) = field
@@ -92,17 +90,15 @@ pub fn additional_output(
             && physical_output
         {
             output.push(quote! {
-                if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    _ = fields.insert(#physical.into(), value);
-                }
+                _ = fields.insert(#physical.into(), #core_root::utils::json::to_js_value(&self.#name)?);
             });
         }
     }
     quote! {
-        fn additional_fields(&self) -> #core_root::field_policy::FieldOutput {
-            let mut fields = #core_root::field_policy::FieldOutput::new();
+        fn additional_js_fields(&self) -> #core_root::AuthResult<#core_root::utils::json::JsObject> {
+            let mut fields = #core_root::utils::json::JsObject::new();
             #(#output)*
-            fields
+            Ok(fields)
         }
     }
 }

@@ -64,7 +64,7 @@ pub(super) fn user_query<M: SeaOrmUserModel>(
 pub(super) async fn native_user_output<M: SeaOrmUserModel, C: ConnectionTrait>(
     db: &C,
     id: &str,
-) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+) -> AuthResult<std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>> {
     use sea_orm::EntityName;
     use sea_orm::sea_query::{Alias, Query};
     let mut output = std::collections::BTreeMap::new();
@@ -104,11 +104,13 @@ pub(super) async fn native_user_output<M: SeaOrmUserModel, C: ConnectionTrait>(
             .map_err(map_db_err)?
         {
             let value: String = row.try_get("", "native_scalar").map_err(map_db_err)?;
-            let mut value: serde_json::Value = serde_json::from_str(&value)?;
+            let mut value = alibi_core::utils::json::parse_value(&value)?;
             if date && let Some(text) = value.as_str() {
                 value = alibi_core::utils::datetime::parse_date_millis(text)
                     .map(alibi_core::utils::datetime::json_date_millis)
-                    .map_or(serde_json::Value::Null, serde_json::Value::String);
+                    .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                        alibi_core::utils::json::JsValue::String(value.into())
+                    });
             }
             _ = output.insert(field.to_owned(), value);
         }
@@ -153,14 +155,12 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     db: &C,
     verification: Option<alibi_core::utils::json::JsValue>,
     id: Option<&str>,
-    native_fields: std::collections::BTreeMap<String, serde_json::Value>,
+    native_fields: std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>,
 ) -> AuthResult<M> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
     let insert = id.is_none();
-    let verification = verification
-        .map(|value| value.to_json_value())
-        .transpose()?;
+    let verification = verification.filter(|value| !value.is_undefined());
     let verification =
         verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()));
     if verification.is_none()
@@ -178,6 +178,9 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         .into_iter()
         .chain(verification.map(|raw| ("emailVerified".to_owned(), raw)))
     {
+        if raw.is_undefined() {
+            continue;
+        }
         let Some(column) = M::list_users_column(&field) else {
             continue;
         };
@@ -200,7 +203,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 | sea_orm::sea_query::ColumnType::Timestamp
                 | sea_orm::sea_query::ColumnType::DateTime
         ) {
-            match raw {
+            match crate::additional_fields::bind_scalar(raw)? {
                 sea_orm::Value::String(Some(value))
                     if db.get_database_backend() == sea_orm::DbBackend::Sqlite =>
                 {
@@ -292,7 +295,7 @@ async fn stage_provider_text<M: SeaOrmUserModel, C: ConnectionTrait>(
     email: Option<alibi_core::utils::json::JsValue>,
 ) -> AuthResult<()> {
     for (field, raw) in [("name", name), ("image", image), ("email", email)] {
-        let Some(raw) = raw else {
+        let Some(raw) = raw.filter(|value| !value.is_undefined()) else {
             continue;
         };
         if raw.is_array() || raw.is_object() {
@@ -348,13 +351,13 @@ where
         if create_user.id.as_deref() == Some("") {
             _ = create_user
                 .adapter_native_fields
-                .insert("id".into(), serde_json::json!(""));
+                .insert("id".into(), serde_json::json!("").into());
             create_user.id = None;
         }
         if create_user
             .adapter_native_fields
             .get("id")
-            .is_some_and(serde_json::Value::is_null)
+            .is_some_and(alibi_core::utils::json::JsValue::is_null)
         {
             _ = create_user.adapter_native_fields.remove("id");
         }
@@ -565,10 +568,14 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SeaOrmUserModel,
 {
+    fn supports_native_json(&self) -> bool {
+        self.db.get_database_backend() != sea_orm::DbBackend::Sqlite
+    }
+
     async fn native_user_output(
         &self,
         id: &str,
-    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    ) -> AuthResult<std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>> {
         native_user_output::<S::User, _>(self.scoped_connection(), id).await
     }
 
@@ -971,7 +978,8 @@ where
         ) {
             return Err(AuthError::internal("Unsupported native user SQL parameter"));
         }
-        let value = crate::additional_fields::raw_value(username)?;
+        let value =
+            crate::additional_fields::bind_scalar(crate::additional_fields::raw_value(username)?)?;
         user_query::<S::User>(connection.get_database_backend())
             .filter(column.eq(value))
             .one(connection)

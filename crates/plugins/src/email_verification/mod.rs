@@ -159,7 +159,7 @@ alibi_core::impl_auth_plugin! {
                 let current = alibi_core::session::cookie_cache::runtime::authenticated(ctx, call, false)
                     .await.ok().flatten();
                 if let Some(read) = &current {
-                    call.record_authenticated_session(ctx.user_view(&read.user), read.session.clone());
+                    call.record_authenticated_session(ctx.user_view(&read.user)?, read.session.clone());
                 }
                 return alibi_core::endpoint::EndpointResponse::json(
                     &send_verification_email_core(&body, current.as_ref().map(|read| &read.user), &self.config, ctx).await?,
@@ -342,7 +342,10 @@ impl EmailVerificationPlugin {
         if self.config.send_verification_email.is_none()
             && let Some(sender) = ctx.email_verification_override()
         {
-            return sender.0.send(&ctx.trusted_user_view(user), None, ctx).await;
+            return sender
+                .0
+                .send(&ctx.trusted_user_view(user)?, None, ctx)
+                .await;
         }
         let verification_token = token::create_email_verification_token(
             ctx.config.current_secret(),
@@ -355,7 +358,7 @@ impl EmailVerificationPlugin {
         let verification_url = verification_url(&ctx.config, &verification_token, callback_url);
 
         if let Some(ref custom_sender) = self.config.send_verification_email {
-            let user = ctx.trusted_user_view(user);
+            let user = ctx.trusted_user_view(user)?;
             send_custom_verification_email(
                 ctx,
                 custom_sender,
@@ -473,7 +476,7 @@ pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
     {
         return Ok(());
     }
-    let user = ctx.trusted_user_view(user);
+    let user = ctx.trusted_user_view(user)?;
     if config
         .as_ref()
         .is_none_or(|config| config.send_verification_email.is_none())
@@ -871,12 +874,12 @@ mod tests {
             banned: Some(false),
             ban_reason: None,
             ban_expires: None,
-            metadata: serde_json::Value::Null,
+            metadata: serde_json::Value::Null.into(),
             is_anonymous: None,
             phone_number: None,
             phone_number_verified: None,
             last_login_method: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
         }
     }
 
@@ -1317,12 +1320,12 @@ mod tests {
             banned: Some(true),
             ban_reason: Some("spam".into()),
             ban_expires: None,
-            metadata: serde_json::Value::Null,
+            metadata: serde_json::Value::Null.into(),
             is_anonymous: None,
             phone_number: None,
             phone_number_verified: None,
             last_login_method: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
         };
         let converted = UserView::from(&user);
         assert_eq!(converted.id, "test-id");

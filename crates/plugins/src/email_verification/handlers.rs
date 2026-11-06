@@ -52,7 +52,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
             Some(&user.id()),
         )?;
         let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-        let user = ctx.user_view(user);
+        let user = ctx.user_view(user)?;
         if config.send_verification_email.is_none()
             && let Some(sender) = ctx.email_verification_override()
         {
@@ -86,7 +86,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                     Some(&user.id()),
                 )?;
                 let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
-                let user = ctx.user_view(&user);
+                let user = ctx.user_view(&user)?;
                 if config.send_verification_email.is_none()
                     && let Some(sender) = ctx.email_verification_override()
                 {
@@ -225,7 +225,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         if user.email().unwrap_or_default().to_lowercase() != claims.email {
             return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
         }
-        let current_session = verification_session(request, ctx).await;
+        let current_session = verification_session(request, ctx).await?;
         if let Some((ref session_user, _)) = current_session
             && session_user.id != user_id
         {
@@ -243,7 +243,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     Some(user_id),
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
-                let mut updated_user = ctx.user_view(&user);
+                let mut updated_user = ctx.user_view(&user)?;
                 updated_user.email = Some(update_to.to_owned());
                 if config.send_verification_email.is_none()
                     && let Some(sender) = ctx.email_verification_override()
@@ -288,7 +288,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     .await?;
 
                 if email_verified && let Some(ref hook) = config.after_email_verification {
-                    let hook_user = ctx.user_view(&updated_user);
+                    let hook_user = ctx.user_view(&updated_user)?;
                     hook(&hook_user).await?;
                 }
 
@@ -316,7 +316,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 return Ok(VerifyEmailResult::Json {
                     body: serde_json::json!({
                         "status": true,
-                        "user": ctx.user_view(&updated_user),
+                        "user": ctx.user_view(&updated_user)?,
                     }),
                     session_token,
                 });
@@ -342,7 +342,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     Some(user_id),
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
-                let wire_user = ctx.user_view(&updated_user);
+                let wire_user = ctx.user_view(&updated_user)?;
                 if config.send_verification_email.is_none()
                     && let Some(sender) = ctx.email_verification_override()
                 {
@@ -383,7 +383,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 return Ok(VerifyEmailResult::Json {
                     body: serde_json::json!({
                         "status": true,
-                        "user": ctx.user_view(&updated_user),
+                        "user": ctx.user_view(&updated_user)?,
                     }),
                     session_token,
                 });
@@ -421,7 +421,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
     }
 
     if let Some(ref hook) = config.before_email_verification {
-        let hook_user = ctx.user_view(&user);
+        let hook_user = ctx.user_view(&user)?;
         hook(&hook_user).await?;
     }
 
@@ -437,12 +437,12 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         .await?;
 
     if let Some(ref hook) = config.after_email_verification {
-        let hook_user = ctx.user_view(&updated_user);
+        let hook_user = ctx.user_view(&updated_user)?;
         hook(&hook_user).await?;
     }
 
     let session_token = if config.auto_sign_in_after_verification {
-        let current_session = verification_session(request, ctx).await;
+        let current_session = verification_session(request, ctx).await?;
         match current_session {
             Some((session_user, session))
                 if session_user.email().unwrap_or_default() == claims.email =>
@@ -471,7 +471,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     })?;
                 // Source publishes the original lookup snapshot with only the
                 // verification flag changed, even though the stored row is newer.
-                let mut original_view = ctx.trusted_user_view(&user);
+                let mut original_view = ctx.trusted_user_view(&user)?;
                 original_view.email_verified = true;
                 alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                     ctx,
@@ -479,7 +479,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                         issued.user.clone(),
                         issued.session.clone(),
                         original_view.clone(),
-                        ctx.session_view(&issued.session),
+                        ctx.session_view(&issued.session)?,
                     ),
                 )
                 .await?;
@@ -508,14 +508,17 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
 async fn verification_session<S: alibi_core::AuthSchema>(
     request: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
-) -> Option<(UserView, SessionView)> {
-    let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
+) -> AuthResult<Option<(UserView, SessionView)>> {
+    let Some(read) = alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
         .await
         .ok()
-        .flatten()?;
-    let user = ctx.user_view(&read.user);
+        .flatten()
+    else {
+        return Ok(None);
+    };
+    let user = ctx.user_view(&read.user)?;
     if let Some(call) = request.endpoint_call() {
         call.record_authenticated_session(user.clone(), read.session.clone());
     }
-    Some((user, read.session))
+    Ok(Some((user, read.session)))
 }

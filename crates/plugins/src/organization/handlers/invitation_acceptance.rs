@@ -158,7 +158,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
         .get_organization_by_id(invitation.organization_id().as_ref())
         .await?
         .ok_or_else(|| acceptance_error(400, codes::ORGANIZATION_NOT_FOUND))?;
-    let original_user = ctx.user_view(user);
+    let original_user = ctx.user_view(user)?;
     let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
     let limit = crate::organization::policy::admission_limit(
         config.membership_limit.as_ref(),
@@ -193,7 +193,7 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
         .await?
         .ok_or_else(|| acceptance_error(400, codes::INVITATION_NOT_FOUND))?;
     let accepted_for_tx = accepted.clone();
-    let original_session = ctx.session_view(session);
+    let original_session = ctx.session_view(session)?;
     let token = session.token().to_owned();
     let teams = config.teams.clone();
     let tx_user = original_user.clone();

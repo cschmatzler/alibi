@@ -542,7 +542,7 @@ impl ApiKeyPlugin {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
                 200,
                 &serde_json::json!({
-                    "user": ctx.user_view(&user),
+                    "user": ctx.user_view(&user)?,
                     "session": session,
                 }),
             )?)));
@@ -583,7 +583,7 @@ impl ApiKeyPlugin {
         let session = SessionView {
             omitted_fields: std::collections::BTreeSet::default(),
             active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
+            extension_fields: Default::default(),
             id: view.id.clone(),
             token: key.to_owned(),
             user_id: user.id().into_owned(),

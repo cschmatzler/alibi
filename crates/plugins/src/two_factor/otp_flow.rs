@@ -45,7 +45,7 @@ pub(in crate::two_factor) async fn send_otp_core(
 
     otp::deliver(
         Arc::clone(sender),
-        ctx.user_view(&state.user()),
+        ctx.user_view(&state.user())?,
         otp,
         ctx.config.background_tasks.clone(),
     )

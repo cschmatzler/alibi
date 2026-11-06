@@ -125,7 +125,7 @@ impl JwtPlugin {
                         .map_err(|_| super::unauthorized())?
                         .ok_or_else(super::unauthorized)?;
                 let user = match &read.user {
-                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user)?,
                     alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                 };
                 let session = JwtSession {

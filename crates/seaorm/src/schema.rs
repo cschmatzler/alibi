@@ -25,7 +25,7 @@ pub trait SeaOrmUserModel:
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: sea_orm::DbBackend,
-    ) -> AuthResult<Vec<(Self::Column, Value)>> {
+    ) -> AuthResult<Vec<(Self::Column, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
@@ -136,7 +136,7 @@ pub trait SeaOrmSessionModel:
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: sea_orm::DbBackend,
-    ) -> AuthResult<Vec<(Self::Column, Value)>> {
+    ) -> AuthResult<Vec<(Self::Column, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
@@ -226,7 +226,7 @@ pub trait SeaOrmAccountModel:
     fn additional_field_bindings(
         fields: &FieldValues,
         _backend: sea_orm::DbBackend,
-    ) -> AuthResult<Vec<(Self::Column, Value)>> {
+    ) -> AuthResult<Vec<(Self::Column, alibi_core::store::adapter::RawFieldValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }

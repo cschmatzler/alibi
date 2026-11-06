@@ -274,7 +274,7 @@ pub(crate) async fn create_user_core(
                 || matches!(wire, "banReason" | "banExpires")
                 || (wire == "id" && value.as_str() == Some(""))
             {
-                _ = native_fields.insert(wire.to_owned(), value);
+                _ = native_fields.insert(wire.to_owned(), value.into());
             }
         }
     }
@@ -336,7 +336,7 @@ pub(crate) async fn create_user_core(
     }
 
     Ok(UserResponse {
-        user: ctx.user_view(&user),
+        user: ctx.user_view(&user)?,
     })
 }
 
@@ -502,7 +502,7 @@ pub(crate) async fn update_user_core(
             } else {
                 _ = update
                     .adapter_native_fields
-                    .insert(name.to_owned(), value.clone());
+                    .insert(name.to_owned(), value.clone().into());
             }
         }
     }
@@ -557,13 +557,14 @@ pub(crate) async fn update_user_core(
                     "banExpires".to_owned(),
                     serde_json::Value::String(alibi_core::utils::datetime::json_date_millis(
                         millis,
-                    )),
+                    ))
+                    .into(),
                 );
             }
         } else {
             _ = update
                 .adapter_native_fields
-                .insert("banExpires".to_owned(), value.clone());
+                .insert("banExpires".to_owned(), value.clone().into());
         }
     }
     if let Some(value) = body
@@ -669,7 +670,7 @@ pub(crate) async fn list_user_sessions_core(
         sessions: sessions
             .iter()
             .map(|session| ctx.session_view(session))
-            .collect(),
+            .collect::<AuthResult<_>>()?,
     })
 }
 
@@ -847,8 +848,8 @@ pub(crate) async fn impersonate_user_core(
     alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &target, &session).await?;
     let token = session.token().to_owned();
     let response = SessionUserResponse {
-        session: ctx.session_view(&session),
-        user: ctx.user_view(&target),
+        session: ctx.session_view(&session)?,
+        user: ctx.user_view(&target)?,
     };
 
     Ok((response, token))
@@ -921,8 +922,8 @@ pub(crate) async fn stop_impersonating_core(
         .await?;
     let token = admin_session.token().to_owned();
     let response = SessionUserResponse {
-        session: ctx.session_view(&admin_session),
-        user: ctx.user_view(&admin_user),
+        session: ctx.session_view(&admin_session)?,
+        user: ctx.user_view(&admin_user)?,
     };
 
     Ok((response, token, admin_cookie.dont_remember))

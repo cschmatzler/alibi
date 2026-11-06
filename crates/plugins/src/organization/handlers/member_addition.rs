@@ -118,7 +118,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
         .get_organization_by_id(organization_id)
         .await?
         .ok_or_else(|| org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
-    let original_user = ctx.user_view(&user);
+    let original_user = ctx.user_view(&user)?;
     let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
     let limit = crate::organization::policy::admission_limit(
         config.membership_limit.as_ref(),
@@ -163,7 +163,7 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
                         organization_id: organization_id.to_owned(),
                         team_id: Some(team_id.to_owned()),
                         session: Some(actor_session.clone()),
-                        user: Some(ctx.user_view(actor)),
+                        user: Some(ctx.user_view(actor)?),
                         request: request.cloned(),
                     })
                     .await?
