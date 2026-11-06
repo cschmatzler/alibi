@@ -11,13 +11,23 @@ pub(crate) async fn prepare_additional_user_fields(
     data: &mut CreateUser,
 ) -> AuthResult<()> {
     apply_creation_input_defaults(ctx, data);
-    if !ctx
+    let username_enabled = ctx
         .get_metadata("username.enabled")
         .and_then(Value::as_bool)
-        .unwrap_or(false)
-    {
+        .unwrap_or(false);
+    if !username_enabled {
         data.username = None;
         data.display_username = None;
+        let mut input = data
+            .additional_fields
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<indexmap::IndexMap<_, _>>();
+        _ = input.shift_remove("username");
+        _ = input.shift_remove("displayUsername");
+        data.additional_fields = ctx
+            .parse_user_fields(&input, true)
+            .map_err(field_input_error)?;
         return Ok(());
     }
     let policy = ctx
@@ -25,15 +35,14 @@ pub(crate) async fn prepare_additional_user_fields(
         .get::<alibi_core::utils::username::UsernameConfig>()
         .map(|policy| (*policy).clone())
         .unwrap_or_default();
-    let mut input = indexmap::IndexMap::new();
-    // Passwordless endpoint fields are untyped extension input. Retain their
-    // raw values through schema parsing and the actual username hook stage.
-    for key in ["username", "displayUsername"] {
-        if (key != "displayUsername" || policy.include_display_username)
-            && let Some(value) = data.additional_fields.get(key)
-        {
-            _ = input.insert(key.into(), value.clone());
-        }
+    // Retain raw extension values through schema parsing and username hooks.
+    let mut input = data
+        .additional_fields
+        .iter()
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect::<indexmap::IndexMap<_, _>>();
+    if !policy.include_display_username {
+        _ = input.shift_remove("displayUsername");
     }
     if let Some(username) = &data.username {
         _ = input.insert(

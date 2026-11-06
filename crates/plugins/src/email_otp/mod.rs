@@ -1166,6 +1166,73 @@ mod tests {
     // Upstream: parseUserInput ignores fields contributed by an absent plugin.
     // Persisted fields are checked because response projection alone can hide writes.
     #[tokio::test]
+    async fn signup_parses_configured_additional_user_input() {
+        use alibi_core::field_policy::FieldConfig;
+        for username_enabled in [false, true] {
+            let validations = Arc::new(AtomicUsize::new(0));
+            let calls = Arc::clone(&validations);
+            let mut auth_config = test_helpers::create_test_config();
+            auth_config.user.additional_fields.insert(
+                "role".into(),
+                FieldConfig::new(json!({"type": "string"})).validate(move |value| {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    if value.as_str() == Some("member") {
+                        Ok(alibi_core::utils::json::JsValue::String("editor".into()))
+                    } else {
+                        Err("role must be member".into())
+                    }
+                }),
+            );
+            let mut ctx = test_helpers::create_test_context_with_config(auth_config).await;
+            if username_enabled {
+                ctx.set_metadata("username.enabled", json!(true));
+            }
+            let (config, _) = configured();
+            let plugin = EmailOtpPlugin::new(config);
+            for (email, role, status) in [
+                ("accepted@example.com", "member", 200),
+                ("rejected@example.com", "owner", 400),
+            ] {
+                assert_eq!(
+                    post(
+                        &plugin,
+                        &ctx,
+                        "/email-otp/send-verification-otp",
+                        json!({"email": email, "type": "sign-in"})
+                    )
+                    .await
+                    .status,
+                    200
+                );
+                let code = if status == 200 { "100000" } else { "100001" };
+                let response = post(
+                    &plugin,
+                    &ctx,
+                    "/sign-in/email-otp",
+                    json!({"email": email, "otp": code, "role": role, "unknown": "ignored"}),
+                )
+                .await;
+                assert_eq!(
+                    response.status,
+                    status,
+                    "{}",
+                    String::from_utf8_lossy(&response.body)
+                );
+                let user = ctx.database.get_user_by_email_record(email).await.unwrap();
+                if status == 200 {
+                    assert_eq!(user.unwrap().role().as_deref(), Some("editor"));
+                } else {
+                    assert!(user.is_none());
+                    assert!(
+                        String::from_utf8_lossy(&response.body).contains("role must be member")
+                    );
+                }
+            }
+            assert_eq!(validations.load(Ordering::SeqCst), 2);
+        }
+    }
+
+    #[tokio::test]
     async fn signup_ignores_unregistered_username_fields() {
         let ctx = test_helpers::create_test_context().await;
         let (config, _) = configured();

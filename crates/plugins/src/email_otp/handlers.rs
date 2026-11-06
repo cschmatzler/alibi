@@ -478,6 +478,16 @@ impl EmailOtpPlugin {
                     .with_name(body.name.unwrap_or_default())
                     .with_email_verified(true);
                 data.image = body.image;
+                if let Some(fields) = raw.as_object() {
+                    for (key, value) in fields {
+                        if !matches!(
+                            key.as_str(),
+                            "email" | "otp" | "name" | "image" | "username" | "displayUsername"
+                        ) {
+                            _ = data.additional_fields.insert(key.clone(), value.clone());
+                        }
+                    }
+                }
                 if let Some(username) = body.username {
                     _ = data.additional_fields.insert("username".into(), username);
                 }
