@@ -42,7 +42,9 @@ impl OAuthProvider {
             authorization: Some(OAuthAuthorizationPolicy::default()),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
-            account_subject: None,
+            account_subject: Some(|profile| {
+                super::remaining_profile::raw_subject(profile.get("id"))
+            }),
             map_user_info: None,
             get_user_info: Some(Arc::new(GitHubUserInfoHandler::new(
                 user_info_url.to_owned(),
@@ -73,6 +75,7 @@ pub(in crate::oauth::providers) struct GitHubEmailAddress {
 pub(in crate::oauth::providers) struct GitHubUserInfoHandler {
     pub(in crate::oauth::providers) user_url: String,
     pub(in crate::oauth::providers) emails_url: String,
+    mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 
 impl GitHubUserInfoHandler {
@@ -80,6 +83,7 @@ impl GitHubUserInfoHandler {
         Self {
             user_url,
             emails_url,
+            mapper: None,
         }
     }
 
@@ -115,6 +119,15 @@ impl GitHubUserInfoHandler {
 
 #[async_trait]
 impl OAuthUserInfoHandler for GitHubUserInfoHandler {
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = Some(mapper);
+        Some(Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -162,39 +175,130 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             .find(|record| record.email == resolved_email)
             .is_some_and(|record| record.verified);
 
-        let id = profile
-            .get("id")
-            .and_then(|value| value.as_i64().map(|value| value.to_string()))
-            .or_else(|| profile.get("id").and_then(Value::as_str).map(String::from))
-            .ok_or("missing id")?;
-
-        let login = profile
-            .get("login")
-            .and_then(Value::as_str)
-            .map(String::from);
-
-        Ok(OAuthUserInfoResponse {
-            user_output: None,
+        let mut output = Map::new();
+        output.insert(
+            "name".into(),
+            ["name", "login"]
+                .into_iter()
+                .filter_map(|key| profile.get(key))
+                .find(|value| super::remaining_profile::truthy(value))
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new())),
+        );
+        for (source, target) in [("email", "email"), ("avatar_url", "image")] {
+            if let Some(value) = profile.get(source) {
+                output.insert(target.into(), value.clone());
+            }
+        }
+        output.insert("emailVerified".into(), Value::Bool(email_verified));
+        if let Some(mapper) = &self.mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
             user: OAuthUserInfo {
-                additional_fields: Map::default(),
-                id,
-                email: resolved_email,
-                name: Some(
-                    profile
-                        .get("name")
-                        .and_then(Value::as_str)
-                        .filter(|name| !name.is_empty())
-                        .map(String::from)
-                        .or(login)
-                        .unwrap_or_default(),
-                ),
-                image: profile
-                    .get("avatar_url")
-                    .and_then(Value::as_str)
-                    .map(String::from),
-                email_verified,
+                additional_fields: Map::new(),
+                id: super::remaining_profile::raw_subject(profile.get("id"))?,
+                email: String::new(),
+                name: None,
+                image: None,
+                email_verified: false,
             },
             data: profile,
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Mapper;
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile["email"], "primary@example.com");
+            Ok(
+                serde_json::json!({"name":"Mapped","custom":true,"id":"public-id"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        }
+    }
+    #[tokio::test]
+    async fn github_maps_after_primary_email_enrichment() {
+        let body =
+            serde_json::json!({"id":42,"login":"login","name":null,"email":null,"avatar_url":null});
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let user_endpoint = endpoint;
+        let user_server = server;
+        let body = serde_json::json!([
+            {"email":"first@example.com","primary":false,"verified":false},
+            {"email":"primary@example.com","primary":true,"verified":true}
+        ]);
+
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let provider = OAuthProvider::github_with_endpoints(
+            "client",
+            "secret",
+            "auth",
+            "token",
+            &user_endpoint,
+            &endpoint,
+        )
+        .with_profile_mapper(Arc::new(Mapper));
+        let response = provider
+            .get_user_info
+            .as_ref()
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.user.name.as_deref(), Some("Mapped"));
+        assert_eq!(response.user.email, "primary@example.com");
+        assert!(response.user.email_verified);
+        assert_eq!(response.user_output.as_ref().unwrap()["image"], Value::Null);
+        assert_eq!(response.user_output.as_ref().unwrap()["id"], "public-id");
+        assert_eq!(
+            provider.account_subject.unwrap()(&response.data).unwrap(),
+            "42"
+        );
+        user_server.await.unwrap();
+        server.await.unwrap();
     }
 }
