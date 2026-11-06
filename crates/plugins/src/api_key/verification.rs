@@ -274,10 +274,9 @@ impl ApiKeyPlugin {
             return Err(ApiKeyErrorCode::KeyDisabled.into());
         }
         if let Some(expires_at) = api_key.expires_at.as_deref() {
-            let expiration = chrono::DateTime::parse_from_rfc3339(expires_at).map_err(|error| {
-                AuthError::internal(format!("Invalid stored API key expiration: {error}"))
-            })?;
-            if chrono::Utc::now() > expiration {
+            let expiration = alibi_core::utils::datetime::parse_date_millis(expires_at)
+                .ok_or_else(|| AuthError::internal("Invalid stored API key expiration"))?;
+            if chrono::Utc::now().timestamp_millis() > expiration {
                 Self::delete_rejected_key(&api_key, config, ctx).await?;
                 return Err(ApiKeyErrorCode::KeyExpired.into());
             }

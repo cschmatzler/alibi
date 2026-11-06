@@ -3455,6 +3455,44 @@ mod crud_tests {
     }
 
     #[tokio::test]
+    async fn secondary_expiration_accepts_javascript_date_strings() {
+        use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
+        let (ctx, owner, _) = context().await;
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+            storage: ApiKeyStorageMode::SecondaryStorage,
+            secondary_storage: Some(cache.clone()),
+            ..Default::default()
+        });
+        for (expiration, expired) in [("2099-01-01", false), ("2000-01-01", true)] {
+            let created = server_key(&plugin, &ctx, &owner, "default").await;
+            let id = format!("api-key:by-id:{}", created.api_key.id);
+            let hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+            let mut row: serde_json::Value =
+                serde_json::from_str(&cache.get(&id).await.unwrap().unwrap()).unwrap();
+            row["expiresAt"] = json!(expiration);
+            let serialized = serde_json::to_string(&row).unwrap();
+            for index in [&id, &hash] {
+                cache.set_without_expiry(index, &serialized).await.unwrap();
+            }
+            let result = plugin.verify_api_key(&VerifyApiKey {
+                key: &created.key, config_id: None, permissions: None,
+            }, &ctx).await;
+            if expired {
+                let ApiKeyVerificationError::Validation(error) = result.unwrap_err() else {
+                    panic!("Expected expired-key validation error");
+                };
+                assert_eq!(error.code, ApiKeyErrorCode::KeyExpired);
+                assert!(cache.get(&id).await.unwrap().is_none());
+                assert!(cache.get(&hash).await.unwrap().is_none());
+            } else {
+                assert_eq!(result.unwrap().id, created.api_key.id);
+                assert!(cache.get(&id).await.unwrap().is_some());
+            }
+        }
+    }
+
+    #[tokio::test]
     async fn source_boxed_metadata_rows_list_successfully_without_mutating_storage() {
         use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
         let (ctx, owner, token) = context().await;
