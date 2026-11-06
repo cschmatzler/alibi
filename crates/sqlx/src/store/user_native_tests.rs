@@ -55,6 +55,43 @@ fn native_secondary_optional_fields_retain_declared_wire_presence() {
     assert!(encoded.get("unknown_extra").is_none());
 }
 
+#[test]
+fn native_secondary_custom_texts_keep_raw_values() {
+    for value in [json!(42), json!({"custom": true}), json!(null)] {
+        let source = json!({
+            "id": "cache-custom", "name": 42, "email": null, "image": {"cached": true},
+            "email_verified": false, "created_at": "2020-01-01T00:00:00.000Z",
+            "updated_at": "2020-01-01T00:00:00.000Z", "favorite_color": value
+        });
+        let record = OptionalNativeUser::from_secondary_snapshot_record(source.clone()).unwrap();
+        assert_eq!(record.stored().favorite_color, None);
+        let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+        assert_eq!(wire["favoriteColor"], value);
+        assert_eq!(wire["email"], serde_json::Value::Null);
+        assert_eq!(wire["image"], source["image"]);
+        assert!(wire.get("absentMarker").is_none());
+        assert_eq!(
+            record.secondary_snapshot().unwrap()["favorite_color"],
+            value
+        );
+    }
+    let source = json!({
+        "id": "cache-missing-text", "email_verified": false,
+        "created_at": "2020-01-01T00:00:00.000Z",
+        "updated_at": "2020-01-01T00:00:00.000Z"
+    });
+    let record = OptionalNativeUser::from_secondary_snapshot_record(source).unwrap();
+    assert_eq!(record.stored().name, "");
+    assert_eq!(record.stored().email, "");
+    let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+    let encoded = record.secondary_snapshot().unwrap();
+    for field in ["name", "email"] {
+        assert!(record.raw_snapshot().field_is_undefined(field));
+        assert!(wire.get(field).is_none());
+        assert!(encoded.get(field).is_none());
+    }
+}
+
 #[tokio::test]
 async fn false_ban_patch_preserves_omissions_and_applies_explicit_values() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()

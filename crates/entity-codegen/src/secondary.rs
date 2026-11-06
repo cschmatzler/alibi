@@ -104,49 +104,58 @@ pub fn user_secondary_codec(
             }
         });
     }
-    if fields
-        .named
-        .iter()
-        .any(|field| field.ident.as_ref().is_some_and(|ident| ident == "name"))
-        && !crate::optional_field(fields, "name")
-    {
-        overlay.push(quote! {
-            if native.field_is_undefined("name") {
-                _ = snapshot.remove("name");
-            } else if let Some(value) = native.values().get("name") {
-                _ = snapshot.insert("name".to_owned(), value.clone());
-            }
-        });
-        capture.push(quote! {
-            native.insert("name".to_owned(), source.get("name").cloned());
-        });
-        normalize.push(quote! {
-            if fields.get("name").is_some_and(::serde_json::Value::is_null) {
-                _ = fields.insert("name".to_owned(), ::serde_json::Value::String(String::new()));
-            }
-        });
-    }
     for field in entity_fields {
         let key = field.ident.to_string();
-        if !crate::optional_field(fields, &key) {
+        if key == "id" {
             continue;
         }
-        normalize.push(quote! {
-            if !fields.contains_key(#key) {
-                _ = fields.insert(#key.to_owned(), ::serde_json::Value::Null);
-            }
-        });
-        if matches!(
-            key.as_str(),
-            "email_verified"
-                | "banned"
-                | "two_factor_enabled"
-                | "is_anonymous"
-                | "phone_number_verified"
-                | "created_at"
-                | "updated_at"
-                | "ban_expires"
-        ) {
+        let optional = crate::optional_field(fields, &key);
+        let text = fields.named.iter().find(|candidate| candidate.ident.as_ref() == Some(&field.ident))
+            .is_some_and(|field| {
+                let syn::Type::Path(path) = &field.ty else { return false };
+                let Some(segment) = path.path.segments.last() else { return false };
+                if segment.ident == "String" {
+                    return true;
+                }
+                if segment.ident != "Option" {
+                    return false;
+                }
+                let syn::PathArguments::AngleBracketed(arguments) = &segment.arguments else { return false };
+                matches!(arguments.args.first(), Some(syn::GenericArgument::Type(syn::Type::Path(inner)))
+                    if inner.path.segments.last().is_some_and(|segment| segment.ident == "String"))
+            });
+        if optional {
+            normalize.push(quote! {
+                if !fields.contains_key(#key) {
+                    _ = fields.insert(#key.to_owned(), ::serde_json::Value::Null);
+                }
+            });
+        }
+        if text {
+            let surrogate = if optional {
+                quote! { ::serde_json::Value::Null }
+            } else {
+                quote! { ::serde_json::Value::String(::std::string::String::new()) }
+            };
+            normalize.push(quote! {
+                if fields.get(#key).is_none_or(|value| !value.is_string()) {
+                    _ = fields.insert(#key.to_owned(), #surrogate);
+                }
+            });
+        }
+        if !(optional || text)
+            || matches!(
+                key.as_str(),
+                "email_verified"
+                    | "banned"
+                    | "two_factor_enabled"
+                    | "is_anonymous"
+                    | "phone_number_verified"
+                    | "created_at"
+                    | "updated_at"
+                    | "ban_expires"
+            )
+        {
             continue;
         }
         let wire = &field.camel;

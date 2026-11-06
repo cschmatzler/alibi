@@ -507,3 +507,50 @@ async fn admin_update_ban_expiry_accepts_javascript_dates_and_invalid_date_fails
     assert_eq!(before.name(), after.name());
     assert_eq!(before.ban_expires(), after.ban_expires());
 }
+
+#[tokio::test]
+async fn native_secondary_nonidentity_texts_keep_raw_cache_values() {
+    use alibi_core::{AuthSchema, AuthUser, CacheAdapter};
+    let (ctx, _, _, user, _) = create_admin_context().await;
+    let user = ctx
+        .database
+        .get_user_by_id_record(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let cache = alibi_core::MemoryCacheAdapter::new();
+    type User = <TestSchema as AuthSchema>::User;
+    let mut source = user.secondary_snapshot().unwrap();
+    source["name"] = serde_json::json!(42);
+    source["email"] = serde_json::Value::Null;
+    source["image"] = serde_json::json!({"cached": true});
+    source["display_username"] = serde_json::json!(false);
+    source["unknownText"] = serde_json::json!("not declared");
+    cache
+        .set(
+            "native-text-user",
+            &source.to_string(),
+            Duration::seconds(60),
+        )
+        .await
+        .unwrap();
+    ctx.database.delete_user(&user.id()).await.unwrap();
+    let cached =
+        serde_json::from_str(&cache.get("native-text-user").await.unwrap().unwrap()).unwrap();
+    let record = User::from_secondary_snapshot_record(cached).unwrap();
+    assert_eq!(record.name(), Some(""));
+    assert_eq!(record.email(), Some(""));
+    assert_eq!(record.image(), None);
+    assert_eq!(record.display_username(), None);
+    let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+    assert_eq!(wire["name"], 42);
+    assert_eq!(wire["email"], serde_json::Value::Null);
+    assert_eq!(wire["image"], source["image"]);
+    assert_eq!(wire["displayUsername"], false);
+    assert!(wire.get("unknownText").is_none());
+    let encoded = record.secondary_snapshot().unwrap();
+    for field in ["name", "email", "image", "display_username"] {
+        assert_eq!(encoded[field], source[field]);
+    }
+    assert!(encoded.get("unknownText").is_none());
+}
