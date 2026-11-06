@@ -756,6 +756,98 @@ mod extension_tests {
     }
 
     #[tokio::test]
+    async fn invitation_selectors_use_active_organization_and_endpoint_errors() -> TestResult {
+        let plugin = OrganizationPlugin::with_config(configuration());
+        let ctx = context(&plugin).await?;
+        let (_, session) = actor(&ctx, "invite-selectors").await;
+        let missing = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Post,
+            "/organization/invite-member",
+            Some(json!({"email":"invitee@example.com","role":"member","organizationId":""})),
+            &[],
+        )
+        .await?;
+        assert_error(&missing, 400, "ORGANIZATION_NOT_FOUND")?;
+        let missing = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Get,
+            "/organization/list-invitations",
+            None,
+            &[("organizationId", "")],
+        )
+        .await?;
+        assert_eq!(missing.status, 400);
+        assert_eq!(
+            body::<Value>(&missing)?["message"],
+            "Organization ID is required"
+        );
+
+        let created = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Post,
+            "/organization/create",
+            Some(json!({"name":"Invites","slug":"invite-selectors"})),
+            &[],
+        )
+        .await?;
+        assert_eq!(created.status, 200);
+        let org: Value = body(&created)?;
+        let invited = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Post,
+            "/organization/invite-member",
+            Some(json!({"email":"invitee@example.com","role":"member","organizationId":""})),
+            &[],
+        )
+        .await?;
+        assert_eq!(
+            invited.status,
+            200,
+            "{}",
+            String::from_utf8_lossy(&invited.body)
+        );
+        let listed = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Get,
+            "/organization/list-invitations",
+            None,
+            &[("organizationId", "")],
+        )
+        .await?;
+        assert_eq!(listed.status, 200);
+        assert_eq!(body::<Vec<Value>>(&listed)?.len(), 1);
+
+        let (_, outsider) = actor(&ctx, "invite-outsider").await;
+        let denied = call(
+            &plugin,
+            &ctx,
+            Some(&outsider.token),
+            HttpMethod::Get,
+            "/organization/list-invitations",
+            None,
+            &[("organizationId", id(&org)?)],
+        )
+        .await?;
+        assert_eq!(denied.status, 403);
+        assert_eq!(
+            body::<Value>(&denied)?["message"],
+            "You are not a member of this organization"
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn list_members_empty_selectors_fall_back_to_active_organization() -> TestResult {
         let plugin = OrganizationPlugin::with_config(configuration());
         let ctx = context(&plugin).await?;

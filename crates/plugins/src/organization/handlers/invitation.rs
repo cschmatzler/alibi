@@ -1,4 +1,3 @@
-use super::resolve_organization_id;
 use crate::organization::types::OrganizationResponse;
 use crate::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse,
@@ -68,8 +67,14 @@ pub(crate) async fn invite_member_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InvitationView> {
-    let org_id =
-        resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
+    let org_id = body
+        .organization_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .or_else(|| session.active_organization_id())
+        .filter(|id| !id.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| super::extension_common::org_error(400, codes::ORGANIZATION_NOT_FOUND))?;
 
     if validator::Validate::validate(body).is_err() {
         return Err(AuthError::Upstream {
@@ -452,14 +457,20 @@ pub(crate) async fn list_invitations_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<InvitationView>> {
-    let org_id =
-        resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?;
+    let org_id = query
+        .organization_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .or_else(|| session.active_organization_id())
+        .filter(|id| !id.is_empty())
+        .map(ToOwned::to_owned)
+        .ok_or_else(|| AuthError::bad_request("Organization ID is required"))?;
 
     let member = ctx
         .database
         .get_member(&org_id, &user.id())
         .await?
-        .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
+        .ok_or_else(|| AuthError::forbidden("You are not a member of this organization"))?;
 
     let config = ctx
         .extensions
