@@ -168,6 +168,7 @@ impl OAuthProvider {
             get_user_info: Some(Arc::new(CognitoUserInfo {
                 endpoint,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
             })),
             refresh_access_token: None,
             verify_id_token: None,
@@ -180,12 +181,23 @@ impl OAuthProvider {
         })
     }
 }
+#[derive(Clone)]
 struct CognitoUserInfo {
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for CognitoUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -199,12 +211,8 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             }
             // Only decoding or the application's mapper may select the access-token
             // fallback. An invalid raw subject remains an admission failure.
-            if let Ok(mapped) = self
-                .mapper
-                .map(|mapper| mapper(profile.clone()))
-                .transpose()
-            {
-                return finish_profile(profile, mapped);
+            if let Ok(output) = self.map_profile(&profile).await {
+                return finish_profile(profile, output);
             }
         }
         let access_token = request
@@ -222,13 +230,33 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        finish_profile(profile, mapped)
+        let output = self.map_profile(&profile).await?;
+        finish_profile(profile, output)
     }
 }
+impl CognitoUserInfo {
+    async fn map_profile(&self, profile: &Value) -> Result<Map<String, Value>, String> {
+        let mut output = Map::new();
+        output.insert("name".into(), profile_name(profile));
+        for (source, target) in [("email", "email"), ("picture", "image")] {
+            if let Some(value) = profile.get(source) {
+                output.insert(target.into(), value.clone());
+            }
+        }
+        output.insert(
+            "emailVerified".into(),
+            Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
+        );
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        Ok(output)
+    }
+}
+
 fn decode_profile(token: &str) -> Result<Value, String> {
     let parts: Vec<_> = token.split('.').collect();
     let [_, payload, _] = parts.as_slice() else {
@@ -277,31 +305,24 @@ fn profile_name(profile: &Value) -> Value {
 }
 fn finish_profile(
     profile: Value,
-    mapped: Option<OAuthUserInfo>,
+    output: Map<String, Value>,
 ) -> Result<OAuthUserInfoResponse, String> {
-    let id = scalar(profile.get("sub"))?.unwrap_or_default();
-    let user_output = mapped.as_ref().map(|user| user.public_profile(true));
-    let user = match mapped {
-        Some(user) => user,
-        None => OAuthUserInfo {
-            additional_fields: Map::default(),
-            id,
-            email: profile
-                .get("email")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .into(),
-            name: Some(scalar(Some(&profile_name(&profile)))?.unwrap_or_default()),
-            image: scalar(profile.get("picture"))?,
-            email_verified: super::email_verified_claim(profile.get("email_verified")),
+    let mut response = OAuthUserInfoResponse {
+        user_output: Some(output.clone()),
+        user: OAuthUserInfo {
+            additional_fields: Map::new(),
+            id: scalar(profile.get("sub"))?.unwrap_or_default(),
+            email: String::new(),
+            name: None,
+            image: None,
+            email_verified: false,
         },
-    };
-    Ok(OAuthUserInfoResponse {
-        user_output,
-        user,
         data: profile,
-    })
+    };
+    super::apply_application_mapping(&mut response, output)?;
+    Ok(response)
 }
+
 fn subject(profile: &Value) -> Result<String, String> {
     let id = scalar(profile.get("sub"))?.ok_or("Missing Cognito subject")?;
     if id
@@ -320,6 +341,91 @@ fn subject(profile: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Mapper {
+        fallback: bool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if call == 0 {
+                assert_eq!(profile["name"], "Given");
+                if self.fallback {
+                    return Err("use HTTP".into());
+                }
+            } else {
+                assert_eq!(profile["sub"], "http-subject");
+                assert!(profile.get("name").is_none());
+            }
+            Ok(serde_json::json!({"custom":true})
+                .as_object()
+                .unwrap()
+                .clone())
+        }
+    }
+    #[tokio::test]
+    async fn cognito_partial_mapping_can_select_userinfo_fallback() {
+        for fallback in [false, true] {
+            let body = serde_json::json!({"sub":"http-subject","given_name":"HTTP","email":null,"picture":null});
+
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let body = body.to_string();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+
+            let mut options = CognitoOptions::new("client", None, "domain", "region", "pool");
+            options.user_info_endpoint = Some(endpoint);
+            let mapper = Arc::new(Mapper {
+                fallback,
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            });
+            let provider = OAuthProvider::cognito(options)
+                .unwrap()
+                .with_profile_mapper(mapper.clone());
+            let profile = serde_json::json!({"sub":"jwt-subject","given_name":"Given","email":null,"picture":null});
+            let token = format!(
+                "e30.{}.sig",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
+            );
+            let response = provider
+                .get_user_info
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    id_token: Some(token),
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let output = response.user_output.unwrap();
+            assert_eq!(output["name"], if fallback { "HTTP" } else { "Given" });
+            assert_eq!(output["email"], Value::Null);
+            assert_eq!(output["image"], Value::Null);
+            assert_eq!(output["custom"], true);
+            assert!(!output.contains_key("id"));
+            assert_eq!(
+                mapper.calls.load(std::sync::atomic::Ordering::SeqCst),
+                if fallback { 2 } else { 1 }
+            );
+            if fallback {
+                server.await.unwrap();
+            } else {
+                server.abort();
+            }
+        }
+    }
     #[test]
     fn cognito_accepts_padded_jwt_payload() {
         let profile = serde_json::json!({"sub":"cognito-id","name":"A"});
