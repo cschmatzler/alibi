@@ -42,7 +42,6 @@ use enrollment::disable_core;
 use enrollment::enable_core;
 use enrollment::mark_factor_verified;
 use enrollment::parse_password_body;
-use enrollment::verify_user_password;
 use lockout::assert_account_not_locked;
 use lockout::record_account_failure;
 use lockout::reset_account_failures;

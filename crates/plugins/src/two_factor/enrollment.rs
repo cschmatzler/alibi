@@ -252,6 +252,25 @@ pub(in crate::two_factor) async fn verify_user_password(
     password: Option<&str>,
     allow_passwordless: bool,
 ) -> AuthResult<()> {
+    verify_password_inner(ctx, user, password, allow_passwordless, false).await
+}
+
+pub(in crate::two_factor) async fn check_user_password(
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    user: &impl AuthUser,
+    password: Option<&str>,
+    allow_passwordless: bool,
+) -> AuthResult<()> {
+    verify_password_inner(ctx, user, password, allow_passwordless, true).await
+}
+
+async fn verify_password_inner(
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    user: &impl AuthUser,
+    password: Option<&str>,
+    allow_passwordless: bool,
+    hash_missing: bool,
+) -> AuthResult<()> {
     let stored_hash = get_credential_password_hash(ctx, user).await?;
     if allow_passwordless && stored_hash.as_deref().is_none_or(str::is_empty) {
         return Ok(());
@@ -268,12 +287,15 @@ pub(in crate::two_factor) async fn verify_user_password(
     if password.encode_utf16().count() > maximum {
         return Err(AuthError::bad_request("Password too long"));
     }
-    let stored_hash = stored_hash
-        .filter(|hash| !hash.is_empty())
-        .ok_or_else(|| AuthError::bad_request("Invalid password"))?;
     let hasher = password_config
         .as_ref()
         .and_then(|config| config.password_hasher.as_ref());
+    let Some(stored_hash) = stored_hash.filter(|hash| !hash.is_empty()) else {
+        if hash_missing {
+            _ = ctx.hash_password(hasher, password).await?;
+        }
+        return Err(AuthError::bad_request("Invalid password"));
+    };
     match alibi_core::verify_password(hasher, password, &stored_hash).await {
         Ok(()) => Ok(()),
         Err(AuthError::InvalidCredentials) => Err(AuthError::bad_request("Invalid password")),
@@ -304,4 +326,58 @@ pub(in crate::two_factor) fn parse_password_body<T: serde::de::DeserializeOwned 
             &fields[..1]
         },
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alibi_core::AuthPlugin;
+
+    #[tokio::test]
+    async fn password_check_hashes_missing_credentials_without_verifying() {
+        struct CountingHasher(std::sync::atomic::AtomicUsize);
+        #[async_trait]
+        impl alibi_core::PasswordHasher for CountingHasher {
+            async fn hash(&self, password: &str) -> AuthResult<String> {
+                assert_eq!(password, "password123");
+                self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok("dummy-hash".into())
+            }
+            async fn verify(&self, _: &str, _: &str) -> AuthResult<bool> {
+                panic!("missing credentials must not reach verification")
+            }
+        }
+        let mut ctx = crate::test_helpers::create_test_context().await;
+        let user = crate::test_helpers::create_user(
+            &ctx,
+            alibi_core::CreateUser::new()
+                .with_email("passwordless@example.com")
+                .with_name("Passwordless"),
+        )
+        .await;
+        let hasher = Arc::new(CountingHasher(std::sync::atomic::AtomicUsize::new(0)));
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
+        crate::EmailPasswordPlugin::new()
+            .password_hasher(Arc::<CountingHasher>::clone(&hasher))
+            .on_init(&mut init)
+            .await
+            .unwrap();
+        ctx.extensions = init.into_parts().extensions;
+        let error = check_user_password(&ctx, &user, Some("password123"), false)
+            .await
+            .unwrap_err();
+        assert_eq!(error.error_payload().1.as_deref(), Some("INVALID_PASSWORD"));
+        assert_eq!(hasher.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+        verify_user_password(&ctx, &user, Some("password123"), false)
+            .await
+            .unwrap_err();
+        check_user_password(&ctx, &user, Some("password123"), true)
+            .await
+            .unwrap();
+        check_user_password(&ctx, &user, Some(""), false)
+            .await
+            .unwrap_err();
+        assert_eq!(hasher.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
 }

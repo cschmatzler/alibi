@@ -8,7 +8,7 @@ pub(in crate::two_factor) async fn get_totp_uri_core(
     require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
     let secret = decrypt_value(&ctx.config, two_factor.secret())?;
-    verify_user_password(
+    enrollment::check_user_password(
         ctx,
         user,
         body.password.as_deref(),

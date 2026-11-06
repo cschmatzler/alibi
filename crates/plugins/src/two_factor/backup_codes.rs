@@ -9,7 +9,7 @@ pub(in crate::two_factor) async fn generate_backup_codes_core(
         return Err(AuthError::bad_request("Two factor isn't enabled").into());
     }
 
-    verify_user_password(
+    enrollment::check_user_password(
         ctx,
         user,
         body.password.as_deref(),
