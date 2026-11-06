@@ -24,7 +24,11 @@ fn integer(value: Option<&JsValue>, name: &str, default: i64) -> Result<i64, Que
     let parsed = match value {
         JsValue::Number(number) => Some(*number),
         JsValue::String(value) => {
-            let value = alibi_core::utils::javascript::trim(value);
+            let value = alibi_core::utils::javascript::trim(
+                value
+                    .as_str()
+                    .ok_or_else(|| error(format!("{name} must be an integer"), "invalidValue"))?,
+            );
             let digits = value.strip_prefix('-').unwrap_or(value);
             if !digits.is_empty() && digits.bytes().all(|byte| byte.is_ascii_digit()) {
                 value.parse::<f64>().ok()

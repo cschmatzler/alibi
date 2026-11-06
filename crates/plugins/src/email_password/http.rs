@@ -110,13 +110,13 @@ impl EmailPasswordPlugin {
                 if let Some(value) = &signup_req.username {
                     _ = body.insert(
                         "username".into(),
-                        alibi_core::utils::json::JsValue::String(value.clone()),
+                        alibi_core::utils::json::JsValue::String(value.clone().into()),
                     );
                 }
                 if let Some(value) = &signup_req.display_username {
                     _ = body.insert(
                         "displayUsername".into(),
-                        alibi_core::utils::json::JsValue::String(value.clone()),
+                        alibi_core::utils::json::JsValue::String(value.clone().into()),
                     );
                 }
             }

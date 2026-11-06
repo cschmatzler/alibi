@@ -1,6 +1,7 @@
 use alibi_core::AuthError;
 use alibi_core::AuthResult;
 use base64::Engine;
+use chrono::Datelike;
 use chrono::Utc;
 use serde_json::Map;
 use serde_json::Value;
@@ -16,31 +17,37 @@ pub(in crate::jwt) fn js_truthy(value: &Value) -> bool {
     }
 }
 
-pub(in crate::jwt) fn js_raw_primitive_string(value: &alibi_core::utils::json::JsValue) -> String {
-    use alibi_core::utils::json::JsValue;
+pub(in crate::jwt) fn js_raw_primitive_string(
+    value: &alibi_core::utils::json::JsValue,
+) -> alibi_core::utils::json::JsString {
+    use alibi_core::utils::json::{JsString, JsValue};
     match value {
-        JsValue::Null => "null".to_owned(),
+        JsValue::Undefined => "undefined".into(),
+        JsValue::Null => "null".into(),
         JsValue::String(value) => value.clone(),
-        JsValue::Date(_) => value.coerce_string().unwrap_or_default(),
-        JsValue::Bool(value) => value.to_string(),
-        JsValue::Number(value) if value.is_nan() => "NaN".to_owned(),
-        JsValue::Number(value) if *value == f64::INFINITY => "Infinity".to_owned(),
-        JsValue::Number(value) if *value == f64::NEG_INFINITY => "-Infinity".to_owned(),
-        JsValue::Number(value) => serde_json::Number::from_f64(*value)
-            .and_then(|number| alibi_core::utils::json::number_to_string(&number).ok())
-            .unwrap_or_default(),
-        JsValue::Array(values) => values
-            .iter()
-            .map(|value| {
-                if value.is_null() {
-                    String::new()
-                } else {
-                    js_raw_primitive_string(value)
+        JsValue::Date(value) => format!(
+            "{}{}{:04}{}",
+            value.format("%a %b %d "),
+            if value.year() < 0 { "-" } else { "" },
+            value.year().unsigned_abs(),
+            value.format(" %H:%M:%S GMT%z (Coordinated Universal Time)")
+        )
+        .into(),
+        JsValue::Bool(value) => value.to_string().into(),
+        JsValue::Number(value) => ryu_js::Buffer::new().format(*value).into(),
+        JsValue::Array(values) => {
+            let mut joined = Vec::new();
+            for (index, value) in values.iter().enumerate() {
+                if index != 0 {
+                    joined.push(44);
                 }
-            })
-            .collect::<Vec<_>>()
-            .join(","),
-        JsValue::Object(_) => "[object Object]".to_owned(),
+                if !matches!(value, JsValue::Null | JsValue::Undefined) {
+                    joined.extend_from_slice(js_raw_primitive_string(value).code_units());
+                }
+            }
+            JsString::from_code_units(joined)
+        }
+        JsValue::Object(_) => "[object Object]".into(),
     }
 }
 

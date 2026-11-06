@@ -365,7 +365,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
         if let Some(value) = &body.username {
             _ = input_fields.insert(
                 "username".into(),
-                alibi_core::utils::json::JsValue::String(value.clone()),
+                alibi_core::utils::json::JsValue::String(value.clone().into()),
             );
         }
         if config.username.include_display_username
@@ -373,7 +373,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
         {
             _ = input_fields.insert(
                 "displayUsername".into(),
-                alibi_core::utils::json::JsValue::String(value.clone()),
+                alibi_core::utils::json::JsValue::String(value.clone().into()),
             );
         }
     }

@@ -15,7 +15,7 @@ impl Issues {
     }
     fn wrong_type(&mut self, path: &str, expected: &str, value: Option<&JsValue>) {
         let received = match value {
-            None => "undefined",
+            None | Some(JsValue::Undefined) => "undefined",
             Some(JsValue::Null) => "null",
             Some(JsValue::Bool(_)) => "boolean",
             Some(JsValue::Number(value)) if value.is_nan() => "NaN",

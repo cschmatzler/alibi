@@ -482,9 +482,13 @@ impl EmailOtpPlugin {
                     for (key, value) in fields {
                         if !matches!(
                             key.as_str(),
-                            "email" | "otp" | "name" | "image" | "username" | "displayUsername"
+                            Some(
+                                "email" | "otp" | "name" | "image" | "username" | "displayUsername"
+                            )
                         ) {
-                            _ = data.additional_fields.insert(key.clone(), value.clone());
+                            _ = data
+                                .additional_fields
+                                .insert(key.require_str()?.to_owned(), value.clone());
                         }
                     }
                 }

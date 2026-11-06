@@ -220,7 +220,7 @@ pub(crate) async fn activate_created_organization(
 
 pub(crate) async fn update_organization_core(
     body: &UpdateOrganizationRequest,
-    raw_metadata: Option<indexmap::IndexMap<String, alibi_core::utils::json::JsValue>>,
+    raw_metadata: Option<alibi_core::utils::json::JsObject>,
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
@@ -285,7 +285,9 @@ pub(crate) async fn update_organization_core(
                 name: update_data.name.clone(),
                 slug: update_data.slug.clone(),
                 logo: update_data.logo.clone(),
-                metadata: raw_metadata,
+                metadata: raw_metadata
+                    .map(|value| alibi_core::utils::json::utf8_keys(&value))
+                    .transpose()?,
             },
             user: ctx.user_view(user),
             member,
@@ -446,7 +448,8 @@ pub(crate) async fn get_full_organization_core(
         organization.id().to_string()
     } else if let Some(id) = query.organization_id.as_deref().filter(|id| !id.is_empty()) {
         id.to_owned()
-    } else if let Some(active_org_id) = session.active_organization_id().filter(|id| !id.is_empty()) {
+    } else if let Some(active_org_id) = session.active_organization_id().filter(|id| !id.is_empty())
+    {
         active_org_id.to_owned()
     } else {
         return Ok(None);

@@ -60,7 +60,10 @@ fn query_text(input: &JsValue) -> AuthResult<String> {
     match input {
         JsValue::Object(fields) => {
             for (name, value) in fields {
-                _ = query.append_pair(name, &value.coerce_string().map_err(ordinary)?);
+                _ = query.append_pair(
+                    name.require_str()?,
+                    &value.coerce_string().map_err(ordinary)?,
+                );
             }
         }
         JsValue::Array(entries) => {

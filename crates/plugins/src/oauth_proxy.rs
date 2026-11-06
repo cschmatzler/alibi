@@ -1181,7 +1181,7 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthProxyPlugin {
             let mut params = std::collections::HashMap::new();
             for (key, value) in merged {
                 if let Some(value) = value.as_str() {
-                    _ = params.insert(key, value.to_owned());
+                    _ = params.insert(key.require_str()?.to_owned(), value.to_owned());
                 } else if [
                     "state",
                     "code",
@@ -1191,7 +1191,8 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthProxyPlugin {
                     "user",
                     "iss",
                 ]
-                .contains(&key.as_str())
+                .iter()
+                .any(|name| Some(*name) == key.as_str())
                 {
                     return Ok(None);
                 }

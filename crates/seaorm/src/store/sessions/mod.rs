@@ -64,7 +64,7 @@ where
         ];
         for (name, destination) in &mut typed_fields {
             if let Some(value) = destination.as_ref() {
-                fields.preserve_creation_value(name, JsValue::String(value.clone()));
+                fields.preserve_creation_value(name, JsValue::String(value.clone().into()));
             }
             // Configured values now belong to the adapter input. A transform
             // that omits one must also omit its original typed creation value.

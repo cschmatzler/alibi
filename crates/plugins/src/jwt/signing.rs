@@ -124,7 +124,10 @@ impl JwtPlugin {
             return Err(AuthError::bad_request("JWT payload must be an object"));
         };
         let config = options.claims.as_ref().unwrap_or(&self.config.claims);
-        let mut own_keys: Vec<String> = payload.keys().cloned().collect();
+        let mut own_keys: Vec<String> = payload
+            .keys()
+            .map(|key| key.require_str().map(str::to_owned))
+            .collect::<AuthResult<_>>()?;
         // JavaScript enumerates canonical array-index property names first.
         own_keys.sort_by_key(|key| {
             key.parse::<u32>()
@@ -149,7 +152,8 @@ impl JwtPlugin {
                         config
                             .issuer
                             .clone()
-                            .unwrap_or_else(|| ctx.config.base_url.clone()),
+                            .unwrap_or_else(|| ctx.config.base_url.clone())
+                            .into(),
                     ),
                     "aud" => serde_json::to_value(
                         config
@@ -160,7 +164,7 @@ impl JwtPlugin {
                     .into(),
                     _ => continue,
                 };
-                _ = payload.insert(name.to_owned(), value);
+                _ = payload.insert(name.to_owned().into(), value);
             }
         }
         let payload = RemoteJwtPayload {

@@ -118,10 +118,9 @@ impl JwtExpiration {
                     Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
                     Some(JsValue::Number(value)) => *value,
                     Some(value) => {
-                        return JsValue::String(format!(
-                            "{}{seconds}",
-                            js_raw_primitive_string(value)
-                        ));
+                        return JsValue::String(
+                            js_raw_primitive_string(value).concat(&seconds.to_string().into()),
+                        );
                     }
                 };
                 base + seconds
@@ -132,11 +131,10 @@ impl JwtExpiration {
                     Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
                     Some(JsValue::Number(value)) => *value,
                     Some(value) => {
-                        return JsValue::String(format!(
-                            "{}{}",
-                            js_raw_primitive_string(value),
-                            ryu_js::Buffer::new().format(*seconds)
-                        ));
+                        return JsValue::String(
+                            js_raw_primitive_string(value)
+                                .concat(&ryu_js::Buffer::new().format(*seconds).into()),
+                        );
                     }
                 };
                 base + seconds

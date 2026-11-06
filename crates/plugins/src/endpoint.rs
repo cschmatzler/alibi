@@ -55,7 +55,7 @@ pub(super) fn validate_fields(
     Ok(JsValue::Object(
         object
             .iter()
-            .filter(|(name, _)| fields.iter().any(|field| field.name == name.as_str()))
+            .filter(|(name, _)| fields.iter().any(|field| Some(field.name) == name.as_str()))
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
     ))

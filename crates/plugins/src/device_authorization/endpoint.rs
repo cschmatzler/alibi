@@ -106,7 +106,10 @@ fn validate_token_body(body: Option<&JsValue>) -> AuthResult<JsValue> {
     Ok(JsValue::Object(
         object
             .iter()
-            .filter(|(name, _)| ["grant_type", "device_code", "client_id"].contains(&name.as_str()))
+            .filter(|(name, _)| {
+                name.as_str()
+                    .is_some_and(|name| ["grant_type", "device_code", "client_id"].contains(&name))
+            })
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
     ))
@@ -125,8 +128,11 @@ impl DeviceAuthorizationPlugin {
                     "grant_type".into(),
                     JsValue::String(super::DEVICE_GRANT_TYPE.into()),
                 ),
-                ("device_code".into(), JsValue::String(device_code.into())),
-                ("client_id".into(), JsValue::String(client_id.into())),
+                (
+                    "device_code".into(),
+                    JsValue::String(device_code.into().into()),
+                ),
+                ("client_id".into(), JsValue::String(client_id.into().into())),
             ]
             .into_iter()
             .collect(),
@@ -152,7 +158,7 @@ impl DeviceAuthorizationPlugin {
     ) -> ServerEndpoint<DeviceActionResponse> {
         ServerEndpoint::new("device-authorization", "deviceApprove").with_body_value(
             JsValue::Object(
-                [("userCode".into(), JsValue::String(user_code.into()))]
+                [("userCode".into(), JsValue::String(user_code.into().into()))]
                     .into_iter()
                     .collect(),
             ),
@@ -165,7 +171,7 @@ impl DeviceAuthorizationPlugin {
         user_code: impl Into<String>,
     ) -> ServerEndpoint<DeviceActionResponse> {
         ServerEndpoint::new("device-authorization", "deviceDeny").with_body_value(JsValue::Object(
-            [("userCode".into(), JsValue::String(user_code.into()))]
+            [("userCode".into(), JsValue::String(user_code.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -194,7 +200,7 @@ impl DeviceAuthorizationPlugin {
     ) -> ServerEndpoint<serde_json::Value> {
         ServerEndpoint::new("device-authorization", "deviceVerify").with_query_value(
             JsValue::Object(
-                [("user_code".into(), JsValue::String(user_code.into()))]
+                [("user_code".into(), JsValue::String(user_code.into().into()))]
                     .into_iter()
                     .collect(),
             ),

@@ -180,7 +180,13 @@ impl UsernameConfig {
     /// the string-only contract of configured native callbacks.
     pub fn normalize_raw_hook_value(&self, value: &JsValue) -> AuthResult<JsValue> {
         if let JsValue::String(value) = value {
-            return self.normalize(value).map(JsValue::String);
+            return self
+                .normalize(
+                    value
+                        .as_str()
+                        .ok_or_else(|| AuthError::bad_request("Invalid username"))?,
+                )
+                .map(|value| JsValue::String(value.into()));
         }
         if matches!(self.normalization, UsernameNormalization::Preserve) {
             return Ok(value.clone());
@@ -199,7 +205,13 @@ impl UsernameConfig {
     )]
     pub async fn validate_raw_hook_value(&self, value: &JsValue) -> AuthResult<()> {
         if let JsValue::String(value) = value {
-            return self.validate_hook_value(value).await;
+            return self
+                .validate_hook_value(
+                    value
+                        .as_str()
+                        .ok_or_else(|| AuthError::bad_request("Invalid username"))?,
+                )
+                .await;
         }
         let normalized;
         let value = if self.validation_order == Some(UsernameValidationOrder::PostNormalization) {
@@ -209,7 +221,7 @@ impl UsernameConfig {
             value
         };
         let raw_length = match value {
-            JsValue::String(value) => Some(value.encode_utf16().count() as f64),
+            JsValue::String(value) => Some(value.len() as f64),
             JsValue::Array(value) => Some(value.len() as f64),
             JsValue::Object(value) => value
                 .get("length")
@@ -301,9 +313,15 @@ impl UsernameConfig {
             "username".into(),
             FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                 match value {
-                    Some(JsValue::String(value)) => {
-                        Ok(Some(JsValue::String(policy.normalize(value)?)))
-                    }
+                    Some(JsValue::String(value)) => Ok(Some(JsValue::String(
+                        policy
+                            .normalize(
+                                value
+                                    .as_str()
+                                    .ok_or_else(|| AuthError::bad_request("Invalid username"))?,
+                            )?
+                            .into(),
+                    ))),
                     value => Ok(value.cloned()),
                 }
             }),
@@ -317,9 +335,13 @@ impl UsernameConfig {
                 "displayUsername".into(),
                 FieldConfig::new(serde_json::json!({"type":"string"})).transform(move |value| {
                     match value {
-                        Some(JsValue::String(value)) => {
-                            Ok(Some(JsValue::String(policy.normalize_display(value)?)))
-                        }
+                        Some(JsValue::String(value)) => Ok(Some(JsValue::String(
+                            policy
+                                .normalize_display(value.as_str().ok_or_else(|| {
+                                    AuthError::bad_request("Invalid display username")
+                                })?)?
+                                .into(),
+                        ))),
                         value => Ok(value.cloned()),
                     }
                 }),
@@ -370,7 +392,7 @@ impl UsernameConfig {
             })?;
             _ = values.insert(
                 "displayUsername".into(),
-                JsValue::String(self.normalize_display(raw)?),
+                JsValue::String(self.normalize_display(raw)?.into()),
             );
         }
         let original_username = username.clone();
@@ -378,7 +400,7 @@ impl UsernameConfig {
             if !value.is_empty() {
                 *value = self.normalize(value)?;
             }
-            _ = values.insert("username".into(), JsValue::String(value.clone()));
+            _ = values.insert("username".into(), JsValue::String(value.clone().into()));
         }
         if self.include_display_username {
             if creation
@@ -387,15 +409,46 @@ impl UsernameConfig {
             {
                 display.clone_from(&original_username);
                 if let Some(value) = &display {
-                    _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                    _ = values.insert(
+                        "displayUsername".into(),
+                        JsValue::String(value.clone().into()),
+                    );
                 }
             } else if let Some(value) = display.as_mut().filter(|value| !value.is_empty()) {
                 *value = self.normalize_display(value)?;
-                _ = values.insert("displayUsername".into(), JsValue::String(value.clone()));
+                _ = values.insert(
+                    "displayUsername".into(),
+                    JsValue::String(value.clone().into()),
+                );
             }
         } else {
             *display = None;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn configured_username_lengths_count_utf16_units() {
+        let config = UsernameConfig {
+            min_length: 2,
+            max_length: 2,
+            validator: Some(Arc::new(|_: String| async { Ok(true) })),
+            ..Default::default()
+        };
+        assert_eq!(
+            config.value_error("é").await.unwrap(),
+            Some(UsernameValidationError::TooShort)
+        );
+        assert_eq!(config.value_error("éé").await.unwrap(), None);
+        assert_eq!(config.value_error("😀").await.unwrap(), None);
+        assert_eq!(
+            config.value_error("a😀").await.unwrap(),
+            Some(UsernameValidationError::TooLong)
+        );
     }
 }

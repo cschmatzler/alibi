@@ -174,7 +174,7 @@ pub(super) fn verify_value(
         }
     }
     match body.get("email") {
-        Some(JsValue::String(email)) if !is_valid_email(email) => {
+        Some(JsValue::String(email)) if !email.as_str().is_some_and(is_valid_email) => {
             errors.push("[body.email] Invalid email address".to_owned());
         }
         None | Some(JsValue::String(_)) => {}
@@ -186,8 +186,13 @@ pub(super) fn verify_value(
             ));
         }
     }
+    let keys = body
+        .keys()
+        .map(|key| key.to_utf8())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|cause| error(cause.to_string().as_str()))?;
     if let Some(unknown) = unknown_field_keys(
-        body.keys().map(String::as_str),
+        keys.iter().map(String::as_str),
         &["message", "signature", "email"],
     ) {
         errors.push(unknown);

@@ -452,7 +452,7 @@ fn validate_metadata(
         let normalized = match (kind, value) {
             // SafeUrlSchema's z.url() trims JS whitespace without reserializing the URL.
             (FieldKind::Uri | FieldKind::Method, JsValue::String(value)) => {
-                JsValue::String(js_trim(value).into())
+                JsValue::String(js_trim(value.require_str()?).into())
             }
             (FieldKind::Uris, JsValue::Array(values)) => JsValue::Array(
                 values
@@ -479,7 +479,7 @@ fn validate_metadata(
             (FieldKind::Jwks, JsValue::Object(object)) => JsValue::Object(
                 object
                     .iter()
-                    .filter(|(name, _)| name.as_str() == "keys")
+                    .filter(|(name, _)| name.as_str() == Some("keys"))
                     .map(|(name, value)| (name.clone(), value.clone()))
                     .collect(),
             ),

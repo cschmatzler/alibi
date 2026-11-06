@@ -84,12 +84,13 @@ pub(super) enum Resource {
 }
 
 fn record(
-    value: &IndexMap<String, JsValue>,
+    value: &IndexMap<alibi_core::utils::json::JsString, JsValue>,
     resource: Option<Resource>,
     attributes: &[Attribute],
-) -> Result<IndexMap<String, JsValue>, String> {
+) -> Result<IndexMap<alibi_core::utils::json::JsString, JsValue>, String> {
     let mut output = IndexMap::new();
     for (key, entry) in value {
+        let key = key.as_str().ok_or("Invalid UTF-16 attribute name")?;
         let extension = matches!(resource, Some(Resource::User))
             .then_some(ENTERPRISE_SCHEMA)
             .filter(|id| id.eq_ignore_ascii_case(key));
@@ -117,7 +118,7 @@ fn record(
         } else {
             entry.clone()
         };
-        _ = output.insert(name.to_owned(), entry);
+        _ = output.insert(name.to_owned().into(), entry);
     }
     Ok(output)
 }
@@ -177,7 +178,9 @@ pub(super) fn canonicalize_patch(
         };
         let path = match entries.get("path") {
             None => None,
-            Some(JsValue::String(path)) => Some(alibi_core::utils::javascript::trim(path)),
+            Some(JsValue::String(path)) => Some(alibi_core::utils::javascript::trim(
+                path.as_str().ok_or("Invalid UTF-16 attribute path")?,
+            )),
             Some(_) => {
                 rewritten.push(operation.clone());
                 continue;

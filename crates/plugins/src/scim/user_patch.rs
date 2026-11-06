@@ -13,17 +13,6 @@ use alibi_core::{
 };
 use indexmap::IndexMap as Map;
 
-trait MutablePatchValue {
-    fn as_object_mut(&mut self) -> Option<&mut Map<String, Value>>;
-}
-impl MutablePatchValue for Value {
-    fn as_object_mut(&mut self) -> Option<&mut Map<String, Value>> {
-        match self {
-            Self::Object(values) => Some(values),
-            _ => None,
-        }
-    }
-}
 fn error(detail: impl Into<String>, kind: &str) -> AuthError {
     AuthError::Api {
         status: 400,
@@ -67,7 +56,7 @@ fn email(value: &Value) -> AuthResult<String> {
 fn get_string<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
     value.get(key).and_then(Value::as_str)
 }
-fn field<'a>(value: &'a Map<String, Value>, key: &str) -> &'a str {
+fn field<'a>(value: &'a Map<alibi_core::utils::json::JsString, Value>, key: &str) -> &'a str {
     value.get(key).and_then(Value::as_str).unwrap_or("")
 }
 fn prefix<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
@@ -92,8 +81,8 @@ fn relative(path: &str) -> String {
     path.into()
 }
 struct State {
-    document: Map<String, Value>,
-    name: Map<String, Value>,
+    document: Map<alibi_core::utils::json::JsString, Value>,
+    name: Map<alibi_core::utils::json::JsString, Value>,
     emails: Vec<Value>,
     user_name: String,
     display_name: String,
@@ -116,7 +105,9 @@ impl State {
         if self.display_name == self.formatted() {
             self.display_name.clone_from(&value);
         }
-        _ = self.name.insert("formatted".into(), Value::String(value));
+        _ = self
+            .name
+            .insert("formatted".into(), Value::String(value.into()));
     }
     fn set_emails(&mut self, value: &Value) -> AuthResult<()> {
         let values = value
@@ -131,7 +122,7 @@ impl State {
             let address = email(item.get("value").unwrap_or(&Value::Null))
                 .map_err(|_| invalid("emails must contain between 1 and 20 valid emails"))?;
             let mut item_out = Map::new();
-            _ = item_out.insert("value".into(), Value::String(address.clone()));
+            _ = item_out.insert("value".into(), Value::String(address.clone().into()));
             let primary = match item.get("primary") {
                 None => false,
                 Some(value) => value
@@ -161,7 +152,7 @@ impl State {
                 if !types.insert(kind.clone()) {
                     return Err(invalid("emails cannot contain duplicate defined types"));
                 }
-                _ = item_out.insert("type".into(), Value::String(kind));
+                _ = item_out.insert("type".into(), Value::String(kind.into()));
             }
             emails.push(Value::Object(item_out));
         }
@@ -206,7 +197,7 @@ impl State {
             };
             let mut normalized = Value::Object(
                 [
-                    ("value".into(), Value::String(address)),
+                    ("value".into(), Value::String(address.into())),
                     ("primary".into(), Value::Bool(primary)),
                 ]
                 .into_iter()
@@ -215,7 +206,7 @@ impl State {
             if let Some(kind) = kind
                 && let Some(object) = normalized.as_object_mut()
             {
-                _ = object.insert("type".into(), Value::String(kind));
+                _ = object.insert("type".into(), Value::String(kind.into()));
             }
             if let Some(existing) = additions.iter_mut().find(|existing| {
                 existing.get("value") == normalized.get("value")
@@ -319,6 +310,7 @@ impl State {
                         .as_object()
                         .ok_or_else(|| invalid("name must be an object"))?;
                     for (key, value) in name {
+                        let key = key.require_str()?;
                         let canonical = match key.to_lowercase().as_str() {
                             "formatted" => "formatted",
                             "givenname" => "givenName",
@@ -337,7 +329,9 @@ impl State {
                         if canonical == "formatted" {
                             self.formatted_set(value);
                         } else {
-                            _ = self.name.insert(canonical.into(), Value::String(value));
+                            _ = self
+                                .name
+                                .insert(canonical.into(), Value::String(value.into()));
                         }
                     }
                 }
@@ -380,7 +374,9 @@ impl State {
                     _ = self.name.shift_remove(canonical);
                 } else {
                     let value = string(value, &format!("name.{canonical}"))?;
-                    _ = self.name.insert(canonical.into(), Value::String(value));
+                    _ = self
+                        .name
+                        .insert(canonical.into(), Value::String(value.into()));
                 }
             }
             "emails" => {
@@ -401,7 +397,7 @@ impl State {
                 let mut emails = self.emails.clone();
                 for item in &mut emails {
                     if let Some(item) = item.as_object_mut() {
-                        _ = item.insert("value".into(), Value::String(replacement.clone()));
+                        _ = item.insert("value".into(), Value::String(replacement.clone().into()));
                     }
                 }
                 self.set_emails(&Value::Array(emails))?;
@@ -434,15 +430,15 @@ impl State {
                                         {
                                             _ = item.insert(
                                                 "value".into(),
-                                                Value::String(replacement.clone()),
+                                                Value::String(replacement.clone().into()),
                                             );
                                         }
                                     }
                                 } else {
                                     emails.push(Value::Object(
                                         [
-                                            ("value".into(), Value::String(replacement)),
-                                            ("type".into(), Value::String(kind)),
+                                            ("value".into(), Value::String(replacement.into())),
+                                            ("type".into(), Value::String(kind.into())),
                                             ("primary".into(), Value::Bool(false)),
                                         ]
                                         .into_iter()
@@ -470,8 +466,10 @@ impl State {
                                 if item.get("primary").and_then(Value::as_bool) == Some(true)
                                     && let Some(item) = item.as_object_mut()
                                 {
-                                    _ = item
-                                        .insert("value".into(), Value::String(replacement.clone()));
+                                    _ = item.insert(
+                                        "value".into(),
+                                        Value::String(replacement.clone().into()),
+                                    );
                                 }
                             }
                             self.set_emails(&Value::Array(emails))?;
@@ -602,12 +600,15 @@ pub(super) fn canonicalize_value(path: Option<&str>, value: &Value) -> Result<Va
     };
     entries
         .into_iter()
-        .map(|(key, entry)| canonicalize_path_value(&key, &entry).map(|entry| (key, entry)))
+        .map(|(key, entry)| {
+            canonicalize_path_value(key.as_str().ok_or("Invalid UTF-16 attribute name")?, &entry)
+                .map(|entry| (key, entry))
+        })
         .collect::<Result<Map<_, _>, _>>()
         .map(Value::Object)
 }
 /// A null key in a value merged into a selected entry removes that sub-attribute.
-fn without_nulls(value: &mut Map<String, Value>) {
+fn without_nulls(value: &mut Map<alibi_core::utils::json::JsString, Value>) {
     value.retain(|_, item| !matches!(item, Value::Null));
 }
 #[derive(Clone)]
@@ -703,18 +704,19 @@ fn manager(value: &Value) -> AuthResult<Option<Value>> {
         if let Some(value) = value.get(key) {
             _ = output.insert(
                 key.into(),
-                Value::String(string(value, &format!("manager.{key}"))?),
+                Value::String(string(value, &format!("manager.{key}"))?.into()),
             );
         }
     }
     Ok((!output.is_empty()).then_some(Value::Object(output)))
 }
-fn enterprise(value: &Value) -> AuthResult<Map<String, Value>> {
+fn enterprise(value: &Value) -> AuthResult<Map<alibi_core::utils::json::JsString, Value>> {
     let object = value
         .as_object()
         .ok_or_else(|| invalid(format!("{ENTERPRISE_SCHEMA} must be an object")))?;
     let mut output = Map::new();
     for (key, value) in object {
+        let key = key.require_str()?;
         let Some(canonical) = canonical(key, true) else {
             return Err(unsupported(&format!("{ENTERPRISE_SCHEMA}:{key}")));
         };
@@ -756,7 +758,7 @@ fn additions(value: &Value) -> Vec<Value> {
         .map_or_else(|| vec![value.clone()], <[Value]>::to_vec)
 }
 fn multivalue(
-    container: &mut Map<String, Value>,
+    container: &mut Map<alibi_core::utils::json::JsString, Value>,
     root: &str,
     sub: Option<&str>,
     selector: Option<&Selector>,
@@ -832,7 +834,7 @@ fn multivalue(
             if let Some(item) = item.as_object_mut() {
                 match selector {
                     Some(Selector::Type(kind)) => {
-                        _ = item.insert("type".into(), Value::String(kind.clone()));
+                        _ = item.insert("type".into(), Value::String(kind.clone().into()));
                     }
                     Some(Selector::Primary(flag)) => {
                         _ = item.insert("primary".into(), Value::Bool(*flag));
@@ -915,7 +917,7 @@ fn multivalue(
     }
     Ok(())
 }
-fn declaration(document: &mut Map<String, Value>, declared: bool) {
+fn declaration(document: &mut Map<alibi_core::utils::json::JsString, Value>, declared: bool) {
     let mut schemas = document
         .get("schemas")
         .and_then(Value::as_array)
@@ -927,7 +929,7 @@ fn declaration(document: &mut Map<String, Value>, declared: bool) {
     }
     _ = document.insert("schemas".into(), Value::Array(schemas));
 }
-fn clean_extension(document: &mut Map<String, Value>) {
+fn clean_extension(document: &mut Map<alibi_core::utils::json::JsString, Value>) {
     if document
         .get(ENTERPRISE_SCHEMA)
         .and_then(Value::as_object)
@@ -938,7 +940,7 @@ fn clean_extension(document: &mut Map<String, Value>) {
     }
 }
 fn generic(
-    document: &mut Map<String, Value>,
+    document: &mut Map<alibi_core::utils::json::JsString, Value>,
     op: Kind,
     path: &str,
     value: &Value,
@@ -968,9 +970,9 @@ fn generic(
                 if let Some(value) = value.as_object() {
                     existing.extend(value.clone());
                 }
-                _ = extension.insert(key, Value::Object(existing));
+                _ = extension.insert(key.into(), Value::Object(existing));
             } else {
-                _ = extension.insert(key, value);
+                _ = extension.insert(key.into(), value);
             }
         }
         declaration(document, true);
@@ -1136,16 +1138,17 @@ pub(super) fn apply(
                 .as_object()
                 .ok_or_else(|| invalid("A pathless User PATCH value must be an object"))?;
             for (key, value) in values {
-                state.apply(operation.op, key, value)?;
+                state.apply(operation.op, key.require_str()?, value)?;
             }
         }
     }
     _ = state
         .document
-        .insert("userName".into(), Value::String(state.user_name));
-    _ = state
-        .document
-        .insert("displayName".into(), Value::String(state.display_name));
+        .insert("userName".into(), Value::String(state.user_name.into()));
+    _ = state.document.insert(
+        "displayName".into(),
+        Value::String(state.display_name.into()),
+    );
     _ = state
         .document
         .insert("active".into(), Value::Bool(state.active));
@@ -1158,7 +1161,7 @@ pub(super) fn apply(
     if let Some(external) = state.external_id {
         _ = state
             .document
-            .insert("externalId".into(), Value::String(external));
+            .insert("externalId".into(), Value::String(external.into()));
     } else {
         _ = state.document.shift_remove("externalId");
     }

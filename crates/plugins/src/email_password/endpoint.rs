@@ -112,7 +112,7 @@ impl EmailPasswordPlugin {
     ) -> ServerEndpoint<super::IsUsernameAvailableResponse> {
         ServerEndpoint::new("email-password", "isUsernameAvailable").with_body_value(
             JsValue::Object(
-                [("username".into(), JsValue::String(username.into()))]
+                [("username".into(), JsValue::String(username.into().into()))]
                     .into_iter()
                     .collect(),
             ),

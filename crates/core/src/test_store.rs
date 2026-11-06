@@ -437,7 +437,7 @@ impl SessionStore<BundledSchema> for MemoryStore {
             if let Some(value) = value {
                 create_session.additional_fields.preserve_creation_value(
                     name,
-                    crate::utils::json::JsValue::String(value.clone()),
+                    crate::utils::json::JsValue::String(value.clone().into()),
                 );
             }
         }

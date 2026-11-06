@@ -612,9 +612,13 @@ fn deserialize_query_number<'de, D: serde::Deserializer<'de>>(
         None => Ok(None),
         Some(JsValue::Number(number)) => Ok(Some(number)),
         Some(JsValue::String(value)) => Ok(Some(if integer_string {
-            integer_query(&value)
+            integer_query(value.as_str().ok_or_else(|| {
+                serde::de::Error::custom("String contains an isolated UTF-16 surrogate")
+            })?)
         } else {
-            number_query(&value)
+            number_query(value.as_str().ok_or_else(|| {
+                serde::de::Error::custom("String contains an isolated UTF-16 surrogate")
+            })?)
         })),
         _ => Err(serde::de::Error::custom(
             "Page limits must be a string or number",

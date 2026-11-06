@@ -229,7 +229,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
                 input
                     .iter()
                     .filter(|(name, _)| {
-                        ["disableCookieCache", "disableRefresh"].contains(&name.as_str())
+                        name.as_str().is_some_and(|name| {
+                            ["disableCookieCache", "disableRefresh"].contains(&name)
+                        })
                     })
                     .map(|(name, value)| (name.clone(), JsValue::Bool(value.is_truthy())))
                     .collect(),
@@ -963,7 +965,7 @@ fn revocation_storage_error(error: AuthError) -> AuthError {
 
 /// Parse application fields after admission, shared by HTTP and logical callers.
 fn parse_session_update_fields(
-    input: &indexmap::IndexMap<String, JsValue>,
+    input: &alibi_core::utils::json::JsObject,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<FieldValues, FieldInputError> {
     let fields = ctx.extensions.get::<SessionFields>().map_or_else(
@@ -1188,21 +1190,28 @@ mod tests {
     #[tokio::test]
     async fn empty_impersonation_marker_is_listed() {
         let (mut ctx, user, _) = test_helpers::create_test_context_with_user(
-            CreateUser::new().with_email("marker@example.com").with_name("Marker"),
+            CreateUser::new()
+                .with_email("marker@example.com")
+                .with_name("Marker"),
             Duration::hours(24),
-        ).await;
+        )
+        .await;
         ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
-        let session = ctx.database.create_session(CreateSession {
-            user_id: user.id.clone(),
-            expires_at: Utc::now() + Duration::hours(24),
-            impersonated_by: Some(String::new()),
-            additional_fields: Default::default(),
-            token: None,
-            ip_address: None,
-            user_agent: None,
-            active_organization_id: None,
-            active_team_id: None,
-        }).await.unwrap();
+        let session = ctx
+            .database
+            .create_session(CreateSession {
+                user_id: user.id.clone(),
+                expires_at: Utc::now() + Duration::hours(24),
+                impersonated_by: Some(String::new()),
+                additional_fields: Default::default(),
+                token: None,
+                ip_address: None,
+                user_agent: None,
+                active_organization_id: None,
+                active_team_id: None,
+            })
+            .await
+            .unwrap();
         let sessions = list_sessions_core(&user.id, &ctx).await.unwrap();
         assert!(sessions.iter().any(|listed| listed.token == session.token));
     }

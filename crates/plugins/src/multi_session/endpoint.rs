@@ -73,7 +73,7 @@ impl MultiSessionPlugin {
             alibi_core::utils::json::JsValue::Object(
                 [(
                     "sessionToken".into(),
-                    alibi_core::utils::json::JsValue::String(session_token.into()),
+                    alibi_core::utils::json::JsValue::String(session_token.into().into()),
                 )]
                 .into_iter()
                 .collect(),
@@ -90,7 +90,7 @@ impl MultiSessionPlugin {
             alibi_core::utils::json::JsValue::Object(
                 [(
                     "sessionToken".into(),
-                    alibi_core::utils::json::JsValue::String(session_token.into()),
+                    alibi_core::utils::json::JsValue::String(session_token.into().into()),
                 )]
                 .into_iter()
                 .collect(),

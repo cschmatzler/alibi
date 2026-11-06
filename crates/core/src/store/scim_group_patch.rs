@@ -245,6 +245,9 @@ pub fn apply_scim_group_patch(
                 ));
             };
             for (key, value) in values {
+                let key = key
+                    .as_str()
+                    .ok_or_else(|| AuthError::bad_request("Invalid SCIM attribute"))?;
                 match key.to_lowercase().as_str() {
                     "id" => {
                         if value.as_str() != Some(group.id.as_str()) {

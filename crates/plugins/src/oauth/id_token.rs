@@ -425,7 +425,9 @@ fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenCo
         return false;
     }
     let matches_audience = match payload.get("aud") {
-        Some(JsValue::String(value)) => audiences.contains(value),
+        Some(JsValue::String(value)) => value
+            .as_str()
+            .is_some_and(|value| audiences.iter().any(|audience| audience == value)),
         Some(JsValue::Array(values)) => values.iter().any(|value| {
             value
                 .as_str()
@@ -458,7 +460,7 @@ fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenCo
 }
 fn js_truthy(value: &JsValue) -> bool {
     match value {
-        JsValue::Null => false,
+        JsValue::Undefined | JsValue::Null => false,
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),

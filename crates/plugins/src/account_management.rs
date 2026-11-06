@@ -109,7 +109,7 @@ impl AccountManagementPlugin {
             .with_body_value(alibi_core::utils::json::JsValue::Object(
                 [(
                     "accountId".into(),
-                    alibi_core::utils::json::JsValue::String(account_id.into()),
+                    alibi_core::utils::json::JsValue::String(account_id.into().into()),
                 )]
                 .into_iter()
                 .collect(),

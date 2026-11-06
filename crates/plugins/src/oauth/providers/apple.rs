@@ -155,14 +155,15 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                     name.last_name.unwrap_or_default()
                 )
                 .trim_matches(js_whitespace)
-                .to_owned(),
+                .to_owned()
+                .into(),
             )
         } else {
             profile
                 .get("name")
                 .filter(|value| value.is_truthy())
                 .cloned()
-                .unwrap_or_else(|| JsValue::String(String::new()))
+                .unwrap_or_else(|| JsValue::String(String::new().into()))
         };
         let id = profile
             .get("sub")

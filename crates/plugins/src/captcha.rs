@@ -283,7 +283,7 @@ impl CaptchaPlugin {
         let text = response.text().await.ok()?;
         // betterFetch retains invalid JSON as text, so a truthy malformed reply
         // fails verification rather than becoming a transport error.
-        let data = parse_value(&text).unwrap_or_else(|_| JsValue::String(text));
+        let data = parse_value(&text).unwrap_or_else(|_| JsValue::String(text.into()));
         if !truthy(&data) {
             return None;
         }
@@ -343,7 +343,7 @@ async fn verify_bot_id(options: BotIdConfig, request: AuthRequest) -> Option<boo
 
 fn truthy(value: &JsValue) -> bool {
     match value {
-        JsValue::Null => false,
+        JsValue::Undefined | JsValue::Null => false,
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),

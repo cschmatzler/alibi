@@ -331,8 +331,8 @@ impl EmailOtpPlugin {
     ) -> ServerEndpoint<EmailOtpVerification> {
         ServerEndpoint::new("email-otp", "verifyEmailOTP").with_body_value(JsValue::Object(
             [
-                ("email".into(), JsValue::String(email.into())),
-                ("otp".into(), JsValue::String(otp.into())),
+                ("email".into(), JsValue::String(email.into().into())),
+                ("otp".into(), JsValue::String(otp.into().into())),
             ]
             .into_iter()
             .collect(),
@@ -348,7 +348,7 @@ impl EmailOtpPlugin {
     ) -> ServerEndpoint<EmailOtpCheck> {
         let mut body = input(email.into(), otp_type);
         if let JsValue::Object(fields) = &mut body {
-            let _ = fields.insert("otp".into(), JsValue::String(otp.into()));
+            let _ = fields.insert("otp".into(), JsValue::String(otp.into().into()));
         }
         ServerEndpoint::new("email-otp", "checkVerificationOTP").with_body_value(body)
     }
@@ -475,7 +475,7 @@ impl EmailOtpPlugin {
 fn input(email: String, otp_type: EmailOtpType) -> JsValue {
     JsValue::Object(
         [
-            ("email".into(), JsValue::String(email)),
+            ("email".into(), JsValue::String(email.into())),
             ("type".into(), JsValue::String(otp_type.as_str().into())),
         ]
         .into_iter()
@@ -485,7 +485,7 @@ fn input(email: String, otp_type: EmailOtpType) -> JsValue {
 
 fn reset_request(name: &'static str, email: String) -> ServerEndpoint<EmailOtpResetRequested> {
     ServerEndpoint::new("email-otp", name).with_body_value(JsValue::Object(
-        [("email".into(), JsValue::String(email))]
+        [("email".into(), JsValue::String(email.into()))]
             .into_iter()
             .collect(),
     ))

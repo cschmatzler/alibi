@@ -35,7 +35,7 @@ fn validate(mapping: &JsValue, saml: bool) -> AuthResult<JsValue> {
     let unknown = mapping.as_object().map_or_else(Vec::new, |object| {
         object
             .keys()
-            .filter(|name| !fields.iter().any(|field| field.name == name.as_str()))
+            .filter(|name| !fields.iter().any(|field| Some(field.name) == name.as_str()))
             .map(serde_json::to_string)
             .collect::<Result<Vec<_>, _>>()
             .unwrap_or_default()

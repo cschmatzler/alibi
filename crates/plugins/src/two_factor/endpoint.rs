@@ -237,7 +237,7 @@ pub(super) fn validate(
             .get(field)
             .map_or_else(|| Ok("undefined".into()), JsValue::coerce_string)
             .map_err(crate::endpoint::validation)?;
-        _ = body.insert(field.into(), JsValue::String(user_id));
+        _ = body.insert(field.into(), JsValue::String(user_id.into()));
     }
     Ok(EndpointInput {
         body: Some(validate_fields(
@@ -273,7 +273,7 @@ impl TwoFactorPlugin {
     ) -> ServerEndpoint<BackupCodesOutput> {
         let mut body = indexmap::IndexMap::new();
         if let Some(password) = input.password {
-            _ = body.insert("password".into(), JsValue::String(password));
+            _ = body.insert("password".into(), JsValue::String(password.into()));
         }
         ServerEndpoint::new("two-factor", "generateBackupCodes")
             .with_body_value(JsValue::Object(body))
@@ -307,7 +307,7 @@ impl TwoFactorPlugin {
     pub fn verify_backup_code_endpoint(
         input: super::VerifyBackupCodeInput,
     ) -> ServerEndpoint<BackupCodeVerified> {
-        let mut body = [("code".into(), JsValue::String(input.code))]
+        let mut body = [("code".into(), JsValue::String(input.code.into()))]
             .into_iter()
             .collect::<indexmap::IndexMap<_, _>>();
         if let Some(disable_session) = input.disable_session {
@@ -332,7 +332,7 @@ impl TwoFactorPlugin {
     pub fn verify_two_factor_otp_endpoint(
         input: super::VerifyOtpInput,
     ) -> ServerEndpoint<TotpVerified> {
-        let mut body = [("code".into(), JsValue::String(input.code))]
+        let mut body = [("code".into(), JsValue::String(input.code.into()))]
             .into_iter()
             .collect::<indexmap::IndexMap<_, _>>();
         if let Some(trust_device) = input.trust_device {
@@ -378,7 +378,7 @@ impl TwoFactorPlugin {
     /// Verify an authenticator code for enrollment or a pending sign-in challenge.
     #[must_use]
     pub fn verify_totp_endpoint(input: super::VerifyTotpInput) -> ServerEndpoint<TotpVerified> {
-        let mut body = [("code".into(), JsValue::String(input.code))]
+        let mut body = [("code".into(), JsValue::String(input.code.into()))]
             .into_iter()
             .collect::<indexmap::IndexMap<_, _>>();
         if let Some(trust_device) = input.trust_device {
@@ -403,7 +403,7 @@ impl TwoFactorPlugin {
     ) -> ServerEndpoint<super::TotpUriOutput> {
         let body = input
             .password
-            .map(|password| ("password".into(), JsValue::String(password)))
+            .map(|password| ("password".into(), JsValue::String(password.into())))
             .into_iter()
             .collect();
         ServerEndpoint::new("two-factor", "getTOTPURI").with_body_value(JsValue::Object(body))
@@ -427,7 +427,7 @@ impl TwoFactorPlugin {
     ) -> ServerEndpoint<TwoFactorDisabled> {
         let body = input
             .password
-            .map(|password| ("password".into(), JsValue::String(password)))
+            .map(|password| ("password".into(), JsValue::String(password.into())))
             .into_iter()
             .collect();
         ServerEndpoint::new("two-factor", "disableTwoFactor").with_body_value(JsValue::Object(body))
@@ -464,10 +464,10 @@ impl TwoFactorPlugin {
         .into_iter()
         .collect::<indexmap::IndexMap<_, _>>();
         if let Some(password) = input.password {
-            _ = body.insert("password".into(), JsValue::String(password));
+            _ = body.insert("password".into(), JsValue::String(password.into()));
         }
         if let Some(issuer) = input.issuer {
-            _ = body.insert("issuer".into(), JsValue::String(issuer));
+            _ = body.insert("issuer".into(), JsValue::String(issuer.into()));
         }
         ServerEndpoint::new("two-factor", "enableTwoFactor").with_body_value(JsValue::Object(body))
     }
@@ -561,7 +561,7 @@ impl TwoFactorPlugin {
 
 fn single_input(name: &str, value: String) -> JsValue {
     JsValue::Object(
-        [(name.into(), JsValue::String(value))]
+        [(name.into(), JsValue::String(value.into()))]
             .into_iter()
             .collect(),
     )

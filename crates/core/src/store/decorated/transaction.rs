@@ -636,7 +636,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+                team_id.map_or(JsValue::Null, |value| {
+                    JsValue::String(value.to_owned().into())
+                }),
             );
             return self.update_ephemeral_scope(token, fields).await;
         }
@@ -647,7 +649,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeTeamId".into(),
-                team_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+                team_id.map_or(JsValue::Null, |value| {
+                    JsValue::String(value.to_owned().into())
+                }),
             );
             return self.update_secondary_scope(token, fields).await;
         }
@@ -663,7 +667,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+                organization_id.map_or(JsValue::Null, |value| {
+                    JsValue::String(value.to_owned().into())
+                }),
             );
             return self.update_ephemeral_scope(token, fields).await;
         }
@@ -674,7 +680,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             let mut fields = FieldValues::new();
             _ = fields.insert(
                 "activeOrganizationId".into(),
-                organization_id.map_or(JsValue::Null, |value| JsValue::String(value.to_owned())),
+                organization_id.map_or(JsValue::Null, |value| {
+                    JsValue::String(value.to_owned().into())
+                }),
             );
             return self.update_secondary_scope(token, fields).await;
         }

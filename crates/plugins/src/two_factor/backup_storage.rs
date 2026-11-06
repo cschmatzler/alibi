@@ -78,8 +78,8 @@ pub(super) fn normalize_json_dates(value: &mut alibi_core::utils::json::JsValue)
     use alibi_core::utils::json::JsValue;
     match value {
         JsValue::String(text) => {
-            if let Some(date) = json_date(text) {
-                *text = date;
+            if let Some(date) = text.as_str().and_then(json_date) {
+                *text = date.into();
             }
         }
         JsValue::Array(values) => values.iter_mut().for_each(normalize_json_dates),

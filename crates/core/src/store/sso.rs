@@ -211,7 +211,13 @@ pub fn sso_field_definition(
             }
             crate::utils::json::JsValue::Number(value) if value.is_finite() => value.to_string(),
             crate::utils::json::JsValue::String(value) => {
-                format!("'{}'", value.replace('\'', "''"))
+                format!(
+                    "'{}'",
+                    value
+                        .to_utf8()
+                        .map_err(|_| crate::AuthError::bad_request("Invalid filter string"))?
+                        .replace('\'', "''")
+                )
             }
             value => format!("'{}'", serde_json::to_string(value)?.replace('\'', "''")),
         };

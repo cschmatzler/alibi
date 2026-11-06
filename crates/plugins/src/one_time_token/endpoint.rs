@@ -62,7 +62,7 @@ impl OneTimeTokenPlugin {
     pub fn verify_endpoint(token: impl Into<String>) -> ServerEndpoint<OneTimeTokenSession> {
         ServerEndpoint::new("one-time-token", "verifyOneTimeToken").with_body_value(
             JsValue::Object(
-                [("token".into(), JsValue::String(token.into()))]
+                [("token".into(), JsValue::String(token.into().into()))]
                     .into_iter()
                     .collect(),
             ),

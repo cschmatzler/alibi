@@ -555,9 +555,9 @@ impl Fixture {
                         calls.fetch_add(1, Ordering::SeqCst);
                         async move {
                             let value = value.unwrap().coerce_string().unwrap();
-                            Ok(Some(alibi_core::utils::json::JsValue::String(format!(
-                                "{value}:once"
-                            ))))
+                            Ok(Some(alibi_core::utils::json::JsValue::String(
+                                format!("{value}:once").into(),
+                            )))
                         }
                     }),
             );

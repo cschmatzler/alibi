@@ -178,7 +178,7 @@ fn validate_list_query(query: &JsValue) -> AuthResult<JsValue> {
                 if number < 0.0 {
                     issues.push(format!("{path} Too small: expected number to be >=0"));
                 }
-                _ = output.insert(name.to_owned(), JsValue::Number(number));
+                _ = output.insert(name.to_owned().into(), JsValue::Number(number));
             }
         } else {
             let kind = if name == "sortDirection" {
@@ -189,7 +189,7 @@ fn validate_list_query(query: &JsValue) -> AuthResult<JsValue> {
             if let Some(issue) = field_issue(kind, Some(value), json_type(Some(value))) {
                 issues.push(format!("{path} {issue}"));
             } else {
-                _ = output.insert(name.to_owned(), value.clone());
+                _ = output.insert(name.to_owned().into(), value.clone());
             }
         }
     }
@@ -275,20 +275,20 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
         let value = object.get(name);
         if value.is_none() && !required {
             if operation == "createApiKey" && matches!(name, "expiresIn" | "remaining") {
-                _ = output.insert(name.to_owned(), JsValue::Null);
+                _ = output.insert(name.to_owned().into(), JsValue::Null);
             }
             continue;
         }
         let path = format!("body.{name}");
         if nullable && value.is_some_and(JsValue::is_null) && !matches!(kind, CoercedId) {
-            _ = output.insert(name.to_owned(), JsValue::Null);
+            _ = output.insert(name.to_owned().into(), JsValue::Null);
             continue;
         }
         if matches!(kind, CoercedId) {
             if let Some(value) = value {
                 match value.coerce_string() {
                     Ok(value) => {
-                        _ = output.insert(name.to_owned(), JsValue::String(value));
+                        _ = output.insert(name.to_owned().into(), JsValue::String(value.into()));
                     }
                     Err(_) => issues.push(format!(
                         "[{path}] Invalid input: expected string, received {}",
@@ -327,7 +327,7 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
             Permissions => validate_permissions(value,&path,&mut issues),
             _ => {}
         }
-        _ = output.insert(name.to_owned(), value.clone());
+        _ = output.insert(name.to_owned().into(), value.clone());
     }
     if issues.is_empty() {
         Ok(JsValue::Object(output))
@@ -339,6 +339,10 @@ fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsVa
 fn validate_permissions(value: &JsValue, path: &str, issues: &mut Vec<String>) {
     if let Some(resources) = value.as_object() {
         for (resource, actions) in resources {
+            let Some(resource) = resource.as_str() else {
+                issues.push(format!("[{path}] Invalid UTF-16 resource name"));
+                continue;
+            };
             let path = format!("{path}.{resource}");
             if let Some(actions) = actions.as_array() {
                 for (index, action) in actions.iter().enumerate() {

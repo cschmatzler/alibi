@@ -122,7 +122,7 @@ impl VerificationCreation {
     pub fn snapshot(&self) -> VerificationSnapshot {
         let mut fields = IndexMap::new();
         if let Some(id) = &self.id {
-            _ = fields.insert("id".into(), JsValue::String(id.clone()));
+            _ = fields.insert("id".into(), JsValue::String(id.clone().into()));
         }
         for (key, value) in [
             ("identifier", self.identifier.clone()),
@@ -131,7 +131,7 @@ impl VerificationCreation {
             ("createdAt", date_json(self.created_at)),
             ("updatedAt", date_json(self.updated_at)),
         ] {
-            _ = fields.insert(key.into(), JsValue::String(value));
+            _ = fields.insert(key.into(), JsValue::String(value.into()));
         }
         VerificationSnapshot {
             data: JsValue::Object(fields),
@@ -250,7 +250,7 @@ impl VerificationSnapshot {
         if let JsValue::Object(fields) = &mut self.data {
             _ = fields.insert(
                 "expiresAt".into(),
-                JsValue::String(crate::utils::datetime::json_date_millis(expiry)),
+                JsValue::String(crate::utils::datetime::json_date_millis(expiry).into()),
             );
         }
         Some(self)
@@ -598,17 +598,25 @@ fn number(value: Option<&JsValue>) -> f64 {
         Some(JsValue::Null) => 0.0,
         Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
         Some(JsValue::Number(value)) => *value,
-        Some(JsValue::String(value)) => string_to_number(value).unwrap_or(f64::NAN),
-        Some(JsValue::Array(values)) => string_to_number(&array_string(values)).unwrap_or(f64::NAN),
+        Some(JsValue::String(value)) => value
+            .as_str()
+            .and_then(string_to_number)
+            .unwrap_or(f64::NAN),
+        Some(JsValue::Array(values)) => array_string(values)
+            .as_deref()
+            .and_then(string_to_number)
+            .unwrap_or(f64::NAN),
         _ => f64::NAN,
     }
 }
 fn date_value(value: Option<&JsValue>) -> Option<i64> {
     match value {
-        Some(JsValue::String(value)) => crate::utils::datetime::parse_date_millis(value),
-        Some(JsValue::Array(values)) => {
-            crate::utils::datetime::parse_date_millis(&array_string(values))
-        }
+        Some(JsValue::String(value)) => value
+            .as_str()
+            .and_then(crate::utils::datetime::parse_date_millis),
+        Some(JsValue::Array(values)) => array_string(values)
+            .as_deref()
+            .and_then(crate::utils::datetime::parse_date_millis),
         Some(JsValue::Object(_)) | None => None,
         _ => {
             let millis = number(value);
@@ -624,46 +632,42 @@ fn date_value(value: Option<&JsValue>) -> Option<i64> {
         }
     }
 }
-fn array_string(values: &[JsValue]) -> String {
-    values
-        .iter()
-        .map(|value| match value {
-            JsValue::Null => String::new(),
-            JsValue::Bool(value) => value.to_string(),
-            JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_owned(),
-            JsValue::String(value) => value.clone(),
-            JsValue::Date(value) => value
-                .format("%a %b %d %Y %H:%M:%S GMT%z (Coordinated Universal Time)")
-                .to_string(),
-            JsValue::Array(values) => array_string(values),
-            JsValue::Object(_) => "[object Object]".into(),
-        })
-        .collect::<Vec<_>>()
-        .join(",")
+fn array_string(values: &[JsValue]) -> Option<String> {
+    JsValue::Array(values.to_vec()).coerce_string().ok()
 }
 
-fn spread(value: &JsValue) -> IndexMap<String, JsValue> {
+fn spread(value: &JsValue) -> crate::utils::json::JsObject {
     match value {
         JsValue::Object(fields) => fields.clone(),
         JsValue::Array(values) => values
             .iter()
             .enumerate()
-            .map(|(index, value)| (index.to_string(), value.clone()))
+            .map(|(index, value)| (index.to_string().into(), value.clone()))
             .collect(),
         JsValue::String(value) => value
-            .chars()
+            .code_units()
+            .iter()
+            .copied()
             .enumerate()
-            .map(|(index, value)| (index.to_string(), JsValue::String(value.to_string())))
+            .map(|(index, value)| {
+                (
+                    index.to_string().into(),
+                    JsValue::String(crate::utils::json::JsString::from_code_units(vec![value])),
+                )
+            })
             .collect(),
         _ => IndexMap::new(),
     }
 }
-fn patch(fields: &mut IndexMap<String, JsValue>, data: &UpdateVerification) {
+fn patch(fields: &mut crate::utils::json::JsObject, data: &UpdateVerification) {
     if let Some(value) = &data.value {
-        _ = fields.insert("value".into(), JsValue::String(value.clone()));
+        _ = fields.insert("value".into(), JsValue::String(value.clone().into()));
     }
     if let Some(expires) = data.expires_at {
-        _ = fields.insert("expiresAt".into(), JsValue::String(date_json(expires)));
+        _ = fields.insert(
+            "expiresAt".into(),
+            JsValue::String(date_json(expires).into()),
+        );
     }
 }
 
@@ -686,12 +690,19 @@ mod tests {
                 expires_at: date,
                 created_at: date,
                 updated_at: date,
-            }.snapshot();
+            }
+            .snapshot();
             for field in ["expiresAt", "createdAt", "updatedAt"] {
-                assert_eq!(snapshot.data().get(field).and_then(JsValue::as_str), Some(expected));
+                assert_eq!(
+                    snapshot.data().get(field).and_then(JsValue::as_str),
+                    Some(expected)
+                );
             }
             let raw = json::to_string(snapshot.data()).unwrap();
-            let cached = VerificationSnapshot::cached(&raw).unwrap().hydrate().unwrap();
+            let cached = VerificationSnapshot::cached(&raw)
+                .unwrap()
+                .hydrate()
+                .unwrap();
             assert_eq!(cached.expires_at().unwrap(), date);
         }
     }

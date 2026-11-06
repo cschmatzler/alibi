@@ -160,9 +160,11 @@ impl LastLoginMethodPlugin {
         };
         Ok(method.map(str::to_owned))
     }
-    fn adapter_context<S: AuthSchema>(ctx: &AuthContext<S>) -> Option<LastLoginMethodContext> {
+    fn adapter_context<S: AuthSchema>(
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<LastLoginMethodContext>> {
         if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
-            let mut context = Self::endpoint_context(&call);
+            let mut context = Self::endpoint_context(&call)?;
             // HTTP handlers retain their validated/transformed input on the
             // physical request; trusted SDK handlers retain it on the call.
             // An optional SDK Request is metadata, not logical endpoint input.
@@ -196,9 +198,11 @@ impl LastLoginMethodPlugin {
                 }
                 context.request = Some(request);
             }
-            return Some(context);
+            return Ok(Some(context));
         }
-        let mut request = current_request_hook_context()?;
+        let Some(mut request) = current_request_hook_context() else {
+            return Ok(None);
+        };
         request.path = request
             .path
             .strip_prefix(&ctx.config.base_path)
@@ -236,7 +240,7 @@ impl LastLoginMethodPlugin {
         let params = endpoint
             .map(|endpoint| endpoint.params.clone())
             .unwrap_or_default();
-        Some(LastLoginMethodContext {
+        Ok(Some(LastLoginMethodContext {
             body,
             request: Some(request),
             endpoint: None,
@@ -245,9 +249,11 @@ impl LastLoginMethodPlugin {
             params,
             response: None,
             new_session,
-        })
+        }))
     }
-    fn endpoint_context(call: &alibi_core::endpoint::EndpointCall) -> LastLoginMethodContext {
+    fn endpoint_context(
+        call: &alibi_core::endpoint::EndpointCall,
+    ) -> AuthResult<LastLoginMethodContext> {
         let new_session = alibi_core::session::cookie_cache::runtime::published_session(call)
             .map(|(user, session)| LastLoginMethodSession { user, session });
         let params = call
@@ -257,12 +263,16 @@ impl LastLoginMethodPlugin {
                 values
                     .iter()
                     .filter_map(|(key, value)| {
-                        value.as_str().map(|value| (key.clone(), value.to_owned()))
+                        value.as_str().map(|value| {
+                            key.require_str()
+                                .map(|key| (key.to_owned(), value.to_owned()))
+                        })
                     })
-                    .collect()
+                    .collect::<AuthResult<_>>()
             })
+            .transpose()?
             .unwrap_or_default();
-        LastLoginMethodContext {
+        Ok(LastLoginMethodContext {
             request: call.request().map(RequestHookContext::from_request),
             endpoint: Some(call.clone()),
             endpoint_response: None,
@@ -271,7 +281,7 @@ impl LastLoginMethodPlugin {
             params,
             response: None,
             new_session,
-        }
+        })
     }
     fn cookie(&self, method: &str, config: &alibi_core::AuthConfig) -> AuthResult<String> {
         if self.config.max_age > 34_560_000.0 {
@@ -370,7 +380,7 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
         });
         let runtime_create = Arc::clone(&runtime);
         ctx.register_user_create_transform(move |mut data| {
-            if let Some(context) = Self::adapter_context(&runtime_create)
+            if let Some(context) = Self::adapter_context(&runtime_create)?
                 && let Some(method) = plugin
                     .resolve(&context)?
                     .filter(|method| !method.is_empty())
@@ -483,7 +493,7 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for LastLoginMethodPlu
         ctx: &AuthContext<S>,
         mut response: alibi_core::endpoint::EndpointResponse,
     ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
-        let mut context = Self::endpoint_context(call);
+        let mut context = Self::endpoint_context(call)?;
         context.endpoint_response = Some(LastLoginMethodEndpointResponse {
             value: response.result().as_ref().ok().cloned(),
             error_body: response.error_body().cloned(),
@@ -525,7 +535,7 @@ impl<S: AuthSchema> alibi_core::store::SessionCreatedHook<S> for LastLoginSessio
         session: &S::Session,
         database: &dyn alibi_core::store::AuthStore<S>,
     ) -> AuthResult<()> {
-        if let Some(context) = LastLoginMethodPlugin::adapter_context(&self.context)
+        if let Some(context) = LastLoginMethodPlugin::adapter_context(&self.context)?
             && let Some(method) = self
                 .plugin
                 .resolve(&context)?
@@ -557,7 +567,7 @@ pub fn reject_last_login_method_input<S: AuthSchema>(
 ) -> AuthResult<()> {
     use alibi_core::utils::json::JsValue;
     let truthy = match value {
-        None | Some(JsValue::Null) => false,
+        None | Some(JsValue::Undefined | JsValue::Null) => false,
         Some(JsValue::Bool(value)) => *value,
         Some(JsValue::Number(value)) => *value != 0.0 && !value.is_nan(),
         Some(JsValue::String(value)) => !value.is_empty(),

@@ -220,7 +220,7 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
             metadata: ak.metadata().and_then(|s| {
                 let value = crate::utils::json::parse_value(s).ok()?;
                 if let crate::utils::json::JsValue::String(encoded) = value {
-                    let mut value = crate::utils::json::parse_value(&encoded)
+                    let mut value = crate::utils::json::parse_value(encoded.as_str()?)
                         .ok()?
                         .to_json_value()
                         .ok()?;

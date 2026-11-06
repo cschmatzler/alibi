@@ -105,7 +105,7 @@ impl<S: AuthSchema> PluginStore<S> {
         _ = fields.insert(
             field.into(),
             value.map_or(crate::utils::json::JsValue::Null, |value| {
-                crate::utils::json::JsValue::String(value.to_owned())
+                crate::utils::json::JsValue::String(value.to_owned().into())
             }),
         );
         let updated = if self.config.session.stateless {

@@ -105,7 +105,9 @@ impl PwnedPasswordClient {
 
 fn response_text(text: String) -> AuthResult<String> {
     match alibi_core::utils::json::parse_value(&text) {
-        Ok(alibi_core::utils::json::JsValue::String(value)) => Ok(value),
+        Ok(alibi_core::utils::json::JsValue::String(value)) => {
+            value.to_utf8().map_err(|_| retry_error())
+        }
         Ok(_) => Err(retry_error()),
         Err(_) if serde_json::from_str::<serde::de::IgnoredAny>(&text).is_ok() => {
             // JavaScript permits escaped unpaired UTF-16 surrogates in JSON.

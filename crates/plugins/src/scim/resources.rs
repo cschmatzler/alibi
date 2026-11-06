@@ -2214,7 +2214,7 @@ fn attribute_paths(
     schema: &str,
 ) -> Result<Vec<Vec<String>>, String> {
     let values = match input {
-        Some(JsValue::String(value)) => vec![value.as_str()],
+        Some(JsValue::String(value)) => value.as_str().into_iter().collect(),
         Some(JsValue::Array(values)) => values.iter().filter_map(JsValue::as_str).collect(),
         _ => Vec::new(),
     };
@@ -2348,7 +2348,13 @@ fn group_creation_body(
                     "[body.externalId] Too small: expected string to have >=1 characters".into(),
                 );
             }
-            Some(value.clone())
+            match value.to_utf8() {
+                Ok(value) => Some(value),
+                Err(error) => {
+                    errors.push(error.to_string());
+                    None
+                }
+            }
         }
         value => {
             errors.push(format!(
@@ -2536,7 +2542,12 @@ fn patch_body(
                 };
                 let op = match operation.get("op") {
                     None => ScimGroupPatchKind::Replace,
-                    Some(JsValue::String(value)) => match value.to_lowercase().as_str() {
+                    Some(JsValue::String(value)) => match value
+                        .to_utf8()
+                        .map_err(|error| error.to_string())?
+                        .to_lowercase()
+                        .as_str()
+                    {
                         "replace" => ScimGroupPatchKind::Replace,
                         "add" => ScimGroupPatchKind::Add,
                         "remove" => ScimGroupPatchKind::Remove,
@@ -2552,7 +2563,9 @@ fn patch_body(
                 };
                 let path = match operation.get("path") {
                     None => None,
-                    Some(JsValue::String(path)) => Some(path.clone()),
+                    Some(JsValue::String(path)) => {
+                        Some(path.to_utf8().map_err(|error| error.to_string())?)
+                    }
                     value => {
                         errors.push(format!("[body.Operations.{index}.path] Invalid input: expected string, received {}",crate::authentication_helpers::json_type(value)));
                         None

@@ -448,7 +448,8 @@ impl ApiKeyPlugin {
         metadata: Option<&alibi_core::utils::json::JsValue>,
     ) -> AuthResult<()> {
         if let Some(value) = metadata.filter(|value| match value {
-            alibi_core::utils::json::JsValue::Null => false,
+            alibi_core::utils::json::JsValue::Undefined
+            | alibi_core::utils::json::JsValue::Null => false,
             alibi_core::utils::json::JsValue::Bool(value) => *value,
             alibi_core::utils::json::JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
             alibi_core::utils::json::JsValue::String(value) => !value.is_empty(),
@@ -3480,9 +3481,17 @@ mod crud_tests {
         for index in [&id, &hash] {
             cache.set_without_expiry(index, &serialized).await.unwrap();
         }
-        let verified = plugin.verify_api_key(&VerifyApiKey {
-            key: &created.key, config_id: None, permissions: None,
-        }, &ctx).await.unwrap();
+        let verified = plugin
+            .verify_api_key(
+                &VerifyApiKey {
+                    key: &created.key,
+                    config_id: None,
+                    permissions: None,
+                },
+                &ctx,
+            )
+            .await
+            .unwrap();
         assert_eq!(verified.remaining, Some(4.0));
         assert_eq!(verified.request_count, Some(1.0));
         assert_ne!(verified.last_refill_at.as_deref(), Some("2000-01-01"));
@@ -3516,9 +3525,16 @@ mod crud_tests {
             for index in [&id, &hash] {
                 cache.set_without_expiry(index, &serialized).await.unwrap();
             }
-            let result = plugin.verify_api_key(&VerifyApiKey {
-                key: &created.key, config_id: None, permissions: None,
-            }, &ctx).await;
+            let result = plugin
+                .verify_api_key(
+                    &VerifyApiKey {
+                        key: &created.key,
+                        config_id: None,
+                        permissions: None,
+                    },
+                    &ctx,
+                )
+                .await;
             if expired {
                 let ApiKeyVerificationError::Validation(error) = result.unwrap_err() else {
                     panic!("Expected expired-key validation error");

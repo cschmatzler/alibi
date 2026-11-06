@@ -47,7 +47,7 @@ pub(crate) async fn prepare_additional_user_fields(
     if let Some(username) = &data.username {
         _ = input.insert(
             "username".into(),
-            alibi_core::utils::json::JsValue::String(username.clone()),
+            alibi_core::utils::json::JsValue::String(username.clone().into()),
         );
     }
     if policy.include_display_username
@@ -55,7 +55,7 @@ pub(crate) async fn prepare_additional_user_fields(
     {
         _ = input.insert(
             "displayUsername".into(),
-            alibi_core::utils::json::JsValue::String(display.clone()),
+            alibi_core::utils::json::JsValue::String(display.clone().into()),
         );
     }
     data.additional_fields = ctx
@@ -83,7 +83,7 @@ pub(crate) async fn prepare_additional_user_fields(
     // Lookup uses the adapter's scalar affinity rather than converting before
     // the hook. This keeps normalization:false numeric values admissible.
     let username = match username {
-        alibi_core::utils::json::JsValue::String(value) => value,
+        alibi_core::utils::json::JsValue::String(value) => value.require_str()?.to_owned(),
         value => {
             let scalar = match alibi_core::store::adapter::RawFieldValue::from_js(&value)? {
                 alibi_core::store::adapter::RawFieldValue::Integer(value) => {

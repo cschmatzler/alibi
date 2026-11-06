@@ -443,27 +443,36 @@ impl SessionFields {
     /// # Errors
     ///
     /// Returns a validation error for disallowed fields or rejected field validators.
-    pub fn parse_update(
+    pub fn parse_update<K: std::hash::Hash + Eq>(
         &self,
-        input: &IndexMap<String, JsValue>,
-    ) -> Result<FieldValues, FieldInputError> {
+        input: &IndexMap<K, JsValue>,
+    ) -> Result<FieldValues, FieldInputError>
+    where
+        String: indexmap::Equivalent<K>,
+    {
         self.parse(input, false)
     }
 
     /// Parse application input before database hooks. Creation defaults and
     /// required fields apply here; adapter binding remains a separate phase.
-    pub fn parse_create(
+    pub fn parse_create<K: std::hash::Hash + Eq>(
         &self,
-        input: &IndexMap<String, JsValue>,
-    ) -> Result<FieldValues, FieldInputError> {
+        input: &IndexMap<K, JsValue>,
+    ) -> Result<FieldValues, FieldInputError>
+    where
+        String: indexmap::Equivalent<K>,
+    {
         self.parse(input, true)
     }
 
-    fn parse(
+    fn parse<K: std::hash::Hash + Eq>(
         &self,
-        input: &IndexMap<String, JsValue>,
+        input: &IndexMap<K, JsValue>,
         creation: bool,
-    ) -> Result<FieldValues, FieldInputError> {
+    ) -> Result<FieldValues, FieldInputError>
+    where
+        String: indexmap::Equivalent<K>,
+    {
         let mut parsed = FieldValues::new();
         for (name, field) in &self.0 {
             let Some(value) = input.get(name) else {

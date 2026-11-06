@@ -166,7 +166,12 @@ impl OAuthProviderPlugin {
                         if let Some(mut parameters) = resolved {
                             _ = parameters
                                 .insert("client_id".into(), JsValue::String(client_id.into()));
-                            input = Some(JsValue::Object(parameters));
+                            input = Some(JsValue::Object(
+                                parameters
+                                    .into_iter()
+                                    .map(|(name, value)| (name.into(), value))
+                                    .collect(),
+                            ));
                             None
                         } else {
                             Some(("invalid_request_uri", "request_uri is invalid or expired"))
@@ -207,10 +212,10 @@ impl OAuthProviderPlugin {
         reserved_error: Option<(&'static str, &'static str)>,
     ) -> AuthResult<EndpointResponse> {
         let validated_max_age = maximum_age(input.as_ref().and_then(|input| input.get("max_age")));
-        let nonfinite_values = nonfinite_query_values(input.as_ref());
+        let nonfinite_values = nonfinite_query_values(input.as_ref())?;
         let mut logical_query = input
             .clone()
-            .unwrap_or_else(|| JsValue::Object(super::OAuthAuthorizationQuery::new()));
+            .unwrap_or_else(|| JsValue::Object(Default::default()));
         let mut query: serde_json::Map<String, Value> = input
             .and_then(|value| alibi_core::utils::json::from_value(value).ok())
             .unwrap_or_default();
@@ -223,7 +228,10 @@ impl OAuthProviderPlugin {
         {
             _ = query.insert("redirect_uri".into(), json!(redirect));
             if let JsValue::Object(fields) = &mut logical_query {
-                _ = fields.insert("redirect_uri".into(), JsValue::String(redirect.clone()));
+                _ = fields.insert(
+                    "redirect_uri".into(),
+                    JsValue::String(redirect.clone().into()),
+                );
             }
         }
         let logical = alibi_core::endpoint::current_endpoint_call_context()
@@ -1014,14 +1022,16 @@ fn js_parameter_text(value: &JsValue) -> AuthResult<String> {
         .map_err(|message| AuthError::CallbackFailure(Box::new(AuthError::internal(message))))
 }
 
-fn nonfinite_query_values(input: Option<&JsValue>) -> std::collections::BTreeMap<String, JsValue> {
+fn nonfinite_query_values(
+    input: Option<&JsValue>,
+) -> AuthResult<std::collections::BTreeMap<String, JsValue>> {
     let Some(values) = input.and_then(JsValue::as_object) else {
-        return std::collections::BTreeMap::default();
+        return Ok(std::collections::BTreeMap::default());
     };
     values
         .iter()
         .filter(|(_, value)| has_nonfinite_array_value(value))
-        .map(|(name, value)| (name.clone(), value.clone()))
+        .map(|(name, value)| Ok((name.require_str()?.to_owned(), value.clone())))
         .collect()
 }
 
@@ -1223,7 +1233,9 @@ fn maximum_age(input: Option<&JsValue>) -> Result<Option<f64>, &'static str> {
     let value = match input {
         JsValue::Number(value) if value.is_finite() => *value,
         JsValue::String(value) => {
-            let value = alibi_core::utils::javascript::trim(value);
+            let value = alibi_core::utils::javascript::trim(
+                value.as_str().ok_or("max_age: Invalid UTF-16 string")?,
+            );
             if value.is_empty() {
                 return Err("max_age: Too small: expected string to have >=1 characters");
             }

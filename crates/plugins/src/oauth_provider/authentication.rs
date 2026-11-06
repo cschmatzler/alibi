@@ -67,7 +67,9 @@ impl OAuthProviderPlugin {
                     _ = body.insert(
                         field.into(),
                         match value {
-                            JsValue::String(value) => Value::String(value.clone()),
+                            JsValue::String(value) => {
+                                Value::String(value.require_str()?.to_owned())
+                            }
                             _ => Value::Null,
                         },
                     );

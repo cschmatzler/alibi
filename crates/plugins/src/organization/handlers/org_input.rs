@@ -16,7 +16,7 @@ fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse
 
 fn kind(value: Option<&JsValue>) -> &'static str {
     match value {
-        None => "undefined",
+        None | Some(JsValue::Undefined) => "undefined",
         Some(JsValue::Null) => "null",
         Some(JsValue::Bool(_)) => "boolean",
         Some(JsValue::Number(value)) if value.is_nan() => "NaN",
@@ -104,7 +104,13 @@ fn string(
                     "[{path}] Too small: expected string to have >=1 characters"
                 ));
             }
-            Some(value.clone())
+            match value.to_utf8() {
+                Ok(value) => Some(value),
+                Err(_) => {
+                    issues.push(format!("[{path}] Invalid UTF-16 string"));
+                    None
+                }
+            }
         }
         value => {
             issues.push(expected(path, "string", value));
@@ -172,7 +178,9 @@ pub(in crate::organization) fn create_value(
     Ok(CreateOrganizationRequest {
         additional_fields: input
             .and_then(JsValue::as_object)
-            .cloned()
+            .map(alibi_core::utils::json::utf8_keys)
+            .transpose()
+            .map_err(|error| response(400, codes::VALIDATION_ERROR, error.to_string()))?
             .unwrap_or_default(),
         name: name.unwrap_or_default(),
         slug: slug.unwrap_or_default(),
@@ -187,7 +195,7 @@ pub(super) fn update(
 ) -> Result<
     (
         UpdateOrganizationRequest,
-        Option<indexmap::IndexMap<String, JsValue>>,
+        Option<alibi_core::utils::json::JsObject>,
     ),
     AuthResponse,
 > {
@@ -199,7 +207,7 @@ pub(in crate::organization) fn update_value(
 ) -> Result<
     (
         UpdateOrganizationRequest,
-        Option<indexmap::IndexMap<String, JsValue>>,
+        Option<alibi_core::utils::json::JsObject>,
     ),
     AuthResponse,
 > {
@@ -221,7 +229,9 @@ pub(in crate::organization) fn update_value(
     let mut fields = UpdateOrganizationData {
         additional_fields: data
             .and_then(JsValue::as_object)
-            .cloned()
+            .map(alibi_core::utils::json::utf8_keys)
+            .transpose()
+            .map_err(|error| response(400, codes::VALIDATION_ERROR, error.to_string()))?
             .unwrap_or_default(),
         name: None,
         slug: None,
@@ -376,7 +386,11 @@ pub(in crate::organization) fn member_role_update_value(
         value.get(key)
     };
     let role = match get("role") {
-        Some(JsValue::String(value)) => Some(RoleInput::One(value.clone())),
+        Some(JsValue::String(value)) => {
+            Some(RoleInput::One(value.to_utf8().map_err(|error| {
+                response(400, codes::VALIDATION_ERROR, error.to_string())
+            })?))
+        }
         Some(JsValue::Array(values)) => values
             .iter()
             .map(|value| value.as_str().map(str::to_owned))
@@ -474,7 +488,11 @@ pub(in crate::organization) fn invitation_create_value(
     let mut issues = Vec::new();
     let email = string(get("email"), "body.email", true, false, false, &mut issues);
     let role = match get("role") {
-        Some(JsValue::String(value)) => Some(RoleInput::One(value.clone())),
+        Some(JsValue::String(value)) => {
+            Some(RoleInput::One(value.to_utf8().map_err(|error| {
+                response(400, codes::VALIDATION_ERROR, error.to_string())
+            })?))
+        }
         Some(JsValue::Array(values)) => values
             .iter()
             .map(|value| value.as_str().map(str::to_owned))
@@ -503,7 +521,11 @@ pub(in crate::organization) fn invitation_create_value(
     };
     let team_id = match get("teamId") {
         None => None,
-        Some(JsValue::String(value)) => Some(TeamInput::One(value.clone())),
+        Some(JsValue::String(value)) => {
+            Some(TeamInput::One(value.to_utf8().map_err(|error| {
+                response(400, codes::VALIDATION_ERROR, error.to_string())
+            })?))
+        }
         Some(JsValue::Array(values)) => {
             let ids = values
                 .iter()

@@ -325,11 +325,17 @@ impl AuthRequest {
                 .map(|name| {
                     let values = self.query_values(name).unwrap_or_default();
                     let value = if values.len() > 1 {
-                        JsValue::Array(values.iter().cloned().map(JsValue::String).collect())
+                        JsValue::Array(
+                            values
+                                .iter()
+                                .cloned()
+                                .map(|value| JsValue::String(value.into()))
+                                .collect(),
+                        )
                     } else {
-                        JsValue::String(self.query.get(name).cloned().unwrap_or_default())
+                        JsValue::String(self.query.get(name).cloned().unwrap_or_default().into())
                     };
-                    (name.clone(), value)
+                    (name.clone().into(), value)
                 })
                 .collect(),
         )
@@ -455,6 +461,16 @@ impl AuthResponse {
             status,
             "application/json",
             crate::utils::json::to_vec(data)?,
+        ))
+    }
+
+    /// Serialize a canonical JavaScript value without narrowing UTF-16 strings.
+    /// Undefined has no JSON text and therefore produces an empty body.
+    pub fn json_value(status: u16, data: &JsValue) -> Result<Self, serde_json::Error> {
+        Ok(Self::with_content(
+            status,
+            "application/json",
+            crate::utils::json::stringify(data)?.unwrap_or_default(),
         ))
     }
 

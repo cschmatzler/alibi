@@ -111,10 +111,17 @@ pub(super) fn check_permissions(
                             .as_str()
                             .is_some_and(|value| value == action && !revived_permission_date(value))
                     }),
-                    JsValue::String(value) if !revived_permission_date(value) => {
-                        value.contains(action)
+                    JsValue::String(value)
+                        if !value.as_str().is_some_and(revived_permission_date) =>
+                    {
+                        action.is_empty()
+                            || value
+                                .code_units()
+                                .windows(action.encode_utf16().count())
+                                .any(|units| units.iter().copied().eq(action.encode_utf16()))
                     }
-                    JsValue::Null
+                    JsValue::Undefined
+                    | JsValue::Null
                     | JsValue::Bool(_)
                     | JsValue::Number(_)
                     | JsValue::Date(_)
@@ -299,7 +306,7 @@ pub(super) async fn create_key_for_user(
 fn json_truthy(value: &alibi_core::utils::json::JsValue) -> bool {
     use alibi_core::utils::json::JsValue;
     match value {
-        JsValue::Null => false,
+        JsValue::Undefined | JsValue::Null => false,
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),
@@ -456,20 +463,25 @@ fn compare_metadata(left: Option<&str>, right: Option<&str>) -> AuthResult<std::
     let primitive = |value: JsValue| match value {
         JsValue::Array(_) | JsValue::Object(_) => value
             .coerce_string()
-            .map(JsValue::String)
+            .map(|value| JsValue::String(value.into()))
             .map_err(alibi_core::AuthError::internal),
         value => Ok(value),
     };
     let left = primitive(left)?;
     let right = primitive(right)?;
     if let (JsValue::String(left), JsValue::String(right)) = (&left, &right) {
-        return Ok(compare_strings(Some(left), Some(right), false));
+        return Ok(compare_strings(
+            Some(left.require_str()?),
+            Some(right.require_str()?),
+            false,
+        ));
     }
     let number = |value: &JsValue| match value {
+        JsValue::Undefined => None,
         JsValue::Null => Some(0.0),
         JsValue::Bool(value) => Some(f64::from(*value)),
         JsValue::Number(value) => Some(*value),
-        JsValue::String(value) => string_to_number(value),
+        JsValue::String(value) => value.as_str().and_then(string_to_number),
         JsValue::Date(value) => string_to_number(&value.timestamp_millis().to_string()),
         JsValue::Array(_) | JsValue::Object(_) => None,
     };
@@ -655,4 +667,33 @@ pub(crate) async fn delete_key_core(
     config.remove_key(ctx, &key).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(serde_json::json!({ "success": true }))
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::check_permissions;
+
+    #[test]
+    fn string_permissions_include_empty_actions_and_utf16_substrings() {
+        for (permission, action) in [("read", ""), ("a😀b", "😀"), ("a😀b", "b")] {
+            assert!(
+                check_permissions(
+                    &serde_json::json!({"resource": permission}).to_string(),
+                    &serde_json::json!({"resource": [action]}),
+                )
+                .unwrap()
+            );
+        }
+        assert!(
+            !check_permissions(
+                r#"{"resource":"read"}"#,
+                &serde_json::json!({"resource": ["write"]}),
+            )
+            .unwrap()
+        );
+        assert!(
+            !check_permissions(r#"{"resource":""}"#, &serde_json::json!({"resource": [""]}),)
+                .unwrap()
+        );
+    }
 }

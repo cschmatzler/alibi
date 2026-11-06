@@ -127,7 +127,7 @@ impl OAuthPlugin {
         user_id: Option<&str>,
     ) -> ServerEndpoint<T> {
         let mut input = JsValue::Object(match selection {
-            OAuthAccountSelection::Id(id) => [("accountId".into(), JsValue::String(id))]
+            OAuthAccountSelection::Id(id) => [("accountId".into(), JsValue::String(id.into()))]
                 .into_iter()
                 .collect(),
             OAuthAccountSelection::Cookie => [("useAccountCookie".into(), JsValue::Bool(true))]
@@ -329,6 +329,7 @@ fn validate_social(call: &EndpointCall) -> AuthResult<EndpointInput> {
     }
     if let Some(params) = body.get("additionalParams").and_then(JsValue::as_object) {
         for (key, value) in params {
+            let key = key.require_str()?;
             if !value.is_string() {
                 return Err(crate::endpoint::validation(format!(
                     "[body.additionalParams.{key}] Invalid input: expected string, received {}",

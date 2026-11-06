@@ -73,9 +73,14 @@ pub(super) fn validate(plugin: &SiwePlugin, call: &EndpointCall) -> AuthResult<E
                 json_type(Some(value)),
             ))
         })?;
-        if let Some(message) =
-            validation::unknown_field_keys(object.keys().map(String::as_str), &[])
-        {
+        if let Some(message) = validation::unknown_field_keys(
+            object
+                .keys()
+                .map(|key| key.require_str())
+                .collect::<AuthResult<Vec<_>>>()?
+                .into_iter(),
+            &[],
+        ) {
             return Err(crate::endpoint::validation(message));
         }
     }

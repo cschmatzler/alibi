@@ -526,7 +526,7 @@ fn merge_optional(target: &mut Option<JsValue>, patch: Option<JsValue>) {
 fn merge_value(target: &mut JsValue, patch: JsValue) {
     if let (JsValue::Object(target), JsValue::Object(patch)) = (&mut *target, &patch) {
         for (name, value) in patch {
-            if value.is_null() || matches!(name.as_str(), "__proto__" | "constructor") {
+            if value.is_null() || matches!(name.as_str(), Some("__proto__" | "constructor")) {
                 continue;
             }
             if let Some(target) = target.get_mut(name) {
@@ -624,7 +624,7 @@ impl EndpointResponse {
         let response = match &self.result {
             Ok(value) => match &self.http_response {
                 Some(response) => response.clone(),
-                None => crate::AuthResponse::json(self.status.unwrap_or(200), value)?,
+                None => crate::AuthResponse::json_value(self.status.unwrap_or(200), value)?,
             },
             Err(error) => {
                 let (status, code, message) = error.error_payload();
@@ -635,7 +635,7 @@ impl EndpointResponse {
                 if self.error_body_absent {
                     response.body.clear();
                 } else if let Some(body) = &self.error_body {
-                    response.body = crate::utils::json::to_vec(body)?;
+                    response.body = crate::utils::json::stringify(body)?.unwrap_or_default();
                 }
                 response
             }
@@ -847,10 +847,20 @@ impl<T> EndpointOutput<T> {
     pub fn into_response(self) -> AuthResult<crate::AuthResponse> {
         let response = match self.http_response {
             Some(response) => response,
-            None => crate::AuthResponse::json(self.status.unwrap_or(200), &self.value)?,
+            None => crate::AuthResponse::json_value(self.status.unwrap_or(200), &self.value)?,
         };
         Ok(forward_response_headers(response, &self.headers))
     }
+    /// Decode through a native lossless contract, rather than ordinary Serde JSON.
+    pub fn decode_lossless<R: crate::utils::json::FromJsValue>(&self) -> AuthResult<R> {
+        if self.http_response.is_some() {
+            return Err(AuthError::internal(
+                "Endpoint returned an HTTP response; use http_response or into_response",
+            ));
+        }
+        R::from_js_value(self.value.clone()).map_err(|error| AuthError::internal(error.to_string()))
+    }
+
     #[must_use]
     pub const fn value(&self) -> &JsValue {
         &self.value
@@ -1018,4 +1028,45 @@ pub async fn with_endpoint_call_context<T>(
 /// Isolate an independent HTTP dispatch from an enclosing logical endpoint call.
 pub async fn without_endpoint_call_context<T>(future: impl Future<Output = T>) -> T {
     ENDPOINT_CALL_CONTEXT.scope(None, future).await
+}
+
+#[cfg(test)]
+mod lossless_tests {
+    use super::*;
+    use crate::utils::json::{JsString, parse_value};
+
+    #[test]
+    fn logical_output_http_and_lossless_decode_retain_code_units() {
+        let mut value = parse_value(r#"{"\ud800":"\ud83d","array":["\ude00"]}"#).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("omitted".into(), JsValue::Undefined);
+        let expected = br#"{"\ud800":"\ud83d","array":["\ude00"]}"#;
+        let response = EndpointResponse::value(value.clone());
+        assert_eq!(response.result.as_ref().unwrap(), &value);
+        assert_eq!(response.to_response().unwrap().body, expected);
+        let output = EndpointOutput::<JsValue> {
+            value: value.clone(),
+            http_response: None,
+            headers: Headers::new(),
+            status: Some(201),
+            output: PhantomData,
+        };
+        let decoded = output.decode_lossless::<JsValue>().unwrap();
+        assert!(decoded.get("omitted").unwrap().is_undefined());
+        assert_eq!(
+            decoded.as_object().unwrap()[&JsString::from_code_units(vec![0xd800])]
+                .as_js_string()
+                .unwrap()
+                .code_units(),
+            &[0xd83d]
+        );
+        let http = output.into_response().unwrap();
+        assert_eq!(http.body, expected);
+        assert_eq!(http.status, 201);
+        let mut error = EndpointResponse::error(AuthError::bad_request("bad"));
+        error.error_body = Some(value);
+        assert_eq!(error.to_response().unwrap().body, expected);
+    }
 }

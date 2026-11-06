@@ -80,11 +80,14 @@ impl<S: AuthSchema> Clone for AuthContext<S> {
 impl<S: AuthSchema> AuthContext<S> {
     /// Parse configured user fields at the endpoint boundary before creation
     /// validation or adapter hooks. Unknown fields are ignored by this policy.
-    pub fn parse_user_fields(
+    pub fn parse_user_fields<K: std::hash::Hash + Eq>(
         &self,
-        input: &indexmap::IndexMap<String, crate::utils::json::JsValue>,
+        input: &indexmap::IndexMap<K, crate::utils::json::JsValue>,
         creation: bool,
-    ) -> Result<crate::field_policy::FieldValues, crate::field_policy::FieldInputError> {
+    ) -> Result<crate::field_policy::FieldValues, crate::field_policy::FieldInputError>
+    where
+        String: indexmap::Equivalent<K>,
+    {
         let registered = self.extensions.get::<crate::field_policy::UserFields>();
         let configured =
             crate::field_policy::SessionFields(self.config.user.additional_fields.clone());

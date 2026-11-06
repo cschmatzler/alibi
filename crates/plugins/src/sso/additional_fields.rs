@@ -75,7 +75,7 @@ pub(super) fn validate_and_copy(
     if let JsValue::Object(output) = output {
         for name in fields.0.keys() {
             if let Some(value) = original.and_then(|input| input.get(name)) {
-                _ = output.insert(name.clone(), value.clone());
+                _ = output.insert(name.clone().into(), value.clone());
             }
         }
     }

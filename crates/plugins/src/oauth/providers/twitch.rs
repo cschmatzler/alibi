@@ -134,7 +134,12 @@ impl OAuthProvider {
             alibi_core::utils::json::to_string(&alibi_core::utils::json::JsValue::Object(
                 [(
                     "id_token".into(),
-                    alibi_core::utils::json::JsValue::Object(claims.into_iter().collect()),
+                    alibi_core::utils::json::JsValue::Object(
+                        claims
+                            .into_iter()
+                            .map(|(key, value)| (key.into(), value))
+                            .collect(),
+                    ),
                 )]
                 .into_iter()
                 .collect(),

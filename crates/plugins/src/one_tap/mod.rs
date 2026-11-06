@@ -450,7 +450,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
 
 fn js_truthy(value: &JsValue) -> bool {
     match value {
-        JsValue::Null => false,
+        JsValue::Undefined | JsValue::Null => false,
         JsValue::Bool(value) => *value,
         JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
         JsValue::String(value) => !value.is_empty(),

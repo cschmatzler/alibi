@@ -196,9 +196,12 @@ impl PhoneNumberPlugin {
     ) -> ServerEndpoint<PhonePasswordResetRequested> {
         ServerEndpoint::new("phone-number", "requestPasswordResetPhoneNumber").with_body_value(
             JsValue::Object(
-                [("phoneNumber".into(), JsValue::String(phone_number.into()))]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "phoneNumber".into(),
+                    JsValue::String(phone_number.into().into()),
+                )]
+                .into_iter()
+                .collect(),
             ),
         )
     }
@@ -207,9 +210,12 @@ impl PhoneNumberPlugin {
     #[must_use]
     pub fn send_otp_endpoint(phone_number: impl Into<String>) -> ServerEndpoint<PhoneOtpSent> {
         ServerEndpoint::new("phone-number", "sendPhoneNumberOTP").with_body_value(JsValue::Object(
-            [("phoneNumber".into(), JsValue::String(phone_number.into()))]
-                .into_iter()
-                .collect(),
+            [(
+                "phoneNumber".into(),
+                JsValue::String(phone_number.into().into()),
+            )]
+            .into_iter()
+            .collect(),
         ))
     }
 
@@ -222,8 +228,11 @@ impl PhoneNumberPlugin {
         ServerEndpoint::new("phone-number", "consumePhoneNumberOTP").with_body_value(
             JsValue::Object(
                 [
-                    ("phoneNumber".into(), JsValue::String(phone_number.into())),
-                    ("code".into(), JsValue::String(code.into())),
+                    (
+                        "phoneNumber".into(),
+                        JsValue::String(phone_number.into().into()),
+                    ),
+                    ("code".into(), JsValue::String(code.into().into())),
                 ]
                 .into_iter()
                 .collect(),

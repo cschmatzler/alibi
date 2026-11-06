@@ -864,8 +864,8 @@ fn query_pairs(call: &EndpointCall) -> AuthResult<HashMap<String, String>> {
         .map(|(key, value)| {
             value
                 .coerce_string()
-                .map(|value| (key.clone(), value))
-                .map_err(validation)
+                .map(|value| Ok((key.require_str()?.to_owned(), value)))
+                .map_err(validation)?
         })
         .collect()
 }

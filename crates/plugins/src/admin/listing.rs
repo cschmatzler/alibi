@@ -104,7 +104,9 @@ pub(super) fn params(call: &EndpointCall) -> AuthResult<ListUsersQueryParams> {
         query
             .get(name)
             .and_then(|value| match value {
-                JsValue::String(value) => alibi_core::utils::javascript::string_to_number(value),
+                JsValue::String(value) => value
+                    .as_str()
+                    .and_then(alibi_core::utils::javascript::string_to_number),
                 JsValue::Number(value) => Some(*value),
                 _ => None,
             })

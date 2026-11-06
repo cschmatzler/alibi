@@ -84,7 +84,7 @@ pub(super) fn strip_resource(resource: &JsValue) -> JsValue {
 }
 
 /// Microsoft Entra may send a single complex value as a one-element array.
-fn single_record(value: &JsValue) -> Option<&IndexMap<String, JsValue>> {
+fn single_record(value: &JsValue) -> Option<&IndexMap<alibi_core::utils::json::JsString, JsValue>> {
     match value {
         JsValue::Object(fields) => Some(fields),
         JsValue::Array(entries) if entries.len() == 1 => match entries.first() {
@@ -117,11 +117,11 @@ fn null_operations(path: String, target: &Target) -> AuthResult<Vec<Operation>> 
 }
 
 fn split(
-    value: &IndexMap<String, JsValue>,
+    value: &IndexMap<alibi_core::utils::json::JsString, JsValue>,
     parent: Option<&Target>,
     resolve: &impl Fn(&str) -> Target,
     removals: &mut Vec<Operation>,
-) -> AuthResult<IndexMap<String, JsValue>> {
+) -> AuthResult<IndexMap<alibi_core::utils::json::JsString, JsValue>> {
     let mut kept = IndexMap::new();
     for (attribute, entry) in value {
         if !matches!(
@@ -131,7 +131,11 @@ fn split(
             _ = kept.insert(attribute.clone(), entry.clone());
             continue;
         }
-        let path = parent.map_or_else(|| attribute.clone(), |parent| parent.sub_path(attribute));
+        let attribute_path = attribute.require_str()?;
+        let path = parent.map_or_else(
+            || attribute_path.to_owned(),
+            |parent| parent.sub_path(attribute_path),
+        );
         let target = resolve(&path);
         if matches!(entry, JsValue::Null) {
             removals.extend(null_operations(path, &target)?);

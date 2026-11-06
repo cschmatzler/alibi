@@ -65,13 +65,20 @@ pub(crate) fn parse(value: &str) -> Option<DateTime<Utc>> {
 pub(crate) fn revive(value: &mut JsValue) {
     match value {
         JsValue::String(text) => {
-            if let Some(normalized) = crate::utils::datetime::normalize_json_date(text) {
-                *text = normalized;
+            if let Some(normalized) = text
+                .as_str()
+                .and_then(crate::utils::datetime::normalize_json_date)
+            {
+                *text = normalized.into();
             }
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive),
         JsValue::Object(values) => values.values_mut().for_each(revive),
-        JsValue::Null | JsValue::Bool(_) | JsValue::Number(_) | JsValue::Date(_) => {}
+        JsValue::Undefined
+        | JsValue::Null
+        | JsValue::Bool(_)
+        | JsValue::Number(_)
+        | JsValue::Date(_) => {}
     }
 }
 
@@ -93,8 +100,8 @@ pub(crate) fn revive_parsed(value: &mut JsValue) {
 // revival distinct from ordinary string coercion; arrays join revived values.
 pub(crate) fn coerce_id(value: &JsValue) -> Option<String> {
     match value {
-        JsValue::String(text) => parse(text).map_or_else(
-            || Some(text.clone()),
+        JsValue::String(text) => text.as_str().and_then(parse).map_or_else(
+            || text.to_utf8().ok(),
             |date| {
                 Some(format!(
                     "{}{:04}{}",
@@ -120,7 +127,7 @@ pub(crate) fn coerce_id(value: &JsValue) -> Option<String> {
     }
 }
 
-fn coerce_object_id(values: &indexmap::IndexMap<String, JsValue>) -> Option<String> {
+fn coerce_object_id(values: &crate::utils::json::JsObject) -> Option<String> {
     // Own/inherited non-callable toString values cannot yield a primitive.
     if values.contains_key("toString") {
         return None;
@@ -130,7 +137,7 @@ fn coerce_object_id(values: &indexmap::IndexMap<String, JsValue>) -> Option<Stri
         // These require JavaScript internal slots or inherited Array methods,
         // rather than an idiomatic own-property native JSON object.
         Some(JsValue::Null | JsValue::Array(_)) => None,
-        Some(JsValue::String(text)) if parse(text).is_some() => None,
+        Some(JsValue::String(text)) if text.as_str().and_then(parse).is_some() => None,
         _ => Some("[object Object]".into()),
     }
 }

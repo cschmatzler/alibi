@@ -263,6 +263,7 @@ impl RawFieldValue {
     )]
     pub fn from_js(value: &JsValue) -> Result<Self, serde_json::Error> {
         Ok(match value {
+            JsValue::Undefined => return Err(serde::ser::Error::custom("cannot bind undefined")),
             JsValue::Null => Self::Null,
             JsValue::Bool(value) => Self::Bool(*value),
             JsValue::Number(value)
@@ -275,7 +276,9 @@ impl RawFieldValue {
                 Self::Integer(*value as i64)
             }
             JsValue::Number(value) => Self::Number(*value),
-            JsValue::String(value) => Self::Text(value.clone()),
+            JsValue::String(value) => {
+                Self::Text(value.to_utf8().map_err(serde::ser::Error::custom)?)
+            }
             JsValue::Date(value) => {
                 Self::Text(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
             }

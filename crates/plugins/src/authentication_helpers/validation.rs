@@ -217,7 +217,7 @@ pub(crate) fn field_issue(
 
 pub(crate) const fn json_type(value: Option<&JsValue>) -> &'static str {
     match value {
-        None => "undefined",
+        None | Some(JsValue::Undefined) => "undefined",
         Some(JsValue::Null) => "null",
         Some(JsValue::Bool(_)) => "boolean",
         Some(JsValue::Number(number)) if number.is_nan() => "NaN",

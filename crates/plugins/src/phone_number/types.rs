@@ -133,7 +133,7 @@ pub(crate) fn reject_verified_input(
 ) -> Result<(), AuthError> {
     use alibi_core::utils::json::JsValue as Value;
     let truthy = match input {
-        None | Some(Value::Null) => false,
+        None | Some(Value::Undefined | Value::Null) => false,
         Some(Value::Bool(value)) => *value,
         Some(Value::Number(value)) => *value != 0.0 && !value.is_nan(),
         Some(Value::String(value)) => !value.is_empty(),
@@ -155,7 +155,7 @@ pub(crate) async fn parse_signup_phone(
 ) -> Result<Option<String>, AuthError> {
     use alibi_core::utils::json::JsValue as Value;
     if input.is_some_and(|value| match value {
-        Value::Null | Value::Bool(false) => false,
+        Value::Undefined | Value::Null | Value::Bool(false) => false,
         Value::String(value) => !value.is_empty(),
         Value::Number(value) => *value != 0.0 && !value.is_nan(),
         Value::Bool(true) | Value::Date(_) | Value::Array(_) | Value::Object(_) => true,

@@ -409,28 +409,10 @@ fn coerced_string<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: Deserializer<'de>,
 {
-    fn js_string(value: &JsValue) -> String {
-        match value {
-            JsValue::String(value) => value.clone(),
-            JsValue::Date(_) => value.coerce_string().unwrap_or_default(),
-            JsValue::Array(values) => values
-                .iter()
-                .map(|value_2| {
-                    if value_2.is_null() {
-                        String::new()
-                    } else {
-                        js_string(value_2)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(","),
-            JsValue::Object(_) => "[object Object]".into(),
-            JsValue::Number(number) => ryu_js::Buffer::new().format(*number).to_owned(),
-            JsValue::Null => "null".into(),
-            JsValue::Bool(value) => value.to_string(),
-        }
-    }
-    JsValue::deserialize(deserializer).map(|value| Some(js_string(&value)))
+    JsValue::deserialize(deserializer)?
+        .coerce_string()
+        .map(Some)
+        .map_err(serde::de::Error::custom)
 }
 
 fn validate_prefix(prefix: &str) -> Result<(), validator::ValidationError> {

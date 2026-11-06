@@ -130,7 +130,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("userId".into(), JsValue::String(body.user_id))]
+                [("userId".into(), JsValue::String(body.user_id.into()))]
                     .into_iter()
                     .collect(),
             )),
@@ -152,7 +152,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("userId".into(), JsValue::String(body.user_id))]
+                [("userId".into(), JsValue::String(body.user_id.into()))]
                     .into_iter()
                     .collect(),
             )),
@@ -165,7 +165,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("userId".into(), JsValue::String(body.user_id))]
+                [("userId".into(), JsValue::String(body.user_id.into()))]
                     .into_iter()
                     .collect(),
             )),
@@ -178,9 +178,12 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("sessionToken".into(), JsValue::String(body.session_token))]
-                    .into_iter()
-                    .collect(),
+                [(
+                    "sessionToken".into(),
+                    JsValue::String(body.session_token.into()),
+                )]
+                .into_iter()
+                .collect(),
             )),
             query: call.query().cloned(),
         });
@@ -198,7 +201,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("userId".into(), JsValue::String(body.user_id))]
+                [("userId".into(), JsValue::String(body.user_id.into()))]
                     .into_iter()
                     .collect(),
             )),
@@ -211,7 +214,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 .map_err(crate::endpoint::error_response)?;
         return Ok(EndpointInput {
             body: Some(JsValue::Object(
-                [("userId".into(), JsValue::String(body.user_id))]
+                [("userId".into(), JsValue::String(body.user_id.into()))]
                     .into_iter()
                     .collect(),
             )),
@@ -275,7 +278,7 @@ impl AdminPlugin {
     #[must_use]
     pub fn get_user_endpoint(id: impl Into<String>) -> ServerEndpoint<super::AdminUserOutput> {
         ServerEndpoint::new("admin", "getUser").with_query_value(JsValue::Object(
-            [("id".into(), JsValue::String(id.into()))]
+            [("id".into(), JsValue::String(id.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -324,7 +327,7 @@ impl AdminPlugin {
         user_id: impl Into<String>,
     ) -> ServerEndpoint<super::AdminUserSessionsResponse> {
         ServerEndpoint::new("admin", "listUserSessions").with_body_value(JsValue::Object(
-            [("userId".into(), JsValue::String(user_id.into()))]
+            [("userId".into(), JsValue::String(user_id.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -374,7 +377,7 @@ impl AdminPlugin {
         user_id: impl Into<String>,
     ) -> ServerEndpoint<super::AdminImpersonationResponse> {
         ServerEndpoint::new("admin", "impersonateUser").with_body_value(JsValue::Object(
-            [("userId".into(), JsValue::String(user_id.into()))]
+            [("userId".into(), JsValue::String(user_id.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -396,7 +399,7 @@ impl AdminPlugin {
         user_id: impl Into<String>,
     ) -> ServerEndpoint<super::AdminSuccessResponse> {
         ServerEndpoint::new("admin", "removeUser").with_body_value(JsValue::Object(
-            [("userId".into(), JsValue::String(user_id.into()))]
+            [("userId".into(), JsValue::String(user_id.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -408,7 +411,7 @@ impl AdminPlugin {
         user_id: impl Into<String>,
     ) -> ServerEndpoint<super::AdminSuccessResponse> {
         ServerEndpoint::new("admin", "revokeUserSessions").with_body_value(JsValue::Object(
-            [("userId".into(), JsValue::String(user_id.into()))]
+            [("userId".into(), JsValue::String(user_id.into().into()))]
                 .into_iter()
                 .collect(),
         ))
@@ -420,9 +423,12 @@ impl AdminPlugin {
         session_token: impl Into<String>,
     ) -> ServerEndpoint<super::AdminSuccessResponse> {
         ServerEndpoint::new("admin", "revokeUserSession").with_body_value(JsValue::Object(
-            [("sessionToken".into(), JsValue::String(session_token.into()))]
-                .into_iter()
-                .collect(),
+            [(
+                "sessionToken".into(),
+                JsValue::String(session_token.into().into()),
+            )]
+            .into_iter()
+            .collect(),
         ))
     }
 
@@ -442,7 +448,7 @@ impl AdminPlugin {
         user_id: impl Into<String>,
     ) -> ServerEndpoint<super::AdminUserResponse> {
         ServerEndpoint::new("admin", "unbanUser").with_body_value(JsValue::Object(
-            [("userId".into(), JsValue::String(user_id.into()))]
+            [("userId".into(), JsValue::String(user_id.into().into()))]
                 .into_iter()
                 .collect(),
         ))

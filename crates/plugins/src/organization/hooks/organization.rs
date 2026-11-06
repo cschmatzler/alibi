@@ -208,7 +208,13 @@ impl OrganizationUpdatePatch {
         if let Some(metadata) = self.metadata {
             data.metadata = Some(
                 metadata
-                    .map_or(JsValue::Null, JsValue::Object)
+                    .map_or(JsValue::Null, |map| {
+                        JsValue::Object(
+                            map.into_iter()
+                                .map(|(key, value)| (key.into(), value))
+                                .collect(),
+                        )
+                    })
                     .to_json_value()?,
             );
         }

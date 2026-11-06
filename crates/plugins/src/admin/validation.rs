@@ -25,7 +25,7 @@ fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse
 
 const fn kind(value: Option<&JsValue>) -> &'static str {
     match value {
-        None => "undefined",
+        None | Some(JsValue::Undefined) => "undefined",
         Some(JsValue::Null) => "null",
         Some(JsValue::Bool(_)) => "boolean",
         Some(JsValue::Number(_)) => "number",
@@ -136,32 +136,7 @@ fn fields(route: &str) -> &'static [(&'static str, Rule)] {
 }
 
 fn coerce_string(value: &JsValue) -> Option<String> {
-    Some(match value {
-        JsValue::Null => "null".into(),
-        JsValue::Bool(value) => value.to_string(),
-        JsValue::Number(value) => ryu_js::Buffer::new().format(*value).to_owned(),
-        JsValue::String(value) => value.clone(),
-        JsValue::Date(_) => return value.coerce_string().ok(),
-        // JSON cannot supply callable methods. An own toString shadows the
-        // inherited conversion and makes z.coerce.string fail its type check.
-        JsValue::Object(value) => {
-            if value.contains_key("toString") {
-                return None;
-            }
-            "[object Object]".into()
-        }
-        JsValue::Array(values) => values
-            .iter()
-            .map(|value_2| {
-                if value_2.is_null() {
-                    Some(String::new())
-                } else {
-                    coerce_string(value_2)
-                }
-            })
-            .collect::<Option<Vec<_>>>()?
-            .join(","),
-    })
+    value.coerce_string().ok()
 }
 
 fn valid_role(value: &JsValue) -> bool {
@@ -220,7 +195,7 @@ pub(super) fn body_value<T: DeserializeOwned + 'static>(
                         if matches!(rule, Rule::NonemptyId) && coerced_value.is_empty() {
                             issues.push(format!("[{path}] userId cannot be empty"));
                         }
-                        _ = input.insert(field.into(), JsValue::String(coerced_value));
+                        _ = input.insert(field.into(), JsValue::String(coerced_value.into()));
                     } else {
                         issues.push(expected(&path, "string", Some(value_2_3)));
                     }

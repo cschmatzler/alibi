@@ -23,7 +23,13 @@ pub(super) fn parse(value: &Value) -> Option<ClaimsRequest> {
         {
             return None;
         }
-        user_info.extend(members.keys().cloned());
+        user_info.extend(
+            members
+                .keys()
+                .map(|key| key.to_utf8())
+                .collect::<Result<Vec<_>, _>>()
+                .ok()?,
+        );
     }
     let mut acr_satisfied = true;
     if let Some(value) = object.get("id_token") {
@@ -71,7 +77,10 @@ pub(super) fn filter_user_info(value: &Value, accepted: &[String]) -> Option<Val
         return None;
     };
     if let Some(JsValue::Object(members)) = object.get_mut("userinfo") {
-        members.retain(|name, _| accepted.contains(name));
+        members.retain(|name, _| {
+            name.as_str()
+                .is_some_and(|name| accepted.iter().any(|key| key == name))
+        });
         if members.is_empty() {
             _ = object.shift_remove("userinfo");
         }

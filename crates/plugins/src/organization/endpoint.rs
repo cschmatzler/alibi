@@ -55,12 +55,15 @@ pub(super) fn validate(
                         "metadata",
                         "keepCurrentActiveOrganization",
                     ]
-                    .contains(&key.as_str())
-                        || organization_fields.0.contains_key(key)
+                    .iter()
+                    .any(|name| Some(*name) == key.as_str())
+                        || key
+                            .as_str()
+                            .is_some_and(|key| organization_fields.0.contains_key(key))
                 });
                 if let Some(value) = body.get("userId") {
                     let value = value.coerce_string().map_err(validation)?;
-                    _ = body.insert("userId".into(), JsValue::String(value));
+                    _ = body.insert("userId".into(), JsValue::String(value.into()));
                 }
             }
         }
@@ -75,7 +78,7 @@ pub(super) fn validate(
                 .get("userId")
                 .map_or_else(|| Ok("undefined".into()), JsValue::coerce_string)
                 .map_err(validation)?;
-            _ = input.insert("userId".into(), JsValue::String(user_id));
+            _ = input.insert("userId".into(), JsValue::String(user_id.into()));
             _ = validate_fields(
                 body.as_ref(),
                 "body",
@@ -96,7 +99,9 @@ pub(super) fn validate(
             }
             if let Some(JsValue::Object(body)) = &mut body {
                 body.retain(|key, _| {
-                    ["userId", "role", "organizationId", "teamId"].contains(&key.as_str())
+                    ["userId", "role", "organizationId", "teamId"]
+                        .iter()
+                        .any(|name| Some(*name) == key.as_str())
                 });
             }
         }

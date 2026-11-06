@@ -48,12 +48,12 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         let mut output = indexmap::IndexMap::new();
         _ = output.insert(
             "connectionId".into(),
-            JsValue::String(body_string(body, "connectionId", 1)?),
+            JsValue::String(body_string(body, "connectionId", 1)?.into()),
         );
         if body.get("provisioningDomainId").is_some() {
             _ = output.insert(
                 "provisioningDomainId".into(),
-                JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+                JsValue::String(body_string(body, "provisioningDomainId", 1)?.into()),
             );
         }
         return Ok(EndpointInput {
@@ -107,20 +107,20 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             _ = extra.insert("credentialId".into(), JsValue::String(credential.into()));
             _ = extra.insert(
                 "actorId".into(),
-                JsValue::String(body_string(body, "actorId", 1)?),
+                JsValue::String(body_string(body, "actorId", 1)?.into()),
             );
         }
         if call.operation_id() == "decommissionSCIMManagedConnection" {
             _ = extra.insert(
                 "actorId".into(),
-                JsValue::String(body_string(body, "actorId", 1)?),
+                JsValue::String(body_string(body, "actorId", 1)?.into()),
             );
         }
         extra.extend([
             ("connectionId".into(), JsValue::String(id.into())),
             (
                 "provisioningDomainId".into(),
-                JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+                JsValue::String(body_string(body, "provisioningDomainId", 1)?.into()),
             ),
         ]);
         return Ok(EndpointInput {
@@ -136,7 +136,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
             body: Some(JsValue::Object(
                 [(
                     "provisioningDomainId".into(),
-                    JsValue::String(body_string(body, "provisioningDomainId", 1)?),
+                    JsValue::String(body_string(body, "provisioningDomainId", 1)?.into()),
                 )]
                 .into_iter()
                 .collect(),
@@ -175,7 +175,10 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         if rotating && name == "creationRequestId" {
             continue;
         }
-        _ = output.insert(name.into(), JsValue::String(body_string(body, name, min)?));
+        _ = output.insert(
+            name.into(),
+            JsValue::String(body_string(body, name, min)?.into()),
+        );
     }
     let scopes = body.get("scopes");
     let Some(values) = scopes.and_then(JsValue::as_array) else {

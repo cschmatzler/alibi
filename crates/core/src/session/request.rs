@@ -79,7 +79,7 @@ impl SessionRequest for crate::endpoint::EndpointCall {
         self.query()
             .and_then(|query| query.get(name))
             .is_some_and(|value| match value {
-                JsValue::Null => false,
+                JsValue::Undefined | JsValue::Null => false,
                 JsValue::Bool(value) => *value,
                 JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
                 JsValue::String(value) => !value.is_empty(),
