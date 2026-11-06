@@ -756,6 +756,41 @@ mod extension_tests {
     }
 
     #[tokio::test]
+    async fn empty_active_organization_is_missing_for_member_reads() -> TestResult {
+        let config = configuration();
+        let plugin = OrganizationPlugin::with_config(config.clone());
+        let ctx = context(&plugin).await?;
+        let (user, mut session) = actor(&ctx, "empty-active-org").await;
+        session.active_organization_id = Some(String::new());
+
+        let member = handlers::member::get_active_member_core(&user, &session, &ctx)
+            .await
+            .unwrap_err();
+        let role = handlers::member::get_active_member_role_core(
+            &types::GetActiveMemberRoleQuery::default(),
+            &user,
+            &session,
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+        let members = handlers::member::list_members_core(
+            &types::ListMembersQuery::default(),
+            &user,
+            &session,
+            &config,
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+        for error in [member, role, members.into()] {
+            let response = error.to_auth_response();
+            assert_error(&response, 400, "NO_ACTIVE_ORGANIZATION")?;
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn invitation_selectors_use_active_organization_and_endpoint_errors() -> TestResult {
         let plugin = OrganizationPlugin::with_config(configuration());
         let ctx = context(&plugin).await?;

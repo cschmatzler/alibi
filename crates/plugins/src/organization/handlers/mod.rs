@@ -49,6 +49,7 @@ pub(crate) async fn resolve_organization_id(
 
     session
         .active_organization_id()
+        .filter(|id| !id.is_empty())
         .map(ToOwned::to_owned)
         .ok_or_else(|| AuthError::bad_request("No active organization"))
 }

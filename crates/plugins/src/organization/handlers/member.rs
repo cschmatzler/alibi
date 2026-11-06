@@ -30,6 +30,7 @@ pub(crate) async fn get_active_member_core(
 ) -> AuthResult<MemberResponse> {
     let org_id = session
         .active_organization_id()
+        .filter(|id| !id.is_empty())
         .ok_or_else(|| AuthError::bad_request("No active organization"))?;
 
     let member = ctx
