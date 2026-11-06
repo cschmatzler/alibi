@@ -142,30 +142,38 @@ async fn token_request(
     endpoint: &str,
     client_ids: &[String],
     query: &[(&str, &str)],
+    operation: &str,
 ) -> Result<OAuthTokenSet, String> {
+    let failure = |message: String| format!("Failed to {operation}: {message}");
     let appid = client_ids.join(",");
     let response = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
-        .map_err(|error| error.to_string())?
+        .map_err(|error| failure(error.to_string()))?
         .get(endpoint)
         .query(&[("appid", appid.as_str())])
         .query(query)
         .send()
         .await
-        .map_err(|e| e.to_string())?
+        .map_err(|e| failure(e.to_string()))?
         .error_for_status()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| failure(e.to_string()))?;
     if response.status().is_redirection() {
-        return Err("WeChat token request refused a redirect".into());
+        return Err(failure("WeChat token request refused a redirect".into()));
     }
-    let raw: Value = response.json().await.map_err(|e| e.to_string())?;
+    let raw: Value = response.json().await.map_err(|e| failure(e.to_string()))?;
     if !super::remaining_profile::truthy(&raw)
         || raw
             .get("errcode")
             .is_some_and(super::remaining_profile::truthy)
     {
-        return Err("WeChat token request failed".into());
+        let message = raw
+            .get("errmsg")
+            .filter(|value| super::remaining_profile::truthy(value))
+            .map(super::remaining_profile::js_string)
+            .transpose()?
+            .unwrap_or_else(|| "Unknown error".into());
+        return Err(failure(message));
     }
     let scope = raw
         .get("scope")
@@ -213,6 +221,7 @@ impl OAuthAuthorizationCodeHandler for WeChatGrants {
                 ("code", &context.code),
                 ("grant_type", "authorization_code"),
             ],
+            "validate authorization code",
         )
         .await
     }
@@ -232,6 +241,7 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh_token),
             ],
+            "refresh access token",
         )
         .await?;
         if let Some(Value::Object(raw)) = &mut tokens.raw {
@@ -420,6 +430,58 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn wechat_grant_errors_preserve_provider_message_and_operation() {
+        for refresh in [false, true] {
+            for (body, message) in [
+                (
+                    json!({"errcode": 40029, "errmsg": "invalid code"}),
+                    "invalid code",
+                ),
+                (
+                    json!({"errcode": 1, "errmsg": {"reason": "denied"}}),
+                    "[object Object]",
+                ),
+                (json!({"errcode": 1, "errmsg": ""}), "Unknown error"),
+                (Value::Null, "Unknown error"),
+            ] {
+                let (endpoint, captured) = profile_server(body).await;
+                let grants = WeChatGrants {
+                    client_ids: vec!["client".into()],
+                    client_secret: "secret".into(),
+                    token_endpoint: endpoint.clone(),
+                    refresh_endpoint: endpoint,
+                };
+                let error = if refresh {
+                    grants.refresh_access_token("refresh").await.unwrap_err()
+                } else {
+                    grants
+                        .validate_authorization_code(OAuthAuthorizationCodeContext {
+                            code: "code".into(),
+                            redirect_uri: String::new(),
+                            code_verifier: None,
+                            device_id: None,
+                        })
+                        .await
+                        .unwrap_err()
+                };
+                captured.await.unwrap();
+                let operation = if refresh {
+                    "refresh access token"
+                } else {
+                    "validate authorization code"
+                };
+                assert_eq!(error, format!("Failed to {operation}: {message}"));
+            }
+        }
+        let (endpoint, captured) = profile_server(json!({"access_token": "token"})).await;
+        let error = token_request(&endpoint, &["client".into()], &[], "refresh access token")
+            .await
+            .unwrap_err();
+        captured.await.unwrap();
+        assert_eq!(error, "Missing WeChat token scope");
     }
 
     #[tokio::test]
