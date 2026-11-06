@@ -152,12 +152,15 @@ impl OAuthUserInfoHandler for KickUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
-        let profile = response
-            .get("data")
-            .and_then(Value::as_array)
-            .and_then(|rows| rows.first())
-            .cloned()
-            .ok_or_else(|| super::remaining_profile::profile_exception("Missing Kick profile"))?;
+        let profile = match response.get("data") {
+            Some(Value::Array(rows)) => rows.first().cloned(),
+            Some(Value::Object(rows)) => rows.get("0").cloned(),
+            Some(Value::String(rows)) => rows.chars().next().and_then(|character| {
+                (character.len_utf16() == 1).then(|| Value::String(character.to_string()))
+            }),
+            _ => None,
+        }
+        .ok_or_else(|| super::remaining_profile::profile_exception("Missing Kick profile"))?;
         let mut output = Map::new();
         for (value, target) in [
             (profile.get("name"), "name"),

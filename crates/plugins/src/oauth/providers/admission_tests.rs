@@ -364,6 +364,41 @@ async fn dedicated_raw_fields_and_account_subjects_do_not_require_scalar_profile
 }
 
 #[tokio::test]
+async fn kick_profile_indexing_accepts_object_properties_and_bmp_strings() {
+    for (rows, expected) in [
+        (
+            serde_json::json!({"0":{"user_id":"one","name":"User"}}),
+            serde_json::json!({"user_id":"one","name":"User"}),
+        ),
+        (serde_json::json!("éz"), serde_json::json!("é")),
+    ] {
+        let server = HttpFixture::new(200, serde_json::json!({"data":rows})).await;
+        let response = fetch_user_info_from_provider(&provider("kick", &server.url), request())
+            .await
+            .unwrap();
+        assert_eq!(response.data, expected);
+    }
+    struct NullMapper(Arc<std::sync::atomic::AtomicUsize>);
+    #[async_trait]
+    impl OAuthProfileMapper for NullMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile, Value::Null);
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(Map::new())
+        }
+    }
+    let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let server = HttpFixture::new(200, serde_json::json!({"data":{"0":null}})).await;
+    assert_outcome(
+        provider("kick", &server.url).with_profile_mapper(Arc::new(NullMapper(calls.clone()))),
+        request(),
+        true,
+    )
+    .await;
+    assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
 async fn cloudflare_name_join_coercion_is_a_source_exception() {
     let server = HttpFixture::new(
         200,
