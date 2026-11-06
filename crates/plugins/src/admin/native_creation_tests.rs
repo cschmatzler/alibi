@@ -324,6 +324,8 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
             .as_object_mut()
             .unwrap()
             .remove("phone_number_verified");
+        snapshot.as_object_mut().unwrap().remove("image");
+        snapshot["username"] = serde_json::Value::Null;
         snapshot["unknownNative"] = serde_json::json!("must not retain");
         cache
             .set(
@@ -353,6 +355,8 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
         assert_eq!(wire["twoFactorEnabled"], "false");
         assert_eq!(wire["isAnonymous"], serde_json::Value::Null);
         assert!(wire.get("phoneNumberVerified").is_none());
+        assert!(wire.get("image").is_none());
+        assert_eq!(wire.get("username"), Some(&serde_json::Value::Null));
         assert!(decoded.email_verified());
         assert!(decoded.two_factor_enabled());
         assert!(!decoded.banned());
@@ -374,5 +378,7 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
             assert_eq!(encoded[field], source[field], "{field}");
         }
         assert!(encoded.get("phone_number_verified").is_none());
+        assert!(encoded.get("image").is_none());
+        assert_eq!(encoded.get("username"), Some(&serde_json::Value::Null));
     }
 }

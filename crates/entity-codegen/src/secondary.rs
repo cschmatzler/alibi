@@ -32,7 +32,11 @@ pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenSt
 /// Generate a user-only codec retaining native boolean/date output separately
 /// from the typed model used by authorization code.
 #[must_use]
-pub fn user_secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenStream {
+pub fn user_secondary_codec(
+    fields: &FieldsNamed,
+    entity_fields: &[crate::EntityField],
+    core_root: &TokenStream,
+) -> TokenStream {
     let mut overlay = Vec::new();
     let mut capture = Vec::new();
     let mut normalize = Vec::new();
@@ -64,13 +68,6 @@ pub fn user_secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> To
         capture.push(quote! {
             native.insert(#wire.to_owned(), source.get(#key).cloned());
         });
-        if optional {
-            normalize.push(quote! {
-                if !fields.contains_key(#key) {
-                    _ = fields.insert(#key.to_owned(), ::serde_json::Value::Null);
-                }
-            });
-        }
         let conversion = if date {
             let ty = &field.ty;
             let utc = if optional {
@@ -105,6 +102,41 @@ pub fn user_secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> To
                     #conversion
                 }
             }
+        });
+    }
+    for field in entity_fields {
+        let key = field.ident.to_string();
+        if !crate::optional_field(fields, &key) {
+            continue;
+        }
+        normalize.push(quote! {
+            if !fields.contains_key(#key) {
+                _ = fields.insert(#key.to_owned(), ::serde_json::Value::Null);
+            }
+        });
+        if matches!(
+            key.as_str(),
+            "email_verified"
+                | "banned"
+                | "two_factor_enabled"
+                | "is_anonymous"
+                | "phone_number_verified"
+                | "created_at"
+                | "updated_at"
+                | "ban_expires"
+        ) {
+            continue;
+        }
+        let wire = &field.camel;
+        overlay.push(quote! {
+            if native.field_is_undefined(#wire) {
+                _ = snapshot.remove(#key);
+            } else if let Some(value) = native.values().get(#wire) {
+                _ = snapshot.insert(#key.to_owned(), value.clone());
+            }
+        });
+        capture.push(quote! {
+            native.insert(#wire.to_owned(), source.get(#key).cloned());
         });
     }
     let names: Vec<_> = fields

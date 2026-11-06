@@ -80,25 +80,26 @@ impl Serialize for UserView {
             "updatedAt",
             &crate::utils::datetime::json_date_millis(self.updated_at.timestamp_millis())
         );
-        if let Some(value) = &self.username {
-            entry!("username", value);
+        if self.username.is_some() || self.extension_fields.contains_key("username") {
+            entry!("username", &self.username);
         }
-        if let Some(value) = &self.display_username {
-            entry!("displayUsername", value);
+        if self.display_username.is_some() || self.extension_fields.contains_key("displayUsername")
+        {
+            entry!("displayUsername", &self.display_username);
         }
         if self.two_factor_enabled.is_some()
             || self.extension_fields.contains_key("twoFactorEnabled")
         {
             entry!("twoFactorEnabled", &self.two_factor_enabled);
         }
-        if let Some(value) = &self.role {
-            entry!("role", value);
+        if self.role.is_some() || self.extension_fields.contains_key("role") {
+            entry!("role", &self.role);
         }
         if self.banned.is_some() || self.extension_fields.contains_key("banned") {
             entry!("banned", &self.banned);
         }
-        if let Some(value) = &self.ban_reason {
-            entry!("banReason", value);
+        if self.ban_reason.is_some() || self.extension_fields.contains_key("banReason") {
+            entry!("banReason", &self.ban_reason);
         }
         if self.ban_expires.is_some() || self.extension_fields.contains_key("banExpires") {
             entry!(
@@ -113,16 +114,17 @@ impl Serialize for UserView {
         if self.is_anonymous.is_some() || self.extension_fields.contains_key("isAnonymous") {
             entry!("isAnonymous", &self.is_anonymous);
         }
-        if let Some(value) = &self.phone_number {
-            entry!("phoneNumber", value);
+        if self.phone_number.is_some() || self.extension_fields.contains_key("phoneNumber") {
+            entry!("phoneNumber", &self.phone_number);
         }
         if self.phone_number_verified.is_some()
             || self.extension_fields.contains_key("phoneNumberVerified")
         {
             entry!("phoneNumberVerified", &self.phone_number_verified);
         }
-        if let Some(value) = &self.last_login_method {
-            entry!("lastLoginMethod", value);
+        if self.last_login_method.is_some() || self.extension_fields.contains_key("lastLoginMethod")
+        {
+            entry!("lastLoginMethod", &self.last_login_method);
         }
         for (name, value) in &self.extension_fields {
             if !matches!(
@@ -135,6 +137,15 @@ impl Serialize for UserView {
                     | "createdAt"
                     | "updatedAt"
                     | "banExpires"
+                    | "name"
+                    | "email"
+                    | "image"
+                    | "username"
+                    | "displayUsername"
+                    | "role"
+                    | "banReason"
+                    | "phoneNumber"
+                    | "lastLoginMethod"
             ) && !self.omitted_fields.contains(name)
             {
                 map.serialize_entry(name, value)?;
@@ -264,11 +275,24 @@ impl<T: AuthUser> From<&T> for UserView {
             "createdAt",
             "updatedAt",
             "banExpires",
-        ] {
+            "name",
+            "email",
+            "image",
+            "username",
+            "displayUsername",
+            "role",
+            "banReason",
+            "phoneNumber",
+            "lastLoginMethod",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .chain(user.additional_fields().into_iter().map(|(name, _)| name))
+        {
             if let Some(output) = user.adapter_snapshot() {
-                if output.field_is_undefined(field) {
+                if output.field_is_undefined(&field) {
                     _ = view.omitted_fields.insert(field.into());
-                } else if let Some(value) = output.values().get(field) {
+                } else if let Some(value) = output.values().get(&field) {
                     _ = view.extension_fields.insert(field.into(), value.clone());
                 }
             }

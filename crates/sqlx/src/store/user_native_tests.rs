@@ -4,6 +4,54 @@ use alibi_core::store::UserStore;
 use alibi_core::{AuthUser, CreateUser};
 use serde_json::json;
 
+#[derive(crate::AuthEntity, Clone, Debug, PartialEq, serde::Serialize, sqlx::FromRow)]
+#[auth(role = "user", table = "custom_user", secondary_storage)]
+struct OptionalNativeUser {
+    id: String,
+    name: String,
+    email: String,
+    email_verified: bool,
+    image: Option<String>,
+    created_at: chrono::DateTime<chrono::Utc>,
+    updated_at: chrono::DateTime<chrono::Utc>,
+    #[sqlx(rename = "physical_color")]
+    favorite_color: Option<String>,
+    absent_marker: Option<String>,
+}
+
+#[test]
+fn native_secondary_optional_fields_retain_declared_wire_presence() {
+    let source = json!({
+        "id": "cache-only", "name": "Cached", "email": "cached@fixture.test",
+        "email_verified": false, "created_at": "2020-01-01T00:00:00.000Z",
+        "updated_at": "2020-01-01T00:00:00.000Z", "favorite_color": null,
+        "unknown_extra": "ignored"
+    });
+    let record = OptionalNativeUser::from_secondary_snapshot_record(source).unwrap();
+    assert_eq!(record.stored().image, None);
+    assert_eq!(record.stored().absent_marker, None);
+    assert!(record.raw_snapshot().field_is_undefined("image"));
+    assert!(record.raw_snapshot().field_is_undefined("absentMarker"));
+    assert_eq!(
+        record.raw_snapshot().values()["favoriteColor"],
+        serde_json::Value::Null
+    );
+    assert!(!record.raw_snapshot().contains_field("unknownExtra"));
+    let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+    assert!(wire.get("image").is_none());
+    assert!(wire.get("absentMarker").is_none());
+    assert_eq!(wire.get("favoriteColor"), Some(&serde_json::Value::Null));
+    let encoded = record.secondary_snapshot().unwrap();
+    assert!(encoded.get("image").is_none());
+    assert!(encoded.get("absent_marker").is_none());
+    assert_eq!(
+        encoded.get("favorite_color"),
+        Some(&serde_json::Value::Null)
+    );
+    assert!(encoded.get("physical_color").is_none());
+    assert!(encoded.get("unknown_extra").is_none());
+}
+
 #[tokio::test]
 async fn false_ban_patch_preserves_omissions_and_applies_explicit_values() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
