@@ -448,7 +448,15 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
             _ => {
                 let issued = create_user_session_record(ctx, &user.id(), ip_address, user_agent)
                     .await
-                    .map_err(SessionIssueError::into_auth_error)?;
+                    .map_err(SessionIssueError::into_auth_error)
+                    .map_err(|error| match error {
+                        AuthError::SessionCreationCancelled => AuthError::Upstream {
+                            status: 500,
+                            code: codes::FAILED_TO_CREATE_SESSION,
+                            message: "Failed to create session",
+                        },
+                        error => error,
+                    })?;
                 // Source publishes the original lookup snapshot with only the
                 // verification flag changed, even though the stored row is newer.
                 let mut original_view = ctx.trusted_user_view(&user);

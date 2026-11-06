@@ -527,6 +527,82 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::{AtomicU32, Ordering};
 
+    #[tokio::test]
+    async fn cancelled_verification_session_reports_failure_after_verifying_email() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        type TestSchema =
+            alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        struct Hook(bool);
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_session(
+                &self,
+                _: &mut alibi_core::CreateSession,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application session policy"))
+                }
+            }
+        }
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(test_helpers::create_test_config());
+            let ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            let user = ctx
+                .database
+                .create_user(CreateUser::new().with_email("cancel-session@example.com"))
+                .await
+                .unwrap();
+            let token = jwt_token(&ctx, "cancel-session@example.com", None, None);
+            let req = test_helpers::create_auth_request(
+                HttpMethod::Get,
+                "/verify-email",
+                None,
+                None,
+                HashMap::from([("token".into(), token)]),
+            );
+            let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(true);
+            let error = plugin.handle_verify_email(&req, &ctx).await.unwrap_err();
+            assert_eq!(error.status_code(), if cancelled { 500 } else { 403 });
+            if cancelled {
+                let response = error.to_auth_response();
+                let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+                assert_eq!(body["code"], "FAILED_TO_CREATE_SESSION");
+            } else {
+                assert_eq!(error.to_string(), "application session policy");
+            }
+            assert!(
+                ctx.database
+                    .get_user_by_id(&user.id())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .email_verified()
+            );
+            assert!(
+                ctx.database
+                    .get_user_sessions(&user.id())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+
     struct DummySender;
 
     #[async_trait]
