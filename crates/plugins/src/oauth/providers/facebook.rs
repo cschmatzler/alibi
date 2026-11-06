@@ -144,6 +144,7 @@ impl OAuthProvider {
                 endpoint,
                 fields: options.fields,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
                 custom: options.get_user_info,
             })),
             refresh_access_token: None,
@@ -157,6 +158,7 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct FacebookUserInfo {
     client_id: String,
     client_ids: Vec<String>,
@@ -165,10 +167,20 @@ struct FacebookUserInfo {
     endpoint: String,
     fields: Vec<String>,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
     custom: Option<Arc<dyn OAuthUserInfoHandler>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for FacebookUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -217,44 +229,58 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         } else {
             self.graph_profile(request.access_token.as_deref()).await?
         };
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: scalar(profile.get("sub").or_else(|| profile.get("id")))?.unwrap_or_default(),
-                name: scalar(profile.get("name"))?,
-                email: profile
-                    .get("email")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(if limited_login {
-                    profile.get("picture")
-                } else {
-                    profile
-                        .get("picture")
-                        .and_then(|picture| picture.get("data"))
-                        .and_then(|data| data.get("url"))
-                })?,
-                email_verified: !limited_login
-                    && profile
-                        .get("email_verified")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false),
-            },
+        let mut output = Map::new();
+        for key in ["name", "email"] {
+            if let Some(value) = profile.get(key) {
+                output.insert(key.into(), value.clone());
+            }
+        }
+        let image = if limited_login {
+            profile.get("picture")
+        } else {
+            profile
+                .get("picture")
+                .and_then(|picture| picture.get("data"))
+                .and_then(|data| data.get("url"))
         };
-        Ok(OAuthUserInfoResponse {
-            user_output,
-            user,
+        if let Some(image) = image {
+            output.insert("image".into(), image.clone());
+        }
+        output.insert(
+            "emailVerified".into(),
+            if limited_login {
+                Value::Bool(false)
+            } else {
+                profile
+                    .get("email_verified")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .unwrap_or(Value::Bool(false))
+            },
+        );
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
+                id: scalar(profile.get("sub").or_else(|| profile.get("id")))?.unwrap_or_default(),
+                name: None,
+                email: String::new(),
+                image: None,
+                email_verified: false,
+            },
             data: profile,
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
+
 impl FacebookUserInfo {
     async fn graph_profile(&self, access_token: Option<&str>) -> Result<Value, String> {
         let access_token = access_token
@@ -368,6 +394,111 @@ fn subject(profile: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Mapper;
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile["email"], Value::Null);
+            Ok(
+                serde_json::json!({"name":"Mapped","custom":true,"id":"public-id"})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        }
+    }
+    #[tokio::test]
+    async fn facebook_partial_mapping_preserves_transport_defaults() {
+        for limited in [true, false] {
+            let profile = if limited {
+                serde_json::json!({"sub":"subject","name":"Original","email":null,"picture":null,"email_verified":"true"})
+            } else {
+                serde_json::json!({"id":"subject","name":"Original","email":null,"picture":{"data":{"url":null}},"email_verified":"true"})
+            };
+            let token = format!(
+                "e30.{}.sig",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
+            );
+            let body = profile;
+
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let body = body.to_string();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+
+            let profile_endpoint = endpoint;
+            let profile_server = server;
+            let body =
+                serde_json::json!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}});
+
+            let body = body.to_string();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+
+            let mut options = FacebookOptions::new("client", Some("secret".into()));
+            options.user_info_endpoint = Some(profile_endpoint);
+            options.token_inspection_endpoint = Some(endpoint);
+            let provider =
+                OAuthProvider::facebook_with_options(options).with_profile_mapper(Arc::new(Mapper));
+            let response = provider
+                .get_user_info
+                .as_ref()
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    id_token: limited.then_some(token),
+                    access_token: (!limited).then(|| "access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let output = response.user_output.unwrap();
+            assert_eq!(output["name"], "Mapped");
+            assert_eq!(output["email"], Value::Null);
+            assert_eq!(output["image"], Value::Null);
+            assert_eq!(
+                output["emailVerified"],
+                if limited {
+                    Value::Bool(false)
+                } else {
+                    Value::String("true".into())
+                }
+            );
+            assert_eq!(output["id"], "public-id");
+            assert_eq!(
+                provider.account_subject.unwrap()(&response.data).unwrap(),
+                "subject"
+            );
+            if limited {
+                server.abort();
+                profile_server.abort();
+            } else {
+                server.await.unwrap();
+                profile_server.await.unwrap();
+            }
+        }
+    }
     #[tokio::test]
     async fn facebook_accepts_padded_jwt_payload() {
         let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
