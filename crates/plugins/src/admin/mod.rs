@@ -730,6 +730,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_update_null_ban_expiry_clears_without_unbanning() {
+        let (ctx, admin, _, user, _) = create_admin_context().await;
+        ctx.database.update_user_record(&user.id, alibi_core::UpdateUser {
+            banned: Some(true),
+            ban_reason: Some("retained".into()),
+            ban_expires: Some(Some(Utc::now() + Duration::hours(1))),
+            ..Default::default()
+        }).await.unwrap();
+
+        let body = types::AdminUpdateUserRequest::new(
+            &user.id,
+            serde_json::json!({"banExpires": null}).as_object().unwrap().clone(),
+        );
+        handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx).await.unwrap();
+        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        use alibi_core::entity::AuthUser as _;
+        assert!(stored.banned());
+        assert_eq!(stored.ban_reason(), Some("retained"));
+        assert!(stored.ban_expires().is_none());
+    }
+
+    #[tokio::test]
     async fn test_custom_admin_role_can_use_permission_engine() {
         let config = Arc::new(alibi_core::AuthConfig::new(
             "test-secret-key-at-least-32-chars-long",

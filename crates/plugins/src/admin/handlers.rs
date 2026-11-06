@@ -450,6 +450,9 @@ pub(crate) async fn update_user_core(
     if let Some(value) = body.data.get("banReason").and_then(|value| value.as_str()) {
         update.ban_reason = Some(value.to_owned());
     }
+    if body.data.get("banExpires") == Some(&serde_json::Value::Null) {
+        update.ban_expires = Some(None);
+    }
     if let Some(value) = body.data.get("banExpires").and_then(|value| value.as_str()) {
         let parsed = DateTime::parse_from_rfc3339(value)
             .map_err(|_error| AuthError::bad_request("Invalid banExpires"))?
