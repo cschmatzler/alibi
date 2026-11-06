@@ -342,6 +342,48 @@ pub(super) async fn read_storage(
     let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&data) else {
         return Ok(None);
     };
+    if !value.is_object() {
+        return Ok(None);
+    }
+    for name in [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "lastRefillAt",
+        "lastRequest",
+    ] {
+        let optional = name != "createdAt" && name != "updatedAt";
+        let date = value.get(name).cloned();
+        let revived = match date {
+            Some(date) => {
+                let date: alibi_core::utils::json::JsValue = serde_json::from_value(date)?;
+                if optional && !date.is_truthy() {
+                    serde_json::Value::Null
+                } else {
+                    let millis = match &date {
+                        alibi_core::utils::json::JsValue::Null => Some(0),
+                        alibi_core::utils::json::JsValue::Bool(value) => Some(i64::from(*value)),
+                        alibi_core::utils::json::JsValue::Number(value) => {
+                            (value.abs() <= 8_640_000_000_000_000.0).then_some(value.trunc() as i64)
+                        }
+                        _ => {
+                            let Ok(string) = date.coerce_string() else {
+                                return Ok(None);
+                            };
+                            alibi_core::utils::datetime::parse_date_millis(&string)
+                        }
+                    };
+                    serde_json::Value::String(millis.map_or_else(
+                        || "Invalid Date".to_owned(),
+                        alibi_core::utils::datetime::json_date_millis,
+                    ))
+                }
+            }
+            None if optional => serde_json::Value::Null,
+            None => serde_json::Value::String("Invalid Date".to_owned()),
+        };
+        value[name] = revived;
+    }
     if let Some(metadata) = value.get_mut("metadata")
         && !metadata.is_null()
     {
@@ -357,14 +399,27 @@ pub(super) async fn write_storage(
     let ttl = key
         .expires_at
         .as_deref()
-        .and_then(|date| chrono::DateTime::parse_from_rfc3339(date).ok())
-        .map(|date| date.signed_duration_since(Utc::now()).num_seconds())
+        .and_then(alibi_core::utils::datetime::parse_date_millis)
+        .map(|date| (date - Utc::now().timestamp_millis()).div_euclid(1000))
         .filter(|seconds| *seconds > 0)
         .map(Duration::seconds);
     let mut value = serde_json::to_value(key)?;
     let fields = value
         .as_object_mut()
         .ok_or_else(|| AuthError::internal("Invalid API key"))?;
+    for name in [
+        "createdAt",
+        "updatedAt",
+        "expiresAt",
+        "lastRefillAt",
+        "lastRequest",
+    ] {
+        if let Some(serde_json::Value::String(date)) = fields.get_mut(name) {
+            let millis = alibi_core::utils::datetime::parse_date_millis(date)
+                .ok_or_else(|| AuthError::internal("Invalid time value"))?;
+            *date = alibi_core::utils::datetime::json_date_millis(millis);
+        }
+    }
     _ = fields.insert(
         "metadata".to_owned(),
         key.metadata

@@ -148,6 +148,7 @@ pub struct ApiKeyView {
     #[serde(serialize_with = "serialize_api_key_number")]
     pub refill_amount: Option<f64>,
     #[serde(rename = "lastRefillAt")]
+    #[serde(serialize_with = "serialize_optional_api_key_date")]
     pub last_refill_at: Option<String>,
     pub enabled: bool,
     #[serde(rename = "rateLimitEnabled")]
@@ -164,12 +165,16 @@ pub struct ApiKeyView {
     #[serde(serialize_with = "serialize_api_key_number")]
     pub remaining: Option<f64>,
     #[serde(rename = "lastRequest")]
+    #[serde(serialize_with = "serialize_optional_api_key_date")]
     pub last_request: Option<String>,
     #[serde(rename = "expiresAt")]
+    #[serde(serialize_with = "serialize_optional_api_key_date")]
     pub expires_at: Option<String>,
     #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "serialize_api_key_date")]
     pub created_at: String,
     #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "serialize_api_key_date")]
     pub updated_at: String,
     #[serde(
         default,
@@ -292,14 +297,24 @@ pub(in crate::wire) fn serialize_api_key_number<S: Serializer>(
     }
 }
 
-// The source adapter exposes dates to JSON through Date.toJSON(). Keep native
-// accessor/storage precision intact while projecting valid RFC3339 wire dates.
 pub(in crate::wire) fn api_key_wire_date(value: &str) -> String {
-    DateTime::parse_from_rfc3339(value).map_or_else(
-        |_| value.to_owned(),
-        |date| {
-            date.with_timezone(&Utc)
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
-        },
-    )
+    api_key_json_date(value).unwrap_or_else(|| value.to_owned())
+}
+
+fn api_key_json_date(value: &str) -> Option<String> {
+    crate::utils::datetime::parse_date_millis(value).map(crate::utils::datetime::json_date_millis)
+}
+
+fn serialize_api_key_date<S: Serializer>(value: &str, serializer: S) -> Result<S::Ok, S::Error> {
+    api_key_json_date(value).serialize(serializer)
+}
+
+fn serialize_optional_api_key_date<S: Serializer>(
+    value: &Option<String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    value
+        .as_deref()
+        .and_then(api_key_json_date)
+        .serialize(serializer)
 }

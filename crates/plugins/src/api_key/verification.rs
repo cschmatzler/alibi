@@ -273,13 +273,14 @@ impl ApiKeyPlugin {
         if !api_key.enabled {
             return Err(ApiKeyErrorCode::KeyDisabled.into());
         }
-        if let Some(expires_at) = api_key.expires_at.as_deref() {
-            let expiration = alibi_core::utils::datetime::parse_date_millis(expires_at)
-                .ok_or_else(|| AuthError::internal("Invalid stored API key expiration"))?;
-            if chrono::Utc::now().timestamp_millis() > expiration {
-                Self::delete_rejected_key(&api_key, config, ctx).await?;
-                return Err(ApiKeyErrorCode::KeyExpired.into());
-            }
+        if let Some(expiration) = api_key
+            .expires_at
+            .as_deref()
+            .and_then(alibi_core::utils::datetime::parse_date_millis)
+            && chrono::Utc::now().timestamp_millis() > expiration
+        {
+            Self::delete_rejected_key(&api_key, config, ctx).await?;
+            return Err(ApiKeyErrorCode::KeyExpired.into());
         }
         if let Some(required) = input.permissions {
             let permitted = match api_key.permissions.as_deref() {

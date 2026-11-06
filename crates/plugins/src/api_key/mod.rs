@@ -2993,6 +2993,7 @@ mod tests {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod crud_tests {
+    include!("date_tests.rs");
     use super::*;
     use alibi_core::{AuthConfig, CreateSession, CreateUser, HttpMethod};
     use chrono::{Duration, Utc};
