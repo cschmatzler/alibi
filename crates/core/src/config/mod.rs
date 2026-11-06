@@ -464,7 +464,7 @@ impl AuthConfig {
 
     /// # Errors
     ///
-    /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
+    /// Returns a configuration error for an empty signing secret or invalid storage configuration.
     pub fn validate(&self) -> Result<(), AuthError> {
         if self.session.stateless
             && (self.session.secondary_storage.is_some()
@@ -491,10 +491,10 @@ impl AuthConfig {
             return Err(AuthError::config("Secret key cannot be empty"));
         }
 
-        if self.secret.len() < 32 {
-            return Err(AuthError::config(
-                "Secret key must be at least 32 characters",
-            ));
+        if self.secret.encode_utf16().count() < 32 {
+            tracing::warn!(
+                "Your BETTER_AUTH_SECRET should be at least 32 characters long for adequate security"
+            );
         }
 
         Ok(())
@@ -788,11 +788,14 @@ mod tests {
         assert!(cfg.validate().is_err());
     }
 
-    // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
-    fn validate_rejects_short_secret() {
-        let cfg = AuthConfig::new("short");
-        assert!(cfg.validate().is_err());
+    fn validate_accepts_nonempty_short_secrets_like_upstream() {
+        for secret in ["s", "short", "🔑", "1234567890123456789012345678901"] {
+            let cfg = AuthConfig::new(secret);
+            assert!(cfg.validate().is_ok(), "{secret}");
+            assert_eq!(cfg.current_secret(), secret);
+        }
+        assert!(AuthConfig::new("").validate().is_err());
     }
 
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
