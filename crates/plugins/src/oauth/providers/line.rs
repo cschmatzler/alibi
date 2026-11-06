@@ -111,6 +111,7 @@ impl OAuthProvider {
             get_user_info: Some(std::sync::Arc::new(LineUserInfo {
                 endpoint,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
             })),
             refresh_access_token: None,
             verify_id_token: Some(std::sync::Arc::new(verifier)),
@@ -123,12 +124,23 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct LineUserInfo {
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for LineUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -157,57 +169,44 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .await
                 .map_err(|error| error.to_string())?
         };
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        // The published profile preserves JSON types and explicit nulls; its
-        // typed persistence values remain separate from this public output.
-        let user_output = Some(mapped.as_ref().map_or_else(
-            || {
-                let mut output = serde_json::Map::new();
-                _ = output.insert(
-                    "name".into(),
-                    profile
-                        .get("name")
-                        .filter(|value| truthy(value))
-                        .cloned()
-                        .unwrap_or_else(|| Value::String(String::new())),
-                );
-                for (source, target) in [("email", "email"), ("picture", "image")] {
-                    if let Some(value) = profile.get(source) {
-                        _ = output.insert(target.into(), value.clone());
-                    }
-                }
-                _ = output.insert("emailVerified".into(), Value::Bool(false));
-                output
-            },
-            |user| user.public_profile(true),
-        ));
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
+        let mut output = Map::new();
+        output.insert(
+            "name".into(),
+            profile
+                .get("name")
+                .filter(|value| truthy(value))
+                .cloned()
+                .unwrap_or_else(|| Value::String(String::new())),
+        );
+        for (source, target) in [("email", "email"), ("picture", "image")] {
+            if let Some(value) = profile.get(source) {
+                output.insert(target.into(), value.clone());
+            }
+        }
+        output.insert("emailVerified".into(), Value::Bool(false));
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
-                name: Some(
-                    scalar(profile.get("name").filter(|value| truthy(value)))?.unwrap_or_default(),
-                ),
-                email: profile
-                    .get("email")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(profile.get("picture"))?,
+                name: None,
+                email: String::new(),
+                image: None,
                 email_verified: false,
             },
-        };
-        Ok(OAuthUserInfoResponse {
-            user_output,
-            user,
             data: profile,
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
+
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
@@ -304,4 +303,77 @@ fn decode_profile(token: &str) -> Option<Value> {
     let bytes = decoder.decode(encoded).ok()?;
     let profile: Value = alibi_core::utils::json::from_slice(&bytes).ok()?;
     profile.is_object().then_some(profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Mapper;
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile["sub"], "line-id");
+            Ok(serde_json::json!({"name":"Mapped","custom":true})
+                .as_object()
+                .unwrap()
+                .clone())
+        }
+    }
+    #[tokio::test]
+    async fn line_maps_decoded_and_fallback_profiles() {
+        for id_token_valid in [true, false] {
+            let body =
+                serde_json::json!({"sub":"line-id","name":"Original","email":null,"picture":null});
+            let token = format!(
+                "e30.{}.sig",
+                base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body.to_string())
+            );
+
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let body = body.to_string();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+
+            let mut options = LineOptions::new("client", None);
+            options.user_info_endpoint = Some(endpoint);
+            let provider = OAuthProvider::line_with_options(options)
+                .with_profile_mapper(std::sync::Arc::new(Mapper));
+            let response = provider
+                .get_user_info
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    id_token: Some(if id_token_valid {
+                        token
+                    } else {
+                        "malformed".into()
+                    }),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let output = response.user_output.unwrap();
+            assert_eq!(output["name"], "Mapped");
+            assert_eq!(output["email"], Value::Null);
+            assert_eq!(output["image"], Value::Null);
+            assert_eq!(output["emailVerified"], false);
+            assert!(!output.contains_key("id"));
+            assert_eq!(response.data["name"], "Original");
+            if id_token_valid {
+                server.abort();
+            } else {
+                server.await.unwrap();
+            }
+        }
+    }
 }
