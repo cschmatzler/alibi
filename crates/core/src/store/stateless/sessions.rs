@@ -56,11 +56,21 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         fields.apply_adapter_transforms_async().await?;
         for (key, value) in &fields {
             match key.as_str() {
-                "activeOrganizationId" => {
-                    session.active_organization_id = value.as_str().map(str::to_owned);
+                "activeOrganizationId" | "activeTeamId" | "impersonatedBy" => {
+                    let destination = match key.as_str() {
+                        "activeOrganizationId" => &mut session.active_organization_id,
+                        "activeTeamId" => &mut session.active_team_id,
+                        _ => &mut session.impersonated_by,
+                    };
+                    *destination = value.as_str().map(str::to_owned);
+                    _ = session.omitted_fields.remove(key);
+                    _ = session.extension_fields.remove(key);
+                    if value.is_null() {
+                        _ = session
+                            .extension_fields
+                            .insert(key.clone(), serde_json::Value::Null);
+                    }
                 }
-                "activeTeamId" => session.active_team_id = value.as_str().map(str::to_owned),
-                "impersonatedBy" => session.impersonated_by = value.as_str().map(str::to_owned),
                 _ => {
                     _ = session
                         .extension_fields

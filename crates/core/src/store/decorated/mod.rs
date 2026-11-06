@@ -8,6 +8,8 @@ use std::sync::Arc;
 mod account;
 mod extensions;
 mod session;
+#[cfg(test)]
+mod session_native_tests;
 mod transaction;
 mod user;
 #[cfg(test)]
