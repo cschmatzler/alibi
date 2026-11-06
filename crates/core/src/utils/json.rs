@@ -993,7 +993,7 @@ pub fn number_to_string(number: &Number) -> Result<String, serde_json::Error> {
 ///
 /// Returns an error if the input cannot be serialized as JavaScript-compatible JSON.
 pub fn to_vec<T: Serialize + ?Sized>(data: &T) -> Result<Vec<u8>, serde_json::Error> {
-    let value = JsValue::from(serde_json::to_value(data)?);
+    let value = to_js_value(data)?;
     let mut bytes = Vec::new();
     write_value(&value, &mut bytes)?;
     Ok(bytes)
@@ -1010,7 +1010,7 @@ pub fn to_string<T: Serialize + ?Sized>(data: &T) -> Result<String, serde_json::
 ///
 /// Returns an error if the `OpenAPI` document cannot be serialized.
 pub fn to_value<T: Serialize + ?Sized>(data: &T) -> Result<Value, serde_json::Error> {
-    finite_value(&JsValue::from(serde_json::to_value(data)?))
+    finite_value(&to_js_value(data)?)
 }
 
 /// # Errors
@@ -1020,7 +1020,7 @@ pub fn serialize<T: Serialize + ?Sized, S: Serializer>(
     data: &T,
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
-    to_value(data)
+    to_js_value(data)
         .map_err(serde::ser::Error::custom)?
         .serialize(serializer)
 }

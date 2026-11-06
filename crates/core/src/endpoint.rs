@@ -583,9 +583,7 @@ impl EndpointResponse {
     /// # Errors
     /// Returns an error if the endpoint value cannot be serialized.
     pub fn json(value: &impl Serialize) -> AuthResult<Self> {
-        Ok(Self::value(crate::utils::json::parse_value(
-            &crate::utils::json::to_string(value)?,
-        )?))
+        Ok(Self::value(crate::utils::json::to_js_value(value)?))
     }
 
     /// Return no logical value and an empty successful HTTP response.
@@ -1034,6 +1032,64 @@ pub async fn without_endpoint_call_context<T>(future: impl Future<Output = T>) -
 mod lossless_tests {
     use super::*;
     use crate::utils::json::{JsString, parse_value};
+
+    #[test]
+    fn nested_serializable_dto_retains_native_logical_values_until_http_encoding() {
+        #[derive(serde::Serialize)]
+        struct Envelope<T> {
+            value: T,
+        }
+        #[derive(serde::Serialize)]
+        struct Fields {
+            #[serde(serialize_with = "crate::utils::json::serialize")]
+            profile: JsValue,
+        }
+        let date = chrono::DateTime::from_timestamp(1_700_000_000, 123_456_789).unwrap();
+        let mut profile = parse_value(
+            r#"{"\ud800":"\udc00","literal":{"alibi::JsString/utf16-v1":[55296]},"array":[null]}"#,
+        )
+        .unwrap();
+        let fields = profile.as_object_mut().unwrap();
+        fields.insert("undefined".into(), JsValue::Undefined);
+        fields.insert("null".into(), JsValue::Null);
+        fields.insert("date".into(), JsValue::Date(date));
+        fields.insert("array".into(), JsValue::Array(vec![JsValue::Undefined]));
+        let dto = Envelope {
+            value: Fields {
+                profile: profile.clone(),
+            },
+        };
+        assert!(serde_json::to_value(&dto).is_err());
+        let response = EndpointResponse::json(&dto).unwrap();
+        let observed = &response.result.as_ref().unwrap()["value"]["profile"];
+        assert_eq!(observed, &profile);
+        assert_eq!(observed.get("undefined"), Some(&JsValue::Undefined));
+        assert_eq!(observed.get("date"), Some(&JsValue::Date(date)));
+        let direct_http = crate::AuthResponse::json(200, &dto).unwrap();
+        let endpoint_http = response.to_response().unwrap();
+        assert_eq!(direct_http.body, endpoint_http.body);
+        let wire = parse_value(std::str::from_utf8(&direct_http.body).unwrap()).unwrap();
+        let profile = &wire["value"]["profile"];
+        assert_eq!(
+            profile.as_object().unwrap()[&JsString::from_code_units(vec![0xd800])]
+                .as_js_string()
+                .unwrap()
+                .code_units(),
+            &[0xdc00]
+        );
+        assert!(profile.get("undefined").is_none());
+        assert_eq!(profile.get("null"), Some(&JsValue::Null));
+        assert_eq!(profile["array"][0], JsValue::Null);
+        assert_eq!(profile["date"].as_str(), Some("2023-11-14T22:13:20.123Z"));
+        assert_eq!(
+            profile["literal"]["alibi::JsString/utf16-v1"][0].as_f64(),
+            Some(55296.0)
+        );
+        let root = EndpointResponse::json(&JsValue::Undefined).unwrap();
+        assert_eq!(root.result.as_ref().unwrap(), &JsValue::Undefined);
+        assert!(root.to_response().unwrap().body.is_empty());
+        assert!(serde_json::to_value(JsValue::Undefined).is_err());
+    }
 
     #[test]
     fn logical_output_http_and_lossless_decode_retain_code_units() {
