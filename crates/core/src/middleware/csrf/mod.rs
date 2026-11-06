@@ -120,7 +120,7 @@ impl CsrfMiddleware {
 
         let inferred = (Self::header(req, "origin") == Some("null")
             && Self::header(req, "sec-fetch-site") == Some("same-origin"))
-        .then(|| req.url().and_then(|url| extract_origin(url.as_str())))
+        .then(|| self.auth_config.infer_request_origin(req))
         .flatten();
         let origin = inferred
             .or_else(|| {
@@ -394,6 +394,32 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned()
+    }
+
+    #[tokio::test]
+    async fn null_origin_inference_honors_only_trusted_valid_proxy_headers() {
+        for (trust_proxy, host, protocol, allowed) in [
+            (true, "localhost:3000", "http", true),
+            (false, "localhost:3000", "http", false),
+            (true, "localhost:3000", "javascript", false),
+            (true, "localhost:3000/other", "http", false),
+        ] {
+            let mut config = (*test_auth_config(vec![])).clone();
+            config.advanced.trust_forwarded_host = trust_proxy;
+            let mw = CsrfMiddleware::new(CsrfConfig::new(), Arc::new(config));
+            let req = make_request(
+                "/sign-out",
+                Some("null"),
+                true,
+                &[
+                    ("sec-fetch-site", "same-origin"),
+                    ("x-forwarded-host", host),
+                    ("x-forwarded-proto", protocol),
+                ],
+            ).with_url(url::Url::parse("http://internal.test/api/auth/sign-out").unwrap());
+            let response = mw.before_request(&req).await.unwrap();
+            assert_eq!(response.is_none(), allowed, "{trust_proxy} {host} {protocol}");
+        }
     }
 
     #[tokio::test]

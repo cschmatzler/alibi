@@ -50,6 +50,20 @@ impl std::fmt::Debug for dyn TrustedProvidersResolver {
 }
 
 impl AuthConfig {
+    pub(crate) fn infer_request_origin(&self, request: &AuthRequest) -> Option<String> {
+        if self.advanced.trust_forwarded_host
+            && let (Some(host), Some(protocol)) = (
+                header(request, "x-forwarded-host").filter(|host| valid_host(host)),
+                header(request, "x-forwarded-proto")
+                    .filter(|protocol| matches!(*protocol, "http" | "https")),
+            )
+            && let Some(origin) = super::extract_origin(&format!("{protocol}://{host}"))
+        {
+            return Some(origin);
+        }
+        request.url().and_then(|url| super::extract_origin(url.as_str()))
+    }
+
     #[must_use]
     pub fn dynamic_base_url(mut self, config: DynamicBaseUrl) -> Self {
         self.dynamic_base_url = Some(config);

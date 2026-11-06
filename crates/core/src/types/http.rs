@@ -273,7 +273,7 @@ impl AuthRequest {
     }
 
     /// Retain the absolute URL received by the HTTP transport.
-    /// Origin inference uses this URL, independently of routing and forwarded headers.
+    /// Origin inference uses this URL when trusted proxy headers do not override it.
     #[must_use]
     pub fn with_url(mut self, url: url::Url) -> Self {
         self.request_url = Some(url);
