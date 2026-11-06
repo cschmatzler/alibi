@@ -880,7 +880,7 @@ pub(crate) async fn list_sessions_core(
         .map(|session| ctx.session_view(session))
         .collect();
     if admin_plugin_enabled(ctx) {
-        sessions.retain(|listed| listed.impersonated_by.is_none());
+        sessions.retain(|listed| listed.impersonated_by.as_deref().is_none_or(str::is_empty));
     }
     Ok(sessions)
 }
@@ -1183,6 +1183,28 @@ mod tests {
         let body_str = String::from_utf8(response.body).unwrap();
         let sessions: Vec<SessionView> = serde_json::from_str(&body_str).unwrap();
         assert_eq!(sessions.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn empty_impersonation_marker_is_listed() {
+        let (mut ctx, user, _) = test_helpers::create_test_context_with_user(
+            CreateUser::new().with_email("marker@example.com").with_name("Marker"),
+            Duration::hours(24),
+        ).await;
+        ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
+        let session = ctx.database.create_session(CreateSession {
+            user_id: user.id.clone(),
+            expires_at: Utc::now() + Duration::hours(24),
+            impersonated_by: Some(String::new()),
+            additional_fields: Default::default(),
+            token: None,
+            ip_address: None,
+            user_agent: None,
+            active_organization_id: None,
+            active_team_id: None,
+        }).await.unwrap();
+        let sessions = list_sessions_core(&user.id, &ctx).await.unwrap();
+        assert!(sessions.iter().any(|listed| listed.token == session.token));
     }
 
     #[tokio::test]

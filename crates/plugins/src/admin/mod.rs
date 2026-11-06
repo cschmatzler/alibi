@@ -541,7 +541,7 @@ impl AdminPlugin {
             Err(AuthError::Unauthenticated) => return Ok(Self::missing_session_response()),
             Err(error) => return Err(error),
         };
-        if session.impersonated_by.is_none() {
+        if session.impersonated_by.as_deref().is_none_or(str::is_empty) {
             return Err(AuthError::bad_request("You are not impersonating anyone"));
         }
 
@@ -727,6 +727,30 @@ mod tests {
             }
             Some(remainder.split(';').next().unwrap_or_default().to_owned())
         })
+    }
+
+    #[tokio::test]
+    async fn empty_impersonation_marker_cannot_be_stopped() {
+        let (ctx, _, _, user, _) = create_admin_context().await;
+        let session = ctx.database.create_session(CreateSession {
+            user_id: user.id,
+            expires_at: Utc::now() + Duration::hours(24),
+            impersonated_by: Some(String::new()),
+            additional_fields: Default::default(),
+            token: None,
+            ip_address: None,
+            user_agent: None,
+            active_organization_id: None,
+            active_team_id: None,
+        }).await.unwrap();
+        let session = SessionView::from(&session);
+        let req = make_request(HttpMethod::Post, "/admin/stop-impersonating", &session.token, Some(serde_json::json!({})));
+        let error = stop_impersonating_core(&session, &req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 400);
+        assert_eq!(error.to_string(), "You are not impersonating anyone");
+        let error = AdminPlugin::new().handle_stop_impersonating(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 400);
+        assert_eq!(error.to_string(), "You are not impersonating anyone");
     }
 
     #[tokio::test]

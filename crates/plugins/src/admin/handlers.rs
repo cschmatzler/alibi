@@ -803,6 +803,7 @@ pub(crate) async fn stop_impersonating_core(
 ) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String, bool)> {
     let admin_id = session
         .impersonated_by()
+        .filter(|id| !id.is_empty())
         .ok_or_else(|| AuthError::bad_request(MESSAGE_NOT_IMPERSONATING))?
         .to_owned();
 
