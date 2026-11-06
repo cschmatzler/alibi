@@ -87,7 +87,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         }
         let (session, user) = self
             .record_store
-            .cached_session_record(token)
+            .secondary_session_for_update(token)
             .await?
             .ok_or(AuthError::SessionNotFound)?;
         let (updated, fields) = self
@@ -96,7 +96,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .await?
             .ok_or(AuthError::SessionNotFound)?;
         self.record_store
-            .mirror_session_fields(token, &updated, &user, Some(&fields))
+            .mirror_session_fields(token, &updated, user, Some(&fields))
             .await?;
         self.inner
             .complete_secondary_session_update(
@@ -609,10 +609,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         create_session: CreateSession,
         policy: crate::session::SessionCreationPolicy,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let model = self
+        let record = self
             .create_session_with_policy(create_session, policy)
             .await?;
-        let record = self.record_store.session_creation_record(model).await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))?;
         Ok(record)
     }
@@ -625,7 +624,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         let model = self
             .update_session_active_organization(token, organization_id)
             .await?;
-        let record = self.record_store.session_write_record(model).await?;
+        let record = self.record_store.session_write_record(token, model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
         Ok(record)
     }
@@ -636,7 +635,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let model = self.update_session_active_team(token, team_id).await?;
-        let record = self.record_store.session_write_record(model).await?;
+        let record = self.record_store.session_write_record(token, model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
         Ok(record)
     }
@@ -675,7 +674,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
-                || self.record_store.cached_session(token).await?.is_some())
+                || self
+                    .record_store
+                    .secondary_session_for_update(token)
+                    .await?
+                    .is_some())
         {
             let mut fields = FieldValues::new();
             _ = fields.insert(
@@ -706,7 +709,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
-                || self.record_store.cached_session(token).await?.is_some())
+                || self
+                    .record_store
+                    .secondary_session_for_update(token)
+                    .await?
+                    .is_some())
         {
             let mut fields = FieldValues::new();
             _ = fields.insert(
@@ -794,11 +801,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     }
 
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
-        self.create_session_with_policy(
-            create_session,
-            crate::session::SessionCreationPolicy::Inline,
-        )
-        .await
+        Ok(self
+            .create_session_with_policy(
+                create_session,
+                crate::session::SessionCreationPolicy::Inline,
+            )
+            .await?
+            .into_stored())
     }
 
     async fn create_verification_record(
@@ -820,7 +829,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         &self,
         mut create_session: CreateSession,
         policy: crate::session::SessionCreationPolicy,
-    ) -> AuthResult<S::Session> {
+    ) -> AuthResult<AdapterRecord<S::Session>> {
         let created_at = chrono::Utc::now();
         for hook in &self.record_store.session_callbacks.callbacks {
             hook.before_create(
@@ -842,46 +851,50 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                 .prepare_secondary_session_creation(create_session, false)
                 .await?
         } else if self.record_store.secondary().is_some() {
-            let model = self
-                .inner
+            self.inner
                 .prepare_secondary_session_creation(
                     create_session,
                     self.record_store.session_uses_database(),
                 )
-                .await?;
+                .await?
+        } else {
+            self.inner.create_session(create_session).await?
+        };
+        let record = self.record_store.session_creation_record(session).await?;
+        let session = record.stored();
+        if self.record_store.secondary().is_some() {
             if policy == crate::session::SessionCreationPolicy::DeferSecondaryStorageWrites
                 && self.record_store.database_session_fallback()
             {
                 self.inner
                     .queue_session_publication(
-                        model.id().as_ref(),
+                        session.id().as_ref(),
                         self.record_store.deferred_session_publication(
-                            model.clone(),
+                            session.clone(),
                             created_at,
                             creation_fields,
+                            record.raw_snapshot().clone(),
                         ),
                     )
                     .await?;
             } else {
-                let user_id = model.user_id();
+                let user_id = session.user_id();
                 self.record_store
                     .mirror_session_creation(
-                        &model,
+                        session,
                         created_at,
                         &creation_fields,
+                        record.raw_snapshot(),
                         self.inner.get_user_by_id_record(user_id.as_ref()),
                     )
                     .await?;
             }
-            model
-        } else {
-            self.inner.create_session(create_session).await?
-        };
+        }
         self.pending_sessions
             .lock()
             .map_err(|_| AuthError::internal("Session callback queue poisoned"))?
             .push(session.clone());
-        Ok(session)
+        Ok(record)
     }
 }
 

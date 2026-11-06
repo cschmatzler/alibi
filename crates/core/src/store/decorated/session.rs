@@ -58,9 +58,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let record = self
-            .session_creation_record(self.create_session(create_session).await?)
-            .await?;
+        let record = self.create_projected_session(create_session).await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))
             .await?;
         Ok(record)
@@ -74,12 +72,19 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             && let Some(cache) = self.secondary()
         {
             if let Some((session, _)) = self.cached_session_record(token).await? {
-                let serde_json::Value::Object(values) =
-                    serde_json::to_value(self.projection_context.session_view(&session))?
-                else {
-                    return Err(AuthError::internal("Session output must be an object"));
-                };
-                let mut output = AdapterOutput::from_values(values);
+                let mut output = self.secondary_session_output(token).await?;
+                for (name, date) in [
+                    ("expiresAt", session.expires_at()),
+                    ("createdAt", session.created_at()),
+                    ("updatedAt", session.updated_at()),
+                ] {
+                    output.insert(
+                        name.into(),
+                        Some(serde_json::Value::String(
+                            crate::utils::datetime::json_date_millis(date.timestamp_millis()),
+                        )),
+                    );
+                }
                 let registered = self
                     .projection_context
                     .extensions
@@ -88,13 +93,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                     .as_ref()
                     .map_or(&self.config.session.additional_fields, |fields| &fields.0);
                 for name in fields.keys() {
-                    if !output.values().contains_key(name) {
+                    if !output.contains_field(name) {
                         output.insert(name.clone(), None);
                     }
                 }
-                for name in self.secondary_absent_fields(token).await? {
-                    output.insert(name, None);
-                }
+                output = output.filter_returned(fields);
                 return Ok(Some(AdapterRecord::with_output(session, output)));
             }
             if !self.database_session_fallback() || cache.get(token).await?.is_some() {
@@ -185,7 +188,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         let Some(model) = self.refresh_session(token, expires_at).await? else {
             return Ok(None);
         };
-        let record = self.session_write_record(model).await?;
+        let record = self.session_write_record(token, model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
         Ok(Some(record))
@@ -199,7 +202,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         let Some(model) = self.update_session_fields(token, fields).await? else {
             return Ok(None);
         };
-        let record = self.session_write_record(model).await?;
+        let record = self.session_write_record(token, model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
         Ok(Some(record))
@@ -212,6 +215,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
             .session_write_record(
+                token,
                 self.update_session_active_organization(token, organization_id)
                     .await?,
             )
@@ -227,7 +231,10 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
-            .session_write_record(self.update_session_active_team(token, team_id).await?)
+            .session_write_record(
+                token,
+                self.update_session_active_team(token, team_id).await?,
+            )
             .await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
@@ -250,43 +257,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         }
         self.inner.update_session_fields(token, fields).await
     }
-    async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
-        let created_at = chrono::Utc::now();
-        for callback in &self.session_callbacks.callbacks {
-            callback
-                .before_create(&create_session, &self.projection_context, None)
-                .await?;
-        }
-        self.session_fields
-            .defaults(&mut create_session.additional_fields);
-        if self.session_uses_database() {
-            self.adapter_fields
-                .attach(&mut create_session.additional_fields, true);
-        }
-        let creation_fields = create_session.additional_fields.clone();
-        let session = if self.config.session.stateless {
-            self.inner
-                .prepare_secondary_session_creation(create_session, false)
-                .await?
-        } else if self.secondary().is_some() {
-            self.inner
-                .prepare_secondary_session_creation(create_session, self.session_uses_database())
-                .await?
-        } else {
-            self.inner.create_session(create_session).await?
-        };
-        self.remember_ephemeral_session(&session)?;
-        self.mirror_created_session(&session, created_at, &creation_fields)
-            .await?;
-        if self.secondary().is_some() || self.config.session.stateless {
-            self.inner
-                .complete_secondary_session_creation(&session)
-                .await?;
-        }
-        for callback in &self.session_callbacks.callbacks {
-            callback.after_create(&session, self).await?;
-        }
-        Ok(session)
+    async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
+        Ok(self
+            .create_projected_session(create_session)
+            .await?
+            .into_stored())
     }
     async fn get_session_by_id(&self, id: &str) -> AuthResult<Option<S::Session>> {
         self.inner.get_session_by_id(id).await
@@ -544,14 +519,62 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
 }
 
 impl<S: AuthSchema> PluginStore<S> {
+    async fn create_projected_session(
+        &self,
+        mut create_session: CreateSession,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        let created_at = chrono::Utc::now();
+        for callback in &self.session_callbacks.callbacks {
+            callback
+                .before_create(&create_session, &self.projection_context, None)
+                .await?;
+        }
+        self.session_fields
+            .defaults(&mut create_session.additional_fields);
+        if self.session_uses_database() {
+            self.adapter_fields
+                .attach(&mut create_session.additional_fields, true);
+        }
+        let creation_fields = create_session.additional_fields.clone();
+        let session = if self.config.session.stateless {
+            self.inner
+                .prepare_secondary_session_creation(create_session, false)
+                .await?
+        } else if self.secondary().is_some() {
+            self.inner
+                .prepare_secondary_session_creation(create_session, self.session_uses_database())
+                .await?
+        } else {
+            self.inner.create_session(create_session).await?
+        };
+        let record = self.session_creation_record(session).await?;
+        let session = record.stored();
+        self.remember_ephemeral_session(session)?;
+        self.mirror_created_session(session, created_at, &creation_fields, record.raw_snapshot())
+            .await?;
+        if self.secondary().is_some() || self.config.session.stateless {
+            self.inner
+                .complete_secondary_session_creation(session)
+                .await?;
+        }
+        for callback in &self.session_callbacks.callbacks {
+            callback.after_create(session, self).await?;
+        }
+        Ok(record)
+    }
     pub(in crate::store) async fn session_write_record(
         &self,
+        token: &str,
         session: S::Session,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         if self.session_uses_database() {
             return self.session_record(session).await;
         }
-        let record = self.session_creation_record(session).await?;
+        let record = if self.secondary().is_some() {
+            AdapterRecord::with_output(session, self.secondary_session_output(token).await?)
+        } else {
+            self.session_creation_record(session).await?
+        };
         let registered = self
             .projection_context
             .extensions

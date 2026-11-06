@@ -644,3 +644,31 @@ async fn secondary_only_session_writes_do_not_execute_database_adapter_transform
         json!({"new": true})
     );
 }
+
+#[tokio::test]
+async fn cached_session_updates_preserve_unread_owner_and_lookup_key() {
+    let (store, cache) = collection_fixture().await;
+    for key in ["first", "second"] {
+        let original_owner = envelope(&cache, key).await["user"].clone();
+        let record = store
+            .refresh_session_record(key, Utc::now() + Duration::hours(2))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(record.token(), "different-embedded-token");
+        assert_eq!(
+            record.raw_snapshot().values()["custom"],
+            json!({"already":"transformed"})
+        );
+        let cached = envelope(&cache, key).await;
+        assert_eq!(cached["user"], original_owner);
+        assert!(cached["session"].get("hidden").is_none());
+        assert!(
+            cache
+                .get("different-embedded-token")
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}

@@ -45,6 +45,7 @@ struct DeferredSessionPublication<S: AuthSchema> {
     session: S::Session,
     created_at: DateTime<Utc>,
     creation_fields: FieldValues,
+    native: AdapterOutput,
 }
 
 #[async_trait::async_trait]
@@ -52,7 +53,12 @@ impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublic
     async fn publish(&self) {
         if let Err(error) = self
             .store
-            .mirror_created_session(&self.session, self.created_at, &self.creation_fields)
+            .mirror_created_session(
+                &self.session,
+                self.created_at,
+                &self.creation_fields,
+                &self.native,
+            )
             .await
         {
             tracing::error!(%error, "Failed to mirror committed session to secondary storage");
@@ -254,11 +260,28 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(Some((session, user)))
     }
 
+    pub(super) async fn secondary_session_for_update(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<(S::Session, serde_json::Value)>> {
+        let Some(cache) = self.secondary() else {
+            return Ok(None);
+        };
+        let Some(raw) = cache.get(token).await? else {
+            return Ok(None);
+        };
+        let Ok(snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+            return Ok(None);
+        };
+        let session = S::Session::from_secondary_snapshot(snapshot.session)?;
+        Ok(Some((session, snapshot.user)))
+    }
+
     pub(super) async fn mirror_session_fields(
         &self,
         token: &str,
         session: &S::Session,
-        user: &AdapterRecord<S::User>,
+        user: serde_json::Value,
         updated_fields: Option<&FieldValues>,
     ) -> AuthResult<()> {
         if self.secondary().is_none() {
@@ -273,15 +296,8 @@ impl<S: AuthSchema> PluginStore<S> {
         });
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
-            self.write_session_snapshot(
-                token,
-                session,
-                user.secondary_snapshot()?,
-                updated_fields,
-                None,
-                ttl,
-            )
-            .await?;
+            self.write_session_snapshot(token, session, user, updated_fields, None, None, ttl)
+                .await?;
             self.write_references(session.user_id().as_ref(), references)
                 .await?;
         }
@@ -295,6 +311,7 @@ impl<S: AuthSchema> PluginStore<S> {
         user: serde_json::Value,
         updated_fields: Option<&FieldValues>,
         created_at: Option<DateTime<Utc>>,
+        native: Option<&AdapterOutput>,
         ttl: Duration,
     ) -> AuthResult<()> {
         let Some(cache) = self.secondary() else {
@@ -334,9 +351,56 @@ impl<S: AuthSchema> PluginStore<S> {
                 _ = absent_fields.remove(name);
             }
         }
+        if let Some(native) = native {
+            for name in self.adapter_fields.0.keys() {
+                if native.field_is_undefined(name) {
+                    _ = absent_fields.insert(name.clone());
+                }
+            }
+            _ = absent_fields.remove("createdAt");
+        }
         let session_snapshot = match created_at {
-            Some(created_at) => session.secondary_snapshot_for_creation(created_at)?,
+            Some(created_at) => match native {
+                Some(native) => session
+                    .secondary_snapshot_for_creation_with_native_output(created_at, native)?,
+                None => session.secondary_snapshot_for_creation(created_at)?,
+            },
             None => session.secondary_snapshot()?,
+        };
+        let session_snapshot = if created_at.is_none() {
+            let mut merged = if let Some(raw) = cache.get(token).await? {
+                serde_json::from_str::<CachedSession>(&raw)?.session
+            } else {
+                serde_json::Value::Object(serde_json::Map::new())
+            };
+            let (Some(merged), serde_json::Value::Object(updated)) =
+                (merged.as_object_mut(), &session_snapshot)
+            else {
+                return Err(AuthError::internal("Invalid secondary session snapshot"));
+            };
+            merged.extend(updated.clone());
+            let mut output = S::Session::output_from_secondary_snapshot(
+                serde_json::Value::Object(merged.clone()),
+            )?;
+            for name in &absent_fields {
+                output.insert(name.clone(), None);
+            }
+            let registered = self
+                .projection_context
+                .extensions
+                .get::<crate::field_policy::SessionFields>();
+            let fields = registered
+                .as_ref()
+                .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+            for (name, field) in fields {
+                if !field.returned {
+                    output.insert(name.clone(), None);
+                    _ = absent_fields.insert(name.clone());
+                }
+            }
+            session.secondary_snapshot_with_native_output(&output)?
+        } else {
+            session_snapshot
         };
         let snapshot = CachedSession {
             session: session_snapshot,
@@ -347,6 +411,19 @@ impl<S: AuthSchema> PluginStore<S> {
             .set(token, &serde_json::to_string(&snapshot)?, ttl)
             .await?;
         Ok(())
+    }
+
+    pub(super) async fn secondary_session_output(&self, token: &str) -> AuthResult<AdapterOutput> {
+        let cache = self
+            .secondary()
+            .ok_or_else(|| AuthError::internal("No secondary session storage"))?;
+        let raw = cache.get(token).await?.ok_or(AuthError::SessionNotFound)?;
+        let snapshot: CachedSession = serde_json::from_str(&raw)?;
+        let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
+        for name in snapshot.absent_fields {
+            output.insert(name, None);
+        }
+        Ok(output)
     }
 
     pub(super) async fn secondary_absent_fields(
@@ -367,12 +444,14 @@ impl<S: AuthSchema> PluginStore<S> {
         session: S::Session,
         created_at: DateTime<Utc>,
         creation_fields: FieldValues,
+        native: AdapterOutput,
     ) -> std::sync::Arc<dyn crate::session::SessionPublication> {
         std::sync::Arc::new(DeferredSessionPublication {
             store: self.clone(),
             session,
             created_at,
             creation_fields,
+            native,
         })
     }
 
@@ -381,12 +460,14 @@ impl<S: AuthSchema> PluginStore<S> {
         session: &S::Session,
         created_at: DateTime<Utc>,
         creation_fields: &FieldValues,
+        native: &AdapterOutput,
     ) -> AuthResult<()> {
         let user_id = session.user_id();
         self.mirror_session_creation(
             session,
             created_at,
             creation_fields,
+            native,
             self.inner.get_user_by_id_record(user_id.as_ref()),
         )
         .await
@@ -397,6 +478,7 @@ impl<S: AuthSchema> PluginStore<S> {
         session: &S::Session,
         created_at: DateTime<Utc>,
         creation_fields: &FieldValues,
+        native: &AdapterOutput,
         user: impl Future<Output = AuthResult<Option<AdapterRecord<S::User>>>> + Send,
     ) -> AuthResult<()> {
         if self.secondary().is_none() {
@@ -430,6 +512,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 user,
                 Some(creation_fields),
                 Some(created_at),
+                Some(native),
                 ttl,
             )
             .await?;
@@ -467,17 +550,15 @@ impl<S: AuthSchema> PluginStore<S> {
         if session.created_at().timestamp_millis() < cutoff {
             return Ok(None);
         }
-        let serde_json::Value::Object(mut values) = snapshot.session else {
-            return Ok(None);
-        };
-        _ = values.insert(
+        let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
+        output.insert(
             "expiresAt".into(),
-            serde_json::Value::String(crate::utils::datetime::json_date_millis(
-                session.expires_at().timestamp_millis(),
+            Some(serde_json::Value::String(
+                crate::utils::datetime::json_date_millis(session.expires_at().timestamp_millis()),
             )),
         );
         for name in snapshot.absent_fields {
-            _ = values.remove(&name);
+            output.insert(name, None);
         }
         if public {
             let registered = self
@@ -487,16 +568,9 @@ impl<S: AuthSchema> PluginStore<S> {
             let fields = registered
                 .as_ref()
                 .map_or(&self.config.session.additional_fields, |fields| &fields.0);
-            for (name, field) in fields {
-                if !field.returned {
-                    _ = values.remove(name);
-                }
-            }
+            output = output.filter_returned(fields);
         }
-        Ok(Some(AdapterRecord::with_output(
-            session,
-            AdapterOutput::from_values(values),
-        )))
+        Ok(Some(AdapterRecord::with_output(session, output)))
     }
 
     pub(super) async fn cached_user_session_records(
@@ -669,7 +743,7 @@ impl<S: AuthSchema> PluginStore<S> {
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        let Some((session, user)) = self.cached_session_record(token).await? else {
+        let Some((session, user)) = self.secondary_session_for_update(token).await? else {
             // A combined database write may still occur, but it must not revive
             // an absent authoritative secondary session in preserved mode.
             return if self.session_uses_database() {
@@ -691,7 +765,7 @@ impl<S: AuthSchema> PluginStore<S> {
         else {
             return Ok(None);
         };
-        self.mirror_session_fields(token, &updated, &user, Some(&fields))
+        self.mirror_session_fields(token, &updated, user, Some(&fields))
             .await?;
         self.inner
             .complete_secondary_session_update(
@@ -744,11 +818,17 @@ mod creation_order_tests {
             context,
         );
         let result = store
-            .mirror_session_creation(&session, session.created_at(), &FieldValues::new(), async {
-                let index = cache.get("active-sessions-owner").await?.unwrap();
-                assert!(index.contains(session.token()));
-                Err(AuthError::internal("owner lookup failed"))
-            })
+            .mirror_session_creation(
+                &session,
+                session.created_at(),
+                &FieldValues::new(),
+                &AdapterOutput::default(),
+                async {
+                    let index = cache.get("active-sessions-owner").await?.unwrap();
+                    assert!(index.contains(session.token()));
+                    Err(AuthError::internal("owner lookup failed"))
+                },
+            )
             .await;
         assert!(
             matches!(result, Err(AuthError::Internal(message)) if message == "owner lookup failed")

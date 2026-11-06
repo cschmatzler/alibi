@@ -1931,3 +1931,376 @@ async fn session_cache_updates_transform_only_actual_database_output() {
         assert_eq!(cached["session"]["active_team_id"], "transaction");
     }
 }
+
+struct SessionProjectionObservation {
+    cache: Arc<RecordingCache>,
+    snapshots: Mutex<Vec<(serde_json::Value, serde_json::Value)>>,
+}
+
+#[async_trait]
+impl alibi_core::store::AdapterAfterHook<TestSchema> for SessionProjectionObservation {
+    async fn after_write(
+        &self,
+        event: &alibi_core::store::AdapterEvent<TestSchema>,
+        _: &dyn alibi_core::store::AuthStore<TestSchema>,
+    ) -> AuthResult<()> {
+        use alibi_core::store::CacheAdapter;
+        if let alibi_core::store::AdapterEvent::SessionCreated(record) = event {
+            let cached: serde_json::Value = serde_json::from_str(
+                &self
+                    .cache
+                    .get(alibi_core::AuthSession::token(record))
+                    .await?
+                    .unwrap(),
+            )
+            .unwrap();
+            self.snapshots.lock().unwrap().push((
+                serde_json::to_value(record).unwrap(),
+                cached["session"].clone(),
+            ));
+        }
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn session_creation_projects_database_output_once_before_ordinary_inline_and_deferred_publication()
+ {
+    use alibi_core::store::CacheAdapter;
+    use alibi_core::utils::json::JsValue;
+    for (persist, transactional, deferred) in [
+        (false, false, false),
+        (false, true, false),
+        (true, false, false),
+        (true, true, false),
+        (true, true, true),
+    ] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), persist, false, false)
+                .await;
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        let outputs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let inputs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut config = (*fixture.ctx.config).clone();
+        let input_calls = inputs.clone();
+        let output_calls = outputs.clone();
+        let observed_cache = cache.clone();
+        config.session.additional_fields.insert(
+            "activeTeamId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .transform_adapter_input(move |value| {
+                    input_calls.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        Ok(value.map(|value| {
+                            JsValue::String(format!("{}:input", value.as_str().unwrap()).into())
+                        }))
+                    }
+                })
+                .transform_output(move |value| {
+                    output_calls.fetch_add(1, Ordering::SeqCst);
+                    let cache = observed_cache.clone();
+                    async move {
+                        assert!(
+                            cache.get("session-project-before-publish").await?.is_none(),
+                            "output transform ran after publication"
+                        );
+                        Ok(value.map(|value| {
+                            JsValue::String(format!("{}:output", value.as_str().unwrap()).into())
+                        }))
+                    }
+                }),
+        );
+        config.session.additional_fields.insert(
+            "activeOrganizationId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .transform_output(|_| async { Ok(None) }),
+        );
+        config.session.additional_fields.insert(
+            "createdAt".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"date"}))
+                .transform_output(|_| async {
+                    Ok(Some(JsValue::String("2001-01-01T00:00:00.000Z".into())))
+                }),
+        );
+        let observation = Arc::new(SessionProjectionObservation {
+            cache: cache.clone(),
+            snapshots: Mutex::new(Vec::new()),
+        });
+        let mut init =
+            alibi_core::plugin::AuthInitContext::new(Arc::new(config), fixture.raw.clone());
+        init.register_adapter_after_hook(observation.clone());
+        let database = init.database_with_registered_transforms();
+        let mut fields = alibi_core::field_policy::FieldValues::new();
+        fields.insert("activeTeamId".into(), JsValue::String("new".into()));
+        let input = CreateSession {
+            user_id: fixture.user.id.clone(),
+            token: Some("session-project-before-publish".into()),
+            expires_at: chrono::Utc::now() + Duration::hours(1),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: fields,
+        };
+        let before = chrono::Utc::now().timestamp_millis();
+        let record = if transactional {
+            let cache = cache.clone();
+            alibi_core::store::write_transaction(database.as_ref(), move |tx| {
+                Box::pin(async move {
+                    let policy = if deferred {
+                        alibi_core::session::SessionCreationPolicy::DeferSecondaryStorageWrites
+                    } else {
+                        alibi_core::session::SessionCreationPolicy::Inline
+                    };
+                    let record = tx.create_session_record_with_policy(input, policy).await?;
+                    assert_eq!(
+                        cache.get("session-project-before-publish").await?.is_none(),
+                        deferred
+                    );
+                    Ok(record)
+                })
+            })
+            .await
+            .unwrap()
+        } else {
+            database.create_session_record(input).await.unwrap()
+        };
+        assert_eq!(inputs.load(Ordering::SeqCst), usize::from(persist));
+        assert_eq!(outputs.load(Ordering::SeqCst), usize::from(persist));
+        assert_eq!(
+            record.raw_snapshot().values()["activeTeamId"],
+            if persist { "new:input:output" } else { "new" }
+        );
+        let cached: serde_json::Value = serde_json::from_str(
+            &cache
+                .get("session-project-before-publish")
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        {
+            let observed = observation.snapshots.lock().unwrap();
+            assert_eq!(observed.len(), 1);
+            assert_eq!(observed[0].0, serde_json::to_value(&record).unwrap());
+            assert_eq!(observed[0].1, cached["session"]);
+        }
+        assert_eq!(
+            cached["session"]["active_team_id"],
+            if persist { "new:input:output" } else { "new" }
+        );
+        let cached_model = <TestSession as alibi_core::AuthSession>::from_secondary_snapshot(
+            cached["session"].clone(),
+        )
+        .unwrap();
+        assert!(alibi_core::AuthSession::created_at(&cached_model).timestamp_millis() >= before);
+        if persist {
+            assert!(
+                record
+                    .raw_snapshot()
+                    .field_is_undefined("activeOrganizationId")
+            );
+            assert!(cached["session"].get("active_organization_id").is_none());
+            assert_eq!(
+                record.raw_snapshot().values()["createdAt"],
+                "2001-01-01T00:00:00.000Z"
+            );
+            assert_eq!(
+                alibi_core::AuthSession::active_team_id(&record),
+                Some("new:input")
+            );
+        }
+        let mut with_extra = cached.clone();
+        with_extra["session"]["unknownTrustedObject"] = serde_json::json!({"nested":[true,null]});
+        cache
+            .set(
+                "session-project-before-publish",
+                &with_extra.to_string(),
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+        let readback = database
+            .get_session_record("session-project-before-publish")
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            readback.raw_snapshot().values()["unknownTrustedObject"],
+            serde_json::json!({"nested":[true,null]})
+        );
+        if persist {
+            assert!(
+                readback
+                    .raw_snapshot()
+                    .field_is_undefined("activeOrganizationId")
+            );
+        }
+        let found = database
+            .get_sessions_by_tokens_record(&["session-project-before-publish".into()])
+            .await
+            .unwrap();
+        assert_eq!(
+            found[0].raw_snapshot().values()["activeTeamId"],
+            if persist { "new:input:output" } else { "new" }
+        );
+        assert_eq!(outputs.load(Ordering::SeqCst), usize::from(persist));
+    }
+}
+
+#[tokio::test]
+async fn session_creation_output_failure_does_not_publish_or_commit_transactional_session() {
+    use alibi_core::store::CacheAdapter;
+    for deferred in [false, true] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        let mut config = (*fixture.ctx.config).clone();
+        config.session.additional_fields.insert(
+            "activeTeamId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .transform_output(|_| async {
+                    Err(AuthError::internal("session output rejected"))
+                }),
+        );
+        let database =
+            alibi_core::plugin::AuthInitContext::new(Arc::new(config), fixture.raw.clone())
+                .database_with_registered_transforms();
+        let user_id = fixture.user.id.clone();
+        let result = alibi_core::store::write_transaction(database.as_ref(), move |tx| {
+            Box::pin(async move {
+                tx.create_session_record_with_policy(
+                    CreateSession {
+                        user_id,
+                        token: Some("output-failure".into()),
+                        expires_at: chrono::Utc::now() + Duration::hours(1),
+                        ip_address: None,
+                        user_agent: None,
+                        impersonated_by: None,
+                        active_organization_id: None,
+                        active_team_id: None,
+                        additional_fields: Default::default(),
+                    },
+                    if deferred {
+                        alibi_core::session::SessionCreationPolicy::DeferSecondaryStorageWrites
+                    } else {
+                        alibi_core::session::SessionCreationPolicy::Inline
+                    },
+                )
+                .await
+            })
+        })
+        .await;
+        assert!(result.is_err());
+        assert!(cache.get("output-failure").await.unwrap().is_none());
+        assert!(
+            fixture
+                .raw
+                .get_session("output-failure")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            !cache
+                .get(&format!("active-sessions-{}", fixture.user.id))
+                .await
+                .unwrap()
+                .unwrap_or_default()
+                .contains("output-failure")
+        );
+    }
+}
+
+#[tokio::test]
+async fn session_secondary_refresh_preserves_unknown_and_undefined_cached_output() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let token =
+        test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+            .await
+            .token;
+    let mut snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+    snapshot["session"]
+        .as_object_mut()
+        .unwrap()
+        .remove("active_organization_id");
+    snapshot["session"]["unknownTrustedObject"] = serde_json::json!({"nested":[true,null]});
+    snapshot["absent_fields"] = serde_json::json!(["activeOrganizationId"]);
+    cache
+        .set(&token, &snapshot.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    let record = fixture
+        .ctx
+        .database
+        .refresh_session_record(&token, chrono::Utc::now() + Duration::hours(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        record.raw_snapshot().values()["unknownTrustedObject"],
+        serde_json::json!({"nested":[true,null]})
+    );
+    assert!(
+        record
+            .raw_snapshot()
+            .field_is_undefined("activeOrganizationId")
+    );
+    let cached: serde_json::Value =
+        serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+    assert_eq!(
+        cached["session"]["unknownTrustedObject"],
+        serde_json::json!({"nested":[true,null]})
+    );
+    assert!(cached["session"].get("active_organization_id").is_none());
+}
+
+#[tokio::test]
+async fn session_transaction_updates_preserve_null_and_nonmodel_cached_owners() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let token =
+        test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+            .await
+            .token;
+    for user in [
+        serde_json::Value::Null,
+        serde_json::json!({"notAnOwnerModel":true}),
+    ] {
+        let mut snapshot: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        snapshot["user"] = user.clone();
+        cache
+            .set(&token, &snapshot.to_string(), Duration::hours(1))
+            .await
+            .unwrap();
+        let tx_token = token.clone();
+        alibi_core::store::write_transaction(fixture.ctx.database.as_ref(), move |tx| {
+            Box::pin(async move {
+                tx.update_session_active_team_record(&tx_token, Some("team"))
+                    .await?;
+                tx.update_session_active_organization_record(&tx_token, Some("org"))
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["user"], user);
+        assert_eq!(cached["session"]["active_team_id"], "team");
+        assert_eq!(cached["session"]["active_organization_id"], "org");
+    }
+}

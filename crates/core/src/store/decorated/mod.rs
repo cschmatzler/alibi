@@ -221,20 +221,10 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: S::Session,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let absent = self.secondary_absent_fields(session.token()).await?;
-        let mut public = serde_json::to_value(crate::SessionView::from(&session))?;
-        let mut physical =
+        let public = serde_json::to_value(crate::SessionView::from(&session))?;
+        let physical =
             serde_json::to_value(self.projection_context.trusted_session_view(&session))?;
-        let mut additional = session.additional_fields();
-        for name in absent {
-            if let Some(object) = public.as_object_mut() {
-                _ = object.remove(&name);
-            }
-            if let Some(object) = physical.as_object_mut() {
-                _ = object.remove(&name);
-            }
-            _ = additional.remove(&name);
-        }
+        let additional = session.additional_fields();
         let output = self
             .adapter_fields
             .record_output(public, additional, physical)
