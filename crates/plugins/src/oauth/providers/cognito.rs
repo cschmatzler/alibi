@@ -8,6 +8,7 @@ use crate::oauth::{
     OAuthNonceComparison,
 };
 use async_trait::async_trait;
+#[cfg(test)]
 use base64::Engine;
 use serde_json::Map;
 use serde_json::Value;
@@ -276,23 +277,7 @@ impl CognitoUserInfo {
 }
 
 fn decode_profile(token: &str) -> Result<Value, String> {
-    let parts: Vec<_> = token.split('.').collect();
-    let [_, payload, _] = parts.as_slice() else {
-        return Err("Invalid Cognito ID token".into());
-    };
-    let bytes = base64::engine::GeneralPurpose::new(
-        &base64::alphabet::URL_SAFE,
-        base64::engine::GeneralPurposeConfig::new()
-            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-    )
-    .decode(payload)
-    .map_err(|error| error.to_string())?;
-    let profile: Value =
-        alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
-    if !profile.is_object() {
-        return Err("Invalid Cognito ID-token claims set".into());
-    }
-    Ok(profile)
+    super::remaining_profile::decode_grant_jwt(token)
 }
 fn truthy(value: &Value) -> bool {
     match value {
@@ -337,6 +322,16 @@ fn subject(profile: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn grant_payload_decoder_accepts_jose_forgiving_base64() {
+        for payload in ["e31=", " e\t3\n0\x0c=\r", "77u/e30="] {
+            assert_eq!(
+                decode_profile(&format!(".{payload}.")).unwrap(),
+                serde_json::json!({})
+            );
+        }
+    }
+
     struct Mapper {
         fallback: bool,
         calls: std::sync::atomic::AtomicUsize,
