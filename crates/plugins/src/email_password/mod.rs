@@ -542,7 +542,13 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                         impersonated_by: None,
                         active_organization_id: None,
                     })
-                    .await?;
+                    .await
+                    .map_err(|error| match error {
+                        AuthError::SessionCreationCancelled => {
+                            AuthError::bad_request("Failed to create session")
+                        }
+                        error => error,
+                    })?;
                 let token = session.token().to_owned();
                 // Source sign-up emits inside its transaction. Serializer failure
                 // rolls back these rows; sign-in retains its separate commit policy.
@@ -811,6 +817,66 @@ mod tests {
                         .is_empty()
                 );
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_signup_session_rolls_back_with_bad_request() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        struct Hook(bool);
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_session(
+                &self,
+                _: &mut CreateSession,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application session policy"))
+                }
+            }
+        }
+
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(crate::test_helpers::create_test_config());
+            let ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            let plugin = EmailPasswordPlugin::new();
+            let error = plugin
+                .handle_sign_up(
+                    &create_signup_request("cancel-signup@example.com", "Password123!"),
+                    &ctx,
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.status_code(), if cancelled { 400 } else { 403 });
+            if cancelled {
+                let response = error.to_auth_response();
+                let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+                assert_eq!(body["code"], "FAILED_TO_CREATE_SESSION");
+            } else {
+                assert_eq!(error.to_string(), "application session policy");
+            }
+            assert!(
+                ctx.database
+                    .get_user_by_email("cancel-signup@example.com")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 
