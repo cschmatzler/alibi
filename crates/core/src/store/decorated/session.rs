@@ -112,17 +112,48 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         tokens: &[String],
     ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
-        let mut records = Vec::new();
-        for model in self.get_sessions_by_tokens(tokens).await? {
-            records.push(self.session_record(model).await?);
+        if !self.config.session.stateless && self.secondary().is_some() {
+            let mut records = std::collections::HashMap::new();
+            let mut missing = Vec::new();
+            let mut unique = Vec::new();
+            for token in tokens {
+                if unique.contains(token) {
+                    continue;
+                }
+                unique.push(token.clone());
+                if let Some(record) = self.cached_collection_session(token, false, true).await? {
+                    records.insert(token.clone(), record);
+                } else if let Some(cache) = self.secondary()
+                    && cache.get(token).await?.is_none()
+                {
+                    missing.push(token.clone());
+                }
+            }
+            if self.database_session_fallback() && !missing.is_empty() {
+                for model in self.inner.get_sessions_by_tokens(&missing).await? {
+                    let record = self.session_record(model).await?;
+                    records.insert(record.token().to_owned(), record);
+                }
+            }
+            return Ok(unique
+                .into_iter()
+                .filter_map(|token| records.remove(&token))
+                .collect());
         }
-        Ok(records)
+        self.session_records(self.get_sessions_by_tokens(tokens).await?)
+            .await
     }
 
     async fn get_user_sessions_record(
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
+        if !self.config.session.stateless
+            && self.secondary().is_some()
+            && !self.database_session_fallback()
+        {
+            return self.cached_user_session_records(user_id).await;
+        }
         self.session_records(self.get_user_sessions(user_id).await?)
             .await
     }
@@ -131,14 +162,19 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
+        if !self.config.session.stateless
+            && self.secondary().is_some()
+            && !self.database_session_fallback()
+        {
+            return self.cached_user_session_records(user_id).await;
+        }
         let now = chrono::Utc::now();
-        let models = self
-            .get_user_sessions(user_id)
+        Ok(self
+            .get_user_sessions_record(user_id)
             .await?
             .into_iter()
             .filter(|session| session.expires_at() > now)
-            .collect();
-        self.session_records(models).await
+            .collect())
     }
 
     async fn refresh_session_record(
@@ -285,24 +321,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 .collect());
         }
         if self.secondary().is_some() {
-            let mut sessions = Vec::new();
-            let mut missing = Vec::new();
-            for token in tokens {
-                if let Some((session, _)) = self.cached_session(token).await? {
-                    sessions.push(session);
-                } else if let Some(cache) = self.secondary()
-                    && cache.get(token).await?.is_none()
-                {
-                    missing.push(token.clone());
-                }
-            }
-            // Since 1.7.12 tokens absent from the cache fall back to the
-            // database when it holds every session. Present but unusable
-            // entries never acquire database authority.
-            if !missing.is_empty() && self.database_session_fallback() {
-                sessions.extend(self.inner.get_sessions_by_tokens(&missing).await?);
-            }
-            return Ok(sessions);
+            return Ok(self
+                .get_sessions_by_tokens_record(tokens)
+                .await?
+                .into_iter()
+                .map(AdapterRecord::into_stored)
+                .collect());
         }
         self.inner.get_sessions_by_tokens(tokens).await
     }

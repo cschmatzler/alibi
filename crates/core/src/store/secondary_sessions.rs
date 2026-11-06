@@ -11,6 +11,7 @@ use std::collections::BTreeSet;
 #[derive(Serialize, Deserialize)]
 struct CachedSession {
     session: serde_json::Value,
+    #[serde(default)]
     user: serde_json::Value,
     #[serde(default)]
     absent_fields: BTreeSet<String>,
@@ -433,7 +434,72 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(())
     }
 
-    pub(super) async fn cached_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+    pub(super) async fn cached_collection_session(
+        &self,
+        token: &str,
+        public: bool,
+        require_owner: bool,
+    ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
+        let Some(cache) = self.secondary() else {
+            return Ok(None);
+        };
+        let Some(raw) = cache.get(token).await? else {
+            return Ok(None);
+        };
+        let Ok(snapshot) = serde_json::from_str::<CachedSession>(&raw) else {
+            return Ok(None);
+        };
+        // findSessions reads user dates; listSessions never reads the owner.
+        if require_owner && snapshot.user.is_null() {
+            return Ok(None);
+        }
+        let Ok(session) = S::Session::from_secondary_snapshot(snapshot.session.clone()) else {
+            return Ok(None);
+        };
+        let cutoff = cache
+            .get(&format!("revoked-sessions-before-{}", session.user_id()))
+            .await?
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(0);
+        if session.created_at().timestamp_millis() < cutoff {
+            return Ok(None);
+        }
+        let serde_json::Value::Object(mut values) = snapshot.session else {
+            return Ok(None);
+        };
+        values.insert(
+            "expiresAt".into(),
+            serde_json::Value::String(crate::utils::datetime::json_date_millis(
+                session.expires_at().timestamp_millis(),
+            )),
+        );
+        for name in snapshot.absent_fields {
+            values.remove(&name);
+        }
+        if public {
+            let registered = self
+                .projection_context
+                .extensions
+                .get::<crate::field_policy::SessionFields>();
+            let fields = registered
+                .as_ref()
+                .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+            for (name, field) in fields {
+                if !field.returned {
+                    values.remove(name);
+                }
+            }
+        }
+        Ok(Some(AdapterRecord::with_output(
+            session,
+            AdapterOutput::from_values(values),
+        )))
+    }
+
+    pub(super) async fn cached_user_session_records(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<AdapterRecord<S::Session>>> {
         let now = Utc::now();
         let mut sessions = Vec::new();
         let mut seen = BTreeSet::new();
@@ -441,13 +507,23 @@ impl<S: AuthSchema> PluginStore<S> {
             if reference.expires_at <= now || !seen.insert(reference.token.clone()) {
                 continue;
             }
-            if let Some((session, _)) = self.cached_session(&reference.token).await?
-                && session.user_id().as_ref() == user_id
+            if let Some(session) = self
+                .cached_collection_session(&reference.token, true, false)
+                .await?
             {
                 sessions.push(session);
             }
         }
         Ok(sessions)
+    }
+
+    pub(super) async fn cached_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        Ok(self
+            .cached_user_session_records(user_id)
+            .await?
+            .into_iter()
+            .map(AdapterRecord::into_stored)
+            .collect())
     }
 
     pub(super) async fn cached_user_tokens(&self, user_id: &str) -> AuthResult<Vec<String>> {

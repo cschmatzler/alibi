@@ -498,3 +498,83 @@ async fn cached_session_record_must_not_rerun_adapter_output_transforms() {
         json!({"nested": [true, null]})
     );
 }
+
+async fn collection_fixture() -> (PluginStore<StatelessSchema>, Arc<MemoryCacheAdapter>) {
+    let cache = Arc::new(MemoryCacheAdapter::new());
+    let mut config = (*config(cache.clone())).clone();
+    config.session.additional_fields.insert(
+        "custom".into(),
+        FieldConfig::new(json!({"type": "json"})).transform_output(|_| async {
+            panic!("cached collection reran adapter output transform")
+        }),
+    );
+    config.session.additional_fields.insert(
+        "hidden".into(),
+        FieldConfig::new(json!({"type": "string"})).hidden(),
+    );
+    let store = decorated::<StatelessSchema>(Arc::new(StatelessStore::default()), Arc::new(config));
+    for (key, user) in [
+        ("first", json!({"notAnOwnerModel": true})),
+        ("second", Value::Null),
+    ] {
+        cache.set(key, &json!({
+            "session": {
+                "id": key, "token": "different-embedded-token", "userId": "different-owner",
+                "expiresAt": crate::utils::datetime::json_date_millis((Utc::now() - Duration::hours(1)).timestamp_millis()),
+                "createdAt": "2026-01-02T03:04:05.678Z", "updatedAt": "2026-01-02T03:04:05.678Z",
+                "custom": {"already": "transformed"}, "hidden": "keep-for-find"
+            }, "user": user
+        }).to_string(), Duration::hours(1)).await.unwrap();
+    }
+    cache.set("active-sessions-index-owner", &json!([
+        {"token": "second", "expiresAt": (Utc::now() + Duration::hours(1)).timestamp_millis()},
+        {"token": "first", "expiresAt": (Utc::now() + Duration::hours(1)).timestamp_millis()},
+        {"token": "second", "expiresAt": (Utc::now() + Duration::hours(1)).timestamp_millis()}
+    ]).to_string(), Duration::hours(1)).await.unwrap();
+    (store, cache)
+}
+
+#[tokio::test]
+async fn cached_session_collections_list_ignores_owner_and_only_filters_index_expiry() {
+    let (store, _) = collection_fixture().await;
+    let records = store.get_user_sessions_record("index-owner").await.unwrap();
+    assert_eq!(
+        records.iter().map(|row| row.id()).collect::<Vec<_>>(),
+        ["second", "first"]
+    );
+    for record in &records {
+        assert_eq!(
+            record.raw_snapshot().values()["custom"],
+            json!({"already": "transformed"})
+        );
+        assert!(record.raw_snapshot().values().get("hidden").is_none());
+    }
+    assert_eq!(
+        store
+            .get_active_user_sessions_record("index-owner")
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn cached_session_collections_find_preserves_hidden_fields_lookup_order_and_null_owner_distinction()
+ {
+    let (store, _) = collection_fixture().await;
+    let records = store
+        .get_sessions_by_tokens_record(&["second".into(), "first".into(), "first".into()])
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0].id(), "first");
+    assert_eq!(
+        records[0].raw_snapshot().values()["hidden"],
+        "keep-for-find"
+    );
+    assert_eq!(
+        records[0].raw_snapshot().values()["custom"],
+        json!({"already": "transformed"})
+    );
+}
