@@ -127,9 +127,13 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let [_, payload, _] = parts.as_slice() else {
             return Err("Invalid Apple ID token".into());
         };
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(payload)
-            .map_err(|error| error.to_string())?;
+        let bytes = base64::engine::GeneralPurpose::new(
+            &base64::alphabet::URL_SAFE,
+            base64::engine::GeneralPurposeConfig::new()
+                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+        )
+        .decode(payload)
+        .map_err(|error| error.to_string())?;
         let mut profile =
             parse_value(std::str::from_utf8(&bytes).map_err(|error| error.to_string())?)
                 .map_err(|error| error.to_string())?;
@@ -220,4 +224,30 @@ impl OAuthUserInfoHandler for AppleUserInfo {
 
 fn js_whitespace(character: char) -> bool {
     (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn apple_accepts_padded_jwt_payload() {
+        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let mut json = profile.to_string();
+        while json.len() % 3 == 0 {
+            json.push(' ');
+        }
+        let payload = base64::engine::general_purpose::URL_SAFE.encode(json);
+        assert!(payload.ends_with('='));
+        let provider = OAuthProvider::apple("client", "secret");
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(format!("e30.{payload}.signature")),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.data["email"], "a@example.com");
+    }
 }

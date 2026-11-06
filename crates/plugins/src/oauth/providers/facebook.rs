@@ -201,9 +201,13 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
                 .as_deref()
                 .ok_or("Missing Facebook ID token")?;
             let payload = token.split('.').nth(1).ok_or("Invalid Facebook ID token")?;
-            let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(payload)
-                .map_err(|error| error.to_string())?;
+            let bytes = base64::engine::GeneralPurpose::new(
+                &base64::alphabet::URL_SAFE,
+                base64::engine::GeneralPurposeConfig::new()
+                    .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+            )
+            .decode(payload)
+            .map_err(|error| error.to_string())?;
             let data: Value =
                 alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
             if !data.is_object() {
@@ -359,4 +363,30 @@ fn subject(profile: &Value) -> Result<String, String> {
         return Err("Invalid Facebook account subject".into());
     }
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn facebook_accepts_padded_jwt_payload() {
+        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let mut json = profile.to_string();
+        while json.len() % 3 == 0 {
+            json.push(' ');
+        }
+        let payload = base64::engine::general_purpose::URL_SAFE.encode(json);
+        assert!(payload.ends_with('='));
+        let provider = OAuthProvider::facebook("client", "secret");
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(format!("e30.{payload}.signature")),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.data["email"], "a@example.com");
+    }
 }

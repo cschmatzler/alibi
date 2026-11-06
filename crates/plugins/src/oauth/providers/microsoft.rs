@@ -269,9 +269,13 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
         let [_, payload, _] = parts.as_slice() else {
             return Err("Invalid Microsoft ID token".into());
         };
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(payload)
-            .map_err(|error| error.to_string())?;
+        let bytes = base64::engine::GeneralPurpose::new(
+            &base64::alphabet::URL_SAFE,
+            base64::engine::GeneralPurposeConfig::new()
+                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+        )
+        .decode(payload)
+        .map_err(|error| error.to_string())?;
         let mut profile: Value =
             alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
         if !profile.is_object() {
@@ -383,5 +387,36 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
         Some(Value::Array(_) | Value::Object(_)) => Err("Invalid Microsoft profile field".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn microsoft_accepts_padded_jwt_payload() {
+        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let mut json = profile.to_string();
+        while json.len() % 3 == 0 {
+            json.push(' ');
+        }
+        let payload = base64::engine::general_purpose::URL_SAFE.encode(json);
+        assert!(payload.ends_with('='));
+        let provider = OAuthProvider::microsoft({
+            let mut options = MicrosoftOptions::new("client", Some("secret".into()));
+            options.disable_profile_photo = true;
+            options
+        })
+        .unwrap();
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(format!("e30.{payload}.signature")),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.data["email"], "a@example.com");
     }
 }
