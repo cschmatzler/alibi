@@ -396,6 +396,29 @@ fn normalize_legacy(value: &str) -> String {
                 .unwrap_or(part)
         })
         .collect::<Vec<_>>();
+    if parts.len() >= 3
+        && let Some(month_index) = parts[..3].iter().position(|part| months.contains(part))
+    {
+        let month = parts[month_index];
+        let (first, second) = match month_index {
+            0 => (parts[1], parts[2]),
+            1 => (parts[0], parts[2]),
+            _ => (parts[0], parts[1]),
+        };
+        if first.bytes().all(|byte| byte.is_ascii_digit())
+            && second.bytes().all(|byte| byte.is_ascii_digit())
+        {
+            let (day, year) = if first
+                .parse::<u32>()
+                .is_ok_and(|number| (1..=31).contains(&number))
+            {
+                (first, second)
+            } else {
+                (second, first)
+            };
+            parts[..3].copy_from_slice(&[month, day, year]);
+        }
+    }
     // These named North American offsets are accepted by Date.parse. Match a
     // whole final token so an arbitrary suffix cannot become a valid timezone.
     let zones = [
@@ -473,6 +496,42 @@ mod tests {
             "2024-01T12:34:60Z",
         ] {
             assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
+
+    #[test]
+    fn named_month_dates_choose_day_and_year_independently_of_token_order() {
+        for date in [
+            "Jan 1 2024",
+            "Jan 2024 1",
+            "1 Jan 2024",
+            "2024 Jan 1",
+            "1 2024 Jan",
+            "2024 1 Jan",
+        ] {
+            for (suffix, expected) in [
+                (" GMT", "2024-01-01T00:00:00Z"),
+                (" 12:34:59 GMT", "2024-01-01T12:34:59Z"),
+                (" 12:34:60.5 GMT", "2024-01-01T12:34:05Z"),
+            ] {
+                let input = format!("{date}{suffix}");
+                assert_eq!(
+                    parse_date_millis(&input),
+                    parse_date_millis(expected),
+                    "{input}"
+                );
+            }
+        }
+        for (input, expected) in [
+            ("Jan 24 1 GMT", "2001-01-24T00:00:00Z"),
+            ("0 Jan 1 GMT", "2000-01-01T00:00:00Z"),
+            ("Feb 2024 30 GMT", "2024-03-01T00:00:00Z"),
+        ] {
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
     }
 
