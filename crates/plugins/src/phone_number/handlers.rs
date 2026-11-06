@@ -343,7 +343,9 @@ impl PhoneNumberPlugin {
     ) -> AuthResult<AuthResponse> {
         self.validate_phone(&body.phone_number).await?;
         let settings = password_settings(ctx);
-        alibi_core::utils::password::validate_password(&body.password, 0, settings.maximum, ctx)?;
+        if body.password.encode_utf16().count() > settings.maximum {
+            return Err(AuthError::bad_request("Password too long"));
+        }
         let user = ctx
             .database
             .get_user_by_phone_number_record(&body.phone_number)

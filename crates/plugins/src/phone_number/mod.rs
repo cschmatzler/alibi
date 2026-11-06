@@ -565,6 +565,57 @@ mod tests {
         user.id().to_string()
     }
 
+    #[tokio::test]
+    async fn phone_signin_does_not_reapply_new_password_complexity() {
+        let mut ctx = context().await;
+        let phone = "+15551110098";
+        let user_id = phone_user(&ctx, phone, true).await;
+        let policy = &mut Arc::make_mut(&mut ctx.config).password;
+        policy.require_uppercase = true;
+        policy.require_lowercase = true;
+        policy.require_numbers = true;
+        policy.require_special = true;
+        let plugin = PhoneNumberPlugin::new(PhoneNumberConfig::default());
+
+        let response = post(
+            &plugin,
+            &ctx,
+            "/sign-in/phone-number",
+            json!({"phoneNumber": phone, "password": "original-password123"}),
+        )
+        .await;
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            ctx.database
+                .get_user_sessions(&user_id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let rejected = post(
+            &plugin,
+            &ctx,
+            "/sign-in/phone-number",
+            json!({"phoneNumber": phone, "password": "a".repeat(129)}),
+        )
+        .await;
+        assert_eq!(rejected.status, 400);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&rejected.body).unwrap()["code"],
+            "PASSWORD_TOO_LONG"
+        );
+        assert_eq!(
+            ctx.database
+                .get_user_sessions(&user_id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
     // Upstream awaits sendOTP directly for /send-otp, but uses its nonfatal
     // background policy for unverified password signin and password reset delivery.
     #[tokio::test]
