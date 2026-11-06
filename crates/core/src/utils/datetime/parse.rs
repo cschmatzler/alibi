@@ -174,6 +174,18 @@ fn parse_legacy(value: &str) -> Option<i64> {
             return time_clip(date.timestamp_millis());
         }
     }
+    let midnight = format!("{without_gmt} 00:00:00");
+    for format in [
+        "%b %d %Y %z %H:%M:%S",
+        "%d %b %Y %z %H:%M:%S",
+        "%m/%d/%Y %z %H:%M:%S",
+        "%Y/%m/%d %z %H:%M:%S",
+        "%Y-%m-%d %z %H:%M:%S",
+    ] {
+        if let Ok(date) = DateTime::parse_from_str(&midnight, format) {
+            return time_clip(date.timestamp_millis());
+        }
+    }
     for format in [
         "%b %d %Y %H:%M:%S%.f",
         "%d %b %Y %H:%M:%S%.f",
@@ -293,6 +305,19 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn date_only_bounds_honor_explicit_timezone_tokens() {
+        for (input, expected) in [
+            ("01 Jan 2024 GMT", "2024-01-01T00:00:00Z"),
+            ("Jan 1 2024 UTC", "2024-01-01T00:00:00Z"),
+            ("January 1 2024 EST", "2024-01-01T05:00:00Z"),
+            ("2024/1/1 GMT+0530", "2023-12-31T18:30:00Z"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+        assert_eq!(parse_date_millis("Jan 1 2024 BOGUS"), None);
+    }
 
     #[test]
     fn legacy_dates_accept_full_weekday_tokens() {
