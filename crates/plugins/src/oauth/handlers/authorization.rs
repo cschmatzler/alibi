@@ -173,10 +173,11 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .filter(|uri| !uri.is_empty())
             .unwrap_or(callback_url),
     );
-    if provider
-        .authorization
-        .as_ref()
-        .is_none_or(|policy| policy.pkce)
+    if !code_challenge.is_empty()
+        && provider
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.pkce)
     {
         set_authorization_param(&mut url, "code_challenge_method", "S256");
         set_authorization_param(&mut url, "code_challenge", code_challenge);
@@ -574,4 +575,45 @@ pub(in crate::oauth::handlers) async fn initiate_oauth_flow_core(
         state,
         payload,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn provider() -> OAuthProvider {
+        let mut provider =
+            crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+        provider.auth_url = "https://example.com/authorize".into();
+        provider
+    }
+
+    #[test]
+    fn authorization_omits_pkce_without_a_challenge() {
+        let provider = provider();
+        for challenge in ["", "challenge"] {
+            let result = build_authorization_url(
+                &provider,
+                "https://app/callback",
+                None,
+                "state",
+                challenge,
+                None,
+                None,
+            )
+            .unwrap();
+            let url = url::Url::parse(&result).unwrap();
+            let pairs: std::collections::HashMap<_, _> = url.query_pairs().collect();
+            assert_eq!(
+                pairs.get("code_challenge").map(|value| value.as_ref()),
+                (!challenge.is_empty()).then_some(challenge)
+            );
+            assert_eq!(
+                pairs
+                    .get("code_challenge_method")
+                    .map(|value| value.as_ref()),
+                (!challenge.is_empty()).then_some("S256")
+            );
+        }
+    }
 }
