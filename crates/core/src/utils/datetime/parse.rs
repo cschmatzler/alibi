@@ -2,7 +2,10 @@
 //! fractional-second truncation. Invalid dates deliberately impose no bound.
 
 use crate::utils::javascript::trim as js_trim;
-use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Offset, TimeZone};
+use chrono::{
+    DateTime, Local, Offset, TimeZone, Timelike,
+    format::{Parsed, StrftimeItems, parse},
+};
 
 #[must_use]
 pub fn parse_date_millis(value: &str) -> Option<i64> {
@@ -185,9 +188,8 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%b %d %Y %H:%M:%S%.f UTC",
         "%d %b %Y %H:%M:%S%.f UTC",
     ] {
-        if let Ok(date) = DateTime::parse_from_str(&without_gmt, format) {
-            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
-            return time_clip(date.with_year(year)?.timestamp_millis());
+        if let Some(millis) = parse_legacy_format(&without_gmt, format) {
+            return Some(millis);
         }
     }
     let midnight = format!("{without_gmt} 00:00:00");
@@ -198,9 +200,8 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%Y/%m/%d %z %H:%M:%S",
         "%Y-%m-%d %z %H:%M:%S",
     ] {
-        if let Ok(date) = DateTime::parse_from_str(&midnight, format) {
-            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
-            return time_clip(date.with_year(year)?.timestamp_millis());
+        if let Some(millis) = parse_legacy_format(&midnight, format) {
+            return Some(millis);
         }
     }
     for format in [
@@ -218,21 +219,15 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%b %d %Y %I:%M:%S %p",
         "%d %b %Y %I:%M:%S %p",
     ] {
-        if let Ok(date) = NaiveDateTime::parse_from_str(&value, format) {
-            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
-            let date = date.with_year(year)?;
-            return time_clip(local_millis(date.and_utc().timestamp_millis())?);
+        if let Some(millis) = parse_legacy_format(&value, format) {
+            return Some(millis);
         }
     }
     for format in [
         "%b %d %Y", "%d %b %Y", "%m/%d/%Y", "%Y/%m/%d", "%m-%d-%Y", "%Y-%m-%d",
     ] {
-        if let Ok(date) = NaiveDate::parse_from_str(&value, format) {
-            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
-            let date = date.with_year(year)?;
-            return time_clip(local_millis(
-                date.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(),
-            )?);
+        if let Some(millis) = parse_legacy_format(&value, format) {
+            return Some(millis);
         }
     }
     if !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()) {
@@ -251,6 +246,27 @@ fn parse_legacy(value: &str) -> Option<i64> {
         return time_clip(civil_days(year, month, 1).checked_mul(86_400_000)?);
     }
     None
+}
+
+fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
+    let mut parsed = Parsed::new();
+    parse(&mut parsed, value, StrftimeItems::new(format)).ok()?;
+    let year = legacy_year(i64::from(parsed.year()?));
+    let days = civil_days(year, i64::from(parsed.month()?), i64::from(parsed.day()?));
+    let time = if parsed.hour_div_12().is_some() {
+        let time = parsed.to_naive_time().ok()?;
+        i64::from(time.num_seconds_from_midnight()) * 1000
+            + i64::from(time.nanosecond() / 1_000_000)
+    } else {
+        0
+    };
+    let nominal = days.checked_mul(86_400_000)?.checked_add(time)?;
+    let millis = if let Some(offset) = parsed.offset() {
+        nominal.checked_sub(i64::from(offset) * 1000)?
+    } else {
+        local_millis(nominal)?
+    };
+    time_clip(millis)
 }
 
 fn strip_weekday(value: &str) -> &str {
@@ -325,6 +341,23 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_dates_roll_over_days_within_the_javascript_range() {
+        for (input, expected) in [
+            ("2024/02/30", "2024-03-01T00:00:00"),
+            ("02/30/2024", "2024-03-01T00:00:00"),
+            ("2/31/2024", "2024-03-02T00:00:00"),
+            ("Feb 30 2024 GMT", "2024-03-01T00:00:00Z"),
+            ("30 Feb 2024 12:34 GMT", "2024-03-01T12:34:00Z"),
+            ("2024/02/30 12:00:00", "2024-03-01T12:00:00"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+        for input in ["2024/02/32", "2024/00/01", "2024/02/00"] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
 
     #[test]
     fn legacy_datetime_seconds_are_optional() {
