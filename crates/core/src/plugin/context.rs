@@ -357,11 +357,10 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     /// Retain configured output for an already authenticated physical user.
-    pub(crate) async fn user_adapter_record(
+    pub(crate) async fn user_adapter_record<M: AuthUser>(
         &self,
-        user: S::User,
-    ) -> AuthResult<AdapterRecord<S::User>> {
-        use crate::AuthUser;
+        user: M,
+    ) -> AuthResult<AdapterRecord<M>> {
         let registered = self
             .extensions
             .get::<crate::field_policy::AdapterFieldPolicies>();

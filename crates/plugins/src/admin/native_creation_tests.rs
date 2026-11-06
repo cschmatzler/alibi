@@ -223,3 +223,89 @@ async fn admin_creation_malformed_native_fields_reach_storage_failure() {
         );
     }
 }
+
+#[tokio::test]
+async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence() {
+    use alibi_core::{AuthSchema, AuthUser, CacheAdapter};
+    let (ctx, _, _, user, _) = create_admin_context().await;
+    let user = ctx
+        .database
+        .get_user_by_id_record(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let cache = alibi_core::MemoryCacheAdapter::new();
+    type User = <TestSchema as AuthSchema>::User;
+    for (index, created_at) in [
+        serde_json::json!(1e20),
+        serde_json::json!(-1),
+        serde_json::json!(1.9),
+        serde_json::json!("2099-01-01T00:00:00.000Z"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut snapshot = user.secondary_snapshot().unwrap();
+        snapshot["created_at"] = created_at.clone();
+        snapshot["updated_at"] = serde_json::json!(-1e20);
+        snapshot["ban_expires"] = serde_json::json!(-0.5);
+        snapshot["email_verified"] = serde_json::json!("false");
+        snapshot["two_factor_enabled"] = serde_json::json!("false");
+        snapshot["banned"] = serde_json::json!(false);
+        snapshot["is_anonymous"] = serde_json::Value::Null;
+        snapshot
+            .as_object_mut()
+            .unwrap()
+            .remove("phone_number_verified");
+        snapshot["unknownNative"] = serde_json::json!("must not retain");
+        cache
+            .set(
+                &format!("native-user-{index}"),
+                &snapshot.to_string(),
+                Duration::seconds(60),
+            )
+            .await
+            .unwrap();
+    }
+    ctx.database.delete_user(&user.id()).await.unwrap();
+    for index in 0..4 {
+        let source: serde_json::Value = serde_json::from_str(
+            &cache
+                .get(&format!("native-user-{index}"))
+                .await
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let decoded = User::from_secondary_snapshot_record(source.clone()).unwrap();
+        let wire = serde_json::to_value(alibi_core::UserView::from(&decoded)).unwrap();
+        assert_eq!(wire["createdAt"], source["created_at"]);
+        assert_eq!(wire["updatedAt"], source["updated_at"]);
+        assert_eq!(wire["banExpires"], source["ban_expires"]);
+        assert_eq!(wire["emailVerified"], "false");
+        assert_eq!(wire["twoFactorEnabled"], "false");
+        assert_eq!(wire["isAnonymous"], serde_json::Value::Null);
+        assert!(wire.get("phoneNumberVerified").is_none());
+        assert!(decoded.email_verified());
+        assert!(decoded.two_factor_enabled());
+        assert!(!decoded.banned());
+        assert!(
+            decoded
+                .raw_snapshot()
+                .field_is_undefined("phoneNumberVerified")
+        );
+        assert!(!decoded.raw_snapshot().contains_field("unknownNative"));
+        let encoded = decoded.secondary_snapshot().unwrap();
+        for field in [
+            "created_at",
+            "updated_at",
+            "ban_expires",
+            "email_verified",
+            "two_factor_enabled",
+            "is_anonymous",
+        ] {
+            assert_eq!(encoded[field], source[field], "{field}");
+        }
+        assert!(encoded.get("phone_number_verified").is_none());
+    }
+}

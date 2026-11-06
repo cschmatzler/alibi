@@ -265,11 +265,12 @@ impl<T: AuthUser> From<&T> for UserView {
             "updatedAt",
             "banExpires",
         ] {
-            if let Some(value) = user
-                .adapter_snapshot()
-                .and_then(|output| output.values().get(field))
-            {
-                _ = view.extension_fields.insert(field.into(), value.clone());
+            if let Some(output) = user.adapter_snapshot() {
+                if output.field_is_undefined(field) {
+                    _ = view.omitted_fields.insert(field.into());
+                } else if let Some(value) = output.values().get(field) {
+                    _ = view.extension_fields.insert(field.into(), value.clone());
+                }
             }
         }
         view

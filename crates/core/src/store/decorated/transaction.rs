@@ -112,13 +112,12 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
         let scalars = self.inner.native_user_output(&user.id()).await?;
-        let mut record = self
-            .record_store
-            .projection_context
-            .user_adapter_record(user)
-            .await?;
-        record.retain_native_scalars(scalars);
-        Ok(record)
+        self.record_store
+            .user_record_with_native_output(
+                user,
+                crate::AdapterOutput::from_values(scalars.into_iter().collect()),
+            )
+            .await
     }
 }
 

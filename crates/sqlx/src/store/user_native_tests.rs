@@ -93,6 +93,13 @@ async fn native_creation_numeric_dates_preserve_storage_type_and_wire_scalars() 
             .unwrap()
             .unwrap();
         assert_eq!(retained.raw_snapshot().values()["createdAt"], expected);
+        type User = <BundledSchema as alibi_core::AuthSchema>::User;
+        let snapshot = retained.secondary_snapshot().unwrap();
+        let decoded = User::from_secondary_snapshot_record(snapshot).unwrap();
+        let wire = serde_json::to_value(alibi_core::UserView::from(&decoded)).unwrap();
+        assert_eq!(wire["createdAt"], expected);
+        assert_eq!(wire["updatedAt"], expected);
+        assert_eq!(wire["banExpires"], expected);
         let (kind, stored): (String, f64) = sqlx::query_as(
             "SELECT typeof(\"createdAt\"), CAST(\"createdAt\" AS REAL) FROM user WHERE id = ?",
         )

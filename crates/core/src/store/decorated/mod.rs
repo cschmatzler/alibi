@@ -10,6 +10,8 @@ mod extensions;
 mod session;
 mod transaction;
 mod user;
+#[cfg(test)]
+mod user_native_tests;
 mod verification;
 
 pub(crate) type UserUpdateTransform =
@@ -119,9 +121,46 @@ impl<S: AuthSchema> PluginStore<S> {
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
         let scalars = self.inner.native_user_output(&user.id()).await?;
-        let mut record = self.projection_context.user_adapter_record(user).await?;
-        record.retain_native_scalars(scalars);
-        Ok(record)
+        self.user_record_with_native_output(
+            user,
+            crate::AdapterOutput::from_values(scalars.into_iter().collect()),
+        )
+        .await
+    }
+
+    /// Project a cache-authoritative user without consulting the database.
+    pub(in crate::store) async fn user_record_with_native_output(
+        &self,
+        user: S::User,
+        scalars: crate::AdapterOutput,
+    ) -> AuthResult<AdapterRecord<S::User>> {
+        let serde_json::Value::Object(base) =
+            serde_json::to_value(self.projection_context.trusted_user_view(&user))?
+        else {
+            return Err(AuthError::internal("User output must be an object"));
+        };
+        let mut source = AdapterRecord::with_output(user, crate::AdapterOutput::from_values(base));
+        source.retain_native_output(scalars.clone());
+        let projected = self.projection_context.user_adapter_record(source).await?;
+        let mut output = projected.raw_snapshot().clone();
+        for field in [
+            "emailVerified",
+            "banned",
+            "twoFactorEnabled",
+            "isAnonymous",
+            "phoneNumberVerified",
+            "createdAt",
+            "updatedAt",
+            "banExpires",
+        ] {
+            if scalars.field_is_undefined(field) && !output.contains_field(field) {
+                output.insert(field.into(), None);
+            }
+        }
+        Ok(AdapterRecord::with_output(
+            projected.into_stored().into_stored(),
+            output,
+        ))
     }
 
     pub(in crate::store) async fn optional_user_record(

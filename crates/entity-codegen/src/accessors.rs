@@ -21,7 +21,7 @@ pub fn auth_user_impl(
     let has = |name: &str| has_field(fields, name);
     let optional = |name: &str| optional_field(fields, name);
     let secondary_codec = if secondary {
-        secondary_codec(fields, core_root)
+        crate::user_secondary_codec(fields, core_root)
     } else {
         quote! {}
     };

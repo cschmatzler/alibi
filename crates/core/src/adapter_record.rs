@@ -16,14 +16,16 @@ pub struct AdapterOutput {
 }
 
 impl AdapterOutput {
-    pub(crate) fn from_values(values: FieldOutput) -> Self {
+    /// Construct trusted, defined adapter output values.
+    pub fn from_values(values: FieldOutput) -> Self {
         Self {
             values,
             undefined_fields: std::collections::BTreeSet::new(),
         }
     }
 
-    pub(crate) fn insert(&mut self, name: String, value: Option<serde_json::Value>) {
+    /// Retain a declared value, or its JavaScript undefined presence.
+    pub fn insert(&mut self, name: String, value: Option<serde_json::Value>) {
         if let Some(value) = value {
             _ = self.undefined_fields.remove(&name);
             _ = self.values.insert(name, value);
@@ -40,6 +42,12 @@ impl AdapterOutput {
         for name in output.undefined_fields {
             self.insert(name, None);
         }
+    }
+
+    /// Whether any defined or undefined properties are retained.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty() && self.undefined_fields.is_empty()
     }
 
     /// Whether this is an own declared output property, including undefined.
@@ -98,6 +106,13 @@ impl<M: Serialize> AdapterRecord<M> {
             output: AdapterOutput::from_values(output),
         })
     }
+
+    /// Keep trusted native scalar output alongside the typed storage model.
+    pub fn with_native_output(stored: M, native: AdapterOutput) -> AuthResult<Self> {
+        let mut record = Self::physical(stored)?;
+        record.output.extend(native);
+        Ok(record)
+    }
 }
 
 impl<M> AdapterRecord<M> {
@@ -112,6 +127,10 @@ impl<M> AdapterRecord<M> {
         for (field, value) in values {
             self.output.insert(field, Some(value));
         }
+    }
+
+    pub(crate) fn retain_native_output(&mut self, output: AdapterOutput) {
+        self.output.extend(output);
     }
 
     #[must_use]
@@ -147,6 +166,18 @@ macro_rules! delegate {
 }
 
 impl<M: AuthUser> AuthUser for AdapterRecord<M> {
+    fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
+        self.stored
+            .secondary_snapshot_with_native_output(&self.output)
+    }
+    fn secondary_snapshot_with_native_output(
+        &self,
+        native: &AdapterOutput,
+    ) -> AuthResult<serde_json::Value> {
+        let mut retained = self.output.clone();
+        retained.extend(native.clone());
+        self.stored.secondary_snapshot_with_native_output(&retained)
+    }
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }

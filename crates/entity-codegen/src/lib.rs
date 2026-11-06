@@ -17,5 +17,5 @@ pub use fields::{
     EntityField, additional_output, camel_case, has_field, is_auth_timestamp, is_known_field,
     is_option, optional_field,
 };
-pub use secondary::secondary_codec;
+pub use secondary::{secondary_codec, user_secondary_codec};
 pub use writes::{Insert, SetField, generated_id, insert_values, update_statements};

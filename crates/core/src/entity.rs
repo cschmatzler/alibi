@@ -74,10 +74,37 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
         ))
     }
     /// Restore a model from a trusted secondary backend, before public projection.
+    /// Generated user codecs normalize native booleans/dates for typed accessors.
+    /// Unrepresentable dates use a typed surrogate; use
+    /// `from_secondary_snapshot_record` to retain the original observable value.
     fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
         Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
         ))
+    }
+
+    /// Overlay declared native values before secondary serialization.
+    /// Custom codecs must override this when native corrections are nonempty;
+    /// silently encoding only the typed model would change the stored values.
+    fn secondary_snapshot_with_native_output(
+        &self,
+        native: &AdapterOutput,
+    ) -> AuthResult<serde_json::Value> {
+        if !native.is_empty() {
+            return Err(AuthError::NotImplemented(
+                "Native user secondary encoding is unsupported".into(),
+            ));
+        }
+        self.secondary_snapshot()
+    }
+
+    /// Decode a secondary user while retaining declared native scalar output.
+    /// The default supports typed-only codecs; native-aware codecs must override
+    /// both this method and `secondary_snapshot_with_native_output`.
+    fn from_secondary_snapshot_record(
+        snapshot: serde_json::Value,
+    ) -> AuthResult<crate::AdapterRecord<Self>> {
+        crate::AdapterRecord::physical(Self::from_secondary_snapshot(snapshot)?)
     }
 
     /// A genuine retained adapter result, including declared undefined values.
