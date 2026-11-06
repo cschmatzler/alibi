@@ -578,3 +578,69 @@ async fn cached_session_collections_find_preserves_hidden_fields_lookup_order_an
         json!({"already": "transformed"})
     );
 }
+
+#[tokio::test]
+async fn secondary_only_session_writes_do_not_execute_database_adapter_transforms() {
+    let cache = Arc::new(MemoryCacheAdapter::new());
+    let mut config = (*config(cache.clone())).clone();
+    for name in ["custom", "activeOrganizationId", "activeTeamId"] {
+        config.session.additional_fields.insert(
+            name.into(),
+            FieldConfig::new(json!({"type":"json"}))
+                .transform_adapter_input(|_| async { panic!("cache write ran adapter input") })
+                .transform_output(|_| async { panic!("cache write ran adapter output") }),
+        );
+    }
+    let store = decorated::<StatelessSchema>(Arc::new(StatelessStore::default()), Arc::new(config));
+    let user = store
+        .create_user(CreateUser::new().with_email("cache-writes@fixture.test"))
+        .await
+        .unwrap();
+    let created = store
+        .create_session_record(creation(&user.id, "cache-writes"))
+        .await
+        .unwrap();
+    assert_eq!(
+        created.raw_snapshot().values()["custom"],
+        json!({"nested": [false, null, 42]})
+    );
+    let mut fields = FieldValues::new();
+    fields.insert("custom".into(), JsValue::from(json!({"new": true})));
+    let updated = store
+        .update_session_fields_record("cache-writes", fields)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        updated.raw_snapshot().values()["custom"],
+        json!({"new": true})
+    );
+    let refreshed = store
+        .refresh_session_record("cache-writes", Utc::now() + Duration::hours(2))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        refreshed.raw_snapshot().values()["custom"],
+        json!({"new": true})
+    );
+    for record in [
+        store
+            .update_session_active_organization_record("cache-writes", Some("org"))
+            .await
+            .unwrap(),
+        store
+            .update_session_active_team_record("cache-writes", Some("team"))
+            .await
+            .unwrap(),
+    ] {
+        assert_eq!(
+            record.raw_snapshot().values()["custom"],
+            json!({"new": true})
+        );
+    }
+    assert_eq!(
+        envelope(&cache, "cache-writes").await["session"]["custom"],
+        json!({"new": true})
+    );
+}

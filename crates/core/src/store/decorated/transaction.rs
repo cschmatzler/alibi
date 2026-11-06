@@ -42,7 +42,9 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         token: &str,
         mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
-        self.adapter_fields.attach(&mut fields, false);
+        if self.record_store.session_uses_database() {
+            self.adapter_fields.attach(&mut fields, false);
+        }
         let staged = self
             .pending_scopes
             .lock()
@@ -80,7 +82,9 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         token: &str,
         mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
-        self.adapter_fields.attach(&mut fields, false);
+        if self.record_store.session_uses_database() {
+            self.adapter_fields.attach(&mut fields, false);
+        }
         let (session, user) = self
             .record_store
             .cached_session_record(token)
@@ -608,7 +612,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         let model = self
             .create_session_with_policy(create_session, policy)
             .await?;
-        let record = self.record_store.session_record(model).await?;
+        let record = self.record_store.session_creation_record(model).await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))?;
         Ok(record)
     }
@@ -621,7 +625,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         let model = self
             .update_session_active_organization(token, organization_id)
             .await?;
-        let record = self.record_store.session_record(model).await?;
+        let record = self.record_store.session_write_record(model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
         Ok(record)
     }
@@ -632,7 +636,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let model = self.update_session_active_team(token, team_id).await?;
-        let record = self.record_store.session_record(model).await?;
+        let record = self.record_store.session_write_record(model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
         Ok(record)
     }
@@ -828,8 +832,10 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
-        self.adapter_fields
-            .attach(&mut create_session.additional_fields, true);
+        if self.record_store.session_uses_database() {
+            self.adapter_fields
+                .attach(&mut create_session.additional_fields, true);
+        }
         let creation_fields = create_session.additional_fields.clone();
         let session = if self.config.session.stateless {
             self.inner

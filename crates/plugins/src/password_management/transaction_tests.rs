@@ -1813,3 +1813,121 @@ async fn session_owner_output_transforms_run_only_on_actual_database_publication
         assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
+
+#[tokio::test]
+async fn session_cache_updates_transform_only_actual_database_output() {
+    use alibi_core::store::CacheAdapter;
+    use alibi_core::utils::json::JsValue;
+    for persist in [false, true] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), persist, false, false)
+                .await;
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        let token =
+            test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+                .await
+                .token;
+        let mut snapshot: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        snapshot["session"]["active_organization_id"] = serde_json::json!("already-output");
+        cache
+            .set(&token, &snapshot.to_string(), Duration::hours(1))
+            .await
+            .unwrap();
+        let inputs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let outputs = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut config = (*fixture.ctx.config).clone();
+        let input_calls = inputs.clone();
+        let output_calls = outputs.clone();
+        config.session.additional_fields.insert(
+            "activeTeamId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .transform_adapter_input(move |value| {
+                    input_calls.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        Ok(value.map(|value| {
+                            JsValue::String(format!("{}:input", value.as_str().unwrap()).into())
+                        }))
+                    }
+                })
+                .transform_output(move |value| {
+                    output_calls.fetch_add(1, Ordering::SeqCst);
+                    async move {
+                        Ok(value.map(|value| {
+                            JsValue::String(format!("{}:output", value.as_str().unwrap()).into())
+                        }))
+                    }
+                }),
+        );
+        config.session.additional_fields.insert(
+            "activeOrganizationId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .transform_output(|value| async move {
+                    assert_ne!(
+                        value.as_ref().and_then(JsValue::as_str),
+                        Some("already-output"),
+                        "replayed untouched cached output"
+                    );
+                    Ok(value)
+                }),
+        );
+        let database =
+            alibi_core::plugin::AuthInitContext::new(Arc::new(config), fixture.raw.clone())
+                .database_with_registered_transforms();
+        let mut fields = alibi_core::field_policy::FieldValues::new();
+        fields.insert("activeTeamId".into(), JsValue::String("new".into()));
+        let updated = database
+            .update_session_fields_record(&token, fields)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            updated.raw_snapshot().values()["activeTeamId"],
+            if persist { "new:input:output" } else { "new" }
+        );
+        let refreshed = database
+            .refresh_session_record(&token, chrono::Utc::now() + Duration::hours(2))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            refreshed.raw_snapshot().values()["activeTeamId"],
+            if persist { "new:input:output" } else { "new" }
+        );
+        database
+            .update_session_active_team_record(&token, Some("ordinary"))
+            .await
+            .unwrap();
+        database
+            .update_session_active_organization_record(&token, Some("organization"))
+            .await
+            .unwrap();
+        let tx_token = token.clone();
+        alibi_core::store::write_transaction(database.as_ref(), move |tx| {
+            Box::pin(async move {
+                let team = tx
+                    .update_session_active_team_record(&tx_token, Some("transaction"))
+                    .await?;
+                assert_eq!(
+                    team.raw_snapshot().values()["activeTeamId"],
+                    if persist {
+                        "transaction:input:output"
+                    } else {
+                        "transaction"
+                    }
+                );
+                tx.update_session_active_organization_record(&tx_token, Some("transaction-org"))
+                    .await?;
+                Ok(())
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(inputs.load(Ordering::SeqCst), if persist { 3 } else { 0 });
+        assert_eq!(outputs.load(Ordering::SeqCst), if persist { 6 } else { 0 });
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["session"]["active_team_id"], "transaction");
+    }
+}

@@ -110,6 +110,9 @@ impl<S: AuthSchema> PluginStore<S> {
                 crate::utils::json::JsValue::String(value.to_owned().into())
             }),
         );
+        if self.session_uses_database() {
+            self.adapter_fields.attach(&mut fields, false);
+        }
         let updated = if self.config.session.stateless {
             self.update_ephemeral_session(token, None, fields).await?
         } else {
@@ -467,14 +470,14 @@ impl<S: AuthSchema> PluginStore<S> {
         let serde_json::Value::Object(mut values) = snapshot.session else {
             return Ok(None);
         };
-        values.insert(
+        _ = values.insert(
             "expiresAt".into(),
             serde_json::Value::String(crate::utils::datetime::json_date_millis(
                 session.expires_at().timestamp_millis(),
             )),
         );
         for name in snapshot.absent_fields {
-            values.remove(&name);
+            _ = values.remove(&name);
         }
         if public {
             let registered = self
@@ -486,7 +489,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 .map_or(&self.config.session.additional_fields, |fields| &fields.0);
             for (name, field) in fields {
                 if !field.returned {
-                    values.remove(name);
+                    _ = values.remove(name);
                 }
             }
         }

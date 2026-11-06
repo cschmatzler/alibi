@@ -59,7 +59,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
-            .session_record(self.create_session(create_session).await?)
+            .session_creation_record(self.create_session(create_session).await?)
             .await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))
             .await?;
@@ -122,7 +122,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 }
                 unique.push(token.clone());
                 if let Some(record) = self.cached_collection_session(token, false, true).await? {
-                    records.insert(token.clone(), record);
+                    _ = records.insert(token.clone(), record);
                 } else if let Some(cache) = self.secondary()
                     && cache.get(token).await?.is_none()
                 {
@@ -132,7 +132,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             if self.database_session_fallback() && !missing.is_empty() {
                 for model in self.inner.get_sessions_by_tokens(&missing).await? {
                     let record = self.session_record(model).await?;
-                    records.insert(record.token().to_owned(), record);
+                    _ = records.insert(record.token().to_owned(), record);
                 }
             }
             return Ok(unique
@@ -185,7 +185,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         let Some(model) = self.refresh_session(token, expires_at).await? else {
             return Ok(None);
         };
-        let record = self.session_record(model).await?;
+        let record = self.session_write_record(model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
         Ok(Some(record))
@@ -199,7 +199,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         let Some(model) = self.update_session_fields(token, fields).await? else {
             return Ok(None);
         };
-        let record = self.session_record(model).await?;
+        let record = self.session_write_record(model).await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
         Ok(Some(record))
@@ -211,7 +211,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         organization_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
-            .session_record(
+            .session_write_record(
                 self.update_session_active_organization(token, organization_id)
                     .await?,
             )
@@ -227,7 +227,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         team_id: Option<&str>,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let record = self
-            .session_record(self.update_session_active_team(token, team_id).await?)
+            .session_write_record(self.update_session_active_team(token, team_id).await?)
             .await?;
         self.observe(AdapterEvent::SessionUpdated(record.clone()))
             .await?;
@@ -239,7 +239,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        self.adapter_fields.attach(&mut fields, false);
+        if self.session_uses_database() {
+            self.adapter_fields.attach(&mut fields, false);
+        }
         if self.config.session.stateless {
             return self.update_ephemeral_session(token, None, fields).await;
         }
@@ -257,8 +259,10 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
-        self.adapter_fields
-            .attach(&mut create_session.additional_fields, true);
+        if self.session_uses_database() {
+            self.adapter_fields
+                .attach(&mut create_session.additional_fields, true);
+        }
         let creation_fields = create_session.additional_fields.clone();
         let session = if self.config.session.stateless {
             self.inner
@@ -374,7 +378,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         expires_at: chrono::DateTime<chrono::Utc>,
         mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        self.adapter_fields.attach(&mut fields, false);
+        if self.session_uses_database() {
+            self.adapter_fields.attach(&mut fields, false);
+        }
         if self.config.session.stateless {
             return self
                 .update_ephemeral_session(token, Some(expires_at), fields)
@@ -538,6 +544,46 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
 }
 
 impl<S: AuthSchema> PluginStore<S> {
+    pub(in crate::store) async fn session_write_record(
+        &self,
+        session: S::Session,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        if self.session_uses_database() {
+            return self.session_record(session).await;
+        }
+        let record = self.session_creation_record(session).await?;
+        let registered = self
+            .projection_context
+            .extensions
+            .get::<crate::field_policy::SessionFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+        let output = record.raw_snapshot().filter_returned(fields);
+        Ok(AdapterRecord::with_output(record.into_stored(), output))
+    }
+
+    pub(in crate::store) async fn session_creation_record(
+        &self,
+        session: S::Session,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        if self.session_uses_database() {
+            return self.session_record(session).await;
+        }
+        let serde_json::Value::Object(mut values) =
+            serde_json::to_value(self.projection_context.trusted_session_view(&session))?
+        else {
+            return Err(AuthError::internal("Session output must be an object"));
+        };
+        for name in self.secondary_absent_fields(session.token()).await? {
+            _ = values.remove(&name);
+        }
+        Ok(AdapterRecord::with_output(
+            session,
+            AdapterOutput::from_values(values),
+        ))
+    }
+
     async fn prepare_session_deletion(
         &self,
         session: &S::Session,
