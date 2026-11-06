@@ -21,7 +21,7 @@ impl OAuthProvider {
             client_secret: client_secret.to_owned(),
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),
             token_url: "https://oauth2.googleapis.com/token".to_owned(),
-            user_info_url: Some("https://www.googleapis.com/oauth2/v3/userinfo".to_owned()),
+            user_info_url: None,
             scopes: vec![
                 "email".to_owned(),
                 "profile".to_owned(),
@@ -66,5 +66,22 @@ impl OAuthProvider {
             allow_idp_initiated: false,
             override_user_info_on_sign_in: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn google_requires_id_token_for_default_profile_lookup() {
+        let provider = OAuthProvider::google("client", "secret");
+        let error = crate::oauth::handlers::fetch_user_info_from_provider(
+            &provider,
+            crate::oauth::OAuthUserInfoRequest {
+                access_token: Some("access-token".into()),
+                ..Default::default()
+            },
+        ).await.unwrap_err();
+        assert!(error.to_string().contains("Missing user_info_url"), "{error}");
     }
 }
