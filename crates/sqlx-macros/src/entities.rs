@@ -59,11 +59,19 @@ pub(crate) fn new_active(
             insert => Ok(set(&field, &insert)),
         })
         .collect::<syn::Result<Vec<_>>>()?;
-    Ok(quote! {
-        let mut active = #sqlx_root::model::ActiveRow::new();
+    let mut id_stage = quote! {
         active.set(#id_column, id.unwrap_or_else(|| {
             #sqlx_root::value::SqlValue::Text(Some(#generated_id))
         }));
+    };
+    if matches!(role, EntityRole::User) {
+        id_stage = quote! {
+            if !create_user.adapter_native_fields.contains_key("id") { #id_stage }
+        };
+    }
+    Ok(quote! {
+        let mut active = #sqlx_root::model::ActiveRow::new();
+        #id_stage
         #(#staged)*
         active
     })

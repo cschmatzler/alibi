@@ -178,6 +178,9 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         let Some(column) = M::list_users_column(&field) else {
             continue;
         };
+        if field == "id" && !alibi_core::utils::json::JsValue::from(raw.clone()).is_truthy() {
+            continue;
+        }
         if (raw.is_object() || raw.is_array())
             && !matches!(
                 column.def().get_column_type(),
@@ -338,7 +341,20 @@ where
         }
         let mut create_user = defaults.apply(create_user)?;
         let now = Utc::now();
-        if create_user.id.is_none() {
+        if create_user.id.as_deref() == Some("") {
+            _ = create_user
+                .adapter_native_fields
+                .insert("id".into(), serde_json::json!(""));
+            create_user.id = None;
+        }
+        if create_user
+            .adapter_native_fields
+            .get("id")
+            .is_some_and(serde_json::Value::is_null)
+        {
+            _ = create_user.adapter_native_fields.remove("id");
+        }
+        if create_user.id.is_none() && !create_user.adapter_native_fields.contains_key("id") {
             create_user.id = self
                 .generated_entity_id::<<S::User as SeaOrmUserModel>::Entity, _>(
                     db,
@@ -358,6 +374,11 @@ where
         let provider_image = create_user.provider_image.take();
         let verification = create_user.provider_email_verified.take();
         let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
+        if let Some(raw_id) = native_fields.get("id") {
+            _ = create_user
+                .adapter_native_fields
+                .insert("id".into(), raw_id.clone());
+        }
         let mut model = S::User::new_active(user_id, create_user, now);
         stage_provider_text::<S::User, _>(db, &mut model, provider_name, provider_image).await?;
         let backend = db.get_database_backend();

@@ -43,11 +43,19 @@ pub(crate) fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) 
             },
             Insert::Default => quote! { #field: #seaorm_root::sea_orm::ActiveValue::NotSet },
         });
+    let mut id_value = quote! {
+        #seaorm_root::sea_orm::ActiveValue::Set(id.unwrap_or_else(|| #generated_id))
+    };
+    if matches!(role, EntityRole::User) {
+        id_value = quote! {
+            if create_user.adapter_native_fields.contains_key("id") {
+                #seaorm_root::sea_orm::ActiveValue::NotSet
+            } else { #id_value }
+        };
+    }
     quote! {
         Self::ActiveModel {
-            id: #seaorm_root::sea_orm::ActiveValue::Set(
-                id.unwrap_or_else(|| #generated_id)
-            ),
+            id: #id_value,
             #(#assignments,)*
         }
     }

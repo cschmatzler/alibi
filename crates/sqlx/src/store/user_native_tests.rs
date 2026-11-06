@@ -479,3 +479,71 @@ async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
         assert_eq!(loaded.raw_snapshot().values()["banExpires"], expected);
     }
 }
+
+#[tokio::test]
+async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+    let calls = Arc::new(AtomicUsize::new(0));
+    let observed = calls.clone();
+    let mut config = alibi_core::AuthConfig::default();
+    config.advanced.database.generate_id = Some(alibi_core::config::DatabaseIdStrategy::Custom(
+        Arc::new(move |model: &str, _: Option<usize>| {
+            assert_eq!(model, "user");
+            Ok(Some(format!(
+                "generated-{}",
+                observed.fetch_add(1, Ordering::SeqCst)
+            )))
+        }),
+    ));
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(config, pool);
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let mut typed = CreateUser::new().with_email("provided-string@fixture.test");
+    typed.id = Some("provided".into());
+    let user = store.create_user(typed).await.unwrap();
+    assert_eq!(user.id(), "provided");
+    assert_eq!(calls.load(Ordering::SeqCst), 0);
+    for (index, (raw, expected)) in [(json!(71), "71"), (json!(1.9), "1.9"), (json!(true), "1")]
+        .into_iter()
+        .enumerate()
+    {
+        let mut input = CreateUser::new().with_email(format!("native-id-{index}@fixture.test"));
+        _ = input.adapter_native_fields.insert("id".into(), raw);
+        let user = store.create_user(input).await.unwrap();
+        assert_eq!(user.id(), expected);
+        let row = store.get_user_by_id(expected).await.unwrap().unwrap();
+        assert_eq!(
+            row.email(),
+            Some(format!("native-id-{index}@fixture.test").as_str())
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+    for (index, raw) in [json!(false), json!(0), json!(""), json!({}), json!([])]
+        .into_iter()
+        .enumerate()
+    {
+        let email = format!("invalid-id-{index}@fixture.test");
+        let mut input = CreateUser::new().with_email(&email);
+        _ = input.adapter_native_fields.insert("id".into(), raw.clone());
+        let error = store.create_user(input).await.unwrap_err();
+        assert_eq!(error.status_code(), 500, "{raw:?}: {error:?}");
+        assert!(store.get_user_by_email(&email).await.unwrap().is_none());
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+    }
+    for index in 0..2 {
+        let mut input = CreateUser::new().with_email(format!("default-id-{index}@fixture.test"));
+        if index == 0 {
+            _ = input.adapter_native_fields.insert("id".into(), json!(null));
+        }
+        let user = store.create_user(input).await.unwrap();
+        assert_eq!(user.id(), format!("generated-{index}"));
+        assert_eq!(calls.load(Ordering::SeqCst), index + 1);
+    }
+}

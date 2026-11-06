@@ -119,7 +119,7 @@ async fn admin_creation_native_scalar_affinity_and_nulls_are_persisted() {
     let mut input = types::CreateUserRequest::new("raw-native@fixture.test", "Outer name");
     input.data = Some(
         serde_json::json!({
-            "id": {"ignored": true},
+            "id": "native-affinity-user",
             "image": 42, "emailVerified": "not-a-boolean",
             "displayUsername": false, "phoneNumber": 12345,
             "lastLoginMethod": null, "banned": 2,
@@ -135,6 +135,7 @@ async fn admin_creation_native_scalar_affinity_and_nulls_are_persisted() {
         .await
         .unwrap();
     let response = serde_json::to_value(&created).unwrap();
+    assert_eq!(response["user"]["id"], "native-affinity-user");
     assert_eq!(response["user"]["twoFactorEnabled"], "false");
     assert_eq!(response["user"]["banned"], false);
     assert_eq!(response["user"]["isAnonymous"], serde_json::Value::Null);

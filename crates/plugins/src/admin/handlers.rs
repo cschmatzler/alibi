@@ -228,9 +228,9 @@ pub(crate) async fn create_user_core(
         .map_or_else(|| config.default_role.clone(), RoleInput::joined);
 
     let mut data = body.data.clone().unwrap_or_default();
-    _ = data.remove("id");
     let mut native_fields = std::collections::BTreeMap::new();
     for (wire, field) in [
+        ("id", "id"),
         ("createdAt", "created_at"),
         ("updatedAt", "updated_at"),
         ("emailVerified", "email_verified"),
@@ -250,7 +250,8 @@ pub(crate) async fn create_user_core(
         let value = data.remove(wire);
         _ = data.remove(field);
         if let Some(mut value) = value {
-            if value.is_null() && matches!(wire, "createdAt" | "updatedAt" | "emailVerified") {
+            if value.is_null() && matches!(wire, "id" | "createdAt" | "updatedAt" | "emailVerified")
+            {
                 continue;
             }
             if matches!(wire, "createdAt" | "updatedAt" | "banExpires") {
@@ -268,7 +269,11 @@ pub(crate) async fn create_user_core(
             if typed.is_ok() {
                 data.insert(field.to_owned(), value.clone());
             }
-            if value.is_null() || typed.is_err() || matches!(wire, "banReason" | "banExpires") {
+            if value.is_null()
+                || typed.is_err()
+                || matches!(wire, "banReason" | "banExpires")
+                || (wire == "id" && value.as_str() == Some(""))
+            {
                 _ = native_fields.insert(wire.to_owned(), value);
             }
         }

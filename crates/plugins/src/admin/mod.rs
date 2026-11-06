@@ -712,6 +712,10 @@ mod tests {
         include!("username_creation_tests.rs");
     }
 
+    mod supplied_ids {
+        include!("supplied_id_tests.rs");
+    }
+
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn create_admin_context() -> (
