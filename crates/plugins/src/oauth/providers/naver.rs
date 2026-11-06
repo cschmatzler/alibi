@@ -85,6 +85,7 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: ["profile", "email"].map(String::from).to_vec(),
             authorization: Some(OAuthAuthorizationPolicy {
+                allow_missing_access_token: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -124,7 +125,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let access_token = request.access_token.ok_or("Missing Naver access token")?;
+        let access_token = super::remaining_profile::bearer_access_token(&request)?;
         let response: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .bearer_auth(access_token)
@@ -235,5 +236,71 @@ fn truthy(value: &Value) -> bool {
         Value::Number(value) => value.as_f64() != Some(0.0),
         Value::String(value) => !value.is_empty(),
         Value::Array(_) | Value::Object(_) | Value::Bool(true) => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 1024];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let body = profile.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn naver_bearer_uses_raw_token_without_requiring_access_token() {
+        assert!(
+            OAuthProvider::naver("client", None)
+                .authorization
+                .unwrap()
+                .allow_missing_access_token
+        );
+        for (raw, expected) in [
+            (None, "undefined"),
+            (Some(json!({"access_token": 42})), "42"),
+        ] {
+            let (endpoint, captured) =
+                profile_server(json!({"resultcode": "00", "response": {"id": "naver-id"}})).await;
+            let handler = NaverUserInfo {
+                endpoint,
+                mapper: None,
+            };
+            handler
+                .get_user_info(OAuthUserInfoRequest {
+                    raw,
+                    ..OAuthUserInfoRequest::default()
+                })
+                .await
+                .unwrap();
+            let request = captured.await.unwrap().to_ascii_lowercase();
+            assert!(
+                request.contains(&format!("authorization: bearer {expected}\r\n")),
+                "{request}"
+            );
+        }
     }
 }
