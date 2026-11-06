@@ -574,7 +574,23 @@ impl OAuthUserInfoHandler for PublishedProfile {
         Ok(OAuthUserInfoResponse {
             user_output: Some(output),
             user,
-            data: profile,
+            data: if matches!(self.kind, ProfileKind::Roblox | ProfileKind::Zoom) {
+                match profile {
+                    Value::Object(_) => profile,
+                    Value::Array(values) => Value::Object(
+                        values.into_iter().enumerate()
+                            .map(|(index, value)| (index.to_string(), value)).collect(),
+                    ),
+                    Value::String(value) => Value::Object(
+                        value.encode_utf16().enumerate().map(|(index, unit)| {
+                            (index.to_string(), Value::String(String::from_utf16_lossy(&[unit])))
+                        }).collect(),
+                    ),
+                    _ => Value::Object(Map::new()),
+                }
+            } else {
+                profile
+            },
         })
     }
 }
@@ -582,6 +598,41 @@ impl OAuthUserInfoHandler for PublishedProfile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn serve_profile(profile: Value) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+            stream.read(&mut buffer).await.unwrap();
+            let body = profile.to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        endpoint
+    }
+
+    #[tokio::test]
+    async fn copied_profiles_spread_arrays_and_primitives() {
+        for kind in [ProfileKind::Roblox, ProfileKind::Zoom] {
+            for (profile, expected) in [
+                (serde_json::json!(42), serde_json::json!({})),
+                (serde_json::json!(false), serde_json::json!({})),
+                (serde_json::json!(["a", 2]), serde_json::json!({"0":"a","1":2})),
+                (serde_json::json!("ab"), serde_json::json!({"0":"a","1":"b"})),
+                (serde_json::json!({"sub":"one", "id":"two"}), serde_json::json!({"sub":"one", "id":"two"})),
+            ] {
+                let handler = PublishedProfile {
+                    kind, endpoint: Some(serve_profile(profile).await),
+                    email_endpoint: None, client_id: "client".into(),
+                    mapper: None, application_mapper: None,
+                };
+                let response = handler.get_user_info(OAuthUserInfoRequest::default()).await.unwrap();
+                assert_eq!(response.data, expected);
+            }
+        }
+    }
 
     #[tokio::test]
     async fn twitch_malformed_id_tokens_are_profile_exceptions() {
