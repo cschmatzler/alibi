@@ -785,6 +785,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_creation_preserves_native_data_and_outer_identity() {
+        let (ctx, _, _, _, _) = create_admin_context().await;
+        let mut input = types::CreateUserRequest::new("native-data@fixture.test", "Outer name");
+        input.role = Some(types::RoleInput::One("user".to_owned()));
+        input.data = Some(serde_json::json!({
+            "email": "ignored@fixture.test", "name": "Ignored name", "role": "admin",
+            "emailVerified": true, "image": "https://example.com/image.png",
+            "username": "native-data", "displayUsername": "Native Data",
+            "isAnonymous": true, "phoneNumber": "+15559876543", "phoneNumberVerified": true,
+            "lastLoginMethod": "email", "twoFactorEnabled": true, "banned": true
+        }).as_object().unwrap().clone());
+        let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx).await.unwrap();
+        let stored = ctx.database.get_user_by_id_record(&created.user.id).await.unwrap().unwrap();
+        use alibi_core::entity::AuthUser as _;
+        assert_eq!(stored.email(), Some("native-data@fixture.test"));
+        assert_eq!(stored.name(), Some("Outer name"));
+        assert_eq!(stored.role(), Some("user"));
+        assert!(stored.email_verified());
+        assert_eq!(stored.image(), Some("https://example.com/image.png"));
+        assert_eq!(stored.username(), Some("native-data"));
+        assert_eq!(stored.display_username(), Some("Native Data"));
+        assert_eq!(stored.is_anonymous(), Some(true));
+        assert_eq!(stored.phone_number(), Some("+15559876543"));
+        assert_eq!(stored.phone_number_verified(), Some(true));
+        assert_eq!(stored.last_login_method(), Some("email"));
+        assert!(stored.two_factor_enabled());
+        assert!(stored.banned());
+    }
+
+    #[tokio::test]
     async fn test_custom_admin_role_can_use_permission_engine() {
         let config = Arc::new(alibi_core::AuthConfig::new(
             "test-secret-key-at-least-32-chars-long",

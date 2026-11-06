@@ -227,22 +227,31 @@ pub(crate) async fn create_user_core(
         .as_ref()
         .map_or_else(|| config.default_role.clone(), RoleInput::joined);
 
-    let metadata = body.data.clone().map_or_else(
-        || serde_json::json!({}),
-        |mut data| {
-            _ = data.remove("role");
-            serde_json::Value::Object(data)
-        },
-    );
-
-    let mut create_user = alibi_core::CreateUser::new()
-        .with_email(&email)
-        .with_name(&body.name)
-        .with_role(role)
-        .with_metadata(metadata);
-    if ctx.config.user_validation.is_some() && body.data.is_none() {
-        create_user.metadata = None;
+    let mut data = body.data.clone().unwrap_or_default();
+    for (wire, field) in [
+        ("createdAt", "created_at"),
+        ("updatedAt", "updated_at"),
+        ("emailVerified", "email_verified"),
+        ("displayUsername", "display_username"),
+        ("twoFactorEnabled", "two_factor_enabled"),
+        ("isAnonymous", "is_anonymous"),
+        ("phoneNumber", "phone_number"),
+        ("phoneNumberVerified", "phone_number_verified"),
+        ("lastLoginMethod", "last_login_method"),
+    ] {
+        _ = data.remove(field);
+        if let Some(value) = data.remove(wire) {
+            data.insert(field.to_owned(), value);
+        }
     }
+    data.insert("email".to_owned(), serde_json::Value::String(email));
+    data.insert("name".to_owned(), serde_json::Value::String(body.name.clone()));
+    data.insert("role".to_owned(), serde_json::Value::String(role));
+    let mut create_user = serde_json::from_value::<alibi_core::CreateUser>(serde_json::Value::Object(data))
+        .map_err(|error| AuthError::bad_request(error.to_string()))?;
+    let registered = ctx.extensions.get::<alibi_core::field_policy::UserFields>();
+    let fields = registered.as_ref().map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+    create_user.additional_fields.retain(|name, _| fields.contains_key(name));
 
     let user = ctx
         .database
