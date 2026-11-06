@@ -13,11 +13,12 @@ mod verification;
 pub use account::AccountStore;
 pub use api_key::{ApiKeyStore, ConsumeApiKeyResult};
 pub use device::DeviceCodeStore;
-pub(crate) use hooks::UserCreateStep;
-pub(in crate::store) use hooks::create_user_data;
 pub use hooks::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateHook, UserCreationDefaults,
+    UserUpdateHook,
 };
+pub(crate) use hooks::{UserCreateStep, UserUpdateStep};
+pub(in crate::store) use hooks::{create_user_data, update_user_data};
 pub use organization::{
     InvitationCreateOptions, InvitationStore, ListOrganizationMembersParams, MemberPageQuery,
     MemberStore, OrganizationStore,

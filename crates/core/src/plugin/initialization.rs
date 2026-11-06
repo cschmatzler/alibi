@@ -110,7 +110,20 @@ impl<S: AuthSchema> AuthInitContext<S> {
         let mut transforms = self
             .extensions
             .cloned_or_default::<crate::store::UserTransforms<S>>();
-        transforms.updates.push(Arc::new(transform));
+        transforms
+            .updates
+            .push(crate::store::UserUpdateStep::Transform(Arc::new(transform)));
+        self.extensions.insert(transforms);
+    }
+
+    /// Register an asynchronous hook in the ordered user update transform chain.
+    pub fn register_user_update_hook(&mut self, hook: Arc<dyn crate::store::UserUpdateHook<S>>) {
+        let mut transforms = self
+            .extensions
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
+        transforms
+            .updates
+            .push(crate::store::UserUpdateStep::Hook(hook));
         self.extensions.insert(transforms);
     }
 

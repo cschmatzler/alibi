@@ -215,9 +215,14 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        for transform in &self.transforms.updates {
-            update = transform(id, update)?;
-        }
+        update = crate::store::contracts::update_user_data(
+            id,
+            update,
+            &self.transforms.updates,
+            &self.projection_context,
+            None,
+        )
+        .await?;
         let user = self.inner.update_user(id, update).await?;
         if self.refresh_cached_user(&user).await.is_err() {
             tracing::error!("Failed to refresh committed user sessions in secondary storage");

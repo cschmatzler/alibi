@@ -326,7 +326,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
             user.email_verified = email_verified;
         }
         if let Some(username) = update.username {
-            user.username = Some(username.to_lowercase());
+            user.username = Some(username);
         }
         if let Some(display_username) = update.display_username {
             user.display_username = Some(display_username);

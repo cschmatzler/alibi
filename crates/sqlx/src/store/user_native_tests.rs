@@ -540,7 +540,13 @@ async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults()
         _ = input.adapter_native_fields.insert("id".into(), raw.clone());
         let error = store.create_user(input).await.unwrap_err();
         assert_eq!(error.status_code(), 500, "{raw:?}: {error:?}");
-        assert!(store.get_user_by_email(&email).await.unwrap().is_none());
+        assert!(
+            store
+                .get_user_by_email(&email.into())
+                .await
+                .unwrap()
+                .is_none()
+        );
         assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
     for index in 0..2 {
@@ -552,4 +558,84 @@ async fn supplied_native_ids_use_sqlite_binding_and_generate_only_for_defaults()
         assert_eq!(user.id(), format!("generated-{index}"));
         assert_eq!(calls.load(Ordering::SeqCst), index + 1);
     }
+}
+
+#[tokio::test]
+async fn native_username_updates_use_sqlite_affinity_without_unconditional_lowercase() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool.clone());
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let created = store
+        .create_user(CreateUser::new().with_email("username-updates@fixture.test"))
+        .await
+        .unwrap();
+    for (raw, expected) in [
+        (json!(42), json!("42")),
+        (json!(false), json!("0")),
+        (json!(""), json!("")),
+        (json!(null), json!(null)),
+    ] {
+        let updated = store
+            .update_user(
+                created.id().as_ref(),
+                alibi_core::UpdateUser {
+                    adapter_native_fields: [
+                        ("username".into(), raw),
+                        ("displayUsername".into(), json!(false)),
+                    ]
+                    .into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(alibi_core::UserView::from(&updated)).unwrap()["username"],
+            expected
+        );
+        let physical: (Option<String>, Option<String>) =
+            sqlx::query_as("SELECT username,displayUsername FROM user WHERE id=?")
+                .bind(created.id().as_ref())
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(serde_json::to_value(physical.0).unwrap(), expected);
+        assert_eq!(physical.1.as_deref(), Some("0"));
+    }
+    let updated = store
+        .update_user(
+            created.id().as_ref(),
+            alibi_core::UpdateUser {
+                username: Some("UnChangedCase".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.username(), Some("UnChangedCase"));
+    let error = store
+        .update_user(
+            created.id().as_ref(),
+            alibi_core::UpdateUser {
+                name: Some("NotStored".into()),
+                adapter_native_fields: [("username".into(), json!({}))].into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert_ne!(
+        store
+            .get_user_by_id(created.id().as_ref())
+            .await
+            .unwrap()
+            .unwrap()
+            .name(),
+        Some("NotStored")
+    );
 }

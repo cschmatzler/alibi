@@ -846,9 +846,6 @@ where
                 return Err(cancelled_by_hook("user update"));
             }
         }
-        if let Some(username) = update.username.as_mut() {
-            *username = username.to_lowercase();
-        }
         let Some(model) = user_query::<S::User>(connection.get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .one(connection)
@@ -866,7 +863,12 @@ where
         let provider_email = update.provider_email.take();
         let verification = update.provider_email_verified.take();
         let native_fields = std::mem::take(&mut update.adapter_native_fields);
-        if native_fields.keys().any(|field| field != "banExpires") {
+        if native_fields.keys().any(|field| {
+            !matches!(
+                field.as_str(),
+                "banExpires" | "username" | "displayUsername"
+            )
+        }) {
             return Err(AuthError::internal("Unsupported native user update field"));
         }
         S::User::apply_update(&mut active, update, Utc::now());

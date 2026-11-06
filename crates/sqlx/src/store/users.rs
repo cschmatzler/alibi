@@ -774,9 +774,6 @@ where
                 return Err(cancelled_by_hook("user update"));
             }
         }
-        if let Some(username) = update.username.as_mut() {
-            *username = username.to_lowercase();
-        }
         let Some(model) = find_user_by_id::<S::User>(exec, id, Lock::None).await? else {
             return Err(AuthError::UserNotFound);
         };
@@ -812,7 +809,10 @@ where
         S::User::prepare_json_metadata(&mut active, backend)?;
 
         for (field, raw) in native_fields {
-            if field != "banExpires" {
+            if !matches!(
+                field.as_str(),
+                "banExpires" | "username" | "displayUsername"
+            ) {
                 return Err(AuthError::internal("Unsupported native user update field"));
             }
             let Some(column) = S::User::list_users_column(&field) else {
@@ -824,14 +824,22 @@ where
             let value =
                 crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
             let value = match value {
-                SqlValue::Text(Some(value)) if backend != Engine::Sqlite => {
+                SqlValue::Text(Some(value))
+                    if field == "banExpires" && backend != Engine::Sqlite =>
+                {
                     chrono::DateTime::parse_from_rfc3339(&value)
                         .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
                         .map_err(|error| AuthError::internal(error.to_string()))?
                 }
-                SqlValue::Text(None) => SqlValue::Timestamp(None),
+                SqlValue::Text(None) if field == "banExpires" => SqlValue::Timestamp(None),
                 value => value,
             };
+            let value = crate::additional_fields::prepare_value(
+                exec,
+                <S::User as SqlxModel>::column_kind(column),
+                value,
+            )
+            .await?;
             active.set(column, value);
         }
         let user = model::update::<S::User>(exec, &active)

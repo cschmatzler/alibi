@@ -174,7 +174,7 @@ macro_rules! native_shadow_reconciliation {
     pub(crate) fn reconcile_native_shadows(&mut self, before: &Self) {
         for (key, changed) in [$(($key, self.$field != before.$field)),*] {
             if changed && self.adapter_native_fields.get(key) == before.adapter_native_fields.get(key) {
-                self.adapter_native_fields.remove(key);
+                _ = self.adapter_native_fields.remove(key);
             }
         }
         if self.name != before.name && self.provider_name == before.provider_name {

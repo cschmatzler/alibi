@@ -188,7 +188,7 @@ impl UserView {
         if update
             .adapter_native_fields
             .keys()
-            .any(|name| name != "banExpires")
+            .any(|name| !matches!(name.as_str(), "banExpires" | "username" | "displayUsername"))
         {
             return Err(crate::AuthError::internal(
                 "Unsupported native user update field",

@@ -446,9 +446,14 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        for transform in &self.record_store.transforms.updates {
-            update = transform(id, update)?;
-        }
+        update = crate::store::contracts::update_user_data(
+            id,
+            update,
+            &self.record_store.transforms.updates,
+            &self.record_store.projection_context,
+            Some(self.inner),
+        )
+        .await?;
         self.inner.update_user(id, update).await
     }
     async fn update_account(

@@ -492,15 +492,19 @@ pub(crate) async fn update_user_core(
     {
         update.email_verified = Some(value);
     }
-    if let Some(value) = body.data.get("username").and_then(|value| value.as_str()) {
-        update.username = Some(value.to_owned());
-    }
-    if let Some(value) = body
-        .data
-        .get("displayUsername")
-        .and_then(|value| value.as_str())
-    {
-        update.display_username = Some(value.to_owned());
+    for name in ["username", "displayUsername"] {
+        if let Some(value) = body.data.get(name) {
+            if let Some(text) = value.as_str() {
+                match name {
+                    "username" => update.username = Some(text.to_owned()),
+                    _ => update.display_username = Some(text.to_owned()),
+                }
+            } else {
+                _ = update
+                    .adapter_native_fields
+                    .insert(name.to_owned(), value.clone());
+            }
+        }
     }
     if let Some(value) = body.data.get("phoneNumber") {
         match value {
@@ -595,35 +599,6 @@ pub(crate) async fn update_user_core(
         .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
-    if let Some(policy) = ctx
-        .extensions
-        .get::<alibi_core::utils::username::UsernameConfig>()
-        && let Some(username) = update
-            .username
-            .as_ref()
-            .filter(|username| !username.is_empty())
-    {
-        policy.validate_hook_value(username).await?;
-        let normalized = policy.normalize(username)?;
-        // The database hook receives the authenticated principal as its current
-        // user, even when an administrator is editing another user's record.
-        if let Some(existing) = ctx.database.get_user_by_username(&normalized).await?
-            && existing.id().as_ref() != acting_user.id
-        {
-            return Err(AuthError::Upstream {
-                status: 400,
-                code: codes::USERNAME_IS_ALREADY_TAKEN,
-                message: "Username is already taken. Please try another.",
-            });
-        }
-        if let Some(display) = update
-            .display_username
-            .as_ref()
-            .filter(|display| !display.is_empty())
-        {
-            policy.validate_display(display).await?;
-        }
-    }
     let updated_user = ctx
         .database
         .update_user_record(&body.user_id, update)

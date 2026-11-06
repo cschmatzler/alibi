@@ -174,16 +174,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
             ctx.register_user_create_hook(Arc::new(username_hooks::UsernameCreateHook(
                 self.config.username.clone(),
             )));
-            let policy = self.config.username.clone();
-            ctx.register_user_update_transform(move |_, mut data| {
-                policy.normalize_fields(
-                    &mut data.username,
-                    &mut data.display_username,
-                    &mut data.additional_fields,
-                    false,
-                )?;
-                Ok(data)
-            });
+            ctx.register_user_update_hook(Arc::new(username_hooks::UsernameUpdateHook(
+                self.config.username.clone(),
+            )));
         }
         if self.config.enable_username {
             _ = ctx

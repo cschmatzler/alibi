@@ -237,3 +237,72 @@ fn configured_user_cache_fields_keep_values_and_presence_without_rerunning_polic
         UserView::from_secondary_snapshot_record_with_fields(invalid_identity, &allowed).is_err()
     );
 }
+
+async fn memory_username_updates<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    let created = store
+        .create_user(CreateUser::new().with_email("native-username-update@fixture.test"))
+        .await
+        .unwrap();
+    for raw in [
+        json!("KeEpCaSe"),
+        json!(42),
+        json!(false),
+        Value::Null,
+        json!(""),
+    ] {
+        let updated = store
+            .update_user(
+                &created.id,
+                UpdateUser {
+                    adapter_native_fields: [
+                        ("username".into(), raw.clone()),
+                        ("displayUsername".into(), json!(false)),
+                    ]
+                    .into(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let wire = serde_json::to_value(&updated).unwrap();
+        assert_eq!(wire["username"], raw);
+        assert_eq!(wire["displayUsername"], false);
+        let record = store
+            .get_user_by_id_record(&created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(UserView::from(&record)).unwrap()["username"],
+            raw
+        );
+    }
+    let updated = store
+        .update_user(
+            &created.id,
+            UpdateUser {
+                username: Some("NotLowered".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.username(), Some("NotLowered"));
+    assert_eq!(
+        serde_json::to_value(&updated).unwrap()["username"],
+        "NotLowered"
+    );
+}
+
+#[tokio::test]
+async fn stateless_native_username_updates_keep_scalars_and_case() {
+    memory_username_updates::<StatelessSchema>(&StatelessStore::default()).await;
+}
+
+#[tokio::test]
+async fn memory_native_username_updates_keep_scalars_and_case() {
+    memory_username_updates::<BundledSchema>(&MemoryStore::new(std::sync::Arc::new(
+        crate::AuthConfig::default(),
+    )))
+    .await;
+}

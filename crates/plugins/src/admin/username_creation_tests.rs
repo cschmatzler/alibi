@@ -40,6 +40,10 @@ async fn username_context(
     ctx
 }
 
+mod username_update {
+    include!("username_update_tests.rs");
+}
+
 fn provision(email: &str, data: serde_json::Value) -> types::CreateUserRequest {
     let mut input = types::CreateUserRequest::new(email, "Username");
     input.data = Some(data.as_object().unwrap().clone());

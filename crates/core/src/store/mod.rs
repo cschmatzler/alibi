@@ -19,7 +19,6 @@ mod sso;
 pub mod stateless;
 mod wallets;
 use crate::schema::AuthSchema;
-pub(crate) use contracts::UserCreateStep;
 use contracts::create_user_data;
 pub use contracts::{
     AccountStore, AdapterAfterHook, AdapterEvent, AfterCommitErrorPolicy, ApiKeyStore,
@@ -28,9 +27,10 @@ pub use contracts::{
     MemberStore, NumericTextInput, OrganizationStore, PasskeyStore, SessionCreatedHook,
     SessionRevocation, SessionStore, TransactionFuture, TransactionStore, TransactionWork,
     TwoFactorStore, TypedTransactionFuture, UserCreateHook, UserCreationDefaults, UserStore,
-    VerificationStore, transaction, transaction_with_policy, verification_reservation_id,
-    verification_reservation_key, write_transaction,
+    UserUpdateHook, VerificationStore, transaction, transaction_with_policy,
+    verification_reservation_id, verification_reservation_key, write_transaction,
 };
+pub(crate) use contracts::{UserCreateStep, UserUpdateStep};
 pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 pub(crate) use decorated::{
     AdapterCallbacks, PluginStore, SessionCreatedCallbacks, UserTransforms,

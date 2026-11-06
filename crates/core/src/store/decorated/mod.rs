@@ -1,9 +1,10 @@
 use crate::AdapterRecord;
 use crate::store::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateStep, UserCreationDefaults,
+    UserUpdateStep,
 };
 use crate::{AuthAccount, AuthSession, AuthUser};
-use crate::{AuthError, AuthResult, AuthSchema, AuthStore, UpdateUser};
+use crate::{AuthError, AuthResult, AuthSchema, AuthStore};
 use std::sync::Arc;
 mod account;
 #[cfg(test)]
@@ -18,13 +19,10 @@ mod user;
 mod user_native_tests;
 mod verification;
 
-pub(crate) type UserUpdateTransform =
-    Arc<dyn Fn(&str, UpdateUser) -> AuthResult<UpdateUser> + Send + Sync>;
-
 pub(crate) struct UserTransforms<S: AuthSchema> {
     pub(crate) creates: Vec<UserCreateStep<S>>,
     pub(crate) adapter_defaults: UserCreationDefaults,
-    pub(crate) updates: Vec<UserUpdateTransform>,
+    pub(crate) updates: Vec<UserUpdateStep<S>>,
 }
 
 impl<S: AuthSchema> Default for UserTransforms<S> {
