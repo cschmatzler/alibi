@@ -1,5 +1,8 @@
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeOrder, OAuthUserInfo, Value};
+use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
+use async_trait::async_trait;
 use serde_json::Map;
+use std::sync::Arc;
 impl OAuthProvider {
     #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
@@ -21,9 +24,14 @@ impl OAuthProvider {
             }),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
-            account_subject: None,
+            account_subject: Some(|profile| {
+                super::remaining_profile::raw_subject(profile.get("id"))
+            }),
             map_user_info: Some(discord_user_info),
-            get_user_info: None,
+            get_user_info: Some(Arc::new(DiscordUserInfo {
+                endpoint: "https://discord.com/api/users/@me".into(),
+                mapper: None,
+            })),
             refresh_access_token: None,
             verify_id_token: None,
             id_token: None,
@@ -33,6 +41,76 @@ impl OAuthProvider {
             allow_idp_initiated: false,
             override_user_info_on_sign_in: false,
         }
+    }
+}
+
+#[derive(Clone)]
+struct DiscordUserInfo {
+    endpoint: String,
+    mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
+}
+#[async_trait]
+impl OAuthUserInfoHandler for DiscordUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        Some(Arc::new(Self {
+            mapper: Some(mapper),
+            ..self.clone()
+        }))
+    }
+
+    async fn get_user_info(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        let mut profile: Value = reqwest::Client::new()
+            .get(&self.endpoint)
+            .bearer_auth(request.access_token.as_deref().unwrap_or("undefined"))
+            .send()
+            .await
+            .map_err(|error| error.to_string())?
+            .error_for_status()
+            .map_err(|error| error.to_string())?
+            .json()
+            .await
+            .map_err(|error| error.to_string())?;
+        let user = discord_user_info(profile.clone())?;
+        profile["image_url"] = serde_json::json!(user.image);
+        let mut output = Map::new();
+        _ = output.insert(
+            "name".into(),
+            profile
+                .get("global_name")
+                .filter(|value| super::remaining_profile::truthy(value))
+                .or_else(|| {
+                    profile
+                        .get("username")
+                        .filter(|value| super::remaining_profile::truthy(value))
+                })
+                .cloned()
+                .unwrap_or(Value::String(String::new())),
+        );
+        for (source, target) in [
+            ("email", "email"),
+            ("verified", "emailVerified"),
+            ("image_url", "image"),
+        ] {
+            if let Some(value) = profile.get(source) {
+                _ = output.insert(target.into(), value.clone());
+            }
+        }
+        if let Some(mapper) = &self.mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user,
+            data: profile,
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
 
@@ -116,6 +194,66 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    struct AvatarMapper;
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for AvatarMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(
+                profile["image_url"],
+                "https://cdn.discordapp.com/avatars/42/a_hash.gif"
+            );
+            Ok(serde_json::from_value(json!({"name":"Mapped","custom":true})).unwrap())
+        }
+    }
+    #[tokio::test]
+    async fn discord_enriches_profile_before_mapping() {
+        let body =
+            json!({"id":"42","username":"user","avatar":"a_hash","email":null,"verified":true});
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let mut provider = OAuthProvider::discord("client", "secret");
+        provider.get_user_info = Some(Arc::new(DiscordUserInfo {
+            endpoint,
+            mapper: None,
+        }));
+        let provider = provider.with_profile_mapper(Arc::new(AvatarMapper));
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        server.await.unwrap();
+        assert_eq!(
+            response.data["image_url"],
+            "https://cdn.discordapp.com/avatars/42/a_hash.gif"
+        );
+        assert_eq!(response.user.name.as_deref(), Some("Mapped"));
+        assert!(response.user.email_verified);
+        let output = response.user_output.unwrap();
+        assert_eq!(output["email"], Value::Null);
+        assert_eq!(output["custom"], true);
+        assert!(!output.contains_key("id"));
+    }
+
     #[test]
     fn discord_optional_email_does_not_reject_profile() {
         let profile = json!({"id":"42","username":"discord-user","avatar":"hash","verified":false});
@@ -125,6 +263,9 @@ mod tests {
         assert_eq!(discord_user_info(null_email).unwrap().email, "");
         let mut with_email = profile;
         with_email["email"] = json!("user@example.com");
-        assert_eq!(discord_user_info(with_email).unwrap().email, "user@example.com");
+        assert_eq!(
+            discord_user_info(with_email).unwrap().email,
+            "user@example.com"
+        );
     }
 }
