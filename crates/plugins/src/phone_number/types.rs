@@ -59,6 +59,8 @@ pub(super) struct VerifyRequest {
     pub image: Option<String>,
     #[serde(rename = "phoneNumberVerified")]
     pub phone_number_verified: Option<alibi_core::utils::json::JsValue>,
+    #[serde(flatten)]
+    pub additional_fields: indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
 }
 
 /// Proof and replacement credential for the public phone password-reset operation.

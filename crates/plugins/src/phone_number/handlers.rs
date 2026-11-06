@@ -594,6 +594,7 @@ impl PhoneNumberPlugin {
                 );
             user.phone_number = Some(body.phone_number.clone());
             user.phone_number_verified = Some(true);
+            user.additional_fields.extend(body.additional_fields);
             // Extension input belongs to new-user schema parsing and hooks.
             // Existing owners never admit or mutate these creation-only fields.
             if ctx

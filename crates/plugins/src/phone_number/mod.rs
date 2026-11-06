@@ -535,6 +535,81 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn verification_signup_admits_configured_fields_only_for_new_users() {
+        use alibi_core::field_policy::FieldConfig;
+        let mut ctx = context().await;
+        let validations = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls = Arc::clone(&validations);
+        let mut config = (*ctx.config).clone();
+        config.user.additional_fields.insert(
+            "role".into(),
+            FieldConfig::new(json!({"type": "string"})).validate(move |value| {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if value.as_str() == Some("member") {
+                    Ok(alibi_core::utils::json::JsValue::String("editor".into()))
+                } else {
+                    Err("role must be member".into())
+                }
+            }),
+        );
+        ctx.config = Arc::new(config);
+        let (plugin, outbox, _) = configured();
+        for (phone, role, status) in [
+            ("+15550000101", "member", 200),
+            ("+15550000102", "owner", 400),
+            ("+15550000101", "owner", 200),
+        ] {
+            assert_eq!(
+                post(
+                    &plugin,
+                    &ctx,
+                    "/phone-number/send-otp",
+                    json!({"phoneNumber": phone})
+                )
+                .await
+                .status,
+                200
+            );
+            let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
+            let response = post(
+                &plugin,
+                &ctx,
+                "/phone-number/verify",
+                json!({"phoneNumber": phone, "code": code, "disableSession": true,
+                    "role": role, "unknown": "ignored"}),
+            )
+            .await;
+            assert_eq!(
+                response.status,
+                status,
+                "{}",
+                String::from_utf8_lossy(&response.body)
+            );
+            let user = ctx
+                .database
+                .get_user_by_phone_number_record(phone)
+                .await
+                .unwrap();
+            if status == 200 {
+                let user = user.unwrap();
+                assert_eq!(user.role().as_deref(), Some("editor"));
+                assert_eq!(user.phone_number_verified(), Some(true));
+                assert!(
+                    ctx.database
+                        .get_user_sessions(&user.id())
+                        .await
+                        .unwrap()
+                        .is_empty()
+                );
+            } else {
+                assert!(user.is_none());
+                assert!(String::from_utf8_lossy(&response.body).contains("role must be member"));
+            }
+        }
+        assert_eq!(validations.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
     async fn phone_user(ctx: &AuthContext<impl AuthSchema>, phone: &str, verified: bool) -> String {
         let mut user = CreateUser::new()
             .with_email(format!("{phone}@registered.fixture.test"))
