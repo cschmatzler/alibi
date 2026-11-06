@@ -580,6 +580,7 @@ async fn change_password_transaction_cookie_failure_does_not_roll_back_committed
 
 enum IndexMutation {
     Rename(Arc<dyn alibi_core::AuthStore<TestSchema>>, String),
+    Delete(Arc<dyn alibi_core::AuthStore<TestSchema>>, String),
 }
 
 struct RecordingCache {
@@ -627,16 +628,20 @@ impl alibi_core::store::CacheAdapter for RecordingCache {
         self.inner.set(key, value, ttl).await?;
         if key.starts_with("active-sessions-") && value != "[]" {
             let mutation = self.index_mutation.lock().unwrap().take();
-            if let Some(IndexMutation::Rename(store, id)) = mutation {
-                store
-                    .update_user(
-                        &id,
-                        alibi_core::UpdateUser {
-                            name: Some("Changed during index publication".into()),
-                            ..Default::default()
-                        },
-                    )
-                    .await?;
+            match mutation {
+                Some(IndexMutation::Rename(store, id)) => {
+                    store
+                        .update_user(
+                            &id,
+                            alibi_core::UpdateUser {
+                                name: Some("Changed during index publication".into()),
+                                ..Default::default()
+                            },
+                        )
+                        .await?;
+                }
+                Some(IndexMutation::Delete(store, id)) => store.delete_user(&id).await?,
+                None => {}
             }
         }
         Ok(())
@@ -928,4 +933,91 @@ async fn creation_codec_keeps_rounded_database_session_alive_past_cached_revocat
         .unwrap();
     assert_eq!(accepted.created_at(), clock);
     assert!(rounded.created_at() < clock);
+}
+
+#[tokio::test]
+async fn session_creation_publishes_null_owner_after_index_triggered_deletion_without_synthesizing_user()
+ {
+    use alibi_core::AuthSession;
+    use alibi_core::store::CacheAdapter;
+    for (store_in_database, deferred) in [(false, false), (true, false), (true, true)] {
+        let cache = RecordingCache::new(false);
+        let fixture = Fixture::with_secondary(
+            Failure::None,
+            Some(cache.clone()),
+            store_in_database,
+            false,
+            false,
+        )
+        .await;
+        *cache.index_mutation.lock().unwrap() = Some(IndexMutation::Delete(
+            fixture.raw.clone(),
+            fixture.user.id.clone(),
+        ));
+        let token = if deferred {
+            let (_, response) = fixture.change(Some(true)).await;
+            let response = response.unwrap();
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["token"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        } else {
+            fixture.hooks.armed.store(false, Ordering::SeqCst);
+            test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+                .await
+                .token
+        };
+        assert!(
+            fixture
+                .raw
+                .get_user_by_id(&fixture.user.id)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        let index = cache
+            .get(&format!("active-sessions-{}", fixture.user.id))
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(index.contains(&token));
+        let raw = cache.get(&token).await.unwrap().unwrap();
+        let snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(snapshot["user"].is_null());
+        let session = TestSession::from_secondary_snapshot(snapshot["session"].clone()).unwrap();
+        assert_eq!(session.token(), token);
+        for error in [
+            fixture.ctx.database.get_session(&token).await.unwrap_err(),
+            fixture
+                .ctx
+                .database
+                .get_session_user(&token)
+                .await
+                .unwrap_err(),
+        ] {
+            assert!(
+                matches!(error, AuthError::Internal(message) if message == "Secondary session owner is absent")
+            );
+        }
+        cache
+            .set(
+                &format!("revoked-sessions-before-{}", fixture.user.id),
+                &(session.created_at().timestamp_millis() + 1).to_string(),
+                Duration::hours(1),
+            )
+            .await
+            .unwrap();
+        assert!(
+            fixture
+                .ctx
+                .database
+                .get_session(&token)
+                .await
+                .unwrap()
+                .is_none(),
+            "revocation precedes null-owner hydration"
+        );
+        fixture.ctx.database.delete_session(&token).await.unwrap();
+        assert!(cache.get(&token).await.unwrap().is_none());
+    }
 }

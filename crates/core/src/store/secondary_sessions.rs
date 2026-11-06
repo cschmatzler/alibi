@@ -175,7 +175,10 @@ impl<S: AuthSchema> PluginStore<S> {
         cache.delete(&key).await
     }
 
-    async fn stored_session(&self, token: &str) -> AuthResult<Option<(S::Session, S::User)>> {
+    async fn stored_session(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<(S::Session, Option<S::User>)>> {
         let Some(cache) = self.secondary() else {
             return Ok(None);
         };
@@ -188,11 +191,18 @@ impl<S: AuthSchema> PluginStore<S> {
         let Ok(session) = S::Session::from_secondary_snapshot(snapshot.session) else {
             return Ok(None);
         };
-        let Ok(user) = S::User::from_secondary_snapshot(snapshot.user) else {
-            return Ok(None);
+        let user = if snapshot.user.is_null() {
+            None
+        } else {
+            let Ok(user) = S::User::from_secondary_snapshot(snapshot.user) else {
+                return Ok(None);
+            };
+            if session.user_id() != user.id() {
+                return Ok(None);
+            }
+            Some(user)
         };
-        // Stored authority must identify the requested credential and its owner.
-        if session.token() != token || session.user_id() != user.id() {
+        if session.token() != token {
             return Ok(None);
         }
         Ok(Some((session, user)))
@@ -218,6 +228,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 return Ok(None);
             }
         }
+        let user = user.ok_or_else(|| AuthError::internal("Secondary session owner is absent"))?;
         Ok(Some((session, user)))
     }
 
@@ -239,7 +250,7 @@ impl<S: AuthSchema> PluginStore<S> {
         });
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
-            self.write_session_snapshot(session, user, updated_fields, None, ttl)
+            self.write_session_snapshot(session, Some(user), updated_fields, None, ttl)
                 .await?;
             self.write_references(session.user_id().as_ref(), references)
                 .await?;
@@ -250,7 +261,7 @@ impl<S: AuthSchema> PluginStore<S> {
     async fn write_session_snapshot(
         &self,
         session: &S::Session,
-        user: &S::User,
+        user: Option<&S::User>,
         updated_fields: Option<&FieldValues>,
         created_at: Option<DateTime<Utc>>,
         ttl: Duration,
@@ -298,7 +309,10 @@ impl<S: AuthSchema> PluginStore<S> {
         };
         let snapshot = CachedSession {
             session: session_snapshot,
-            user: user.secondary_snapshot()?,
+            user: user
+                .map(AuthUser::secondary_snapshot)
+                .transpose()?
+                .unwrap_or(serde_json::Value::Null),
             absent_fields,
         };
         cache
@@ -364,12 +378,10 @@ impl<S: AuthSchema> PluginStore<S> {
         });
         self.write_references(session.user_id().as_ref(), references)
             .await?;
-        let user = user
-            .await?
-            .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
+        let user = user.await?;
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
-            self.write_session_snapshot(session, &user, None, Some(created_at), ttl)
+            self.write_session_snapshot(session, user.as_ref(), None, Some(created_at), ttl)
                 .await?;
         }
         Ok(())
