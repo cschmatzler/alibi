@@ -384,13 +384,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
         let claims = request
             .id_token
             .as_deref()
-            .and_then(|token| token.split('.').nth(1))
-            .and_then(|payload| {
-                base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(payload)
-                    .ok()
-            })
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+            .and_then(|token| super::remaining_profile::decode_grant_jwt(token).ok());
         if self.verified_oidc && request.id_token.is_some() && claims.is_none() {
             return Err("Invalid provider ID token claims".into());
         }
@@ -662,5 +656,25 @@ impl DiscoveryVerifier {
                 .filter(|nonce| !nonce.is_empty())
                 .is_none_or(|nonce| claims.get("nonce").and_then(Value::as_str) == Some(nonce)),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn id_token(claims: Value) -> String {
+        format!("e30.{}.signature", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string()))
+    }
+
+    #[tokio::test]
+    async fn generic_user_info_requires_jws_claims() {
+        let handler = GenericUserInfo { url: None, mapper: None, custom: None, verified_oidc: false };
+        let token = id_token(serde_json::json!({"sub":"subject", "email":"a@example.com"}));
+        let response = handler.get_user_info(OAuthUserInfoRequest { id_token: Some(token.clone()), ..Default::default() }).await.unwrap();
+        assert_eq!(response.user.id, "subject");
+        for malformed in [token.rsplit_once('.').unwrap().0.to_owned(), format!("{token}.extra"), id_token(serde_json::json!([]))] {
+            assert!(handler.get_user_info(OAuthUserInfoRequest { id_token: Some(malformed), ..Default::default() }).await.is_err());
+        }
     }
 }
