@@ -1,5 +1,5 @@
 use super::Middleware;
-use crate::config::{AuthConfig, extract_origin};
+use crate::config::AuthConfig;
 use crate::error::{AuthError, AuthResult};
 use crate::types::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
@@ -127,7 +127,11 @@ impl CsrfMiddleware {
                 Self::header(req, "origin")
                     .filter(|value| !value.is_empty())
                     .map(ToOwned::to_owned)
-                    .or_else(|| Self::header(req, "referer").and_then(extract_origin))
+                    .or_else(|| {
+                        Self::header(req, "referer")
+                            .filter(|value| !value.is_empty())
+                            .map(ToOwned::to_owned)
+                    })
             })
             .filter(|value| value != "null")
             .ok_or_else(|| AuthError::forbidden(MISSING_OR_NULL_ORIGIN))?;
@@ -343,6 +347,7 @@ impl Middleware for CsrfMiddleware {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::extract_origin;
 
     fn make_request(
         path: &str,
@@ -389,6 +394,30 @@ mod tests {
             .as_str()
             .unwrap()
             .to_owned()
+    }
+
+    #[tokio::test]
+    async fn referer_validation_preserves_custom_scheme_paths() {
+        let mw = CsrfMiddleware::new(
+            CsrfConfig::new(),
+            test_auth_config(vec!["myapp://callback/allowed".into(), "myapp:/local".into()]),
+        );
+        for referer in [
+            "myapp://callback/allowed/nested?value=1",
+            "myapp:/local",
+            "http://localhost:3000/account",
+        ] {
+            let req = make_request("/sign-out", None, true, &[("referer", referer)]);
+            assert!(mw.before_request(&req).await.unwrap().is_none(), "{referer}");
+        }
+        for referer in ["myapp://callback/other", "not a URL"] {
+            let req = make_request("/sign-out", None, true, &[("referer", referer)]);
+            assert_eq!(
+                forbidden_message(mw.before_request(&req).await.unwrap()),
+                INVALID_ORIGIN,
+                "{referer}"
+            );
+        }
     }
 
     // Rust-specific surface: Rust middleware implementations are library-specific behavior with no direct TS analogue.
