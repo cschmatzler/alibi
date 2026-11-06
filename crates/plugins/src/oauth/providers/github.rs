@@ -144,35 +144,32 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         let emails = self
             .fetch_json::<Vec<GitHubEmailAddress>>(&client, &self.emails_url, access_token)
             .await
-            .unwrap_or_default();
+            .ok();
 
-        let resolved_email = profile
+        if !profile
             .get("email")
-            .and_then(Value::as_str)
-            .filter(|email| !email.is_empty())
-            .map(String::from)
-            .or_else(|| {
-                emails
-                    .iter()
-                    .find(|record| record.primary)
-                    .or_else(|| emails.first())
-                    .map(|record| record.email.clone())
-            })
-            .unwrap_or_default();
-
-        if let Some(profile_object) = profile.as_object_mut()
-            && profile_object
-                .get("email")
-                .and_then(Value::as_str)
-                .is_none_or(str::is_empty)
-            && !resolved_email.is_empty()
+            .is_some_and(super::remaining_profile::truthy)
+            && let Some(emails) = &emails
+            && let Some(profile_object) = profile.as_object_mut()
         {
-            _ = profile_object.insert("email".to_owned(), Value::String(resolved_email.clone()));
+            if let Some(record) = emails
+                .iter()
+                .find(|record| record.primary)
+                .or_else(|| emails.first())
+            {
+                _ = profile_object.insert("email".to_owned(), Value::String(record.email.clone()));
+            } else {
+                _ = profile_object.remove("email");
+            }
         }
 
         let email_verified = emails
-            .iter()
-            .find(|record| record.email == resolved_email)
+            .as_ref()
+            .and_then(|emails| {
+                emails.iter().find(|record| {
+                    profile.get("email").and_then(Value::as_str) == Some(record.email.as_str())
+                })
+            })
             .is_some_and(|record| record.verified);
 
         let mut output = Map::new();
@@ -227,6 +224,62 @@ mod tests {
             )
         }
     }
+    #[tokio::test]
+    async fn github_empty_email_list_differs_from_failed_lookup() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        struct EmailMapper(Option<Value>);
+        #[async_trait]
+        impl super::super::OAuthProfileMapper for EmailMapper {
+            async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+                assert_eq!(profile.get("email"), self.0.as_ref());
+                Ok(Map::new())
+            }
+        }
+
+        for email in [Value::Null, Value::String(String::new())] {
+            for status in ["200 OK", "500 Internal Server Error"] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let endpoint = format!("http://{}", listener.local_addr().unwrap());
+                let profile = serde_json::json!({"id":42,"login":"login","email":email});
+                let server = tokio::spawn(async move {
+                    for (status, body) in [("200 OK", profile.to_string()), (status, "[]".into())] {
+                        let (mut stream, _) = listener.accept().await.unwrap();
+                        let mut request = [0; 8192];
+                        let _ = stream.read(&mut request).await.unwrap();
+                        let response = format!(
+                            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                            body.len()
+                        );
+                        stream.write_all(response.as_bytes()).await.unwrap();
+                    }
+                });
+                let expected_email = (status != "200 OK").then_some(email.clone());
+                let provider = OAuthProvider::github_with_endpoints(
+                    "client", "secret", "auth", "token", &endpoint, &endpoint,
+                )
+                .with_profile_mapper(Arc::new(EmailMapper(expected_email.clone())));
+                let response = provider
+                    .get_user_info
+                    .as_ref()
+                    .unwrap()
+                    .get_user_info(OAuthUserInfoRequest {
+                        access_token: Some("access".into()),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(response.data.get("email"), expected_email.as_ref());
+                assert_eq!(
+                    response.user_output.as_ref().unwrap().get("email"),
+                    expected_email.as_ref()
+                );
+                assert!(!response.user.email_verified);
+                assert_eq!(response.user.email, "");
+                server.await.unwrap();
+            }
+        }
+    }
+
     #[tokio::test]
     async fn github_maps_after_primary_email_enrichment() {
         let body =
