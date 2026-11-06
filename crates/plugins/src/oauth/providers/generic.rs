@@ -466,6 +466,9 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .json()
                 .await
                 .map_err(|_| "Generic OAuth user info unavailable")?;
+            if !super::remaining_profile::truthy(&profile) {
+                return Err("Generic OAuth user info unavailable".into());
+            }
             if let Some(object) = profile.as_object_mut() {
                 _ = object.insert(
                     "emailVerified".into(),
@@ -716,6 +719,22 @@ mod tests {
     impl OAuthProfileMapper for ImageMapper {
         async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
             Ok(Map::from_iter([("image".into(), self.0.clone())]))
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_falsy_fetched_profiles_skip_mapping() {
+        for profile in [Value::Null, Value::Bool(false), serde_json::json!(0), serde_json::json!("")] {
+            let handler = GenericUserInfo {
+                url: Some(serve_profile(profile).await),
+                mapper: Some(Arc::new(FailingMapper)),
+                custom: None,
+                verified_oidc: false,
+            };
+            let error = handler.get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()), ..Default::default()
+            }).await.unwrap_err();
+            assert_eq!(error, "Generic OAuth user info unavailable");
         }
     }
 
