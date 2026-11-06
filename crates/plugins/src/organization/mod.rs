@@ -756,6 +756,34 @@ mod extension_tests {
     }
 
     #[tokio::test]
+    async fn organization_reads_return_null_for_empty_active_organization() -> TestResult {
+        let plugin = OrganizationPlugin::with_config(configuration());
+        let ctx = context(&plugin).await?;
+        let (_, session) = actor(&ctx, "empty-organization-read").await;
+        ctx.database
+            .update_session_active_organization(&session.token, Some(""))
+            .await?;
+        for path in [
+            "/organization/get-organization",
+            "/organization/get-full-organization",
+        ] {
+            let response = call(
+                &plugin,
+                &ctx,
+                Some(&session.token),
+                HttpMethod::Get,
+                path,
+                None,
+                &[],
+            )
+            .await?;
+            assert_eq!(response.status, 200);
+            assert!(body::<Value>(&response)?.is_null());
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn empty_active_organization_is_missing_for_member_reads() -> TestResult {
         let config = configuration();
         let plugin = OrganizationPlugin::with_config(config.clone());

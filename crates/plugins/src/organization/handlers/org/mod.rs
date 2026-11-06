@@ -446,7 +446,7 @@ pub(crate) async fn get_full_organization_core(
         organization.id().to_string()
     } else if let Some(id) = query.organization_id.as_deref().filter(|id| !id.is_empty()) {
         id.to_owned()
-    } else if let Some(active_org_id) = session.active_organization_id() {
+    } else if let Some(active_org_id) = session.active_organization_id().filter(|id| !id.is_empty()) {
         active_org_id.to_owned()
     } else {
         return Ok(None);
@@ -833,7 +833,7 @@ pub(crate) async fn handle_get_organization(
         ctx.database.get_organization_by_slug(slug).await?
     } else if let Some(id) = id
         .map(String::as_str)
-        .or_else(|| session.active_organization_id())
+        .or_else(|| session.active_organization_id().filter(|id| !id.is_empty()))
     {
         ctx.database.get_organization_by_id(id).await?
     } else {
