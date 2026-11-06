@@ -170,15 +170,6 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
         if !truthy(&profile) {
             return Err("Missing PayPal profile".into());
         }
-        if request.id_token.is_none()
-            && request
-                .raw
-                .as_ref()
-                .and_then(|raw| raw.get("id_token"))
-                .is_some_and(truthy)
-        {
-            return Err("Invalid PayPal ID token type".into());
-        }
         if let Some(token) = super::remaining_profile::grant_id_token(&request)? {
             // The published factory decodes, it does not verify JWT signatures.
             // This token comes from the trusted code exchange; direct ID-token
@@ -304,6 +295,54 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn paypal_accepts_raw_id_tokens_without_a_typed_projection() {
+        use base64::Engine;
+
+        let payload =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"sub":"paypal-subject"}"#);
+        let token = format!("header.{payload}.signature");
+        for typed_token in [None, Some("different-typed-token".into())] {
+            let (endpoint, captured) = profile_server(json!({
+                "sub": "paypal-subject",
+                "user_id": "legacy-paypal-id",
+                "email": "paypal@example.com"
+            }))
+            .await;
+            let response = PayPalUserInfo {
+                endpoint,
+                mapper: None,
+                application_mapper: None,
+            }
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: typed_token,
+                raw: Some(json!({"access_token": "access", "id_token": token})),
+                ..OAuthUserInfoRequest::default()
+            })
+            .await
+            .unwrap();
+            captured.await.unwrap();
+            assert_eq!(response.user.id, "legacy-paypal-id");
+            assert_eq!(response.data["sub"], "paypal-subject");
+        }
+        for raw_token in [json!(42), json!({}), json!("invalid")] {
+            let (endpoint, captured) = profile_server(json!({"sub": "paypal-subject"})).await;
+            let error = PayPalUserInfo {
+                endpoint,
+                mapper: None,
+                application_mapper: None,
+            }
+            .get_user_info(OAuthUserInfoRequest {
+                raw: Some(json!({"access_token": "access", "id_token": raw_token})),
+                ..OAuthUserInfoRequest::default()
+            })
+            .await
+            .unwrap_err();
+            captured.await.unwrap();
+            assert!(!error.starts_with("oauth-profile-exception:"), "{error}");
+        }
     }
 
     #[tokio::test]
