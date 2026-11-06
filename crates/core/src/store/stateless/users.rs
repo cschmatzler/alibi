@@ -149,9 +149,15 @@ impl UserStore<StatelessSchema> for StatelessStore {
             .apply_adapter_transforms_async()
             .await?;
         let now = Utc::now();
-        let id = create_user
-            .id
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let supplied_id = crate::store::memory_user_id::MemoryUserId::supplied(
+            create_user.adapter_native_fields.get("id"),
+        );
+        let (physical_id, id) = supplied_id.unwrap_or_else(|| {
+            let id = create_user
+                .id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            (crate::store::memory_user_id::MemoryUserId::string(&id), id)
+        });
         let mut omitted_fields = std::collections::BTreeSet::new();
         for (name, absent) in [
             ("name", create_user.name.is_none()),
@@ -197,7 +203,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         };
         user.retain_native_user_fields(native_fields);
         let mut state = self.lock()?;
-        if state.users.contains_key(&id)
+        if state.users.contains_key(&physical_id)
             || state
                 .users
                 .values()
@@ -205,7 +211,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         {
             return Err(AuthError::bad_request("User already exists"));
         }
-        _ = state.users.insert(id, user.clone());
+        _ = state.users.insert(physical_id, user.clone());
         Ok(user)
     }
 
@@ -220,14 +226,23 @@ impl UserStore<StatelessSchema> for StatelessStore {
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
-        Ok(self.lock()?.users.get(id).cloned())
+        Ok(self
+            .lock()?
+            .users
+            .get(&crate::store::memory_user_id::MemoryUserId::string(id))
+            .cloned())
     }
 
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<UserView>> {
         let state = self.lock()?;
         Ok(ids
             .iter()
-            .filter_map(|id| state.users.get(id).cloned())
+            .filter_map(|id| {
+                state
+                    .users
+                    .get(&crate::store::memory_user_id::MemoryUserId::string(id))
+                    .cloned()
+            })
             .collect())
     }
 
@@ -239,9 +254,12 @@ impl UserStore<StatelessSchema> for StatelessStore {
         let mut users: Vec<_> = self
             .lock()?
             .users
-            .values()
-            .filter(|user| ids.contains(&user.id))
-            .cloned()
+            .iter()
+            .filter(|(key, _)| {
+                ids.iter()
+                    .any(|id| **key == crate::store::memory_user_id::MemoryUserId::string(id))
+            })
+            .map(|(_, user)| user.clone())
             .collect();
         users.truncate(members::slice_index(limit, users.len()));
         Ok(users)
@@ -308,7 +326,10 @@ impl UserStore<StatelessSchema> for StatelessStore {
             .apply_adapter_transforms_async()
             .await?;
         let mut state = self.lock()?;
-        let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
+        let user = state
+            .users
+            .get_mut(&crate::store::memory_user_id::MemoryUserId::string(id))
+            .ok_or(AuthError::UserNotFound)?;
         user.clear_native_user_update(&update)?;
         if let Some(email) = update.email {
             user.email = Some(email.to_lowercase());
@@ -383,12 +404,18 @@ impl UserStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        _ = self.lock()?.users.shift_remove(id);
+        _ = self
+            .lock()?
+            .users
+            .shift_remove(&crate::store::memory_user_id::MemoryUserId::string(id));
         Ok(())
     }
 
     async fn list_users(&self, _params: ListUsersParams) -> AuthResult<(Vec<UserView>, usize)> {
-        let users: Vec<_> = self.lock()?.users.values().cloned().collect();
-        Ok(crate::user_query::apply_list_users(users, &_params))
+        let state = self.lock()?;
+        Ok(crate::store::memory_user_id::MemoryUserId::apply_list(
+            state.users.iter(),
+            &_params,
+        ))
     }
 }

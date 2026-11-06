@@ -149,7 +149,7 @@ impl AuthSchema for BundledSchema {
 
 #[derive(Default)]
 struct State {
-    users: HashMap<String, UserView>,
+    users: HashMap<crate::store::memory_user_id::MemoryUserId, UserView>,
     sessions: HashMap<String, SessionView>,
     accounts: HashMap<String, AccountView>,
     verifications: HashMap<String, VerificationView>,
@@ -264,9 +264,15 @@ impl UserStore<BundledSchema> for MemoryStore {
             .apply_adapter_transforms_async()
             .await?;
         let now = Utc::now();
-        let id = create_user
-            .id
-            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let supplied_id = crate::store::memory_user_id::MemoryUserId::supplied(
+            create_user.adapter_native_fields.get("id"),
+        );
+        let (physical_id, id) = supplied_id.unwrap_or_else(|| {
+            let id = create_user
+                .id
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            (crate::store::memory_user_id::MemoryUserId::string(&id), id)
+        });
         let username = create_user.username;
         let native_fields = create_user.adapter_native_fields;
         let mut user = UserView {
@@ -299,7 +305,7 @@ impl UserStore<BundledSchema> for MemoryStore {
                 .collect::<Result<_, _>>()?,
         };
         user.retain_native_user_fields(native_fields);
-        self.lock().users.insert(id, user.clone());
+        self.lock().users.insert(physical_id, user.clone());
         Ok(user)
     }
 
@@ -314,14 +320,23 @@ impl UserStore<BundledSchema> for MemoryStore {
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
-        Ok(self.lock().users.get(id).cloned())
+        Ok(self
+            .lock()
+            .users
+            .get(&crate::store::memory_user_id::MemoryUserId::string(id))
+            .cloned())
     }
 
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<UserView>> {
         let state = self.lock();
         Ok(ids
             .iter()
-            .filter_map(|id| state.users.get(id).cloned())
+            .filter_map(|id| {
+                state
+                    .users
+                    .get(&crate::store::memory_user_id::MemoryUserId::string(id))
+                    .cloned()
+            })
             .collect())
     }
 
@@ -386,7 +401,10 @@ impl UserStore<BundledSchema> for MemoryStore {
             .apply_adapter_transforms_async()
             .await?;
         let mut state = self.lock();
-        let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
+        let user = state
+            .users
+            .get_mut(&crate::store::memory_user_id::MemoryUserId::string(id))
+            .ok_or(AuthError::UserNotFound)?;
         user.clear_native_user_update(&update)?;
         if let Some(email) = update.email {
             user.email = Some(email.to_lowercase());
@@ -449,13 +467,18 @@ impl UserStore<BundledSchema> for MemoryStore {
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        self.lock().users.remove(id);
+        self.lock()
+            .users
+            .remove(&crate::store::memory_user_id::MemoryUserId::string(id));
         Ok(())
     }
 
     async fn list_users(&self, _params: ListUsersParams) -> AuthResult<(Vec<UserView>, usize)> {
-        let users: Vec<_> = self.lock().users.values().cloned().collect();
-        Ok(crate::user_query::apply_list_users(users, &_params))
+        let state = self.lock();
+        Ok(crate::store::memory_user_id::MemoryUserId::apply_list(
+            state.users.iter(),
+            &_params,
+        ))
     }
 }
 
