@@ -880,6 +880,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn change_password_treats_empty_credential_hash_as_missing() {
+        let plugin = PasswordManagementPlugin::new();
+        let (ctx, user, session) = create_test_context_with_user().await;
+        let account = ctx
+            .database
+            .get_user_accounts(&user.id)
+            .await
+            .unwrap()
+            .remove(0);
+        ctx.database
+            .update_account(
+                &account.id,
+                alibi_core::UpdateAccount {
+                    password: Some(String::new()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let req = test_helpers::create_auth_request_no_query(
+            HttpMethod::Post,
+            "/change-password",
+            Some(&session.token),
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "currentPassword": "Password123!", "newPassword": "NewPassword123!"
+                }))
+                .unwrap(),
+            ),
+        );
+        let error = plugin.handle_change_password(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 400);
+        assert_eq!(
+            error.error_payload().1.as_deref(),
+            Some("CREDENTIAL_ACCOUNT_NOT_FOUND")
+        );
+        assert_eq!(
+            ctx.database.get_user_accounts(&user.id).await.unwrap()[0]
+                .password
+                .as_deref(),
+            Some("")
+        );
+    }
+
+    #[tokio::test]
     async fn test_change_password_success() {
         let plugin = PasswordManagementPlugin::new();
         let (ctx, _user, session) = create_test_context_with_user().await;

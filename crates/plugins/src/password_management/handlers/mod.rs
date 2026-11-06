@@ -222,6 +222,7 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         Some(
             credential_account
                 .password()
+                .filter(|hash| !hash.is_empty())
                 .ok_or_else(|| AuthError::bad_request("Credential account not found"))?
                 .to_owned(),
         )
