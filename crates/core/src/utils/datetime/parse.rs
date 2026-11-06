@@ -295,26 +295,19 @@ fn strip_weekday(value: &str) -> &str {
 
 fn normalize_legacy(value: &str) -> String {
     let months = [
-        ("January", "Jan"),
-        ("February", "Feb"),
-        ("March", "Mar"),
-        ("April", "Apr"),
-        ("May", "May"),
-        ("June", "Jun"),
-        ("July", "Jul"),
-        ("August", "Aug"),
-        ("September", "Sep"),
-        ("October", "Oct"),
-        ("November", "Nov"),
-        ("December", "Dec"),
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     let mut parts = value
         .split_whitespace()
         .map(|part| {
             months
                 .iter()
-                .find(|(name, _)| part.eq_ignore_ascii_case(name))
-                .map_or(part, |(_, abbreviation)| *abbreviation)
+                .find(|month| {
+                    part.bytes().all(|byte| byte.is_ascii_alphabetic())
+                        && part.get(..3).is_some_and(|prefix| prefix.eq_ignore_ascii_case(month))
+                })
+                .copied()
+                .unwrap_or(part)
         })
         .collect::<Vec<_>>();
     // These named North American offsets are accepted by Date.parse. Match a
@@ -345,6 +338,21 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_month_tokens_use_their_three_letter_prefix() {
+        for (month, token) in [
+            "Januaryish", "Febuary", "Marble", "Aprilfoo", "Maybe", "Juniper",
+            "Julyish", "Augustus", "Sept", "Octoberish", "Novemberish", "Decemberish",
+        ].into_iter().enumerate() {
+            let input = format!("{token} 1 2024 GMT");
+            let expected = format!("2024-{:02}-01T00:00:00Z", month + 1);
+            assert_eq!(parse_date_millis(&input), parse_date_millis(&expected), "{input}");
+        }
+        for token in ["Ju", "Jax", "Month"] {
+            assert_eq!(parse_date_millis(&format!("{token} 1 2024 GMT")), None);
+        }
+    }
 
     #[test]
     fn slash_separated_expiry_timestamps_honor_offsets() {
