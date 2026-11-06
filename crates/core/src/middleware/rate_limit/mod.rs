@@ -5,7 +5,7 @@ use crate::error::{AuthError, AuthResult};
 use crate::types::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
 use indexmap::IndexMap;
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -85,12 +85,19 @@ impl MemoryRateLimitStorage {
             .is_some_and(|(expiry, _)| *expiry <= now)
         {
             if let Some((_, expired_key)) = state.expirations.pop_first() {
-                _ = state.buckets.remove(&expired_key);
+                _ = state.buckets.shift_remove(&expired_key);
+            }
+        }
+        while state.buckets.len() > self.max_buckets {
+            if let Some((expired_key, bucket)) = state.buckets.shift_remove_index(0)
+                && let Some(deadline) = bucket.deadline
+            {
+                _ = state.expirations.remove(&(deadline, expired_key));
             }
         }
         // Non-positive and NaN windows have no live memory entry in Source.
         if limit.window_seconds <= 0.0 || limit.window_seconds.is_nan() {
-            if let Some(previous) = state.buckets.remove(&key)
+            if let Some(previous) = state.buckets.shift_remove(&key)
                 && let Some(deadline) = previous.deadline
             {
                 _ = state.expirations.remove(&(deadline, key));
@@ -112,17 +119,6 @@ impl MemoryRateLimitStorage {
             }
             if expired { 1.0 } else { previous.count + 1.0 }
         } else {
-            if state.buckets.len() >= self.max_buckets {
-                let remaining = state
-                    .expirations
-                    .first()
-                    .map_or(limit.window_seconds, |(expiry, _)| {
-                        expiry.saturating_duration_since(now).as_secs_f64()
-                    });
-                return Ok(RateLimitDecision::Blocked {
-                    retry_after: remaining.ceil(),
-                });
-            }
             1.0
         };
         _ = state.buckets.insert(
@@ -224,7 +220,7 @@ pub struct RateLimitConfig {
     /// Shared atomic storage; absent selects bounded process-local memory.
     pub storage: Option<Arc<dyn RateLimitStorage>>,
 
-    /// Maximum live client/path buckets. New buckets fail closed at capacity.
+    /// Retained client/path buckets after pruning, in insertion order.
     pub max_buckets: usize,
 
     /// Whether rate limiting is enabled.
@@ -300,7 +296,7 @@ impl RateLimitConfig {
         self
     }
 
-    /// Bound memory without evicting active clients and resetting their quotas.
+    /// Evict the oldest inserted buckets when pruning exceeds this limit.
     #[must_use]
     pub const fn max_buckets(mut self, maximum: usize) -> Self {
         self.max_buckets = maximum;
@@ -318,7 +314,7 @@ impl RateLimitConfig {
 ///
 /// Each allowed request extends the current window until its quota is exhausted.
 /// Expired buckets are removed through an ordered expiry index. Both indexes
-/// are bounded by `max_buckets`; no per-request timestamp list is retained.
+/// retain at most `max_buckets + 1` entries between requests, like upstream.
 /// Independent processes can install shared database/cache storage.
 #[derive(Debug)]
 pub struct RateLimitMiddleware {
@@ -331,7 +327,7 @@ pub struct RateLimitMiddleware {
 
 #[derive(Debug, Default)]
 struct RateLimitState {
-    buckets: HashMap<String, Bucket>,
+    buckets: IndexMap<String, Bucket>,
     expirations: BTreeSet<(Instant, String)>,
 }
 
@@ -668,12 +664,11 @@ mod tests {
         );
     }
 
-    // Capacity and expiry are observable admission behavior, not private map layout.
     #[tokio::test]
-    async fn bounded_buckets_preserve_active_quotas_and_recover_after_expiry() {
+    async fn memory_capacity_evicts_oldest_insertions_without_rejecting_new_clients() {
         let mw = RateLimitMiddleware::new(
             RateLimitConfig::new()
-                .default_limit(Duration::from_millis(250), 2)
+                .default_limit(Duration::from_secs(60), 2)
                 .max_buckets(2),
         );
         let first = make_request("/get-session", "192.0.2.1");
@@ -681,19 +676,43 @@ mod tests {
         let third = make_request("/get-session", "192.0.2.3");
         assert!(mw.before_request(&first).await.unwrap().is_none());
         assert!(mw.before_request(&second).await.unwrap().is_none());
-        for _ in 0..8 {
-            assert_eq!(
-                mw.before_request(&third).await.unwrap().unwrap().status,
-                429
-            );
-        }
+        assert!(mw.before_request(&first).await.unwrap().is_none());
+        assert!(mw.before_request(&third).await.unwrap().is_none());
+        assert!(mw.before_request(&third).await.unwrap().is_none());
+        assert_eq!(
+            mw.before_request(&third).await.unwrap().unwrap().status,
+            429
+        );
+        assert!(mw.before_request(&first).await.unwrap().is_none());
+        assert_eq!(
+            mw.before_request(&third).await.unwrap().unwrap().status,
+            429
+        );
+        assert!(mw.before_request(&second).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn memory_capacity_prunes_expired_buckets_before_insertion_order_eviction() {
+        let mw = RateLimitMiddleware::new(
+            RateLimitConfig::new()
+                .default_limit(Duration::from_millis(250), 1)
+                .max_buckets(2),
+        );
+        let first = make_request("/get-session", "192.0.2.1");
+        let second = make_request("/get-session", "192.0.2.2");
+        let third = make_request("/get-session", "192.0.2.3");
         assert!(mw.before_request(&first).await.unwrap().is_none());
         assert_eq!(
             mw.before_request(&first).await.unwrap().unwrap().status,
             429
         );
         tokio::time::sleep(Duration::from_millis(300)).await;
+        assert!(mw.before_request(&second).await.unwrap().is_none());
         assert!(mw.before_request(&third).await.unwrap().is_none());
+        assert_eq!(
+            mw.before_request(&second).await.unwrap().unwrap().status,
+            429
+        );
         assert!(mw.before_request(&first).await.unwrap().is_none());
     }
 
