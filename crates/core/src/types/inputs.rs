@@ -279,7 +279,7 @@ pub struct UpdateUserResponse<U> {
     pub user: U,
 }
 
-/// String operands for admin user-list filtering.
+/// Operands for admin user-list filtering, before adapter field transformations.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum UserFilterValue {
@@ -287,6 +287,50 @@ pub enum UserFilterValue {
     Scalar(String),
     /// Ordered operands, including duplicates, for membership or adapter queries.
     Multiple(Vec<String>),
+    /// Original JavaScript operand, including numbers, booleans and UTF-16 strings.
+    Native(crate::utils::json::JsValue),
+}
+
+impl UserFilterValue {
+    /// Recover the original operand without string coercion.
+    #[must_use]
+    pub fn native(&self) -> crate::utils::json::JsValue {
+        use crate::utils::json::JsValue;
+        match self {
+            Self::Scalar(value) => JsValue::String(value.clone().into()),
+            Self::Multiple(values) => JsValue::Array(
+                values
+                    .iter()
+                    .map(|value| JsValue::String(value.clone().into()))
+                    .collect(),
+            ),
+            Self::Native(value) => value.clone(),
+        }
+    }
+}
+
+impl From<crate::utils::json::JsValue> for UserFilterValue {
+    fn from(value: crate::utils::json::JsValue) -> Self {
+        use crate::utils::json::JsValue;
+        match &value {
+            JsValue::String(text) => {
+                if let Some(text) = text.as_str() {
+                    return Self::Scalar(text.to_owned());
+                }
+            }
+            JsValue::Array(values) => {
+                if let Some(values) = values
+                    .iter()
+                    .map(|value| value.as_str().map(str::to_owned))
+                    .collect::<Option<Vec<_>>>()
+                {
+                    return Self::Multiple(values);
+                }
+            }
+            _ => {}
+        }
+        Self::Native(value)
+    }
 }
 
 impl From<String> for UserFilterValue {

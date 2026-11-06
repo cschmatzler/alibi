@@ -119,18 +119,7 @@ pub(super) fn params(call: &EndpointCall) -> AuthResult<ListUsersQueryParams> {
             .filter(|value| value.is_finite() && *value > 0.0)
             .and_then(|value| format!("{:.0}", value.floor()).parse::<usize>().ok())
     };
-    let filter_value = query
-        .get("filterValue")
-        .map(|value| match value {
-            JsValue::Array(values) => values
-                .iter()
-                .map(JsValue::coerce_string)
-                .collect::<Result<Vec<_>, _>>()
-                .map(UserFilterValue::Multiple),
-            value => value.coerce_string().map(UserFilterValue::Scalar),
-        })
-        .transpose()
-        .map_err(AuthError::internal)?;
+    let filter_value = query.get("filterValue").cloned().map(UserFilterValue::from);
     Ok(ListUsersQueryParams {
         source_limit,
         source_offset,
@@ -145,4 +134,48 @@ pub(super) fn params(call: &EndpointCall) -> AuthResult<ListUsersQueryParams> {
         filter_value,
         filter_operator: text("filterOperator"),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alibi_core::HttpMethod;
+    use alibi_core::endpoint::{EndpointDefinition, EndpointOptions};
+    use alibi_core::utils::json::{JsString, to_js_value};
+
+    #[test]
+    fn typed_user_filter_admission_preserves_operands() {
+        let definition = EndpointDefinition {
+            name: "list-users",
+            operation_id: "listUsers",
+            path: Some("/admin/list-users".into()),
+            method: HttpMethod::Get,
+        };
+        for operand in [
+            JsValue::Number(10.0),
+            JsValue::Bool(true),
+            JsValue::Bool(false),
+            JsValue::Array(vec![JsValue::Number(2.0), JsValue::Number(10.0)]),
+            JsValue::String("10".into()),
+            JsValue::Array(vec![JsValue::String("2".into())]),
+            JsValue::Array(vec![]),
+            JsValue::String(JsString::from_code_units(vec![0xd800])),
+            JsValue::Array(vec![JsValue::String(JsString::from_code_units(vec![
+                0xdc00,
+            ]))]),
+        ] {
+            let query = JsValue::Object([("filterValue".into(), operand.clone())].into());
+            let call =
+                EndpointCall::new(&definition, None, Some(query), EndpointOptions::default());
+            let admitted = validate(&call).unwrap();
+            let call = EndpointCall::new(
+                &definition,
+                None,
+                admitted.query,
+                EndpointOptions::default(),
+            );
+            let params = params(&call).unwrap();
+            assert_eq!(to_js_value(&params.filter_value.unwrap()).unwrap(), operand);
+        }
+    }
 }

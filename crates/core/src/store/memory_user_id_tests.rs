@@ -504,3 +504,77 @@ async fn stateless_physical_primitive_id_relational_utf16() {
 async fn memory_physical_primitive_id_relational_utf16() {
     physical_relational_utf16::<BundledSchema>(&MemoryStore::default()).await;
 }
+
+async fn typed_filter_operands<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    for (raw, label) in [
+        (json!(2), "n2"),
+        (json!("2"), "s2"),
+        (json!(10), "n10"),
+        (json!("10"), "s10"),
+        (json!(true), "btrue"),
+        (json!("true"), "strue"),
+    ] {
+        store
+            .create_user(CreateUser {
+                name: Some(label.into()),
+                email: Some(format!("{label}@example.test")),
+                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    for (operator, raw, expected) in [
+        ("lt", json!(10), "btrue n2 s2"),
+        ("lt", json!("10"), "btrue n2"),
+        ("lte", json!(true), "btrue"),
+        ("lte", json!("true"), "s10 s2 strue"),
+        ("eq", json!(2), "n2"),
+        ("eq", json!(false), ""),
+        ("ne", json!(false), "btrue n10 n2 s10 s2 strue"),
+        ("eq", json!(["2"]), ""),
+        ("ne", json!(["2"]), "btrue n10 n2 s10 s2 strue"),
+        ("ne", json!(2), "btrue n10 s10 s2 strue"),
+        ("eq", json!(true), "btrue"),
+        ("ne", json!(true), "n10 n2 s10 s2 strue"),
+        ("in", json!([2, 10]), "n10 n2"),
+        ("not_in", json!([2, 10]), "btrue s10 s2 strue"),
+        ("in", json!(["2", "10"]), "s10 s2"),
+        ("not_in", json!(["2", "10"]), "btrue n10 n2 strue"),
+        ("eq", json!([2]), ""),
+        ("ne", json!([2]), "btrue n10 n2 s10 s2 strue"),
+        ("lt", json!([10]), "btrue n2"),
+        ("lte", json!([]), ""),
+    ] {
+        for field in ["id", "_id"] {
+            let operand = serde_json::from_value(raw.clone()).unwrap();
+            let (users, count) = store
+                .list_users(ListUsersParams {
+                    filter_field: Some(field.into()),
+                    filter_operator: Some(operator.into()),
+                    filter_value: Some(operand),
+                    sort_by: Some("name".into()),
+                    sort_direction: Some("asc".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let names = users
+                .iter()
+                .map(|user| user.name.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(names.join(" "), expected, "{field} {operator} {raw}");
+            assert_eq!(count, names.len());
+        }
+    }
+}
+
+#[tokio::test]
+async fn typed_user_filter_memory_operands() {
+    typed_filter_operands::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn typed_user_filter_stateless_operands() {
+    typed_filter_operands::<StatelessSchema>(&StatelessStore::default()).await;
+}

@@ -1,5 +1,4 @@
-use crate::utils::{javascript::string_to_number, json::JsValue};
-use std::borrow::Cow;
+use crate::utils::json::JsValue;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum MemoryUserId {
@@ -29,22 +28,12 @@ impl MemoryUserId {
         Some((key, value.coerce_string().expect("primitive ID conversion")))
     }
 
-    fn matches_relational(&self, value: &str, operator: &str) -> bool {
-        let comparison = match self {
-            Self::String(string) => Some(string.encode_utf16().cmp(value.encode_utf16())),
-            Self::Number(bits) => {
-                string_to_number(value).and_then(|value| f64::from_bits(*bits).partial_cmp(&value))
-            }
-            Self::Bool(boolean) => string_to_number(value)
-                .and_then(|value| f64::from(u8::from(*boolean)).partial_cmp(&value)),
-        };
-        comparison.is_some_and(|ordering| match operator {
-            "lt" => ordering.is_lt(),
-            "lte" => ordering.is_le(),
-            "gt" => ordering.is_gt(),
-            "gte" => ordering.is_ge(),
-            _ => false,
-        })
+    fn native(&self) -> JsValue {
+        match self {
+            Self::String(value) => JsValue::String(value.clone().into()),
+            Self::Number(bits) => JsValue::Number(f64::from_bits(*bits)),
+            Self::Bool(value) => JsValue::Bool(*value),
+        }
     }
 
     pub(crate) fn apply_list<'a>(
@@ -59,30 +48,12 @@ impl MemoryUserId {
                     "eq" | "ne" | "in" | "not_in" | "lt" | "lte" | "gt" | "gte"
                 )
         });
-        let relational_value = filter
-            .filter(|_| matches!(operator, "lt" | "lte" | "gt" | "gte"))
-            .map(|value| match value {
-                crate::types::UserFilterValue::Scalar(value) => Cow::Borrowed(value.as_str()),
-                // Array ToPrimitive uses its comma-joined string, not membership.
-                crate::types::UserFilterValue::Multiple(values) => Cow::Owned(values.join(",")),
-            });
+        let operand = filter.map(crate::types::UserFilterValue::native);
         let users = users
             .filter(|(id, _)| {
-                let Some(filter) = filter else { return true };
-                if let Some(value) = &relational_value {
-                    return id.matches_relational(value, operator);
-                }
-                let equal = match filter {
-                    crate::types::UserFilterValue::Scalar(value) => **id == Self::string(value),
-                    crate::types::UserFilterValue::Multiple(values) => {
-                        values.iter().any(|value| **id == Self::string(value))
-                    }
-                };
-                if matches!(params.filter_operator.as_deref(), Some("ne" | "not_in")) {
-                    !equal
-                } else {
-                    equal
-                }
+                operand.as_ref().is_none_or(|operand| {
+                    crate::user_query::matches_native_operand(&id.native(), operand, operator)
+                })
             })
             .map(|(_, user)| user.clone())
             .collect();

@@ -422,19 +422,35 @@ where
             .unwrap_or("email");
         let column = S::User::list_users_column(field)
             .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
-        let operands = match value {
-            UserFilterValue::Multiple(values) => values.as_slice(),
-            UserFilterValue::Scalar(value) if operator != "in" => std::slice::from_ref(value),
-            UserFilterValue::Scalar(_) => {
-                return Err(AuthError::bad_request("Value must be an array"));
-            }
+        let native = value.native();
+        if operator == "in" && !matches!(native, alibi_core::utils::json::JsValue::Array(_)) {
+            return Err(AuthError::bad_request("Value must be an array"));
+        }
+        use sea_orm::sea_query::ColumnType;
+        let column_type = column.def();
+        let column_type = column_type.get_column_type();
+        let numeric = matches!(
+            column_type,
+            ColumnType::Integer | ColumnType::BigInteger | ColumnType::Float | ColumnType::Double
+        );
+        let native = transform_filter_operand(
+            native,
+            matches!(column_type, ColumnType::Boolean),
+            numeric,
+            self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres,
+        );
+        let pattern = native
+            .coerce_js_string()
+            .map_err(AuthError::internal)?
+            .to_utf8_binding();
+        let operands = match native {
+            alibi_core::utils::json::JsValue::Array(values) => values,
+            value => vec![value],
         };
-        // Upstream coerces a scalar string on a boolean field before binding;
-        // array operands keep their original strings.
         let numeric_cast =
             if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
-                use sea_orm::sea_query::ColumnType;
-                match column.def().get_column_type() {
+                match column_type {
+                    ColumnType::Boolean => Some("boolean"),
                     ColumnType::Integer => Some("int4"),
                     ColumnType::BigInteger => Some("int8"),
                     ColumnType::Float => Some("float4"),
@@ -444,32 +460,47 @@ where
             } else {
                 None
             };
-        let bindings: Vec<sea_orm::Value> = if numeric_cast.is_some() {
-            numeric_filter_text(operands)
-                .into_iter()
-                .map(Into::into)
-                .collect()
-        } else if matches!(value, UserFilterValue::Scalar(_))
-            && matches!(
-                column.def().get_column_type(),
-                sea_orm::sea_query::ColumnType::Boolean
-            )
-        {
-            operands
-                .iter()
-                .map(|value_2| (value_2 == "true").into())
-                .collect()
-        } else {
-            operands.iter().cloned().map(Into::into).collect()
-        };
-        let tuple = || {
-            Expr::tuple(bindings.iter().map(|value| {
-                numeric_cast.map_or_else(
-                    || column.save_as(Expr::val(value.clone())),
-                    |cast| Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),
+        let bindings: Vec<sea_orm::Value> = operands
+            .into_iter()
+            .map(|value| {
+                use alibi_core::utils::json::JsValue;
+                // node-postgres sends primitives as text with the SQL column's inferred type.
+                Ok(
+                    if self.scoped_connection().get_database_backend()
+                        == sea_orm::DbBackend::Postgres
+                        && (numeric_cast.is_some()
+                            || matches!(
+                                column_type,
+                                ColumnType::String(_) | ColumnType::Text | ColumnType::Char(_)
+                            ))
+                    {
+                        value
+                            .coerce_js_string()
+                            .map_err(AuthError::internal)?
+                            .to_utf8_binding()
+                            .into()
+                    } else {
+                        match value {
+                            JsValue::String(value) => value.to_utf8_binding().into(),
+                            JsValue::Number(value) => value.into(),
+                            JsValue::Bool(value) => value.into(),
+                            _ => {
+                                return Err(AuthError::bad_request(
+                                    "Unsupported user filter operand",
+                                ));
+                            }
+                        }
+                    },
                 )
-            }))
+            })
+            .collect::<AuthResult<_>>()?;
+        let bound = |value: &sea_orm::Value| match numeric_cast
+            .filter(|_| matches!(value, sea_orm::Value::String(_)))
+        {
+            Some(cast) => Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),
+            None => column.save_as(Expr::val(value.clone())),
         };
+        let tuple = || Expr::tuple(bindings.iter().map(bound));
         Ok(match operator {
             "in" | "not_in" if numeric_cast.is_some() && bindings.is_empty() => {
                 Expr::cust_with_exprs(
@@ -482,12 +513,7 @@ where
                 )
             }
             "in" | "not_in" if numeric_cast.is_some() => {
-                let values = bindings.iter().cloned().map(|value| {
-                    Expr::cust_with_values(
-                        format!("$1::{}", numeric_cast.unwrap_or_default()),
-                        [value],
-                    )
-                });
+                let values = bindings.iter().map(bound);
                 if operator == "in" {
                     Expr::col(column).is_in(values)
                 } else {
@@ -499,9 +525,9 @@ where
             // The pinned adapter interpolates the complete array's
             // comma-joined value into a bound LIKE pattern. Actual SQL
             // retains backend case, wildcard and NULL semantics.
-            "contains" => column.like(format!("%{}%", operands.join(","))),
-            "starts_with" => column.like(format!("{}%", operands.join(","))),
-            "ends_with" => column.like(format!("%{}", operands.join(","))),
+            "contains" => column.like(format!("%{pattern}%")),
+            "starts_with" => column.like(format!("{pattern}%")),
+            "ends_with" => column.like(format!("%{pattern}")),
             "eq" => Expr::col(column).eq(tuple()),
             "ne" => Expr::col(column).ne(tuple()),
             "lt" => Expr::col(column).lt(tuple()),
@@ -798,27 +824,54 @@ fn normalize_user_email(email: &str) -> String {
     email.to_lowercase()
 }
 
-// Match Source's scalar/all-or-none array Number coercion before PostgreSQL
-// parses the text as the declared numeric column type.
-fn numeric_filter_text(values: &[String]) -> Vec<String> {
-    let numbers = values
-        .iter()
-        .map(|value| {
-            (!alibi_core::utils::javascript::trim(value).is_empty())
-                .then(|| alibi_core::utils::javascript::string_to_number(value))
-                .flatten()
-                .filter(|number| !number.is_nan())
-        })
-        .collect::<Option<Vec<_>>>();
-    numbers.map_or_else(
-        || values.to_vec(),
-        |numbers| {
-            numbers
-                .into_iter()
-                .map(|number| ryu_js::Buffer::new().format(number).to_owned())
-                .collect()
-        },
-    )
+// Adapter factory transformations are scalar-only for booleans and
+// all-or-none for string arrays on numeric fields.
+fn transform_filter_operand(
+    value: alibi_core::utils::json::JsValue,
+    boolean: bool,
+    numeric: bool,
+    supports_booleans: bool,
+) -> alibi_core::utils::json::JsValue {
+    use alibi_core::utils::{
+        javascript::{string_to_number, trim},
+        json::JsValue,
+    };
+    if boolean {
+        let value = match value {
+            JsValue::String(value) => JsValue::Bool(value == "true"),
+            value => value,
+        };
+        return match value {
+            JsValue::Bool(value) if !supports_booleans => {
+                JsValue::Number(f64::from(u8::from(value)))
+            }
+            value => value,
+        };
+    }
+    if numeric {
+        let parse = |value: &JsValue| {
+            value
+                .as_str()
+                .filter(|value| !trim(value).is_empty())
+                .and_then(string_to_number)
+                .filter(|value| !value.is_nan())
+                .map(JsValue::Number)
+        };
+        match &value {
+            JsValue::String(_) => {
+                if let Some(number) = parse(&value) {
+                    return number;
+                }
+            }
+            JsValue::Array(values) => {
+                if let Some(numbers) = values.iter().map(parse).collect::<Option<Vec<_>>>() {
+                    return JsValue::Array(numbers);
+                }
+            }
+            _ => {}
+        }
+    }
+    value
 }
 
 impl<S> SeaOrmStore<S>
@@ -946,4 +999,106 @@ where
             .await
             .map_err(map_db_err)
     }
+}
+
+#[cfg(test)]
+mod typed_filter_tests {
+    use super::*;
+    use sea_orm::entity::prelude::*;
+    use serde_json::json;
+
+    #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, crate::AuthEntity)]
+    #[sea_orm(table_name = "filter_user")]
+    #[auth(role = "user")]
+    pub(super) struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub name: String,
+        pub email: String,
+        #[sea_orm(column_name = "emailVerified")]
+        pub email_verified: bool,
+        pub image: Option<String>,
+        #[sea_orm(column_name = "createdAt")]
+        pub created_at: chrono::DateTime<Utc>,
+        #[sea_orm(column_name = "updatedAt")]
+        pub updated_at: chrono::DateTime<Utc>,
+        pub score: f64,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub(super) enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+    struct FilterSchema;
+    impl AuthSchema for FilterSchema {
+        type User = Model;
+        type Session = super::super::entities::session::Model;
+        type Account = super::super::entities::account::Model;
+        type Verification = super::super::entities::verification::Model;
+    }
+
+    #[tokio::test]
+    async fn typed_user_filter_sqlite_bound_affinity() {
+        let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+        _ = db.execute_unprepared(TABLE).await.unwrap();
+        _ = db.execute_unprepared(ROWS).await.unwrap();
+        let store = SeaOrmStore::<FilterSchema>::new(alibi_core::AuthConfig::default(), db);
+
+        for (field, operator, raw, expected) in [
+            ("name", "eq", json!(2), "b"),
+            ("name", "eq", json!("2"), "a"),
+            ("name", "ne", json!(2), "a c d e f"),
+            ("name", "eq", json!(true), "d"),
+            ("name", "eq", json!("true"), "c"),
+            ("name", "eq", json!(false), "e"),
+            ("name", "eq", json!("false"), "f"),
+            ("name", "in", json!([2, 10]), "b"),
+            ("name", "not_in", json!([2, 10]), "a c d e f"),
+            ("name", "in", json!(["2", "10"]), "a"),
+            ("name", "contains", json!(2), "a b"),
+            ("name", "in", json!([]), ""),
+            ("name", "not_in", json!([]), "a b c d e f"),
+            ("emailVerified", "eq", json!(true), "a c f"),
+            ("emailVerified", "eq", json!(false), "b d e"),
+            ("emailVerified", "eq", json!("true"), "a c f"),
+            ("emailVerified", "eq", json!("nonsense"), "b d e"),
+            ("emailVerified", "eq", json!(1), "a c f"),
+            ("emailVerified", "in", json!([1]), "a c f"),
+            ("emailVerified", "in", json!(["true"]), ""),
+            ("emailVerified", "in", json!(["1"]), "a c f"),
+            ("emailVerified", "contains", json!("true"), "a c f"),
+            ("score", "eq", json!(2), "a"),
+            ("score", "eq", json!("0x2"), "a"),
+            ("score", "in", json!([2, 10]), "a b"),
+            ("score", "not_in", json!([2, 10]), "c d e f"),
+            ("score", "in", json!(["0x2", "0xa"]), "a b"),
+            ("score", "in", json!(["0x2", "invalid"]), ""),
+        ] {
+            let (users, count) = store
+                .list_users(ListUsersParams {
+                    filter_field: Some(field.into()),
+                    filter_operator: Some(operator.into()),
+                    filter_value: Some(serde_json::from_value(raw.clone()).unwrap()),
+                    sort_by: Some("id".into()),
+                    sort_direction: Some("asc".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let ids = users
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(ids.join(" "), expected, "{field} {operator} {raw}");
+            assert_eq!(count, ids.len());
+        }
+    }
+
+    const TABLE: &str = "CREATE TABLE filter_user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
+        emailVerified BOOLEAN NOT NULL, image TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, score REAL NOT NULL)";
+    const ROWS: &str = "INSERT INTO filter_user VALUES
+        ('a','2','a@example.test',1,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',2),
+        ('b','2.0','b@example.test',0,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',10),
+        ('c','true','c@example.test',1,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',3),
+        ('d','1','d@example.test',0,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',4),
+        ('e','0','e@example.test',0,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',5),
+        ('f','false','f@example.test',1,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',6)";
 }
