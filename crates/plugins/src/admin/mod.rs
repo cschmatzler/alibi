@@ -752,6 +752,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_update_phone_fields_persist_and_can_clear_number() {
+        let (ctx, admin, _, user, _) = create_admin_context().await;
+        for (data, expected_phone, expected_verified) in [
+            (serde_json::json!({"phoneNumber": "+15551234567", "phoneNumberVerified": true}), Some("+15551234567"), true),
+            (serde_json::json!({"phoneNumber": null, "phoneNumberVerified": false}), None, false),
+        ] {
+            let body = types::AdminUpdateUserRequest::new(
+                &user.id, data.as_object().unwrap().clone(),
+            );
+            handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx).await.unwrap();
+            let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+            use alibi_core::entity::AuthUser as _;
+            assert_eq!(stored.phone_number(), expected_phone);
+            assert_eq!(stored.phone_number_verified(), Some(expected_verified));
+        }
+    }
+
+    #[tokio::test]
     async fn test_custom_admin_role_can_use_permission_engine() {
         let config = Arc::new(alibi_core::AuthConfig::new(
             "test-secret-key-at-least-32-chars-long",

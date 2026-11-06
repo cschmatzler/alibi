@@ -444,6 +444,16 @@ pub(crate) async fn update_user_core(
     {
         update.display_username = Some(value.to_owned());
     }
+    if let Some(value) = body.data.get("phoneNumber") {
+        match value {
+            serde_json::Value::Null => update.phone_number = Some(None),
+            serde_json::Value::String(value) => update.phone_number = Some(Some(value.clone())),
+            _ => {}
+        }
+    }
+    if let Some(value) = body.data.get("phoneNumberVerified").and_then(serde_json::Value::as_bool) {
+        update.phone_number_verified = Some(value);
+    }
     if let Some(value) = body.data.get("banned").and_then(serde_json::Value::as_bool) {
         update.banned = Some(value);
     }
