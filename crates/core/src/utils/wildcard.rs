@@ -75,8 +75,8 @@ pub fn matches(pattern: &str, value: &str) -> bool {
 pub fn compile_path_glob(pattern: &str) -> Result<Regex, regex::Error> {
     let mut expression = String::from("^");
     translate(&mut expression, pattern, |character| match character {
-        '*' => Some(".*?"),
-        '?' => Some("."),
+        '*' => Some(r"[^\n\r\u{2028}\u{2029}]*?"),
+        '?' => Some(r"[^\n\r\u{2028}\u{2029}]"),
         _ => None,
     });
     expression.push('$');
@@ -106,5 +106,22 @@ fn translate(
             (literal, None) => literal,
         };
         expression.push_str(&regex::escape(literal.encode_utf8(&mut [0; 4])));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn path_globs_exclude_all_javascript_line_terminators() {
+        for separator in ['\n', '\r', '\u{2028}', '\u{2029}'] {
+            let path = format!("/a{separator}b");
+            assert!(!compile_path_glob("/a*b").unwrap().is_match(&path));
+            assert!(!compile_path_glob("/a?b").unwrap().is_match(&path));
+            assert!(compile_path_glob(&path).unwrap().is_match(&path));
+        }
+        assert!(compile_path_glob("/a*b").unwrap().is_match("/a/b"));
+        assert!(compile_path_glob("/a?b").unwrap().is_match("/a\tb"));
     }
 }
