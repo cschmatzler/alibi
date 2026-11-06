@@ -242,6 +242,7 @@ impl GenericOAuthConfig {
             policy.verify_grant_id_token && !self.disable_id_token_nonce_binding;
         policy.discovery_openid_scope = is_oidc;
         policy.source_profile_exceptions = true;
+        policy.require_client_id = true;
         self.provider.auth_url = self.authorization_url.unwrap_or_default();
         self.provider.token_url = self.token_url.unwrap_or_default();
         self.provider.user_info_url.clone_from(&self.user_info_url);

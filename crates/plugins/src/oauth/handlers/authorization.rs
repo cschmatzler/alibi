@@ -588,6 +588,33 @@ mod tests {
         provider
     }
 
+    #[tokio::test]
+    async fn generic_authorization_requires_a_client_id() {
+        for client_id in ["", "client"] {
+            let mut config = crate::oauth::providers::GenericOAuthConfig::new(client_id, "");
+            config.authorization_url = Some("https://example.com/authorize".into());
+            let provider = config.resolve().await.unwrap().unwrap().provider;
+            let result = build_authorization_url(
+                &provider,
+                "https://app/callback",
+                None,
+                "state",
+                "challenge",
+                None,
+                None,
+            );
+            assert_eq!(result.is_ok(), !client_id.is_empty());
+            if client_id.is_empty() {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .to_string()
+                        .contains("Client ID is required")
+                );
+            }
+        }
+    }
+
     #[test]
     fn authorization_omits_pkce_without_a_challenge() {
         let provider = provider();
