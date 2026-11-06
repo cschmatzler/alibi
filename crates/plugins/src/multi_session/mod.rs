@@ -388,11 +388,14 @@ impl MultiSessionPlugin {
         let removed = tokens_to_delete.len();
         // Upstream counts every named cookie, including invalid signatures.
         let count = Self::multi_cookies(req).len();
+        let has_session_cookie = headers
+            .get_all("set-cookie")
+            .any(|header| header.contains(&related_cookie_name(&ctx.config, "session_token")));
         #[expect(
             clippy::cast_precision_loss,
             reason = "Match upstream JavaScript numeric comparison"
         )]
-        let budget = (count.saturating_sub(removed) + 1) as f64;
+        let budget = (count.saturating_sub(removed) + usize::from(has_session_cookie)) as f64;
         if budget > self.config.maximum_sessions {
             return Ok(additional);
         }
@@ -559,6 +562,28 @@ mod tests {
 
     fn pair(header: &str) -> String {
         header.split(';').next().unwrap().to_owned()
+    }
+
+    #[tokio::test]
+    async fn issuance_budget_only_counts_a_session_cookie_when_present() {
+        let ctx = create_test_context().await;
+        let plugin = MultiSessionPlugin::with_config(MultiSessionConfig { maximum_sessions: 0.0 });
+        let (user, session) = create_user_and_session(
+            &ctx, CreateUser::new().with_email("budget@example.test"), Duration::days(1),
+        ).await;
+        let req = request_with_cookies(HttpMethod::Post, "/custom-login", &[], None);
+        alibi_core::hooks::with_request_hook_context(&req, async {
+            alibi_core::session::cookie_cache::runtime::emit_issuance(&ctx, &user, &session).await.unwrap();
+        }).await;
+        let mut headers = alibi_core::Headers::new();
+        headers.append("set-cookie", "application=ready; Path=/");
+        let proof = plugin.session_hook_headers(&req, req.path(), &ctx, &headers).await.unwrap();
+        assert!(proof.get_all("set-cookie").any(|value| value.starts_with(
+            &format!("{}=", MultiSessionPlugin::cookie_name(&session.token, &ctx))
+        )));
+        headers.append("set-cookie", create_session_cookie(&session.token, &ctx.config).unwrap());
+        let suppressed = plugin.session_hook_headers(&req, req.path(), &ctx, &headers).await.unwrap();
+        assert!(suppressed.get_all("set-cookie").next().is_none());
     }
 
     #[tokio::test]
