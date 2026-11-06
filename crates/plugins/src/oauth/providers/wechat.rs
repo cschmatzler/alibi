@@ -143,13 +143,13 @@ async fn token_request(
     client_ids: &[String],
     query: &[(&str, &str)],
 ) -> Result<OAuthTokenSet, String> {
-    let appids: Vec<_> = client_ids.iter().map(|id| ("appid", id)).collect();
+    let appid = client_ids.join(",");
     let response = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| error.to_string())?
         .get(endpoint)
-        .query(&appids)
+        .query(&[("appid", appid.as_str())])
         .query(query)
         .send()
         .await
@@ -415,6 +415,52 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn wechat_grants_stringify_client_arrays_as_one_appid() {
+        for ids in [vec!["first".into(), "second".into()], Vec::new()] {
+            for refresh in [false, true] {
+                let (endpoint, captured) = profile_server(
+                    json!({"scope": "snsapi_login", "access_token": "access", "expires_in": 3600}),
+                )
+                .await;
+                let grants = WeChatGrants {
+                    client_ids: ids.clone(),
+                    client_secret: "secret".into(),
+                    token_endpoint: endpoint.clone(),
+                    refresh_endpoint: endpoint,
+                };
+                if refresh {
+                    grants.refresh_access_token("refresh").await.unwrap();
+                } else {
+                    grants
+                        .validate_authorization_code(OAuthAuthorizationCodeContext {
+                            code: "code".into(),
+                            redirect_uri: "https://app.example/callback".into(),
+                            code_verifier: None,
+                            device_id: None,
+                        })
+                        .await
+                        .unwrap();
+                }
+                let request = captured.await.unwrap();
+                let target = request
+                    .lines()
+                    .next()
+                    .unwrap()
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap();
+                let url = reqwest::Url::parse(&format!("http://localhost{target}")).unwrap();
+                let appids: Vec<_> = url
+                    .query_pairs()
+                    .filter(|(key, _)| key == "appid")
+                    .map(|(_, value)| value.into_owned())
+                    .collect();
+                assert_eq!(appids, vec![ids.join(",")]);
+            }
+        }
     }
 
     #[tokio::test]
