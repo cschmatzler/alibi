@@ -302,8 +302,10 @@ impl OAuthUserInfoHandler for PublishedProfile {
     ) -> Result<OAuthUserInfoResponse, String> {
         let client = reqwest::Client::new();
         let mut profile: Value = if matches!(self.kind, ProfileKind::Twitch) {
-            let token = grant_id_token(&request)?.ok_or("Missing Twitch ID token")?;
-            decode_grant_jwt(&token)?
+            let token = grant_id_token(&request)
+                .map_err(profile_exception)?
+                .ok_or("Missing Twitch ID token")?;
+            decode_grant_jwt(&token).map_err(profile_exception)?
         } else {
             let endpoint = self
                 .endpoint
@@ -574,5 +576,37 @@ impl OAuthUserInfoHandler for PublishedProfile {
             user,
             data: profile,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn twitch_malformed_id_tokens_are_profile_exceptions() {
+        let provider = super::super::OAuthProvider::twitch("client", Some("secret"));
+        for token in [serde_json::json!("malformed"), serde_json::json!(42)] {
+            let error = crate::oauth::handlers::fetch_user_info_from_provider(
+                &provider,
+                OAuthUserInfoRequest {
+                    raw: Some(serde_json::json!({"id_token": token})),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                matches!(error, alibi_core::AuthError::Api { status: 500, code: Some(code), .. } if code == "OAUTH_PROFILE_EXCEPTION")
+            );
+        }
+        let error = provider
+            .get_user_info
+            .as_ref()
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest::default())
+            .await
+            .unwrap_err();
+        assert!(!error.starts_with(PROFILE_EXCEPTION_PREFIX));
     }
 }
