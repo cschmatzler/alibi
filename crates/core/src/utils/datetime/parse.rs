@@ -166,11 +166,12 @@ fn parse_legacy(value: &str) -> Option<i64> {
     let value = remove_comments(value)?;
     let value = value.trim();
     let value = strip_weekday(value).trim();
-    if let Ok(date) = DateTime::parse_from_rfc2822(value) {
-        return time_clip(date.timestamp_millis());
-    }
     let value = value.replace(',', " ");
     let value = normalize_legacy(&value);
+    let value = normalize_legacy_seconds(&value)?;
+    if let Ok(date) = DateTime::parse_from_rfc2822(&value) {
+        return time_clip(date.timestamp_millis());
+    }
     let without_gmt = value.replace("GMT+", "+").replace("GMT-", "-");
     // Chrono needs an explicit offset; literal GMT/UTC format tokens do not
     // supply one. JavaScript accepts these names as zero-offset bounds.
@@ -247,9 +248,69 @@ fn parse_legacy(value: &str) -> Option<i64> {
             50..=99 => (1900 + number, 1),
             _ => (number, 1),
         };
-        return time_clip(local_millis(civil_days(year, month, 1).checked_mul(86_400_000)?)?);
+        return time_clip(local_millis(
+            civil_days(year, month, 1).checked_mul(86_400_000)?,
+        )?);
     }
     None
+}
+
+fn normalize_legacy_seconds(value: &str) -> Option<String> {
+    let Some(clock) = value.split_whitespace().find(|part| {
+        part.split_once(':').is_some_and(|(hour, _)| {
+            !hour.is_empty() && hour.bytes().all(|byte| byte.is_ascii_digit())
+        })
+    }) else {
+        return Some(value.to_owned());
+    };
+    let start = value.find(clock)?;
+    let first_colon = clock.find(':')?;
+    let Some(second_colon) = clock[first_colon + 1..].find(':') else {
+        return Some(value.to_owned());
+    };
+    let start = start + first_colon + 1 + second_colon + 1;
+    let mut tail = &value[start..];
+    let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+    if length == 0 {
+        return Some(value.to_owned());
+    }
+    let seconds = tail[..length].trim_start_matches('0');
+    let overflow = seconds.len() > 2 || seconds.parse::<u32>().unwrap_or(0) > 59;
+    tail = &tail[length..];
+    let mut replacement = if overflow {
+        // V8 puts an out-of-range seconds token in its day composer.
+        // Named-month dates have one spare numeric slot; numeric dates do not.
+        if !value[..start].split_whitespace().any(|part| {
+            [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ]
+            .contains(&part)
+        }) {
+            return None;
+        }
+        tail = tail.strip_prefix('.').unwrap_or(tail);
+        tail = tail.trim_start();
+        let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+        let seconds = tail[..length].trim_start_matches('0');
+        if seconds.len() > 2 || seconds.parse::<u32>().unwrap_or(0) > 59 {
+            return None;
+        }
+        tail = &tail[length..];
+        format!("{:02}", seconds.parse::<u32>().unwrap_or(0))
+    } else {
+        format!("{:02}", seconds.parse::<u32>().unwrap_or(0))
+    };
+    if tail.starts_with('.') {
+        tail = &tail[1..];
+        let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+        if length == 0 {
+            return None;
+        }
+        replacement.push('.');
+        replacement.extend(tail[..length].chars().take(3));
+        tail = &tail[length..];
+    }
+    Some(format!("{}{replacement}{tail}", &value[..start]))
 }
 
 fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
@@ -270,7 +331,8 @@ fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
         &mut parsed,
         normalized.as_deref().unwrap_or(value),
         StrftimeItems::new(format),
-    ).ok()?;
+    )
+    .ok()?;
     let year = legacy_year(i64::from(parsed.year()?));
     let days = civil_days(year, i64::from(parsed.month()?), i64::from(parsed.day()?))
         + i64::from(end_of_day.is_some());
@@ -326,7 +388,9 @@ fn normalize_legacy(value: &str) -> String {
                 .iter()
                 .find(|month| {
                     part.bytes().all(|byte| byte.is_ascii_alphabetic())
-                        && part.get(..3).is_some_and(|prefix| prefix.eq_ignore_ascii_case(month))
+                        && part
+                            .get(..3)
+                            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(month))
                 })
                 .copied()
                 .unwrap_or(part)
@@ -362,6 +426,64 @@ mod tests {
     use super::*;
 
     #[test]
+    fn legacy_overflow_seconds_follow_v8_day_and_time_composition() {
+        for (input, expected) in [
+            ("Jan 1 2024 12:34:60 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:61 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:99 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:100 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:060 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:059 GMT", "2024-01-01T12:34:59Z"),
+            ("Jan 1 2024 12:34:60.5 GMT", "2024-01-01T12:34:05Z"),
+            ("1 Jan 2024 12:34:61.25 UTC", "2024-01-01T12:34:25Z"),
+            ("Mon, 1 Jan 2024 12:34:60 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60.001 GMT", "2024-01-01T12:34:01Z"),
+            ("Jan 1 2024 12:34:60.0001 GMT", "2024-01-01T12:34:01Z"),
+            (
+                "Jan 1 2024 12:34:60.000000000000000005 GMT",
+                "2024-01-01T12:34:05Z",
+            ),
+            ("Jan 1 2024 12:34:60. GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60.5.1 GMT", "2024-01-01T12:34:05.100Z"),
+            ("Jan 1 2024 12:34:60 1 GMT", "2024-01-01T12:34:01Z"),
+            ("Jan 1 2024 24:00:60 GMT", "2024-01-02T00:00:00Z"),
+            ("Jan 1 2024 24:00:60.0000 GMT", "2024-01-02T00:00:00Z"),
+            ("Jan 1 2024 12:34:60 EST", "2024-01-01T17:34:00Z"),
+            ("Jan 1 2024 12:34:60", "2024-01-01T12:34:00"),
+            ("1/1/2024 12:34:059 GMT", "2024-01-01T12:34:59Z"),
+        ] {
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
+        }
+        for input in [
+            "Jan 1 2024 12:34:60.60 GMT",
+            "Jan 1 2024 12:34:99.123 GMT",
+            "Jan 1 2024 12:34:60: GMT",
+            "Jan 1 2024 24:00:60.0001 GMT",
+            "Jan 1 2024 12:34:59. GMT",
+            "Jan 1 2024 12:60:00 GMT",
+            "1/1/2024 12:34:60 GMT",
+            "2024/1/1 12:34:60.5 GMT",
+            "2024-01-01 12:34:60 GMT",
+            "2024-01-01T12:34:60Z",
+            "2024T12:34:60Z",
+            "2024-01T12:34:60Z",
+        ] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
+
+    #[test]
+    fn incomplete_iso_dates_accept_time_components() {
+        for input in ["2024T12:00Z", "2024-01T12:00Z"] {
+            assert_eq!(parse_date_millis(input), Some(1_704_110_400_000), "{input}");
+        }
+    }
+
+    #[test]
     fn legacy_end_of_day_times_advance_to_the_next_midnight() {
         for (input, expected) in [
             ("Jan 1 2024 24:00 GMT", "2024-01-02T00:00:00Z"),
@@ -370,7 +492,11 @@ mod tests {
             ("2024/1/1 24:00", "2024-01-02T00:00:00"),
             ("1/1/2024 24:00:00.000 -0500", "2024-01-02T05:00:00Z"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
         for input in [
             "Jan 1 2024 24:01 GMT",
@@ -386,12 +512,29 @@ mod tests {
     #[test]
     fn legacy_month_tokens_use_their_three_letter_prefix() {
         for (month, token) in [
-            "Januaryish", "Febuary", "Marble", "Aprilfoo", "Maybe", "Juniper",
-            "Julyish", "Augustus", "Sept", "Octoberish", "Novemberish", "Decemberish",
-        ].into_iter().enumerate() {
+            "Januaryish",
+            "Febuary",
+            "Marble",
+            "Aprilfoo",
+            "Maybe",
+            "Juniper",
+            "Julyish",
+            "Augustus",
+            "Sept",
+            "Octoberish",
+            "Novemberish",
+            "Decemberish",
+        ]
+        .into_iter()
+        .enumerate()
+        {
             let input = format!("{token} 1 2024 GMT");
             let expected = format!("2024-{:02}-01T00:00:00Z", month + 1);
-            assert_eq!(parse_date_millis(&input), parse_date_millis(&expected), "{input}");
+            assert_eq!(
+                parse_date_millis(&input),
+                parse_date_millis(&expected),
+                "{input}"
+            );
         }
         for token in ["Ju", "Jax", "Month"] {
             assert_eq!(parse_date_millis(&format!("{token} 1 2024 GMT")), None);
@@ -406,7 +549,11 @@ mod tests {
             ("2024/1/2 12:34:56.789 UTC", "2024-01-02T12:34:56.789Z"),
             ("1/2/2024 12:34 -0800", "2024-01-02T20:34:00Z"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
         assert_eq!(parse_date_millis("1/2/2024 12:34 BOGUS"), None);
     }
@@ -423,8 +570,13 @@ mod tests {
                 ])
                 .env(CHILD, "1")
                 .env("TZ", "America/New_York")
-                .output().unwrap();
-            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stdout)
+            );
             return;
         }
         for (input, expected) in [
@@ -435,9 +587,16 @@ mod tests {
             ("99", "1999-01-01T05:00:00Z"),
             ("10000", "+010000-01-01T05:00:00Z"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
-        assert_eq!(parse_date_millis("1000"), parse_date_millis("1000-01-01T00:00:00Z"));
+        assert_eq!(
+            parse_date_millis("1000"),
+            parse_date_millis("1000-01-01T00:00:00Z")
+        );
     }
 
     #[test]
@@ -450,7 +609,11 @@ mod tests {
             ("30 Feb 2024 12:34 GMT", "2024-03-01T12:34:00Z"),
             ("2024/02/30 12:00:00", "2024-03-01T12:00:00"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
         for input in ["2024/02/32", "2024/00/01", "2024/02/00"] {
             assert_eq!(parse_date_millis(input), None, "{input}");
@@ -467,7 +630,11 @@ mod tests {
             ("1/1/2024 12:34", "2024-01-01T12:34:00"),
             ("Jan 1 2024 1:34 PM", "2024-01-01T13:34:00"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
     }
 
@@ -481,7 +648,11 @@ mod tests {
             ("0049-01-01T12:00:00Z", "0049-01-01T12:00:00Z"),
             ("Jan 1 49 12:00:00", "2049-01-01T12:00:00"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
     }
 
@@ -493,7 +664,11 @@ mod tests {
             ("January 1 2024 EST", "2024-01-01T05:00:00Z"),
             ("2024/1/1 GMT+0530", "2023-12-31T18:30:00Z"),
         ] {
-            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
         }
         assert_eq!(parse_date_millis("Jan 1 2024 BOGUS"), None);
     }
@@ -501,7 +676,16 @@ mod tests {
     #[test]
     fn legacy_dates_accept_full_weekday_tokens() {
         let expected = parse_date_millis("2024-01-01T12:00:00Z");
-        for weekday in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "mOnDaY"] {
+        for weekday in [
+            "Monday",
+            "Tuesday",
+            "Wednesday",
+            "Thursday",
+            "Friday",
+            "Saturday",
+            "Sunday",
+            "mOnDaY",
+        ] {
             assert_eq!(
                 parse_date_millis(&format!("{weekday}, 01 Jan 2024 12:00:00 GMT")),
                 expected,
