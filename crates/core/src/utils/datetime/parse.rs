@@ -168,10 +168,7 @@ fn parse_legacy(value: &str) -> Option<i64> {
     let value = strip_weekday(value).trim();
     let value = value.replace(',', " ");
     let value = normalize_legacy(&value);
-    let value = normalize_legacy_seconds(&value)?;
-    if let Ok(date) = DateTime::parse_from_rfc2822(&value) {
-        return time_clip(date.timestamp_millis());
-    }
+    let value = normalize_legacy_time(&value)?;
     let without_gmt = value.replace("GMT+", "+").replace("GMT-", "-");
     // Chrono needs an explicit offset; literal GMT/UTC format tokens do not
     // supply one. JavaScript accepts these names as zero-offset bounds.
@@ -255,7 +252,7 @@ fn parse_legacy(value: &str) -> Option<i64> {
     None
 }
 
-fn normalize_legacy_seconds(value: &str) -> Option<String> {
+fn normalize_legacy_time(value: &str) -> Option<String> {
     let Some(clock) = value.split_whitespace().find(|part| {
         part.split_once(':').is_some_and(|(hour, _)| {
             !hour.is_empty() && hour.bytes().all(|byte| byte.is_ascii_digit())
@@ -264,53 +261,93 @@ fn normalize_legacy_seconds(value: &str) -> Option<String> {
         return Some(value.to_owned());
     };
     let start = value.find(clock)?;
-    let first_colon = clock.find(':')?;
-    let Some(second_colon) = clock[first_colon + 1..].find(':') else {
-        return Some(value.to_owned());
-    };
-    let start = start + first_colon + 1 + second_colon + 1;
-    let mut tail = &value[start..];
-    let length = tail.bytes().take_while(u8::is_ascii_digit).count();
-    if length == 0 {
-        return Some(value.to_owned());
+    let (hour, mut tail) = value[start..].split_once(':')?;
+    let mut hour = hour.bytes().fold(0u32, |number, digit| {
+        (number * 10 + u32::from(digit - b'0')).min(60)
+    });
+    let minute_length = tail.bytes().take_while(u8::is_ascii_digit).count();
+    if minute_length == 0 {
+        return None;
     }
-    let seconds = tail[..length].trim_start_matches('0');
-    let overflow = seconds.len() > 2 || seconds.parse::<u32>().unwrap_or(0) > 59;
-    tail = &tail[length..];
-    let mut replacement = if overflow {
-        // V8 puts an out-of-range seconds token in its day composer.
-        // Named-month dates have one spare numeric slot; numeric dates do not.
-        if !value[..start].split_whitespace().any(|part| {
-            [
-                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-            ]
-            .contains(&part)
-        }) {
-            return None;
-        }
-        tail = tail.strip_prefix('.').unwrap_or(tail);
-        tail = tail.trim_start();
-        let length = tail.bytes().take_while(u8::is_ascii_digit).count();
-        let seconds = tail[..length].trim_start_matches('0');
-        if seconds.len() > 2 || seconds.parse::<u32>().unwrap_or(0) > 59 {
-            return None;
-        }
-        tail = &tail[length..];
-        format!("{:02}", seconds.parse::<u32>().unwrap_or(0))
-    } else {
-        format!("{:02}", seconds.parse::<u32>().unwrap_or(0))
-    };
-    if tail.starts_with('.') {
-        tail = &tail[1..];
+    let minute = tail[..minute_length].bytes().fold(0u32, |number, digit| {
+        (number * 10 + u32::from(digit - b'0')).min(60)
+    });
+    if hour > 24 || minute > 59 {
+        return None;
+    }
+    tail = &tail[minute_length..];
+    let mut seconds = 0;
+    let mut fraction = String::new();
+    if let Some(rest) = tail.strip_prefix(':') {
+        tail = rest;
         let length = tail.bytes().take_while(u8::is_ascii_digit).count();
         if length == 0 {
             return None;
         }
-        replacement.push('.');
-        replacement.extend(tail[..length].chars().take(3));
+        seconds = tail[..length].bytes().fold(0u32, |number, digit| {
+            (number * 10 + u32::from(digit - b'0')).min(60)
+        });
         tail = &tail[length..];
+        if seconds >= 60 {
+            // V8 puts an out-of-range seconds token in its day composer.
+            // Named-month dates have one spare numeric slot; numeric dates do not.
+            if !value[..start].split_whitespace().any(|part| {
+                [
+                    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov",
+                    "Dec",
+                ]
+                .contains(&part)
+            }) {
+                return None;
+            }
+            tail = tail.strip_prefix('.').unwrap_or(tail);
+            let next = tail.trim_start();
+            let length = next.bytes().take_while(u8::is_ascii_digit).count();
+            seconds = next[..length].bytes().fold(0u32, |number, digit| {
+                (number * 10 + u32::from(digit - b'0')).min(60)
+            });
+            if seconds >= 60 {
+                return None;
+            }
+            if length > 0 {
+                tail = &next[length..];
+            }
+        }
+        if let Some(rest) = tail.strip_prefix('.') {
+            tail = rest;
+            let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+            if length == 0 {
+                return None;
+            }
+            fraction.push('.');
+            fraction.extend(tail[..length].chars().take(3));
+            tail = &tail[length..];
+        }
     }
-    Some(format!("{}{replacement}{tail}", &value[..start]))
+    if tail.starts_with(char::is_whitespace)
+        && let Some(meridiem) = tail.split_whitespace().next()
+        && (meridiem.eq_ignore_ascii_case("AM") || meridiem.eq_ignore_ascii_case("PM"))
+    {
+        if hour > 12 {
+            return None;
+        }
+        hour = hour % 12
+            + if meridiem.eq_ignore_ascii_case("PM") {
+                12
+            } else {
+                0
+            };
+        tail = &tail.trim_start()[meridiem.len()..];
+    }
+    let tail = if tail.eq_ignore_ascii_case("Z") {
+        " +0000"
+    } else {
+        tail
+    };
+    Some(format!(
+        "{}{hour:02}:{minute:02}:{seconds:02}{fraction}{tail}",
+        &value[..start]
+    ))
 }
 
 fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
@@ -425,6 +462,7 @@ fn normalize_legacy(value: &str) -> String {
         ("UT", "+0000"),
         ("UTC", "+0000"),
         ("GMT", "+0000"),
+        ("Z", "+0000"),
         ("EST", "-0500"),
         ("EDT", "-0400"),
         ("CST", "-0600"),
@@ -494,6 +532,43 @@ mod tests {
             "2024-01-01T12:34:60Z",
             "2024T12:34:60Z",
             "2024-01T12:34:60Z",
+        ] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
+
+    #[test]
+    fn legacy_clock_fields_accept_padding_meridiems_and_utc_markers() {
+        for (input, expected) in [
+            ("Jan 1 2024 00012:00034:00059 GMT", "2024-01-01T12:34:59Z"),
+            ("Jan 1 2024 00024:00000:60 GMT", "2024-01-02T00:00:00Z"),
+            ("Jan 1 2024 12:34:60 PM GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60.5 PM -0500", "2024-01-01T17:34:05Z"),
+            ("Jan 1 2024 12:34:60 AM", "2024-01-01T00:34:00"),
+            ("Jan 1 2024 12:34:60.5 PM", "2024-01-01T12:34:05"),
+            ("Jan 1 2024 0:34 AM GMT", "2024-01-01T00:34:00Z"),
+            ("Jan 1 2024 0:34 PM GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:59.5 PM GMT", "2024-01-01T12:34:59.500Z"),
+            ("Jan 1 2024 12:34:60.0 PM GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60.00.001 GMT", "2024-01-01T12:34:00.001Z"),
+            ("Jan 1 2024 12:34:60.5Z", "2024-01-01T12:34:05Z"),
+            ("Jan 1 2024 12:34:60.5z", "2024-01-01T12:34:05Z"),
+            ("Jan 1 2024 12:34:60 Z", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60 z", "2024-01-01T12:34:00Z"),
+            ("1/1/2024 0:34 PM GMT", "2024-01-01T12:34:00Z"),
+        ] {
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
+        }
+        for input in [
+            "Jan 1 2024 12:34:60.5PM GMT",
+            "Jan 1 2024 24:00:60 PM GMT",
+            "Jan 1 2024 13:34 PM GMT",
+            "Jan 1 2024 12:34:60.5ZZ",
+            "Jan 1 2024 12:34:60.5ZZZ",
         ] {
             assert_eq!(parse_date_millis(input), None, "{input}");
         }
