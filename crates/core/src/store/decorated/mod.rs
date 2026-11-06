@@ -1,11 +1,13 @@
 use crate::AdapterRecord;
 use crate::store::{
-    AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateTransform, UserCreationDefaults,
+    AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateStep, UserCreationDefaults,
 };
 use crate::{AuthAccount, AuthSession, AuthUser};
 use crate::{AuthError, AuthResult, AuthSchema, AuthStore, UpdateUser};
 use std::sync::Arc;
 mod account;
+#[cfg(test)]
+mod create_hook_tests;
 mod extensions;
 mod session;
 #[cfg(test)]
@@ -19,11 +21,30 @@ mod verification;
 pub(crate) type UserUpdateTransform =
     Arc<dyn Fn(&str, UpdateUser) -> AuthResult<UpdateUser> + Send + Sync>;
 
-#[derive(Clone, Default)]
-pub(crate) struct UserTransforms {
-    pub(crate) creates: Vec<UserCreateTransform>,
+pub(crate) struct UserTransforms<S: AuthSchema> {
+    pub(crate) creates: Vec<UserCreateStep<S>>,
     pub(crate) adapter_defaults: UserCreationDefaults,
     pub(crate) updates: Vec<UserUpdateTransform>,
+}
+
+impl<S: AuthSchema> Default for UserTransforms<S> {
+    fn default() -> Self {
+        Self {
+            creates: Vec::new(),
+            adapter_defaults: UserCreationDefaults::default(),
+            updates: Vec::new(),
+        }
+    }
+}
+
+impl<S: AuthSchema> Clone for UserTransforms<S> {
+    fn clone(&self) -> Self {
+        Self {
+            creates: self.creates.clone(),
+            adapter_defaults: self.adapter_defaults.clone(),
+            updates: self.updates.clone(),
+        }
+    }
 }
 
 pub(crate) struct SessionCreatedCallbacks<S: AuthSchema> {
@@ -63,7 +84,7 @@ pub(crate) struct PluginStore<S: AuthSchema> {
         Arc<std::sync::Mutex<indexmap::IndexMap<String, S::Session>>>,
     pub(in crate::store) inner: Arc<dyn AuthStore<S>>,
     pub(in crate::store) config: Arc<crate::AuthConfig>,
-    pub(in crate::store) transforms: UserTransforms,
+    pub(in crate::store) transforms: UserTransforms<S>,
     pub(in crate::store) session_callbacks: SessionCreatedCallbacks<S>,
     pub(in crate::store) session_fields: crate::field_policy::SessionFields,
     pub(in crate::store) adapter_fields: crate::field_policy::SessionAdapterFields,
@@ -75,7 +96,7 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(crate) fn new(
         inner: Arc<dyn AuthStore<S>>,
         config: Arc<crate::AuthConfig>,
-        transforms: UserTransforms,
+        transforms: UserTransforms<S>,
         session_callbacks: SessionCreatedCallbacks<S>,
         session_fields: crate::field_policy::SessionFields,
         adapter_fields: crate::field_policy::SessionAdapterFields,

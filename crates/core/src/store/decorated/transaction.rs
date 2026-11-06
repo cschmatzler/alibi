@@ -1,7 +1,7 @@
 use crate::field_policy::FieldValues;
 use crate::store::{
     AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
-    UserCreateTransform, UserCreationDefaults, create_data,
+    UserCreateStep, UserCreationDefaults, create_user_data,
 };
 use crate::types::AddTeamMemberResult;
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
@@ -18,7 +18,7 @@ use std::sync::Arc;
 pub(in crate::store) struct PluginTransaction<'a, S: AuthSchema> {
     pub(in crate::store) inner: &'a dyn AuthTransaction<S>,
     pub(in crate::store) config: Arc<crate::AuthConfig>,
-    pub(in crate::store) creates: Vec<UserCreateTransform>,
+    pub(in crate::store) creates: Vec<UserCreateStep<S>>,
     pub(in crate::store) adapter_defaults: UserCreationDefaults,
     pub(in crate::store) pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
     pub(in crate::store) pending_scopes:
@@ -691,6 +691,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
+    async fn get_user_by_username_value(&self, username: &JsValue) -> AuthResult<Option<S::User>> {
+        self.inner.get_user_by_username_value(username).await
+    }
+
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_id(id).await
     }
@@ -709,7 +713,15 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             return self.create_user_prepared(prepared).await;
         }
         self.inner
-            .create_user(create_data(create_user, &self.creates)?)
+            .create_user(
+                create_user_data(
+                    create_user,
+                    &self.creates,
+                    &self.record_store.projection_context,
+                    Some(self.inner),
+                )
+                .await?,
+            )
             .await
     }
     async fn create_user_with_source(
@@ -724,7 +736,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.create_user_prepared(prepared).await
     }
     async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
-        let mut data = create_data(prepared.into_data(), &self.creates)?;
+        let mut data = create_user_data(
+            prepared.into_data(),
+            &self.creates,
+            &self.record_store.projection_context,
+            Some(self.inner),
+        )
+        .await?;
         self.record_store
             .field_policies()
             .user

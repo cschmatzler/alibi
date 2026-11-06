@@ -1,5 +1,6 @@
 use crate::store::{
-    AccountStore, AdapterEvent, NumericTextInput, PluginStore, SessionStore, UserStore, create_data,
+    AccountStore, AdapterEvent, NumericTextInput, PluginStore, SessionStore, UserStore,
+    create_user_data,
 };
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
 use crate::{AdapterRecord, AuthAccount};
@@ -133,7 +134,13 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
             let prepared = prepare_creation(&self.config, create_user, None).await?;
             return self.create_user_prepared(prepared).await;
         }
-        let create_user = create_data(create_user, &self.transforms.creates)?;
+        let create_user = create_user_data(
+            create_user,
+            &self.transforms.creates,
+            &self.projection_context,
+            None,
+        )
+        .await?;
         self.inner.create_user(create_user).await
     }
     async fn create_user_with_source(
@@ -148,7 +155,13 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.create_user_prepared(prepared).await
     }
     async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
-        let mut data = create_data(prepared.into_data(), &self.transforms.creates)?;
+        let mut data = create_user_data(
+            prepared.into_data(),
+            &self.transforms.creates,
+            &self.projection_context,
+            None,
+        )
+        .await?;
         self.field_policies()
             .user
             .attach(&mut data.additional_fields, true);
@@ -181,6 +194,13 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     }
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_username(username).await
+    }
+
+    async fn get_user_by_username_value(
+        &self,
+        username: &crate::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        self.inner.get_user_by_username_value(username).await
     }
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_phone_number(phone_number).await

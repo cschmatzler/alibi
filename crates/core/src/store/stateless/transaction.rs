@@ -138,6 +138,12 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
     async fn create_user(&self, data: CreateUser) -> AuthResult<UserView> {
         UserStore::<StatelessSchema>::create_user(self.live, data).await
     }
+    async fn get_user_by_username_value(
+        &self,
+        username: &crate::utils::json::JsValue,
+    ) -> AuthResult<Option<UserView>> {
+        UserStore::<StatelessSchema>::get_user_by_username_value(self.live, username).await
+    }
     async fn create_user_prepared(&self, data: PreparedUserCreation) -> AuthResult<UserView> {
         UserStore::<StatelessSchema>::create_user_prepared(self.live, data).await
     }

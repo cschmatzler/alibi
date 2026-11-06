@@ -729,6 +729,14 @@ where
             .await
             .map_err(map_db_err)
     }
+    async fn get_user_by_username_value(
+        &self,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        self.store
+            .get_user_by_username_value_with_connection(self.tx, username)
+            .await
+    }
     async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
         self.store
             .create_passkey_with_connection(self.tx, data)

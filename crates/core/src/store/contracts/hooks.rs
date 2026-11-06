@@ -12,6 +12,47 @@ impl UserCreationDefaults {
     }
 }
 
+/// An ordered, asynchronous user creation hook after identity admission.
+/// Transactional hooks must use the supplied transaction for database operations.
+#[async_trait]
+pub trait UserCreateHook<S: AuthSchema>: Send + Sync {
+    async fn before_create(
+        &self,
+        input: CreateUser,
+        context: &crate::AuthContext<S>,
+        transaction: Option<&dyn crate::AuthTransaction<S>>,
+    ) -> AuthResult<CreateUser>;
+}
+
+pub(crate) enum UserCreateStep<S: AuthSchema> {
+    Transform(UserCreateTransform),
+    Hook(Arc<dyn UserCreateHook<S>>),
+}
+
+impl<S: AuthSchema> Clone for UserCreateStep<S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Transform(transform) => Self::Transform(Arc::clone(transform)),
+            Self::Hook(hook) => Self::Hook(Arc::clone(hook)),
+        }
+    }
+}
+
+pub(in crate::store) async fn create_user_data<S: AuthSchema>(
+    mut data: CreateUser,
+    steps: &[UserCreateStep<S>],
+    context: &crate::AuthContext<S>,
+    transaction: Option<&dyn crate::AuthTransaction<S>>,
+) -> AuthResult<CreateUser> {
+    for step in steps {
+        data = match step {
+            UserCreateStep::Transform(transform) => transform(data)?,
+            UserCreateStep::Hook(hook) => hook.before_create(data, context, transaction).await?,
+        };
+    }
+    Ok(data)
+}
+
 /// Guard creation and observe successfully persisted sessions.
 /// Before hooks must use the supplied transaction for transactional reads/writes.
 /// After hooks run only after commit; their errors do not roll back the write.

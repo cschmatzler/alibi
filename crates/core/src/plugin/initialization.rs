@@ -64,8 +64,22 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .cloned_or_default::<crate::store::UserTransforms>();
-        transforms.creates.push(Arc::new(transform));
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
+        transforms
+            .creates
+            .push(crate::store::UserCreateStep::Transform(Arc::new(transform)));
+        self.extensions.insert(transforms);
+    }
+
+    /// Register an asynchronous hook in the same ordered chain as synchronous
+    /// user create transforms. Identity admission runs before this chain.
+    pub fn register_user_create_hook(&mut self, hook: Arc<dyn crate::store::UserCreateHook<S>>) {
+        let mut transforms = self
+            .extensions
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
+        transforms
+            .creates
+            .push(crate::store::UserCreateStep::Hook(hook));
         self.extensions.insert(transforms);
     }
 
@@ -80,7 +94,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .cloned_or_default::<crate::store::UserTransforms>();
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
         transforms.adapter_defaults.0.push(Arc::new(default));
         self.extensions.insert(transforms);
     }
@@ -95,7 +109,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     {
         let mut transforms = self
             .extensions
-            .cloned_or_default::<crate::store::UserTransforms>();
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
         transforms.updates.push(Arc::new(transform));
         self.extensions.insert(transforms);
     }
@@ -144,7 +158,7 @@ impl<S: AuthSchema> AuthInitContext<S> {
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
         let transforms = self
             .extensions
-            .cloned_or_default::<crate::store::UserTransforms>();
+            .cloned_or_default::<crate::store::UserTransforms<S>>();
         let session_callbacks = self
             .extensions
             .cloned_or_default::<crate::store::SessionCreatedCallbacks<S>>();

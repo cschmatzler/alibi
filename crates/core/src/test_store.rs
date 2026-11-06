@@ -344,6 +344,26 @@ impl UserStore<BundledSchema> for MemoryStore {
             .cloned())
     }
 
+    async fn get_user_by_username_value(
+        &self,
+        username: &crate::utils::json::JsValue,
+    ) -> AuthResult<Option<UserView>> {
+        Ok(self
+            .lock()
+            .users
+            .values()
+            .find(|user| {
+                user.extension_fields
+                    .get("username")
+                    .cloned()
+                    .or_else(|| user.username.clone().map(serde_json::Value::String))
+                    .map(crate::utils::json::JsValue::from)
+                    .as_ref()
+                    == Some(username)
+            })
+            .cloned())
+    }
+
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<UserView>> {
         Ok(self
             .lock()

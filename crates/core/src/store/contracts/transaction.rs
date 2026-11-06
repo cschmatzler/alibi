@@ -607,6 +607,15 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "User lookup in a transaction is not supported by this store".to_owned(),
         ))
     }
+    /// Look up a username on this transaction, never on a separate root connection.
+    async fn get_user_by_username_value(
+        &self,
+        _username: &crate::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        Err(AuthError::NotImplemented(
+            "Username lookup in a transaction is unsupported by this store".into(),
+        ))
+    }
     /// Persist a verified passkey in the same transaction as its new session.
     async fn create_passkey(&self, _passkey: CreatePasskey) -> AuthResult<Passkey> {
         Err(AuthError::NotImplemented(

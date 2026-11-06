@@ -4,6 +4,53 @@ use alibi_core::store::UserStore;
 use alibi_core::{AuthUser, CreateUser};
 use serde_json::json;
 
+#[tokio::test]
+async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool);
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let mut input = CreateUser::new().with_email("raw-username@fixture.test");
+    _ = input
+        .adapter_native_fields
+        .insert("username".into(), json!(42));
+    let user = store.create_user(input).await.unwrap();
+    let found = store
+        .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(42.0))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.id(), user.id());
+    for raw in [json!([]), json!({})] {
+        assert!(store.get_user_by_username_value(&raw.into()).await.is_err());
+    }
+    alibi_core::store::transaction(&store, |tx| {
+        Box::pin(async move {
+            let mut input = CreateUser::new().with_email("transaction-username@fixture.test");
+            _ = input
+                .adapter_native_fields
+                .insert("username".into(), json!(73));
+            let created = tx.create_user(input).await?;
+            let found = tx
+                .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(73.0))
+                .await?
+                .unwrap();
+            assert_eq!(found.id(), created.id());
+            assert!(
+                tx.get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(999.0))
+                    .await?
+                    .is_none()
+            );
+            Ok(())
+        })
+    })
+    .await
+    .unwrap();
+}
+
 #[derive(crate::AuthEntity, Clone, Debug, PartialEq, serde::Serialize, sqlx::FromRow)]
 #[auth(role = "user", table = "custom_user", secondary_storage)]
 struct OptionalNativeUser {

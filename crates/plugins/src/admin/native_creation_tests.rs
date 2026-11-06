@@ -3,6 +3,55 @@ use alibi_core::UpdateUser;
 use chrono::Datelike;
 
 #[tokio::test]
+async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction() {
+    let (ctx, _, _, _, _) = create_admin_context().await;
+    let mut input = alibi_core::CreateUser::new().with_email("raw-username@fixture.test");
+    input
+        .adapter_native_fields
+        .insert("username".into(), serde_json::json!(42));
+    let user = ctx.database.create_user(input).await.unwrap();
+    let found = ctx
+        .database
+        .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(42.0))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        alibi_core::AuthUser::id(&found),
+        alibi_core::AuthUser::id(&user)
+    );
+    for raw in [serde_json::json!([]), serde_json::json!({})] {
+        assert!(
+            ctx.database
+                .get_user_by_username_value(&raw.into())
+                .await
+                .is_err()
+        );
+    }
+    alibi_core::store::transaction(ctx.database.as_ref(), |tx| {
+        Box::pin(async move {
+            let mut input =
+                alibi_core::CreateUser::new().with_email("transaction-username@fixture.test");
+            input
+                .adapter_native_fields
+                .insert("username".into(), serde_json::json!(73));
+            let created = tx.create_user(input).await?;
+            let found = tx
+                .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(73.0))
+                .await?
+                .unwrap();
+            assert_eq!(
+                alibi_core::AuthUser::id(&found),
+                alibi_core::AuthUser::id(&created)
+            );
+            Ok(())
+        })
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
 async fn false_ban_patch_preserves_omissions_and_honors_explicit_values() {
     let (ctx, admin, _, user, _) = create_admin_context().await;
     let expiry = Utc::now() + Duration::hours(1);

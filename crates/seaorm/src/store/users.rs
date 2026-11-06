@@ -631,6 +631,14 @@ where
             .map_err(map_db_err)
     }
 
+    async fn get_user_by_username_value(
+        &self,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        self.get_user_by_username_value_with_connection(self.scoped_connection(), username)
+            .await
+    }
+
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
         let column = S::User::phone_number_column()
             .ok_or_else(|| AuthError::internal("the user schema has no phone-number field"))?;
@@ -861,6 +869,29 @@ where
     S: AuthSchema,
     S::User: crate::schema::SeaOrmUserModel,
 {
+    pub(super) async fn get_user_by_username_value_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        let Some(column) = S::User::username_column() else {
+            return Ok(None);
+        };
+        if matches!(
+            username,
+            alibi_core::utils::json::JsValue::Array(_)
+                | alibi_core::utils::json::JsValue::Object(_)
+        ) {
+            return Err(AuthError::internal("Unsupported native user SQL parameter"));
+        }
+        let value = crate::additional_fields::raw_value(username)?;
+        user_query::<S::User>(connection.get_database_backend())
+            .filter(column.eq(value))
+            .one(connection)
+            .await
+            .map_err(map_db_err)
+    }
+
     pub(super) async fn get_user_by_email_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,

@@ -696,6 +696,14 @@ where
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         users::find_user_by_id::<S::User>(Exec::tx(self.tx), id, users::Lock::None).await
     }
+    async fn get_user_by_username_value(
+        &self,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        self.store
+            .get_user_by_username_value_with_connection(Exec::tx(self.tx), username)
+            .await
+    }
     async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
         self.store
             .create_passkey_with_connection(Exec::tx(self.tx), data)

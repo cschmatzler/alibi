@@ -215,6 +215,18 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
+    /// Look up an untyped username using the adapter's actual parameter semantics.
+    async fn get_user_by_username_value(
+        &self,
+        username: &crate::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        if let Some(username) = username.as_str() {
+            return self.get_user_by_username(username).await;
+        }
+        Err(AuthError::NotImplemented(
+            "Raw username lookup is unsupported by this store".into(),
+        ))
+    }
     async fn get_user_by_phone_number(&self, _phone_number: &str) -> AuthResult<Option<S::User>> {
         Err(AuthError::internal(
             "phone-number lookup is not supported by this store",

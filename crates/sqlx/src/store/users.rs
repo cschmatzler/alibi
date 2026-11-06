@@ -568,6 +568,14 @@ where
         self.exec().fetch_optional(sql).await
     }
 
+    async fn get_user_by_username_value(
+        &self,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        self.get_user_by_username_value_with_connection(self.exec(), username)
+            .await
+    }
+
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
         let column = S::User::phone_number_column()
             .ok_or_else(|| AuthError::internal("the user schema has no phone-number field"))?;
@@ -807,6 +815,25 @@ where
     S: AuthSchema,
     S::User: crate::schema::SqlxUserModel,
 {
+    pub(super) async fn get_user_by_username_value_with_connection(
+        &self,
+        exec: Exec<'_>,
+        username: &alibi_core::utils::json::JsValue,
+    ) -> AuthResult<Option<S::User>> {
+        let Some(column) = S::User::username_column() else {
+            return Ok(None);
+        };
+        if matches!(
+            username,
+            alibi_core::utils::json::JsValue::Array(_)
+                | alibi_core::utils::json::JsValue::Object(_)
+        ) {
+            return Err(AuthError::internal("Unsupported native user SQL parameter"));
+        }
+        let value = crate::additional_fields::raw_value(username)?;
+        exec.fetch_optional(self.user_lookup(column, value)).await
+    }
+
     pub(super) async fn get_user_by_email_with_connection(
         &self,
         exec: Exec<'_>,
