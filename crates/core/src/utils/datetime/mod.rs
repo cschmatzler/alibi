@@ -1,7 +1,7 @@
 //! JSON timestamps matching JavaScript's `Date.toJSON()` precision.
 
 mod parse;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 pub use parse::parse_date_millis;
 use serde::Serializer;
 
@@ -14,7 +14,7 @@ use serde::Serializer;
 ///
 /// Propagates errors from the serializer.
 pub fn serialize<S: Serializer>(value: &DateTime<Utc>, serializer: S) -> Result<S::Ok, S::Error> {
-    serializer.serialize_str(&value.to_rfc3339_opts(SecondsFormat::Millis, true))
+    serializer.serialize_str(&json_date_millis(value.timestamp_millis()))
 }
 
 /// Serialize a nullable timestamp using the same millisecond precision.
@@ -28,7 +28,7 @@ pub fn serialize_optional<S: Serializer>(
 ) -> Result<S::Ok, S::Error> {
     match value {
         Some(value) => {
-            serializer.serialize_some(&value.to_rfc3339_opts(SecondsFormat::Millis, true))
+            serializer.serialize_some(&json_date_millis(value.timestamp_millis()))
         }
         None => serializer.serialize_none(),
     }
@@ -181,6 +181,28 @@ mod tests {
                 decoded.expires_at.map(|date| date.timestamp_millis()),
                 Some(value.timestamp_millis())
             );
+        }
+    }
+
+    #[test]
+    fn expanded_years_use_javascript_six_digit_iso_format() {
+        for (input, expected) in [
+            ("+10000-01-01T00:00:00Z", "+010000-01-01T00:00:00.000Z"),
+            ("-0001-01-01T00:00:00Z", "-000001-01-01T00:00:00.000Z"),
+            ("0000-01-01T00:00:00Z", "0000-01-01T00:00:00.000Z"),
+        ] {
+            let date: DateTime<Utc> = input.parse().unwrap();
+            let encoded = serde_json::to_value(Timestamps {
+                created_at: date,
+                expires_at: Some(date),
+            }).unwrap();
+            assert_eq!(encoded["created_at"], expected);
+            assert_eq!(encoded["expires_at"], expected);
+            let date = crate::utils::json::JsValue::Date(date);
+            assert_eq!(serde_json::to_value(&date).unwrap(), expected);
+            assert_eq!(date.to_json_value().unwrap(), expected);
+            assert_eq!(crate::utils::json::to_string(&date).unwrap(), format!("\"{expected}\""));
+            assert_eq!(String::deserialize(date).unwrap(), expected);
         }
     }
 

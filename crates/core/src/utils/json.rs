@@ -170,7 +170,7 @@ impl Serialize for JsValue {
             Self::Number(n) => serializer.serialize_f64(*n),
             Self::String(s) => serializer.serialize_str(s),
             Self::Date(value) => serializer
-                .serialize_str(&value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
+                .serialize_str(&crate::utils::datetime::json_date_millis(value.timestamp_millis())),
             Self::Array(a) => a.serialize(serializer),
             Self::Object(m) => m.serialize(serializer),
         }
@@ -270,7 +270,7 @@ impl<'de> Deserializer<'de> for JsValue {
             Self::Number(n) => visitor.visit_f64(n),
             Self::String(s) => visitor.visit_string(s),
             Self::Date(value) => {
-                visitor.visit_string(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
+                visitor.visit_string(crate::utils::datetime::json_date_millis(value.timestamp_millis()))
             }
             Self::Array(a) => {
                 visitor.visit_seq(serde::de::value::SeqDeserializer::new(a.into_iter()))
@@ -704,7 +704,7 @@ fn finite_value(value: &JsValue) -> Result<Value, serde_json::Error> {
             .ok_or_else(|| invalid("invalid finite JSON number")),
         JsValue::String(s) => Ok(Value::String(s.clone())),
         JsValue::Date(value) => Ok(Value::String(
-            value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            crate::utils::datetime::json_date_millis(value.timestamp_millis()),
         )),
         JsValue::Array(a) => a
             .iter()
@@ -738,7 +738,7 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
         JsValue::String(s) => serde_json::to_writer(bytes, s)?,
         JsValue::Date(value) => serde_json::to_writer(
             bytes,
-            &value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
+            &crate::utils::datetime::json_date_millis(value.timestamp_millis()),
         )?,
         JsValue::Array(a) => {
             bytes.push(b'[');
