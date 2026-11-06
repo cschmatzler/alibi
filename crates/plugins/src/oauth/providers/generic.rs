@@ -243,6 +243,8 @@ impl GenericOAuthConfig {
         policy.discovery_openid_scope = is_oidc;
         policy.source_profile_exceptions = true;
         policy.require_client_id = true;
+        policy.preserve_raw_profile_scalars = true;
+        policy.preserve_raw_email_errors = true;
         self.provider.auth_url = self.authorization_url.unwrap_or_default();
         self.provider.token_url = self.token_url.unwrap_or_default();
         self.provider.user_info_url.clone_from(&self.user_info_url);
@@ -493,8 +495,16 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             image: string(&raw, "image"),
             email_verified: super::email_verified_claim(raw.get("emailVerified")),
         };
+        let mut output: Map<String, Value> = ["email", "name", "image"]
+            .into_iter()
+            .filter_map(|key| raw.get(key).cloned().map(|value| (key.into(), value)))
+            .collect();
+        _ = output.insert("emailVerified".into(), Value::Bool(user.email_verified));
+        if output.get("image").is_some_and(Value::is_null) {
+            _ = output.remove("image");
+        }
         let mut response = OAuthUserInfoResponse {
-            user_output: None,
+            user_output: Some(output),
             user,
             data: raw.take(),
         };
@@ -700,6 +710,20 @@ mod tests {
         async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
             Err("custom mapper failed".into())
         }
+    }
+
+    #[tokio::test]
+    async fn generic_default_profiles_preserve_public_scalars_without_ids() {
+        let handler = GenericUserInfo { url: None, mapper: None, custom: None, verified_oidc: false };
+        let response = handler.get_user_info(OAuthUserInfoRequest {
+            id_token: Some(id_token(serde_json::json!({"sub":"subject", "email":"a@example.com", "name":42, "picture":false}))),
+            ..Default::default()
+        }).await.unwrap();
+        assert_eq!(response.user_output.unwrap(), serde_json::json!({"email":"a@example.com", "emailVerified":false, "name":42, "image":false}).as_object().unwrap().clone());
+        let provider = GenericOAuthConfig::new("client", "secret").resolve().await.unwrap().unwrap().provider;
+        let policy = provider.authorization.unwrap();
+        assert!(policy.preserve_raw_profile_scalars);
+        assert!(policy.preserve_raw_email_errors);
     }
 
     #[tokio::test]
