@@ -6,6 +6,8 @@
 mod account;
 mod plugins;
 mod session;
+#[cfg(test)]
+mod session_native_tests;
 mod user;
 mod user_native;
 #[cfg(test)]

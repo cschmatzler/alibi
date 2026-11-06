@@ -63,17 +63,23 @@ impl Serialize for SessionView {
         entry!("ipAddress", &self.ip_address);
         entry!("userAgent", &self.user_agent);
         entry!("userId", &self.user_id);
-        if let Some(value) = &self.impersonated_by {
-            entry!("impersonatedBy", value);
+        if self.impersonated_by.is_some() || self.extension_fields.contains_key("impersonatedBy") {
+            entry!("impersonatedBy", &self.impersonated_by);
         }
-        if let Some(value) = &self.active_organization_id {
-            entry!("activeOrganizationId", value);
+        if self.active_organization_id.is_some()
+            || self.extension_fields.contains_key("activeOrganizationId")
+        {
+            entry!("activeOrganizationId", &self.active_organization_id);
         }
-        if let Some(value) = &self.active_team_id {
-            entry!("activeTeamId", value);
+        if self.active_team_id.is_some() || self.extension_fields.contains_key("activeTeamId") {
+            entry!("activeTeamId", &self.active_team_id);
         }
         for (name, value) in &self.extension_fields {
-            if !self.omitted_fields.contains(name) {
+            if !matches!(
+                name.as_str(),
+                "impersonatedBy" | "activeOrganizationId" | "activeTeamId"
+            ) && !self.omitted_fields.contains(name)
+            {
                 map.serialize_entry(name, value)?;
             }
         }
@@ -83,6 +89,9 @@ impl Serialize for SessionView {
 
 impl<T: AuthSession> From<&T> for SessionView {
     fn from(session: &T) -> Self {
+        if let Some(view) = session.retained_session_view() {
+            return view.clone();
+        }
         Self {
             id: session.id().into_owned(),
             expires_at: session.expires_at(),
@@ -102,6 +111,37 @@ impl<T: AuthSession> From<&T> for SessionView {
 }
 
 impl AuthSession for SessionView {
+    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+        Ok(serde_json::to_value(self)?)
+    }
+
+    fn secondary_snapshot_for_creation(
+        &self,
+        created_at: DateTime<Utc>,
+    ) -> crate::AuthResult<serde_json::Value> {
+        let mut session = self.clone();
+        session.created_at = created_at;
+        _ = session.omitted_fields.remove("createdAt");
+        session.secondary_snapshot()
+    }
+
+    fn from_secondary_snapshot(snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+        let mut session: Self = serde_json::from_value(snapshot.clone())?;
+        for name in ["ipAddress", "userAgent"] {
+            if snapshot.get(name).is_none() {
+                _ = session.omitted_fields.insert(name.to_owned());
+            }
+        }
+        for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
+            if snapshot.get(name).is_some_and(serde_json::Value::is_null) {
+                _ = session
+                    .extension_fields
+                    .insert(name.to_owned(), serde_json::Value::Null);
+            }
+        }
+        Ok(session)
+    }
+
     fn retained_session_view(&self) -> Option<&SessionView> {
         Some(self)
     }
