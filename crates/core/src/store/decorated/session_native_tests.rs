@@ -401,3 +401,53 @@ async fn cached_session_unknown_objects_survive_and_only_declared_hidden_fields_
     assert!(public.get("privateCacheState").is_none());
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 0);
 }
+
+#[tokio::test]
+async fn cached_session_record_must_not_rerun_adapter_output_transforms() {
+    let cache = Arc::new(MemoryCacheAdapter::new());
+    let mut config = (*config(cache.clone())).clone();
+    config.session.additional_fields.insert(
+        "custom".into(),
+        FieldConfig::new(json!({"type": "json"})).transform_output(|_| async {
+            panic!("cached session record reran adapter output transform")
+        }),
+    );
+    let config = Arc::new(config);
+    let inner = Arc::new(StatelessStore::default());
+    let user = inner
+        .create_user(CreateUser::new().with_email("record-transform@fixture.test"))
+        .await
+        .unwrap();
+    let snapshot = json!({
+        "session": {
+            "id": "record-cache-session", "token": "record-cache-token", "userId": user.id,
+            "expiresAt": crate::utils::datetime::json_date_millis((Utc::now() + Duration::hours(1)).timestamp_millis()),
+            "createdAt": "2026-01-02T03:04:05.678Z", "updatedAt": "2026-01-02T03:04:05.678Z",
+            "custom": {"already": "transformed"},
+            "unknownTrustedObject": {"nested": [true, null]}
+        },
+        "user": user.secondary_snapshot().unwrap()
+    });
+    cache
+        .set(
+            "record-cache-token",
+            &snapshot.to_string(),
+            Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    let store = decorated::<StatelessSchema>(inner, config);
+    let cached = store
+        .get_session_record("record-cache-token")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        cached.raw_snapshot().values()["custom"],
+        json!({"already": "transformed"})
+    );
+    assert_eq!(
+        cached.raw_snapshot().values()["unknownTrustedObject"],
+        json!({"nested": [true, null]})
+    );
+}

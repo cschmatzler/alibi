@@ -70,6 +70,37 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
     ) -> AuthResult<Option<AdapterRecord<S::Session>>> {
+        if !self.config.session.stateless
+            && let Some(cache) = self.secondary()
+        {
+            if let Some((session, _)) = self.cached_session_record(token).await? {
+                let serde_json::Value::Object(values) =
+                    serde_json::to_value(self.projection_context.session_view(&session))?
+                else {
+                    return Err(AuthError::internal("Session output must be an object"));
+                };
+                let mut output = AdapterOutput::from_values(values);
+                let registered = self
+                    .projection_context
+                    .extensions
+                    .get::<crate::field_policy::SessionFields>();
+                let fields = registered
+                    .as_ref()
+                    .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+                for name in fields.keys() {
+                    if !output.values().contains_key(name) {
+                        output.insert(name.clone(), None);
+                    }
+                }
+                for name in self.secondary_absent_fields(token).await? {
+                    output.insert(name, None);
+                }
+                return Ok(Some(AdapterRecord::with_output(session, output)));
+            }
+            if !self.database_session_fallback() || cache.get(token).await?.is_some() {
+                return Ok(None);
+            }
+        }
         let Some(model) = self.get_session(token).await? else {
             return Ok(None);
         };
