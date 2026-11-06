@@ -88,6 +88,7 @@ impl OAuthProvider {
             authorization: Some(OAuthAuthorizationPolicy {
                 preserve_raw_profile_scalars: true,
                 source_profile_exceptions: true,
+                allow_missing_access_token: true,
                 authorization_code: Some(OAuthAuthorizationCodeCallback(grants.clone())),
                 client_id_parameter: "appid".into(),
                 token_expiry_always: true,
@@ -382,4 +383,66 @@ fn subject(profile: &Value) -> Result<String, String> {
         .filter(|value| super::remaining_profile::truthy(value))
         .or_else(|| profile.get("openid"));
     super::remaining_profile::raw_subject(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 1024];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let body = profile.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn wechat_userinfo_allows_missing_access_token_with_openid() {
+        assert!(
+            OAuthProvider::wechat("client", "secret")
+                .authorization
+                .unwrap()
+                .allow_missing_access_token
+        );
+        let (endpoint, captured) =
+            profile_server(json!({"openid": "openid", "nickname": "name"})).await;
+        let response = WeChatProfile {
+            endpoint,
+            mapper: None,
+            application_mapper: None,
+        }
+        .get_user_info(OAuthUserInfoRequest {
+            raw: Some(json!({"openid": "openid"})),
+            ..OAuthUserInfoRequest::default()
+        })
+        .await
+        .unwrap();
+        let captured = captured.await.unwrap();
+        assert!(
+            captured.starts_with("GET /?access_token=&openid=openid&lang=zh_CN HTTP/1.1"),
+            "{captured}"
+        );
+        assert_eq!(response.user.email, "openid@wechat.placeholder.invalid");
+    }
 }
