@@ -16,6 +16,7 @@ struct CachedSession {
 #[derive(Clone, Serialize, Deserialize)]
 struct Reference {
     token: String,
+    #[serde(rename = "expiresAt", with = "chrono::serde::ts_milliseconds")]
     expires_at: DateTime<Utc>,
 }
 

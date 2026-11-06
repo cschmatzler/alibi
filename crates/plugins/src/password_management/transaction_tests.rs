@@ -185,6 +185,68 @@ impl CookieCacheVersionResolver for Hooks {
     }
 }
 
+#[tokio::test]
+async fn secondary_session_index_uses_typescript_expiry_shape_for_listing_and_revocation() {
+    use alibi_core::store::CacheAdapter;
+
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let key = format!("active-sessions-{}", fixture.user.id);
+    let own: serde_json::Value =
+        serde_json::from_str(&cache.get(&key).await.unwrap().unwrap()).unwrap();
+    for session in &fixture.sessions {
+        let reference = own
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|reference| reference["token"] == session.token)
+            .unwrap();
+        assert_eq!(
+            reference["expiresAt"],
+            session.expires_at.timestamp_millis()
+        );
+        assert!(reference.get("expires_at").is_none());
+    }
+
+    let selected = &fixture.sessions[0];
+    let upstream = serde_json::json!([
+        { "token": selected.token, "expiresAt": selected.expires_at.timestamp_millis() },
+        { "token": "already-expired", "expiresAt": 0 }
+    ]);
+    cache
+        .set(&key, &upstream.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    let listed = fixture
+        .ctx
+        .database
+        .get_user_sessions(&fixture.user.id)
+        .await
+        .unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].token, selected.token);
+
+    fixture
+        .ctx
+        .database
+        .delete_user_sessions(&fixture.user.id)
+        .await
+        .unwrap();
+    assert!(cache.get(&selected.token).await.unwrap().is_none());
+    assert!(cache.get(&key).await.unwrap().is_none());
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_user_sessions(&fixture.user.id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 struct TestHasher;
 
 #[async_trait]
