@@ -211,6 +211,11 @@ pub trait OAuthUserInfoHandler: Send + Sync {
         None
     }
 
+    /// Reconfigure built-in Google admission without wrapping application handlers.
+    fn configured_hosted_domain(&self, _domain: &str) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        None
+    }
+
     /// Custom application callbacks throw on failure; factory transports can
     /// return a missing profile and tag only their uncaught projection failures.
     fn errors_are_exceptions(&self) -> bool {
