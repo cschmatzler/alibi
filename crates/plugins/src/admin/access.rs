@@ -157,7 +157,7 @@ pub(super) fn has_permission(
     config: &AdminConfig,
     requested: &HashMap<String, Vec<String>>,
 ) -> bool {
-    if is_admin_user_id(user_id, config) {
+    if is_admin_user_id(user_id.filter(|id| !id.is_empty()), config) {
         return true;
     }
 

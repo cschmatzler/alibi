@@ -751,6 +751,21 @@ mod tests {
         assert!(stored.ban_expires().is_none());
     }
 
+    #[test]
+    fn empty_admin_id_does_not_bypass_role_permissions() {
+        let config = AdminConfig {
+            admin_user_ids: Some(vec![String::new(), "trusted".to_owned()]),
+            ..AdminConfig::default()
+        };
+        let requested = std::collections::HashMap::from([
+            ("user".to_owned(), vec!["delete".to_owned()]),
+        ]);
+        assert!(!access::has_permission(Some(""), Some("user"), &config, &requested));
+        assert!(!access::has_permission(None, Some("user"), &config, &requested));
+        assert!(access::has_permission(Some("trusted"), Some("user"), &config, &requested));
+        assert!(access::has_permission(Some(""), Some("admin"), &config, &requested));
+    }
+
     #[tokio::test]
     async fn admin_update_phone_fields_persist_and_can_clear_number() {
         let (ctx, admin, _, user, _) = create_admin_context().await;
