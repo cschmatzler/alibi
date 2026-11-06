@@ -608,7 +608,13 @@ impl PhoneNumberPlugin {
                     user,
                     alibi_core::user_validation::UserValidationSource::creation("phone-number"),
                 )
-                .await?
+                .await
+                .map_err(|error| match error {
+                    AuthError::UserCreationCancelled => {
+                        phone_error(500, codes::FAILED_TO_CREATE_USER, "Failed to create user")
+                    }
+                    error => error,
+                })?
         };
         self.callback(ctx, req.physical_request(), &body.phone_number, &user)
             .await?;

@@ -237,6 +237,87 @@ mod tests {
     use serde_json::{Value, json};
     use std::sync::Mutex;
 
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+
+    #[tokio::test]
+    async fn cancelled_phone_signup_reports_creation_failure_without_masking_hook_errors() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        struct Hook(bool);
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_user(
+                &self,
+                _: &mut CreateUser,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application user policy"))
+                }
+            }
+        }
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(test_helpers::create_test_config());
+            let mut ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            ctx.set_metadata("phone-number.enabled", json!(true));
+            let (plugin, outbox, _) = configured();
+            let phone = "+15551110221";
+            assert_eq!(
+                post(
+                    &plugin,
+                    &ctx,
+                    "/phone-number/send-otp",
+                    json!({"phoneNumber":phone})
+                )
+                .await
+                .status,
+                200
+            );
+            let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
+            let response = post(
+                &plugin,
+                &ctx,
+                "/phone-number/verify",
+                json!({"phoneNumber":phone,"code":code}),
+            )
+            .await;
+            if cancelled {
+                assert_eq!(response.status, 500);
+                let body: Value = serde_json::from_slice(&response.body).unwrap();
+                assert_eq!(body["code"], "FAILED_TO_CREATE_USER");
+            } else {
+                assert_eq!(response.status, 403);
+            }
+            assert!(
+                ctx.database
+                    .get_user_by_phone_number(phone)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                ctx.verifications()
+                    .find(&format!("phone-number-otp-{phone}"))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
     #[derive(Default)]
     struct Outbox(Mutex<Vec<PhoneOtpDelivery>>);
 
