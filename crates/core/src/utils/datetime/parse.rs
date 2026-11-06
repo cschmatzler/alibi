@@ -51,6 +51,11 @@ fn parse_iso(mut input: &str) -> Option<i64> {
     if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
         return None;
     }
+    let year = if input.starts_with(' ') {
+        legacy_year(year)
+    } else {
+        year
+    };
     let days = civil_days(year, month, day);
     if input.is_empty() {
         return time_clip(days.checked_mul(86_400_000)?);
@@ -116,6 +121,14 @@ fn parse_iso(mut input: &str) -> Option<i64> {
     time_clip(nominal + if negative { offset } else { -offset })
 }
 
+fn legacy_year(year: i64) -> i64 {
+    match year {
+        0..=49 => year + 2000,
+        50..=99 => year + 1900,
+        _ => year,
+    }
+}
+
 fn time_clip(milliseconds: i64) -> Option<i64> {
     (milliseconds.abs() <= 8_640_000_000_000_000).then_some(milliseconds)
 }
@@ -171,7 +184,8 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%d %b %Y %H:%M:%S%.f UTC",
     ] {
         if let Ok(date) = DateTime::parse_from_str(&without_gmt, format) {
-            return time_clip(date.timestamp_millis());
+            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
+            return time_clip(date.with_year(year)?.timestamp_millis());
         }
     }
     let midnight = format!("{without_gmt} 00:00:00");
@@ -183,7 +197,8 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%Y-%m-%d %z %H:%M:%S",
     ] {
         if let Ok(date) = DateTime::parse_from_str(&midnight, format) {
-            return time_clip(date.timestamp_millis());
+            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
+            return time_clip(date.with_year(year)?.timestamp_millis());
         }
     }
     for format in [
@@ -196,20 +211,17 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%d %b %Y %I:%M:%S %p",
     ] {
         if let Ok(date) = NaiveDateTime::parse_from_str(&value, format) {
+            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
+            let date = date.with_year(year)?;
             return time_clip(local_millis(date.and_utc().timestamp_millis())?);
         }
     }
     for format in [
         "%b %d %Y", "%d %b %Y", "%m/%d/%Y", "%Y/%m/%d", "%m-%d-%Y", "%Y-%m-%d",
     ] {
-        if let Ok(mut date) = NaiveDate::parse_from_str(&value, format) {
-            if (0..=99).contains(&date.year()) {
-                date = date.with_year(if date.year() < 50 {
-                    2000 + date.year()
-                } else {
-                    1900 + date.year()
-                })?;
-            }
+        if let Ok(date) = NaiveDate::parse_from_str(&value, format) {
+            let year = i32::try_from(legacy_year(i64::from(date.year()))).ok()?;
+            let date = date.with_year(year)?;
             return time_clip(local_millis(
                 date.and_hms_opt(0, 0, 0)?.and_utc().timestamp_millis(),
             )?);
@@ -305,6 +317,20 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_datetime_years_use_javascript_century_pivot() {
+        for (input, expected) in [
+            ("Jan 1 49 12:00:00 GMT", "2049-01-01T12:00:00Z"),
+            ("Jan 1 99 12:00:00 GMT", "1999-01-01T12:00:00Z"),
+            ("Jan 1 00 GMT", "2000-01-01T00:00:00Z"),
+            ("0049-01-01 12:00:00Z", "2049-01-01T12:00:00Z"),
+            ("0049-01-01T12:00:00Z", "0049-01-01T12:00:00Z"),
+            ("Jan 1 49 12:00:00", "2049-01-01T12:00:00"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+    }
 
     #[test]
     fn date_only_bounds_honor_explicit_timezone_tokens() {
