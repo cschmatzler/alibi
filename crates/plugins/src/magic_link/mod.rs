@@ -342,7 +342,13 @@ impl MagicLinkPlugin {
                 }
             }
         };
-        let (payload, mut response) = session_response(ctx, req, user).await?;
+        let (payload, mut response) = match session_response(ctx, req, user).await {
+            Ok(response) => response,
+            Err(AuthError::SessionCreationCancelled) => {
+                return Ok(error_redirect(error_url, "failed_to_create_session", None));
+            }
+            Err(error) => return Err(error),
+        };
         if callback.is_none() {
             response.body = serde_json::to_vec(&payload)?;
             return Ok(response);
@@ -573,6 +579,97 @@ mod tests {
             assert!(
                 ctx.verifications()
                     .find("magic-link:cancel-user")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn cancelled_session_creation_redirects_without_masking_hook_errors() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        struct Hook(bool);
+
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_session(
+                &self,
+                _: &mut alibi_core::CreateSession,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application session policy"))
+                }
+            }
+        }
+
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(test_helpers::create_test_config());
+            let ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            let (plugin, _) = configured();
+            let user = ctx
+                .database
+                .create_user(
+                    CreateUser::new()
+                        .with_email("cancel-session@example.com")
+                        .with_email_verified(true)
+                        .with_name("Session Owner"),
+                )
+                .await
+                .unwrap();
+            ctx.verifications()
+                .create(CreateVerification {
+                    identifier: "magic-link:cancel-session".into(),
+                    value: json!({"type":"magic-link","email":"cancel-session@example.com"})
+                        .to_string(),
+                    expires_at: Utc::now() + Duration::minutes(5),
+                })
+                .await
+                .unwrap();
+            let mut req = verify_request("cancel-session");
+            req.query
+                .insert("errorCallbackURL".into(), "/failure".into());
+            let result = plugin.verify(&req, &ctx).await;
+            if cancelled {
+                let response = result.unwrap();
+                assert_eq!(response.status, 302);
+                let location = Url::parse(response.headers.get("location").unwrap()).unwrap();
+                assert!(
+                    location
+                        .query_pairs()
+                        .any(|(key, value)| key == "error" && value == "failed_to_create_session")
+                );
+                assert!(response.headers.get("set-cookie").is_none());
+            } else {
+                let error = result.unwrap_err();
+                assert_eq!(error.status_code(), 403);
+                assert_eq!(error.to_string(), "application session policy");
+            }
+            assert!(
+                ctx.database
+                    .get_user_sessions(&user.id())
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                ctx.verifications()
+                    .find("magic-link:cancel-session")
                     .await
                     .unwrap()
                     .is_none()
