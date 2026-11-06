@@ -105,6 +105,7 @@ impl OAuthProvider {
             get_user_info: Some(std::sync::Arc::new(CloudflareUserInfo {
                 url: user_info_url,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
             })),
             refresh_access_token: None,
             verify_id_token: None,
@@ -150,12 +151,23 @@ fn subject(profile: &Value) -> Result<String, String> {
     }
     Ok(id)
 }
+#[derive(Clone)]
 struct CloudflareUserInfo {
     url: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait::async_trait]
 impl super::OAuthUserInfoHandler for CloudflareUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn super::OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: super::OAuthUserInfoRequest,
@@ -180,11 +192,6 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
         let profile = envelope
             .get("result")
             .ok_or("Missing Cloudflare API result")?;
-        let email = profile
-            .get("email")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
         let names = ["first_name", "last_name"]
             .into_iter()
             .filter_map(|key| profile.get(key))
@@ -192,32 +199,98 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .map(super::remaining_profile::js_string)
             .collect::<Result<Vec<_>, _>>()?;
         let name = names.join(" ");
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
-        let id = subject(profile)?;
-        let mut user = mapped.unwrap_or_else(|| OAuthUserInfo {
-            additional_fields: Map::default(),
-            id: id.clone(),
-            email: email.clone(),
-            name: Some(if name.is_empty() { email } else { name }),
-            image: None,
-            email_verified: false,
-        });
-        user.id = id;
-        Ok(super::OAuthUserInfoResponse {
-            user_output,
-            user,
+        let mut output = Map::new();
+        if name.is_empty() {
+            if let Some(email) = profile.get("email") {
+                output.insert("name".into(), email.clone());
+            }
+        } else {
+            output.insert("name".into(), Value::String(name));
+        }
+        if let Some(email) = profile.get("email") {
+            output.insert("email".into(), email.clone());
+        }
+        output.insert("emailVerified".into(), Value::Bool(false));
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = super::OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
+                id: subject(profile)?,
+                email: String::new(),
+                name: None,
+                image: None,
+                email_verified: false,
+            },
             data: profile.clone(),
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Mapper;
+    #[async_trait::async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile["id"], "cf-id");
+            assert!(profile.get("result").is_none());
+            Ok(serde_json::json!({"name":"Mapped","custom":true})
+                .as_object()
+                .unwrap()
+                .clone())
+        }
+    }
+    #[tokio::test]
+    async fn cloudflare_maps_unwrapped_result_with_partial_defaults() {
+        let body = serde_json::json!({"success":true,"result":{"id":"cf-id","email":null}});
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let mut options = CloudflareOptions::new("client", None);
+        options.user_info_endpoint = Some(endpoint);
+        let provider = OAuthProvider::cloudflare_with_options(options)
+            .with_profile_mapper(std::sync::Arc::new(Mapper));
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(super::super::OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let output = response.user_output.unwrap();
+        assert_eq!(output["name"], "Mapped");
+        assert_eq!(output["email"], Value::Null);
+        assert_eq!(output["emailVerified"], false);
+        assert_eq!(output["custom"], true);
+        assert!(!output.contains_key("image"));
+        assert!(!output.contains_key("id"));
+        server.await.unwrap();
+    }
     #[tokio::test]
     async fn cloudflare_string_coerces_truthy_name_parts() {
         let body = serde_json::json!({"success":true,"result":{"id":"cf-id","first_name":["Cloud","Flare"],"last_name":true,"email":"fallback@example.com"}});
