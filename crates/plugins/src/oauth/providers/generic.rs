@@ -398,7 +398,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             })
             .flatten();
         if let Some(custom) = &self.custom {
-            let mut response = custom.get_user_info(request).await?;
+            let mut response = custom.get_user_info(request).await
+                .map_err(super::remaining_profile::profile_exception)?;
             if let Some(expected) = expected_sub
                 && response
                     .data
@@ -412,7 +413,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 return Err("UserInfo subject mismatch".into());
             }
             if let Some(mapper) = &self.mapper {
-                let mapped = mapper.map_profile(response.data.clone()).await?;
+                let mapped = mapper.map_profile(response.data.clone()).await
+                    .map_err(super::remaining_profile::profile_exception)?;
                 super::apply_application_mapping(&mut response, mapped)?;
             }
             return Ok(response);
@@ -676,6 +678,42 @@ mod tests {
             stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         });
         endpoint
+    }
+
+    struct CustomProfile(bool);
+    #[async_trait]
+    impl OAuthUserInfoHandler for CustomProfile {
+        async fn get_user_info(&self, _: OAuthUserInfoRequest) -> Result<OAuthUserInfoResponse, String> {
+            if self.0 {
+                return Err("custom profile failed".into());
+            }
+            Ok(OAuthUserInfoResponse {
+                user_output: None,
+                user: OAuthUserInfo { additional_fields: Map::new(), id: "user".into(), email: "a@example.com".into(), name: None, image: None, email_verified: false },
+                data: serde_json::json!({"id":"user", "email":"a@example.com"}),
+            })
+        }
+    }
+    struct FailingMapper;
+    #[async_trait]
+    impl OAuthProfileMapper for FailingMapper {
+        async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+            Err("custom mapper failed".into())
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_custom_callback_failures_are_profile_exceptions() {
+        for fail_profile in [true, false] {
+            let mut config = GenericOAuthConfig::new("client", "secret");
+            config.provider.get_user_info = Some(Arc::new(CustomProfile(fail_profile)));
+            if !fail_profile {
+                config.map_profile = Some(Arc::new(FailingMapper));
+            }
+            let provider = config.resolve().await.unwrap().unwrap().provider;
+            let error = crate::oauth::handlers::fetch_user_info_from_provider(&provider, OAuthUserInfoRequest::default()).await.unwrap_err();
+            assert!(matches!(error, alibi_core::AuthError::Api { status: 500, code: Some(code), .. } if code == "OAUTH_PROFILE_EXCEPTION"));
+        }
     }
 
     #[tokio::test]
