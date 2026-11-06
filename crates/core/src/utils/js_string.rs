@@ -266,6 +266,24 @@ impl Serialize for Utf16Payload<'_> {
 }
 impl<'de> Deserialize<'de> for JsString {
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        String::deserialize(deserializer).map(Self::from)
+        struct Utf16Visitor;
+        impl<'de> serde::de::Visitor<'de> for Utf16Visitor {
+            type Value = JsString;
+            fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+                formatter.write_str("a string")
+            }
+            fn visit_newtype_struct<D: Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<Self::Value, D::Error> {
+                if deserializer.is_human_readable() {
+                    String::deserialize(deserializer).map(JsString::from)
+                } else {
+                    Vec::<u16>::deserialize(deserializer).map(JsString::from_code_units)
+                }
+            }
+        }
+        deserializer
+            .deserialize_newtype_struct(super::native_serializer::UTF16_PROTOCOL, Utf16Visitor)
     }
 }

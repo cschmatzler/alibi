@@ -6,6 +6,8 @@
 #[path = "js_string.rs"]
 mod js_string;
 pub use js_string::JsString;
+#[path = "json_deserializer.rs"]
+mod native_deserializer;
 #[path = "json_serializer.rs"]
 mod native_serializer;
 pub use native_serializer::to_js_value;
@@ -479,6 +481,16 @@ impl<'de> Deserialize<'de> for JsValue {
             fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
                 formatter.write_str("a JSON value")
             }
+            fn visit_newtype_struct<D: Deserializer<'de>>(
+                self,
+                deserializer: D,
+            ) -> Result<Self::Value, D::Error> {
+                if deserializer.is_human_readable() {
+                    deserializer.deserialize_any(self)
+                } else {
+                    native_deserializer::decode(deserializer)
+                }
+            }
             fn visit_unit<E>(self) -> Result<Self::Value, E> {
                 Ok(JsValue::Null)
             }
@@ -528,7 +540,7 @@ impl<'de> Deserialize<'de> for JsValue {
                 Ok(JsValue::Object(values))
             }
         }
-        deserializer.deserialize_any(JsVisitor)
+        deserializer.deserialize_newtype_struct(native_serializer::VALUE_PROTOCOL, JsVisitor)
     }
 }
 
@@ -574,7 +586,8 @@ impl<'de> Deserializer<'de> for JsValue {
                 visitor.visit_seq(serde::de::value::SeqDeserializer::new(a.into_iter()))
             }
             Self::Object(m) => visitor.visit_map(serde::de::value::MapDeserializer::new(
-                ordinary_entries(m)?.into_iter(),
+                m.into_iter()
+                    .map(|(key, value)| (JsValue::String(key), value)),
             )),
         }
     }
@@ -587,10 +600,17 @@ impl<'de> Deserializer<'de> for JsValue {
     }
     fn deserialize_newtype_struct<V: Visitor<'de>>(
         self,
-        _name: &'static str,
+        name: &'static str,
         visitor: V,
     ) -> Result<V::Value, Self::Error> {
-        visitor.visit_newtype_struct(self)
+        if matches!(
+            name,
+            native_serializer::VALUE_PROTOCOL | native_serializer::UTF16_PROTOCOL
+        ) {
+            visitor.visit_newtype_struct(native_deserializer::Capture(self))
+        } else {
+            visitor.visit_newtype_struct(self)
+        }
     }
     fn deserialize_enum<V: Visitor<'de>>(
         self,
