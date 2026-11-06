@@ -63,16 +63,20 @@ impl Serialize for SessionView {
         entry!("ipAddress", &self.ip_address);
         entry!("userAgent", &self.user_agent);
         entry!("userId", &self.user_id);
-        if self.impersonated_by.is_some() || self.extension_fields.contains_key("impersonatedBy") {
-            entry!("impersonatedBy", &self.impersonated_by);
+        if let Some(value) = self.extension_fields.get("impersonatedBy") {
+            entry!("impersonatedBy", value);
+        } else if let Some(value) = &self.impersonated_by {
+            entry!("impersonatedBy", value);
         }
-        if self.active_organization_id.is_some()
-            || self.extension_fields.contains_key("activeOrganizationId")
-        {
-            entry!("activeOrganizationId", &self.active_organization_id);
+        if let Some(value) = self.extension_fields.get("activeOrganizationId") {
+            entry!("activeOrganizationId", value);
+        } else if let Some(value) = &self.active_organization_id {
+            entry!("activeOrganizationId", value);
         }
-        if self.active_team_id.is_some() || self.extension_fields.contains_key("activeTeamId") {
-            entry!("activeTeamId", &self.active_team_id);
+        if let Some(value) = self.extension_fields.get("activeTeamId") {
+            entry!("activeTeamId", value);
+        } else if let Some(value) = &self.active_team_id {
+            entry!("activeTeamId", value);
         }
         for (name, value) in &self.extension_fields {
             if !matches!(

@@ -112,3 +112,17 @@ fn session_secondary_codec_rejects_unrepresentable_required_values_without_fabri
         );
     }
 }
+
+#[test]
+fn session_secondary_codec_retains_configured_scope_extension_values() {
+    let mut session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
+        session
+            .extension_fields
+            .insert(name.into(), json!("configured-scope"));
+    }
+    let encoded = session.secondary_snapshot().unwrap();
+    for name in ["impersonatedBy", "activeOrganizationId", "activeTeamId"] {
+        assert_eq!(encoded[name], "configured-scope");
+    }
+}
