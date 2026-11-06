@@ -204,3 +204,303 @@ fn primitive_identity_keys_use_javascript_number_values() {
         assert!(MemoryUserId::supplied(Some(&raw)).is_none());
     }
 }
+
+async fn physical_relational_filters<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    for (raw, label) in [
+        (json!(2), "n2"),
+        (json!("2"), "s2"),
+        (json!(10), "n10"),
+        (json!("10"), "s10"),
+        (json!(true), "btrue"),
+        (json!("true"), "strue"),
+    ] {
+        store
+            .create_user(CreateUser {
+                name: Some(label.into()),
+                email: Some(format!("{label}@example.test")),
+                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+
+    // Expected sets come from the memory adapter's physical record[field] comparisons.
+    let scalar_cases = [
+        (
+            "10",
+            [
+                "btrue n2",
+                "btrue n10 n2 s10",
+                "s2 strue",
+                "n10 s10 s2 strue",
+            ],
+        ),
+        (
+            "2",
+            [
+                "btrue s10",
+                "btrue n2 s10 s2",
+                "n10 strue",
+                "n10 n2 s2 strue",
+            ],
+        ),
+        ("notnumeric", ["s10 s2", "s10 s2", "strue", "strue"]),
+        (
+            "",
+            [
+                "",
+                "",
+                "btrue n10 n2 s10 s2 strue",
+                "btrue n10 n2 s10 s2 strue",
+            ],
+        ),
+        (
+            " \t\u{feff}",
+            [
+                "",
+                "",
+                "btrue n10 n2 s10 s2 strue",
+                "btrue n10 n2 s10 s2 strue",
+            ],
+        ),
+        (
+            " 2 ",
+            [
+                "btrue",
+                "btrue n2",
+                "n10 s10 s2 strue",
+                "n10 n2 s10 s2 strue",
+            ],
+        ),
+        (
+            "0x10",
+            [
+                "btrue n10 n2",
+                "btrue n10 n2",
+                "s10 s2 strue",
+                "s10 s2 strue",
+            ],
+        ),
+        (
+            "0b10",
+            [
+                "btrue",
+                "btrue n2",
+                "n10 s10 s2 strue",
+                "n10 n2 s10 s2 strue",
+            ],
+        ),
+        (
+            "0o10",
+            [
+                "btrue n2",
+                "btrue n2",
+                "n10 s10 s2 strue",
+                "n10 s10 s2 strue",
+            ],
+        ),
+        (
+            "2e0",
+            [
+                "btrue s10 s2",
+                "btrue n2 s10 s2",
+                "n10 strue",
+                "n10 n2 strue",
+            ],
+        ),
+        (
+            "Infinity",
+            [
+                "btrue n10 n2 s10 s2",
+                "btrue n10 n2 s10 s2",
+                "strue",
+                "strue",
+            ],
+        ),
+        (
+            "-Infinity",
+            [
+                "",
+                "",
+                "btrue n10 n2 s10 s2 strue",
+                "btrue n10 n2 s10 s2 strue",
+            ],
+        ),
+        ("+0x10", ["", "", "s10 s2 strue", "s10 s2 strue"]),
+        ("1_0", ["s10", "s10", "s2 strue", "s2 strue"]),
+        ("inf", ["s10 s2", "s10 s2", "strue", "strue"]),
+        ("\u{0085}", ["s10 s2 strue", "s10 s2 strue", "", ""]),
+    ];
+    let array_cases = [
+        (
+            vec![],
+            [
+                "",
+                "",
+                "btrue n10 n2 s10 s2 strue",
+                "btrue n10 n2 s10 s2 strue",
+            ],
+        ),
+        (
+            vec!["2"],
+            [
+                "btrue s10",
+                "btrue n2 s10 s2",
+                "n10 strue",
+                "n10 n2 s2 strue",
+            ],
+        ),
+        (vec!["1", "0"], ["", "", "s10 s2 strue", "s10 s2 strue"]),
+        (vec!["", ""], ["", "", "s10 s2 strue", "s10 s2 strue"]),
+        (vec!["notnumeric"], ["s10 s2", "s10 s2", "strue", "strue"]),
+    ];
+    let cases = scalar_cases
+        .into_iter()
+        .map(|(value, expected)| (crate::UserFilterValue::from(value), expected))
+        .chain(array_cases.into_iter().map(|(values, expected)| {
+            (
+                values
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect::<Vec<_>>()
+                    .into(),
+                expected,
+            )
+        }));
+    for (value, expected) in cases {
+        for field in ["id", "_id"] {
+            for (operator, expected) in ["lt", "lte", "gt", "gte"].into_iter().zip(expected) {
+                let (users, count) = store
+                    .list_users(ListUsersParams {
+                        filter_field: Some(field.into()),
+                        filter_operator: Some(operator.into()),
+                        filter_value: Some(value.clone()),
+                        sort_by: Some("name".into()),
+                        sort_direction: Some("asc".into()),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                let names = users
+                    .iter()
+                    .map(|user| user.name.as_deref().unwrap())
+                    .collect::<Vec<_>>();
+                assert_eq!(names.join(" "), expected, "{field} {operator} {value:?}");
+                assert_eq!(count, names.len(), "{field} {operator} {value:?}");
+            }
+        }
+    }
+
+    for (operator, value, expected) in [
+        ("eq", "2".into(), "s2"),
+        ("ne", "2".into(), "btrue n10 n2 s10 strue"),
+        (
+            "in",
+            vec!["2".to_owned(), "10".to_owned(), "true".to_owned()].into(),
+            "s10 s2 strue",
+        ),
+        (
+            "not_in",
+            vec!["2".to_owned(), "10".to_owned(), "true".to_owned()].into(),
+            "btrue n10 n2",
+        ),
+    ] {
+        let (users, count) = store
+            .list_users(ListUsersParams {
+                filter_field: Some("id".into()),
+                filter_operator: Some(operator.into()),
+                filter_value: Some(value),
+                sort_by: Some("name".into()),
+                sort_direction: Some("asc".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let names = users
+            .iter()
+            .map(|user| user.name.as_deref().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(names.join(" "), expected, "{operator}");
+        assert_eq!(count, names.len());
+    }
+
+    let (page, count) = store
+        .list_users(ListUsersParams {
+            filter_field: Some("id".into()),
+            filter_operator: Some("gte".into()),
+            filter_value: Some("10".into()),
+            sort_by: Some("name".into()),
+            sort_direction: Some("asc".into()),
+            offset: Some(1),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    assert_eq!(count, 4);
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0].name.as_deref(), Some("s10"));
+}
+
+async fn physical_relational_utf16<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    for (raw, label) in [
+        (json!("\u{10000}"), "astral"),
+        (json!("\u{e000}"), "bmp"),
+        (json!(2), "number"),
+    ] {
+        store
+            .create_user(CreateUser {
+                name: Some(label.into()),
+                email: Some(format!("{label}@example.test")),
+                adapter_native_fields: [("id".to_owned(), raw)].into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    for (value, expected) in [
+        ("\u{e000}", ["astral", "astral bmp", "", "bmp"]),
+        ("\u{10000}", ["", "astral", "bmp", "astral bmp"]),
+    ] {
+        for (operator, expected) in ["lt", "lte", "gt", "gte"].into_iter().zip(expected) {
+            let (users, count) = store
+                .list_users(ListUsersParams {
+                    filter_field: Some("id".into()),
+                    filter_operator: Some(operator.into()),
+                    filter_value: Some(value.into()),
+                    sort_by: Some("name".into()),
+                    sort_direction: Some("asc".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let names = users
+                .iter()
+                .map(|user| user.name.as_deref().unwrap())
+                .collect::<Vec<_>>();
+            assert_eq!(names.join(" "), expected, "{operator} {value:?}");
+            assert_eq!(count, names.len());
+        }
+    }
+}
+
+#[tokio::test]
+async fn stateless_physical_primitive_id_relational_filters() {
+    physical_relational_filters::<StatelessSchema>(&StatelessStore::default()).await;
+}
+
+#[tokio::test]
+async fn memory_physical_primitive_id_relational_filters() {
+    physical_relational_filters::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn stateless_physical_primitive_id_relational_utf16() {
+    physical_relational_utf16::<StatelessSchema>(&StatelessStore::default()).await;
+}
+
+#[tokio::test]
+async fn memory_physical_primitive_id_relational_utf16() {
+    physical_relational_utf16::<BundledSchema>(&MemoryStore::default()).await;
+}
