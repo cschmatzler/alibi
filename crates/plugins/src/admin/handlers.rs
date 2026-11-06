@@ -525,9 +525,9 @@ pub(crate) async fn update_user_core(
         update.ban_expires = Some(None);
     }
     if let Some(value) = body.data.get("banExpires").and_then(|value| value.as_str()) {
-        let parsed = DateTime::parse_from_rfc3339(value)
-            .map_err(|_error| AuthError::bad_request("Invalid banExpires"))?
-            .with_timezone(&Utc);
+        let parsed = alibi_core::utils::datetime::parse_date_millis(value)
+            .and_then(DateTime::<Utc>::from_timestamp_millis)
+            .ok_or_else(|| AuthError::internal("Invalid time value"))?;
         update.ban_expires = Some(Some(parsed));
     }
     if let Some(value) = body

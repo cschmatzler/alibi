@@ -448,3 +448,62 @@ async fn unrelated_user_update_retains_native_sqlite_scalars() {
     assert_eq!(row.try_get::<f64>("", "createdAt").unwrap(), 1e20);
     assert_eq!(row.try_get::<f64>("", "banExpires").unwrap(), -0.5);
 }
+
+#[tokio::test]
+async fn admin_update_ban_expiry_accepts_javascript_dates_and_invalid_date_fails_before_write() {
+    use alibi_core::AuthUser;
+    let (ctx, admin, _, user, _) = create_admin_context().await;
+    for (input, expected) in [
+        ("2099-01-01", "2099-01-01T00:00:00.000Z"),
+        ("January 2, 2099", "2099-01-02T00:00:00.000Z"),
+    ] {
+        let data = serde_json::json!({"banExpires": input});
+        let response = handlers::update_user_core(
+            &types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone()),
+            &admin,
+            &AdminConfig::default(),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::to_value(&response).unwrap()["banExpires"],
+            expected
+        );
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            stored.ban_expires().unwrap().timestamp_millis(),
+            alibi_core::utils::datetime::parse_date_millis(expected).unwrap()
+        );
+    }
+    let before = ctx
+        .database
+        .get_user_by_id_record(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let data = serde_json::json!({"name": "Must not write", "banExpires": "not a date"});
+    let error = handlers::update_user_core(
+        &types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone()),
+        &admin,
+        &AdminConfig::default(),
+        &ctx,
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error.status_code(), 500);
+    assert!(error.to_string().contains("Invalid time value"));
+    let after = ctx
+        .database
+        .get_user_by_id_record(&user.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(before.name(), after.name());
+    assert_eq!(before.ban_expires(), after.ban_expires());
+}
