@@ -96,7 +96,7 @@ impl OAuthProvider {
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
                 require_client_secret: true,
-                default_prompt: options.prompt,
+                prompt: options.prompt,
                 token_endpoint_auth: Some(authentication),
                 authorization_code_client_key: options.client_key,
                 redirect_uri: options.redirect_uri,
@@ -273,6 +273,36 @@ fn decode_profile(token: &str) -> Option<Value> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn paybin_omits_empty_authorization_prompts() {
+        let mut config = crate::test_helpers::create_test_config();
+        config.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
+        let ctx = crate::test_helpers::create_test_context_with_config(config).await;
+        for (prompt, expected) in [
+            (None, None),
+            (Some(""), None),
+            (Some("login"), Some("login")),
+        ] {
+            let mut options = PaybinOptions::new("client", Some("secret".into()));
+            options.prompt = prompt.map(str::to_owned);
+            let mut config = super::super::OAuthConfig::default();
+            config
+                .providers
+                .insert("paybin".into(), OAuthProvider::paybin_with_options(options));
+            let flow = crate::oauth::handlers::social_sign_in_core(
+                &crate::oauth::OAuthSocialSignInRequest::new("paybin"),
+                &config,
+                None,
+                &ctx,
+            )
+            .await
+            .unwrap();
+            let url = url::Url::parse(flow.response.url.as_deref().unwrap()).unwrap();
+            let actual = url.query_pairs().find(|(key, _)| key == "prompt");
+            assert_eq!(actual.as_ref().map(|(_, value)| value.as_ref()), expected);
+        }
+    }
 
     #[tokio::test]
     async fn paybin_invalid_id_tokens_are_profile_exceptions() {
