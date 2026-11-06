@@ -6,7 +6,7 @@ use crate::types::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 /// A compiled `per_endpoint` key. Patterns without `*` match exactly.
@@ -54,7 +54,7 @@ pub enum RateLimitDecision {
 /// when they must consume the same client/path quotas.
 #[derive(Debug)]
 pub struct MemoryRateLimitStorage {
-    state: Mutex<RateLimitState>,
+    state: Arc<Mutex<RateLimitState>>,
     max_buckets: usize,
 }
 
@@ -62,7 +62,7 @@ impl MemoryRateLimitStorage {
     #[must_use]
     pub fn new(max_buckets: usize) -> Self {
         Self {
-            state: Mutex::new(RateLimitState::default()),
+            state: Arc::new(Mutex::new(RateLimitState::default())),
             max_buckets,
         }
     }
@@ -218,7 +218,7 @@ pub struct RateLimitConfig {
     /// Ordered path overrides. The first matching rule wins.
     pub per_endpoint: IndexMap<String, RateLimitRule>,
 
-    /// Shared atomic storage; absent selects bounded process-local memory.
+    /// Shared atomic storage; absent selects bounded, process-wide memory.
     pub storage: Option<Arc<dyn RateLimitStorage>>,
 
     /// Retained client/path buckets after pruning, in insertion order.
@@ -326,6 +326,9 @@ pub struct RateLimitMiddleware {
     plugin_rules: Vec<PluginRateLimit>,
 }
 
+static MEMORY_RATE_LIMIT_STATE: LazyLock<Arc<Mutex<RateLimitState>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(RateLimitState::default())));
+
 #[derive(Debug, Default)]
 struct RateLimitState {
     buckets: IndexMap<String, Bucket>,
@@ -358,7 +361,10 @@ impl RateLimitMiddleware {
         if config.default.max_requests == 0.0 || config.default.max_requests.is_nan() {
             config.default.max_requests = 100.0;
         }
-        let memory = MemoryRateLimitStorage::new(config.max_buckets);
+        let memory = MemoryRateLimitStorage {
+            state: Arc::clone(&MEMORY_RATE_LIMIT_STATE),
+            max_buckets: config.max_buckets,
+        };
         if let Some(storage) = &config.storage {
             storage.observe_window(config.default.window_seconds);
             storage.observe_window(AUTH_LIMIT.window_seconds);
@@ -524,6 +530,65 @@ mod tests {
     use crate::types::HttpMethod;
     use std::collections::HashMap as StdHashMap;
 
+    fn isolated_middleware(mut config: RateLimitConfig) -> RateLimitMiddleware {
+        if config.storage.is_none() {
+            config.storage = Some(Arc::new(MemoryRateLimitStorage::new(config.max_buckets)));
+        }
+        RateLimitMiddleware::new(config)
+    }
+
+    #[tokio::test]
+    async fn default_memory_quota_is_shared_across_middleware_instances() {
+        let config = RateLimitConfig::new().default_limit(Duration::from_secs(60), 1);
+        let request = make_request("/process-wide-memory-regression", "192.0.2.251");
+        {
+            let first = RateLimitMiddleware::new(config.clone());
+            let second = RateLimitMiddleware::new(config.clone());
+            assert!(first.before_request(&request).await.unwrap().is_none());
+            assert_eq!(
+                second
+                    .before_request(&request)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .status,
+                429
+            );
+            assert!(
+                second
+                    .before_request(&make_request(
+                        "/process-wide-memory-regression",
+                        "192.0.2.252"
+                    ))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                second
+                    .before_request(&make_request(
+                        "/process-wide-memory-other-path",
+                        "192.0.2.251"
+                    ))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+        let replacement = RateLimitMiddleware::new(config.clone());
+        assert_eq!(
+            replacement
+                .before_request(&request)
+                .await
+                .unwrap()
+                .unwrap()
+                .status,
+            429
+        );
+        let isolated = isolated_middleware(config);
+        assert!(isolated.before_request(&request).await.unwrap().is_none());
+    }
+
     fn make_request(path: &str, ip: &str) -> AuthRequest {
         let mut headers = StdHashMap::new();
         headers.insert("x-forwarded-for".to_owned(), ip.to_owned());
@@ -540,7 +605,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_allows_within_limit() {
         let config = RateLimitConfig::new().default_limit(Duration::from_secs(60), 5);
-        let mw = RateLimitMiddleware::new(config);
+        let mw = isolated_middleware(config);
         let req = make_request("/get-session", "1.2.3.4");
 
         for _ in 0..5 {
@@ -552,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_blocks_over_limit() {
         let config = RateLimitConfig::new().default_limit(Duration::from_secs(60), 3);
-        let mw = RateLimitMiddleware::new(config);
+        let mw = isolated_middleware(config);
         let req = make_request("/get-session", "1.2.3.4");
 
         for _ in 0..3 {
@@ -568,7 +633,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limit_per_client() {
         let config = RateLimitConfig::new().default_limit(Duration::from_secs(60), 2);
-        let mw = RateLimitMiddleware::new(config);
+        let mw = isolated_middleware(config);
 
         let req_a = make_request("/get-session", "1.1.1.1");
         let req_b = make_request("/get-session", "2.2.2.2");
@@ -596,7 +661,7 @@ mod tests {
             let config = RateLimitConfig::new()
                 .default_limit(Duration::from_secs(60), 100)
                 .endpoint(pattern, Duration::from_secs(60), 2);
-            let mw = RateLimitMiddleware::new(config);
+            let mw = isolated_middleware(config);
             let req = make_request(path, "1.2.3.4");
             for _ in 0..2 {
                 assert!(mw.before_request(&req).await.unwrap().is_none());
@@ -615,7 +680,7 @@ mod tests {
         let config = RateLimitConfig::new()
             .default_limit(Duration::from_secs(60), 1)
             .enabled(false);
-        let mw = RateLimitMiddleware::new(config);
+        let mw = isolated_middleware(config);
         let req = make_request("/sign-in/email", "1.2.3.4");
 
         for _ in 0..10 {
@@ -637,7 +702,7 @@ mod tests {
             "/email-otp/send-verification-otp",
             "/email-otp/request-password-reset",
         ] {
-            let mw = RateLimitMiddleware::new(RateLimitConfig::new());
+            let mw = isolated_middleware(RateLimitConfig::new());
             let req = make_request(path, "192.0.2.1");
             for _ in 0..3 {
                 assert!(mw.before_request(&req).await.unwrap().is_none());
@@ -648,7 +713,7 @@ mod tests {
                 "{path}"
             );
         }
-        let mw = RateLimitMiddleware::new(RateLimitConfig::new());
+        let mw = isolated_middleware(RateLimitConfig::new());
         let req = make_request("/get-session", "192.0.2.1");
         for _ in 0..100 {
             assert!(mw.before_request(&req).await.unwrap().is_none());
@@ -668,7 +733,7 @@ mod tests {
 
     #[tokio::test]
     async fn memory_capacity_evicts_oldest_insertions_without_rejecting_new_clients() {
-        let mw = RateLimitMiddleware::new(
+        let mw = isolated_middleware(
             RateLimitConfig::new()
                 .default_limit(Duration::from_secs(60), 2)
                 .max_buckets(2),
@@ -695,7 +760,7 @@ mod tests {
 
     #[tokio::test]
     async fn memory_capacity_prunes_expired_buckets_before_insertion_order_eviction() {
-        let mw = RateLimitMiddleware::new(
+        let mw = isolated_middleware(
             RateLimitConfig::new()
                 .default_limit(Duration::from_millis(250), 1)
                 .max_buckets(2),
@@ -720,7 +785,7 @@ mod tests {
 
     #[tokio::test]
     async fn mounted_and_internal_paths_share_sensitive_route_quotas() {
-        let mw = RateLimitMiddleware::new(RateLimitConfig::new()).with_base_path("/api/auth/");
+        let mw = isolated_middleware(RateLimitConfig::new()).with_base_path("/api/auth/");
         let mounted = make_request("/api/auth/sign-in/email", "192.0.2.1");
         let internal = make_request("/sign-in/email", "192.0.2.1");
         assert!(mw.before_request(&mounted).await.unwrap().is_none());
@@ -804,7 +869,7 @@ mod tests {
             (60.0, f64::NAN, [200, 200, 200]),
             (f64::INFINITY, 1.0, [200, 429, 429]),
         ] {
-            let middleware = RateLimitMiddleware::new(RateLimitConfig::new().rule(
+            let middleware = isolated_middleware(RateLimitConfig::new().rule(
                 "/get-session",
                 RateLimitRule::Limit(EndpointRateLimit {
                     window_seconds: window,
@@ -839,8 +904,8 @@ mod tests {
             .default_limit(Duration::from_millis(250), 3)
             .storage(storage);
         let instances = [
-            Arc::new(RateLimitMiddleware::new(config.clone())),
-            Arc::new(RateLimitMiddleware::new(config)),
+            Arc::new(isolated_middleware(config.clone())),
+            Arc::new(isolated_middleware(config)),
         ];
         let mut tasks = tokio::task::JoinSet::new();
         for index in 0..32 {
@@ -939,7 +1004,7 @@ mod tests {
         assert!(first.get(&invalid_key).await.unwrap().is_none());
 
         let unavailable = Arc::new(RedisAdapter::new("redis://127.0.0.1:9").await.unwrap());
-        let middleware = RateLimitMiddleware::new(
+        let middleware = isolated_middleware(
             RateLimitConfig::new().storage(Arc::new(CacheRateLimitStorage::new(unavailable))),
         );
         let error = middleware
