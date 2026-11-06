@@ -151,10 +151,12 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
     ) -> Result<OAuthUserInfoResponse, String> {
         // The pinned factory decodes only. Grant transport and state own admission;
         // direct ID-token verification is deliberately unsupported.
-        let profile = super::remaining_profile::grant_id_token(&request)?
-            .as_deref()
-            .and_then(decode_profile)
-            .ok_or("Missing or invalid Paybin ID token")?;
+        let token = super::remaining_profile::grant_id_token(&request)
+            .map_err(super::remaining_profile::profile_exception)?
+            .ok_or("Missing Paybin ID token")?;
+        let profile = decode_profile(&token).ok_or_else(|| {
+            super::remaining_profile::profile_exception("Invalid Paybin ID token")
+        })?;
         let application_output = if let Some(mapper) = &self.application_mapper {
             Some(
                 mapper
@@ -265,4 +267,56 @@ fn decode_profile(token: &str) -> Option<Value> {
     let bytes = decoder.decode(encoded).ok()?;
     let profile: Value = alibi_core::utils::json::from_slice(&bytes).ok()?;
     profile.is_object().then_some(profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[tokio::test]
+    async fn paybin_invalid_id_tokens_are_profile_exceptions() {
+        let handler = PaybinUserInfo {
+            mapper: None,
+            application_mapper: None,
+        };
+        assert!(!handler.errors_are_exceptions());
+        for token in [json!(null), json!(false), json!(0), json!("")] {
+            let error = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    raw: Some(json!({"id_token": token})),
+                    ..OAuthUserInfoRequest::default()
+                })
+                .await
+                .unwrap_err();
+            assert_eq!(error, "Missing Paybin ID token");
+        }
+        for token in [
+            json!("broken"),
+            json!("a.!.c"),
+            json!("a.W10.c"),
+            json!(42),
+            json!({}),
+        ] {
+            let error = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    raw: Some(json!({"id_token": token})),
+                    ..OAuthUserInfoRequest::default()
+                })
+                .await
+                .unwrap_err();
+            assert!(error.starts_with("oauth-profile-exception:"), "{error}");
+        }
+        let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .encode(br#"{"sub":"paybin","email":"paybin@example.com"}"#);
+        let response = handler
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(format!("header.{payload}.signature")),
+                ..OAuthUserInfoRequest::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.data["sub"], "paybin");
+        assert_eq!(response.user.email, "paybin@example.com");
+    }
 }
