@@ -857,6 +857,29 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn change_password_rejects_oversized_current_password_before_account_lookup() {
+        let plugin = PasswordManagementPlugin::new();
+        let (ctx, _, session) = create_test_context_with_oauth_only_user().await;
+        let req = test_helpers::create_auth_request_no_query(
+            HttpMethod::Post,
+            "/change-password",
+            Some(&session.token),
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "currentPassword": "🍵".repeat(65), "newPassword": "NewPassword123!"
+                }))
+                .unwrap(),
+            ),
+        );
+        let error = plugin.handle_change_password(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 400);
+        assert_eq!(
+            error.error_payload().1.as_deref(),
+            Some("PASSWORD_TOO_LONG")
+        );
+    }
+
+    #[tokio::test]
     async fn test_change_password_success() {
         let plugin = PasswordManagementPlugin::new();
         let (ctx, _user, session) = create_test_context_with_user().await;
