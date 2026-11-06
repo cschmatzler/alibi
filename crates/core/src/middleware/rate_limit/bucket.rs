@@ -28,9 +28,9 @@ impl From<Step> for Option<RateLimitDecision> {
 /// Decide one request given the stored `count` and `last_request`.
 #[must_use]
 pub fn step(count: f64, last_request: i64, now: i64, rule: &EndpointRateLimit) -> Step {
-    let elapsed = chrono::Duration::milliseconds(now.saturating_sub(last_request))
-        .to_std()
-        .map_or(0.0, |duration| duration.as_secs_f64());
+    let elapsed = (crate::utils::javascript::number_from_i64(now)
+        - crate::utils::javascript::number_from_i64(last_request))
+        / 1000.0;
     let expired = elapsed >= rule.window_seconds;
     if !expired
         && (rule.window_seconds.is_nan()
@@ -44,5 +44,30 @@ pub fn step(count: f64, last_request: i64, now: i64, rule: &EndpointRateLimit) -
     Step::Allowed {
         count: if expired { 1.0 } else { count + 1.0 },
         reset: expired,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn future_last_request_extends_retry_after() {
+        let rule = EndpointRateLimit {
+            window_seconds: 10.0,
+            max_requests: 3.0,
+        };
+        assert_eq!(
+            step(3.0, 3000, 1000, &rule),
+            Step::Blocked { retry_after: 12.0 }
+        );
+        assert_eq!(
+            step(2.0, 3000, 1000, &rule),
+            Step::Allowed { count: 3.0, reset: false }
+        );
+        assert_eq!(
+            step(3.0, 3000, 13000, &rule),
+            Step::Allowed { count: 1.0, reset: true }
+        );
     }
 }
