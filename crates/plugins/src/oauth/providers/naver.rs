@@ -87,6 +87,8 @@ impl OAuthProvider {
             authorization: Some(OAuthAuthorizationPolicy {
                 allow_missing_access_token: true,
                 source_profile_exceptions: true,
+                preserve_raw_profile_scalars: true,
+                preserve_raw_email_errors: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -244,7 +246,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Err("Invalid Naver profile field".into()),
+        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
@@ -302,6 +304,28 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn naver_preserves_compound_public_fields() {
+        let policy = OAuthProvider::naver("client", None).authorization.unwrap();
+        assert!(policy.preserve_raw_profile_scalars);
+        assert!(policy.preserve_raw_email_errors);
+        let profile = json!({"resultcode": "00", "response": {"id": "naver", "name": {}, "nickname": "ignored", "email": ["raw"], "profile_image": []}});
+        let (endpoint, captured) = profile_server(profile).await;
+        let response = NaverUserInfo {
+            endpoint,
+            mapper: None,
+            application_mapper: None,
+        }
+        .get_user_info(OAuthUserInfoRequest::default())
+        .await
+        .unwrap();
+        captured.await.unwrap();
+        let output = response.user_output.unwrap();
+        assert_eq!(output["name"], json!({}));
+        assert_eq!(output["email"], json!(["raw"]));
+        assert_eq!(output["image"], json!([]));
     }
 
     struct Mapper {
