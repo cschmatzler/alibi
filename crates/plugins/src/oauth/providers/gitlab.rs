@@ -91,6 +91,11 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
+        if profile.is_null() {
+            return Err(super::remaining_profile::profile_exception(
+                "Null GitLab profile",
+            ));
+        }
         let user = gitlab_user_info(profile.clone())?;
         let mut output = Map::new();
         _ = output.insert(
@@ -171,13 +176,7 @@ pub(in crate::oauth::providers) fn gitlab_user_info(
     if profile.get("state").and_then(Value::as_str) != Some("active") || locked {
         return Err("GitLab account is inactive or locked".into());
     }
-    let id = match profile.get("id") {
-        Some(Value::String(value)) => value.clone(),
-        Some(Value::Number(value)) => {
-            alibi_core::utils::json::number_to_string(value).map_err(|error| error.to_string())?
-        }
-        _ => return Err("Missing GitLab account ID".into()),
-    };
+    let id = super::remaining_profile::raw_subject(profile.get("id")).unwrap_or_default();
     Ok(OAuthUserInfo {
         additional_fields: Map::default(),
         id,

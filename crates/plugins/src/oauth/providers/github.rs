@@ -210,7 +210,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
                 additional_fields: Map::new(),
-                id: super::remaining_profile::raw_subject(profile.get("id"))?,
+                id: super::remaining_profile::raw_subject(profile.get("id")).unwrap_or_default(),
                 email: String::new(),
                 name: None,
                 image: None,

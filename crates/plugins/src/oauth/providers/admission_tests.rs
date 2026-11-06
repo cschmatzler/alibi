@@ -304,6 +304,30 @@ async fn dedicated_profiles_distinguish_null_transport_and_mapping_exceptions_th
 }
 
 #[tokio::test]
+async fn repository_profiles_defer_missing_subject_admission_until_after_mapping() {
+    for (name, profile) in [
+        ("github", serde_json::json!({"email":"a@example.com"})),
+        (
+            "gitlab",
+            serde_json::json!({"state":"active","email":"a@example.com"}),
+        ),
+    ] {
+        let server = HttpFixture::new(200, profile).await;
+        let provider = provider(name, &server.url);
+        let response = fetch_user_info_from_provider(&provider, request())
+            .await
+            .unwrap();
+        assert!(provider.account_subject.unwrap()(&response.data).is_err());
+        assert_outcome(
+            provider.with_profile_mapper(Arc::new(RejectMapper)),
+            request(),
+            true,
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
 async fn dedicated_null_profile_admission_matches_source_checks() {
     for (name, throws) in [
         ("atlassian", false),
@@ -313,7 +337,7 @@ async fn dedicated_null_profile_admission_matches_source_checks() {
         ("facebook", false),
         ("figma", false),
         ("github", false),
-        ("gitlab", false),
+        ("gitlab", true),
         ("huggingface", true),
         ("kakao", false),
         ("kick", true),
