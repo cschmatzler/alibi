@@ -463,6 +463,16 @@ pub(crate) async fn update_user_core(
     if let Some(value) = body.data.get("phoneNumberVerified").and_then(serde_json::Value::as_bool) {
         update.phone_number_verified = Some(value);
     }
+    if let Some(value) = body.data.get("isAnonymous").and_then(serde_json::Value::as_bool) {
+        update.is_anonymous = Some(value);
+    }
+    if let Some(value) = body.data.get("lastLoginMethod") {
+        match value {
+            serde_json::Value::Null => update.last_login_method = Some(None),
+            serde_json::Value::String(value) => update.last_login_method = Some(Some(value.clone())),
+            _ => {}
+        }
+    }
     if let Some(value) = body.data.get("banned").and_then(serde_json::Value::as_bool) {
         update.banned = Some(value);
     }

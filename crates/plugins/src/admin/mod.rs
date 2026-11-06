@@ -785,6 +785,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_update_preserves_plugin_profile_fields() {
+        let (ctx, admin, _, user, _) = create_admin_context().await;
+        for (data, anonymous, method) in [
+            (serde_json::json!({"isAnonymous": true, "lastLoginMethod": "email"}), true, Some("email")),
+            (serde_json::json!({"isAnonymous": false, "lastLoginMethod": null}), false, None),
+        ] {
+            let input = types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
+            handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx).await.unwrap();
+            let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+            use alibi_core::entity::AuthUser as _;
+            assert_eq!(stored.is_anonymous(), Some(anonymous));
+            assert_eq!(stored.last_login_method(), method);
+        }
+    }
+
+    #[tokio::test]
     async fn admin_creation_preserves_native_data_and_outer_identity() {
         let (ctx, _, _, _, _) = create_admin_context().await;
         let mut input = types::CreateUserRequest::new("native-data@fixture.test", "Outer name");
