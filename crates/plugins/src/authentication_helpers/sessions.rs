@@ -162,7 +162,11 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
     };
     if !reserved {
         for _ in 0..8 {
-            if ctx.verifications().find(&identifier).await?.is_none() {
+            let Some(lock) = ctx.verifications().find(&identifier).await? else {
+                break;
+            };
+            if lock.is_expired() {
+                ctx.verifications().delete(&identifier).await?;
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -194,4 +198,46 @@ pub(crate) async fn revoke_unproven_access<S: AuthSchema>(
     .await;
     _ = ctx.verifications().delete(&identifier).await;
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn waiting_for_mailbox_cleanup_deletes_expired_lock() {
+        let mut config = crate::test_helpers::create_test_config();
+        config.verification.disable_cleanup = true;
+        let ctx = crate::test_helpers::create_test_context_with_config(config).await;
+        let user = crate::test_helpers::create_user(
+            &ctx,
+            alibi_core::CreateUser::new().with_email("cleanup-lock@example.com"),
+        )
+        .await;
+        let identifier = format!("revoke-unproven-account-access:{}", user.id());
+        assert!(
+            ctx.verifications()
+                .reserve(CreateVerification {
+                    identifier: identifier.clone(),
+                    value: user.id().to_string(),
+                    expires_at: Utc::now() + Duration::milliseconds(500),
+                })
+                .await
+                .unwrap()
+        );
+
+        let returned = revoke_unproven_access(&ctx, user.id().as_ref())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(returned.id(), user.id());
+        assert!(!returned.email_verified());
+        assert!(
+            ctx.verifications()
+                .find(&identifier)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
 }
