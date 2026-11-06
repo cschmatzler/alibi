@@ -708,6 +708,10 @@ mod tests {
         include!("native_creation_tests.rs");
     }
 
+    mod username_creation {
+        include!("username_creation_tests.rs");
+    }
+
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn create_admin_context() -> (

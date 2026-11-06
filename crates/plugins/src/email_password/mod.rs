@@ -4,6 +4,7 @@ mod http;
 mod signin;
 mod signup;
 mod types;
+mod username_hooks;
 
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::helpers::{SessionIssueError, apply_default_role};
@@ -170,16 +171,9 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         ctx.extensions.insert(config);
         if self.config.enable_username {
             ctx.extensions.insert(self.config.username.clone());
-            let policy = self.config.username.clone();
-            ctx.register_user_create_transform(move |mut data| {
-                policy.normalize_fields(
-                    &mut data.username,
-                    &mut data.display_username,
-                    &mut data.additional_fields,
-                    true,
-                )?;
-                Ok(data)
-            });
+            ctx.register_user_create_hook(Arc::new(username_hooks::UsernameCreateHook(
+                self.config.username.clone(),
+            )));
             let policy = self.config.username.clone();
             ctx.register_user_update_transform(move |_, mut data| {
                 policy.normalize_fields(

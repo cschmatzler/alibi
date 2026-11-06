@@ -140,7 +140,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
                 _ = omitted_fields.insert(name.to_owned());
             }
         }
-        let username = create_user.username.map(|username| username.to_lowercase());
+        let username = create_user.username;
         let native_fields = create_user.adapter_native_fields;
         let mut user = UserView {
             omitted_fields,

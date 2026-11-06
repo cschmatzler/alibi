@@ -220,9 +220,6 @@ where
             }
         }
         let mut create_user = defaults.apply(create_user)?;
-        if let Some(username) = create_user.username.as_mut() {
-            *username = username.to_lowercase();
-        }
         let now = Utc::now();
         if create_user.id.is_none() {
             create_user.id = self

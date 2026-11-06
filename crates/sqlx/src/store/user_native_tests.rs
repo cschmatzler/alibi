@@ -51,6 +51,30 @@ async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction
     .unwrap();
 }
 
+#[tokio::test]
+async fn native_username_creation_without_plugin_preserves_case() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool);
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let mut input = CreateUser::new().with_email("case@fixture.test");
+    input.username = Some("KeEpCaSe".into());
+    let created = store.create_user(input).await.unwrap();
+    assert_eq!(created.username(), Some("KeEpCaSe"));
+    assert_eq!(
+        store
+            .get_user_by_id(&created.id())
+            .await
+            .unwrap()
+            .unwrap()
+            .username(),
+        Some("KeEpCaSe")
+    );
+}
+
 #[derive(crate::AuthEntity, Clone, Debug, PartialEq, serde::Serialize, sqlx::FromRow)]
 #[auth(role = "user", table = "custom_user", secondary_storage)]
 struct OptionalNativeUser {

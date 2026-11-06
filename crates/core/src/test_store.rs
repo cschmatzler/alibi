@@ -267,7 +267,7 @@ impl UserStore<BundledSchema> for MemoryStore {
         let id = create_user
             .id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let username = create_user.username.map(|username| username.to_lowercase());
+        let username = create_user.username;
         let native_fields = create_user.adapter_native_fields;
         let mut user = UserView {
             omitted_fields: std::collections::BTreeSet::default(),
