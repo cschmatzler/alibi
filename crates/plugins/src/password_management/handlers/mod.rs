@@ -270,11 +270,12 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
                 return Ok(None);
             }
             let session = session_manager
-                .create_session_record_in_transaction(
+                .create_session_record_in_transaction_with_policy(
                     &session_user,
                     meta.ip_address,
                     meta.user_agent,
                     tx,
+                    alibi_core::session::SessionCreationPolicy::DeferSecondaryStorageWrites,
                 )
                 .await
                 .map_err(|error| match error {

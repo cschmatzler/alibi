@@ -28,12 +28,15 @@ enum Failure {
     AfterUpdate,
     AfterCreate,
     Cookies,
+    Commit,
 }
 
 struct Hooks {
     armed: AtomicBool,
     failure: Failure,
     events: Mutex<Vec<&'static str>>,
+    cache: Option<Arc<RecordingCache>>,
+    revoke_after_create: bool,
 }
 
 impl Hooks {
@@ -102,6 +105,17 @@ impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hooks {
             match self.failure {
                 Failure::Create => return Err(Self::error()),
                 Failure::CancelCreate => return Ok(HookControl::Cancel),
+                Failure::Commit => {
+                    use alibi_seaorm::sea_orm::ConnectionTrait;
+                    ctx.tx.unwrap().execute_unprepared(
+                        "CREATE TABLE commit_failure (id TEXT REFERENCES user(id) DEFERRABLE INITIALLY DEFERRED)"
+                    ).await.unwrap();
+                    ctx.tx
+                        .unwrap()
+                        .execute_unprepared("INSERT INTO commit_failure VALUES ('missing-user')")
+                        .await
+                        .unwrap();
+                }
                 _ => {}
             }
         }
@@ -132,11 +146,23 @@ impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hooks {
 
     async fn after_create_session(
         &self,
-        _: &TestSession,
+        session: &TestSession,
         ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
-        if self.after("after_create", ctx) && self.failure == Failure::AfterCreate {
-            return Err(Self::error());
+        if self.after("after_create", ctx) {
+            if self.failure == Failure::AfterCreate {
+                return Err(Self::error());
+            }
+            if self.revoke_after_create {
+                use alibi_core::AuthSession;
+                use alibi_core::store::CacheAdapter;
+                let cache = self.cache.as_ref().unwrap();
+                assert!(
+                    cache.get(session.token()).await?.is_some(),
+                    "mirror must precede after-create"
+                );
+                cache.delete(session.token()).await?;
+            }
         }
         Ok(())
     }
@@ -175,14 +201,27 @@ struct Fixture {
     user: UserView,
     sessions: Vec<SessionView>,
     hooks: Arc<Hooks>,
+    raw: Arc<dyn alibi_core::AuthStore<TestSchema>>,
 }
 
 impl Fixture {
     async fn new(failure: Failure) -> Self {
+        Self::with_secondary(failure, None, true, false, false).await
+    }
+
+    async fn with_secondary(
+        failure: Failure,
+        cache: Option<Arc<RecordingCache>>,
+        store_in_database: bool,
+        preserve_in_database: bool,
+        revoke_after_create: bool,
+    ) -> Self {
         let hooks = Arc::new(Hooks {
             armed: AtomicBool::new(false),
             failure,
             events: Mutex::new(Vec::new()),
+            cache: cache.clone(),
+            revoke_after_create,
         });
         let mut config = test_helpers::create_test_config();
         config.session.cookie_cache = Some(CookieCacheConfig {
@@ -190,15 +229,22 @@ impl Fixture {
             version: Some(CookieCacheVersion::Resolver(hooks.clone())),
             ..Default::default()
         });
+        config.session.secondary_storage = cache
+            .clone()
+            .map(|cache| cache as Arc<dyn alibi_core::store::CacheAdapter>);
+        config.session.store_in_database = store_in_database;
+        config.session.preserve_in_database = preserve_in_database;
         let config = Arc::new(config);
         let db = Database::connect("sqlite::memory:").await.unwrap();
         alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
-        let ctx = AuthContext::new(
-            config.clone(),
-            Arc::new(SeaOrmStore::<TestSchema>::new(config, db).with_hooks(vec![hooks.clone()])),
+        let raw: Arc<dyn alibi_core::AuthStore<TestSchema>> = Arc::new(
+            SeaOrmStore::<TestSchema>::new(config.clone(), db).with_hooks(vec![hooks.clone()]),
         );
+        let database = alibi_core::plugin::AuthInitContext::new(config.clone(), raw.clone())
+            .database_with_registered_transforms();
+        let ctx = AuthContext::new(config, database);
         let user = test_helpers::create_user(
             &ctx,
             CreateUser::new()
@@ -235,11 +281,15 @@ impl Fixture {
             .map(SessionView::from)
             .collect();
         hooks.armed.store(true, Ordering::SeqCst);
+        if let Some(cache) = &cache {
+            cache.armed.store(true, Ordering::SeqCst);
+        }
         Self {
             ctx,
             user,
             sessions,
             hooks,
+            raw,
         }
     }
 
@@ -523,4 +573,237 @@ async fn change_password_transaction_cookie_failure_does_not_roll_back_committed
             "issuance",
         ]
     );
+}
+
+struct RecordingCache {
+    inner: alibi_core::store::MemoryCacheAdapter,
+    armed: AtomicBool,
+    fail_mirror: bool,
+    fail_index: AtomicBool,
+    writes: Mutex<Vec<String>>,
+}
+
+impl RecordingCache {
+    fn new(fail_mirror: bool) -> Arc<Self> {
+        Arc::new(Self {
+            inner: alibi_core::store::MemoryCacheAdapter::new(),
+            armed: AtomicBool::new(false),
+            fail_mirror,
+            fail_index: AtomicBool::new(false),
+            writes: Mutex::new(Vec::new()),
+        })
+    }
+}
+
+#[async_trait]
+impl alibi_core::store::CacheAdapter for RecordingCache {
+    async fn set(&self, key: &str, value: &str, ttl: Duration) -> AuthResult<()> {
+        let snapshot = serde_json::from_str::<serde_json::Value>(value).ok();
+        let mirror = snapshot
+            .as_ref()
+            .is_some_and(|value| value.get("session").is_some());
+        if self.armed.load(Ordering::SeqCst)
+            && self.fail_index.load(Ordering::SeqCst)
+            && key.starts_with("active-sessions-")
+            && value != "[]"
+        {
+            return Err(Hooks::error());
+        }
+        if self.armed.load(Ordering::SeqCst) && mirror {
+            self.writes.lock().unwrap().push(key.to_owned());
+            if self.fail_mirror {
+                return Err(Hooks::error());
+            }
+        }
+        self.inner.set(key, value, ttl).await
+    }
+
+    async fn get(&self, key: &str) -> AuthResult<Option<String>> {
+        self.inner.get(key).await
+    }
+    async fn delete(&self, key: &str) -> AuthResult<()> {
+        self.inner.delete(key).await
+    }
+    async fn exists(&self, key: &str) -> AuthResult<bool> {
+        self.inner.exists(key).await
+    }
+    async fn expire(&self, key: &str, ttl: Duration) -> AuthResult<()> {
+        self.inner.expire(key, ttl).await
+    }
+    async fn clear(&self) -> AuthResult<()> {
+        self.inner.clear().await
+    }
+}
+
+#[tokio::test]
+async fn change_password_deferred_mirror_failure_commits_and_issues_usable_token() {
+    let cache = RecordingCache::new(true);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+    let (request, response) = fixture.change(Some(true)).await;
+    let response = response.unwrap();
+    assert_eq!(response.status, 200);
+    fixture.assert_password("hash:NewPassword123!").await;
+    let replacement = fixture.replacement().await;
+    assert_eq!(*cache.writes.lock().unwrap(), [replacement.token.clone()]);
+    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+    assert_eq!(body["token"], replacement.token);
+    assert_eq!(
+        published_session(&request).unwrap().1.token,
+        replacement.token
+    );
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session(&replacement.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(response.headers.get("Set-Cookie").is_some());
+}
+
+#[tokio::test]
+async fn change_password_deferred_mirror_is_absent_on_transaction_or_commit_failure() {
+    for failure in [Failure::Create, Failure::CancelCreate, Failure::Commit] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(failure, Some(cache.clone()), true, false, false).await;
+        let (request, response) = fixture.change(Some(true)).await;
+        assert!(response.is_err(), "{failure:?}");
+        fixture.assert_password("hash:Password123!").await;
+        fixture.assert_original_sessions().await;
+        assert!(cache.writes.lock().unwrap().is_empty(), "{failure:?}");
+        assert_unpublished(&request);
+    }
+}
+
+#[tokio::test]
+async fn change_password_deferred_mirror_precedes_after_create_revocation() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, true).await;
+    let (_, response) = fixture.change(Some(true)).await;
+    let body: serde_json::Value = serde_json::from_slice(&response.unwrap().body).unwrap();
+    let token = body["token"].as_str().unwrap();
+    assert_eq!(*cache.writes.lock().unwrap(), [token]);
+    assert!(
+        cache.get(token).await.unwrap().is_none(),
+        "no mirror may resurrect the revoked token after the hook"
+    );
+}
+
+#[tokio::test]
+async fn change_password_secondary_authority_keeps_inline_mirror_failures_atomic() {
+    for (store, preserve) in [(false, false), (true, true)] {
+        let cache = RecordingCache::new(true);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), store, preserve, false)
+                .await;
+        let (request, response) = fixture.change(Some(true)).await;
+        assert!(response.is_err());
+        fixture.assert_password("hash:Password123!").await;
+        assert_eq!(cache.writes.lock().unwrap().len(), 1);
+        if store {
+            assert_eq!(
+                fixture
+                    .raw
+                    .get_user_sessions(&fixture.user.id)
+                    .await
+                    .unwrap()
+                    .len(),
+                2
+            );
+        }
+        assert_unpublished(&request);
+    }
+}
+
+#[tokio::test]
+async fn change_password_default_session_creation_policy_still_propagates_mirror_errors() {
+    let cache = RecordingCache::new(true);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+    let user = fixture.user.id.clone();
+    let result = alibi_core::store::write_transaction(fixture.ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            tx.create_session(CreateSession {
+                user_id: user,
+                expires_at: chrono::Utc::now() + Duration::hours(1),
+                token: None,
+                ip_address: None,
+                user_agent: None,
+                impersonated_by: None,
+                active_organization_id: None,
+                active_team_id: None,
+                additional_fields: Default::default(),
+            })
+            .await
+        })
+    })
+    .await;
+    assert!(result.is_err());
+    assert_eq!(cache.writes.lock().unwrap().len(), 1);
+    assert_eq!(
+        fixture
+            .raw
+            .get_user_sessions(&fixture.user.id)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
+#[tokio::test]
+async fn change_password_deferred_mirror_does_not_jump_preceding_after_hook_failure() {
+    for failure in [Failure::AfterDelete, Failure::AfterUpdate] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(failure, Some(cache.clone()), true, false, false).await;
+        let (request, response) = fixture.change(Some(true)).await;
+        assert!(response.is_err());
+        fixture.assert_password("hash:NewPassword123!").await;
+        assert_eq!(
+            fixture
+                .raw
+                .get_user_sessions(&fixture.user.id)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(cache.writes.lock().unwrap().is_empty());
+        assert_unpublished(&request);
+    }
+}
+
+#[tokio::test]
+async fn change_password_deferred_index_failure_also_leaves_database_token_usable() {
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+    cache.fail_index.store(true, Ordering::SeqCst);
+    let (request, response) = fixture.change(Some(true)).await;
+    let response = response.unwrap();
+    assert_eq!(response.status, 200);
+    fixture.assert_password("hash:NewPassword123!").await;
+    let replacement = fixture.replacement().await;
+    assert!(cache.writes.lock().unwrap().is_empty());
+    assert_eq!(
+        published_session(&request).unwrap().1.token,
+        replacement.token
+    );
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session(&replacement.token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(response.headers.get("Set-Cookie").is_some());
 }

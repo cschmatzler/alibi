@@ -561,7 +561,21 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let model = self.create_session(create_session).await?;
+        self.create_session_record_with_policy(
+            create_session,
+            crate::session::SessionCreationPolicy::Inline,
+        )
+        .await
+    }
+
+    async fn create_session_record_with_policy(
+        &self,
+        create_session: CreateSession,
+        policy: crate::session::SessionCreationPolicy,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        let model = self
+            .create_session_with_policy(create_session, policy)
+            .await?;
         let record = self.record_store.session_record(model).await?;
         self.observe(AdapterEvent::SessionCreated(record.clone()))?;
         Ok(record)
@@ -717,7 +731,34 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.inner.create_account(create_account).await
     }
 
-    async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
+    async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
+        self.create_session_with_policy(
+            create_session,
+            crate::session::SessionCreationPolicy::Inline,
+        )
+        .await
+    }
+
+    async fn create_verification_record(
+        &self,
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.inner
+            .create_verification_record(data, publication)
+            .await
+    }
+    async fn create_verification(&self, data: CreateVerification) -> AuthResult<S::Verification> {
+        self.inner.create_verification(data).await
+    }
+}
+
+impl<S: AuthSchema> PluginTransaction<'_, S> {
+    async fn create_session_with_policy(
+        &self,
+        mut create_session: CreateSession,
+        policy: crate::session::SessionCreationPolicy,
+    ) -> AuthResult<S::Session> {
         for hook in &self.record_store.session_callbacks.callbacks {
             hook.before_create(
                 &create_session,
@@ -742,12 +783,24 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                     self.record_store.session_uses_database(),
                 )
                 .await?;
-            let user = self
-                .inner
-                .get_user_by_id(model.user_id().as_ref())
-                .await?
-                .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
-            self.record_store.mirror_session(&model, &user).await?;
+            if policy == crate::session::SessionCreationPolicy::DeferSecondaryStorageWrites
+                && self.record_store.database_session_fallback()
+            {
+                self.inner
+                    .queue_session_publication(
+                        model.id().as_ref(),
+                        self.record_store
+                            .deferred_session_publication(model.clone()),
+                    )
+                    .await?;
+            } else {
+                let user = self
+                    .inner
+                    .get_user_by_id(model.user_id().as_ref())
+                    .await?
+                    .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
+                self.record_store.mirror_session(&model, &user).await?;
+            }
             model
         } else {
             self.inner.create_session(create_session).await?
@@ -757,19 +810,6 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .map_err(|_| AuthError::internal("Session callback queue poisoned"))?
             .push(session.clone());
         Ok(session)
-    }
-
-    async fn create_verification_record(
-        &self,
-        data: VerificationCreation,
-        publication: VerificationPublication,
-    ) -> AuthResult<Option<VerificationSnapshot>> {
-        self.inner
-            .create_verification_record(data, publication)
-            .await
-    }
-    async fn create_verification(&self, data: CreateVerification) -> AuthResult<S::Verification> {
-        self.inner.create_verification(data).await
     }
 }
 

@@ -58,6 +58,7 @@ pub enum AfterHook<S: AuthSchema> {
     AccountCreated(S::Account),
     AccountUpdated(S::Account),
     SessionCreated(S::Session),
+    SessionPublication(Arc<dyn crate::session::SessionPublication>),
     SessionUpdated(S::Session),
     SessionUpdateMissing(String),
     SessionDeleted(S::Session),
@@ -99,7 +100,9 @@ impl<S: AuthSchema> AfterHook<S> {
                 hook.after_update_session_missing(token, ctx).await
             }
             Self::SessionDeleted(session) => hook.after_delete_session(session, ctx).await,
-            Self::SessionRetirement { .. } | Self::SessionRevocation(_) => Ok(()),
+            Self::SessionRetirement { .. }
+            | Self::SessionRevocation(_)
+            | Self::SessionPublication(_) => Ok(()),
             Self::VerificationCreated(verification) => {
                 hook.after_create_verification(verification, ctx).await
             }
@@ -146,6 +149,20 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         let index = events.iter().position(|event| matches!(event, AfterHook::SessionDeleted(session) if session_ids.iter().any(|id| id == session.id().as_ref()))).unwrap_or(events.len());
         events.insert(index, AfterHook::SessionRevocation(revocation));
     }
+    /// Insert only before the matching create event, preserving preceding operations.
+    pub async fn attach_session_publication(
+        &self,
+        session_id: &str,
+        publication: Arc<dyn crate::session::SessionPublication>,
+    ) -> AuthResult<()> {
+        use crate::AuthSession as _;
+        let mut events = self.0.lock().await;
+        let index = events.iter().rposition(|event| matches!(event, AfterHook::SessionCreated(session) if session.id().as_ref() == session_id))
+            .ok_or_else(|| AuthError::internal("Session publication has no matching create event"))?;
+        events.insert(index, AfterHook::SessionPublication(publication));
+        Ok(())
+    }
+
     /// Keep plugin retirement after the selected row's application after-hooks.
     pub async fn attach_session_retirement(
         &self,
@@ -184,6 +201,10 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         policy: crate::store::AfterCommitErrorPolicy,
     ) -> AuthResult<()> {
         for event in self.0.into_inner() {
+            if let AfterHook::SessionPublication(publication) = &event {
+                publication.publish().await;
+                continue;
+            }
             if let AfterHook::SessionRevocation(revocation) = &event {
                 if let Err(error) = revocation.revoke().await {
                     if policy == crate::store::AfterCommitErrorPolicy::Propagate {

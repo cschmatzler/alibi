@@ -765,6 +765,16 @@ where
         self.pending_after.push(event).await;
         Ok(result)
     }
+    async fn queue_session_publication(
+        &self,
+        session_id: &str,
+        publication: Arc<dyn alibi_core::session::SessionPublication>,
+    ) -> AuthResult<()> {
+        self.pending_after
+            .attach_session_publication(session_id, publication)
+            .await
+    }
+
     async fn prepare_secondary_session_creation(
         &self,
         input: CreateSession,
@@ -960,3 +970,128 @@ mod scim_projection;
 mod scim_user_create;
 mod scim_user_replace;
 mod scim_users;
+
+#[cfg(all(test, feature = "sqlite"))]
+mod session_publication_tests {
+    use super::*;
+    use alibi_core::store::{SessionStore, UserStore, write_transaction};
+    use alibi_core::{AuthError, AuthSession};
+    use std::sync::Mutex;
+
+    type Schema = bundled_schema::BundledSchema;
+
+    struct Publication {
+        store: Arc<SqlxStore<Schema>>,
+        token: String,
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl alibi_core::session::SessionPublication for Publication {
+        async fn publish(&self) {
+            assert!(self.store.get_session(&self.token).await.unwrap().is_some());
+            self.events.lock().unwrap().push("mirror".into());
+        }
+    }
+
+    struct Hooks {
+        events: Arc<Mutex<Vec<String>>>,
+        fail_commit: bool,
+    }
+
+    #[async_trait]
+    impl DatabaseHooks<Schema, SqlxBackend> for Hooks {
+        async fn before_create_session(
+            &self,
+            input: &mut CreateSession,
+            ctx: &SqlxHookContext<'_>,
+        ) -> AuthResult<crate::hooks::HookControl> {
+            if self.fail_commit && input.token.as_deref() == Some("replacement") {
+                use crate::hooks::SqlxHookContextExt;
+                let mut connection = ctx.connection().await?;
+                let db = connection.sqlite().unwrap();
+                _ = sqlx::raw_sql(sqlx::AssertSqlSafe(
+                    "CREATE TABLE commit_failure (id TEXT REFERENCES user(id) DEFERRABLE INITIALLY DEFERRED); INSERT INTO commit_failure VALUES ('missing-user')".to_owned()
+                )).execute(db).await.unwrap();
+            }
+            Ok(crate::hooks::HookControl::Continue)
+        }
+
+        async fn after_create_session(
+            &self,
+            session: &<Schema as alibi_core::AuthSchema>::Session,
+            ctx: &SqlxHookContext<'_>,
+        ) -> AuthResult<()> {
+            assert!(ctx.tx.is_none());
+            self.events.lock().unwrap().push(session.token().to_owned());
+            Ok(())
+        }
+    }
+
+    fn input(user_id: &str, token: &str) -> CreateSession {
+        CreateSession {
+            user_id: user_id.to_owned(),
+            token: Some(token.to_owned()),
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn publication_is_committed_before_matching_create_hook_only() {
+        for outcome in ["commit", "rollback", "commit-failure"] {
+            let pool = SqlxPool::connect("sqlite::memory:").await.unwrap();
+            migrator::run_migrations(&pool).await.unwrap();
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let store = Arc::new(
+                SqlxStore::<Schema>::new(AuthConfig::new("test-secret-min-32-chars-1234567"), pool)
+                    .hook(Hooks {
+                        events: events.clone(),
+                        fail_commit: outcome == "commit-failure",
+                    }),
+            );
+            let user = store
+                .create_user(CreateUser::new().with_email("mirror@example.com"))
+                .await
+                .unwrap();
+            let user_id = user.id;
+            let publication = Arc::new(Publication {
+                store: store.clone(),
+                token: "replacement".into(),
+                events: events.clone(),
+            });
+            let result = write_transaction(store.as_ref(), move |tx| {
+                Box::pin(async move {
+                    _ = tx.create_session(input(&user_id, "preceding")).await?;
+                    let replacement = tx
+                        .prepare_secondary_session_creation(input(&user_id, "replacement"), true)
+                        .await?;
+                    tx.queue_session_publication(replacement.id().as_ref(), publication)
+                        .await?;
+                    if outcome == "rollback" {
+                        return Err(AuthError::internal("rollback"));
+                    }
+                    Ok(())
+                })
+            })
+            .await;
+            if outcome == "commit" {
+                result.unwrap();
+                assert_eq!(
+                    *events.lock().unwrap(),
+                    ["preceding", "mirror", "replacement"]
+                );
+            } else {
+                assert!(result.is_err(), "{outcome}");
+                assert!(events.lock().unwrap().is_empty(), "{outcome}");
+                assert!(store.get_session("preceding").await.unwrap().is_none());
+                assert!(store.get_session("replacement").await.unwrap().is_none());
+            }
+        }
+    }
+}

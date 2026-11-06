@@ -379,6 +379,18 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
 
+    /// Queue publication after commit, immediately before this session's after-create hooks.
+    /// Unsupported adapters fail rather than publish before commit or drop the mirror.
+    async fn queue_session_publication(
+        &self,
+        _session_id: &str,
+        _publication: std::sync::Arc<dyn crate::session::SessionPublication>,
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional session publication is unsupported",
+        ))
+    }
+
     /// Stage an update against a trusted cached model using this transaction's hooks.
     async fn prepare_secondary_session_update(
         &self,
@@ -475,6 +487,16 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         AdapterRecord::physical(self.create_session(create_session).await?)
+    }
+
+    /// Select secondary publication timing on initialized stores. Raw adapters
+    /// have no secondary mirror and retain their ordinary creation semantics.
+    async fn create_session_record_with_policy(
+        &self,
+        create_session: CreateSession,
+        _policy: crate::session::SessionCreationPolicy,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        self.create_session_record(create_session).await
     }
 
     /// Return a retained adapter record. The default is the physical model's

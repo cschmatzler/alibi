@@ -800,6 +800,16 @@ where
         self.pending_after.push(event).await;
         Ok(result)
     }
+    async fn queue_session_publication(
+        &self,
+        session_id: &str,
+        publication: Arc<dyn alibi_core::session::SessionPublication>,
+    ) -> AuthResult<()> {
+        self.pending_after
+            .attach_session_publication(session_id, publication)
+            .await
+    }
+
     async fn prepare_secondary_session_creation(
         &self,
         input: CreateSession,

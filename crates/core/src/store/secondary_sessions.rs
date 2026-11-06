@@ -35,6 +35,20 @@ impl<S: AuthSchema> super::SessionRevocation for CachedUserRevocation<S> {
     }
 }
 
+struct DeferredSessionPublication<S: AuthSchema> {
+    store: PluginStore<S>,
+    session: S::Session,
+}
+
+#[async_trait::async_trait]
+impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublication<S> {
+    async fn publish(&self) {
+        if let Err(error) = self.store.mirror_created_session(&self.session).await {
+            tracing::error!(%error, "Failed to mirror committed session to secondary storage");
+        }
+    }
+}
+
 impl CachedSession {
     fn absent_fields(raw: &str) -> BTreeSet<String> {
         serde_json::from_str::<Self>(raw)
@@ -296,6 +310,16 @@ impl<S: AuthSchema> PluginStore<S> {
             return Ok(BTreeSet::new());
         };
         Ok(CachedSession::absent_fields(&raw))
+    }
+
+    pub(super) fn deferred_session_publication(
+        &self,
+        session: S::Session,
+    ) -> std::sync::Arc<dyn crate::session::SessionPublication> {
+        std::sync::Arc::new(DeferredSessionPublication {
+            store: self.clone(),
+            session,
+        })
     }
 
     pub(super) async fn mirror_created_session(&self, session: &S::Session) -> AuthResult<()> {

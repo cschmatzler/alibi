@@ -17,6 +17,21 @@ use std::sync::Arc;
 #[derive(Clone, Copy, Debug)]
 pub struct SessionRefreshSuppressed;
 
+/// Session creation storage policy. Deferral is honored only when the database
+/// can serve secondary-storage misses.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SessionCreationPolicy {
+    #[default]
+    Inline,
+    DeferSecondaryStorageWrites,
+}
+
+/// A session mirror queued before the created session's database after-hooks.
+#[async_trait::async_trait]
+pub trait SessionPublication: Send + Sync {
+    async fn publish(&self);
+}
+
 /// Controls whether a persistent session read may write to its store.
 #[derive(Debug, Clone, Copy)]
 pub struct SessionReadOptions {
@@ -115,6 +130,26 @@ impl<S: AuthSchema> SessionManager<S> {
     ) -> AuthResult<AdapterRecord<S::Session>> {
         database
             .create_session_record(self.new_session(user, ip_address, user_agent))
+            .await
+    }
+
+    /// Create in a transaction with an explicit secondary publication policy.
+    ///
+    /// # Errors
+    /// Propagates creation errors and unsupported publication capabilities.
+    pub async fn create_session_record_in_transaction_with_policy(
+        &self,
+        user: &impl AuthUser,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+        database: &dyn crate::AuthTransaction<S>,
+        policy: SessionCreationPolicy,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        database
+            .create_session_record_with_policy(
+                self.new_session(user, ip_address, user_agent),
+                policy,
+            )
             .await
     }
 
@@ -852,3 +887,34 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
+
+#[cfg(test)]
+mod publication_contract_tests {
+    use super::*;
+    use crate::AuthError;
+    use crate::store::write_transaction;
+    use crate::test_store::{BundledSchema, MemoryStore};
+
+    struct UnexpectedPublication;
+
+    #[async_trait::async_trait]
+    impl SessionPublication for UnexpectedPublication {
+        async fn publish(&self) {
+            panic!("unsupported adapters must not publish the session");
+        }
+    }
+
+    #[tokio::test]
+    async fn unsupported_transaction_publication_fails_closed() {
+        let store = MemoryStore::default();
+        let result = write_transaction::<BundledSchema, _, _>(&store, |tx| {
+            Box::pin(async move {
+                tx.queue_session_publication("session-id", Arc::new(UnexpectedPublication))
+                    .await
+            })
+        })
+        .await;
+        assert!(matches!(result, Err(AuthError::NotImplemented(message))
+            if message == "Transactional session publication is unsupported"));
+    }
+}
