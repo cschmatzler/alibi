@@ -197,8 +197,8 @@ pub(super) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
             .with_decode_allow_trailing_bits(true),
     );
     let bytes = decoder.decode(encoded).map_err(|error| error.to_string())?;
-    let decoded = String::from_utf8_lossy(&bytes);
-    let decoded = decoded.strip_prefix('\u{feff}').unwrap_or(&decoded);
+    let decoded = std::str::from_utf8(&bytes).map_err(|error| error.to_string())?;
+    let decoded = decoded.strip_prefix('\u{feff}').unwrap_or(decoded);
     let profile: Value = alibi_core::utils::json::from_slice(decoded.as_bytes())
         .map_err(|error| error.to_string())?;
     if !profile.is_object() {
@@ -634,16 +634,29 @@ mod tests {
                 serde_json::json!({})
             );
         }
-        assert_eq!(
-            decode_grant_jwt(".eyJ4Ijoi_yJ9.").unwrap(),
-            serde_json::json!({"x": "\u{fffd}"})
-        );
         for payload in ["e30==", "e30===", "e30\x0b=", "e=30", "e", "===="] {
             assert!(
                 decode_grant_jwt(&format!(".{payload}.")).is_err(),
                 "{payload:?}"
             );
         }
+    }
+
+    #[test]
+    fn grant_jwt_decoding_rejects_malformed_utf8() {
+        for bytes in [
+            b"{\"x\":\"\xff\"}".as_slice(),
+            b"{\"x\":\"\xc0\xaf\"}",
+            b"{\"x\":\"\xed\xa0\x80\"}",
+            b"{\"x\":\"\xf0\x9f\"}",
+        ] {
+            let payload = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes);
+            assert!(decode_grant_jwt(&format!(".{payload}.")).is_err());
+        }
+        assert_eq!(
+            decode_grant_jwt(".eyJ4Ijoi77-9In0.").unwrap(),
+            serde_json::json!({"x": "\u{fffd}"})
+        );
     }
 
     #[test]
