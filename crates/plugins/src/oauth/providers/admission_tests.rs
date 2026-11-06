@@ -44,6 +44,56 @@ impl Drop for HttpFixture {
     }
 }
 
+struct RawIdMapper(Value);
+#[async_trait]
+impl OAuthProfileMapper for RawIdMapper {
+    async fn map_profile(&self, _: Value) -> Result<Map<String, Value>, String> {
+        Ok(serde_json::json!({"id": self.0})
+            .as_object()
+            .unwrap()
+            .clone())
+    }
+}
+
+#[tokio::test]
+async fn mapped_public_ids_do_not_run_object_to_primitive_coercion() {
+    use base64::Engine;
+    for mapped_id in [
+        serde_json::json!({"toString":0}),
+        serde_json::json!([{"toString":0}]),
+        Value::Null,
+    ] {
+        let profile = serde_json::json!({"sub":"subject","email":"a@example.com"});
+        let token = format!(
+            "h.{}.s",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
+        );
+        let mut generic = GenericOAuthConfig::new("client", "secret");
+        generic.map_profile = Some(Arc::new(RawIdMapper(mapped_id.clone())));
+        for provider in [
+            OAuthProvider::google("client", "secret")
+                .with_profile_mapper(Arc::new(RawIdMapper(mapped_id.clone()))),
+            generic.resolve().await.unwrap().unwrap().provider,
+        ] {
+            let response = fetch_user_info_from_provider(
+                &provider,
+                OAuthUserInfoRequest {
+                    id_token: Some(token.clone()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.user_output.as_ref().unwrap()["id"], mapped_id);
+            assert_eq!(response.data["sub"], "subject");
+            assert_eq!(
+                provider.account_subject.unwrap()(&response.data).unwrap(),
+                "subject"
+            );
+        }
+    }
+}
+
 pub(super) struct RejectMapper;
 #[async_trait]
 impl OAuthProfileMapper for RejectMapper {

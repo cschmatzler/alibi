@@ -269,7 +269,7 @@ pub(super) fn apply_application_mapping(
     output.extend(mapped.clone());
     for (key, value) in mapped {
         match key.as_str() {
-            "id" => response.user.id = remaining_profile::js_string(&value)?,
+            "id" => response.user.id = remaining_profile::scalar(Some(&value))?.unwrap_or_default(),
             "email" => response.user.email = value.as_str().unwrap_or_default().into(),
             "emailVerified" => response.user.email_verified = email_verified_claim(Some(&value)),
             "name" => {
