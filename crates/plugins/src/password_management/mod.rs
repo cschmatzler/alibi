@@ -973,6 +973,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn change_password_preserves_password_verifier_failures() {
+        struct FailingVerifier;
+        #[async_trait::async_trait]
+        impl PasswordHasher for FailingVerifier {
+            async fn hash(&self, _: &str) -> AuthResult<String> {
+                Ok("unused-new-hash".into())
+            }
+            async fn verify(&self, _: &str, _: &str) -> AuthResult<bool> {
+                Err(AuthError::internal("password provider unavailable"))
+            }
+        }
+        let (ctx, user, session) = create_test_context_with_user().await;
+        let before = ctx.database.get_user_accounts(&user.id).await.unwrap()[0]
+            .password
+            .clone();
+        let mut plugin = PasswordManagementPlugin::new();
+        plugin.config.password_hasher = Some(Arc::new(FailingVerifier));
+        let req = test_helpers::create_auth_request_no_query(
+            HttpMethod::Post,
+            "/change-password",
+            Some(&session.token),
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "currentPassword": "Password123!", "newPassword": "NewPassword123!"
+                }))
+                .unwrap(),
+            ),
+        );
+        let error = plugin.handle_change_password(&req, &ctx).await.unwrap_err();
+        assert_eq!(error.status_code(), 500);
+        assert!(error.to_string().contains("password provider unavailable"));
+        assert_eq!(
+            ctx.database.get_user_accounts(&user.id).await.unwrap()[0].password,
+            before
+        );
+    }
+
+    #[tokio::test]
     async fn test_change_password_success() {
         let plugin = PasswordManagementPlugin::new();
         let (ctx, _user, session) = create_test_context_with_user().await;

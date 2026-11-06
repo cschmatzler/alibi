@@ -244,7 +244,10 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
             &stored_hash,
         )
         .await
-        .map_err(|_error| AuthError::bad_request("Invalid password"))?;
+        .map_err(|error| match error {
+            AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
+            other => other,
+        })?;
     }
 
     // Revocation and the password write commit together, as upstream's
