@@ -209,6 +209,9 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
     meta: &RequestMeta,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(ChangePasswordResponse<UserView>, Option<String>)> {
+    let (minimum, maximum) = crate::email_password::password_length_limits(ctx);
+    password_utils::validate_password(&body.new_password, minimum, maximum, ctx)?;
+
     let credential_account = get_credential_account(ctx, user.id())
         .await?
         .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
@@ -222,9 +225,6 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
     } else {
         None
     };
-
-    let (minimum, maximum) = crate::email_password::password_length_limits(ctx);
-    password_utils::validate_password(&body.new_password, minimum, maximum, ctx)?;
 
     let password_hash = ctx
         .hash_password(config.password_hasher.as_ref(), &body.new_password)

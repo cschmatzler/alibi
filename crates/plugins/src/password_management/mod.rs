@@ -832,6 +832,31 @@ mod tests {
 
     // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
     #[tokio::test]
+    async fn change_password_validates_new_length_before_account_lookup() {
+        let plugin = PasswordManagementPlugin::new();
+        let (ctx, _, session) = create_test_context_with_oauth_only_user().await;
+        for (password, code) in [
+            ("short".to_owned(), "PASSWORD_TOO_SHORT"),
+            ("A".repeat(129), "PASSWORD_TOO_LONG"),
+        ] {
+            let req = test_helpers::create_auth_request_no_query(
+                HttpMethod::Post,
+                "/change-password",
+                Some(&session.token),
+                Some(
+                    serde_json::to_vec(&serde_json::json!({
+                        "currentPassword": "Password123!", "newPassword": password
+                    }))
+                    .unwrap(),
+                ),
+            );
+            let error = plugin.handle_change_password(&req, &ctx).await.unwrap_err();
+            assert_eq!(error.status_code(), 400);
+            assert_eq!(error.error_payload().1.as_deref(), Some(code));
+        }
+    }
+
+    #[tokio::test]
     async fn test_change_password_success() {
         let plugin = PasswordManagementPlugin::new();
         let (ctx, _user, session) = create_test_context_with_user().await;
