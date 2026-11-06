@@ -3,6 +3,7 @@
 //! `JsValue` carries IEEE754 numbers, including Infinity and signed zero, without
 //! enabling `serde_json` features that reserve otherwise valid application keys.
 
+use chrono::Datelike;
 use indexmap::IndexMap;
 use serde::{
     Deserialize, Deserializer, Serialize, Serializer,
@@ -35,9 +36,13 @@ impl JsValue {
             Self::Null => Ok("null".to_owned()),
             Self::Bool(value) => Ok(value.to_string()),
             Self::String(value) => Ok(value.clone()),
-            Self::Date(value) => Ok(value
-                .format("%a %b %d %Y %H:%M:%S GMT%z (Coordinated Universal Time)")
-                .to_string()),
+            Self::Date(value) => Ok(format!(
+                "{}{}{:04}{}",
+                value.format("%a %b %d "),
+                if value.year() < 0 { "-" } else { "" },
+                value.year().unsigned_abs(),
+                value.format(" %H:%M:%S GMT%z (Coordinated Universal Time)")
+            )),
             Self::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
             Self::Array(values) => values
                 .iter()
@@ -771,4 +776,24 @@ fn write_value(value: &JsValue, bytes: &mut Vec<u8>) -> Result<(), serde_json::E
 fn array_index(name: &str) -> Option<u32> {
     let index = name.parse::<u32>().ok()?;
     (index != u32::MAX && index.to_string() == name).then_some(index)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn date_string_coercion_does_not_sign_positive_expanded_years() {
+        for (year, prefix) in [
+            (10000, "Sat Jan 01 10000"),
+            (-1, "Fri Jan 01 -0001"),
+            (0, "Sat Jan 01 0000"),
+        ] {
+            let date = JsValue::Date(Utc.with_ymd_and_hms(year, 1, 1, 0, 0, 0).unwrap());
+            let expected = format!("{prefix} 00:00:00 GMT+0000 (Coordinated Universal Time)");
+            assert_eq!(date.coerce_string().unwrap(), expected);
+            assert_eq!(JsValue::Array(vec![date]).coerce_string().unwrap(), expected);
+        }
+    }
 }
