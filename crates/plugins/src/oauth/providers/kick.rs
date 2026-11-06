@@ -101,6 +101,7 @@ impl OAuthProvider {
             get_user_info: Some(std::sync::Arc::new(KickUserInfo {
                 endpoint,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
             })),
             refresh_access_token: None,
             verify_id_token: None,
@@ -113,12 +114,23 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct KickUserInfo {
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for KickUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -141,31 +153,37 @@ impl OAuthUserInfoHandler for KickUserInfo {
             .and_then(|rows| rows.first())
             .cloned()
             .ok_or("Missing Kick profile")?;
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
+        let mut output = Map::new();
+        for (value, target) in [
+            (profile.get("name"), "name"),
+            (profile.get("email"), "email"),
+            (profile.get("profile_picture"), "image"),
+        ] {
+            if let Some(value) = value {
+                _ = output.insert(target.into(), value.clone());
+            }
+        }
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
                 id: scalar(profile.get("user_id"))?.unwrap_or_default(),
-                name: scalar(profile.get("name"))?,
-                email: profile
-                    .get("email")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(profile.get("profile_picture"))?,
+                name: None,
+                email: String::new(),
+                image: None,
                 email_verified: false,
             },
-        };
-        Ok(OAuthUserInfoResponse {
-            user_output,
-            user,
             data: profile,
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
@@ -192,4 +210,83 @@ fn subject(profile: &Value) -> Result<String, String> {
         return Err("Invalid Kick user_id".into());
     }
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct PartialMapper(Value);
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for PartialMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile, self.0);
+            Ok(serde_json::from_value(serde_json::json!({
+                "id": "public-id", "name": "Mapped", "custom": true
+            }))
+            .unwrap())
+        }
+    }
+
+    #[tokio::test]
+    async fn kick_http_partial_profile_mapping() {
+        for mapped in [false, true] {
+            let mut profile = serde_json::json!({"user_id":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
+            if mapped {
+                profile["name"] = serde_json::json!({"requiresMapping": true});
+            }
+            let body = (serde_json::json!({"data": [profile.clone()]})).to_string();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            });
+            let mut options = KickOptions::new("client", Some("secret".into()));
+            options.user_info_endpoint = Some(endpoint);
+            let mut provider = OAuthProvider::kick_with_options(options);
+            if mapped {
+                provider = provider.with_profile_mapper(Arc::new(PartialMapper(profile.clone())));
+            }
+            let response = provider
+                .get_user_info
+                .as_ref()
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            server.await.unwrap();
+            assert_eq!(response.data, profile);
+            assert_eq!(
+                (provider.account_subject.unwrap())(&response.data).unwrap(),
+                "raw-id"
+            );
+            let output = response.user_output.unwrap();
+            assert_eq!(output.get("email"), Some(&Value::Null));
+            assert_eq!(output.get("image"), Some(&Value::Null));
+            assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
+            assert_eq!(
+                response.user.name.as_deref(),
+                Some(if mapped { "Mapped" } else { "Original" })
+            );
+            if mapped {
+                assert_eq!(output["id"], "public-id");
+                assert_eq!(output["custom"], true);
+            } else {
+                assert!(!output.contains_key("id"));
+            }
+        }
+    }
 }
