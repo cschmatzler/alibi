@@ -140,6 +140,7 @@ impl LastLoginMethodPlugin {
             context
                 .params
                 .get("id")
+                .filter(|id| !id.is_empty())
                 .map(String::as_str)
                 .or_else(|| path.rsplit('/').next())
         } else if path == "/one-tap/callback" {
@@ -575,4 +576,29 @@ pub fn reject_last_login_method_input<S: AuthSchema>(
         });
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn callback_provider_empty_parameter_falls_back_to_path() {
+        let plugin = LastLoginMethodPlugin::new();
+        let mut context = LastLoginMethodContext {
+            request: None,
+            endpoint: None,
+            endpoint_response: None,
+            body: None,
+            route_path: "/callback/github".into(),
+            params: std::collections::HashMap::new(),
+            response: None,
+            new_session: None,
+        };
+        assert_eq!(plugin.resolve(&context).unwrap().as_deref(), Some("github"));
+        context.params.insert("id".into(), String::new());
+        assert_eq!(plugin.resolve(&context).unwrap().as_deref(), Some("github"));
+        context.params.insert("id".into(), "google".into());
+        assert_eq!(plugin.resolve(&context).unwrap().as_deref(), Some("google"));
+    }
 }
