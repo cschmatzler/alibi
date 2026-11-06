@@ -129,7 +129,37 @@ impl AuthSession for SessionView {
         session.secondary_snapshot()
     }
 
-    fn from_secondary_snapshot(snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+    fn from_secondary_snapshot(mut snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+        for name in ["expiresAt", "createdAt", "updatedAt"] {
+            let value = snapshot.get(name).ok_or_else(|| {
+                crate::AuthError::internal(format!("Missing secondary session {name}"))
+            })?;
+            let milliseconds = match value {
+                serde_json::Value::String(text) => crate::utils::datetime::parse_date_millis(text),
+                serde_json::Value::Array(_) => crate::utils::datetime::parse_date_millis(
+                    &crate::utils::json::JsValue::from(value.clone())
+                        .coerce_string()
+                        .map_err(crate::AuthError::internal)?,
+                ),
+                serde_json::Value::Null => Some(0),
+                serde_json::Value::Bool(value) => Some(i64::from(*value)),
+                serde_json::Value::Number(number) => number
+                    .as_f64()
+                    .filter(|value| value.is_finite() && value.abs() <= 8_640_000_000_000_000.0)
+                    .map(|value| value.trunc() as i64),
+                serde_json::Value::Object(_) => None,
+            };
+            let date = milliseconds
+                .and_then(DateTime::<Utc>::from_timestamp_millis)
+                .ok_or_else(|| {
+                    crate::AuthError::not_implemented(format!(
+                        "Unrepresentable secondary session {name}"
+                    ))
+                })?;
+            snapshot[name] = serde_json::Value::String(crate::utils::datetime::json_date_millis(
+                date.timestamp_millis(),
+            ));
+        }
         let mut session: Self = serde_json::from_value(snapshot.clone())?;
         for name in ["ipAddress", "userAgent"] {
             if snapshot.get(name).is_none() {

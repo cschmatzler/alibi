@@ -81,14 +81,7 @@ fn session_secondary_creation_clock_correction_does_not_mutate_model() {
 
 #[test]
 fn session_secondary_codec_rejects_unrepresentable_required_values_without_fabrication() {
-    for name in [
-        "id",
-        "token",
-        "userId",
-        "expiresAt",
-        "createdAt",
-        "updatedAt",
-    ] {
+    for name in ["id", "token", "userId"] {
         for invalid in [None, Some(Value::Null), Some(json!({})), Some(json!(42))] {
             let mut physical = snapshot();
             match invalid {
@@ -104,12 +97,55 @@ fn session_secondary_codec_rejects_unrepresentable_required_values_without_fabri
         }
     }
     for name in ["expiresAt", "createdAt", "updatedAt"] {
-        let mut physical = snapshot();
-        physical[name] = json!("invalid date");
-        assert!(
-            SessionView::from_secondary_snapshot(physical).is_err(),
-            "{name}"
-        );
+        for invalid in [
+            None,
+            Some(json!("invalid date")),
+            Some(json!({})),
+            Some(json!(8_640_000_000_000_000_i64)),
+            Some(json!(-8_640_000_000_000_000_i64)),
+            Some(json!(1e20)),
+        ] {
+            let mut physical = snapshot();
+            match invalid {
+                Some(value) => physical[name] = value,
+                None => {
+                    physical.as_object_mut().unwrap().remove(name);
+                }
+            }
+            assert!(
+                SessionView::from_secondary_snapshot(physical).is_err(),
+                "{name}"
+            );
+        }
+    }
+}
+
+#[test]
+fn session_secondary_codec_revives_representable_javascript_dates() {
+    for name in ["expiresAt", "createdAt", "updatedAt"] {
+        for (input, expected) in [
+            (json!(null), "1970-01-01T00:00:00.000Z"),
+            (json!(false), "1970-01-01T00:00:00.000Z"),
+            (json!(true), "1970-01-01T00:00:00.001Z"),
+            (json!(1.9), "1970-01-01T00:00:00.001Z"),
+            (json!(-1.9), "1969-12-31T23:59:59.999Z"),
+            (json!(-0.5), "1970-01-01T00:00:00.000Z"),
+            (json!(1767323045678_i64), "2026-01-02T03:04:05.678Z"),
+            (
+                json!(["2026-01-02T03:04:05.678Z"]),
+                "2026-01-02T03:04:05.678Z",
+            ),
+            (
+                json!("2026-01-02T04:04:05.678+01:00"),
+                "2026-01-02T03:04:05.678Z",
+            ),
+        ] {
+            let mut physical = snapshot();
+            physical[name] = input;
+            let session = SessionView::from_secondary_snapshot(physical.clone()).unwrap();
+            physical[name] = json!(expected);
+            assert_eq!(session.secondary_snapshot().unwrap(), physical);
+        }
     }
 }
 
