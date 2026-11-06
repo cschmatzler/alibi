@@ -870,3 +870,104 @@ async fn empty_user_list_selectors_memory_follow_admin_truthiness() {
 async fn empty_user_list_selectors_stateless_follow_admin_truthiness() {
     empty_user_list_selectors::<StatelessSchema>(&StatelessStore::default()).await;
 }
+
+async fn ordinary_string_collation<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    for (id, value) in [
+        ("z", Some("z")),
+        ("upper-a", Some("A")),
+        ("lower-a", Some("a")),
+        ("accent", Some("é")),
+        ("decomposed", Some("e\u{301}")),
+        ("upper-e", Some("E")),
+        ("lower-e", Some("e")),
+        ("upper-z", Some("Z")),
+        ("lower-b", Some("b")),
+        ("upper-b", Some("B")),
+        ("missing-1", None),
+        ("missing-2", None),
+        ("upper-accent", Some("É")),
+    ] {
+        let created = store
+            .create_user(CreateUser {
+                id: Some(id.into()),
+                name: value.map(str::to_owned),
+                email: value.map(|value| format!("{value}-{id}@example.test")),
+                username: value.map(str::to_owned),
+                role: value.map(str::to_owned),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(created.name.as_deref(), value);
+        assert_eq!(created.username.as_deref(), value);
+        assert_eq!(created.role.as_deref(), value);
+        assert_eq!(
+            created.email,
+            value.map(|value| format!("{value}-{id}@example.test").to_lowercase())
+        );
+    }
+
+    // Better Auth 1.7.18 memory-adapter.ts:176-225, Node default en-US.
+    for field in ["name", "username", "role", "email"] {
+        for direction in [None, Some("asc"), Some("desc")] {
+            let expected = match (field, direction) {
+                ("email", Some("desc")) => {
+                    "z upper-z upper-e upper-accent lower-e decomposed accent upper-b lower-b upper-a lower-a missing-1 missing-2"
+                }
+                ("email", _) => {
+                    "missing-1 missing-2 lower-a upper-a lower-b upper-b accent decomposed lower-e upper-accent upper-e upper-z z"
+                }
+                (_, Some("desc")) => {
+                    "upper-z z upper-accent accent decomposed upper-e lower-e upper-b lower-b upper-a lower-a missing-1 missing-2"
+                }
+                _ => {
+                    "missing-1 missing-2 lower-a upper-a lower-b upper-b lower-e upper-e accent decomposed upper-accent z upper-z"
+                }
+            };
+            let params = ListUsersParams {
+                sort_by: Some(field.into()),
+                sort_direction: direction.map(str::to_owned),
+                ..Default::default()
+            };
+            let (users, count) = store.list_users(params.clone()).await.unwrap();
+            let ids = users
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(ids.join(" "), expected, "{field} {direction:?}");
+            assert_eq!(count, 13, "{field} {direction:?}");
+
+            for (offset, limit) in [(0, 4), (2, 5), (9, 6), (13, 2), (0, 0)] {
+                let (page, total) = store
+                    .list_users(ListUsersParams {
+                        offset: Some(offset),
+                        limit: Some(limit),
+                        ..params.clone()
+                    })
+                    .await
+                    .unwrap();
+                let ids = page.iter().map(|user| user.id.as_str()).collect::<Vec<_>>();
+                assert_eq!(
+                    ids,
+                    expected
+                        .split(' ')
+                        .skip(offset)
+                        .take(limit)
+                        .collect::<Vec<_>>(),
+                    "{field} {direction:?} offset={offset} limit={limit}"
+                );
+                assert_eq!(total, 13, "{field} {direction:?}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn ordinary_string_collation_memory_matches_locale_compare() {
+    ordinary_string_collation::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn ordinary_string_collation_stateless_matches_locale_compare() {
+    ordinary_string_collation::<StatelessSchema>(&StatelessStore::default()).await;
+}

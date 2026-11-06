@@ -489,10 +489,7 @@ impl UserStore<BundledSchema> for MemoryStore {
 
     async fn list_users(&self, _params: ListUsersParams) -> AuthResult<(Vec<UserView>, usize)> {
         let state = self.lock();
-        Ok(crate::store::memory_user_id::MemoryUserId::apply_list(
-            state.users.iter(),
-            &_params,
-        ))
+        crate::store::memory_user_id::MemoryUserId::apply_list(state.users.iter(), &_params)
     }
 }
 

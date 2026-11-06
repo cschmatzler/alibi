@@ -39,7 +39,7 @@ impl MemoryUserId {
     pub(crate) fn apply_list<'a>(
         users: impl Iterator<Item = (&'a Self, &'a crate::UserView)>,
         params: &crate::ListUsersParams,
-    ) -> (Vec<crate::UserView>, usize) {
+    ) -> crate::AuthResult<(Vec<crate::UserView>, usize)> {
         let operator = params.filter_operator.as_deref().unwrap_or("eq");
         let filter = params.filter_value.as_ref().filter(|_| {
             matches!(params.filter_field.as_deref(), Some("id" | "_id"))

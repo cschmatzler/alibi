@@ -1,6 +1,7 @@
 //! Internal helpers for applying admin user-list query semantics.
 
 use crate::entity::AuthUser;
+use crate::error::{AuthError, AuthResult};
 use crate::types::ListUsersParams;
 use crate::utils::{
     javascript::{number_from_i64, string_to_number},
@@ -220,20 +221,26 @@ fn compare_options<T: Ord + Copy>(lhs: Option<T>, rhs: Option<T>, direction: &st
 }
 
 /// Apply Better Auth admin list-users semantics to a user collection.
+///
+/// # Errors
+/// Returns an error if the compiled collation data cannot be loaded.
 #[must_use]
 pub fn apply_list_users<T: AuthUser + Clone>(
     users: Vec<T>,
     params: &ListUsersParams,
-) -> (Vec<T>, usize) {
+) -> AuthResult<(Vec<T>, usize)> {
     apply(users, params, false)
 }
 
 /// Filter and page users whose configured column order was applied by storage.
+///
+/// # Errors
+/// Propagates errors from applying user-list semantics.
 #[must_use]
 pub fn apply_list_users_presorted<T: AuthUser + Clone>(
     users: Vec<T>,
     params: &ListUsersParams,
-) -> (Vec<T>, usize) {
+) -> AuthResult<(Vec<T>, usize)> {
     apply(users, params, true)
 }
 
@@ -241,33 +248,54 @@ fn apply<T: AuthUser + Clone>(
     mut users: Vec<T>,
     params: &ListUsersParams,
     presorted: bool,
-) -> (Vec<T>, usize) {
+) -> AuthResult<(Vec<T>, usize)> {
     users.retain(|user| matches_search(user, params) && matches_filter(user, params));
 
     if !presorted && let Some(sort_by) = params.sort_by.as_deref().filter(|field| !field.is_empty())
     {
         let sort_direction = params.sort_direction.as_deref().unwrap_or("asc");
-        users.sort_by(|lhs, rhs| match sort_by {
-            "id" | "_id" | "email" | "name" | "username" | "role" => compare_options(
-                string_field(lhs, sort_by).as_deref(),
-                string_field(rhs, sort_by).as_deref(),
-                sort_direction,
-            ),
-            "createdAt" | "updatedAt" | "banExpires" => compare_options(
-                date_field(lhs, sort_by),
-                date_field(rhs, sort_by),
-                sort_direction,
-            ),
-            "banned" => match sort_direction {
-                "asc" => bool_field(lhs, sort_by).cmp(&bool_field(rhs, sort_by)),
-                _ => bool_field(rhs, sort_by).cmp(&bool_field(lhs, sort_by)),
-            },
-            _ => compare_options(
-                date_field(lhs, "createdAt"),
-                date_field(rhs, "createdAt"),
-                sort_direction,
-            ),
-        });
+        if matches!(sort_by, "email" | "name" | "username" | "role") {
+            let collator = icu_collator::Collator::try_new(
+                icu_collator::CollatorPreferences::default(),
+                icu_collator::options::CollatorOptions::default(),
+            )
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+            users.sort_by(|lhs, rhs| {
+                let ordering = match (string_field(lhs, sort_by), string_field(rhs, sort_by)) {
+                    (Some(lhs), Some(rhs)) => collator.compare(&lhs, &rhs),
+                    (None, None) => Ordering::Equal,
+                    (None, Some(_)) => Ordering::Less,
+                    (Some(_), None) => Ordering::Greater,
+                };
+                if sort_direction == "asc" {
+                    ordering
+                } else {
+                    ordering.reverse()
+                }
+            });
+        } else {
+            users.sort_by(|lhs, rhs| match sort_by {
+                "id" | "_id" => compare_options(
+                    string_field(lhs, sort_by).as_deref(),
+                    string_field(rhs, sort_by).as_deref(),
+                    sort_direction,
+                ),
+                "createdAt" | "updatedAt" | "banExpires" => compare_options(
+                    date_field(lhs, sort_by),
+                    date_field(rhs, sort_by),
+                    sort_direction,
+                ),
+                "banned" => match sort_direction {
+                    "asc" => bool_field(lhs, sort_by).cmp(&bool_field(rhs, sort_by)),
+                    _ => bool_field(rhs, sort_by).cmp(&bool_field(lhs, sort_by)),
+                },
+                _ => compare_options(
+                    date_field(lhs, "createdAt"),
+                    date_field(rhs, "createdAt"),
+                    sort_direction,
+                ),
+            });
+        }
     }
 
     let total = users.len();
@@ -275,7 +303,7 @@ fn apply<T: AuthUser + Clone>(
     let limit = params.limit.unwrap_or(total);
     let paged = users.into_iter().skip(offset).take(limit).collect();
 
-    (paged, total)
+    Ok((paged, total))
 }
 
 #[cfg(test)]
@@ -324,7 +352,7 @@ mod tests {
                 filter_value: Some(serde_json::from_value(operand.clone()).unwrap()),
                 ..Default::default()
             };
-            let (users, count) = apply_list_users(vec![user.clone()], &params);
+            let (users, count) = apply_list_users(vec![user.clone()], &params).unwrap();
             assert_eq!(count == 1, expected, "{field} {op} {operand}");
             assert_eq!(users.len(), count);
         }
