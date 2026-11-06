@@ -126,6 +126,7 @@ impl AuthSession for SessionView {
         let mut session = self.clone();
         session.created_at = created_at;
         _ = session.omitted_fields.remove("createdAt");
+        _ = session.extension_fields.remove("createdAt");
         session.secondary_snapshot()
     }
 

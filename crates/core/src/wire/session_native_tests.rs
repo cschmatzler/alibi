@@ -162,3 +162,21 @@ fn session_secondary_codec_retains_configured_scope_extension_values() {
         assert_eq!(encoded[name], "configured-scope");
     }
 }
+
+#[test]
+fn session_secondary_creation_clock_replaces_raw_shadow_without_mutation() {
+    let mut session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    session
+        .extension_fields
+        .insert("createdAt".into(), json!("1999-01-01T00:00:00.000Z"));
+    let before = session.clone();
+    let corrected = session
+        .secondary_snapshot_for_creation(Utc.timestamp_millis_opt(1_767_323_045_999).unwrap())
+        .unwrap();
+    assert_eq!(corrected["createdAt"], "2026-01-02T03:04:05.999Z");
+    assert_eq!(session, before);
+    assert_eq!(
+        session.secondary_snapshot().unwrap()["createdAt"],
+        "1999-01-01T00:00:00.000Z"
+    );
+}
