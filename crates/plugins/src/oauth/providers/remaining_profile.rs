@@ -174,16 +174,33 @@ pub(super) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
     if payload.is_empty() {
         return Err("Invalid grant ID-token payload".into());
     }
+    let mut encoded = payload
+        .bytes()
+        .filter(|byte| !matches!(byte, b' ' | b'\t' | b'\n' | b'\r' | 0x0c))
+        .map(|byte| match byte {
+            b'-' => b'+',
+            b'_' => b'/',
+            byte => byte,
+        })
+        .collect::<Vec<_>>();
+    if encoded.len() % 4 == 0 {
+        for _ in 0..2 {
+            if encoded.last() == Some(&b'=') {
+                encoded.pop();
+            }
+        }
+    }
     let decoder = base64::engine::GeneralPurpose::new(
         &base64::alphabet::STANDARD,
         base64::engine::GeneralPurposeConfig::new()
-            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::RequireNone)
+            .with_decode_allow_trailing_bits(true),
     );
-    let bytes = decoder
-        .decode(payload.replace('-', "+").replace('_', "/"))
+    let bytes = decoder.decode(encoded).map_err(|error| error.to_string())?;
+    let decoded = String::from_utf8_lossy(&bytes);
+    let decoded = decoded.strip_prefix('\u{feff}').unwrap_or(&decoded);
+    let profile: Value = alibi_core::utils::json::from_slice(decoded.as_bytes())
         .map_err(|error| error.to_string())?;
-    let profile: Value =
-        alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
     if !profile.is_object() {
         return Err("Invalid grant ID-token claims".into());
     }
@@ -608,6 +625,26 @@ pub(super) fn object_spread(value: Value) -> Map<String, Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grant_jwt_decoding_matches_jose_forgiving_payload_rules() {
+        for payload in ["e30", "e30=", "e31", "e31=", " e\t3\n0\x0c=\r", "77u/e30="] {
+            assert_eq!(
+                decode_grant_jwt(&format!(".{payload}.")).unwrap(),
+                serde_json::json!({})
+            );
+        }
+        assert_eq!(
+            decode_grant_jwt(".eyJ4Ijoi/yJ9.").unwrap(),
+            serde_json::json!({"x": "\u{fffd}"})
+        );
+        for payload in ["e30==", "e30===", "e30\x0b=", "e=30", "e", "===="] {
+            assert!(
+                decode_grant_jwt(&format!(".{payload}.")).is_err(),
+                "{payload:?}"
+            );
+        }
+    }
 
     async fn serve_profile(profile: Value) -> String {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

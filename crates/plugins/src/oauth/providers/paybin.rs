@@ -4,6 +4,7 @@ use super::{
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use async_trait::async_trait;
+#[cfg(test)]
 use base64::Engine;
 use serde_json::Map;
 use serde_json::Value;
@@ -252,22 +253,7 @@ fn subject(profile: &Value) -> Result<String, String> {
 }
 
 fn decode_profile(token: &str) -> Option<Value> {
-    let mut parts = token.split('.');
-    _ = parts.next()?;
-    let payload = parts.next()?;
-    _ = parts.next()?;
-    if payload.is_empty() || parts.next().is_some() {
-        return None;
-    }
-    let encoded = payload.replace('-', "+").replace('_', "/");
-    let decoder = base64::engine::GeneralPurpose::new(
-        &base64::alphabet::STANDARD,
-        base64::engine::GeneralPurposeConfig::new()
-            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-    );
-    let bytes = decoder.decode(encoded).ok()?;
-    let profile: Value = alibi_core::utils::json::from_slice(&bytes).ok()?;
-    profile.is_object().then_some(profile)
+    super::remaining_profile::decode_grant_jwt(token).ok()
 }
 
 #[cfg(test)]
