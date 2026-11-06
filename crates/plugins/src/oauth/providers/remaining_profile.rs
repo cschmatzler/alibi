@@ -171,7 +171,7 @@ pub(super) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
     let [_, payload, _] = parts.as_slice() else {
         return Err("Invalid grant ID token".into());
     };
-    if payload.is_empty() {
+    if payload.is_empty() || payload.bytes().any(|byte| matches!(byte, b'+' | b'/')) {
         return Err("Invalid grant ID-token payload".into());
     }
     let mut encoded = payload
@@ -628,14 +628,14 @@ mod tests {
 
     #[test]
     fn grant_jwt_decoding_matches_jose_forgiving_payload_rules() {
-        for payload in ["e30", "e30=", "e31", "e31=", " e\t3\n0\x0c=\r", "77u/e30="] {
+        for payload in ["e30", "e30=", "e31", "e31=", " e\t3\n0\x0c=\r", "77u_e30="] {
             assert_eq!(
                 decode_grant_jwt(&format!(".{payload}.")).unwrap(),
                 serde_json::json!({})
             );
         }
         assert_eq!(
-            decode_grant_jwt(".eyJ4Ijoi/yJ9.").unwrap(),
+            decode_grant_jwt(".eyJ4Ijoi_yJ9.").unwrap(),
             serde_json::json!({"x": "\u{fffd}"})
         );
         for payload in ["e30==", "e30===", "e30\x0b=", "e=30", "e", "===="] {
@@ -644,6 +644,20 @@ mod tests {
                 "{payload:?}"
             );
         }
+    }
+
+    #[test]
+    fn grant_jwt_decoding_rejects_standard_base64_alphabet() {
+        for payload in ["77u/e30=", "eyJ4Ijoi/yJ9", "eyJuYW1lIjoi8J+kmSJ9"] {
+            assert!(
+                decode_grant_jwt(&format!(".{payload}.")).is_err(),
+                "{payload}"
+            );
+        }
+        assert_eq!(
+            decode_grant_jwt(".eyJuYW1lIjoi8J-kmSJ9.").unwrap(),
+            serde_json::json!({"name": "🤙"})
+        );
     }
 
     async fn serve_profile(profile: Value) -> String {
