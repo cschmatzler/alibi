@@ -204,7 +204,11 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             Some(user) => user,
             None => OAuthUserInfo {
                 additional_fields: Map::default(),
-                id: scalar(account.and_then(|value| value.get("id")))?.unwrap_or_default(),
+                id: account
+                    .and_then(|value| value.get("id"))
+                    .map(super::remaining_profile::js_string)
+                    .transpose()?
+                    .unwrap_or_default(),
                 name: Some(
                     scalar(
                         account
@@ -250,19 +254,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("response").and_then(|value| value.get("id")))?
-        .ok_or("Missing Naver subject")?;
-    if id
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid Naver subject".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("response").and_then(|value| value.get("id")))
 }
 
 fn truthy(value: &Value) -> bool {
@@ -326,6 +318,37 @@ mod tests {
         assert_eq!(output["name"], json!({}));
         assert_eq!(output["email"], json!(["raw"]));
         assert_eq!(output["image"], json!([]));
+    }
+
+    #[tokio::test]
+    async fn naver_account_subject_uses_javascript_string_coercion() {
+        for (id, expected) in [
+            (json!({}), "[object Object]"),
+            (json!([1, 2]), "1,2"),
+            (json!(false), "false"),
+        ] {
+            let profile = json!({"resultcode": "00", "response": {"id": id}});
+            assert_eq!(subject(&profile).unwrap(), expected);
+            let (endpoint, captured) = profile_server(profile).await;
+            let response = NaverUserInfo {
+                endpoint,
+                mapper: None,
+                application_mapper: None,
+            }
+            .get_user_info(OAuthUserInfoRequest::default())
+            .await
+            .unwrap();
+            captured.await.unwrap();
+            assert_eq!(response.user.id, expected);
+        }
+        for id in [
+            json!(null),
+            json!([]),
+            json!("undefined"),
+            json!("\u{feff}"),
+        ] {
+            assert!(subject(&json!({"response": {"id": id}})).is_err());
+        }
     }
 
     struct Mapper {
