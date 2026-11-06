@@ -323,12 +323,14 @@ impl AuthUser for UserView {
     fn from_secondary_snapshot_record(
         snapshot: serde_json::Value,
     ) -> crate::AuthResult<crate::AdapterRecord<Self>> {
-        let user = Self::from_secondary_native_snapshot(snapshot)?;
-        let mut native = crate::AdapterOutput::default();
-        for name in &user.omitted_fields {
-            native.insert(name.clone(), None);
-        }
-        crate::AdapterRecord::with_native_output(user, native)
+        Self::secondary_native_record(snapshot, &Default::default())
+    }
+
+    fn from_secondary_snapshot_record_with_fields(
+        snapshot: serde_json::Value,
+        allowed: &crate::field_policy::FieldConfigs,
+    ) -> crate::AuthResult<crate::AdapterRecord<Self>> {
+        Self::secondary_native_record(snapshot, allowed)
     }
 
     fn retained_user_view(&self) -> Option<&UserView> {

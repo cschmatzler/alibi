@@ -108,6 +108,16 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
         crate::AdapterRecord::physical(Self::from_secondary_snapshot(snapshot)?)
     }
 
+    /// Decode configured additional user fields without trusting arbitrary cache keys.
+    /// Declared entity codecs already know their fields; dynamic wire views use
+    /// the effective registered field set supplied by the initialized store.
+    fn from_secondary_snapshot_record_with_fields(
+        snapshot: serde_json::Value,
+        _allowed: &crate::field_policy::FieldConfigs,
+    ) -> AuthResult<crate::AdapterRecord<Self>> {
+        Self::from_secondary_snapshot_record(snapshot)
+    }
+
     /// A genuine retained adapter result, including declared undefined values.
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         None

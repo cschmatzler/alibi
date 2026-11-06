@@ -106,6 +106,30 @@ impl UserView {
         Ok(user)
     }
 
+    pub(super) fn secondary_native_record(
+        snapshot: Value,
+        allowed: &crate::field_policy::FieldConfigs,
+    ) -> AuthResult<crate::AdapterRecord<Self>> {
+        let extras: BTreeMap<String, Option<Value>> = allowed
+            .keys()
+            .filter(|name| name.as_str() != "id" && !NATIVE_FIELDS.contains(&name.as_str()))
+            .map(|name| (name.clone(), snapshot.get(name).cloned()))
+            .collect();
+        let mut user = Self::from_secondary_native_snapshot(snapshot)?;
+        for (name, value) in extras {
+            if let Some(value) = value {
+                _ = user.extension_fields.insert(name, value);
+            } else {
+                _ = user.omitted_fields.insert(name);
+            }
+        }
+        let mut native = crate::AdapterOutput::default();
+        for name in &user.omitted_fields {
+            native.insert(name.clone(), None);
+        }
+        crate::AdapterRecord::with_native_output(user, native)
+    }
+
     pub(crate) fn native_user_fields(&self) -> BTreeMap<String, Value> {
         self.extension_fields
             .iter()

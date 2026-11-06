@@ -191,3 +191,52 @@ fn user_view_secondary_preserves_known_presence_and_rejects_nonstring_identity()
         assert!(UserView::from_secondary_snapshot_record(source).is_err());
     }
 }
+
+#[test]
+fn configured_user_cache_fields_keep_values_and_presence_without_rerunning_policy() {
+    use crate::field_policy::{FieldConfig, FieldConfigs};
+    let allowed: FieldConfigs = [
+        (
+            "customNull".into(),
+            FieldConfig::new(json!({"type": "string"})),
+        ),
+        (
+            "customMissing".into(),
+            FieldConfig::new(json!({"type": "string"})),
+        ),
+        (
+            "customValue".into(),
+            FieldConfig::new(json!({"type": "json"})).transform_output(|_| async {
+                panic!("cache hydration must not run database output transforms")
+            }),
+        ),
+        ("image".into(), FieldConfig::new(json!({"type": "string"}))),
+        ("id".into(), FieldConfig::new(json!({"type": "string"}))),
+    ]
+    .into();
+    let source = json!({
+        "id": "real-owner", "name": 42, "emailVerified": "false",
+        "createdAt": 1e20, "updatedAt": -0.5,
+        "customNull": null, "customValue": {"retained": [1, false]}, "unknown": true,
+        "image": {"retained": true}
+    });
+    let record =
+        UserView::from_secondary_snapshot_record_with_fields(source.clone(), &allowed).unwrap();
+    let wire = serde_json::to_value(UserView::from(&record)).unwrap();
+    assert_eq!(wire["id"], "real-owner");
+    assert_eq!(wire["name"], 42);
+    assert_eq!(wire["image"], source["image"]);
+    assert_eq!(wire["emailVerified"], "false");
+    assert_eq!(wire["createdAt"], json!(1e20));
+    assert!(wire["customNull"].is_null());
+    assert_eq!(wire["customValue"], source["customValue"]);
+    assert!(record.raw_snapshot().field_is_undefined("customMissing"));
+    assert!(wire.get("customMissing").is_none());
+    assert!(wire.get("unknown").is_none());
+    assert_eq!(record.secondary_snapshot().unwrap(), wire);
+    let mut invalid_identity = source;
+    invalid_identity["id"] = Value::Null;
+    assert!(
+        UserView::from_secondary_snapshot_record_with_fields(invalid_identity, &allowed).is_err()
+    );
+}
