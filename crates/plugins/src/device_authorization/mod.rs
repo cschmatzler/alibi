@@ -738,6 +738,39 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn zero_polling_interval_does_not_throttle_after_clock_rollback() {
+        let ctx = test_helpers::create_test_context().await;
+        let future_poll = Utc::now() + Duration::minutes(1);
+        ctx.database.create_device_code(CreateDeviceCode {
+            device_code: "zero-interval-device".into(),
+            user_code: "ZEROPOLL".into(),
+            user_id: None,
+            expires_at: Utc::now() + Duration::hours(1),
+            status: "pending".into(),
+            last_polled_at: Some(future_poll),
+            polling_interval: Some(0),
+            client_id: Some("client".into()),
+            scope: None,
+        }).await.unwrap();
+        let plugin = DeviceAuthorizationPlugin::new();
+        let request = test_helpers::create_auth_json_request_no_query(
+            HttpMethod::Post, "/device/token", None,
+            Some(serde_json::json!({
+                "device_code": "zero-interval-device",
+                "client_id": "client",
+                "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
+            })),
+        );
+        let response = plugin.handle_device_token(&request, &ctx).await.unwrap();
+        assert_eq!(response.status, 400);
+        assert_eq!(json_body(&response)["error"], "authorization_pending");
+        let stored = ctx.database.get_device_code_by_device_code("zero-interval-device")
+            .await.unwrap().unwrap();
+        assert!(stored.last_polled_at.unwrap() < future_poll);
+        assert_eq!(stored.polling_interval, Some(0));
+    }
+
+    #[tokio::test]
     async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
         let ctx = test_helpers::create_test_context().await;
         let attempts = Arc::new(AtomicUsize::new(0));

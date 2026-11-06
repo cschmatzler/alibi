@@ -49,6 +49,7 @@ impl DeviceAuthorizationPlugin {
         let now = Utc::now();
         if let (Some(last_polled_at), Some(polling_interval)) =
             (device_code.last_polled_at, device_code.polling_interval)
+            && polling_interval != 0
         {
             let elapsed = now.signed_duration_since(last_polled_at).num_milliseconds();
             if elapsed < polling_interval {
