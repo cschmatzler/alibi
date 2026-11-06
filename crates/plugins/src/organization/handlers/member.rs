@@ -53,7 +53,11 @@ pub(crate) async fn list_members_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<ListMembersResponse, OrganizationPageError> {
-    let org_id = if let Some(slug) = query.organization_slug.as_deref() {
+    let org_id = if let Some(slug) = query
+        .organization_slug
+        .as_deref()
+        .filter(|slug| !slug.is_empty())
+    {
         let organization = ctx
             .database
             .get_organization_by_slug(slug)
@@ -61,7 +65,13 @@ pub(crate) async fn list_members_core(
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         organization.id().to_string()
     } else {
-        resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?
+        resolve_organization_id(
+            query.organization_id.as_deref().filter(|id| !id.is_empty()),
+            None,
+            session,
+            ctx,
+        )
+        .await?
     };
 
     _ = ctx

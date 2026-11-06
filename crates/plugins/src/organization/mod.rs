@@ -755,6 +755,50 @@ mod extension_tests {
         }
     }
 
+    #[tokio::test]
+    async fn list_members_empty_selectors_fall_back_to_active_organization() -> TestResult {
+        let plugin = OrganizationPlugin::with_config(configuration());
+        let ctx = context(&plugin).await?;
+        let (_, session) = actor(&ctx, "list-empty-selectors").await;
+        let created = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Post,
+            "/organization/create",
+            Some(json!({"name":"Active","slug":"list-empty-selectors"})),
+            &[],
+        )
+        .await?;
+        assert_eq!(created.status, 200);
+        for query in [
+            vec![("organizationSlug", "")],
+            vec![("organizationId", "")],
+            vec![("organizationSlug", ""), ("organizationId", "")],
+        ] {
+            let listed = call(
+                &plugin,
+                &ctx,
+                Some(&session.token),
+                HttpMethod::Get,
+                "/organization/list-members",
+                None,
+                &query,
+            )
+            .await?;
+            assert_eq!(
+                listed.status,
+                200,
+                "{}",
+                String::from_utf8_lossy(&listed.body)
+            );
+            let value: Value = body(&listed)?;
+            assert_eq!(value["total"], 1);
+            assert_eq!(value["members"].as_array().unwrap().len(), 1);
+        }
+        Ok(())
+    }
+
     #[derive(Debug)]
     struct CustomDefaultTeam;
 
