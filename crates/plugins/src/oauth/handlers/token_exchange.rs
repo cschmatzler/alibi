@@ -397,10 +397,10 @@ pub(crate) async fn validate_authorization_code_via_provider(
     {
         form.push(("client_key", client_key));
     }
-    if let Some(code_verifier) = code_verifier {
+    if let Some(code_verifier) = code_verifier.filter(|value| !value.is_empty()) {
         form.push(("code_verifier", code_verifier));
     }
-    if let Some(device_id) = device_id {
+    if let Some(device_id) = device_id.filter(|value| !value.is_empty()) {
         form.push(("device_id", device_id));
     }
 
@@ -561,6 +561,52 @@ pub(crate) async fn fetch_user_info_from_provider(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn token_endpoint() -> (String, tokio::sync::oneshot::Receiver<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 4096];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
+                    let headers = String::from_utf8_lossy(&request[..end]);
+                    let length: usize = headers.lines().find_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.eq_ignore_ascii_case("content-length").then(|| value.trim().parse().unwrap())
+                    }).unwrap();
+                    if request.len() >= end + 4 + length {
+                        sender.send(String::from_utf8(request[end + 4..].to_vec()).unwrap()).unwrap();
+                        break;
+                    }
+                }
+            }
+            let body = r#"{"access_token":"access","id_token":"id","refresh_token":"refresh"}"#;
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        (endpoint, receiver)
+    }
+
+    #[tokio::test]
+    async fn authorization_code_omits_empty_optional_fields() {
+        for optional in ["", "value"] {
+            let (endpoint, received) = token_endpoint().await;
+            let mut provider = crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+            provider.token_url = endpoint;
+            validate_authorization_code_via_provider(&provider, "code", "https://app/callback", Some(optional), Some(optional)).await.unwrap();
+            let body = received.await.unwrap();
+            let fields: std::collections::HashMap<_, _> = url::form_urlencoded::parse(body.as_bytes()).collect();
+            for key in ["code_verifier", "device_id"] {
+                assert_eq!(fields.get(key).map(|value| value.as_ref()), (!optional.is_empty()).then_some(optional));
+            }
+        }
+    }
 
     #[tokio::test]
     async fn automatic_token_authentication_omits_empty_secrets() {
