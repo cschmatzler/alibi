@@ -199,7 +199,7 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         account
     };
     let mut actual_user = existing.ok_or_else(|| error("unable_to_create_user", ""))?;
-    if user.id.as_str() != Some(account.account_id())
+    if user.id != account.account_id()
         || account.provider_id() != *provider
         || account.user_id() != actual_user.id().as_ref()
     {

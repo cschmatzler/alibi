@@ -233,7 +233,7 @@ pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
         crate::field_policy::FieldOutput::new()
     }
     fn id(&self) -> Cow<'_, str>;
-    fn account_id(&self) -> &str;
+    fn account_id(&self) -> crate::utils::json::JsString;
     fn provider_id(&self) -> &str;
     fn user_id(&self) -> Cow<'_, str>;
     fn access_token(&self) -> Option<&str>;

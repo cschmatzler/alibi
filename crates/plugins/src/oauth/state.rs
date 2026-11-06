@@ -116,7 +116,7 @@ pub(crate) struct AccountCookiePayload {
     #[serde(rename = "providerId")]
     pub provider_id: String,
     #[serde(rename = "accountId")]
-    pub account_id: String,
+    pub account_id: alibi_core::utils::json::JsString,
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
     #[serde(rename = "refreshToken")]

@@ -1,6 +1,10 @@
 use crate::{AdapterRecord, AuthAccount};
 use crate::{AuthError, AuthResult, AuthSchema, CreateAccount, UpdateAccount};
 use async_trait::async_trait;
+#[cfg(test)]
+#[path = "account_utf16_tests.rs"]
+mod utf16_tests;
+
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
     /// Apply the physical token TEXT column's scalar affinity before persistence.

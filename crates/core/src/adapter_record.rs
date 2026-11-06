@@ -229,7 +229,7 @@ impl<M: AuthAccount> AuthAccount for AdapterRecord<M> {
     }
     delegate!(additional_fields, FieldOutput);
     delegate!(id, Cow<'_, str>);
-    delegate!(account_id, &str);
+    delegate!(account_id, crate::utils::json::JsString);
     delegate!(provider_id, &str);
     delegate!(user_id, Cow<'_, str>);
     delegate!(access_token, Option<&str>);

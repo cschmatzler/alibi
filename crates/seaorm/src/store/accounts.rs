@@ -235,3 +235,7 @@ where
         Ok(accounts.pop())
     }
 }
+
+#[cfg(test)]
+#[path = "accounts_utf16_tests.rs"]
+mod utf16_tests;

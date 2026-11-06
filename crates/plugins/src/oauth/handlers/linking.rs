@@ -435,8 +435,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     }
     let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;
     if existing_accounts.iter().any(|account| {
-        account.provider_id() == body.provider
-            && canonical_user.id.as_str() == Some(account.account_id())
+        account.provider_id() == body.provider && canonical_user.id == account.account_id()
     }) {
         return Ok(SocialSignInResponse {
             url: Some(String::new()),

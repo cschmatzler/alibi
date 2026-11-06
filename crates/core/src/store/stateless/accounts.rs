@@ -9,7 +9,7 @@ impl AccountStore<StatelessSchema> for StatelessStore {
         let now = Utc::now();
         let account = AccountView {
             id: uuid::Uuid::new_v4().to_string(),
-            account_id: create_account.account_id.to_utf8_binding(),
+            account_id: create_account.account_id,
             provider_id: create_account.provider_id,
             user_id: create_account.user_id,
             access_token: create_account.access_token,
@@ -36,8 +36,7 @@ impl AccountStore<StatelessSchema> for StatelessStore {
     ) -> AuthResult<Option<AccountView>> {
         let storage = self.lock()?;
         let mut matches = storage.accounts.values().filter(|account| {
-            account.provider_id == provider
-                && provider_account_id.as_str() == Some(account.account_id.as_str())
+            account.provider_id == provider && *provider_account_id == account.account_id
         });
         let first = matches.next().cloned();
         if matches.next().is_some() {

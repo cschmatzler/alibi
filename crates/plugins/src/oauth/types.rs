@@ -159,7 +159,7 @@ pub struct AccountInfoAccount {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     pub provider_id: String,
-    pub account_id: String,
+    pub account_id: alibi_core::utils::json::JsString,
 }
 
 /// Provider profile and owned account returned by the `accountInfo` server operation.
@@ -179,7 +179,7 @@ impl AccountInfoResponse {
                 ("data".into(), self.data),
                 (
                     "account".into(),
-                    JsValue::from(serde_json::to_value(self.account)?),
+                    alibi_core::utils::json::to_js_value(&self.account)?,
                 ),
             ]
             .into_iter()
@@ -200,15 +200,30 @@ impl alibi_core::utils::json::FromJsValue for AccountInfoResponse {
         let data = fields
             .shift_remove("data")
             .ok_or("Missing account-info data")?;
-        let account = fields
-            .shift_remove("account")
-            .ok_or("Missing account-info account")?
-            .to_json_value()
-            .map_err(|error| error.to_string())?;
+        let Some(JsValue::Object(mut account)) = fields.shift_remove("account") else {
+            return Err("Missing account-info account".into());
+        };
+        let account_id = account
+            .shift_remove("accountId")
+            .and_then(|id| id.as_js_string().cloned())
+            .ok_or("Missing account-info account ID")?;
+        let provider_id = account
+            .shift_remove("providerId")
+            .and_then(|id| id.as_str().map(str::to_owned))
+            .ok_or("Missing account-info provider ID")?;
+        let id = match account.shift_remove("id") {
+            None | Some(JsValue::Null) => None,
+            Some(JsValue::String(id)) => Some(id.to_utf8().map_err(|error| error.to_string())?),
+            _ => return Err("Invalid account-info row ID".into()),
+        };
         Ok(Self {
             user,
             data,
-            account: serde_json::from_value(account).map_err(|error| error.to_string())?,
+            account: AccountInfoAccount {
+                id,
+                provider_id,
+                account_id,
+            },
         })
     }
 }

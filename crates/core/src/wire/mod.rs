@@ -110,7 +110,7 @@ mod tests {
     fn account_view_omits_password_on_serialize() {
         let account = AccountView {
             id: "acc-1".to_owned(),
-            account_id: "account-id".to_owned(),
+            account_id: "account-id".to_owned().into(),
             provider_id: "credential".to_owned(),
             user_id: "user-1".to_owned(),
             access_token: None,

@@ -198,6 +198,16 @@ impl PartialEq<str> for JsString {
         self.as_str() == Some(other)
     }
 }
+impl PartialEq<String> for JsString {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
+}
+impl PartialEq<std::borrow::Cow<'_, str>> for JsString {
+    fn eq(&self, other: &std::borrow::Cow<'_, str>) -> bool {
+        self == other.as_ref()
+    }
+}
 impl PartialEq<&str> for JsString {
     fn eq(&self, other: &&str) -> bool {
         self == *other

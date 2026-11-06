@@ -7,7 +7,7 @@ use std::borrow::Cow;
 pub struct AccountView {
     pub id: String,
     #[serde(rename = "accountId")]
-    pub account_id: String,
+    pub account_id: crate::utils::json::JsString,
     #[serde(rename = "providerId")]
     pub provider_id: String,
     #[serde(rename = "userId")]
@@ -39,7 +39,7 @@ impl<T: AuthAccount> From<&T> for AccountView {
     fn from(account: &T) -> Self {
         Self {
             id: account.id().into_owned(),
-            account_id: account.account_id().to_owned(),
+            account_id: account.account_id(),
             provider_id: account.provider_id().to_owned(),
             user_id: account.user_id().into_owned(),
             access_token: account.access_token().map(str::to_owned),
@@ -59,8 +59,8 @@ impl AuthAccount for AccountView {
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
-    fn account_id(&self) -> &str {
-        &self.account_id
+    fn account_id(&self) -> crate::utils::json::JsString {
+        self.account_id.clone()
     }
     fn provider_id(&self) -> &str {
         &self.provider_id

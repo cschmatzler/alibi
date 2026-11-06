@@ -198,7 +198,7 @@ pub fn auth_account_impl(
         impl #core_root::entity::AuthAccount for #ident {
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn account_id(&self) -> &str { &self.account_id }
+            fn account_id(&self) -> #core_root::utils::json::JsString { self.account_id.clone().into() }
             fn provider_id(&self) -> &str { &self.provider_id }
             fn user_id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.user_id) }
             fn access_token(&self) -> Option<&str> { self.access_token.as_deref() }
