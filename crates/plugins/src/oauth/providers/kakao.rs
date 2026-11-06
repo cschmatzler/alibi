@@ -191,9 +191,7 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
                 "image",
             ),
         ] {
-            if let Some(value) = value {
-                _ = output.insert(target.into(), value.clone());
-            }
+            _ = output.insert(target.into(), value.cloned().unwrap_or(Value::Undefined));
         }
         _ = output.insert(
             "emailVerified".into(),
@@ -254,6 +252,129 @@ mod tests {
                 }))
                 .unwrap(),
             )
+        }
+    }
+
+    struct SparseMapper(Value);
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for SparseMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
+            assert_eq!(profile, self.0);
+            let mut mapped = crate::oauth::providers::js!({
+                "id": "public-id", "name": null, "email": null,
+                "emailVerified": 0, "custom": false
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            _ = mapped.insert("image".into(), Value::Undefined);
+            Ok(mapped)
+        }
+    }
+
+    #[tokio::test]
+    async fn kakao_http_default_own_undefined_fields() {
+        for (profile, expected_wire, undefined_keys) in [
+            (
+                crate::oauth::providers::js!({"id":"raw-id"}),
+                crate::oauth::providers::js!({"name":"","emailVerified":false}),
+                &["email", "image"][..],
+            ),
+            (
+                crate::oauth::providers::js!({"id":"raw-id","kakao_account":{"profile":{}}}),
+                crate::oauth::providers::js!({"name":"","emailVerified":false}),
+                &["email", "image"][..],
+            ),
+            (
+                crate::oauth::providers::js!({"id":"raw-id","kakao_account":{"name":null,"email":null,"profile":{"nickname":null,"thumbnail_image_url":null}}}),
+                crate::oauth::providers::js!({"name":"","email":null,"image":null,"emailVerified":false}),
+                &[][..],
+            ),
+            (
+                crate::oauth::providers::js!({"id":"raw-id","kakao_account":{"name":0,"email":false,"is_email_valid":0,"is_email_verified":true,"profile":{"nickname":false,"profile_image_url":0,"thumbnail_image_url":0}}}),
+                crate::oauth::providers::js!({"name":"","email":false,"image":0,"emailVerified":false}),
+                &[][..],
+            ),
+        ] {
+            for mapped in [false, true] {
+                let wire_profile = profile.clone();
+                let body = alibi_core::utils::json::stringify(&wire_profile)
+                    .unwrap()
+                    .unwrap();
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let endpoint = format!("http://{}", listener.local_addr().unwrap());
+                let server = tokio::spawn(async move {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 8192];
+                    let _ = stream.read(&mut request).await.unwrap();
+                    let headers = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    stream.write_all(headers.as_bytes()).await.unwrap();
+                    stream.write_all(&body).await.unwrap();
+                });
+                let mut options = KakaoOptions::new("client", Some("secret".into()));
+                options.user_info_endpoint = Some(endpoint);
+                if mapped {
+                    options.map_profile_to_user = Some(|_| {
+                        Ok(
+                            crate::oauth::providers::js!({"name":"Static", "custom":true})
+                                .as_object()
+                                .unwrap()
+                                .clone(),
+                        )
+                    });
+                }
+                let mut provider = OAuthProvider::kakao_with_options(options);
+                if mapped {
+                    provider =
+                        provider.with_profile_mapper(Arc::new(SparseMapper(profile.clone())));
+                }
+                let response = provider
+                    .get_user_info
+                    .as_ref()
+                    .unwrap()
+                    .get_user_info(OAuthUserInfoRequest {
+                        access_token: Some("access".into()),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                server.await.unwrap();
+                assert_eq!(response.data, profile);
+                assert_eq!(
+                    (provider.account_subject.unwrap())(&response.data).unwrap(),
+                    "raw-id"
+                );
+
+                let (expected_wire, undefined_keys) = if mapped {
+                    (
+                        crate::oauth::providers::js!({
+                            "id":"public-id", "name":null, "email":null,
+                            "emailVerified":0, "custom":false
+                        }),
+                        &["image"][..],
+                    )
+                } else {
+                    (expected_wire.clone(), undefined_keys)
+                };
+                let mut expected_user = expected_wire.as_object().unwrap().clone();
+                for key in undefined_keys {
+                    _ = expected_user.insert((*key).into(), Value::Undefined);
+                    assert_eq!(response.user.get(*key), Some(&Value::Undefined), "{key}");
+                }
+                assert_eq!(response.user, expected_user);
+                assert_eq!(response.user.contains_key("id"), mapped);
+                let bytes = alibi_core::utils::json::stringify(&Value::Object(response.user))
+                    .unwrap()
+                    .unwrap();
+                let encoded: Value = alibi_core::utils::json::from_slice(&bytes).unwrap();
+                assert_eq!(encoded, expected_wire);
+                for key in undefined_keys {
+                    assert!(encoded.get(*key).is_none(), "{key}");
+                }
+            }
         }
     }
 
