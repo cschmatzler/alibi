@@ -189,7 +189,7 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .into_iter()
             .filter_map(|key| profile.get(key))
             .filter(|value| truthy(value))
-            .map(|value| scalar(Some(value)).map(Option::unwrap_or_default))
+            .map(super::remaining_profile::js_string)
             .collect::<Result<Vec<_>, _>>()?;
         let name = names.join(" ");
         let mapped = self
@@ -212,5 +212,45 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             user,
             data: profile.clone(),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn cloudflare_string_coerces_truthy_name_parts() {
+        let body = serde_json::json!({"success":true,"result":{"id":"cf-id","first_name":["Cloud","Flare"],"last_name":true,"email":"fallback@example.com"}});
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let mut options = CloudflareOptions::new("client", Some("secret".into()));
+        options.user_info_endpoint = Some(endpoint);
+        let provider = OAuthProvider::cloudflare_with_options(options);
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(super::super::OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(response.user.name.as_deref(), Some("Cloud,Flare true"));
+        server.await.unwrap();
     }
 }
