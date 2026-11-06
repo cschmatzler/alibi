@@ -4,8 +4,9 @@ use super::{
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use crate::oauth::{OAuthIdTokenConfig, OAuthJwksSource};
-use alibi_core::utils::json::{JsValue, parse_value};
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
+#[cfg(test)]
 use base64::Engine;
 use serde_json::Map;
 use std::sync::Arc;
@@ -87,6 +88,7 @@ impl OAuthProvider {
             user_info_url: None,
             scopes: vec!["email".into(), "name".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 response_type: "code id_token".into(),
@@ -121,6 +123,10 @@ struct AppleUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for AppleUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -134,22 +140,13 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let token = request.id_token.ok_or("Missing Apple ID token")?;
-        let parts: Vec<_> = token.split('.').collect();
-        let [_, payload, _] = parts.as_slice() else {
-            return Err("Invalid Apple ID token".into());
-        };
-        let bytes = base64::engine::GeneralPurpose::new(
-            &base64::alphabet::URL_SAFE,
-            base64::engine::GeneralPurposeConfig::new()
-                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-        )
-        .decode(payload)
-        .map_err(|error| error.to_string())?;
-        let mut profile =
-            parse_value(std::str::from_utf8(&bytes).map_err(|error| error.to_string())?)
-                .map_err(|error| error.to_string())?;
-        _ = profile.as_object().ok_or("Invalid Apple profile")?;
+        let token = super::remaining_profile::grant_id_token(&request)
+            .map_err(super::remaining_profile::profile_exception)?
+            .ok_or("Missing Apple ID token")?;
+        let mut profile = JsValue::from(
+            super::remaining_profile::decode_grant_jwt(&token)
+                .map_err(super::remaining_profile::profile_exception)?,
+        );
         let name_value = if let Some(name) = request.user.and_then(|user| user.name) {
             JsValue::String(
                 format!(
@@ -167,22 +164,10 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                 .cloned()
                 .unwrap_or_else(|| JsValue::String(String::new()))
         };
-        let id = match profile.get("sub") {
-            Some(JsValue::String(value))
-                if !value.trim_matches(js_whitespace).is_empty()
-                    && value != "null"
-                    && value != "undefined" =>
-            {
-                value.clone()
-            }
-            Some(JsValue::Number(value)) if value.is_finite() => {
-                alibi_core::utils::json::number_to_string(
-                    &serde_json::Number::from_f64(*value).ok_or("Invalid Apple subject")?,
-                )
-                .map_err(|error| error.to_string())?
-            }
-            _ => return Err("Invalid Apple subject".into()),
-        };
+        let id = profile
+            .get("sub")
+            .and_then(|value| value.coerce_string().ok())
+            .unwrap_or_default();
         let email_verified = match profile.get("email_verified") {
             Some(JsValue::Bool(value)) => *value,
             Some(JsValue::String(value)) => value == "true",
@@ -203,10 +188,19 @@ impl OAuthUserInfoHandler for AppleUserInfo {
             output.insert("email".into(), email.clone());
         }
         if let Some(mapper) = self.map_profile_to_user {
-            output.extend(mapper(data.clone())?.public_profile(true));
+            output.extend(
+                mapper(data.clone())
+                    .map_err(super::remaining_profile::profile_exception)?
+                    .public_profile(true),
+            );
         }
         if let Some(mapper) = &self.application_mapper {
-            output.extend(mapper.map_profile(data.clone()).await?);
+            output.extend(
+                mapper
+                    .map_profile(data.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
         }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
@@ -220,7 +214,8 @@ impl OAuthUserInfoHandler for AppleUserInfo {
             },
             data,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         response.user.id = id;
         Ok(response)
     }

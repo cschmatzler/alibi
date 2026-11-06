@@ -30,7 +30,10 @@ impl OAuthProvider {
             token_url: gitlab_endpoint(issuer, "/oauth/token"),
             user_info_url: Some(gitlab_endpoint(issuer, "/api/v4/user")),
             scopes: vec!["read_user".into()],
-            authorization: Some(OAuthAuthorizationPolicy::default()),
+            authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
+                ..OAuthAuthorizationPolicy::default()
+            }),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(|profile| {
@@ -60,6 +63,10 @@ struct GitLabUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for GitLabUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -109,14 +116,20 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
                 .unwrap_or(Value::Bool(false)),
         );
         if let Some(mapper) = &self.mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
+            output.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
         }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
             user,
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }

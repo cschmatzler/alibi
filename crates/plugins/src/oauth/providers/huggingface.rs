@@ -85,6 +85,7 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -122,6 +123,10 @@ struct HuggingFaceUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for HuggingFaceUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
@@ -182,10 +187,24 @@ impl OAuthUserInfoHandler for HuggingFaceUserInfo {
                 .unwrap_or(Value::Bool(false)),
         );
         if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
+            output.extend(
+                mapper(profile.clone())
+                    .map_err(super::remaining_profile::profile_exception)?
+                    .public_profile(true),
+            );
         }
         if let Some(mapper) = &self.application_mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
+            output.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
+        }
+        if profile.is_null() {
+            return Err(super::remaining_profile::profile_exception(
+                "Null huggingface profile",
+            ));
         }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
@@ -199,7 +218,8 @@ impl OAuthUserInfoHandler for HuggingFaceUserInfo {
             },
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }

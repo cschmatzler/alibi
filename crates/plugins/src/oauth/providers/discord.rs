@@ -17,6 +17,7 @@ impl OAuthProvider {
             user_info_url: Some("https://discord.com/api/users/@me".to_owned()),
             scopes: vec!["identify".to_owned(), "email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 scope_order: OAuthScopeOrder::RequestedThenConfigured,
                 pkce: false,
                 default_prompt: Some("none".into()),
@@ -51,6 +52,10 @@ struct DiscordUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for DiscordUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -76,7 +81,11 @@ impl OAuthUserInfoHandler for DiscordUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
-        let user = discord_user_info(profile.clone())?;
+        if !super::remaining_profile::truthy(&profile) {
+            return Err("Missing discord profile".into());
+        }
+        let user = discord_user_info(profile.clone())
+            .map_err(super::remaining_profile::profile_exception)?;
         profile["image_url"] = serde_json::json!(user.image);
         let mut output = Map::new();
         _ = output.insert(
@@ -102,14 +111,20 @@ impl OAuthUserInfoHandler for DiscordUserInfo {
             }
         }
         if let Some(mapper) = &self.mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
+            output.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
         }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
             user,
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }
@@ -252,6 +267,44 @@ mod tests {
         assert_eq!(output["email"], Value::Null);
         assert_eq!(output["custom"], true);
         assert!(!output.contains_key("id"));
+    }
+
+    #[tokio::test]
+    async fn discord_admission_distinguishes_null_transport_projection_and_mapper() {
+        use super::super::admission_tests::{
+            HttpFixture, RejectHandler, RejectMapper, assert_outcome, request,
+        };
+        for (status, profile, throws) in [
+            (200, Value::Null, false),
+            (500, Value::Null, false),
+            (
+                200,
+                json!({"id":"not-a-number","avatar":null,"discriminator":"0"}),
+                true,
+            ),
+        ] {
+            let server = HttpFixture::new(status, profile).await;
+            let mut provider = OAuthProvider::discord("client", "secret");
+            provider.get_user_info = Some(Arc::new(DiscordUserInfo {
+                endpoint: server.url.clone(),
+                mapper: None,
+            }));
+            assert_outcome(provider, request(), throws).await;
+        }
+        let server = HttpFixture::new(200, json!({"id":"42","avatar":"hash"})).await;
+        let mut provider = OAuthProvider::discord("client", "secret");
+        provider.get_user_info = Some(Arc::new(DiscordUserInfo {
+            endpoint: server.url.clone(),
+            mapper: None,
+        }));
+        assert_outcome(
+            provider.clone().with_profile_mapper(Arc::new(RejectMapper)),
+            request(),
+            true,
+        )
+        .await;
+        provider.get_user_info = Some(Arc::new(RejectHandler));
+        assert_outcome(provider, request(), true).await;
     }
 
     #[test]

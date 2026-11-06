@@ -39,7 +39,10 @@ impl OAuthProvider {
             token_url: token_url.to_owned(),
             user_info_url: Some(user_info_url.to_owned()),
             scopes: vec!["read:user".to_owned(), "user:email".to_owned()],
-            authorization: Some(OAuthAuthorizationPolicy::default()),
+            authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
+                ..OAuthAuthorizationPolicy::default()
+            }),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
             account_subject: Some(|profile| {
@@ -119,6 +122,10 @@ impl GitHubUserInfoHandler {
 
 #[async_trait]
 impl OAuthUserInfoHandler for GitHubUserInfoHandler {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -141,6 +148,9 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         let mut profile: Value = self
             .fetch_json(&client, &self.user_url, access_token)
             .await?;
+        if !super::remaining_profile::truthy(&profile) {
+            return Err("Missing github profile".into());
+        }
         let emails = self
             .fetch_json::<Vec<GitHubEmailAddress>>(&client, &self.emails_url, access_token)
             .await
@@ -189,7 +199,12 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         }
         output.insert("emailVerified".into(), Value::Bool(email_verified));
         if let Some(mapper) = &self.mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
+            output.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
         }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
@@ -203,7 +218,8 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             },
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }

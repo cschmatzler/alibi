@@ -80,6 +80,7 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["current_user:read".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -118,6 +119,10 @@ struct FigmaUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for FigmaUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
@@ -143,6 +148,9 @@ impl OAuthUserInfoHandler for FigmaUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
+        if !super::remaining_profile::truthy(&profile) {
+            return Err("Missing Figma profile".into());
+        }
         let mut output = Map::new();
         for (value, target) in [
             (profile.get("handle"), "name"),

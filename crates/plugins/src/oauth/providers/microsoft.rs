@@ -202,6 +202,7 @@ impl OAuthProvider {
             user_info_url: None,
             scopes,
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 scope_encoding: OAuthScopeEncoding::UriComponent,
                 disable_default_scopes: options.disable_default_scope,
@@ -260,6 +261,10 @@ struct MicrosoftUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for MicrosoftUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -273,26 +278,11 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let token = request
-            .id_token
-            .filter(|value| !value.is_empty())
+        let token = super::remaining_profile::grant_id_token(&request)
+            .map_err(super::remaining_profile::profile_exception)?
             .ok_or("Missing Microsoft ID token")?;
-        let parts: Vec<_> = token.split('.').collect();
-        let [_, payload, _] = parts.as_slice() else {
-            return Err("Invalid Microsoft ID token".into());
-        };
-        let bytes = base64::engine::GeneralPurpose::new(
-            &base64::alphabet::URL_SAFE,
-            base64::engine::GeneralPurposeConfig::new()
-                .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-        )
-        .decode(payload)
-        .map_err(|error| error.to_string())?;
-        let mut profile: Value =
-            alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        if !profile.is_object() {
-            return Err("Invalid Microsoft ID-token claims set".into());
-        }
+        let mut profile = super::remaining_profile::decode_grant_jwt(&token)
+            .map_err(super::remaining_profile::profile_exception)?;
         let id = subject(&profile)?;
         if !self.disable_photo
             && let Some(access) = request.access_token.filter(|value| !value.is_empty())
@@ -316,17 +306,36 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                 );
             }
         }
+        let mut mapped = Map::new();
+        if let Some(mapper) = self.mapper {
+            mapped.extend(
+                mapper(profile.clone())
+                    .map_err(super::remaining_profile::profile_exception)?
+                    .public_profile(true),
+            );
+        }
+        if let Some(mapper) = &self.application_mapper {
+            mapped.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
+        }
         let email = profile
             .get("email")
-            .and_then(Value::as_str)
-            .unwrap_or_default()
-            .to_owned();
+            .filter(|value| super::remaining_profile::truthy(value));
         let verified = match profile.get("email_verified") {
             Some(value) => super::email_verified_claim(Some(value)),
             None => {
-                !email.is_empty()
-                    && (email_list_includes(profile.get("verified_primary_email"), &email)?
-                        || email_list_includes(profile.get("verified_secondary_email"), &email)?)
+                if let Some(email) = email {
+                    email_list_includes(profile.get("verified_primary_email"), email)
+                        .map_err(super::remaining_profile::profile_exception)?
+                        || email_list_includes(profile.get("verified_secondary_email"), email)
+                            .map_err(super::remaining_profile::profile_exception)?
+                } else {
+                    false
+                }
             }
         };
         let mut output = Map::new();
@@ -336,12 +345,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             }
         }
         output.insert("emailVerified".into(), Value::Bool(verified));
-        if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
-        }
-        if let Some(mapper) = &self.application_mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
-        }
+        output.extend(mapped);
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
@@ -354,7 +358,8 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             },
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }
@@ -374,11 +379,15 @@ fn subject(profile: &Value) -> Result<String, String> {
     }
     Ok(id.into())
 }
-fn email_list_includes(value: Option<&Value>, email: &str) -> Result<bool, String> {
+fn email_list_includes(value: Option<&Value>, email: &Value) -> Result<bool, String> {
     match value {
         None | Some(Value::Null) => Ok(false),
-        Some(Value::Array(values)) => Ok(values.iter().any(|value| value.as_str() == Some(email))),
-        Some(Value::String(value)) => Ok(value.contains(email)),
+        Some(Value::Array(values)) => Ok(values
+            .iter()
+            .any(|value| super::remaining_profile::strict_primitive_equal(value, email))),
+        Some(Value::String(value)) => {
+            Ok(value.contains(&super::remaining_profile::js_string(email)?))
+        }
         _ => Err("Invalid Microsoft verified email list".into()),
     }
 }

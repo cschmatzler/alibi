@@ -146,6 +146,7 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 scope_encoding: OAuthScopeEncoding::UriComponent,
                 disable_default_scopes: options.disable_default_scope,
@@ -189,6 +190,10 @@ struct CognitoUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for CognitoUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -230,6 +235,9 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
+        if !super::remaining_profile::truthy(&profile) {
+            return Err("Missing Cognito profile".into());
+        }
         let output = self.map_profile(&profile, false).await?;
         finish_profile(profile, output)
     }

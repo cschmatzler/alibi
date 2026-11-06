@@ -8,6 +8,7 @@ use crate::oauth::{
     id_token::OAuthNonceComparison,
 };
 use async_trait::async_trait;
+#[cfg(test)]
 use base64::Engine;
 use serde_json::Map;
 use serde_json::Value;
@@ -116,6 +117,7 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["email".into(), "public_profile".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -172,6 +174,10 @@ struct FacebookUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for FacebookUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: Arc<dyn super::OAuthProfileMapper>,
@@ -201,7 +207,10 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
             {
                 _ = self.inspect(token).await?;
             }
-            return custom.get_user_info(request).await;
+            return custom
+                .get_user_info(request)
+                .await
+                .map_err(super::remaining_profile::profile_exception);
         }
         let limited_login = request
             .id_token
@@ -212,29 +221,26 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
                 .id_token
                 .as_deref()
                 .ok_or("Missing Facebook ID token")?;
-            let payload = token.split('.').nth(1).ok_or("Invalid Facebook ID token")?;
-            let bytes = base64::engine::GeneralPurpose::new(
-                &base64::alphabet::URL_SAFE,
-                base64::engine::GeneralPurposeConfig::new()
-                    .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
-            )
-            .decode(payload)
-            .map_err(|error| error.to_string())?;
-            let data: Value =
-                alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
-            if !data.is_object() {
-                return Err("Invalid Facebook ID profile".into());
-            }
-            data
+            super::remaining_profile::decode_grant_jwt(token)
+                .map_err(super::remaining_profile::profile_exception)?
         } else {
             self.graph_profile(request.access_token.as_deref()).await?
         };
         let mut mapped = Map::new();
         if let Some(mapper) = self.mapper {
-            mapped.extend(mapper(profile.clone())?.public_profile(true));
+            mapped.extend(
+                mapper(profile.clone())
+                    .map_err(super::remaining_profile::profile_exception)?
+                    .public_profile(true),
+            );
         }
         if let Some(mapper) = &self.application_mapper {
-            mapped.extend(mapper.map_profile(profile.clone()).await?);
+            mapped.extend(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            );
         }
         let mut output = Map::new();
         for key in ["name", "email"] {
@@ -287,7 +293,8 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
             },
             data: profile,
         };
-        super::apply_application_mapping(&mut response, output)?;
+        super::apply_application_mapping(&mut response, output)
+            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }

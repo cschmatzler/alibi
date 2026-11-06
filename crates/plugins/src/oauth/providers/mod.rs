@@ -948,3 +948,6 @@ mod linkedin;
 pub use linkedin::LinkedInOptions;
 mod linear;
 pub use linear::LinearOptions;
+
+#[cfg(test)]
+mod admission_tests;

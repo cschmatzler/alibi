@@ -91,6 +91,7 @@ impl OAuthProvider {
         );
         provider.scopes = vec!["read:jira-user".into(), "offline_access".into()];
         provider.authorization = Some(OAuthAuthorizationPolicy {
+            source_profile_exceptions: true,
             configured_scopes: options.scope,
             disable_default_scopes: options.disable_default_scope,
             prompt: options.prompt,
@@ -162,6 +163,10 @@ struct AtlassianMappedUserInfo {
 }
 #[async_trait::async_trait]
 impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     fn mapped_handler(
         &self,
         mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
@@ -187,6 +192,9 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             .error_for_status()
             .map_err(|error| error.to_string())?;
         let profile: Value = response.json().await.map_err(|error| error.to_string())?;
+        if !super::remaining_profile::truthy(&profile) {
+            return Err("Missing atlassian profile".into());
+        }
         let mut output = Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
