@@ -58,7 +58,7 @@ impl ManagedSecrets {
     }
 
     /// # Errors
-    /// Rejects invalid versions, empty readers and an insecure current key.
+    /// Rejects invalid versions and empty keys. Short current keys produce a warning.
     pub fn validate(&self) -> Result<(), AuthError> {
         if self
             .keys
@@ -69,12 +69,46 @@ impl ManagedSecrets {
                 "Secret versions must be safe nonnegative integers with nonempty keys",
             ));
         }
-        if self.current_secret().len() < 32 {
-            return Err(AuthError::config(
-                "Current secret key must be at least 32 characters",
-            ));
+        if self.current_secret().encode_utf16().count() < 32 {
+            tracing::warn!(
+                version = self.current_version,
+                "The current secret should be at least 32 characters long for adequate security"
+            );
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AuthConfig;
+
+    #[test]
+    fn managed_secrets_accept_nonempty_short_current_keys() {
+        for secret in ["x", "short", "🔑"] {
+            let secrets = ManagedSecrets::new(2, secret).retain(1, "old");
+            assert!(secrets.validate().is_ok());
+            let config = AuthConfig::default().managed_secrets(secrets);
+            assert!(config.validate().is_ok());
+            assert_eq!(config.current_secret(), secret);
+            assert_eq!(
+                config.verification_secrets().collect::<Vec<_>>(),
+                [secret, "old"]
+            );
+        }
+        assert!(ManagedSecrets::new(2, "").validate().is_err());
+        assert!(
+            ManagedSecrets::new(2, "current")
+                .retain(1, "")
+                .validate()
+                .is_err()
+        );
+        assert!(
+            ManagedSecrets::new(9_007_199_254_740_992, "key")
+                .validate()
+                .is_err()
+        );
     }
 }
 
