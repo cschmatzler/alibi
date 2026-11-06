@@ -1648,6 +1648,60 @@ mod tests {
     // server-only in TS (no HTTP routes), so the Rust plugin does not expose
     // them either. Route dispatch tests for these have been removed.
 
+    #[tokio::test]
+    async fn api_key_update_refill_uses_presence_not_truthiness() {
+        let plugin = ApiKeyPlugin::builder().build();
+        let (ctx, user, session) = create_test_context_with_user().await;
+        let (key_id, _) = create_key_and_get_raw(
+            &plugin,
+            &ctx,
+            &session.token,
+            serde_json::json!({"name":"refill-presence"}),
+        )
+        .await;
+        for (interval, amount, code) in [
+            (None, Some(0.0), "REFILL_AMOUNT_AND_INTERVAL_REQUIRED"),
+            (Some(0.0), None, "REFILL_INTERVAL_AND_AMOUNT_REQUIRED"),
+        ] {
+            let error = plugin
+                .update_key(
+                    &ctx,
+                    &UpdateKeyRequest {
+                        key_id: key_id.clone(),
+                        user_id: Some(user.id.clone()),
+                        refill_interval: interval,
+                        refill_amount: amount,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap_err();
+            assert_eq!(error.status_code(), 400);
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&error.to_auth_response().body)
+                    .unwrap()["code"],
+                code
+            );
+        }
+        for (interval, amount) in [(0.0, 5.0), (60_000.0, 0.0), (0.0, 0.0)] {
+            let updated = plugin
+                .update_key(
+                    &ctx,
+                    &UpdateKeyRequest {
+                        key_id: key_id.clone(),
+                        user_id: Some(user.id.clone()),
+                        refill_interval: Some(interval),
+                        refill_amount: Some(amount),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(updated.refill_interval, Some(interval));
+            assert_eq!(updated.refill_amount, Some(amount));
+        }
+    }
+
     // Ensure refillInterval + refillAmount require each other (validation logic)
     #[tokio::test]
     async fn test_refill_logic() {

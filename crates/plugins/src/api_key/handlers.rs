@@ -589,7 +589,19 @@ pub(super) async fn update_key_for_user(
             super::ApiKeyErrorCode::InvalidMetadataType,
         ));
     }
-    ApiKeyPlugin::validate_refill(body.refill_interval, body.refill_amount)?;
+    match (body.refill_interval, body.refill_amount) {
+        (None, Some(_)) => {
+            return Err(super::api_key_error(
+                super::ApiKeyErrorCode::RefillAmountAndIntervalRequired,
+            ));
+        }
+        (Some(_), None) => {
+            return Err(super::api_key_error(
+                super::ApiKeyErrorCode::RefillIntervalAndAmountRequired,
+            ));
+        }
+        _ => {}
+    }
     if body.name.is_none()
         && body.enabled.is_none()
         && expires_at.is_none()
