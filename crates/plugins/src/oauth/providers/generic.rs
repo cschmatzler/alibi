@@ -400,7 +400,9 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             })
             .flatten();
         if let Some(custom) = &self.custom {
-            let mut response = custom.get_user_info(request).await
+            let mut response = custom
+                .get_user_info(request)
+                .await
                 .map_err(super::remaining_profile::profile_exception)?;
             if let Some(expected) = expected_sub
                 && response
@@ -415,7 +417,9 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 return Err("UserInfo subject mismatch".into());
             }
             if let Some(mapper) = &self.mapper {
-                let mapped = mapper.map_profile(response.data.clone()).await
+                let mapped = mapper
+                    .map_profile(response.data.clone())
+                    .await
                     .map_err(super::remaining_profile::profile_exception)?;
                 super::apply_application_mapping(&mut response, mapped)?;
             }
@@ -438,7 +442,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
                 _ = object.entry("id").or_insert(id);
-                let verified = Value::Bool(super::email_verified_claim(object.get("email_verified")));
+                let verified =
+                    Value::Bool(super::email_verified_claim(object.get("email_verified")));
                 _ = object.entry("emailVerified").or_insert(verified);
                 if let Some(image) = object.get("picture").cloned() {
                     _ = object.entry("image").or_insert(image);
@@ -450,11 +455,10 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .url
                 .as_ref()
                 .ok_or("Generic OAuth user info unavailable")?;
-            let access_token = request
-                .access_token
-                .as_deref()
-                .filter(|token| !token.is_empty())
-                .ok_or("Generic OAuth user info unavailable")?;
+            if !super::remaining_profile::has_access_token(&request) {
+                return Err("Generic OAuth user info unavailable".into());
+            }
+            let access_token = super::remaining_profile::bearer_access_token(&request)?;
             let profile: Value = reqwest::Client::new()
                 .get(url)
                 .bearer_auth(access_token)
@@ -682,7 +686,10 @@ mod tests {
     use super::*;
 
     fn id_token(claims: Value) -> String {
-        format!("e30.{}.signature", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string()))
+        format!(
+            "e30.{}.signature",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string())
+        )
     }
 
     async fn serve_profile(profile: Value) -> String {
@@ -702,13 +709,23 @@ mod tests {
     struct CustomProfile(bool);
     #[async_trait]
     impl OAuthUserInfoHandler for CustomProfile {
-        async fn get_user_info(&self, _: OAuthUserInfoRequest) -> Result<OAuthUserInfoResponse, String> {
+        async fn get_user_info(
+            &self,
+            _: OAuthUserInfoRequest,
+        ) -> Result<OAuthUserInfoResponse, String> {
             if self.0 {
                 return Err("custom profile failed".into());
             }
             Ok(OAuthUserInfoResponse {
                 user_output: None,
-                user: OAuthUserInfo { additional_fields: Map::new(), id: "user".into(), email: "a@example.com".into(), name: None, image: None, email_verified: false },
+                user: OAuthUserInfo {
+                    additional_fields: Map::new(),
+                    id: "user".into(),
+                    email: "a@example.com".into(),
+                    name: None,
+                    image: None,
+                    email_verified: false,
+                },
                 data: serde_json::json!({"id":"user", "email":"a@example.com"}),
             })
         }
@@ -716,41 +733,148 @@ mod tests {
     struct ImageMapper(Value);
     #[async_trait]
     impl OAuthProfileMapper for ImageMapper {
-        async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+        async fn map_profile(
+            &self,
+            _: Value,
+        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
             Ok(Map::from_iter([("image".into(), self.0.clone())]))
         }
     }
 
     #[tokio::test]
+    async fn generic_user_info_preserves_raw_bearer_values() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        for token in [
+            serde_json::json!(42),
+            serde_json::json!(true),
+            serde_json::json!(["access", "token"]),
+        ] {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let (sender, receiver) = tokio::sync::oneshot::channel();
+            tokio::spawn(async move {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut bytes = Vec::new();
+                loop {
+                    let mut chunk = [0; 4096];
+                    let read = stream.read(&mut chunk).await.unwrap();
+                    assert_ne!(read, 0);
+                    bytes.extend_from_slice(&chunk[..read]);
+                    if bytes.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                sender.send(String::from_utf8(bytes).unwrap()).unwrap();
+                let body = r#"{"id":"subject","email":"a@example.com"}"#;
+                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            });
+            let handler = GenericUserInfo {
+                url: Some(url),
+                mapper: None,
+                custom: None,
+                verified_oidc: false,
+            };
+            let response = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    raw: Some(serde_json::json!({"access_token":token})),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(response.user.email, "a@example.com");
+            let request = receiver.await.unwrap();
+            let authorization = request
+                .lines()
+                .find_map(|line| {
+                    line.split_once(':')
+                        .filter(|(key, _)| key.eq_ignore_ascii_case("authorization"))
+                        .map(|(_, value)| value.trim())
+                })
+                .unwrap();
+            assert_eq!(
+                authorization,
+                format!(
+                    "Bearer {}",
+                    super::super::remaining_profile::js_string(&token).unwrap()
+                )
+            );
+        }
+        let handler = GenericUserInfo {
+            url: Some("http://127.0.0.1:1".into()),
+            mapper: None,
+            custom: None,
+            verified_oidc: false,
+        };
+        assert!(
+            handler
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("typed-access".into()),
+                    raw: Some(serde_json::json!({"access_token":false})),
+                    ..Default::default()
+                })
+                .await
+                .is_err()
+        );
+    }
+
+    #[tokio::test]
     async fn generic_profiles_spread_truthy_payloads() {
         for (profile, expected) in [
-            (serde_json::json!(42), serde_json::json!({"emailVerified":false})),
-            (serde_json::json!(true), serde_json::json!({"emailVerified":false})),
-            (serde_json::json!(["a", 2]), serde_json::json!({"0":"a", "1":2, "emailVerified":false})),
-            (serde_json::json!("ab"), serde_json::json!({"0":"a", "1":"b", "emailVerified":false})),
+            (
+                serde_json::json!(42),
+                serde_json::json!({"emailVerified":false}),
+            ),
+            (
+                serde_json::json!(true),
+                serde_json::json!({"emailVerified":false}),
+            ),
+            (
+                serde_json::json!(["a", 2]),
+                serde_json::json!({"0":"a", "1":2, "emailVerified":false}),
+            ),
+            (
+                serde_json::json!("ab"),
+                serde_json::json!({"0":"a", "1":"b", "emailVerified":false}),
+            ),
         ] {
             let handler = GenericUserInfo {
-                url: Some(serve_profile(profile).await), mapper: None, custom: None, verified_oidc: false,
+                url: Some(serve_profile(profile).await),
+                mapper: None,
+                custom: None,
+                verified_oidc: false,
             };
-            let response = handler.get_user_info(OAuthUserInfoRequest {
-                access_token: Some("access".into()), ..Default::default()
-            }).await.unwrap();
+            let response = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
             assert_eq!(response.data, expected);
         }
     }
 
     #[tokio::test]
     async fn generic_falsy_fetched_profiles_skip_mapping() {
-        for profile in [Value::Null, Value::Bool(false), serde_json::json!(0), serde_json::json!("")] {
+        for profile in [
+            Value::Null,
+            Value::Bool(false),
+            serde_json::json!(0),
+            serde_json::json!(""),
+        ] {
             let handler = GenericUserInfo {
                 url: Some(serve_profile(profile).await),
                 mapper: Some(Arc::new(FailingMapper)),
                 custom: None,
                 verified_oidc: false,
             };
-            let error = handler.get_user_info(OAuthUserInfoRequest {
-                access_token: Some("access".into()), ..Default::default()
-            }).await.unwrap_err();
+            let error = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap_err();
             assert_eq!(error, "Generic OAuth user info unavailable");
         }
     }
@@ -758,11 +882,16 @@ mod tests {
     #[tokio::test]
     async fn generic_mapped_null_images_are_omitted() {
         for custom in [false, true] {
-            for image in [Value::Null, Value::Bool(false), Value::String(String::new())] {
+            for image in [
+                Value::Null,
+                Value::Bool(false),
+                Value::String(String::new()),
+            ] {
                 let handler = GenericUserInfo {
                     url: None,
                     mapper: Some(Arc::new(ImageMapper(image.clone()))),
-                    custom: custom.then(|| Arc::new(CustomProfile(false)) as Arc<dyn OAuthUserInfoHandler>),
+                    custom: custom
+                        .then(|| Arc::new(CustomProfile(false)) as Arc<dyn OAuthUserInfoHandler>),
                     verified_oidc: false,
                 };
                 let response = handler.get_user_info(OAuthUserInfoRequest {
@@ -778,20 +907,33 @@ mod tests {
     struct FailingMapper;
     #[async_trait]
     impl OAuthProfileMapper for FailingMapper {
-        async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+        async fn map_profile(
+            &self,
+            _: Value,
+        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
             Err("custom mapper failed".into())
         }
     }
 
     #[tokio::test]
     async fn generic_default_profiles_preserve_public_scalars_without_ids() {
-        let handler = GenericUserInfo { url: None, mapper: None, custom: None, verified_oidc: false };
+        let handler = GenericUserInfo {
+            url: None,
+            mapper: None,
+            custom: None,
+            verified_oidc: false,
+        };
         let response = handler.get_user_info(OAuthUserInfoRequest {
             id_token: Some(id_token(serde_json::json!({"sub":"subject", "email":"a@example.com", "name":42, "picture":false}))),
             ..Default::default()
         }).await.unwrap();
         assert_eq!(response.user_output.unwrap(), serde_json::json!({"email":"a@example.com", "emailVerified":false, "name":42, "image":false}).as_object().unwrap().clone());
-        let provider = GenericOAuthConfig::new("client", "secret").resolve().await.unwrap().unwrap().provider;
+        let provider = GenericOAuthConfig::new("client", "secret")
+            .resolve()
+            .await
+            .unwrap()
+            .unwrap()
+            .provider;
         let policy = provider.authorization.unwrap();
         assert!(policy.preserve_raw_profile_scalars);
         assert!(policy.preserve_raw_email_errors);
@@ -806,18 +948,49 @@ mod tests {
                 config.map_profile = Some(Arc::new(FailingMapper));
             }
             let provider = config.resolve().await.unwrap().unwrap().provider;
-            let error = crate::oauth::handlers::fetch_user_info_from_provider(&provider, OAuthUserInfoRequest::default()).await.unwrap_err();
-            assert!(matches!(error, alibi_core::AuthError::Api { status: 500, code: Some(code), .. } if code == "OAUTH_PROFILE_EXCEPTION"));
+            let error = crate::oauth::handlers::fetch_user_info_from_provider(
+                &provider,
+                OAuthUserInfoRequest::default(),
+            )
+            .await
+            .unwrap_err();
+            assert!(
+                matches!(error, alibi_core::AuthError::Api { status: 500, code: Some(code), .. } if code == "OAUTH_PROFILE_EXCEPTION")
+            );
         }
     }
 
     #[tokio::test]
     async fn generic_profile_aliases_normalize_email_verification() {
-        for (value, expected) in [(Value::Null, false), (serde_json::json!(false), false), (serde_json::json!(true), true), (serde_json::json!("true"), true), (serde_json::json!("false"), false), (serde_json::json!(1), false)] {
+        for (value, expected) in [
+            (Value::Null, false),
+            (serde_json::json!(false), false),
+            (serde_json::json!(true), true),
+            (serde_json::json!("true"), true),
+            (serde_json::json!("false"), false),
+            (serde_json::json!(1), false),
+        ] {
             let profile = serde_json::json!({"sub":"subject", "email":"a@example.com", "email_verified": value});
-            let handler = GenericUserInfo { url: Some(serve_profile(profile.clone()).await), mapper: None, custom: None, verified_oidc: false };
-            let fetched = handler.get_user_info(OAuthUserInfoRequest { access_token: Some("access".into()), ..Default::default() }).await.unwrap();
-            let decoded = handler.get_user_info(OAuthUserInfoRequest { id_token: Some(id_token(profile)), ..Default::default() }).await.unwrap();
+            let handler = GenericUserInfo {
+                url: Some(serve_profile(profile.clone()).await),
+                mapper: None,
+                custom: None,
+                verified_oidc: false,
+            };
+            let fetched = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            let decoded = handler
+                .get_user_info(OAuthUserInfoRequest {
+                    id_token: Some(id_token(profile)),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
             for response in [fetched, decoded] {
                 assert_eq!(response.data["emailVerified"], Value::Bool(expected));
                 assert_eq!(response.user.email_verified, expected);
@@ -827,12 +1000,35 @@ mod tests {
 
     #[tokio::test]
     async fn generic_user_info_requires_jws_claims() {
-        let handler = GenericUserInfo { url: None, mapper: None, custom: None, verified_oidc: false };
+        let handler = GenericUserInfo {
+            url: None,
+            mapper: None,
+            custom: None,
+            verified_oidc: false,
+        };
         let token = id_token(serde_json::json!({"sub":"subject", "email":"a@example.com"}));
-        let response = handler.get_user_info(OAuthUserInfoRequest { id_token: Some(token.clone()), ..Default::default() }).await.unwrap();
+        let response = handler
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(token.clone()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
         assert_eq!(response.user.id, "subject");
-        for malformed in [token.rsplit_once('.').unwrap().0.to_owned(), format!("{token}.extra"), id_token(serde_json::json!([]))] {
-            assert!(handler.get_user_info(OAuthUserInfoRequest { id_token: Some(malformed), ..Default::default() }).await.is_err());
+        for malformed in [
+            token.rsplit_once('.').unwrap().0.to_owned(),
+            format!("{token}.extra"),
+            id_token(serde_json::json!([])),
+        ] {
+            assert!(
+                handler
+                    .get_user_info(OAuthUserInfoRequest {
+                        id_token: Some(malformed),
+                        ..Default::default()
+                    })
+                    .await
+                    .is_err()
+            );
         }
     }
 }
