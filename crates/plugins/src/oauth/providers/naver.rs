@@ -86,6 +86,7 @@ impl OAuthProvider {
             scopes: ["profile", "email"].map(String::from).to_vec(),
             authorization: Some(OAuthAuthorizationPolicy {
                 allow_missing_access_token: true,
+                source_profile_exceptions: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -102,6 +103,7 @@ impl OAuthProvider {
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(NaverUserInfo {
                 endpoint,
+                application_mapper: None,
                 mapper: options.map_profile_to_user,
             })),
             refresh_access_token: None,
@@ -115,14 +117,26 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct NaverUserInfo {
     endpoint: String,
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for NaverUserInfo {
     fn errors_are_exceptions(&self) -> bool {
         false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
     }
 
     async fn get_user_info(
@@ -146,10 +160,21 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             return Err("Invalid Naver resultcode".into());
         }
         let account = profile.get("response");
+        let application_output = if let Some(mapper) = &self.application_mapper {
+            Some(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            )
+        } else {
+            None
+        };
         let mapped = self
             .mapper
             .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?;
         // Keep Source's original JSON publication separate from typed persistence.
         let mut output = alibi_core::field_policy::FieldOutput::new();
         let name = account
@@ -200,11 +225,15 @@ impl OAuthUserInfoHandler for NaverUserInfo {
                 email_verified: false,
             },
         };
-        Ok(OAuthUserInfoResponse {
+        let mut response = OAuthUserInfoResponse {
             user_output: Some(output),
             user,
             data: profile,
-        })
+        };
+        if let Some(mapped) = application_output {
+            super::apply_application_mapping(&mut response, mapped)?;
+        }
+        Ok(response)
     }
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
@@ -275,6 +304,72 @@ mod tests {
         (endpoint, request)
     }
 
+    struct Mapper {
+        expected: Value,
+        fail: bool,
+    }
+
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(
+            &self,
+            profile: Value,
+        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+            assert_eq!(profile, self.expected);
+            if self.fail {
+                return Err("mapping failed".into());
+            }
+            Ok(json!({"name": "mapped", "custom": 42})
+                .as_object()
+                .unwrap()
+                .clone())
+        }
+    }
+
+    #[tokio::test]
+    async fn naver_async_mapper_receives_envelope_and_merges_partial_fields() {
+        let profile = json!({"resultcode": "00", "response": {"id": "original", "email": "original@example.com"}});
+        for fail in [false, true] {
+            let (endpoint, captured) = profile_server(profile.clone()).await;
+            let mut options = NaverOptions::new("client", None);
+            options.user_info_endpoint = Some(endpoint);
+            let provider = OAuthProvider::naver_with_options(options).with_profile_mapper(
+                std::sync::Arc::new(Mapper {
+                    expected: profile.clone(),
+                    fail,
+                }),
+            );
+            assert!(
+                provider
+                    .authorization
+                    .as_ref()
+                    .unwrap()
+                    .source_profile_exceptions
+            );
+            let response = provider
+                .get_user_info
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest::default())
+                .await;
+            captured.await.unwrap();
+            if fail {
+                assert_eq!(
+                    response.unwrap_err(),
+                    "oauth-profile-exception:mapping failed"
+                );
+            } else {
+                let response = response.unwrap();
+                assert_eq!(response.data, profile);
+                assert_eq!(subject(&response.data).unwrap(), "original");
+                let output = response.user_output.unwrap();
+                assert_eq!(output["name"], "mapped");
+                assert_eq!(output["email"], "original@example.com");
+                assert_eq!(output["emailVerified"], false);
+                assert_eq!(output["custom"], 42);
+            }
+        }
+    }
+
     #[tokio::test]
     async fn naver_resultcode_failures_are_not_profile_exceptions() {
         for profile in [
@@ -286,6 +381,7 @@ mod tests {
             let handler = NaverUserInfo {
                 endpoint,
                 mapper: None,
+                application_mapper: None,
             };
             assert!(!handler.errors_are_exceptions());
             assert_eq!(
@@ -300,6 +396,7 @@ mod tests {
         let handler = NaverUserInfo {
             endpoint: "http://127.0.0.1:0".into(),
             mapper: None,
+            application_mapper: None,
         };
         assert!(!handler.errors_are_exceptions());
         assert!(
@@ -327,6 +424,7 @@ mod tests {
             let handler = NaverUserInfo {
                 endpoint,
                 mapper: None,
+                application_mapper: None,
             };
             handler
                 .get_user_info(OAuthUserInfoRequest {
