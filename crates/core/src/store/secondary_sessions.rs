@@ -201,9 +201,6 @@ impl<S: AuthSchema> PluginStore<S> {
             let Ok(user) = S::User::from_secondary_snapshot_record(snapshot.user) else {
                 return Ok(None);
             };
-            if session.user_id() != user.id() {
-                return Ok(None);
-            }
             Some(user)
         };
         if session.token() != token {

@@ -241,6 +241,89 @@ async fn cached_session_envelope_without_rust_metadata_remains_usable() {
 }
 
 #[tokio::test]
+async fn cached_owner_identity_remains_distinct_from_session_bookkeeping() {
+    use alibi_core::{AuthSession, store::CacheAdapter};
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let token = &fixture.sessions[0].token;
+    let cached_owner_id = "cached-owner-with-no-database-row";
+    let mut snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    snapshot["user"]["id"] = cached_owner_id.into();
+    cache
+        .set(token, &snapshot.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .raw
+            .get_user_by_id(cached_owner_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let owner = fixture
+        .ctx
+        .database
+        .get_session_user_record(token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(owner.id(), cached_owner_id);
+    assert_eq!(serde_json::to_value(&owner).unwrap()["id"], cached_owner_id);
+    assert_ne!(owner.id(), fixture.user.id);
+    let session = fixture
+        .ctx
+        .database
+        .get_session(token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(session.user_id(), fixture.user.id);
+
+    fixture
+        .ctx
+        .database
+        .refresh_session(token, chrono::Utc::now() + Duration::hours(2))
+        .await
+        .unwrap()
+        .unwrap();
+    let refreshed: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    assert_eq!(refreshed["user"]["id"], cached_owner_id);
+    let sessions = fixture
+        .ctx
+        .database
+        .get_user_sessions(&fixture.user.id)
+        .await
+        .unwrap();
+    assert!(
+        sessions
+            .iter()
+            .any(|session| session.token() == token.as_str())
+    );
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_user_sessions(cached_owner_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    fixture
+        .ctx
+        .database
+        .delete_user_sessions(&fixture.user.id)
+        .await
+        .unwrap();
+    assert!(cache.get(token).await.unwrap().is_none());
+}
+
+#[tokio::test]
 async fn secondary_session_index_uses_typescript_expiry_shape_for_listing_and_revocation() {
     use alibi_core::store::CacheAdapter;
 
