@@ -429,7 +429,15 @@ impl PhoneNumberPlugin {
             user.clone(),
             Some(body.remember_me.unwrap_or(true)),
         )
-        .await?;
+        .await
+        .map_err(|error| match error {
+            AuthError::SessionCreationCancelled => phone_error(
+                401,
+                codes::FAILED_TO_CREATE_SESSION,
+                "Failed to create session",
+            ),
+            error => error,
+        })?;
         if crate::two_factor::is_enabled(ctx) && user.two_factor_enabled() {
             let trusted = crate::two_factor::inspect_trusted_device(req, &user, ctx).await?;
             if trusted.trusted {
@@ -625,7 +633,17 @@ impl PhoneNumberPlugin {
             )
             .map_err(AuthError::from);
         }
-        let (payload, mut response) = session_response(ctx, req, user).await?;
+        let (payload, mut response) =
+            session_response(ctx, req, user)
+                .await
+                .map_err(|error| match error {
+                    AuthError::SessionCreationCancelled => phone_error(
+                        500,
+                        codes::FAILED_TO_CREATE_SESSION,
+                        "Failed to create session",
+                    ),
+                    error => error,
+                })?;
         response.body = serde_json::to_vec(
             &json!({"status":true,"token":payload.get("token"),"user":payload.get("user")}),
         )?;

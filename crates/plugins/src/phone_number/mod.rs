@@ -318,6 +318,96 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn cancelled_phone_sessions_report_creation_failure_without_masking_hook_errors() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        struct Hook(bool);
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_session(
+                &self,
+                _: &mut alibi_core::CreateSession,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application session policy"))
+                }
+            }
+        }
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(test_helpers::create_test_config());
+            let mut ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            ctx.set_metadata("phone-number.enabled", json!(true));
+            let (plugin, outbox, _) = configured();
+            let phone = "+15551110222";
+            let user_id = phone_user(&ctx, phone, true).await;
+            let password_response = post(
+                &plugin,
+                &ctx,
+                "/sign-in/phone-number",
+                json!({"phoneNumber":phone,"password":"original-password123"}),
+            )
+            .await;
+            assert_eq!(
+                post(
+                    &plugin,
+                    &ctx,
+                    "/phone-number/send-otp",
+                    json!({"phoneNumber":phone})
+                )
+                .await
+                .status,
+                200
+            );
+            let code = outbox.0.lock().unwrap().last().unwrap().code.clone();
+            let otp_response = post(
+                &plugin,
+                &ctx,
+                "/phone-number/verify",
+                json!({"phoneNumber":phone,"code":code}),
+            )
+            .await;
+            for (response, status) in [(password_response, 401), (otp_response, 500)] {
+                if cancelled {
+                    assert_eq!(response.status, status);
+                    let body: Value = serde_json::from_slice(&response.body).unwrap();
+                    assert_eq!(body["code"], "FAILED_TO_CREATE_SESSION");
+                } else {
+                    assert_eq!(response.status, 403);
+                }
+                assert!(response.headers.get("set-cookie").is_none());
+            }
+            assert!(
+                ctx.database
+                    .get_user_sessions(&user_id)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                ctx.verifications()
+                    .find(&format!("phone-number-otp-{phone}"))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+    }
+
     #[derive(Default)]
     struct Outbox(Mutex<Vec<PhoneOtpDelivery>>);
 
