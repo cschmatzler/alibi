@@ -782,18 +782,18 @@ where
     }
     async fn complete_secondary_session_update(
         &self,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
-        use alibi_core::AuthSession;
-        let token = session.token().to_owned();
         let result = self
             .store
             .complete_secondary_update_with_connection(
                 self.tx,
                 Some(self.tx),
+                token,
                 session,
                 expires_at,
                 fields,
@@ -801,7 +801,7 @@ where
             )
             .await?;
         let event = result.as_ref().map_or_else(
-            || AfterHook::SessionUpdateMissing(token),
+            || AfterHook::SessionUpdateMissing(token.to_owned()),
             |model| AfterHook::SessionUpdated(model.clone()),
         );
         self.pending_after.push(event).await;

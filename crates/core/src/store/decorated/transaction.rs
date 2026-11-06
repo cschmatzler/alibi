@@ -65,7 +65,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .ok_or(AuthError::SessionNotFound)?;
         let updated = self
             .inner
-            .complete_secondary_session_update(updated, None, fields, false)
+            .complete_secondary_session_update(token, updated, None, fields, false)
             .await?
             .ok_or(AuthError::SessionNotFound)?;
         _ = self
@@ -92,10 +92,11 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .await?
             .ok_or(AuthError::SessionNotFound)?;
         self.record_store
-            .mirror_session_fields(&updated, &user, Some(&fields))
+            .mirror_session_fields(token, &updated, &user, Some(&fields))
             .await?;
         self.inner
             .complete_secondary_session_update(
+                token,
                 updated,
                 None,
                 fields,

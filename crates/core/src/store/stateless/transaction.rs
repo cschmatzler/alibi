@@ -122,13 +122,14 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
     }
     async fn complete_secondary_session_update(
         &self,
+        token: &str,
         session: SessionView,
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         SessionStore::<StatelessSchema>::complete_secondary_session_update(
-            self.live, session, expires_at, fields, persist,
+            self.live, token, session, expires_at, fields, persist,
         )
         .await
     }

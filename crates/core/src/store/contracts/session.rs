@@ -42,6 +42,7 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     /// Publish the staged physical update and run after hooks exactly once.
     async fn complete_secondary_session_update(
         &self,
+        _token: &str,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
         _fields: FieldValues,

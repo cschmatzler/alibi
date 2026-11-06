@@ -142,7 +142,7 @@ impl<S: AuthSchema> PluginStore<S> {
             *destination = session.clone();
         }
         self.inner
-            .complete_secondary_session_update(session, expires_at, fields, false)
+            .complete_secondary_session_update(token, session, expires_at, fields, false)
             .await
     }
 
@@ -203,9 +203,6 @@ impl<S: AuthSchema> PluginStore<S> {
             };
             Some(user)
         };
-        if session.token() != token {
-            return Ok(None);
-        }
         Ok(Some((session, user)))
     }
 
@@ -245,6 +242,7 @@ impl<S: AuthSchema> PluginStore<S> {
 
     pub(super) async fn mirror_session_fields(
         &self,
+        token: &str,
         session: &S::Session,
         user: &AdapterRecord<S::User>,
         updated_fields: Option<&FieldValues>,
@@ -254,14 +252,15 @@ impl<S: AuthSchema> PluginStore<S> {
         }
         let now = Utc::now();
         let mut references = self.references(session.user_id().as_ref()).await?;
-        references.retain(|reference| reference.token != session.token());
+        references.retain(|reference| reference.token != token);
         references.push(Reference {
-            token: session.token().to_owned(),
+            token: token.to_owned(),
             expires_at: session.expires_at(),
         });
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
             self.write_session_snapshot(
+                token,
                 session,
                 user.secondary_snapshot()?,
                 updated_fields,
@@ -277,6 +276,7 @@ impl<S: AuthSchema> PluginStore<S> {
 
     async fn write_session_snapshot(
         &self,
+        token: &str,
         session: &S::Session,
         user: serde_json::Value,
         updated_fields: Option<&FieldValues>,
@@ -286,7 +286,7 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(cache) = self.secondary() else {
             return Ok(());
         };
-        let mut absent_fields = if let Some(raw) = cache.get(session.token()).await? {
+        let mut absent_fields = if let Some(raw) = cache.get(token).await? {
             CachedSession::absent_fields(&raw)
         } else if !self.config.session.store_in_database {
             let mut absent = BTreeSet::new();
@@ -330,7 +330,7 @@ impl<S: AuthSchema> PluginStore<S> {
             absent_fields,
         };
         cache
-            .set(session.token(), &serde_json::to_string(&snapshot)?, ttl)
+            .set(token, &serde_json::to_string(&snapshot)?, ttl)
             .await?;
         Ok(())
     }
@@ -405,8 +405,15 @@ impl<S: AuthSchema> PluginStore<S> {
                     .secondary_snapshot()?,
                 None => serde_json::Value::Null,
             };
-            self.write_session_snapshot(session, user, None, Some(created_at), ttl)
-                .await?;
+            self.write_session_snapshot(
+                session.token(),
+                session,
+                user,
+                None,
+                Some(created_at),
+                ttl,
+            )
+            .await?;
         }
         Ok(())
     }
@@ -590,10 +597,11 @@ impl<S: AuthSchema> PluginStore<S> {
         else {
             return Ok(None);
         };
-        self.mirror_session_fields(&updated, &user, Some(&fields))
+        self.mirror_session_fields(token, &updated, &user, Some(&fields))
             .await?;
         self.inner
             .complete_secondary_session_update(
+                token,
                 updated,
                 expires_at,
                 fields,

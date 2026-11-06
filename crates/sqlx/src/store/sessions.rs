@@ -158,6 +158,7 @@ where
         &self,
         exec: Exec<'_>,
         tx: Option<&SqlxTransaction>,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         mut fields: FieldValues,
@@ -168,12 +169,11 @@ where
         let session = if persist {
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = exec
-                .fetch_optional::<S::Session>(Self::active_session_by_token(exec, session.token()))
+                .fetch_optional::<S::Session>(Self::active_session_by_token(exec, token))
                 .await?
             else {
                 for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                    hook.after_update_session_missing(session.token(), &context)
-                        .await?;
+                    hook.after_update_session_missing(token, &context).await?;
                 }
                 return Ok(None);
             };
@@ -187,8 +187,7 @@ where
                 model
             } else {
                 for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                    hook.after_update_session_missing(session.token(), &context)
-                        .await?;
+                    hook.after_update_session_missing(token, &context).await?;
                 }
                 return Ok(None);
             }
@@ -366,6 +365,7 @@ where
     }
     async fn complete_secondary_session_update(
         &self,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
@@ -374,6 +374,7 @@ where
         self.complete_secondary_update_with_connection(
             self.exec(),
             None,
+            token,
             session,
             expires_at,
             fields,

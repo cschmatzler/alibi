@@ -241,6 +241,106 @@ async fn cached_session_envelope_without_rust_metadata_remains_usable() {
 }
 
 #[tokio::test]
+async fn cached_session_token_does_not_replace_its_lookup_key() {
+    use alibi_core::{AuthSession, store::CacheAdapter};
+    for persist in [false, true] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), persist, false, false)
+                .await;
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        let token = &fixture.sessions[0].token;
+        let embedded_token = "cached-token-with-no-database-row";
+        let mut snapshot: serde_json::Value =
+            serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+        snapshot["session"]["token"] = embedded_token.into();
+        cache
+            .set(token, &snapshot.to_string(), Duration::hours(1))
+            .await
+            .unwrap();
+        assert_eq!(
+            fixture
+                .ctx
+                .database
+                .get_session(token)
+                .await
+                .unwrap()
+                .unwrap()
+                .token(),
+            embedded_token
+        );
+        let expires_at = chrono::Utc::now() + Duration::hours(2);
+        let updated = fixture
+            .ctx
+            .database
+            .refresh_session(token, expires_at)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            updated.token(),
+            if persist {
+                token.as_str()
+            } else {
+                embedded_token
+            }
+        );
+        assert_eq!(updated.expires_at(), expires_at);
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["session"]["token"], embedded_token);
+        assert!(cache.get(embedded_token).await.unwrap().is_none());
+        let key = format!("active-sessions-{}", fixture.user.id);
+        let index: serde_json::Value =
+            serde_json::from_str(&cache.get(&key).await.unwrap().unwrap()).unwrap();
+        assert!(
+            index
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["token"] == token.as_str())
+        );
+        assert!(
+            !index
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|entry| entry["token"] == embedded_token)
+        );
+        let lookup = token.clone();
+        let scoped =
+            alibi_core::store::write_transaction(fixture.ctx.database.as_ref(), move |tx| {
+                Box::pin(async move {
+                    tx.update_session_active_organization(&lookup, Some("from-transaction"))
+                        .await
+                })
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            scoped.token(),
+            if persist {
+                token.as_str()
+            } else {
+                embedded_token
+            }
+        );
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["session"]["token"], embedded_token);
+        assert!(cache.get(embedded_token).await.unwrap().is_none());
+        if persist {
+            let physical = fixture.raw.get_session(token).await.unwrap().unwrap();
+            assert_eq!(physical.token(), token.as_str());
+            assert_eq!(physical.expires_at(), expires_at);
+            assert_eq!(physical.active_organization_id(), Some("from-transaction"));
+        }
+        fixture.ctx.database.delete_session(token).await.unwrap();
+        assert!(cache.get(token).await.unwrap().is_none());
+    }
+}
+
+#[tokio::test]
 async fn cached_owner_identity_remains_distinct_from_session_bookkeeping() {
     use alibi_core::{AuthSession, store::CacheAdapter};
     let cache = RecordingCache::new(false);

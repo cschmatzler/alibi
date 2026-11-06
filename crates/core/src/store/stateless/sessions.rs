@@ -76,6 +76,7 @@ impl SessionStore<StatelessSchema> for StatelessStore {
     }
     async fn complete_secondary_session_update(
         &self,
+        _token: &str,
         session: SessionView,
         _expires_at: Option<DateTime<Utc>>,
         _fields: FieldValues,

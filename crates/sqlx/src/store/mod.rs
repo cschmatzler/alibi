@@ -749,18 +749,18 @@ where
     }
     async fn complete_secondary_session_update(
         &self,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
-        use alibi_core::AuthSession;
-        let token = session.token().to_owned();
         let result = self
             .store
             .complete_secondary_update_with_connection(
                 Exec::tx(self.tx),
                 Some(self.tx),
+                token,
                 session,
                 expires_at,
                 fields,
@@ -768,7 +768,7 @@ where
             )
             .await?;
         let event = result.as_ref().map_or_else(
-            || AfterHook::SessionUpdateMissing(token),
+            || AfterHook::SessionUpdateMissing(token.to_owned()),
             |model| AfterHook::SessionUpdated(model.clone()),
         );
         self.pending_after.push(event).await;
@@ -1096,6 +1096,86 @@ mod session_publication_tests {
             active_organization_id: None,
             active_team_id: None,
             additional_fields: Default::default(),
+        }
+    }
+
+    #[tokio::test]
+    async fn secondary_update_persists_by_lookup_token_not_cached_token() {
+        let pool = SqlxPool::connect("sqlite::memory:").await.unwrap();
+        migrator::run_migrations(&pool).await.unwrap();
+        let store = SqlxStore::<Schema>::new(AuthConfig::default(), pool);
+        let user = store
+            .create_user(CreateUser::new().with_email("lookup@example.com"))
+            .await
+            .unwrap();
+        let original = store
+            .create_session(input(&user.id, "lookup-token"))
+            .await
+            .unwrap();
+        for transactional in [false, true] {
+            let mut cached = original.clone();
+            cached.token = "unrelated-cached-token".into();
+            let expiry = Utc::now() + chrono::Duration::hours(2);
+            let updated = if transactional {
+                write_transaction(&store, move |tx| {
+                    Box::pin(async move {
+                        let (staged, fields) = tx
+                            .prepare_secondary_session_update(
+                                cached,
+                                Some(expiry),
+                                Default::default(),
+                            )
+                            .await?
+                            .unwrap();
+                        tx.complete_secondary_session_update(
+                            "lookup-token",
+                            staged,
+                            Some(expiry),
+                            fields,
+                            true,
+                        )
+                        .await
+                    })
+                })
+                .await
+                .unwrap()
+                .unwrap()
+            } else {
+                let (staged, fields) = store
+                    .prepare_secondary_session_update(cached, Some(expiry), Default::default())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                store
+                    .complete_secondary_session_update(
+                        "lookup-token",
+                        staged,
+                        Some(expiry),
+                        fields,
+                        true,
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+            };
+            assert_eq!(updated.token(), "lookup-token");
+            assert_eq!(updated.expires_at(), expiry);
+            assert_eq!(
+                store
+                    .get_session("lookup-token")
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .expires_at(),
+                expiry
+            );
+            assert!(
+                store
+                    .get_session("unrelated-cached-token")
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
         }
     }
 

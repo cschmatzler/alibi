@@ -150,6 +150,7 @@ where
         &self,
         db: &C,
         tx: Option<&ScopedTransaction>,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         mut fields: FieldValues,
@@ -160,14 +161,13 @@ where
         let session = if persist {
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = <S::Session as SeaOrmSessionModel>::Entity::find()
-                .filter(S::Session::token_column().eq(session.token()))
+                .filter(S::Session::token_column().eq(token))
                 .one(db)
                 .await
                 .map_err(map_db_err)?
             else {
                 for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                    hook.after_update_session_missing(session.token(), &context)
-                        .await?;
+                    hook.after_update_session_missing(token, &context).await?;
                 }
                 return Ok(None);
             };
@@ -181,8 +181,7 @@ where
                 Ok(model) => model,
                 Err(sea_orm::DbErr::RecordNotUpdated) => {
                     for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                        hook.after_update_session_missing(session.token(), &context)
-                            .await?;
+                        hook.after_update_session_missing(token, &context).await?;
                     }
                     return Ok(None);
                 }
@@ -371,6 +370,7 @@ where
     }
     async fn complete_secondary_session_update(
         &self,
+        token: &str,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
         fields: FieldValues,
@@ -379,6 +379,7 @@ where
         self.complete_secondary_update_with_connection(
             self.scoped_connection(),
             None,
+            token,
             session,
             expires_at,
             fields,

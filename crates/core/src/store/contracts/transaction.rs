@@ -428,6 +428,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     /// Persist a staged update on the current connection; after hooks belong to commit.
     async fn complete_secondary_session_update(
         &self,
+        _token: &str,
         _session: S::Session,
         _expires_at: Option<chrono::DateTime<chrono::Utc>>,
         _fields: FieldValues,
