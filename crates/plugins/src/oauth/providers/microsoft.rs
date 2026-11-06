@@ -223,6 +223,7 @@ impl OAuthProvider {
                 photo_endpoint,
                 disable_photo: options.disable_profile_photo,
                 mapper: options.map_profile_to_user,
+                application_mapper: None,
             })),
             refresh_access_token: None,
             verify_id_token: None,
@@ -250,13 +251,24 @@ impl OAuthIdTokenClaimsVerifier for MicrosoftClaims {
             && !(self.tenant == "consumers" && tid != CONSUMER_TENANT)
     }
 }
+#[derive(Clone)]
 struct MicrosoftUserInfo {
     photo_endpoint: String,
     disable_photo: bool,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for MicrosoftUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -304,10 +316,6 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                 );
             }
         }
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
         let email = profile
             .get("email")
             .and_then(Value::as_str)
@@ -321,40 +329,36 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                         || email_list_includes(profile.get("verified_secondary_email"), &email)?)
             }
         };
-        // Public provider output keeps the original JSON shape independently
-        // from the typed values used by account admission and persistence.
-        let user_output = Some(mapped.as_ref().map_or_else(
-            || {
-                let mut output = serde_json::Map::new();
-                for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")]
-                {
-                    if let Some(value) = profile.get(source) {
-                        _ = output.insert(target.into(), value.clone());
-                    }
-                }
-                _ = output.insert("emailVerified".into(), Value::Bool(verified));
-                output
-            },
-            |user| user.public_profile(true),
-        ));
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
+        let mut output = Map::new();
+        for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
+            if let Some(value) = profile.get(source) {
+                output.insert(target.into(), value.clone());
+            }
+        }
+        output.insert("emailVerified".into(), Value::Bool(verified));
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
                 id,
-                email,
-                name: scalar(profile.get("name"))?,
-                image: scalar(profile.get("picture"))?,
-                email_verified: verified,
+                email: String::new(),
+                name: None,
+                image: None,
+                email_verified: false,
             },
-        };
-        Ok(OAuthUserInfoResponse {
-            user_output,
-            user,
             data: profile,
-        })
+        };
+        super::apply_application_mapping(&mut response, output)?;
+        Ok(response)
     }
 }
+
 fn subject(profile: &Value) -> Result<String, String> {
     let id = profile
         .get("oid")
@@ -378,21 +382,80 @@ fn email_list_includes(value: Option<&Value>, email: &str) -> Result<bool, Strin
         _ => Err("Invalid Microsoft verified email list".into()),
     }
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Err("Invalid Microsoft profile field".into()),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Mapper;
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            let expected = base64::engine::general_purpose::STANDARD
+                .encode(serde_json::json!("photo").to_string());
+            assert_eq!(
+                profile["picture"],
+                format!("data:image/jpeg;base64, {expected}")
+            );
+            Ok(
+                serde_json::json!({"name":"Mapped","id":"public-id","custom":true})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
+        }
+    }
+    #[tokio::test]
+    async fn microsoft_maps_photo_enriched_claims() {
+        let body = serde_json::json!("photo");
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let mut options = MicrosoftOptions::new("client", None);
+        options.profile_photo_endpoint = Some(endpoint);
+        let provider = OAuthProvider::microsoft(options)
+            .unwrap()
+            .with_profile_mapper(Arc::new(Mapper));
+        let profile = serde_json::json!({"oid":"object-id","name":"Original","email":"a@example.com","verified_primary_email":["a@example.com"]});
+        let token = format!(
+            "e30.{}.sig",
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
+        );
+        let response = provider
+            .get_user_info
+            .as_ref()
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                id_token: Some(token),
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let output = response.user_output.unwrap();
+        assert_eq!(output["name"], "Mapped");
+        assert_eq!(output["email"], "a@example.com");
+        assert_eq!(output["emailVerified"], true);
+        assert_eq!(output["custom"], true);
+        assert_eq!(output["id"], "public-id");
+        assert_eq!(
+            provider.account_subject.unwrap()(&response.data).unwrap(),
+            "object-id"
+        );
+        server.await.unwrap();
+    }
     #[tokio::test]
     async fn microsoft_accepts_padded_jwt_payload() {
         let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
