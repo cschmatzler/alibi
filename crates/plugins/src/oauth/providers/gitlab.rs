@@ -95,7 +95,7 @@ pub(in crate::oauth::providers) fn gitlab_user_info(
         email: profile
             .get("email")
             .and_then(Value::as_str)
-            .ok_or("Missing GitLab email")?
+            .unwrap_or_default()
             .into(),
         name: Some(
             profile
@@ -115,4 +115,19 @@ pub(in crate::oauth::providers) fn gitlab_user_info(
             .and_then(Value::as_bool)
             .unwrap_or(false),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn gitlab_optional_email_does_not_reject_active_accounts() {
+        let profile = serde_json::json!({"id":42,"state":"active","username":"user"});
+        assert_eq!(gitlab_user_info(profile.clone()).unwrap().email, "");
+        let mut profile = profile;
+        profile["email"] = Value::Null;
+        assert_eq!(gitlab_user_info(profile.clone()).unwrap().email, "");
+        profile["locked"] = Value::Bool(true);
+        assert!(gitlab_user_info(profile).is_err());
+    }
 }
