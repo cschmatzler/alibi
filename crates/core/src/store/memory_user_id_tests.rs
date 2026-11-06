@@ -670,3 +670,125 @@ async fn legacy_user_filter_memory_operands_match_native_channel() {
 async fn legacy_user_filter_stateless_operands_match_native_channel() {
     legacy_filter_operands::<StatelessSchema>(&StatelessStore::default()).await;
 }
+
+async fn optional_user_sort<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    for (id, day, verified) in [
+        ("b", 2, true),
+        ("c", 1, true),
+        ("a", 3, true),
+        ("d", 4, false),
+    ] {
+        store
+            .create_user(CreateUser {
+                id: Some(id.into()),
+                email: Some(format!("{id}@example.test")),
+                email_verified: Some(verified),
+                created_at: Some(
+                    chrono::DateTime::parse_from_rfc3339(&format!("2020-01-{day:02}T00:00:00Z"))
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    let params = ListUsersParams {
+        search_value: Some("@example.test".into()),
+        filter_field: Some("emailVerified".into()),
+        filter_value: Some("true".into()),
+        ..Default::default()
+    };
+    let ids = |users: &[UserView]| {
+        users
+            .iter()
+            .map(|user| user.id.as_str())
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let native_order = "b c a";
+    for sort_by in [None, Some("")] {
+        for sort_direction in [None, Some("asc"), Some("desc")] {
+            let query = ListUsersParams {
+                sort_by: sort_by.map(str::to_owned),
+                sort_direction: sort_direction.map(str::to_owned),
+                ..params.clone()
+            };
+            let (users, count) = store.list_users(query.clone()).await.unwrap();
+            assert_eq!(ids(&users), native_order, "{sort_by:?} {sort_direction:?}");
+            assert_eq!(count, 3);
+            for (offset, limit) in [(0, 2), (1, 1), (2, 2), (3, 1)] {
+                let (page, total) = store
+                    .list_users(ListUsersParams {
+                        offset: Some(offset),
+                        limit: Some(limit),
+                        ..query.clone()
+                    })
+                    .await
+                    .unwrap();
+                let expected = native_order
+                    .split(' ')
+                    .skip(offset)
+                    .take(limit)
+                    .collect::<Vec<_>>();
+                assert_eq!(ids(&page), expected.join(" "));
+                assert_eq!(total, 3);
+            }
+        }
+    }
+    for (direction, expected) in [
+        (None, "c b a"),
+        (Some("asc"), "c b a"),
+        (Some("desc"), "a b c"),
+    ] {
+        let (users, count) = store
+            .list_users(ListUsersParams {
+                sort_by: Some("createdAt".into()),
+                sort_direction: direction.map(str::to_owned),
+                ..params.clone()
+            })
+            .await
+            .unwrap();
+        assert_eq!(ids(&users), expected, "{direction:?}");
+        assert_eq!(count, 3);
+    }
+    store
+        .update_user(
+            "c",
+            UpdateUser {
+                name: Some("renamed".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    let (users, count) = store.list_users(params.clone()).await.unwrap();
+    assert_eq!(ids(&users), "b c a");
+    assert_eq!(count, 3);
+    store.delete_user("c").await.unwrap();
+    let (users, count) = store.list_users(params.clone()).await.unwrap();
+    assert_eq!(ids(&users), "b a");
+    assert_eq!(count, 2);
+    store
+        .create_user(CreateUser {
+            id: Some("c".into()),
+            email: Some("c@example.test".into()),
+            email_verified: Some(true),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    let (users, count) = store.list_users(params).await.unwrap();
+    assert_eq!(ids(&users), "b a c");
+    assert_eq!(count, 3);
+}
+
+#[tokio::test]
+async fn optional_user_sort_memory_preserves_insertion_order() {
+    optional_user_sort::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn optional_user_sort_stateless_preserves_insertion_order() {
+    optional_user_sort::<StatelessSchema>(&StatelessStore::default()).await;
+}

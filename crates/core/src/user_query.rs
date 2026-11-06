@@ -232,19 +232,9 @@ fn apply<T: AuthUser + Clone>(
 ) -> (Vec<T>, usize) {
     users.retain(|user| matches_search(user, params) && matches_filter(user, params));
 
-    let sort_by = params.sort_by.as_deref().unwrap_or("createdAt");
-    // An explicit sort field defaults to ascending in the public admin API.
-    let default_direction = if params.sort_by.is_some() {
-        "asc"
-    } else {
-        "desc"
-    };
-    let sort_direction = params
-        .sort_direction
-        .as_deref()
-        .unwrap_or(default_direction);
-
-    if !presorted {
+    if !presorted && let Some(sort_by) = params.sort_by.as_deref().filter(|field| !field.is_empty())
+    {
+        let sort_direction = params.sort_direction.as_deref().unwrap_or("asc");
         users.sort_by(|lhs, rhs| match sort_by {
             "id" | "_id" | "email" | "name" | "username" | "role" => compare_options(
                 string_field(lhs, sort_by).as_deref(),

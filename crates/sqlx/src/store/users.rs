@@ -675,23 +675,15 @@ where
         let table = <S::User as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::User>(self.exec());
         self.user_list_predicates(&mut sql, &params)?;
-        let field = params
-            .sort_by
-            .as_deref()
-            .filter(|field| !field.is_empty())
-            .unwrap_or("createdAt");
-        let column = S::User::list_users_column(field)
-            .ok_or_else(|| AuthError::bad_request("User sort field has no configured column"))?;
-        sql.push(" ORDER BY ");
-        sql.column(table, column);
-        let direction = params.sort_direction.as_deref().unwrap_or_else(|| {
-            if params.sort_by.is_some() {
-                "asc"
-            } else {
-                "desc"
-            }
-        });
-        sql.push(if direction == "desc" { " DESC" } else { " ASC" });
+        if let Some(field) = params.sort_by.as_deref().filter(|field| !field.is_empty()) {
+            let column = S::User::list_users_column(field).ok_or_else(|| {
+                AuthError::bad_request("User sort field has no configured column")
+            })?;
+            sql.push(" ORDER BY ");
+            sql.column(table, column);
+            let direction = params.sort_direction.as_deref().unwrap_or("asc");
+            sql.push(if direction == "desc" { " DESC" } else { " ASC" });
+        }
         let number = |value: usize| value.to_string().parse::<f64>().ok();
         let limit = params
             .source_limit
@@ -1017,6 +1009,83 @@ mod typed_filter_tests {
             assert_eq!(count, ids.len());
         }
     }
+
+    #[tokio::test]
+    async fn optional_user_sort_sqlite_preserves_natural_order() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        _ = sqlx::query(TABLE).execute(&pool).await.unwrap();
+        _ = sqlx::query(ORDER_ROWS).execute(&pool).await.unwrap();
+        let store = SqlxStore::<FilterSchema>::new(alibi_core::AuthConfig::default(), pool);
+
+        let params = ListUsersParams {
+            search_value: Some("@example.test".into()),
+            filter_field: Some("emailVerified".into()),
+            filter_value: Some("true".into()),
+            ..Default::default()
+        };
+        for sort_by in [None, Some("")] {
+            for sort_direction in [None, Some("asc"), Some("desc")] {
+                let query = ListUsersParams {
+                    sort_by: sort_by.map(str::to_owned),
+                    sort_direction: sort_direction.map(str::to_owned),
+                    ..params.clone()
+                };
+                let (users, count) = store.list_users(query.clone()).await.unwrap();
+                let ids = users
+                    .iter()
+                    .map(|user| user.id.as_str())
+                    .collect::<Vec<_>>();
+                // This SQLite fixture's natural scan order is not a cross-backend contract.
+                assert_eq!(ids, ["b", "c", "a"], "{sort_by:?} {sort_direction:?}");
+                assert_eq!(count, 3);
+                for (offset, limit, expected) in
+                    [(0, 2, "b c"), (1, 1, "c"), (2, 2, "a"), (3, 1, "")]
+                {
+                    let (page, total) = store
+                        .list_users(ListUsersParams {
+                            offset: Some(offset),
+                            limit: Some(limit),
+                            ..query.clone()
+                        })
+                        .await
+                        .unwrap();
+                    let ids = page.iter().map(|user| user.id.as_str()).collect::<Vec<_>>();
+                    assert_eq!(ids.join(" "), expected);
+                    assert_eq!(total, 3);
+                }
+            }
+        }
+        for (direction, expected) in [
+            (None, "c b a"),
+            (Some("asc"), "c b a"),
+            (Some("desc"), "a b c"),
+        ] {
+            let (users, count) = store
+                .list_users(ListUsersParams {
+                    sort_by: Some("createdAt".into()),
+                    sort_direction: direction.map(str::to_owned),
+                    ..params.clone()
+                })
+                .await
+                .unwrap();
+            let ids = users
+                .iter()
+                .map(|user| user.id.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(ids.join(" "), expected, "{direction:?}");
+            assert_eq!(count, 3);
+        }
+    }
+
+    const ORDER_ROWS: &str = "INSERT INTO filter_user VALUES
+        ('b','middle','b@example.test',1,NULL,'2020-01-02T00:00:00Z','2020-01-02T00:00:00Z',2),
+        ('c','oldest','c@example.test',1,NULL,'2020-01-01T00:00:00Z','2020-01-01T00:00:00Z',1),
+        ('a','newest','a@example.test',1,NULL,'2020-01-03T00:00:00Z','2020-01-03T00:00:00Z',3),
+        ('d','excluded','d@example.test',0,NULL,'2020-01-04T00:00:00Z','2020-01-04T00:00:00Z',4)";
 
     const TABLE: &str = "CREATE TABLE filter_user (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL,
         emailVerified BOOLEAN NOT NULL, image TEXT, createdAt TEXT NOT NULL, updatedAt TEXT NOT NULL, score REAL NOT NULL)";

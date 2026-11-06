@@ -149,7 +149,7 @@ impl AuthSchema for BundledSchema {
 
 #[derive(Default)]
 struct State {
-    users: HashMap<crate::store::memory_user_id::MemoryUserId, UserView>,
+    users: indexmap::IndexMap<crate::store::memory_user_id::MemoryUserId, UserView>,
     sessions: HashMap<String, SessionView>,
     accounts: HashMap<String, AccountView>,
     verifications: HashMap<String, VerificationView>,
@@ -483,7 +483,7 @@ impl UserStore<BundledSchema> for MemoryStore {
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
         self.lock()
             .users
-            .remove(&crate::store::memory_user_id::MemoryUserId::string(id));
+            .shift_remove(&crate::store::memory_user_id::MemoryUserId::string(id));
         Ok(())
     }
 
