@@ -681,6 +681,63 @@ mod tests {
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     #[tokio::test]
+    async fn verification_context_cannot_override_authoritative_fields() {
+        struct Grant;
+        #[async_trait::async_trait]
+        impl DeviceAuthorizationGrant for Grant {
+            async fn authorize_request(
+                &self,
+                _: &serde_json::Map<String, Value>,
+                _: Option<&AuthRequest>,
+            ) -> Result<DeviceGrantAuthorization, DeviceGrantFailure> {
+                unreachable!()
+            }
+
+            async fn verification_context(
+                &self,
+                _: &DeviceGrantRecord,
+            ) -> AuthResult<serde_json::Map<String, Value>> {
+                Ok(serde_json::json!({
+                    "user_code": "spoofed",
+                    "status": "approved",
+                    "client_id": "other-client",
+                    "scope": "other-scope",
+                    "application": "retained"
+                }).as_object().unwrap().clone())
+            }
+        }
+        let (ctx, _, session) = create_context_with_user("reviewer@example.com").await;
+        let plugin = DeviceAuthorizationPlugin::new().grant(Grant);
+        ctx.database.create_device_code(CreateDeviceCode {
+            device_code: "context-device".into(),
+            user_code: "ABCD1234".into(),
+            user_id: None,
+            expires_at: Utc::now() + Duration::hours(1),
+            status: "pending".into(),
+            last_polled_at: None,
+            polling_interval: Some(5000),
+            client_id: Some("real-client".into()),
+            scope: Some("real-scope".into()),
+        }).await.unwrap();
+
+        let request = device_claim_request("ABCD1234", &session.token);
+        let response = plugin.handle_device_verify(&request, &ctx).await.unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(json_body(&response), serde_json::json!({
+            "user_code": "ABCD1234",
+            "status": "pending",
+            "client_id": "real-client",
+            "scope": "real-scope",
+            "application": "retained"
+        }));
+
+        let response = plugin.handle_device_verify(&device_verify_request("ABCD1234"), &ctx).await.unwrap();
+        assert_eq!(json_body(&response), serde_json::json!({
+            "user_code": "ABCD1234", "status": "pending"
+        }));
+    }
+
+    #[tokio::test]
     async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
         let ctx = test_helpers::create_test_context().await;
         let attempts = Arc::new(AtomicUsize::new(0));

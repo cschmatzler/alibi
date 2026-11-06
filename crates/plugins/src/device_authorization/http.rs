@@ -135,7 +135,9 @@ impl DeviceAuthorizationPlugin {
                 fields,
             };
             if let Some(object) = response.as_object_mut() {
-                object.extend(grant.verification_context(&record).await?);
+                let mut context = grant.verification_context(&record).await?;
+                context.append(object);
+                *object = context;
             }
         }
         AuthResponse::json(200, &response).map_err(AuthError::from)
