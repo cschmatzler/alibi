@@ -595,7 +595,12 @@ async fn load_credential_password_hash(
 ) -> AuthResult<String> {
     super::helpers::get_credential_account(ctx, user.id())
         .await?
-        .and_then(|account| account.password().map(str::to_owned))
+        .and_then(|account| {
+            account
+                .password()
+                .filter(|hash| !hash.is_empty())
+                .map(str::to_owned)
+        })
         .ok_or(AuthError::InvalidCredentials)
 }
 
@@ -941,6 +946,70 @@ mod tests {
             .unwrap();
         assert_eq!(signin_response.status, 200);
         assert_eq!(verify_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn username_sign_in_rejects_empty_hash_without_verifying() {
+        struct AcceptingHasher(Arc<AtomicUsize>);
+
+        #[async_trait]
+        impl PasswordHasher for AcceptingHasher {
+            async fn hash(&self, _: &str) -> AuthResult<String> {
+                panic!("existing credential must not trigger dummy hashing")
+            }
+
+            async fn verify(&self, _: &str, _: &str) -> AuthResult<bool> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(true)
+            }
+        }
+
+        let calls = Arc::new(AtomicUsize::new(0));
+        let plugin = EmailPasswordPlugin::new()
+            .password_hasher(Arc::new(AcceptingHasher(Arc::clone(&calls))));
+        let ctx = create_test_context().await;
+        let mut input = CreateUser::new()
+            .with_email("empty-hash@example.com")
+            .with_name("Empty Hash");
+        input.username = Some("empty_hash".into());
+        let user = ctx.database.create_user(input).await.unwrap();
+        ctx.database
+            .create_account(CreateAccount {
+                user_id: user.id().to_string(),
+                account_id: user.id().to_string(),
+                provider_id: "credential".into(),
+                password: Some(String::new()),
+                additional_fields: Default::default(),
+                access_token: None,
+                refresh_token: None,
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+            })
+            .await
+            .unwrap();
+        let body = serde_json::json!({
+            "username": "empty_hash",
+            "password": "Password123!",
+        });
+        let req = AuthRequest::from_parts(
+            HttpMethod::Post,
+            "/sign-in/username".into(),
+            HashMap::new(),
+            Some(body.to_string().into_bytes()),
+            HashMap::new(),
+        );
+        let response = plugin.handle_sign_in_username(&req, &ctx).await.unwrap();
+        assert_eq!(response.status, 401);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[tokio::test]
