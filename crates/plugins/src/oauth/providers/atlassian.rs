@@ -101,12 +101,12 @@ impl OAuthProvider {
         });
         provider.authorization_params = vec![("audience".into(), "api.atlassian.com".into())];
         provider.map_user_info = Some(atlassian_user_info);
-        if let Some(mapper) = options.map_profile_to_user {
-            provider.get_user_info = Some(std::sync::Arc::new(AtlassianMappedUserInfo {
-                url: provider.user_info_url.clone().unwrap_or_default(),
-                mapper,
-            }));
-        }
+        provider.account_subject = Some(subject);
+        provider.get_user_info = Some(std::sync::Arc::new(AtlassianMappedUserInfo {
+            url: provider.user_info_url.clone().unwrap_or_default(),
+            mapper: options.map_profile_to_user,
+            application_mapper: None,
+        }));
         provider
     }
 }
@@ -154,12 +154,23 @@ fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
         email_verified: false,
     })
 }
+#[derive(Clone)]
 struct AtlassianMappedUserInfo {
     url: String,
-    mapper: fn(Value) -> Result<OAuthUserInfo, String>,
+    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait::async_trait]
 impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn super::OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: super::OAuthUserInfoRequest,
@@ -176,20 +187,95 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             .error_for_status()
             .map_err(|error| error.to_string())?;
         let profile: Value = response.json().await.map_err(|error| error.to_string())?;
-        let mut user = (self.mapper)(profile.clone())?;
-        let user_output = Some(user.public_profile(true));
-        user.id = subject(&profile)?;
-        Ok(super::OAuthUserInfoResponse {
-            user_output,
-            user,
+        let mut output = Map::new();
+        for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
+            if let Some(value) = profile.get(source) {
+                output.insert(target.into(), value.clone());
+            }
+        }
+        output.insert("emailVerified".into(), Value::Bool(false));
+        if let Some(mapper) = self.mapper {
+            output.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            output.extend(mapper.map_profile(profile.clone()).await?);
+        }
+        let mut response = super::OAuthUserInfoResponse {
+            user_output: Some(output.clone()),
+            user: OAuthUserInfo {
+                additional_fields: Map::new(),
+                id: subject(&profile)?,
+                email: String::new(),
+                name: None,
+                image: None,
+                email_verified: false,
+            },
             data: profile,
-        })
+        };
+        let name = super::remaining_profile::scalar(output.get("name"))?;
+        super::apply_application_mapping(&mut response, output)?;
+        response.user.name = name;
+        Ok(response)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    struct Mapper;
+    #[async_trait::async_trait]
+    impl super::super::OAuthProfileMapper for Mapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            assert_eq!(profile["account_id"], "account");
+            Ok(serde_json::json!({"custom":true})
+                .as_object()
+                .unwrap()
+                .clone())
+        }
+    }
+    #[tokio::test]
+    async fn atlassian_maps_partial_fields_without_sync_mapper() {
+        let body =
+            serde_json::json!({"account_id":"account","name":false,"email":null,"picture":null});
+
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let mut options = AtlassianOptions::new("client", "secret");
+        options.user_info_endpoint = Some(endpoint);
+        let provider = OAuthProvider::atlassian_with_options(options)
+            .with_profile_mapper(std::sync::Arc::new(Mapper));
+        let response = provider
+            .get_user_info
+            .unwrap()
+            .get_user_info(super::super::OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let output = response.user_output.unwrap();
+        assert_eq!(output["name"], false);
+        assert_eq!(response.user.name.as_deref(), Some("false"));
+        assert_eq!(output["email"], Value::Null);
+        assert_eq!(output["image"], Value::Null);
+        assert_eq!(output["custom"], true);
+        assert!(!output.contains_key("id"));
+        server.await.unwrap();
+    }
     #[test]
     fn atlassian_preserves_falsy_scalar_names() {
         for (name, expected) in [
