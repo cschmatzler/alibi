@@ -503,6 +503,16 @@ pub(crate) async fn update_user_core(
         update.metadata = Some(serde_json::Value::Object(value.clone()));
     }
 
+    let registered = ctx.extensions.get::<alibi_core::field_policy::UserFields>();
+    let fields = registered
+        .as_ref()
+        .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+    for name in fields.keys() {
+        if let Some(value) = body.data.get(name) {
+            update.additional_fields.insert(name.clone(), value.clone().into());
+        }
+    }
+
     // The source resolves the target before running installed user database hooks.
     _ = ctx
         .database

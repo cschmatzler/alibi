@@ -809,6 +809,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_update_persists_trusted_additional_fields() {
+        let mut config = test_helpers::create_test_config();
+        config.user.additional_fields.insert(
+            "profileLabel".to_owned(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .field_name("displayUsername")
+                .read_only(),
+        );
+        let mut ctx = test_helpers::create_test_context_with_config(config).await;
+        let init = alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
+        ctx.database = init.database_with_registered_transforms();
+        let admin = test_helpers::create_user(&ctx,
+            CreateUser::new().with_email("admin@fixture.test").with_role("admin")).await;
+        let user = test_helpers::create_user(&ctx,
+            CreateUser::new().with_email("profile@fixture.test")).await;
+        let data = serde_json::json!({"profileLabel":"Trusted label","unconfigured":"Ignored"});
+        let input = types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
+        let output = handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx).await.unwrap();
+        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        use alibi_core::entity::AuthUser as _;
+        assert_eq!(stored.display_username(), Some("Trusted label"));
+        assert_eq!(output.values()["profileLabel"], "Trusted label");
+        assert!(!output.values().contains_key("unconfigured"));
+    }
+
+    #[tokio::test]
     async fn admin_update_preserves_plugin_profile_fields() {
         let (ctx, admin, _, user, _) = create_admin_context().await;
         for (data, anonymous, method) in [
