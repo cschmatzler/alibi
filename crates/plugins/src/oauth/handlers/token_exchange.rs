@@ -172,32 +172,15 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
         }
         return Ok(request.form(&form));
     }
-    // Generic parameter policies use the published automatic authentication
-    // selection. Retain the legacy transport for providers with no additions.
-    let authentication = authentication.or_else(|| {
-        provider.authorization.as_ref().and_then(|policy| {
-            let additions = if grant_type == OAuthTokenGrant::RefreshToken {
-                &policy.refresh_token_params
-            } else {
-                &policy.authorization_code_params
-            };
-            (!additions.is_empty()).then_some(if provider.client_secret.is_empty() {
-                OAuthTokenEndpointAuth::None
-            } else {
-                OAuthTokenEndpointAuth::ClientSecretPost
-            })
-        })
+    let authentication = authentication.unwrap_or_else(|| {
+        if provider.client_secret.is_empty() {
+            OAuthTokenEndpointAuth::None
+        } else {
+            OAuthTokenEndpointAuth::ClientSecretPost
+        }
     });
     let request = match authentication {
-        None => {
-            form.retain(|(key, _)| key != "client_id" && key != "client_secret");
-            form.extend([
-                ("client_id".into(), provider.client_id.clone()),
-                ("client_secret".into(), provider.client_secret.clone()),
-            ]);
-            request
-        }
-        Some(OAuthTokenEndpointAuth::None) => {
+        OAuthTokenEndpointAuth::None => {
             if provider.client_id.is_empty()
                 || !provider.client_secret.is_empty()
                 || has_field("client_secret")
@@ -210,7 +193,7 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
             form.push(("client_id".into(), provider.client_id.clone()));
             request
         }
-        Some(OAuthTokenEndpointAuth::PrivateKeyJwt) => {
+        OAuthTokenEndpointAuth::PrivateKeyJwt => {
             if provider.client_id.is_empty()
                 || provider.token_url.is_empty()
                 || !provider.client_secret.is_empty()
@@ -244,7 +227,7 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
             ]);
             request
         }
-        Some(OAuthTokenEndpointAuth::ClientKeyPost) => {
+        OAuthTokenEndpointAuth::ClientKeyPost => {
             form.retain(|(key, _)| key != "client_key" && key != "client_secret");
             form.extend([
                 ("client_key".into(), provider.client_id.clone()),
@@ -252,7 +235,7 @@ pub(in crate::oauth::handlers) async fn provider_token_request(
             ]);
             request
         }
-        Some(method) => {
+        method => {
             if provider.client_id.is_empty() || provider.client_secret.is_empty() {
                 return Err(AuthError::config(
                     "Client ID and client secret are required",
@@ -573,4 +556,36 @@ pub(crate) async fn fetch_user_info_from_provider(
         data: user_info_json,
     };
     Ok(response)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn automatic_token_authentication_omits_empty_secrets() {
+        for grant in [
+            OAuthTokenGrant::AuthorizationCode,
+            OAuthTokenGrant::RefreshToken,
+        ] {
+            for secret in ["", "secret"] {
+                let mut provider =
+                    crate::oauth::providers::GenericOAuthConfig::new("client", secret).provider;
+                provider.token_url = "https://example.com/token".into();
+                let request = provider_token_request(&provider, &[("grant_type", "test")], grant)
+                    .await
+                    .unwrap()
+                    .build()
+                    .unwrap();
+                let body = request.body().unwrap().as_bytes().unwrap();
+                let fields: std::collections::HashMap<_, _> =
+                    url::form_urlencoded::parse(body).collect();
+                assert_eq!(fields.get("client_id").map(|v| v.as_ref()), Some("client"));
+                assert_eq!(
+                    fields.get("client_secret").map(|v| v.as_ref()),
+                    (!secret.is_empty()).then_some(secret)
+                );
+            }
+        }
+    }
 }
