@@ -14,7 +14,6 @@ async fn username_context(
         init.register_user_create_transform(move |mut data| {
             events.lock().unwrap().push("before".into());
             data.username = Some("ORDERED".into());
-            data.adapter_native_fields.remove("username");
             Ok(data)
         });
     }

@@ -165,6 +165,55 @@ pub struct UpdateVerification {
     pub expires_at: Option<DateTime<Utc>>,
 }
 
+macro_rules! native_shadow_reconciliation {
+    ($input:ty; $($field:ident => $key:literal),* $(,)?) => {
+        impl $input {
+    /// Reconcile the two native callback interfaces after a typed transform.
+    /// Explicit raw edits win. Removing a raw override restores typed fallback;
+    /// it does not create an own JavaScript undefined property.
+    pub(crate) fn reconcile_native_shadows(&mut self, before: &Self) {
+        for (key, changed) in [$(($key, self.$field != before.$field)),*] {
+            if changed && self.adapter_native_fields.get(key) == before.adapter_native_fields.get(key) {
+                self.adapter_native_fields.remove(key);
+            }
+        }
+        if self.name != before.name && self.provider_name == before.provider_name {
+            self.provider_name = None;
+        }
+        if self.email != before.email && self.provider_email == before.provider_email {
+            self.provider_email = None;
+        }
+        if self.image != before.image && self.provider_image == before.provider_image {
+            self.provider_image = None;
+        }
+        if self.email_verified != before.email_verified
+            && self.provider_email_verified == before.provider_email_verified {
+            self.provider_email_verified = None;
+        }
+    }
+        }
+    };
+}
+
+native_shadow_reconciliation!(CreateUser;
+    id => "id", name => "name", email => "email", image => "image",
+    email_verified => "emailVerified", username => "username",
+    display_username => "displayUsername", two_factor_enabled => "twoFactorEnabled",
+    role => "role", banned => "banned", metadata => "metadata",
+    is_anonymous => "isAnonymous", phone_number => "phoneNumber",
+    phone_number_verified => "phoneNumberVerified", last_login_method => "lastLoginMethod",
+    created_at => "createdAt", updated_at => "updatedAt",
+);
+native_shadow_reconciliation!(UpdateUser;
+    name => "name", email => "email", image => "image",
+    email_verified => "emailVerified", username => "username",
+    display_username => "displayUsername", two_factor_enabled => "twoFactorEnabled",
+    role => "role", banned => "banned", metadata => "metadata",
+    is_anonymous => "isAnonymous", phone_number => "phoneNumber",
+    phone_number_verified => "phoneNumberVerified", last_login_method => "lastLoginMethod",
+    ban_reason => "banReason", clear_ban_reason => "banReason", ban_expires => "banExpires",
+);
+
 impl CreateUser {
     #[must_use]
     pub fn new() -> Self {

@@ -48,6 +48,129 @@ async fn raw_username_lookup_keeps_memory_scalar_equality() {
     );
 }
 
+#[tokio::test]
+async fn typed_user_create_transform_invalidates_only_unchanged_raw_shadows() {
+    use crate::utils::json::JsValue;
+    let config = Arc::new(AuthConfig::default());
+    let physical = Arc::new(MemoryStore::new(config.clone()));
+    let mut init = AuthInitContext::<BundledSchema>::new(config, physical);
+    init.register_user_create_transform(|mut data| {
+        data.name = Some("typed replacement".into());
+        data.email = Some("typed@fixture.test".into());
+        data.username = Some("typed-user".into());
+        Ok(data)
+    });
+    init.register_user_create_transform(|data| {
+        assert_eq!(data.provider_name, None);
+        assert_eq!(data.provider_email, None);
+        assert!(!data.adapter_native_fields.contains_key("username"));
+        Ok(data)
+    });
+    let database = init.database_with_registered_transforms();
+    let mut input = CreateUser::new().with_email("original@fixture.test");
+    input.provider_name = Some(JsValue::Null);
+    input.provider_email = Some(JsValue::String("original@fixture.test".into()));
+    input
+        .adapter_native_fields
+        .insert("username".into(), serde_json::json!(42));
+    let user = database.create_user(input).await.unwrap();
+    assert_eq!(user.name.as_deref(), Some("typed replacement"));
+    assert_eq!(user.email.as_deref(), Some("typed@fixture.test"));
+    assert_eq!(user.username.as_deref(), Some("typed-user"));
+}
+
+#[test]
+fn raw_user_shadows_keep_explicit_edits_and_preserve_undefined_and_removal() {
+    use crate::utils::json::{JsString, JsValue};
+    let mut before = CreateUser::new().with_name("original");
+    before.provider_name = Some(JsValue::String(JsString::from_code_units(vec![0xd800])));
+    before.provider_email = Some(JsValue::Undefined);
+    before.provider_image = Some(JsValue::Null);
+    before
+        .adapter_native_fields
+        .insert("username".into(), serde_json::json!(42));
+
+    before.id = Some("original-id".into());
+    before
+        .adapter_native_fields
+        .insert("id".into(), serde_json::json!(42));
+    let mut changed_id = before.clone();
+    changed_id.id = Some("typed-id".into());
+    changed_id.reconcile_native_shadows(&before);
+    assert!(!changed_id.adapter_native_fields.contains_key("id"));
+    let mut explicit_id = before.clone();
+    explicit_id.id = Some("typed-id".into());
+    explicit_id
+        .adapter_native_fields
+        .insert("id".into(), serde_json::Value::Null);
+    explicit_id.reconcile_native_shadows(&before);
+    assert_eq!(
+        explicit_id.adapter_native_fields["id"],
+        serde_json::Value::Null
+    );
+
+    let mut unchanged = before.clone();
+    unchanged.reconcile_native_shadows(&before);
+    assert_eq!(unchanged.provider_name, before.provider_name);
+    assert_eq!(unchanged.provider_email, Some(JsValue::Undefined));
+    assert_eq!(unchanged.provider_image, Some(JsValue::Null));
+
+    for explicit in [Some(JsValue::Null), Some(JsValue::Undefined), None] {
+        let mut edited = before.clone();
+        edited.name = Some("typed replacement".into());
+        edited.provider_name = explicit.clone();
+        edited.username = Some("typed-user".into());
+        edited
+            .adapter_native_fields
+            .insert("username".into(), serde_json::json!("explicit-raw"));
+        edited.reconcile_native_shadows(&before);
+        assert_eq!(edited.provider_name, explicit);
+        assert_eq!(
+            edited.adapter_native_fields["username"],
+            serde_json::json!("explicit-raw")
+        );
+    }
+    let mut removed = before.clone();
+    removed.provider_name = None;
+    removed.adapter_native_fields.remove("username");
+    removed.reconcile_native_shadows(&before);
+    assert_eq!(removed.provider_name, None);
+    assert_eq!(removed.name.as_deref(), Some("original"));
+    assert!(!removed.adapter_native_fields.contains_key("username"));
+}
+
+#[test]
+fn update_raw_shadow_reconciliation_uses_the_same_explicit_edit_precedence() {
+    use crate::utils::json::JsValue;
+    let mut before = crate::UpdateUser::default();
+    before.provider_name = Some(JsValue::Undefined);
+    before.provider_image = Some(JsValue::Null);
+    before
+        .adapter_native_fields
+        .insert("username".into(), serde_json::json!(42));
+
+    let mut typed = before.clone();
+    typed.name = Some("typed".into());
+    typed.username = Some("typed-user".into());
+    typed.reconcile_native_shadows(&before);
+    assert_eq!(typed.provider_name, None);
+    assert_eq!(typed.provider_image, Some(JsValue::Null));
+    assert!(!typed.adapter_native_fields.contains_key("username"));
+
+    for explicit in [Some(JsValue::Null), Some(JsValue::Undefined), None] {
+        let mut edited = before.clone();
+        edited.image = Some("typed-image".into());
+        edited.provider_image = explicit.clone();
+        edited.reconcile_native_shadows(&before);
+        if explicit == before.provider_image {
+            assert_eq!(edited.provider_image, None);
+        } else {
+            assert_eq!(edited.provider_image, explicit);
+        }
+        assert_eq!(edited.image.as_deref(), Some("typed-image"));
+    }
+}
+
 type Events = Arc<Mutex<Vec<&'static str>>>;
 
 struct Identity(Events);

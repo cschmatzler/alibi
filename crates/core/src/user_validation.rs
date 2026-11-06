@@ -168,7 +168,10 @@ pub async fn validate_user_info(
             "User validation requires an endpoint context",
         ));
     }
-    match validator.validate(data, &context).await {
+    let before = data.user.clone();
+    let result = validator.validate(data, &context).await;
+    data.user.reconcile_native_shadows(&before);
+    match result {
         Ok(Some(rejection)) if !rejection.error.is_empty() => {
             let message = rejection
                 .error_description

@@ -46,7 +46,12 @@ pub(in crate::store) async fn create_user_data<S: AuthSchema>(
 ) -> AuthResult<CreateUser> {
     for step in steps {
         data = match step {
-            UserCreateStep::Transform(transform) => transform(data)?,
+            UserCreateStep::Transform(transform) => {
+                let before = data.clone();
+                let mut transformed = transform(data)?;
+                transformed.reconcile_native_shadows(&before);
+                transformed
+            }
             UserCreateStep::Hook(hook) => hook.before_create(data, context, transaction).await?,
         };
     }
