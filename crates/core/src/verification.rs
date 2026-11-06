@@ -15,7 +15,7 @@ use crate::{
 };
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, Utc};
 use indexmap::IndexMap;
 use sha2::{Digest, Sha256};
 use std::{any::Any, fmt, sync::Arc};
@@ -588,7 +588,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
 }
 
 fn date_json(date: DateTime<Utc>) -> String {
-    date.to_rfc3339_opts(SecondsFormat::Millis, true)
+    crate::utils::datetime::json_date_millis(date.timestamp_millis())
 }
 fn key(identifier: &str) -> String {
     format!("verification:{identifier}")
@@ -664,5 +664,35 @@ fn patch(fields: &mut IndexMap<String, JsValue>, data: &UpdateVerification) {
     }
     if let Some(expires) = data.expires_at {
         _ = fields.insert("expiresAt".into(), JsValue::String(date_json(expires)));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn expanded_verification_dates_survive_cache_hydration() {
+        for (year, expected) in [
+            (10000, "+010000-01-01T00:00:00.000Z"),
+            (-1, "-000001-01-01T00:00:00.000Z"),
+        ] {
+            let date = Utc.with_ymd_and_hms(year, 1, 1, 0, 0, 0).unwrap();
+            let snapshot = VerificationCreation {
+                id: None,
+                identifier: "test".into(),
+                value: "value".into(),
+                expires_at: date,
+                created_at: date,
+                updated_at: date,
+            }.snapshot();
+            for field in ["expiresAt", "createdAt", "updatedAt"] {
+                assert_eq!(snapshot.data().get(field).and_then(JsValue::as_str), Some(expected));
+            }
+            let raw = json::to_string(snapshot.data()).unwrap();
+            let cached = VerificationSnapshot::cached(&raw).unwrap().hydrate().unwrap();
+            assert_eq!(cached.expires_at().unwrap(), date);
+        }
     }
 }
