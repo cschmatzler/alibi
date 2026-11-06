@@ -7,7 +7,7 @@ use async_trait::async_trait;
 use indexmap::IndexMap;
 use std::collections::BTreeSet;
 use std::sync::{Arc, LazyLock, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// A compiled `per_endpoint` key. Patterns without `*` match exactly.
 #[derive(Debug)]
@@ -70,15 +70,10 @@ impl MemoryRateLimitStorage {
         &self,
         key: String,
         limit: &EndpointRateLimit,
+        now: f64,
     ) -> AuthResult<RateLimitDecision> {
-        let now = Instant::now();
-        let deadline = if limit.window_seconds <= 0.0 {
-            Some(now)
-        } else {
-            Duration::try_from_secs_f64(limit.window_seconds)
-                .ok()
-                .and_then(|window| now.checked_add(window))
-        };
+        let window_in_ms = limit.window_seconds * 1000.0;
+        let deadline = now + window_in_ms;
         let mut state = self
             .state
             .lock()
@@ -86,37 +81,35 @@ impl MemoryRateLimitStorage {
         while state
             .expirations
             .first()
-            .is_some_and(|(expiry, _)| *expiry <= now)
+            .is_some_and(|(expiry, _)| expiry.0 <= now)
         {
             if let Some((_, expired_key)) = state.expirations.pop_first() {
                 _ = state.buckets.shift_remove(&expired_key);
             }
         }
         while state.buckets.len() > self.max_buckets {
-            if let Some((expired_key, bucket)) = state.buckets.shift_remove_index(0)
-                && let Some(deadline) = bucket.deadline
-            {
-                _ = state.expirations.remove(&(deadline, expired_key));
+            if let Some((expired_key, bucket)) = state.buckets.shift_remove_index(0) {
+                _ = state
+                    .expirations
+                    .remove(&(MemoryExpiration(bucket.deadline), expired_key));
             }
         }
         let count = if let Some(previous) = state
             .buckets
             .get(&key)
             .copied()
-            .filter(|bucket| !bucket.invalid_expiration)
+            .filter(|bucket| now < bucket.deadline)
         {
-            let elapsed = now.duration_since(previous.last_request).as_secs_f64();
-            let expired = elapsed >= limit.window_seconds;
+            let elapsed = now - previous.last_request;
+            let expired = elapsed >= window_in_ms;
             if !expired && previous.count >= limit.max_requests {
                 return Ok(RateLimitDecision::Blocked {
-                    retry_after: (limit.window_seconds
-                        - now.duration_since(previous.last_request).as_secs_f64())
-                    .ceil(),
+                    retry_after: ((previous.last_request + window_in_ms - now) / 1000.0).ceil(),
                 });
             }
-            if let Some(deadline) = previous.deadline {
-                _ = state.expirations.remove(&(deadline, key.clone()));
-            }
+            _ = state
+                .expirations
+                .remove(&(MemoryExpiration(previous.deadline), key.clone()));
             if expired { 1.0 } else { previous.count + 1.0 }
         } else {
             1.0
@@ -125,13 +118,12 @@ impl MemoryRateLimitStorage {
             key.clone(),
             Bucket {
                 deadline,
-                invalid_expiration: limit.window_seconds.is_nan(),
                 last_request: now,
                 count,
             },
         );
-        if let Some(deadline) = deadline {
-            _ = state.expirations.insert((deadline, key));
+        if !deadline.is_nan() {
+            _ = state.expirations.insert((MemoryExpiration(deadline), key));
         }
         Ok(RateLimitDecision::Allowed)
     }
@@ -140,7 +132,11 @@ impl MemoryRateLimitStorage {
 #[async_trait]
 impl RateLimitStorage for MemoryRateLimitStorage {
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
-        self.consume_memory(key.to_owned(), rule)
+        self.consume_memory(
+            key.to_owned(),
+            rule,
+            crate::utils::javascript::number_from_i64(chrono::Utc::now().timestamp_millis()),
+        )
     }
 }
 
@@ -332,15 +328,37 @@ static MEMORY_RATE_LIMIT_STATE: LazyLock<Arc<Mutex<RateLimitState>>> =
 #[derive(Debug, Default)]
 struct RateLimitState {
     buckets: IndexMap<String, Bucket>,
-    expirations: BTreeSet<(Instant, String)>,
+    expirations: BTreeSet<(MemoryExpiration, String)>,
 }
 
 #[derive(Debug, Clone, Copy)]
 struct Bucket {
-    deadline: Option<Instant>,
-    invalid_expiration: bool,
-    last_request: Instant,
+    deadline: f64,
+    last_request: f64,
     count: f64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct MemoryExpiration(f64);
+
+impl PartialEq for MemoryExpiration {
+    fn eq(&self, other: &Self) -> bool {
+        self.cmp(other).is_eq()
+    }
+}
+
+impl Eq for MemoryExpiration {}
+
+impl PartialOrd for MemoryExpiration {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MemoryExpiration {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.total_cmp(&other.0)
+    }
 }
 
 const AUTH_LIMIT: EndpointRateLimit = EndpointRateLimit {
@@ -729,6 +747,60 @@ mod tests {
                 .unwrap()
                 <= 10
         );
+    }
+
+    #[test]
+    fn memory_quotas_use_signed_wall_clock_milliseconds() {
+        let storage = MemoryRateLimitStorage::new(2);
+        let rule = EndpointRateLimit {
+            window_seconds: 10.0,
+            max_requests: 1.0,
+        };
+        assert!(matches!(
+            storage
+                .consume_memory("rollback".into(), &rule, 3000.0)
+                .unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        for (now, expected_retry) in [(1000.0, 12.0), (12999.0, 1.0)] {
+            let RateLimitDecision::Blocked { retry_after } = storage
+                .consume_memory("rollback".into(), &rule, now)
+                .unwrap()
+            else {
+                panic!("rollback must retain the existing quota");
+            };
+            assert_eq!(retry_after, expected_retry);
+        }
+        assert!(matches!(
+            storage
+                .consume_memory("rollback".into(), &rule, 13000.0)
+                .unwrap(),
+            RateLimitDecision::Allowed
+        ));
+
+        let fractional = EndpointRateLimit {
+            window_seconds: 0.0001,
+            max_requests: 1.0,
+        };
+        assert!(matches!(
+            storage
+                .consume_memory("fractional".into(), &fractional, 1000.0)
+                .unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        let RateLimitDecision::Blocked { retry_after } = storage
+            .consume_memory("fractional".into(), &fractional, 1000.0)
+            .unwrap()
+        else {
+            panic!("requests in the same millisecond share the quota");
+        };
+        assert_eq!(retry_after, 1.0);
+        assert!(matches!(
+            storage
+                .consume_memory("fractional".into(), &fractional, 1001.0)
+                .unwrap(),
+            RateLimitDecision::Allowed
+        ));
     }
 
     #[tokio::test]
