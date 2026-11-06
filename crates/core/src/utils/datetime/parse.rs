@@ -178,6 +178,8 @@ fn parse_legacy(value: &str) -> Option<i64> {
     for format in [
         "%b %d %Y %H:%M:%S%.f %z",
         "%d %b %Y %H:%M:%S%.f %z",
+        "%b %d %Y %H:%M %z",
+        "%d %b %Y %H:%M %z",
         "%b %d %Y %H:%M:%S%.f GMT",
         "%d %b %Y %H:%M:%S%.f GMT",
         "%b %d %Y %H:%M:%S%.f UTC",
@@ -207,6 +209,12 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%m/%d/%Y %H:%M:%S%.f",
         "%Y/%m/%d %H:%M:%S%.f",
         "%Y-%m-%d %H:%M:%S%.f",
+        "%b %d %Y %H:%M",
+        "%d %b %Y %H:%M",
+        "%m/%d/%Y %H:%M",
+        "%Y/%m/%d %H:%M",
+        "%b %d %Y %I:%M %p",
+        "%d %b %Y %I:%M %p",
         "%b %d %Y %I:%M:%S %p",
         "%d %b %Y %I:%M:%S %p",
     ] {
@@ -317,6 +325,20 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_datetime_seconds_are_optional() {
+        for (input, expected) in [
+            ("Jan 1 2024 12:34 GMT", "2024-01-01T12:34:00Z"),
+            ("1 Jan 2024 12:34 EST", "2024-01-01T17:34:00Z"),
+            ("Jan 1 2024 12:34", "2024-01-01T12:34:00"),
+            ("2024/1/1 12:34", "2024-01-01T12:34:00"),
+            ("1/1/2024 12:34", "2024-01-01T12:34:00"),
+            ("Jan 1 2024 1:34 PM", "2024-01-01T13:34:00"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+    }
 
     #[test]
     fn legacy_datetime_years_use_javascript_century_pivot() {
