@@ -225,7 +225,7 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
         Some(Arc::new(handler))
     }
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String> {
-        token_request(
+        let mut tokens = token_request(
             &self.refresh_endpoint,
             &self.client_ids,
             &[
@@ -233,7 +233,12 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
                 ("refresh_token", refresh_token),
             ],
         )
-        .await
+        .await?;
+        if let Some(Value::Object(raw)) = &mut tokens.raw {
+            _ = raw.remove("openid");
+            _ = raw.remove("unionid");
+        }
+        Ok(tokens)
     }
 }
 #[derive(Clone)]
@@ -415,6 +420,39 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn wechat_refresh_does_not_publish_code_grant_identity() {
+        for refresh in [false, true] {
+            let (endpoint, captured) = profile_server(json!({"scope": "snsapi_login", "access_token": "access", "refresh_token": "next", "openid": "openid", "unionid": "unionid", "expires_in": 3600})).await;
+            let grants = WeChatGrants {
+                client_ids: vec!["client".into()],
+                client_secret: "secret".into(),
+                token_endpoint: endpoint.clone(),
+                refresh_endpoint: endpoint,
+            };
+            let tokens = if refresh {
+                grants.refresh_access_token("refresh").await.unwrap()
+            } else {
+                grants
+                    .validate_authorization_code(OAuthAuthorizationCodeContext {
+                        code: "code".into(),
+                        redirect_uri: String::new(),
+                        code_verifier: None,
+                        device_id: None,
+                    })
+                    .await
+                    .unwrap()
+            };
+            captured.await.unwrap();
+            assert_eq!(tokens.access_token.as_deref(), Some("access"));
+            assert_eq!(tokens.refresh_token.as_deref(), Some("next"));
+            assert_eq!(tokens.scopes, ["snsapi_login"]);
+            let raw = tokens.raw.unwrap();
+            assert_eq!(raw.get("openid").is_some(), !refresh);
+            assert_eq!(raw.get("unionid").is_some(), !refresh);
+        }
     }
 
     #[tokio::test]
