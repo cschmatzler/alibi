@@ -679,11 +679,99 @@ async fn stateless_ban_expiry_comparisons_keep_native_truthiness_and_timeclip() 
             .await
             .unwrap();
         assert_eq!(
-            super::super::ban_expired_at(&user, Utc::now()),
+            super::super::ban_expired_at(&user, Utc::now()).unwrap(),
             expired,
             "{expiry}"
         );
         let stored = store.get_user_by_id(&user.id).await.unwrap().unwrap();
         assert_eq!(serde_json::to_value(stored).unwrap()["banExpires"], expiry);
+    }
+}
+
+#[tokio::test]
+async fn stateless_structured_ban_expiry_uses_date_primitive_conversion_and_errors() {
+    use alibi_core::store::SessionCreatedHook;
+    let ctx = AuthContext::new(
+        Arc::new(crate::test_helpers::create_test_config()),
+        Arc::new(alibi_core::store::stateless::StatelessStore::default()),
+    );
+    for (index, (expiry, expired)) in [
+        (serde_json::json!(["2000-01-01"]), Some(true)),
+        (serde_json::json!([0]), Some(true)),
+        (serde_json::json!([["2000-01-01"]]), Some(true)),
+        (serde_json::json!([]), Some(false)),
+        (serde_json::json!({}), Some(false)),
+        (serde_json::json!({"toString": null}), None),
+        (serde_json::json!({"toString": 1}), None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let user = ctx
+            .database
+            .create_user_record(alibi_core::CreateUser {
+                email: Some(format!("structured-expiry-{index}@fixture.test")),
+                banned: Some(true),
+                adapter_native_fields: [
+                    ("banExpires".into(), expiry.clone()),
+                    ("banReason".into(), serde_json::json!("retained")),
+                ]
+                .into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let result = AdminSessionGuard
+            .before_create(
+                &CreateSession {
+                    user_id: user.id().to_string(),
+                    expires_at: Utc::now() + Duration::hours(1),
+                    token: None,
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                    additional_fields: Default::default(),
+                },
+                &ctx,
+                None,
+            )
+            .await;
+        if let Some(expired) = expired {
+            assert_eq!(result.is_ok(), expired, "{expiry}: {result:?}");
+        } else {
+            let error = result.unwrap_err();
+            assert_eq!(error.status_code(), 500);
+            assert!(
+                error
+                    .to_string()
+                    .contains("Cannot convert object to primitive value")
+            );
+        }
+        let stored = ctx
+            .database
+            .get_user_by_id_record(user.id().as_ref())
+            .await
+            .unwrap()
+            .unwrap();
+        let wire = serde_json::to_value(UserView::from(&stored)).unwrap();
+        assert_eq!(stored.banned(), expired != Some(true));
+        assert_eq!(
+            wire["banExpires"],
+            if expired == Some(true) {
+                serde_json::Value::Null
+            } else {
+                expiry
+            }
+        );
+        assert_eq!(
+            wire["banReason"],
+            if expired == Some(true) {
+                serde_json::Value::Null
+            } else {
+                serde_json::json!("retained")
+            }
+        );
     }
 }

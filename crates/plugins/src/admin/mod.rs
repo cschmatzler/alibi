@@ -193,7 +193,10 @@ alibi_core::impl_auth_plugin! {
     }
 }
 
-fn ban_expired_at(user: &impl alibi_core::AuthUser, now: chrono::DateTime<chrono::Utc>) -> bool {
+fn ban_expired_at(
+    user: &impl alibi_core::AuthUser,
+    now: chrono::DateTime<chrono::Utc>,
+) -> AuthResult<bool> {
     if let Some(value) = user
         .adapter_snapshot()
         .and_then(|output| output.values().get("banExpires"))
@@ -203,7 +206,7 @@ fn ban_expired_at(user: &impl alibi_core::AuthUser, now: chrono::DateTime<chrono
         })
     {
         if !alibi_core::utils::json::JsValue::from(value.clone()).is_truthy() {
-            return false;
+            return Ok(false);
         }
         let millis = match value {
             serde_json::Value::Number(value) => value
@@ -214,11 +217,17 @@ fn ban_expired_at(user: &impl alibi_core::AuthUser, now: chrono::DateTime<chrono
             serde_json::Value::String(value) => {
                 alibi_core::utils::datetime::parse_date_millis(value).map(|value| value as f64)
             }
+            serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
+                let text = alibi_core::utils::json::JsValue::from(value.clone())
+                    .coerce_string()
+                    .map_err(AuthError::internal)?;
+                alibi_core::utils::datetime::parse_date_millis(&text).map(|value| value as f64)
+            }
             _ => None,
         };
-        return millis.is_some_and(|value| value < now.timestamp_millis() as f64);
+        return Ok(millis.is_some_and(|value| value < now.timestamp_millis() as f64));
     }
-    user.ban_expires().is_some_and(|expiry| expiry < now)
+    Ok(user.ban_expires().is_some_and(|expiry| expiry < now))
 }
 
 struct AdminSessionGuard;
@@ -241,7 +250,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::store::SessionCreatedHook<S> for Adm
         if !user.banned() {
             return Ok(());
         }
-        if ban_expired_at(&user, chrono::Utc::now()) {
+        if ban_expired_at(&user, chrono::Utc::now())? {
             let update = alibi_core::UpdateUser {
                 banned: Some(false),
                 clear_ban_reason: true,

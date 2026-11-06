@@ -787,7 +787,7 @@ pub(crate) async fn impersonate_user_core(
     }
 
     if target.banned() {
-        if super::ban_expired_at(&target, Utc::now()) {
+        if super::ban_expired_at(&target, Utc::now())? {
             _ = ctx
                 .database
                 .update_user_record(
