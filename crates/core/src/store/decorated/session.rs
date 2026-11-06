@@ -159,6 +159,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.update_session_fields(token, fields).await
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
+        let created_at = chrono::Utc::now();
         for callback in &self.session_callbacks.callbacks {
             callback
                 .before_create(&create_session, &self.projection_context, None)
@@ -180,7 +181,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             self.inner.create_session(create_session).await?
         };
         self.remember_ephemeral_session(&session)?;
-        self.mirror_created_session(&session).await?;
+        self.mirror_created_session(&session, created_at).await?;
         if self.secondary().is_some() || self.config.session.stateless {
             self.inner
                 .complete_secondary_session_creation(&session)

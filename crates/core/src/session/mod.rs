@@ -895,6 +895,79 @@ mod publication_contract_tests {
     use crate::store::write_transaction;
     use crate::test_store::{BundledSchema, MemoryStore};
 
+    #[derive(Clone, Debug, serde::Serialize)]
+    struct ManualCodecSession(crate::SessionView);
+
+    impl crate::AuthSession for ManualCodecSession {
+        fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
+            Ok(serde_json::json!({ "manualCreationClock": self.0.created_at }))
+        }
+        fn id(&self) -> std::borrow::Cow<'_, str> {
+            self.0.id()
+        }
+        fn expires_at(&self) -> chrono::DateTime<chrono::Utc> {
+            self.0.expires_at()
+        }
+        fn token(&self) -> &str {
+            self.0.token()
+        }
+        fn created_at(&self) -> chrono::DateTime<chrono::Utc> {
+            self.0.created_at()
+        }
+        fn updated_at(&self) -> chrono::DateTime<chrono::Utc> {
+            self.0.updated_at()
+        }
+        fn ip_address(&self) -> Option<&str> {
+            self.0.ip_address()
+        }
+        fn user_agent(&self) -> Option<&str> {
+            self.0.user_agent()
+        }
+        fn user_id(&self) -> std::borrow::Cow<'_, str> {
+            self.0.user_id()
+        }
+        fn impersonated_by(&self) -> Option<&str> {
+            self.0.impersonated_by()
+        }
+        fn active_organization_id(&self) -> Option<&str> {
+            self.0.active_organization_id()
+        }
+    }
+
+    #[tokio::test]
+    async fn manual_creation_codec_preserves_its_keys_and_fails_closed_on_clock_correction() {
+        use crate::AuthSession;
+        use crate::store::SessionStore;
+        let store = MemoryStore::default();
+        let session = ManualCodecSession(
+            store
+                .create_session(crate::CreateSession {
+                    user_id: "manual-owner".into(),
+                    token: None,
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                    additional_fields: Default::default(),
+                })
+                .await
+                .unwrap(),
+        );
+        assert_eq!(
+            session
+                .secondary_snapshot_for_creation(session.created_at())
+                .unwrap(),
+            serde_json::json!({"manualCreationClock": session.created_at()})
+        );
+        assert!(matches!(
+            session.secondary_snapshot_for_creation(session.created_at() + chrono::Duration::milliseconds(1)),
+            Err(AuthError::NotImplemented(message))
+                if message == "Secondary session creation timestamp correction is unsupported"
+        ));
+    }
+
     struct UnexpectedPublication;
 
     #[async_trait::async_trait]

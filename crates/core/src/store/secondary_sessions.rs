@@ -38,12 +38,17 @@ impl<S: AuthSchema> super::SessionRevocation for CachedUserRevocation<S> {
 struct DeferredSessionPublication<S: AuthSchema> {
     store: PluginStore<S>,
     session: S::Session,
+    created_at: DateTime<Utc>,
 }
 
 #[async_trait::async_trait]
 impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublication<S> {
     async fn publish(&self) {
-        if let Err(error) = self.store.mirror_created_session(&self.session).await {
+        if let Err(error) = self
+            .store
+            .mirror_created_session(&self.session, self.created_at)
+            .await
+        {
             tracing::error!(%error, "Failed to mirror committed session to secondary storage");
         }
     }
@@ -216,23 +221,15 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(Some((session, user)))
     }
 
-    pub(super) async fn mirror_session(
-        &self,
-        session: &S::Session,
-        user: &S::User,
-    ) -> AuthResult<()> {
-        self.mirror_session_fields(session, user, None).await
-    }
-
     pub(super) async fn mirror_session_fields(
         &self,
         session: &S::Session,
         user: &S::User,
         updated_fields: Option<&FieldValues>,
     ) -> AuthResult<()> {
-        let Some(cache) = self.secondary() else {
+        if self.secondary().is_none() {
             return Ok(());
-        };
+        }
         let now = Utc::now();
         let mut references = self.references(session.user_id().as_ref()).await?;
         references.retain(|reference| reference.token != session.token());
@@ -240,62 +237,73 @@ impl<S: AuthSchema> PluginStore<S> {
             token: session.token().to_owned(),
             expires_at: session.expires_at(),
         });
-        // Creation writes the index first; updates write the credential first.
-        // Keep both partial failure boundaries visible.
-        let updating = updated_fields.is_some();
-        if !updating {
-            self.write_references(session.user_id().as_ref(), references.clone())
-                .await?;
-        }
         let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
         if ttl > Duration::zero() {
-            let mut absent_fields = if let Some(raw) = cache.get(session.token()).await? {
-                CachedSession::absent_fields(&raw)
-            } else if !self.config.session.store_in_database {
-                let mut absent = BTreeSet::new();
-                for (name, value) in [
-                    ("impersonatedBy", session.impersonated_by()),
-                    ("activeOrganizationId", session.active_organization_id()),
-                    ("activeTeamId", session.active_team_id()),
-                ] {
-                    if value.is_none() {
-                        _ = absent.insert(name.to_owned());
-                    }
-                }
-                for (name, value) in session.additional_fields() {
-                    if value.is_null()
-                        && self
-                            .config
-                            .session
-                            .additional_fields
-                            .get(&name)
-                            .is_none_or(|field| field.default.is_none())
-                    {
-                        _ = absent.insert(name);
-                    }
-                }
-                absent
-            } else {
-                BTreeSet::new()
-            };
-            if let Some(fields) = updated_fields {
-                for name in fields.keys() {
-                    _ = absent_fields.remove(name);
+            self.write_session_snapshot(session, user, updated_fields, None, ttl)
+                .await?;
+            self.write_references(session.user_id().as_ref(), references)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn write_session_snapshot(
+        &self,
+        session: &S::Session,
+        user: &S::User,
+        updated_fields: Option<&FieldValues>,
+        created_at: Option<DateTime<Utc>>,
+        ttl: Duration,
+    ) -> AuthResult<()> {
+        let Some(cache) = self.secondary() else {
+            return Ok(());
+        };
+        let mut absent_fields = if let Some(raw) = cache.get(session.token()).await? {
+            CachedSession::absent_fields(&raw)
+        } else if !self.config.session.store_in_database {
+            let mut absent = BTreeSet::new();
+            for (name, value) in [
+                ("impersonatedBy", session.impersonated_by()),
+                ("activeOrganizationId", session.active_organization_id()),
+                ("activeTeamId", session.active_team_id()),
+            ] {
+                if value.is_none() {
+                    _ = absent.insert(name.to_owned());
                 }
             }
-            let snapshot = CachedSession {
-                session: session.secondary_snapshot()?,
-                user: user.secondary_snapshot()?,
-                absent_fields,
-            };
-            cache
-                .set(session.token(), &serde_json::to_string(&snapshot)?, ttl)
-                .await?;
-            if updating {
-                self.write_references(session.user_id().as_ref(), references)
-                    .await?;
+            for (name, value) in session.additional_fields() {
+                if value.is_null()
+                    && self
+                        .config
+                        .session
+                        .additional_fields
+                        .get(&name)
+                        .is_none_or(|field| field.default.is_none())
+                {
+                    _ = absent.insert(name);
+                }
+            }
+            absent
+        } else {
+            BTreeSet::new()
+        };
+        if let Some(fields) = updated_fields {
+            for name in fields.keys() {
+                _ = absent_fields.remove(name);
             }
         }
+        let session_snapshot = match created_at {
+            Some(created_at) => session.secondary_snapshot_for_creation(created_at)?,
+            None => session.secondary_snapshot()?,
+        };
+        let snapshot = CachedSession {
+            session: session_snapshot,
+            user: user.secondary_snapshot()?,
+            absent_fields,
+        };
+        cache
+            .set(session.token(), &serde_json::to_string(&snapshot)?, ttl)
+            .await?;
         Ok(())
     }
 
@@ -315,23 +323,56 @@ impl<S: AuthSchema> PluginStore<S> {
     pub(super) fn deferred_session_publication(
         &self,
         session: S::Session,
+        created_at: DateTime<Utc>,
     ) -> std::sync::Arc<dyn crate::session::SessionPublication> {
         std::sync::Arc::new(DeferredSessionPublication {
             store: self.clone(),
             session,
+            created_at,
         })
     }
 
-    pub(super) async fn mirror_created_session(&self, session: &S::Session) -> AuthResult<()> {
+    pub(super) async fn mirror_created_session(
+        &self,
+        session: &S::Session,
+        created_at: DateTime<Utc>,
+    ) -> AuthResult<()> {
+        let user_id = session.user_id();
+        self.mirror_session_creation(
+            session,
+            created_at,
+            self.inner.get_user_by_id(user_id.as_ref()),
+        )
+        .await
+    }
+
+    pub(super) async fn mirror_session_creation(
+        &self,
+        session: &S::Session,
+        created_at: DateTime<Utc>,
+        user: impl Future<Output = AuthResult<Option<S::User>>> + Send,
+    ) -> AuthResult<()> {
         if self.secondary().is_none() {
             return Ok(());
         }
-        let user = self
-            .inner
-            .get_user_by_id(session.user_id().as_ref())
+        let now = Utc::now();
+        let mut references = self.references(session.user_id().as_ref()).await?;
+        references.retain(|reference| reference.token != session.token());
+        references.push(Reference {
+            token: session.token().to_owned(),
+            expires_at: session.expires_at(),
+        });
+        self.write_references(session.user_id().as_ref(), references)
+            .await?;
+        let user = user
             .await?
             .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
-        self.mirror_session(session, &user).await
+        let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
+        if ttl > Duration::zero() {
+            self.write_session_snapshot(session, &user, None, Some(created_at), ttl)
+                .await?;
+        }
+        Ok(())
     }
 
     pub(super) async fn cached_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
@@ -505,5 +546,57 @@ impl<S: AuthSchema> PluginStore<S> {
                 self.session_uses_database(),
             )
             .await
+    }
+}
+
+#[cfg(test)]
+mod creation_order_tests {
+    use super::*;
+    use crate::store::{CacheAdapter, SessionStore};
+    use crate::test_store::{BundledSchema, MemoryStore};
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn creation_indexes_before_owner_lookup_and_propagates_lookup_errors() {
+        let cache = Arc::new(crate::store::MemoryCacheAdapter::new());
+        let mut config = crate::AuthConfig::new("test-secret-min-32-chars-1234567");
+        config.session.secondary_storage = Some(cache.clone());
+        let config = Arc::new(config);
+        let raw = Arc::new(MemoryStore::default());
+        let session = raw
+            .create_session(crate::CreateSession {
+                user_id: "owner".into(),
+                token: Some("indexed-before-lookup".into()),
+                expires_at: Utc::now() + Duration::hours(1),
+                ip_address: None,
+                user_agent: None,
+                impersonated_by: None,
+                active_organization_id: None,
+                active_team_id: None,
+                additional_fields: Default::default(),
+            })
+            .await
+            .unwrap();
+        let context = crate::AuthContext::new(config.clone(), raw.clone());
+        let store = PluginStore::<BundledSchema>::new(
+            raw,
+            config,
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            Default::default(),
+            context,
+        );
+        let result = store
+            .mirror_session_creation(&session, session.created_at(), async {
+                let index = cache.get("active-sessions-owner").await?.unwrap();
+                assert!(index.contains(session.token()));
+                Err(AuthError::internal("owner lookup failed"))
+            })
+            .await;
+        assert!(
+            matches!(result, Err(AuthError::Internal(message)) if message == "owner lookup failed")
+        );
+        assert!(cache.get(session.token()).await.unwrap().is_none());
     }
 }

@@ -132,6 +132,22 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// Encode a new session using its original creation clock, before database rounding.
+    ///
+    /// Manual codecs must override this when their model needs a timestamp correction.
+    fn secondary_snapshot_for_creation(
+        &self,
+        created_at: DateTime<Utc>,
+    ) -> AuthResult<serde_json::Value> {
+        if self.created_at() == created_at {
+            self.secondary_snapshot()
+        } else {
+            Err(AuthError::not_implemented(
+                "Secondary session creation timestamp correction is unsupported",
+            ))
+        }
+    }
+
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
     fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {

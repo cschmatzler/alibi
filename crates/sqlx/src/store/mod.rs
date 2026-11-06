@@ -974,6 +974,54 @@ mod scim_users;
 #[cfg(all(test, feature = "sqlite"))]
 mod session_publication_tests {
     use super::*;
+
+    #[derive(crate::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
+    #[auth(role = "session", table = "mapped_session", secondary_storage)]
+    struct MappedClockSession {
+        id: String,
+        user_id: String,
+        token: String,
+        expires_at: chrono::NaiveDateTime,
+        #[sqlx(rename = "database_creation_clock")]
+        created_at: chrono::NaiveDateTime,
+        updated_at: chrono::NaiveDateTime,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+        impersonated_by: Option<String>,
+        active_organization_id: Option<String>,
+        custom_label: String,
+    }
+
+    #[test]
+    fn creation_codec_corrects_mapped_naive_clock_without_mutating_model_or_custom_fields() {
+        let clock = chrono::DateTime::from_timestamp_millis(1_800_000_000_789).unwrap();
+        let rounded = chrono::DateTime::from_timestamp_millis(1_800_000_000_000).unwrap();
+        let session = MappedClockSession {
+            id: "session".into(),
+            user_id: "owner".into(),
+            token: "credential".into(),
+            expires_at: (clock + chrono::Duration::hours(1)).naive_utc(),
+            created_at: rounded.naive_utc(),
+            updated_at: rounded.naive_utc(),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            custom_label: "retained".into(),
+        };
+        let snapshot = session.secondary_snapshot_for_creation(clock).unwrap();
+        assert_eq!(snapshot["custom_label"], "retained");
+        assert!(snapshot.get("database_creation_clock").is_none());
+        let restored = MappedClockSession::from_secondary_snapshot(snapshot).unwrap();
+        assert_eq!(restored.created_at(), clock);
+        assert_eq!(restored.updated_at(), rounded);
+        assert_eq!(session.created_at(), rounded);
+        let ordinary =
+            MappedClockSession::from_secondary_snapshot(session.secondary_snapshot().unwrap())
+                .unwrap();
+        assert_eq!(ordinary.created_at(), rounded);
+    }
+
     use alibi_core::store::{SessionStore, UserStore, write_transaction};
     use alibi_core::{AuthError, AuthSession};
     use std::sync::Mutex;

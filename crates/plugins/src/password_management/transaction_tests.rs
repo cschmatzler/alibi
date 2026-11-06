@@ -37,6 +37,7 @@ struct Hooks {
     events: Mutex<Vec<&'static str>>,
     cache: Option<Arc<RecordingCache>>,
     revoke_after_create: bool,
+    before_create_clock: Mutex<Option<chrono::DateTime<chrono::Utc>>>,
 }
 
 impl Hooks {
@@ -102,6 +103,7 @@ impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hooks {
         ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.before("create", ctx) {
+            *self.before_create_clock.lock().unwrap() = Some(chrono::Utc::now());
             match self.failure {
                 Failure::Create => return Err(Self::error()),
                 Failure::CancelCreate => return Ok(HookControl::Cancel),
@@ -222,6 +224,7 @@ impl Fixture {
             events: Mutex::new(Vec::new()),
             cache: cache.clone(),
             revoke_after_create,
+            before_create_clock: Mutex::new(None),
         });
         let mut config = test_helpers::create_test_config();
         config.session.cookie_cache = Some(CookieCacheConfig {
@@ -575,12 +578,17 @@ async fn change_password_transaction_cookie_failure_does_not_roll_back_committed
     );
 }
 
+enum IndexMutation {
+    Rename(Arc<dyn alibi_core::AuthStore<TestSchema>>, String),
+}
+
 struct RecordingCache {
     inner: alibi_core::store::MemoryCacheAdapter,
     armed: AtomicBool,
     fail_mirror: bool,
     fail_index: AtomicBool,
     writes: Mutex<Vec<String>>,
+    index_mutation: Mutex<Option<IndexMutation>>,
 }
 
 impl RecordingCache {
@@ -591,6 +599,7 @@ impl RecordingCache {
             fail_mirror,
             fail_index: AtomicBool::new(false),
             writes: Mutex::new(Vec::new()),
+            index_mutation: Mutex::new(None),
         })
     }
 }
@@ -615,7 +624,22 @@ impl alibi_core::store::CacheAdapter for RecordingCache {
                 return Err(Hooks::error());
             }
         }
-        self.inner.set(key, value, ttl).await
+        self.inner.set(key, value, ttl).await?;
+        if key.starts_with("active-sessions-") && value != "[]" {
+            let mutation = self.index_mutation.lock().unwrap().take();
+            if let Some(IndexMutation::Rename(store, id)) = mutation {
+                store
+                    .update_user(
+                        &id,
+                        alibi_core::UpdateUser {
+                            name: Some("Changed during index publication".into()),
+                            ..Default::default()
+                        },
+                    )
+                    .await?;
+            }
+        }
+        Ok(())
     }
 
     async fn get(&self, key: &str) -> AuthResult<Option<String>> {
@@ -806,4 +830,102 @@ async fn change_password_deferred_index_failure_also_leaves_database_token_usabl
             .is_some()
     );
     assert!(response.headers.get("Set-Cookie").is_some());
+}
+
+#[tokio::test]
+async fn session_creation_publishes_index_before_loading_owner_in_ordinary_and_deferred_paths() {
+    use alibi_core::store::CacheAdapter;
+    use alibi_core::{AuthSession, AuthUser};
+    for deferred in [false, true] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+        *cache.index_mutation.lock().unwrap() = Some(IndexMutation::Rename(
+            fixture.raw.clone(),
+            fixture.user.id.clone(),
+        ));
+        let token = if deferred {
+            let (_, response) = fixture.change(Some(true)).await;
+            let response = response.unwrap();
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["token"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        } else {
+            fixture.hooks.armed.store(false, Ordering::SeqCst);
+            test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+                .await
+                .token
+        };
+        let raw = cache.get(&token).await.unwrap().unwrap();
+        let snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        let owner = <TestSchema as alibi_core::AuthSchema>::User::from_secondary_snapshot(
+            snapshot["user"].clone(),
+        )
+        .unwrap();
+        assert_eq!(owner.name(), Some("Changed during index publication"));
+        let cached = TestSession::from_secondary_snapshot(snapshot["session"].clone()).unwrap();
+        if deferred {
+            let before_hook = fixture.hooks.before_create_clock.lock().unwrap().unwrap();
+            assert!(
+                cached.created_at() <= before_hook,
+                "capture creation clock before before-create hooks"
+            );
+        }
+        assert_eq!(cached.token(), token);
+    }
+}
+
+#[tokio::test]
+async fn creation_codec_keeps_rounded_database_session_alive_past_cached_revocation_cutoff() {
+    use alibi_core::AuthSession;
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+    let token = &fixture.sessions[0].token;
+    let mut rounded = fixture.raw.get_session(token).await.unwrap().unwrap();
+    let clock =
+        chrono::DateTime::from_timestamp_millis(chrono::Utc::now().timestamp_millis()).unwrap();
+    rounded.created_at = chrono::DateTime::from_timestamp(clock.timestamp() - 1, 0).unwrap();
+    let cutoff = clock.timestamp_millis() - 1;
+    cache
+        .set(
+            &format!("revoked-sessions-before-{}", fixture.user.id),
+            &cutoff.to_string(),
+            Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    let raw = cache.get(token).await.unwrap().unwrap();
+    let mut snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
+    snapshot["session"] = rounded.secondary_snapshot().unwrap();
+    cache
+        .set(token, &snapshot.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session(token)
+            .await
+            .unwrap()
+            .is_none(),
+        "rounded clock incorrectly predates revocation"
+    );
+    snapshot["session"] = rounded.secondary_snapshot_for_creation(clock).unwrap();
+    cache
+        .set(token, &snapshot.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    let accepted = fixture
+        .ctx
+        .database
+        .get_session(token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(accepted.created_at(), clock);
+    assert!(rounded.created_at() < clock);
 }

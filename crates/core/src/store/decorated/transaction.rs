@@ -759,6 +759,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         mut create_session: CreateSession,
         policy: crate::session::SessionCreationPolicy,
     ) -> AuthResult<S::Session> {
+        let created_at = chrono::Utc::now();
         for hook in &self.record_store.session_callbacks.callbacks {
             hook.before_create(
                 &create_session,
@@ -790,16 +791,18 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                     .queue_session_publication(
                         model.id().as_ref(),
                         self.record_store
-                            .deferred_session_publication(model.clone()),
+                            .deferred_session_publication(model.clone(), created_at),
                     )
                     .await?;
             } else {
-                let user = self
-                    .inner
-                    .get_user_by_id(model.user_id().as_ref())
-                    .await?
-                    .ok_or_else(|| AuthError::internal("Secondary session owner not found"))?;
-                self.record_store.mirror_session(&model, &user).await?;
+                let user_id = model.user_id();
+                self.record_store
+                    .mirror_session_creation(
+                        &model,
+                        created_at,
+                        self.inner.get_user_by_id(user_id.as_ref()),
+                    )
+                    .await?;
             }
             model
         } else {

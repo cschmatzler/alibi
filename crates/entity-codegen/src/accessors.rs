@@ -133,7 +133,29 @@ pub fn auth_session_impl(
 ) -> TokenStream {
     let has = |name: &str| has_field(fields, name);
     let secondary_codec = if secondary {
-        secondary_codec(fields, core_root)
+        let codec = secondary_codec(fields, core_root);
+        let created_at_type = &fields
+            .named
+            .iter()
+            .find(|field| {
+                field
+                    .ident
+                    .as_ref()
+                    .is_some_and(|name| name == "created_at")
+            })
+            .expect("validated session created_at field")
+            .ty;
+        quote! {
+            #codec
+            fn secondary_snapshot_for_creation(
+                &self,
+                created_at: ::chrono::DateTime<::chrono::Utc>,
+            ) -> #core_root::AuthResult<::serde_json::Value> {
+                let mut model = self.clone();
+                model.created_at = <#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at);
+                model.secondary_snapshot()
+            }
+        }
     } else {
         quote! {}
     };
