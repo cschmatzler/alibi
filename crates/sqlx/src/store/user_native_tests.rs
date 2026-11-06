@@ -22,12 +22,13 @@ struct OptionalNativeUser {
 #[test]
 fn native_secondary_optional_fields_retain_declared_wire_presence() {
     let source = json!({
-        "id": "cache-only", "name": "Cached", "email": "cached@fixture.test",
+        "id": "cache-only", "name": null, "email": "cached@fixture.test",
         "email_verified": false, "created_at": "2020-01-01T00:00:00.000Z",
         "updated_at": "2020-01-01T00:00:00.000Z", "favorite_color": null,
         "unknown_extra": "ignored"
     });
     let record = OptionalNativeUser::from_secondary_snapshot_record(source).unwrap();
+    assert_eq!(record.stored().name, "");
     assert_eq!(record.stored().image, None);
     assert_eq!(record.stored().absent_marker, None);
     assert!(record.raw_snapshot().field_is_undefined("image"));
@@ -38,10 +39,12 @@ fn native_secondary_optional_fields_retain_declared_wire_presence() {
     );
     assert!(!record.raw_snapshot().contains_field("unknownExtra"));
     let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+    assert_eq!(wire.get("name"), Some(&serde_json::Value::Null));
     assert!(wire.get("image").is_none());
     assert!(wire.get("absentMarker").is_none());
     assert_eq!(wire.get("favoriteColor"), Some(&serde_json::Value::Null));
     let encoded = record.secondary_snapshot().unwrap();
+    assert_eq!(encoded.get("name"), Some(&serde_json::Value::Null));
     assert!(encoded.get("image").is_none());
     assert!(encoded.get("absent_marker").is_none());
     assert_eq!(

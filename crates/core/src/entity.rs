@@ -75,8 +75,9 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     }
     /// Restore a model from a trusted secondary backend, before public projection.
     /// Generated user codecs normalize native booleans/dates for typed accessors.
-    /// Unrepresentable dates use a typed surrogate; use
-    /// `from_secondary_snapshot_record` to retain the original observable value.
+    /// Unrepresentable dates and null nonoptional names use typed surrogates;
+    /// use `from_secondary_snapshot_record` to retain the observable value.
+    /// A surrogate name is not an authoritative adapter value.
     fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
         Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),

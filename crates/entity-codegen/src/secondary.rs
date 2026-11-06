@@ -104,6 +104,28 @@ pub fn user_secondary_codec(
             }
         });
     }
+    if fields
+        .named
+        .iter()
+        .any(|field| field.ident.as_ref().is_some_and(|ident| ident == "name"))
+        && !crate::optional_field(fields, "name")
+    {
+        overlay.push(quote! {
+            if native.field_is_undefined("name") {
+                _ = snapshot.remove("name");
+            } else if let Some(value) = native.values().get("name") {
+                _ = snapshot.insert("name".to_owned(), value.clone());
+            }
+        });
+        capture.push(quote! {
+            native.insert("name".to_owned(), source.get("name").cloned());
+        });
+        normalize.push(quote! {
+            if fields.get("name").is_some_and(::serde_json::Value::is_null) {
+                _ = fields.insert("name".to_owned(), ::serde_json::Value::String(String::new()));
+            }
+        });
+    }
     for field in entity_fields {
         let key = field.ident.to_string();
         if !crate::optional_field(fields, &key) {
