@@ -243,9 +243,11 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
             emit_column(sql);
             sql.push(" < -62135596800000 THEN -62135596800000 ELSE CAST(");
             emit_column(sql);
-            sql.push(" AS INTEGER) END / 1000.0, 'unixepoch') ELSE ");
+            sql.push(" AS INTEGER) END / 1000.0, 'unixepoch') ELSE CASE WHEN ");
             emit_column(sql);
-            sql.push(" END AS ");
+            sql.push(" IS NULL THEN NULL ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ");
+            emit_column(sql);
+            sql.push("), '1970-01-01T00:00:00.000Z') END END AS ");
             sql.ident(column);
         } else if sql.engine() == Engine::Postgres && M::column_kind(column) == ColumnKind::BigInt {
             sql.push("CAST(");

@@ -524,11 +524,25 @@ pub(crate) async fn update_user_core(
     if body.data.get("banExpires") == Some(&serde_json::Value::Null) {
         update.ban_expires = Some(None);
     }
-    if let Some(value) = body.data.get("banExpires").and_then(|value| value.as_str()) {
-        let parsed = alibi_core::utils::datetime::parse_date_millis(value)
-            .and_then(DateTime::<Utc>::from_timestamp_millis)
-            .ok_or_else(|| AuthError::internal("Invalid time value"))?;
-        update.ban_expires = Some(Some(parsed));
+    if let Some(value) = body.data.get("banExpires").filter(|value| !value.is_null()) {
+        if let Some(text) = value.as_str() {
+            let millis = alibi_core::utils::datetime::parse_date_millis(text)
+                .ok_or_else(|| AuthError::internal("Invalid time value"))?;
+            if let Some(parsed) = DateTime::<Utc>::from_timestamp_millis(millis) {
+                update.ban_expires = Some(Some(parsed));
+            } else {
+                _ = update.adapter_native_fields.insert(
+                    "banExpires".to_owned(),
+                    serde_json::Value::String(alibi_core::utils::datetime::json_date_millis(
+                        millis,
+                    )),
+                );
+            }
+        } else {
+            _ = update
+                .adapter_native_fields
+                .insert("banExpires".to_owned(), value.clone());
+        }
     }
     if let Some(value) = body
         .data

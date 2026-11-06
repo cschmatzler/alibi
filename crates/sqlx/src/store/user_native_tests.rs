@@ -339,3 +339,72 @@ async fn unrelated_user_update_retains_native_sqlite_scalars() {
     .unwrap();
     assert_eq!(row, ("real".into(), 0.5, 1e20, -0.5));
 }
+
+#[tokio::test]
+async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool.clone());
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let expanded = "+275760-09-13T00:00:00.000Z";
+    let mut input = CreateUser::new().with_email("expanded-date@fixture.test");
+    for field in ["createdAt", "updatedAt", "banExpires"] {
+        _ = input
+            .adapter_native_fields
+            .insert(field.into(), json!(expanded));
+    }
+    let created = store.create_user_record(input).await.unwrap();
+    let wire = serde_json::to_value(alibi_core::UserView::from(&created)).unwrap();
+    for field in ["createdAt", "updatedAt", "banExpires"] {
+        assert_eq!(wire[field], expanded);
+    }
+    for value in [
+        json!(0),
+        json!(-0.5),
+        json!(1.9),
+        json!(true),
+        json!(1e20),
+        json!(-1e20),
+        json!(expanded),
+        json!(null),
+    ] {
+        let updated = store
+            .update_user_record(
+                &created.id(),
+                alibi_core::UpdateUser {
+                    adapter_native_fields: [("banExpires".into(), value.clone())]
+                        .into_iter()
+                        .collect(),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let expected = if value.is_boolean() { json!(1) } else { value };
+        let wire = serde_json::to_value(alibi_core::UserView::from(&updated)).unwrap();
+        assert_eq!(wire["banExpires"], expected);
+        let raw: (String, String) = sqlx::query_as(
+            "SELECT json_quote(banExpires), typeof(banExpires) FROM user WHERE id = ?",
+        )
+        .bind(created.id().as_ref())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&raw.0).unwrap(),
+            expected
+        );
+        if expected.is_number() {
+            assert!(matches!(raw.1.as_str(), "integer" | "real"));
+        }
+        let loaded = store
+            .get_user_by_id_record(&created.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(loaded.raw_snapshot().values()["banExpires"], expected);
+    }
+}

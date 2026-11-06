@@ -50,6 +50,9 @@ pub struct CreateUser {
 /// User update data
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateUser {
+    /// Trusted native adapter updates; HTTP deserialization cannot populate this channel.
+    #[serde(skip)]
+    pub adapter_native_fields: std::collections::BTreeMap<String, serde_json::Value>,
     /// Trusted provider value, independent from the typed boolean authority.
     #[serde(skip)]
     pub provider_email_verified: Option<serde_json::Value>,

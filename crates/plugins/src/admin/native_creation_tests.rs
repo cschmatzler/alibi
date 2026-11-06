@@ -554,3 +554,103 @@ async fn native_secondary_nonidentity_texts_keep_raw_cache_values() {
     }
     assert!(encoded.get("unknownText").is_none());
 }
+
+#[tokio::test]
+async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
+    use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .unwrap();
+    let (_, acting_admin, _, _, _) = create_admin_context().await;
+    let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+        test_helpers::create_test_config(),
+        database.clone(),
+    ));
+    let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+    let expanded = "+275760-09-13T00:00:00.000Z";
+    let mut input = types::CreateUserRequest::new("expanded-date@fixture.test", "Date");
+    input.data = Some(
+        serde_json::json!({
+            "createdAt": expanded, "updatedAt": expanded, "banExpires": expanded
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+        .await
+        .unwrap();
+    let wire = serde_json::to_value(&created).unwrap();
+    for field in ["createdAt", "updatedAt", "banExpires"] {
+        assert_eq!(wire["user"][field], expanded);
+    }
+    let row = database
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT createdAt AS value, typeof(createdAt) AS kind FROM user WHERE id = ?",
+            [created.user.id.clone().into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<String>("", "value").unwrap(), expanded);
+    assert_eq!(row.try_get::<String>("", "kind").unwrap(), "text");
+    for value in [
+        serde_json::json!(0),
+        serde_json::json!(-0.5),
+        serde_json::json!(1.9),
+        serde_json::json!(true),
+        serde_json::json!(1e20),
+        serde_json::json!(-1e20),
+        serde_json::json!(expanded),
+        serde_json::Value::Null,
+    ] {
+        let response = handlers::update_user_core(
+            &types::AdminUpdateUserRequest::new(
+                &created.user.id,
+                serde_json::json!({"banExpires": value})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            ),
+            &acting_admin,
+            &AdminConfig::default(),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let expected = if value.is_boolean() {
+            serde_json::json!(1)
+        } else {
+            value.clone()
+        };
+        let wire = serde_json::to_value(response).unwrap();
+        assert_eq!(wire["banExpires"], expected);
+        let retained = ctx
+            .database
+            .get_user_by_id_record(&created.user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(retained.raw_snapshot().values()["banExpires"], expected);
+        let row = database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "SELECT json_quote(banExpires) AS value, typeof(banExpires) AS kind FROM user WHERE id = ?",
+            [created.user.id.clone().into()])).await.unwrap().unwrap();
+        let physical: serde_json::Value =
+            serde_json::from_str(&row.try_get::<String>("", "value").unwrap()).unwrap();
+        assert_eq!(physical, expected);
+        let expected_kind = if expected.is_null() {
+            "null"
+        } else if expected.is_string() {
+            "text"
+        } else if expected.as_f64().unwrap().fract() == 0.0
+            && expected.as_f64().unwrap().abs() < i64::MAX as f64
+        {
+            "integer"
+        } else {
+            "real"
+        };
+        assert_eq!(row.try_get::<String>("", "kind").unwrap(), expected_kind);
+    }
+}

@@ -270,6 +270,9 @@ where
                 crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
             let value = if matches!(field.as_str(), "createdAt" | "updatedAt" | "banExpires") {
                 match value {
+                    SqlValue::Text(Some(value)) if backend == Engine::Sqlite => {
+                        SqlValue::Text(Some(value))
+                    }
                     SqlValue::Text(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
                         .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
                         .map_err(|error| AuthError::internal(error.to_string()))?,
@@ -746,6 +749,7 @@ where
         let provider_name = update.provider_name.take();
         let provider_image = update.provider_image.take();
         let provider_verification = update.provider_email_verified.take();
+        let native_fields = std::mem::take(&mut update.adapter_native_fields);
         S::User::apply_update(&mut active, update, Utc::now());
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
         stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
@@ -761,6 +765,29 @@ where
         }
         S::User::prepare_json_metadata(&mut active, backend)?;
 
+        for (field, raw) in native_fields {
+            if field != "banExpires" {
+                return Err(AuthError::internal("Unsupported native user update field"));
+            }
+            let Some(column) = S::User::list_users_column(&field) else {
+                continue;
+            };
+            if raw.is_object() || raw.is_array() {
+                return Err(AuthError::internal("Unsupported native user SQL parameter"));
+            }
+            let value =
+                crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
+            let value = match value {
+                SqlValue::Text(Some(value)) if backend != Engine::Sqlite => {
+                    chrono::DateTime::parse_from_rfc3339(&value)
+                        .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
+                        .map_err(|error| AuthError::internal(error.to_string()))?
+                }
+                SqlValue::Text(None) => SqlValue::Timestamp(None),
+                value => value,
+            };
+            active.set(column, value);
+        }
         let user = model::update::<S::User>(exec, &active)
             .await?
             .ok_or_else(record_not_updated)?;

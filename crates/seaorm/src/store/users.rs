@@ -17,14 +17,14 @@ use sea_orm::{
 
 // Only the typed Rust view is bounded to SQLite's printable date range.
 // The retained adapter output always reads the original numeric DATE value.
-const SQLITE_TYPED_DATE: &str = "CASE WHEN typeof(?) IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ? < -8640000000000000 OR ? > 253402300799999 THEN 253402300799999 WHEN ? < -62135596800000 THEN -62135596800000 ELSE CAST(? AS INTEGER) END / 1000.0, 'unixepoch') ELSE ? END";
+const SQLITE_TYPED_DATE: &str = "CASE WHEN typeof(?) IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ? < -8640000000000000 OR ? > 253402300799999 THEN 253402300799999 WHEN ? < -62135596800000 THEN -62135596800000 ELSE CAST(? AS INTEGER) END / 1000.0, 'unixepoch') ELSE CASE WHEN ? IS NULL THEN NULL ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ?), '1970-01-01T00:00:00.000Z') END END";
 
 fn sqlite_date_column<C: sea_orm::Iden + Copy + 'static>(
     column: C,
 ) -> sea_orm::sea_query::SimpleExpr {
     Expr::cust_with_exprs(
         SQLITE_TYPED_DATE,
-        std::iter::repeat_with(|| Expr::col(column)).take(6),
+        std::iter::repeat_with(|| Expr::col(column)).take(7),
     )
 }
 
@@ -195,6 +195,11 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 | sea_orm::sea_query::ColumnType::DateTime
         ) {
             match raw {
+                sea_orm::Value::String(Some(value))
+                    if db.get_database_backend() == sea_orm::DbBackend::Sqlite =>
+                {
+                    sea_orm::Value::String(Some(value))
+                }
                 sea_orm::Value::String(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
                     .map(|date| sea_orm::Value::ChronoDateTimeUtc(Some(date.with_timezone(&Utc))))
                     .map_err(|error| AuthError::internal(error.to_string()))?,
@@ -818,6 +823,10 @@ where
         let provider_name = update.provider_name.take();
         let provider_image = update.provider_image.take();
         let verification = update.provider_email_verified.take();
+        let native_fields = std::mem::take(&mut update.adapter_native_fields);
+        if native_fields.keys().any(|field| field != "banExpires") {
+            return Err(AuthError::internal("Unsupported native user update field"));
+        }
         S::User::apply_update(&mut active, update, Utc::now());
         stage_provider_text::<S::User, _>(connection, &mut active, provider_name, provider_image)
             .await?;
@@ -833,7 +842,7 @@ where
             connection,
             verification,
             Some(id),
-            Default::default(),
+            native_fields,
         )
         .await?;
         if tx.is_none() {
