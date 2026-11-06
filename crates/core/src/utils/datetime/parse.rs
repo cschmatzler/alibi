@@ -243,7 +243,7 @@ fn parse_legacy(value: &str) -> Option<i64> {
             50..=99 => (1900 + number, 1),
             _ => (number, 1),
         };
-        return time_clip(civil_days(year, month, 1).checked_mul(86_400_000)?);
+        return time_clip(local_millis(civil_days(year, month, 1).checked_mul(86_400_000)?)?);
     }
     None
 }
@@ -341,6 +341,35 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numeric_legacy_dates_use_local_midnight() {
+        const CHILD: &str = "ALIBI_NUMERIC_DATE_TZ_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "utils::datetime::parse::tests::numeric_legacy_dates_use_local_midnight",
+                    "--test-threads=1",
+                ])
+                .env(CHILD, "1")
+                .env("TZ", "America/New_York")
+                .output().unwrap();
+            assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stdout));
+            return;
+        }
+        for (input, expected) in [
+            ("0", "2000-01-01T05:00:00Z"),
+            ("1", "2001-01-01T05:00:00Z"),
+            ("12", "2001-12-01T05:00:00Z"),
+            ("32", "2032-01-01T05:00:00Z"),
+            ("99", "1999-01-01T05:00:00Z"),
+            ("10000", "+010000-01-01T05:00:00Z"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+        assert_eq!(parse_date_millis("1000"), parse_date_millis("1000-01-01T00:00:00Z"));
+    }
 
     #[test]
     fn legacy_dates_roll_over_days_within_the_javascript_range() {
