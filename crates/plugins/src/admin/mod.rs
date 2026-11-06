@@ -795,6 +795,76 @@ mod tests {
         assert!(stored.ban_expires().is_none());
     }
 
+    #[tokio::test]
+    async fn admin_update_null_ban_reason_clears_without_unbanning() {
+        let (mut ctx, admin, _, user, _) = create_admin_context().await;
+        let cache = Arc::new(alibi_core::store::MemoryCacheAdapter::new());
+        let mut config = (*ctx.config).clone();
+        config.session.secondary_storage = Some(cache.clone());
+        ctx.config = Arc::new(config);
+        let init = alibi_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        ctx.database = init.database_with_registered_transforms();
+        let expiry = Utc::now() + Duration::hours(1);
+        ctx.database
+            .update_user_record(
+                &user.id,
+                alibi_core::UpdateUser {
+                    banned: Some(true),
+                    ban_reason: Some("removed".into()),
+                    ban_expires: Some(Some(expiry)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let session = test_helpers::create_session(&ctx, user.id.clone(), Duration::hours(1)).await;
+        let body = types::AdminUpdateUserRequest::new(
+            &user.id,
+            serde_json::json!({"banReason": null})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+        handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx)
+            .await
+            .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        use alibi_core::entity::AuthUser as _;
+        assert!(stored.banned());
+        assert!(stored.ban_reason().is_none());
+        assert!(stored.ban_expires().is_some());
+        use alibi_core::store::CacheAdapter as _;
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(&session.token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["user"]["ban_reason"], serde_json::Value::Null);
+        assert_eq!(cached["user"]["banned"], true);
+        assert!(!cached["user"]["ban_expires"].is_null());
+
+        ctx.database
+            .update_user_record(
+                &user.id,
+                alibi_core::UpdateUser {
+                    ban_reason: Some("must not win".into()),
+                    clear_ban_reason: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(stored.ban_reason().is_none());
+    }
+
     #[test]
     fn empty_admin_id_does_not_bypass_role_permissions() {
         let config = AdminConfig {

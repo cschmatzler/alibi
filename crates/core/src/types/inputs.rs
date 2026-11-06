@@ -67,6 +67,9 @@ pub struct UpdateUser {
     pub role: Option<String>,
     pub banned: Option<bool>,
     pub ban_reason: Option<String>,
+    /// Explicitly clear the reason; takes precedence over `ban_reason`.
+    #[serde(skip)]
+    pub clear_ban_reason: bool,
     /// `None` leaves the expiry unchanged; `Some(None)` clears it without unbanning.
     #[serde(
         default,

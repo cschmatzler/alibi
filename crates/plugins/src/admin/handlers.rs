@@ -479,6 +479,7 @@ pub(crate) async fn update_user_core(
     if let Some(value) = body.data.get("banned").and_then(serde_json::Value::as_bool) {
         update.banned = Some(value);
     }
+    update.clear_ban_reason = body.data.get("banReason") == Some(&serde_json::Value::Null);
     if let Some(value) = body.data.get("banReason").and_then(|value| value.as_str()) {
         update.ban_reason = Some(value.to_owned());
     }

@@ -3,6 +3,48 @@ use crate::store::stateless::{StatelessSchema, StatelessStore, members};
 use crate::{AuthError, AuthResult, CreateUser, ListUsersParams, UpdateUser, UserView};
 use async_trait::async_trait;
 use chrono::Utc;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn clear_ban_reason_keeps_stateless_ban_and_expiry() {
+        let store = StatelessStore::default();
+        let user = store
+            .create_user(CreateUser::new().with_email("banned@example.test"))
+            .await
+            .unwrap();
+        let expiry = Utc::now() + chrono::Duration::hours(1);
+        store
+            .update_user(
+                &user.id,
+                UpdateUser {
+                    banned: Some(true),
+                    ban_reason: Some("remove".into()),
+                    ban_expires: Some(Some(expiry)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        store
+            .update_user(
+                &user.id,
+                UpdateUser {
+                    clear_ban_reason: true,
+                    ban_reason: Some("must not win".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let stored = store.get_user_by_id(&user.id).await.unwrap().unwrap();
+        assert_eq!(stored.banned, Some(true));
+        assert_eq!(stored.ban_reason, None);
+        assert_eq!(stored.ban_expires, Some(expiry));
+    }
+}
 #[async_trait]
 impl UserStore<StatelessSchema> for StatelessStore {
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<UserView> {
@@ -177,7 +219,9 @@ impl UserStore<StatelessSchema> for StatelessStore {
                 user.ban_expires = None;
             }
         }
-        if let Some(ban_reason) = update.ban_reason {
+        if update.clear_ban_reason {
+            user.ban_reason = None;
+        } else if let Some(ban_reason) = update.ban_reason {
             user.ban_reason = Some(ban_reason);
         }
         if let Some(ban_expires) = update.ban_expires {

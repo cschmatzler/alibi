@@ -200,7 +200,8 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
                         }
                     }
                     if update.banned != ::std::option::Option::Some(false) {
-                        if let ::std::option::Option::Some(ban_reason) = update.ban_reason { #reason }
+                        if update.clear_ban_reason { #clear_reason }
+                        else if let ::std::option::Option::Some(ban_reason) = update.ban_reason { #reason }
                         if let ::std::option::Option::Some(ban_expires) = update.ban_expires { #expires }
                     }
                 });
