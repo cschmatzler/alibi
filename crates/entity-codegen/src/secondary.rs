@@ -29,6 +29,99 @@ pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenSt
     }
 }
 
+/// Overlay session output using Rust snapshot keys, independently of SQL names.
+#[must_use]
+pub(crate) fn session_secondary_codec(
+    fields: &FieldsNamed,
+    entity_fields: &[crate::EntityField],
+    core_root: &TokenStream,
+) -> TokenStream {
+    let names: Vec<_> = fields
+        .named
+        .iter()
+        .filter_map(|field| field.ident.as_ref())
+        .collect();
+    let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
+    let decode = fields.named.iter().map(|field| {
+        let name = field.ident.as_ref().expect("named field");
+        let key = name.to_string();
+        if crate::is_option(&field.ty) {
+            quote! { #name: fields.remove(#key).map(::serde_json::from_value).transpose()?.flatten(), }
+        } else {
+            quote! { #name: ::serde_json::from_value(fields.remove(#key).ok_or_else(||
+                #core_root::AuthError::internal("Incomplete secondary session snapshot"))?)?, }
+        }
+    });
+    let inverse = entity_fields.iter().map(|field| {
+        let key = field.ident.to_string();
+        let wire = &field.camel;
+        quote! { #key => #wire, }
+    });
+    let absent = entity_fields.iter().map(|field| {
+        let key = field.ident.to_string();
+        let wire = &field.camel;
+        quote! { if !fields.contains_key(#key) { output.insert(#wire.to_owned(), None); } }
+    });
+    let mapping = entity_fields
+        .iter()
+        .map(|field| {
+            let key = field.ident.to_string();
+            let wire = &field.camel;
+            quote! { #wire => #key, }
+        })
+        .collect::<Vec<_>>();
+    let removals = entity_fields.iter().map(|field| {
+        let key = field.ident.to_string();
+        let wire = &field.camel;
+        quote! { if native.field_is_undefined(#wire) { _ = snapshot.remove(#key); } }
+    });
+    quote! {
+        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
+            let mut snapshot = ::serde_json::Map::new();
+            #(_ = snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?);)*
+            Ok(::serde_json::Value::Object(snapshot))
+        }
+        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
+            let ::serde_json::Value::Object(mut fields) = snapshot else {
+                return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
+            };
+            Ok(Self { #(#decode)* })
+        }
+        fn output_from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<#core_root::AdapterOutput> {
+            let ::serde_json::Value::Object(fields) = snapshot else {
+                return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
+            };
+            let mut output = #core_root::AdapterOutput::default();
+            for (key, value) in &fields {
+                let wire = match key.as_str() { #(#inverse)* _ => key.as_str() };
+                output.insert(wire.to_owned(), Some(value.clone()));
+            }
+            #(#absent)*
+            Ok(output)
+        }
+        fn secondary_snapshot_with_native_output(
+            &self,
+            native: &#core_root::AdapterOutput,
+        ) -> #core_root::AuthResult<::serde_json::Value> {
+            let ::serde_json::Value::Object(mut snapshot) = self.secondary_snapshot()? else {
+                return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
+            };
+            // Unknown trusted properties survive; declared logical names map to
+            // actual Rust fields, never to renamed database columns.
+            for name in snapshot.keys().cloned().chain(native.values().keys().cloned()).collect::<Vec<_>>() {
+                let key = match name.as_str() { #(#mapping)* _ => name.as_str() };
+                if native.field_is_undefined(&name) {
+                    _ = snapshot.remove(key);
+                } else if let Some(value) = native.values().get(&name) {
+                    _ = snapshot.insert(key.to_owned(), value.clone());
+                }
+            }
+            #(#removals)*
+            Ok(::serde_json::Value::Object(snapshot))
+        }
+    }
+}
+
 /// Generate a user-only codec retaining native boolean/date output separately
 /// from the typed model used by authorization code.
 #[must_use]

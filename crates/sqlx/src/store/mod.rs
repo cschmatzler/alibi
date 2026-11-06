@@ -1042,6 +1042,112 @@ mod session_publication_tests {
         assert_eq!(ordinary.created_at(), rounded);
     }
 
+    #[derive(crate::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
+    #[auth(role = "session", table = "projected_session", secondary_storage)]
+    struct ProjectedSession {
+        id: String,
+        user_id: String,
+        token: String,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        #[sqlx(rename = "renamed_clock_column")]
+        created_at: chrono::DateTime<chrono::Utc>,
+        updated_at: chrono::DateTime<chrono::Utc>,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+        #[sqlx(rename = "renamed_label_column")]
+        custom_label: Option<String>,
+    }
+
+    #[test]
+    fn session_native_output_codec_maps_logical_fields_without_mutating_storage_authority() {
+        let clock = chrono::DateTime::from_timestamp_millis(1_800_000_000_789).unwrap();
+        let rounded = chrono::DateTime::from_timestamp_millis(1_800_000_000_000).unwrap();
+        let session = ProjectedSession {
+            id: "session".into(),
+            user_id: "owner".into(),
+            token: "credential".into(),
+            expires_at: clock + chrono::Duration::hours(1),
+            created_at: rounded,
+            updated_at: rounded,
+            ip_address: Some("stored-ip".into()),
+            user_agent: Some("stored-agent".into()),
+            custom_label: Some("stored-label".into()),
+        };
+        let mut native = alibi_core::AdapterOutput::default();
+        native.insert("customLabel".into(), Some(serde_json::Value::Null));
+        native.insert("ipAddress".into(), None);
+        native.insert(
+            "unknownTrustedObject".into(),
+            Some(serde_json::json!({"nested":[true,null]})),
+        );
+        native.insert(
+            "createdAt".into(),
+            Some(serde_json::json!("2001-01-01T00:00:00.000Z")),
+        );
+        let snapshot = session
+            .secondary_snapshot_with_native_output(&native)
+            .unwrap();
+        assert_eq!(snapshot["custom_label"], serde_json::Value::Null);
+        assert!(snapshot.get("ip_address").is_none());
+        assert_eq!(
+            snapshot["unknownTrustedObject"],
+            serde_json::json!({"nested":[true,null]})
+        );
+        assert!(snapshot.get("renamed_label_column").is_none());
+        assert!(snapshot.get("renamed_clock_column").is_none());
+        let creation = session
+            .secondary_snapshot_for_creation_with_native_output(clock, &native)
+            .unwrap();
+        assert_eq!(creation["created_at"], serde_json::to_value(clock).unwrap());
+        assert_eq!(snapshot["created_at"], "2001-01-01T00:00:00.000Z");
+        let output = ProjectedSession::output_from_secondary_snapshot(snapshot.clone()).unwrap();
+        assert_eq!(output.values()["customLabel"], serde_json::Value::Null);
+        assert!(output.field_is_undefined("ipAddress"));
+        assert_eq!(
+            output.values()["unknownTrustedObject"],
+            serde_json::json!({"nested":[true,null]})
+        );
+        assert!(!output.values().contains_key("custom_label"));
+        assert!(!output.values().contains_key("renamed_label_column"));
+        let decoded = ProjectedSession::from_secondary_snapshot(snapshot.clone()).unwrap();
+        assert_eq!(decoded.custom_label, None);
+        assert_eq!(decoded.ip_address, None);
+
+        assert_eq!(session.created_at(), rounded);
+        assert_eq!(session.custom_label.as_deref(), Some("stored-label"));
+        native.insert("customLabel".into(), None);
+        assert!(
+            session
+                .secondary_snapshot_with_native_output(&native)
+                .unwrap()
+                .get("custom_label")
+                .is_none()
+        );
+
+        let naive = MappedClockSession {
+            id: "session".into(),
+            user_id: "owner".into(),
+            token: "credential".into(),
+            expires_at: (clock + chrono::Duration::hours(1)).naive_utc(),
+            created_at: rounded.naive_utc(),
+            updated_at: rounded.naive_utc(),
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            custom_label: "retained".into(),
+        };
+        let snapshot = naive
+            .secondary_snapshot_for_creation_with_native_output(clock, &native)
+            .unwrap();
+        assert_eq!(
+            snapshot["created_at"],
+            serde_json::to_value(clock.naive_utc()).unwrap()
+        );
+        assert!(snapshot.get("database_creation_clock").is_none());
+        assert_eq!(naive.created_at(), rounded);
+    }
+
     use alibi_core::store::{SessionStore, UserStore, write_transaction};
     use alibi_core::{AuthError, AuthSession};
     use std::sync::Mutex;

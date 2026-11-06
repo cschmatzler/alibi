@@ -186,6 +186,35 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
         }
     }
 
+    /// Encode trusted adapter output without changing the typed storage authority.
+    fn secondary_snapshot_with_native_output(
+        &self,
+        native: &AdapterOutput,
+    ) -> AuthResult<serde_json::Value> {
+        if native.is_empty() {
+            self.secondary_snapshot()
+        } else {
+            Err(AuthError::not_implemented(
+                "Secondary session output correction is unsupported",
+            ))
+        }
+    }
+
+    /// The original prehook clock takes precedence over projected creation output.
+    fn secondary_snapshot_for_creation_with_native_output(
+        &self,
+        created_at: DateTime<Utc>,
+        native: &AdapterOutput,
+    ) -> AuthResult<serde_json::Value> {
+        if native.is_empty() {
+            self.secondary_snapshot_for_creation(created_at)
+        } else {
+            Err(AuthError::not_implemented(
+                "Secondary session creation output correction is unsupported",
+            ))
+        }
+    }
+
     /// Encode the complete typed model for a trusted secondary backend.
     /// Custom entities can opt in without adding a Deserialize bound to all schemas.
     fn secondary_snapshot(&self) -> AuthResult<serde_json::Value> {
@@ -197,6 +226,13 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<Self> {
         Err(AuthError::NotImplemented(
             "Secondary model decoding is unsupported".into(),
+        ))
+    }
+
+    /// Recover logical adapter properties from a trusted physical cache snapshot.
+    fn output_from_secondary_snapshot(_snapshot: serde_json::Value) -> AuthResult<AdapterOutput> {
+        Err(AuthError::not_implemented(
+            "Secondary session output decoding is unsupported",
         ))
     }
 

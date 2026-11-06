@@ -180,3 +180,49 @@ fn session_secondary_creation_clock_replaces_raw_shadow_without_mutation() {
         "1999-01-01T00:00:00.000Z"
     );
 }
+
+#[test]
+fn session_native_output_overlay_keeps_null_undefined_extras_and_original_creation_clock() {
+    let session = SessionView::from_secondary_snapshot(snapshot()).unwrap();
+    let clock = chrono::DateTime::from_timestamp_millis(1_800_000_000_789).unwrap();
+    let mut native = crate::AdapterOutput::default();
+    native.insert("custom".into(), Some(serde_json::Value::Null));
+    native.insert("ipAddress".into(), None);
+    native.insert(
+        "unknownTrustedObject".into(),
+        Some(serde_json::json!({"nested":[true,null]})),
+    );
+    native.insert(
+        "createdAt".into(),
+        Some(serde_json::json!("2001-01-01T00:00:00.000Z")),
+    );
+    let projected = session
+        .secondary_snapshot_with_native_output(&native)
+        .unwrap();
+    assert_eq!(projected["custom"], serde_json::Value::Null);
+    assert!(projected.get("ipAddress").is_none());
+    assert_eq!(
+        projected["unknownTrustedObject"],
+        serde_json::json!({"nested":[true,null]})
+    );
+    assert_eq!(projected["createdAt"], "2001-01-01T00:00:00.000Z");
+    let creation = session
+        .secondary_snapshot_for_creation_with_native_output(clock, &native)
+        .unwrap();
+    assert_eq!(
+        creation["createdAt"],
+        crate::utils::datetime::json_date_millis(clock.timestamp_millis())
+    );
+    native.insert("createdAt".into(), None);
+    assert_eq!(
+        session
+            .secondary_snapshot_for_creation_with_native_output(clock, &native)
+            .unwrap()["createdAt"],
+        creation["createdAt"]
+    );
+    assert_ne!(session.created_at(), clock);
+    assert_ne!(
+        session.secondary_snapshot().unwrap()["custom"],
+        serde_json::Value::Null
+    );
+}

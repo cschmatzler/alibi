@@ -119,6 +119,36 @@ impl AuthSession for SessionView {
         Ok(serde_json::to_value(self)?)
     }
 
+    fn secondary_snapshot_with_native_output(
+        &self,
+        native: &crate::AdapterOutput,
+    ) -> crate::AuthResult<serde_json::Value> {
+        let serde_json::Value::Object(mut snapshot) = self.secondary_snapshot()? else {
+            return Err(crate::AuthError::internal(
+                "Invalid secondary session snapshot",
+            ));
+        };
+        for name in snapshot.keys().cloned().collect::<Vec<_>>() {
+            if native.field_is_undefined(&name) {
+                _ = snapshot.remove(&name);
+            }
+        }
+        snapshot.extend(native.values().clone());
+        Ok(serde_json::Value::Object(snapshot))
+    }
+
+    fn secondary_snapshot_for_creation_with_native_output(
+        &self,
+        created_at: DateTime<Utc>,
+        native: &crate::AdapterOutput,
+    ) -> crate::AuthResult<serde_json::Value> {
+        let mut snapshot = self.secondary_snapshot_with_native_output(native)?;
+        snapshot["createdAt"] = serde_json::Value::String(
+            crate::utils::datetime::json_date_millis(created_at.timestamp_millis()),
+        );
+        Ok(snapshot)
+    }
+
     fn secondary_snapshot_for_creation(
         &self,
         created_at: DateTime<Utc>,
@@ -175,6 +205,17 @@ impl AuthSession for SessionView {
             }
         }
         Ok(session)
+    }
+
+    fn output_from_secondary_snapshot(
+        snapshot: serde_json::Value,
+    ) -> crate::AuthResult<crate::AdapterOutput> {
+        let serde_json::Value::Object(values) = snapshot else {
+            return Err(crate::AuthError::internal(
+                "Invalid secondary session snapshot",
+            ));
+        };
+        Ok(crate::AdapterOutput::from_values(values))
     }
 
     fn retained_session_view(&self) -> Option<&SessionView> {
