@@ -361,12 +361,6 @@ pub(crate) async fn validate_authorization_code_via_provider(
     code_verifier: Option<&str>,
     device_id: Option<&str>,
 ) -> AuthResult<OAuthTokenSet> {
-    let redirect_uri = provider
-        .authorization
-        .as_ref()
-        .and_then(|policy| policy.redirect_uri.as_deref())
-        .filter(|uri| !uri.is_empty())
-        .unwrap_or(redirect_uri);
     if let Some(handler) = provider
         .authorization
         .as_ref()
@@ -384,6 +378,12 @@ pub(crate) async fn validate_authorization_code_via_provider(
             .map_err(AuthError::internal)
             .and_then(|tokens| with_default_access_expiry(provider, tokens));
     }
+    let redirect_uri = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.redirect_uri.as_deref())
+        .filter(|uri| !uri.is_empty())
+        .unwrap_or(redirect_uri);
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -591,6 +591,42 @@ mod tests {
             stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
         });
         (endpoint, receiver)
+    }
+
+    struct CaptureCodeContext(std::sync::Mutex<Option<crate::oauth::providers::OAuthAuthorizationCodeContext>>);
+
+    #[async_trait::async_trait]
+    impl crate::oauth::providers::OAuthAuthorizationCodeHandler for CaptureCodeContext {
+        async fn validate_authorization_code(
+            &self,
+            context: crate::oauth::providers::OAuthAuthorizationCodeContext,
+        ) -> Result<OAuthTokenSet, String> {
+            *self.0.lock().unwrap() = Some(context);
+            Ok(OAuthTokenSet::default())
+        }
+    }
+
+    #[tokio::test]
+    async fn custom_code_handlers_receive_original_redirect_uri() {
+        let capture = std::sync::Arc::new(CaptureCodeContext(std::sync::Mutex::new(None)));
+        let mut provider = crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+        let policy = provider.authorization.as_mut().unwrap();
+        policy.redirect_uri = Some("https://configured/callback".into());
+        policy.authorization_code = Some(crate::oauth::providers::OAuthAuthorizationCodeCallback(capture.clone()));
+        validate_authorization_code_via_provider(&provider, "code", "https://actual/callback", Some("verifier"), Some("device")).await.unwrap();
+        let context = capture.0.lock().unwrap().take().unwrap();
+        assert_eq!(context.redirect_uri, "https://actual/callback");
+        assert_eq!(context.code, "code");
+        assert_eq!(context.code_verifier.as_deref(), Some("verifier"));
+        assert_eq!(context.device_id.as_deref(), Some("device"));
+
+        let (endpoint, received) = token_endpoint().await;
+        provider.token_url = endpoint;
+        provider.authorization.as_mut().unwrap().authorization_code = None;
+        validate_authorization_code_via_provider(&provider, "code", "https://actual/callback", None, None).await.unwrap();
+        let body = received.await.unwrap();
+        let fields: std::collections::HashMap<_, _> = url::form_urlencoded::parse(body.as_bytes()).collect();
+        assert_eq!(fields.get("redirect_uri").map(|v| v.as_ref()), Some("https://configured/callback"));
     }
 
     #[tokio::test]
