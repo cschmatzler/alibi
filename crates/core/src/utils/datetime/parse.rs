@@ -253,12 +253,34 @@ fn parse_legacy(value: &str) -> Option<i64> {
 }
 
 fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
+    let end_of_day = if format.contains("%H:") {
+        value.match_indices("24:").find_map(|(index, _)| {
+            (index == 0 || value.as_bytes()[index - 1].is_ascii_whitespace()).then_some(index)
+        })
+    } else {
+        None
+    };
+    let normalized = end_of_day.map(|index| {
+        let mut normalized = value.to_owned();
+        normalized.replace_range(index..index + 2, "00");
+        normalized
+    });
     let mut parsed = Parsed::new();
-    parse(&mut parsed, value, StrftimeItems::new(format)).ok()?;
+    parse(
+        &mut parsed,
+        normalized.as_deref().unwrap_or(value),
+        StrftimeItems::new(format),
+    ).ok()?;
     let year = legacy_year(i64::from(parsed.year()?));
-    let days = civil_days(year, i64::from(parsed.month()?), i64::from(parsed.day()?));
+    let days = civil_days(year, i64::from(parsed.month()?), i64::from(parsed.day()?))
+        + i64::from(end_of_day.is_some());
     let time = if parsed.hour_div_12().is_some() {
         let time = parsed.to_naive_time().ok()?;
+        if end_of_day.is_some()
+            && (time.num_seconds_from_midnight() != 0 || time.nanosecond() / 1_000_000 != 0)
+        {
+            return None;
+        }
         i64::from(time.num_seconds_from_midnight()) * 1000
             + i64::from(time.nanosecond() / 1_000_000)
     } else {
@@ -338,6 +360,28 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn legacy_end_of_day_times_advance_to_the_next_midnight() {
+        for (input, expected) in [
+            ("Jan 1 2024 24:00 GMT", "2024-01-02T00:00:00Z"),
+            ("31 Dec 2024 24:00:00 UTC", "2025-01-01T00:00:00Z"),
+            ("Jan 1 2024 24:00:00.0001 GMT", "2024-01-02T00:00:00Z"),
+            ("2024/1/1 24:00", "2024-01-02T00:00:00"),
+            ("1/1/2024 24:00:00.000 -0500", "2024-01-02T05:00:00Z"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+        for input in [
+            "Jan 1 2024 24:01 GMT",
+            "Jan 1 2024 24:00:01 GMT",
+            "Jan 1 2024 24:00:00.001 GMT",
+            "Jan 1 2024 25:00 GMT",
+            "Jan 1 2024 24:00 PM",
+        ] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
 
     #[test]
     fn legacy_month_tokens_use_their_three_letter_prefix() {
