@@ -72,9 +72,13 @@ impl MemoryRateLimitStorage {
         limit: &EndpointRateLimit,
     ) -> AuthResult<RateLimitDecision> {
         let now = Instant::now();
-        let deadline = Duration::try_from_secs_f64(limit.window_seconds)
-            .ok()
-            .and_then(|window| now.checked_add(window));
+        let deadline = if limit.window_seconds <= 0.0 {
+            Some(now)
+        } else {
+            Duration::try_from_secs_f64(limit.window_seconds)
+                .ok()
+                .and_then(|window| now.checked_add(window))
+        };
         let mut state = self
             .state
             .lock()
@@ -95,16 +99,12 @@ impl MemoryRateLimitStorage {
                 _ = state.expirations.remove(&(deadline, expired_key));
             }
         }
-        // Non-positive and NaN windows have no live memory entry in Source.
-        if limit.window_seconds <= 0.0 || limit.window_seconds.is_nan() {
-            if let Some(previous) = state.buckets.shift_remove(&key)
-                && let Some(deadline) = previous.deadline
-            {
-                _ = state.expirations.remove(&(deadline, key));
-            }
-            return Ok(RateLimitDecision::Allowed);
-        }
-        let count = if let Some(previous) = state.buckets.get(&key).copied() {
+        let count = if let Some(previous) = state
+            .buckets
+            .get(&key)
+            .copied()
+            .filter(|bucket| !bucket.invalid_expiration)
+        {
             let elapsed = now.duration_since(previous.last_request).as_secs_f64();
             let expired = elapsed >= limit.window_seconds;
             if !expired && previous.count >= limit.max_requests {
@@ -125,6 +125,7 @@ impl MemoryRateLimitStorage {
             key.clone(),
             Bucket {
                 deadline,
+                invalid_expiration: limit.window_seconds.is_nan(),
                 last_request: now,
                 count,
             },
@@ -334,6 +335,7 @@ struct RateLimitState {
 #[derive(Debug, Clone, Copy)]
 struct Bucket {
     deadline: Option<Instant>,
+    invalid_expiration: bool,
     last_request: Instant,
     count: f64,
 }
@@ -737,6 +739,57 @@ mod tests {
         for _ in 0..4 {
             assert!(mw.before_request(&other_mount).await.unwrap().is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn nan_windows_compare_existing_quotas_and_retain_insertion_order() {
+        let valid = EndpointRateLimit {
+            window_seconds: 60.0,
+            max_requests: 1.0,
+        };
+        let invalid = EndpointRateLimit {
+            window_seconds: f64::NAN,
+            max_requests: 1.0,
+        };
+        let storage = MemoryRateLimitStorage::new(2);
+        assert!(matches!(
+            storage.consume("first", &valid).await.unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        let RateLimitDecision::Blocked { retry_after } =
+            storage.consume("first", &invalid).await.unwrap()
+        else {
+            panic!("NaN does not reset an existing live quota");
+        };
+        assert!(retry_after.is_nan());
+        for _ in 0..2 {
+            assert!(matches!(
+                storage.consume("invalid", &invalid).await.unwrap(),
+                RateLimitDecision::Allowed
+            ));
+        }
+        assert!(matches!(
+            storage.consume("third", &valid).await.unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        assert!(matches!(
+            storage.consume("first", &valid).await.unwrap(),
+            RateLimitDecision::Allowed
+        ));
+
+        let storage = MemoryRateLimitStorage::new(2);
+        assert!(matches!(
+            storage.consume("invalid", &invalid).await.unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        assert!(matches!(
+            storage.consume("invalid", &valid).await.unwrap(),
+            RateLimitDecision::Allowed
+        ));
+        assert!(matches!(
+            storage.consume("invalid", &valid).await.unwrap(),
+            RateLimitDecision::Blocked { .. }
+        ));
     }
 
     #[tokio::test]
