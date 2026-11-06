@@ -183,6 +183,10 @@ fn parse_legacy(value: &str) -> Option<i64> {
         "%d %b %Y %H:%M:%S%.f %z",
         "%b %d %Y %H:%M %z",
         "%d %b %Y %H:%M %z",
+        "%m/%d/%Y %H:%M:%S%.f %z",
+        "%Y/%m/%d %H:%M:%S%.f %z",
+        "%m/%d/%Y %H:%M %z",
+        "%Y/%m/%d %H:%M %z",
         "%b %d %Y %H:%M:%S%.f GMT",
         "%d %b %Y %H:%M:%S%.f GMT",
         "%b %d %Y %H:%M:%S%.f UTC",
@@ -341,6 +345,19 @@ fn normalize_legacy(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slash_separated_expiry_timestamps_honor_offsets() {
+        for (input, expected) in [
+            ("2024/01/02 12:34 GMT+0530", "2024-01-02T07:04:00Z"),
+            ("01/02/2024 12:34:56 EST", "2024-01-02T17:34:56Z"),
+            ("2024/1/2 12:34:56.789 UTC", "2024-01-02T12:34:56.789Z"),
+            ("1/2/2024 12:34 -0800", "2024-01-02T20:34:00Z"),
+        ] {
+            assert_eq!(parse_date_millis(input), parse_date_millis(expected), "{input}");
+        }
+        assert_eq!(parse_date_millis("1/2/2024 12:34 BOGUS"), None);
+    }
 
     #[test]
     fn numeric_legacy_dates_use_local_midnight() {
