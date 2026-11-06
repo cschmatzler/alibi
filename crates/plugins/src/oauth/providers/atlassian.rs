@@ -140,11 +140,7 @@ fn subject(profile: &Value) -> Result<String, String> {
     reason = "signature fixed by the map_user_info callback type"
 )]
 fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
-    let name = match profile.get("name") {
-        Some(Value::Bool(false)) => String::new(),
-        Some(Value::Number(value)) if value.as_f64() == Some(0.0) => String::new(),
-        value => string(value)?.unwrap_or_default(),
-    };
+    let name = string(profile.get("name"))?.unwrap_or_default();
     Ok(OAuthUserInfo {
         additional_fields: Map::default(),
         id: subject(&profile)?,
@@ -188,5 +184,22 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             user,
             data: profile,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn atlassian_preserves_falsy_scalar_names() {
+        for (name, expected) in [
+            (serde_json::json!(false), "false"),
+            (serde_json::json!(0), "0"),
+            (serde_json::json!(""), ""),
+        ] {
+            let user = atlassian_user_info(serde_json::json!({"account_id":"account","name":name}))
+                .unwrap();
+            assert_eq!(user.name.as_deref(), Some(expected));
+        }
     }
 }
