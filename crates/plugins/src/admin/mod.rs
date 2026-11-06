@@ -730,6 +730,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn admin_update_null_name_reaches_storage_validation() {
+        let (ctx, admin, _, user, _) = create_admin_context().await;
+        let error = update_user_core(
+            &types::AdminUpdateUserRequest::new(
+                &user.id, serde_json::json!({"name":null}).as_object().unwrap().clone(),
+            ),
+            &admin,
+            &AdminConfig::default(),
+            &ctx,
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(error.status_code(), 500);
+        assert_eq!(error.to_string(), "Internal server error: field value cannot be represented by its model column");
+        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        use alibi_core::entity::AuthUser as _;
+        assert_eq!(stored.name(), Some("Regular User"));
+    }
+
+    #[tokio::test]
     async fn empty_impersonation_marker_cannot_be_stopped() {
         let (ctx, _, _, user, _) = create_admin_context().await;
         let session = ctx.database.create_session(CreateSession {

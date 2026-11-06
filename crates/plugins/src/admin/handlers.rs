@@ -430,6 +430,9 @@ pub(crate) async fn update_user_core(
     if let Some(value) = body.data.get("name").and_then(|value| value.as_str()) {
         update.name = Some(value.to_owned());
     }
+    if body.data.get("name") == Some(&serde_json::Value::Null) {
+        update.provider_name = Some(serde_json::Value::Null);
+    }
     if let Some(value) = body.data.get("image").and_then(|value| value.as_str()) {
         update.image = Some(value.to_owned());
     }
