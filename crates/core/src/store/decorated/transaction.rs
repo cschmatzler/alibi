@@ -83,7 +83,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         self.adapter_fields.attach(&mut fields, false);
         let (session, user) = self
             .record_store
-            .cached_session(token)
+            .cached_session_record(token)
             .await?
             .ok_or(AuthError::SessionNotFound)?;
         let (updated, fields) = self
@@ -804,7 +804,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                     .mirror_session_creation(
                         &model,
                         created_at,
-                        self.inner.get_user_by_id(user_id.as_ref()),
+                        self.inner.get_user_by_id_record(user_id.as_ref()),
                     )
                     .await?;
             }

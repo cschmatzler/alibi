@@ -1,6 +1,6 @@
-use crate::AdapterRecord;
 use crate::field_policy::FieldValues;
 use crate::store::{AdapterEvent, PluginStore, SessionRevocation, SessionStore};
+use crate::{AdapterOutput, AdapterRecord};
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
 use async_trait::async_trait;
 
@@ -26,6 +26,28 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         token: &str,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
+        if !self.config.session.stateless && self.secondary().is_some() {
+            let Some((_, user)) = self.cached_session_record(token).await? else {
+                return Ok(None);
+            };
+            let serde_json::Value::Object(values) =
+                serde_json::to_value(self.projection_context.trusted_user_view(&user))?
+            else {
+                return Err(AuthError::internal("User output must be an object"));
+            };
+            let mut output = AdapterOutput::from_values(values);
+            for field in ["createdAt", "updatedAt"] {
+                output.insert(
+                    field.into(),
+                    Some(revive_cached_user_date(
+                        user.raw_snapshot().values().get(field),
+                    )),
+                );
+            }
+            return Ok(Some(self.projection_context.filter_user_record(
+                AdapterRecord::with_output(user.into_stored(), output),
+            )));
+        }
         let Some(user) = self.get_session_user(token).await? else {
             return Ok(None);
         };
@@ -495,4 +517,28 @@ impl<S: AuthSchema> PluginStore<S> {
         }
         Ok(())
     }
+}
+
+fn revive_cached_user_date(value: Option<&serde_json::Value>) -> serde_json::Value {
+    use serde_json::Value;
+    let millis = match value {
+        Some(Value::Null) => Some(0),
+        Some(Value::Bool(value)) => Some(i64::from(*value)),
+        Some(Value::Number(value)) => value
+            .as_f64()
+            .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
+            .map(|value| value.trunc() as i64),
+        Some(Value::String(value)) => crate::utils::datetime::parse_date_millis(value),
+        Some(Value::Array(_)) => value
+            .and_then(|value| {
+                crate::utils::json::JsValue::from(value.clone())
+                    .coerce_string()
+                    .ok()
+            })
+            .and_then(|value| crate::utils::datetime::parse_date_millis(&value)),
+        _ => None,
+    };
+    millis
+        .map(|millis| Value::String(crate::utils::datetime::json_date_millis(millis)))
+        .unwrap_or(Value::Null)
 }

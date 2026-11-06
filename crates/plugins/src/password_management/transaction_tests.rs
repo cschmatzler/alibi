@@ -5,7 +5,9 @@ use alibi_core::session::cookie_cache::{
     CacheVersionContext, CookieCacheVersion, CookieCacheVersionResolver,
 };
 use alibi_core::wire::{SessionView, UserView};
-use alibi_core::{CookieCacheConfig, CreateAccount, CreateSession, CreateUser, UpdateAccount};
+use alibi_core::{
+    AuthUser, CookieCacheConfig, CreateAccount, CreateSession, CreateUser, UpdateAccount,
+};
 use alibi_seaorm::{
     Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
@@ -319,6 +321,7 @@ struct Fixture {
     sessions: Vec<SessionView>,
     hooks: Arc<Hooks>,
     raw: Arc<dyn alibi_core::AuthStore<TestSchema>>,
+    db: alibi_seaorm::sea_orm::DatabaseConnection,
 }
 
 impl Fixture {
@@ -333,6 +336,25 @@ impl Fixture {
         preserve_in_database: bool,
         revoke_after_create: bool,
     ) -> Self {
+        Self::with_secondary_output_counter(
+            failure,
+            cache,
+            store_in_database,
+            preserve_in_database,
+            revoke_after_create,
+            None,
+        )
+        .await
+    }
+
+    async fn with_secondary_output_counter(
+        failure: Failure,
+        cache: Option<Arc<RecordingCache>>,
+        store_in_database: bool,
+        preserve_in_database: bool,
+        revoke_after_create: bool,
+        output_calls: Option<Arc<std::sync::atomic::AtomicUsize>>,
+    ) -> Self {
         let hooks = Arc::new(Hooks {
             armed: AtomicBool::new(false),
             failure,
@@ -342,6 +364,21 @@ impl Fixture {
             before_create_clock: Mutex::new(None),
         });
         let mut config = test_helpers::create_test_config();
+        if let Some(calls) = output_calls {
+            config.user.additional_fields.insert(
+                "emailVerified".into(),
+                alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type": "boolean"}))
+                    .transform_output(move |value| {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        async move {
+                            let value = value.unwrap().coerce_string().unwrap();
+                            Ok(Some(alibi_core::utils::json::JsValue::String(format!(
+                                "{value}:once"
+                            ))))
+                        }
+                    }),
+            );
+        }
         config.session.cookie_cache = Some(CookieCacheConfig {
             enabled: true,
             version: Some(CookieCacheVersion::Resolver(hooks.clone())),
@@ -358,7 +395,8 @@ impl Fixture {
             .await
             .unwrap();
         let raw: Arc<dyn alibi_core::AuthStore<TestSchema>> = Arc::new(
-            SeaOrmStore::<TestSchema>::new(config.clone(), db).with_hooks(vec![hooks.clone()]),
+            SeaOrmStore::<TestSchema>::new(config.clone(), db.clone())
+                .with_hooks(vec![hooks.clone()]),
         );
         let database = alibi_core::plugin::AuthInitContext::new(config.clone(), raw.clone())
             .database_with_registered_transforms();
@@ -408,6 +446,7 @@ impl Fixture {
             sessions,
             hooks,
             raw,
+            db,
         }
     }
 
@@ -1134,5 +1173,385 @@ async fn session_creation_publishes_null_owner_after_index_triggered_deletion_wi
         );
         fixture.ctx.database.delete_session(&token).await.unwrap();
         assert!(cache.get(&token).await.unwrap().is_none());
+    }
+}
+
+fn native_owner_scalars() -> [(&'static str, &'static str, serde_json::Value); 8] {
+    [
+        ("email_verified", "emailVerified", serde_json::json!(2)),
+        (
+            "two_factor_enabled",
+            "twoFactorEnabled",
+            serde_json::json!(-1),
+        ),
+        ("banned", "banned", serde_json::json!(0.5)),
+        ("is_anonymous", "isAnonymous", serde_json::json!("pending")),
+        (
+            "phone_number_verified",
+            "phoneNumberVerified",
+            serde_json::json!(-2),
+        ),
+        (
+            "ban_expires",
+            "banExpires",
+            serde_json::json!(9000000000000000_i64),
+        ),
+        ("created_at", "createdAt", serde_json::json!(-123.5)),
+        ("updated_at", "updatedAt", serde_json::json!(123.25)),
+    ]
+}
+
+fn assert_native_owner_snapshot(snapshot: &serde_json::Value) {
+    for (physical, _, expected) in native_owner_scalars() {
+        assert_eq!(snapshot[physical], expected, "{physical}");
+    }
+}
+
+async fn seed_native_owner(fixture: &Fixture) {
+    use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
+    fixture.db.execute_raw(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "UPDATE user SET emailVerified = 2, twoFactorEnabled = -1, banned = 0.5, isAnonymous = 'pending', phoneNumberVerified = -2, banExpires = 9000000000000000, createdAt = -123.5, updatedAt = 123.25 WHERE id = ?",
+        [fixture.user.id.clone().into()],
+    )).await.unwrap();
+}
+
+#[tokio::test]
+async fn inline_transaction_session_creation_reads_native_owner_on_transaction_connection() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), true, false, false).await;
+    seed_native_owner(&fixture).await;
+    let user_id = fixture.user.id.clone();
+    let created = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        alibi_core::store::write_transaction(fixture.ctx.database.as_ref(), move |tx| {
+            Box::pin(async move {
+                tx.create_session(CreateSession {
+                    user_id,
+                    expires_at: chrono::Utc::now() + Duration::hours(1),
+                    token: None,
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                    additional_fields: Default::default(),
+                })
+                .await
+            })
+        }),
+    )
+    .await
+    .expect("owner lookup must not acquire the occupied root connection")
+    .unwrap();
+    let snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(&created.token).await.unwrap().unwrap()).unwrap();
+    assert_eq!(snapshot["user"]["email_verified"], false);
+    assert_eq!(snapshot["user"]["is_anonymous"], "pending");
+    assert_eq!(snapshot["user"]["created_at"], -123.5);
+    assert_eq!(snapshot["user"]["ban_expires"], 9000000000000000_i64);
+}
+
+#[tokio::test]
+async fn session_creation_and_user_refresh_publish_native_owner_scalars() {
+    use alibi_core::store::CacheAdapter;
+    for (store_in_database, deferred) in [(false, false), (true, false), (true, true)] {
+        let cache = RecordingCache::new(false);
+        let fixture = Fixture::with_secondary(
+            Failure::None,
+            Some(cache.clone()),
+            store_in_database,
+            false,
+            false,
+        )
+        .await;
+        seed_native_owner(&fixture).await;
+        let token = if deferred {
+            let (_, response) = fixture.change(Some(true)).await;
+            let response = response.unwrap();
+            serde_json::from_slice::<serde_json::Value>(&response.body).unwrap()["token"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        } else {
+            fixture.hooks.armed.store(false, Ordering::SeqCst);
+            test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+                .await
+                .token
+        };
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        for (physical, _, expected) in native_owner_scalars() {
+            let expected = if matches!(
+                physical,
+                "email_verified" | "two_factor_enabled" | "banned" | "phone_number_verified"
+            ) {
+                serde_json::Value::Bool(false)
+            } else {
+                expected
+            };
+            assert_eq!(snapshot["user"][physical], expected, "{physical}");
+        }
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        fixture
+            .ctx
+            .database
+            .update_user(
+                &fixture.user.id,
+                alibi_core::UpdateUser {
+                    name: Some("Published new owner".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let snapshot: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(snapshot["user"]["name"], "Published new owner");
+        for (physical, _, expected) in native_owner_scalars() {
+            if physical != "updated_at" {
+                let expected = if matches!(
+                    physical,
+                    "email_verified" | "two_factor_enabled" | "banned" | "phone_number_verified"
+                ) {
+                    serde_json::Value::Bool(false)
+                } else {
+                    expected
+                };
+                assert_eq!(snapshot["user"][physical], expected, "{physical}");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn cached_session_owner_retains_raw_scalars_and_absence_without_database_requery() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let token = &fixture.sessions[0].token;
+    let mut snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    for (physical, _, value) in native_owner_scalars() {
+        snapshot["user"][physical] = value;
+    }
+    snapshot["user"].as_object_mut().unwrap().remove("image");
+    snapshot["user"]["name"] = serde_json::Value::Null;
+    alibi_seaorm::store::entities::user::Model::from_secondary_snapshot_record(
+        snapshot["user"].clone(),
+    )
+    .expect("cached native owner must decode without losing null name or absent image");
+    cache
+        .set(
+            token,
+            &serde_json::to_string(&snapshot).unwrap(),
+            Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    fixture.raw.delete_user(&fixture.user.id).await.unwrap();
+    assert!(
+        fixture
+            .raw
+            .get_user_by_id(&fixture.user.id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let record = fixture
+        .ctx
+        .database
+        .get_session_user_record(token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(record.id(), fixture.user.id);
+    for (_, wire, expected) in native_owner_scalars() {
+        let expected = match wire {
+            "createdAt" => serde_json::json!(alibi_core::utils::datetime::json_date_millis(-123)),
+            "updatedAt" => serde_json::json!(alibi_core::utils::datetime::json_date_millis(123)),
+            _ => expected,
+        };
+        assert_eq!(
+            record.raw_snapshot().values().get(wire),
+            Some(&expected),
+            "{wire}"
+        );
+    }
+    assert!(!record.raw_snapshot().values().contains_key("image"));
+    assert_eq!(
+        record.raw_snapshot().values().get("name"),
+        Some(&serde_json::Value::Null)
+    );
+    fixture
+        .ctx
+        .database
+        .refresh_session(token, chrono::Utc::now() + Duration::hours(2))
+        .await
+        .unwrap()
+        .unwrap();
+    let snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    assert_native_owner_snapshot(&snapshot["user"]);
+    assert!(snapshot["user"].get("image").is_none());
+    assert!(snapshot["user"]["name"].is_null());
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session_user_record(token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
+async fn cached_session_owner_revives_only_created_and_updated_dates() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    let token = &fixture.sessions[0].token;
+    let original: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    for (raw, expected) in [
+        (
+            serde_json::json!(0),
+            serde_json::json!("1970-01-01T00:00:00.000Z"),
+        ),
+        (
+            serde_json::json!(-1),
+            serde_json::json!("1969-12-31T23:59:59.999Z"),
+        ),
+        (
+            serde_json::json!(1.9),
+            serde_json::json!("1970-01-01T00:00:00.001Z"),
+        ),
+        (serde_json::json!(1e20), serde_json::Value::Null),
+        (
+            serde_json::Value::Null,
+            serde_json::json!("1970-01-01T00:00:00.000Z"),
+        ),
+        (
+            serde_json::Value::Bool(true),
+            serde_json::json!("1970-01-01T00:00:00.001Z"),
+        ),
+        (
+            serde_json::json!("2024-01-02T03:04:05.678Z"),
+            serde_json::json!("2024-01-02T03:04:05.678Z"),
+        ),
+        (serde_json::json!({}), serde_json::Value::Null),
+    ] {
+        let mut snapshot = original.clone();
+        snapshot["user"]["created_at"] = raw.clone();
+        snapshot["user"]["updated_at"] = raw.clone();
+        snapshot["user"]["ban_expires"] = raw.clone();
+        cache
+            .set(token, &snapshot.to_string(), Duration::hours(1))
+            .await
+            .unwrap();
+        let record = fixture
+            .ctx
+            .database
+            .get_session_user_record(token)
+            .await
+            .unwrap()
+            .unwrap();
+        let wire = serde_json::to_value(&record).unwrap();
+        assert_eq!(wire["createdAt"], expected);
+        assert_eq!(wire["updatedAt"], expected);
+        assert_eq!(wire["banExpires"], raw);
+        let stored: serde_json::Value =
+            serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(stored["user"]["created_at"], raw);
+        assert_eq!(stored["user"]["updated_at"], raw);
+    }
+}
+
+#[tokio::test]
+async fn session_owner_output_transforms_run_only_on_actual_database_publication() {
+    use alibi_core::store::CacheAdapter;
+    for (store_in_database, deferred) in [(false, false), (true, false), (true, true)] {
+        let cache = RecordingCache::new(false);
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let fixture = Fixture::with_secondary_output_counter(
+            Failure::None,
+            Some(cache.clone()),
+            store_in_database,
+            false,
+            false,
+            Some(calls.clone()),
+        )
+        .await;
+        seed_native_owner(&fixture).await;
+        calls.store(0, Ordering::SeqCst);
+        let token = if deferred {
+            let (_, response) = fixture.change(Some(true)).await;
+            serde_json::from_slice::<serde_json::Value>(&response.unwrap().body).unwrap()["token"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        } else {
+            fixture.hooks.armed.store(false, Ordering::SeqCst);
+            test_helpers::create_session(&fixture.ctx, fixture.user.id.clone(), Duration::hours(1))
+                .await
+                .token
+        };
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        for _ in 0..2 {
+            let record = fixture
+                .ctx
+                .database
+                .get_session_user_record(&token)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                record.raw_snapshot().values()["emailVerified"],
+                "false:once"
+            );
+        }
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        fixture
+            .ctx
+            .database
+            .refresh_session(&token, chrono::Utc::now() + Duration::hours(2))
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
+        assert_eq!(cached["user"]["email_verified"], "false:once");
+        fixture
+            .ctx
+            .database
+            .update_user(
+                &fixture.user.id,
+                alibi_core::UpdateUser {
+                    name: Some("Refreshed".into()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let record = fixture
+            .ctx
+            .database
+            .get_session_user_record(&token)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            record.raw_snapshot().values()["emailVerified"],
+            "false:once"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 }
