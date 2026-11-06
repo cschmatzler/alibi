@@ -602,6 +602,39 @@ mod tests {
     }
 
     #[test]
+    fn legacy_comments_preserve_time_token_boundaries() {
+        for (input, expected) in [
+            ("Jan 1 2024 12:34:60 (ignored", "2024-01-01T12:34:00"),
+            ("Jan 1 2024 12:34:59 (ignored", "2024-01-01T12:34:59"),
+            ("Jan 1 2024 12:34:60(comment) GMT", "2024-01-01T12:34:00Z"),
+            (") Jan 1 2024 12:34:60 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT (a(b)c", "2024-01-01T12:34:00Z"),
+            (
+                "Jan 1 2024 12:34:59.5(comment) GMT",
+                "2024-01-01T12:34:59.500Z",
+            ),
+            ("Jan(comment)1 2024 12:34:60 GMT", "2024-01-01T12:34:00Z"),
+            ("Jan 1 2024 12:34:60(comment)1 GMT", "2024-01-01T12:34:01Z"),
+        ] {
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
+        }
+        for input in [
+            "Jan 1 2024 12:34:59(comment) GMT",
+            "Jan 1 2024 12:34:60.5(comment) GMT",
+            "Jan 1 2024 12:34(comment) GMT",
+            "Jan 1 2024 12:34:59.(comment)5 GMT",
+            "Ja(comment)n 1 2024 12:34:60 GMT",
+            "Jan 1 2024 12:34:60 GMT )",
+        ] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
+
+    #[test]
     fn legacy_offsets_accept_short_hours_and_unbounded_hhmm_components() {
         for (input, expected) in [
             ("Jan 1 2024 12:34:60 GMT+5", "2024-01-01T07:34:00Z"),
@@ -936,17 +969,74 @@ mod tests {
     }
 }
 
+fn comment_interrupts_legacy_time(value: &str) -> bool {
+    if value.ends_with(char::is_whitespace) {
+        return false;
+    }
+    let number = |token: &str| {
+        (!token.is_empty() && token.bytes().all(|byte| byte.is_ascii_digit())).then(|| {
+            token.bytes().fold(0u32, |number, digit| {
+                (number * 10 + u32::from(digit - b'0')).min(60)
+            })
+        })
+    };
+    let Some((hour, clock)) = value
+        .split_whitespace()
+        .last()
+        .and_then(|part| part.split_once(':'))
+    else {
+        return false;
+    };
+    if number(hour).is_none() {
+        return false;
+    }
+    let Some((_, seconds)) = clock.split_once(':') else {
+        return number(clock).is_some_and(|minute| minute < 60);
+    };
+    let (seconds, fraction) = seconds
+        .split_once('.')
+        .map_or((seconds, None), |(seconds, fraction)| {
+            (seconds, Some(fraction))
+        });
+    let Some(seconds) = number(seconds) else {
+        return false;
+    };
+    if seconds < 60 {
+        fraction.is_none_or(str::is_empty)
+    } else {
+        fraction
+            .and_then(number)
+            .is_some_and(|seconds| seconds < 60)
+    }
+}
+
 fn remove_comments(value: &str) -> Option<String> {
     let mut result = String::new();
     let mut depth = 0usize;
+    let mut has_number = false;
     for character in value.chars() {
         match character {
-            '(' => depth = depth.checked_add(1)?,
+            '(' => {
+                if depth == 0 {
+                    if comment_interrupts_legacy_time(&result) {
+                        return None;
+                    }
+                    // Comments separate tokens; they never concatenate words or numerals.
+                    if result.ends_with(|character: char| character.is_ascii_alphanumeric()) {
+                        result.push(' ');
+                    }
+                }
+                depth = depth.checked_add(1)?;
+            }
             ')' if depth > 0 => depth -= 1,
-            ')' => return None,
-            _ if depth == 0 => result.push(character),
+            ')' if has_number => return None,
+            ')' => {}
+            _ if depth == 0 => {
+                has_number |= character.is_ascii_digit();
+                result.push(character);
+            }
             _ => {}
         }
     }
-    (depth == 0).then_some(result)
+    Some(result)
 }
