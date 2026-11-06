@@ -67,7 +67,7 @@ impl OAuthProvider {
             authorization: None,
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
-            account_subject: None,
+            account_subject: Some(subject),
             map_user_info: None,
             get_user_info: None,
             refresh_access_token: None,
@@ -111,47 +111,25 @@ impl OAuthProvider {
         provider
     }
 }
-fn string(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null) => Ok(None),
-        _ => Err("Invalid Atlassian profile field".into()),
-    }
-}
 fn subject(profile: &Value) -> Result<String, String> {
-    let value = string(profile.get("account_id"))?.ok_or("Missing Atlassian account_id")?;
-    if value
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || value == "null"
-        || value == "undefined"
-    {
-        return Err("Invalid Atlassian account_id".into());
-    }
-    Ok(value)
+    super::remaining_profile::raw_subject(profile.get("account_id"))
 }
 #[expect(
     clippy::needless_pass_by_value,
     reason = "signature fixed by the map_user_info callback type"
 )]
 fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
-    let name = string(profile.get("name"))?.unwrap_or_default();
+    let name = super::remaining_profile::scalar(profile.get("name"))?.unwrap_or_default();
     Ok(OAuthUserInfo {
         additional_fields: Map::default(),
-        id: subject(&profile)?,
+        id: subject(&profile).unwrap_or_default(),
         name: Some(name),
         email: profile
             .get("email")
             .and_then(Value::as_str)
             .unwrap_or_default()
             .into(),
-        image: string(profile.get("picture"))?,
+        image: super::remaining_profile::scalar(profile.get("picture"))?,
         email_verified: false,
     })
 }
@@ -212,7 +190,7 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
                 additional_fields: Map::new(),
-                id: subject(&profile)?,
+                id: subject(&profile).unwrap_or_default(),
                 email: String::new(),
                 name: None,
                 image: None,

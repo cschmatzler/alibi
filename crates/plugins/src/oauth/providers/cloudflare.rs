@@ -101,7 +101,7 @@ impl OAuthProvider {
             }),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
-            account_subject: None,
+            account_subject: Some(subject),
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(CloudflareUserInfo {
                 url: user_info_url,
@@ -119,17 +119,6 @@ impl OAuthProvider {
         }
     }
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null) => Ok(None),
-        _ => Err("Invalid Cloudflare profile field".into()),
-    }
-}
 fn truthy(value: &Value) -> bool {
     match value {
         Value::Null | Value::Bool(false) => false,
@@ -139,18 +128,7 @@ fn truthy(value: &Value) -> bool {
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("id"))?.ok_or("Missing Cloudflare ID")?;
-    if id
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid Cloudflare ID".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("id"))
 }
 #[derive(Clone)]
 struct CloudflareUserInfo {
@@ -202,7 +180,8 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .filter_map(|key| profile.get(key))
             .filter(|value| truthy(value))
             .map(super::remaining_profile::js_string)
-            .collect::<Result<Vec<_>, _>>()?;
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(super::remaining_profile::profile_exception)?;
         let name = names.join(" ");
         let mut output = Map::new();
         if name.is_empty() {
@@ -235,7 +214,7 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
                 additional_fields: Map::new(),
-                id: subject(profile)?,
+                id: subject(profile).unwrap_or_default(),
                 email: String::new(),
                 name: None,
                 image: None,

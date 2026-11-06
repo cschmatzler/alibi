@@ -304,6 +304,78 @@ async fn dedicated_profiles_distinguish_null_transport_and_mapping_exceptions_th
 }
 
 #[tokio::test]
+async fn dedicated_raw_fields_and_account_subjects_do_not_require_scalar_profiles() {
+    for name in [
+        "atlassian",
+        "cloudflare",
+        "cognito",
+        "dropbox",
+        "figma",
+        "huggingface",
+        "kakao",
+        "kick",
+        "line",
+        "linear",
+        "linkedin",
+    ] {
+        for subject in [
+            serde_json::json!({}),
+            serde_json::json!(["raw", 7]),
+            Value::Null,
+        ] {
+            let raw = serde_json::json!({
+                "id":subject, "sub":subject, "account_id":subject, "user_id":subject,
+                "email":{"raw":true}, "name":{"raw":true}, "handle":{"raw":true},
+                "picture":{"raw":true}, "img_url":{"raw":true}, "avatarUrl":{"raw":true},
+                "kakao_account":{"email":{"raw":true},"profile":{"nickname":{"raw":true}}},
+            });
+            let body = match name {
+                "cloudflare" => serde_json::json!({"success":true,"result":raw}),
+                "kick" => serde_json::json!({"data":[raw]}),
+                "linear" => serde_json::json!({"data":{"viewer":raw}}),
+                _ => raw.clone(),
+            };
+            let server = HttpFixture::new(200, body).await;
+            let provider = provider(name, &server.url);
+            let response = fetch_user_info_from_provider(&provider, request())
+                .await
+                .unwrap_or_else(|error| panic!("{name}: {error:?}"));
+            assert_eq!(response.data, raw, "{name}");
+            let expected = super::remaining_profile::raw_subject(Some(&subject));
+            assert_eq!(
+                provider.account_subject.unwrap()(&response.data),
+                expected,
+                "{name}"
+            );
+            assert!(response.user_output.is_some(), "{name}");
+        }
+    }
+    let provider = OAuthProvider::facebook("client", "secret");
+    for subject in [
+        serde_json::json!({}),
+        serde_json::json!(["raw", 7]),
+        Value::Null,
+    ] {
+        assert_eq!(
+            provider.account_subject.unwrap()(&serde_json::json!({"sub":subject,"id":"fallback"})),
+            super::remaining_profile::raw_subject(Some(&subject))
+        );
+    }
+}
+
+#[tokio::test]
+async fn cloudflare_name_join_coercion_is_a_source_exception() {
+    let server = HttpFixture::new(
+        200,
+        serde_json::json!({
+            "success":true, "result":{"id":"cf","first_name":{"toString":0}}
+        }),
+    )
+    .await;
+    assert_outcome(provider("cloudflare", &server.url), request(), true).await;
+}
+
+#[tokio::test]
 async fn repository_profiles_defer_missing_subject_admission_until_after_mapping() {
     for (name, profile) in [
         ("github", serde_json::json!({"email":"a@example.com"})),

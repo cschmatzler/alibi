@@ -211,7 +211,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
                 additional_fields: Map::new(),
-                id: scalar(profile.get("sub"))?.unwrap_or_default(),
+                id: super::remaining_profile::scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: None,
                 email: String::new(),
                 image: None,
@@ -225,30 +225,8 @@ impl OAuthUserInfoHandler for LineUserInfo {
     }
 }
 
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Err("Invalid LINE profile field".into()),
-    }
-}
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("sub"))?.ok_or("Missing LINE sub")?;
-    if id
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid LINE sub".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("sub"))
 }
 
 fn truthy(value: &Value) -> bool {
