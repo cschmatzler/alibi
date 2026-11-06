@@ -19,14 +19,11 @@ impl ApiKeyPlugin {
             !config.rate_limit.enabled || !key.rate_limit_enabled || count_mutated;
         if let Some(mut remaining) = key.remaining {
             if let (Some(interval), Some(amount)) = (key.refill_interval, key.refill_amount) {
-                let last = chrono::DateTime::parse_from_rfc3339(
+                let elapsed = elapsed_milliseconds(
+                    now,
                     key.last_refill_at.as_deref().unwrap_or(&key.created_at),
-                )
-                .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
-                if interval != 0.0
-                    && amount != 0.0
-                    && milliseconds(now.signed_duration_since(last)) > interval
-                {
+                )?;
+                if interval != 0.0 && amount != 0.0 && elapsed > interval {
                     remaining = amount;
                     mutations.last_refill_at = Some(timestamp());
                 }
@@ -42,10 +39,8 @@ impl ApiKeyPlugin {
             let elapsed = key
                 .last_request
                 .as_deref()
-                .map(chrono::DateTime::parse_from_rfc3339)
-                .transpose()
-                .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?
-                .map(|last| milliseconds(now.signed_duration_since(last)));
+                .map(|last| elapsed_milliseconds(now, last))
+                .transpose()?;
             if elapsed.is_none_or(|elapsed| elapsed > window) {
                 mutations.request_count = Some(1.0);
             } else if key.request_count.unwrap_or(0.0) >= max {
@@ -103,11 +98,8 @@ impl ApiKeyPlugin {
     }
 }
 
-fn milliseconds(duration: chrono::Duration) -> f64 {
-    // JavaScript dates use integral milliseconds; string conversion avoids narrowing.
-    duration
-        .num_milliseconds()
-        .to_string()
-        .parse()
-        .unwrap_or_default()
+fn elapsed_milliseconds(now: chrono::DateTime<Utc>, last: &str) -> alibi_core::AuthResult<f64> {
+    let last = alibi_core::utils::datetime::parse_date_millis(last)
+        .ok_or_else(|| alibi_core::AuthError::internal("Invalid stored API key usage timestamp"))?;
+    Ok((now.timestamp_millis() - last) as f64)
 }

@@ -3455,6 +3455,46 @@ mod crud_tests {
     }
 
     #[tokio::test]
+    async fn secondary_usage_accepts_javascript_refill_and_rate_limit_dates() {
+        use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
+        let (ctx, owner, _) = context().await;
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+            storage: ApiKeyStorageMode::SecondaryStorage,
+            secondary_storage: Some(cache.clone()),
+            ..Default::default()
+        });
+        let created = server_key(&plugin, &ctx, &owner, "default").await;
+        let id = format!("api-key:by-id:{}", created.api_key.id);
+        let hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+        let mut row: serde_json::Value =
+            serde_json::from_str(&cache.get(&id).await.unwrap().unwrap()).unwrap();
+        row["remaining"] = json!(2);
+        row["refillAmount"] = json!(5);
+        row["refillInterval"] = json!(1);
+        row["lastRefillAt"] = json!("2000-01-01");
+        row["lastRequest"] = json!("2000-01-01");
+        row["requestCount"] = json!(10);
+        let serialized = serde_json::to_string(&row).unwrap();
+        for index in [&id, &hash] {
+            cache.set_without_expiry(index, &serialized).await.unwrap();
+        }
+        let verified = plugin.verify_api_key(&VerifyApiKey {
+            key: &created.key, config_id: None, permissions: None,
+        }, &ctx).await.unwrap();
+        assert_eq!(verified.remaining, Some(4.0));
+        assert_eq!(verified.request_count, Some(1.0));
+        assert_ne!(verified.last_refill_at.as_deref(), Some("2000-01-01"));
+        assert_ne!(verified.last_request.as_deref(), Some("2000-01-01"));
+        for index in [&id, &hash] {
+            let stored: serde_json::Value =
+                serde_json::from_str(&cache.get(index).await.unwrap().unwrap()).unwrap();
+            assert_eq!(stored["remaining"], 4.0);
+            assert_eq!(stored["requestCount"], 1.0);
+        }
+    }
+
+    #[tokio::test]
     async fn secondary_expiration_accepts_javascript_date_strings() {
         use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
         let (ctx, owner, _) = context().await;
