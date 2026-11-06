@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug)]
 enum PathPattern {
     Exact,
-    Glob(regex::Regex),
+    Glob(crate::utils::wildcard::Wildcard),
     Invalid,
 }
 
