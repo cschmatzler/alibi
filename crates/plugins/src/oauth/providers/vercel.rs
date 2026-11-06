@@ -50,12 +50,44 @@ impl OAuthProvider {
             client_secret.map(str::to_owned),
         ))
     }
+    /// # Panics
+    /// Panics for token authentication/secret combinations rejected by Vercel.
+    /// Use `try_vercel_with_options` to handle invalid configuration.
     #[must_use]
     pub fn vercel_with_options(options: VercelOptions) -> Self {
+        Self::try_vercel_with_options(options).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    pub fn try_vercel_with_options(options: VercelOptions) -> Result<Self, String> {
+        let has_secret = options
+            .client_secret
+            .as_ref()
+            .is_some_and(|s| !s.is_empty());
+        let invalid_method = match options.token_endpoint_auth {
+            Some(OAuthTokenEndpointAuth::None) if has_secret => Some("none"),
+            Some(OAuthTokenEndpointAuth::PrivateKeyJwt) if has_secret => Some("private_key_jwt"),
+            Some(OAuthTokenEndpointAuth::ClientSecretBasic) if !has_secret => {
+                Some("client_secret_basic")
+            }
+            Some(OAuthTokenEndpointAuth::ClientSecretPost) if !has_secret => {
+                Some("client_secret_post")
+            }
+            _ => None,
+        };
+        if let Some(method) = invalid_method {
+            let reason = if has_secret {
+                "cannot be combined with"
+            } else {
+                "requires"
+            };
+            return Err(format!(
+                "Vercel {method} token endpoint authentication {reason} clientSecret"
+            ));
+        }
         let mut policy = OAuthAuthorizationPolicy {
             preserve_raw_profile_scalars: true,
             source_profile_exceptions: true,
-            require_client_id: true,
+            code_verifier_required_for: Some("Vercel"),
             login_hint: false,
             pkce: true,
             configured_scopes: options.scope,
@@ -118,9 +150,77 @@ impl OAuthProvider {
             mapper: options.map_profile_to_user,
             application_mapper: None,
         }));
-        provider
+        Ok(provider)
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
     super::remaining_profile::subject(ProfileKind::Vercel, profile)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vercel_constructor_validates_explicit_authentication_against_secret_truthiness() {
+        use OAuthTokenEndpointAuth::{
+            ClientKeyPost, ClientSecretBasic, ClientSecretPost, PrivateKeyJwt,
+        };
+        for secret in [None, Some(""), Some("secret")] {
+            for method in [
+                None,
+                Some(ClientSecretBasic),
+                Some(ClientSecretPost),
+                Some(PrivateKeyJwt),
+                Some(OAuthTokenEndpointAuth::None),
+            ] {
+                let mut options = VercelOptions::new("client", secret.map(str::to_owned));
+                options.token_endpoint_auth = method;
+                let has_secret = secret.is_some_and(|s| !s.is_empty());
+                let invalid = match method {
+                    Some(PrivateKeyJwt | OAuthTokenEndpointAuth::None) => has_secret,
+                    Some(ClientSecretBasic | ClientSecretPost) => !has_secret,
+                    _ => false,
+                };
+                let result = OAuthProvider::try_vercel_with_options(options.clone());
+                assert_eq!(result.is_err(), invalid, "{secret:?} {method:?}");
+                if invalid {
+                    let method_name = match method.unwrap() {
+                        ClientSecretBasic => "client_secret_basic",
+                        ClientSecretPost => "client_secret_post",
+                        PrivateKeyJwt => "private_key_jwt",
+                        OAuthTokenEndpointAuth::None => "none",
+                        ClientKeyPost => unreachable!(),
+                    };
+                    let reason = if has_secret {
+                        "cannot be combined with"
+                    } else {
+                        "requires"
+                    };
+                    assert_eq!(
+                        result.unwrap_err(),
+                        format!(
+                            "Vercel {method_name} token endpoint authentication {reason} clientSecret"
+                        )
+                    );
+                    assert!(
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            OAuthProvider::vercel_with_options(options)
+                        }))
+                        .is_err()
+                    );
+                } else {
+                    let provider = result.unwrap();
+                    assert_eq!(
+                        provider.authorization.unwrap().token_endpoint_auth,
+                        Some(method.unwrap_or(if has_secret {
+                            ClientSecretPost
+                        } else {
+                            OAuthTokenEndpointAuth::None
+                        }))
+                    );
+                }
+            }
+        }
+    }
 }

@@ -66,6 +66,7 @@ impl OAuthProvider {
             require_client_id: true,
             login_hint: false,
             pkce: true,
+            code_verifier_required_for: Some("Salesforce"),
             configured_scopes: options.scope,
             disable_default_scopes: options.disable_default_scope,
             authorization_code_client_key: options.client_key,

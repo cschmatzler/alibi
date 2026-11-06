@@ -96,6 +96,7 @@ impl OAuthProvider {
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
                 require_client_secret: true,
+                code_verifier_required_for: Some("Paybin"),
                 prompt: options.prompt,
                 token_endpoint_auth: Some(authentication),
                 authorization_code_client_key: options.client_key,

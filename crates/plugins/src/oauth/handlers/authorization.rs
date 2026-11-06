@@ -82,6 +82,16 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
     {
         return Err(AuthError::config("Client ID is required"));
     }
+    if code_challenge.is_empty()
+        && let Some(name) = provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.code_verifier_required_for)
+    {
+        return Err(AuthError::config(format!(
+            "codeVerifier is required for {name}"
+        )));
+    }
     let mut effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
         || {
             scopes.map_or_else(
@@ -612,6 +622,69 @@ mod tests {
                         .contains("Client ID is required")
                 );
             }
+        }
+    }
+
+    #[test]
+    fn published_required_verifiers_preserve_credential_order_and_optional_pkce() {
+        for (name, provider) in [
+            ("Paybin", OAuthProvider::paybin("client", Some("secret"))),
+            (
+                "Salesforce",
+                OAuthProvider::salesforce("client", Some("secret")),
+            ),
+            ("Vercel", OAuthProvider::vercel("", None)),
+        ] {
+            let result = build_authorization_url(
+                &provider,
+                "https://app/callback",
+                None,
+                "state",
+                "",
+                None,
+                None,
+            );
+            assert!(
+                result
+                    .unwrap_err()
+                    .to_string()
+                    .contains(&format!("codeVerifier is required for {name}"))
+            );
+            let result = build_authorization_url(
+                &provider,
+                "https://app/callback",
+                None,
+                "state",
+                "challenge",
+                None,
+                None,
+            )
+            .unwrap();
+            let url = url::Url::parse(&result).unwrap();
+            assert!(
+                url.query_pairs()
+                    .any(|(key, value)| key == "code_challenge" && value == "challenge")
+            );
+        }
+        for provider in [
+            OAuthProvider::paybin("", None),
+            OAuthProvider::salesforce("", None),
+        ] {
+            let error = build_authorization_url(
+                &provider,
+                "https://app/callback",
+                None,
+                "state",
+                "",
+                None,
+                None,
+            )
+            .unwrap_err();
+            assert!(
+                error
+                    .to_string()
+                    .contains("Client ID and client secret are required")
+            );
         }
     }
 

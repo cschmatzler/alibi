@@ -578,6 +578,8 @@ pub struct OAuthAuthorizationPolicy {
     pub disable_default_scopes: bool,
     pub scope_order: OAuthScopeOrder,
     pub pkce: bool,
+    /// Published factory name when authorization requires a PKCE verifier.
+    pub code_verifier_required_for: Option<&'static str>,
     pub prompt: Option<String>,
     /// Used when `prompt` is absent or empty; Discord defaults to `none`.
     pub default_prompt: Option<String>,
@@ -644,6 +646,7 @@ impl Default for OAuthAuthorizationPolicy {
             disable_default_scopes: false,
             scope_order: OAuthScopeOrder::ConfiguredThenRequested,
             pkce: true,
+            code_verifier_required_for: None,
             prompt: None,
             default_prompt: None,
             discord_permissions: None,
