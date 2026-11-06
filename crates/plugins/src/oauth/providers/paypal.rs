@@ -167,7 +167,7 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
-        if !profile.is_object() {
+        if !truthy(&profile) {
             return Err("Missing PayPal profile".into());
         }
         if request.id_token.is_none()
@@ -267,9 +267,93 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        _ => Err("Invalid PayPal profile field".into()),
+        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
     super::remaining_profile::raw_subject(profile.get("user_id"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 1024];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let body = profile.to_string();
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn paypal_retains_truthy_profiles_and_compound_public_fields() {
+        for profile in [
+            json!({"user_id": "paypal", "name": {}, "email": [], "picture": ["raw"], "email_verified": "raw"}),
+            json!(42),
+            json!("profile"),
+            json!([]),
+        ] {
+            let (endpoint, captured) = profile_server(profile.clone()).await;
+            let response = PayPalUserInfo {
+                endpoint,
+                mapper: None,
+                application_mapper: None,
+            }
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..OAuthUserInfoRequest::default()
+            })
+            .await
+            .unwrap();
+            captured.await.unwrap();
+            assert_eq!(response.data, profile);
+            let output = response.user_output.unwrap();
+            if profile.is_object() {
+                assert_eq!(output["name"], json!({}));
+                assert_eq!(output["image"], json!(["raw"]));
+                assert_eq!(output["email"], json!([]));
+                assert_eq!(output["emailVerified"], "raw");
+            } else {
+                assert!(output.is_empty());
+            }
+        }
+        for profile in [Value::Null, json!(false), json!(0), json!("")] {
+            let (endpoint, captured) = profile_server(profile).await;
+            assert!(
+                PayPalUserInfo {
+                    endpoint,
+                    mapper: None,
+                    application_mapper: None
+                }
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..OAuthUserInfoRequest::default()
+                })
+                .await
+                .is_err()
+            );
+            captured.await.unwrap();
+        }
+    }
 }
