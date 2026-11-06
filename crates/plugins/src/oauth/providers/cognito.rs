@@ -211,7 +211,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             }
             // Only decoding or the application's mapper may select the access-token
             // fallback. An invalid raw subject remains an admission failure.
-            if let Ok(output) = self.map_profile(&profile).await {
+            if let Ok(output) = self.map_profile(&profile, true).await {
                 return finish_profile(profile, output);
             }
         }
@@ -230,12 +230,16 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
-        let output = self.map_profile(&profile).await?;
+        let output = self.map_profile(&profile, false).await?;
         finish_profile(profile, output)
     }
 }
 impl CognitoUserInfo {
-    async fn map_profile(&self, profile: &Value) -> Result<Map<String, Value>, String> {
+    async fn map_profile(
+        &self,
+        profile: &Value,
+        id_token: bool,
+    ) -> Result<Map<String, Value>, String> {
         let mut output = Map::new();
         output.insert("name".into(), profile_name(profile));
         for (source, target) in [("email", "email"), ("picture", "image")] {
@@ -243,10 +247,16 @@ impl CognitoUserInfo {
                 output.insert(target.into(), value.clone());
             }
         }
-        output.insert(
-            "emailVerified".into(),
-            Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
-        );
+        if id_token {
+            if let Some(value) = profile.get("email_verified") {
+                output.insert("emailVerified".into(), value.clone());
+            }
+        } else {
+            output.insert(
+                "emailVerified".into(),
+                Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
+            );
+        }
         if let Some(mapper) = self.mapper {
             output.extend(mapper(profile.clone())?.public_profile(true));
         }
@@ -423,6 +433,68 @@ mod tests {
                 server.await.unwrap();
             } else {
                 server.abort();
+            }
+        }
+    }
+    #[tokio::test]
+    async fn cognito_verification_output_depends_on_profile_transport() {
+        for claim in [
+            None,
+            Some(Value::Null),
+            Some(Value::String("true".into())),
+            Some(Value::Bool(true)),
+            Some(Value::Bool(false)),
+        ] {
+            for id_token in [true, false] {
+                let mut body = serde_json::json!({"sub":"subject","name":"Name"});
+                if let Some(value) = &claim {
+                    body["email_verified"] = value.clone();
+                }
+                let token = format!(
+                    "e30.{}.sig",
+                    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body.to_string())
+                );
+
+                use tokio::io::{AsyncReadExt, AsyncWriteExt};
+                let body = body.to_string();
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let endpoint = format!("http://{}", listener.local_addr().unwrap());
+                let server = tokio::spawn(async move {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 8192];
+                    let _ = stream.read(&mut request).await.unwrap();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                });
+
+                let mut options = CognitoOptions::new("client", None, "domain", "region", "pool");
+                options.user_info_endpoint = Some(endpoint);
+                let provider = OAuthProvider::cognito(options).unwrap();
+                let response = provider
+                    .get_user_info
+                    .unwrap()
+                    .get_user_info(OAuthUserInfoRequest {
+                        id_token: id_token.then_some(token),
+                        access_token: Some("access".into()),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                let output = response.user_output.unwrap();
+                if id_token {
+                    assert_eq!(output.get("emailVerified"), claim.as_ref());
+                    server.abort();
+                } else {
+                    assert_eq!(
+                        output["emailVerified"],
+                        Value::Bool(super::super::email_verified_claim(claim.as_ref()))
+                    );
+                    server.await.unwrap();
+                }
             }
         }
     }
