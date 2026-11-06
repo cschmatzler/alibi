@@ -391,7 +391,12 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
     let Some(user) = ctx.database.get_user_by_email_record(&claims.email).await? else {
         return verification_error(query, codes::USER_NOT_FOUND, "User not found");
     };
-    if claims.user_id.as_deref().is_some_and(|id| id != user.id()) {
+    if claims
+        .user_id
+        .as_deref()
+        .filter(|id| !id.is_empty())
+        .is_some_and(|id| id != user.id())
+    {
         return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
     }
     if user.email_verified() {

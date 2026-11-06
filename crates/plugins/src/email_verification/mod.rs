@@ -603,6 +603,48 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn legacy_verification_with_empty_user_binding_is_accepted() {
+        let ctx = test_helpers::create_test_context().await;
+        let user = ctx
+            .database
+            .create_user(CreateUser::new().with_email("empty-binding@example.com"))
+            .await
+            .unwrap();
+        let plugin = EmailVerificationPlugin::new();
+        let token = external_verification_token(
+            &ctx.config.secret,
+            jsonwebtoken::Algorithm::HS256,
+            &serde_json::json!({"email":"empty-binding@example.com","userId":""}),
+        );
+        let req = test_helpers::create_auth_request(
+            HttpMethod::Get,
+            "/verify-email",
+            None,
+            None,
+            HashMap::from([("token".into(), token)]),
+        );
+        assert_eq!(
+            plugin.handle_verify_email(&req, &ctx).await.unwrap().status,
+            200
+        );
+        assert!(
+            ctx.database
+                .get_user_by_id(&user.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .email_verified()
+        );
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     struct DummySender;
 
     #[async_trait]
