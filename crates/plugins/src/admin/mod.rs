@@ -193,6 +193,30 @@ alibi_core::impl_auth_plugin! {
     }
 }
 
+fn ban_expired_at(user: &impl alibi_core::AuthUser, now: chrono::DateTime<chrono::Utc>) -> bool {
+    if let Some(value) = user
+        .adapter_snapshot()
+        .and_then(|output| output.values().get("banExpires"))
+    {
+        if !alibi_core::utils::json::JsValue::from(value.clone()).is_truthy() {
+            return false;
+        }
+        let millis = match value {
+            serde_json::Value::Number(value) => value
+                .as_f64()
+                .filter(|value| value.abs() <= 8_640_000_000_000_000.0)
+                .map(f64::trunc),
+            serde_json::Value::Bool(value) => Some(f64::from(u8::from(*value))),
+            serde_json::Value::String(value) => {
+                alibi_core::utils::datetime::parse_date_millis(value).map(|value| value as f64)
+            }
+            _ => None,
+        };
+        return millis.is_some_and(|value| value < now.timestamp_millis() as f64);
+    }
+    user.ban_expires().is_some_and(|expiry| expiry < now)
+}
+
 struct AdminSessionGuard;
 
 #[async_trait::async_trait]
@@ -213,10 +237,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::store::SessionCreatedHook<S> for Adm
         if !user.banned() {
             return Ok(());
         }
-        if user
-            .ban_expires()
-            .is_some_and(|expiry| expiry < chrono::Utc::now())
-        {
+        if ban_expired_at(&user, chrono::Utc::now()) {
             let update = alibi_core::UpdateUser {
                 banned: Some(false),
                 ban_reason: None,
@@ -669,6 +690,10 @@ mod tests {
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
+
+    mod native_creation {
+        include!("native_creation_tests.rs");
+    }
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 

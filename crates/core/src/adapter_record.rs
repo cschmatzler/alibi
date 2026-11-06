@@ -105,8 +105,13 @@ impl<M> AdapterRecord<M> {
         Self { stored, output }
     }
 
-    pub(crate) fn retain_provider_verification(&mut self, value: serde_json::Value) {
-        self.output.insert("emailVerified".into(), Some(value));
+    pub(crate) fn retain_native_scalars(
+        &mut self,
+        values: std::collections::BTreeMap<String, serde_json::Value>,
+    ) {
+        for (field, value) in values {
+            self.output.insert(field, Some(value));
+        }
     }
 
     #[must_use]

@@ -118,11 +118,9 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        let verification = self.inner.provider_verification_output(&user.id()).await?;
+        let scalars = self.inner.native_user_output(&user.id()).await?;
         let mut record = self.projection_context.user_adapter_record(user).await?;
-        if let Some(value) = verification {
-            record.retain_provider_verification(value);
-        }
+        record.retain_native_scalars(scalars);
         Ok(record)
     }
 

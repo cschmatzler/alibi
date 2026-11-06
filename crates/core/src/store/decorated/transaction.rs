@@ -111,15 +111,13 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         &self,
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        let verification = self.inner.provider_verification_output(&user.id()).await?;
+        let scalars = self.inner.native_user_output(&user.id()).await?;
         let mut record = self
             .record_store
             .projection_context
             .user_adapter_record(user)
             .await?;
-        if let Some(value) = verification {
-            record.retain_provider_verification(value);
-        }
+        record.retain_native_scalars(scalars);
         Ok(record)
     }
 }
@@ -491,6 +489,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .delete_sso_provider_and_accounts(id, provider_id)
             .await
     }
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        self.inner.native_user_output(id).await
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,

@@ -228,6 +228,8 @@ pub(crate) async fn create_user_core(
         .map_or_else(|| config.default_role.clone(), RoleInput::joined);
 
     let mut data = body.data.clone().unwrap_or_default();
+    _ = data.remove("id");
+    let mut native_fields = std::collections::BTreeMap::new();
     for (wire, field) in [
         ("createdAt", "created_at"),
         ("updatedAt", "updated_at"),
@@ -238,20 +240,56 @@ pub(crate) async fn create_user_core(
         ("phoneNumber", "phone_number"),
         ("phoneNumberVerified", "phone_number_verified"),
         ("lastLoginMethod", "last_login_method"),
+        ("image", "image"),
+        ("username", "username"),
+        ("banned", "banned"),
+        ("banReason", "ban_reason"),
+        ("banExpires", "ban_expires"),
+        ("metadata", "metadata"),
     ] {
+        let value = data.remove(wire);
         _ = data.remove(field);
-        if let Some(value) = data.remove(wire) {
-            data.insert(field.to_owned(), value);
+        if let Some(mut value) = value {
+            if value.is_null() && matches!(wire, "createdAt" | "updatedAt" | "emailVerified") {
+                continue;
+            }
+            if matches!(wire, "createdAt" | "updatedAt" | "banExpires") {
+                if let Some(date) = value.as_str() {
+                    let millis = alibi_core::utils::datetime::parse_date_millis(date)
+                        .ok_or_else(|| AuthError::internal("Invalid time value"))?;
+                    value = serde_json::Value::String(
+                        alibi_core::utils::datetime::json_date_millis(millis),
+                    );
+                }
+            }
+            let typed = serde_json::from_value::<alibi_core::CreateUser>(
+                serde_json::json!({field: value.clone()}),
+            );
+            if typed.is_ok() {
+                data.insert(field.to_owned(), value.clone());
+            }
+            if value.is_null() || typed.is_err() || matches!(wire, "banReason" | "banExpires") {
+                _ = native_fields.insert(wire.to_owned(), value);
+            }
         }
     }
     data.insert("email".to_owned(), serde_json::Value::String(email));
-    data.insert("name".to_owned(), serde_json::Value::String(body.name.clone()));
+    data.insert(
+        "name".to_owned(),
+        serde_json::Value::String(body.name.clone()),
+    );
     data.insert("role".to_owned(), serde_json::Value::String(role));
-    let mut create_user = serde_json::from_value::<alibi_core::CreateUser>(serde_json::Value::Object(data))
-        .map_err(|error| AuthError::bad_request(error.to_string()))?;
+    let mut create_user =
+        serde_json::from_value::<alibi_core::CreateUser>(serde_json::Value::Object(data))
+            .map_err(|error| AuthError::bad_request(error.to_string()))?;
+    create_user.adapter_native_fields = native_fields;
     let registered = ctx.extensions.get::<alibi_core::field_policy::UserFields>();
-    let fields = registered.as_ref().map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
-    create_user.additional_fields.retain(|name, _| fields.contains_key(name));
+    let fields = registered
+        .as_ref()
+        .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+    create_user
+        .additional_fields
+        .retain(|name, _| fields.contains_key(name));
 
     let user = ctx
         .database
@@ -735,10 +773,7 @@ pub(crate) async fn impersonate_user_core(
     }
 
     if target.banned() {
-        if target
-            .ban_expires()
-            .is_some_and(|expires| expires < Utc::now())
-        {
+        if super::ban_expired_at(&target, Utc::now()) {
             _ = ctx
                 .database
                 .update_user_record(

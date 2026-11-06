@@ -15,30 +15,105 @@ use sea_orm::{
     QueryFilter, QueryOrder, QuerySelect, QueryTrait,
 };
 
+// Only the typed Rust view is bounded to SQLite's printable date range.
+// The retained adapter output always reads the original numeric DATE value.
+const SQLITE_TYPED_DATE: &str = "CASE WHEN typeof(?) IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ? < -8640000000000000 OR ? > 253402300799999 THEN 253402300799999 WHEN ? < -62135596800000 THEN -62135596800000 ELSE CAST(? AS INTEGER) END / 1000.0, 'unixepoch') ELSE ? END";
+
+fn sqlite_date_column<C: sea_orm::Iden + Copy + 'static>(
+    column: C,
+) -> sea_orm::sea_query::SimpleExpr {
+    Expr::cust_with_exprs(
+        SQLITE_TYPED_DATE,
+        std::iter::repeat_with(|| Expr::col(column)).take(6),
+    )
+}
+
 pub(super) fn user_query<M: SeaOrmUserModel>(
     backend: sea_orm::DbBackend,
 ) -> sea_orm::Select<M::Entity> {
-    use sea_orm::{Iden, Iterable};
+    use sea_orm::Iterable;
     let query = M::Entity::find();
     if backend != sea_orm::DbBackend::Sqlite {
         return query;
     }
-    let Some(verification) = M::list_users_column("emailVerified") else {
-        return query;
-    };
-    let verification_name = verification.to_string();
+
     let mut query = query.select_only();
     for column in <M::Entity as EntityTrait>::Column::iter() {
-        if column.to_string() == verification_name {
+        if matches!(
+            column.def().get_column_type(),
+            sea_orm::sea_query::ColumnType::Boolean
+        ) {
             query = query.column_as(Expr::cust_with_exprs(
                 "CASE WHEN typeof(?) IN ('integer', 'real') THEN ? = 1 WHEN ? IS NULL THEN NULL ELSE ? <> '' END",
                 [Expr::col(column), Expr::col(column), Expr::col(column), Expr::col(column)],
             ),column);
+        } else if matches!(
+            column.def().get_column_type(),
+            sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                | sea_orm::sea_query::ColumnType::Timestamp
+                | sea_orm::sea_query::ColumnType::DateTime
+        ) {
+            query = query.column_as(sqlite_date_column(column), column);
         } else {
             query = query.column(column);
         }
     }
     query
+}
+
+pub(super) async fn native_user_output<M: SeaOrmUserModel, C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    use sea_orm::EntityName;
+    use sea_orm::sea_query::{Alias, Query};
+    let mut output = std::collections::BTreeMap::new();
+    if db.get_database_backend() != sea_orm::DbBackend::Sqlite {
+        return Ok(output);
+    }
+    for field in [
+        "emailVerified",
+        "banned",
+        "twoFactorEnabled",
+        "isAnonymous",
+        "phoneNumberVerified",
+        "createdAt",
+        "updatedAt",
+        "banExpires",
+    ] {
+        let Some(column) = M::list_users_column(field) else {
+            continue;
+        };
+        let date = matches!(field, "createdAt" | "updatedAt" | "banExpires");
+        let expression = if date {
+            Expr::cust_with_exprs("json_quote(?)", [Expr::col(column)])
+        } else {
+            Expr::cust_with_exprs(
+                "CASE typeof(?) WHEN 'text' THEN json_quote(?) WHEN 'null' THEN 'null' ELSE CASE WHEN ? = 1 THEN 'true' ELSE 'false' END END",
+                [Expr::col(column), Expr::col(column), Expr::col(column)],
+            )
+        };
+        let query = Query::select()
+            .expr_as(expression, Alias::new("native_scalar"))
+            .from(M::Entity::default().table_ref())
+            .and_where(M::id_column().eq(M::parse_id(id)?))
+            .to_owned();
+        if let Some(row) = db
+            .query_one_raw(db.get_database_backend().build(&query))
+            .await
+            .map_err(map_db_err)?
+        {
+            let value: String = row.try_get("", "native_scalar").map_err(map_db_err)?;
+            let mut value: serde_json::Value = serde_json::from_str(&value)?;
+            if date && let Some(text) = value.as_str() {
+                value = alibi_core::utils::datetime::parse_date_millis(text)
+                    .map(alibi_core::utils::datetime::json_date_millis)
+                    .map_or(serde_json::Value::Null, serde_json::Value::String);
+            }
+            _ = output.insert(field.to_owned(), value);
+        }
+    }
+    Ok(output)
 }
 
 pub(super) async fn provider_verification_output<M: SeaOrmUserModel, C: ConnectionTrait>(
@@ -78,45 +153,56 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     db: &C,
     verification: Option<serde_json::Value>,
     id: Option<&str>,
+    native_fields: std::collections::BTreeMap<String, serde_json::Value>,
 ) -> AuthResult<M> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
     let insert = id.is_none();
-    let Some(verification) =
-        verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()))
-    else {
+    let verification =
+        verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()));
+    if verification.is_none() && native_fields.is_empty() {
         return if insert {
             model.insert(db).await.map_err(map_db_err)
         } else {
             model.update(db).await.map_err(map_db_err)
         };
     };
-    let column = M::list_users_column("emailVerified").ok_or_else(|| {
-        AuthError::internal("The user model does not expose its provider verification column")
-    })?;
-    let value: sea_orm::Value = match verification {
-        serde_json::Value::Null => sea_orm::Value::Bool(None),
-        serde_json::Value::String(value) => value.into(),
-        serde_json::Value::Number(value) => {
-            if db.get_database_backend() == sea_orm::DbBackend::Postgres {
-                alibi_core::utils::json::number_to_string(&value)
-                    .map_err(|error| AuthError::internal(error.to_string()))?
-                    .into()
-            } else if let Some(value) = value.as_i64() {
-                value.into()
-            } else {
-                value
-                    .as_f64()
-                    .ok_or_else(|| AuthError::internal("Invalid provider verification number"))?
-                    .into()
+    let mut native_values = Vec::new();
+    for (field, raw) in native_fields
+        .into_iter()
+        .chain(verification.map(|raw| ("emailVerified".to_owned(), raw)))
+    {
+        let Some(column) = M::list_users_column(&field) else {
+            continue;
+        };
+        if (raw.is_object() || raw.is_array())
+            && !matches!(
+                column.def().get_column_type(),
+                sea_orm::sea_query::ColumnType::Json | sea_orm::sea_query::ColumnType::JsonBinary
+            )
+        {
+            return Err(AuthError::internal("Unsupported native user SQL parameter"));
+        }
+        let raw =
+            crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
+        let value = if matches!(
+            column.def().get_column_type(),
+            sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                | sea_orm::sea_query::ColumnType::Timestamp
+                | sea_orm::sea_query::ColumnType::DateTime
+        ) {
+            match raw {
+                sea_orm::Value::String(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
+                    .map(|date| sea_orm::Value::ChronoDateTimeUtc(Some(date.with_timezone(&Utc))))
+                    .map_err(|error| AuthError::internal(error.to_string()))?,
+                sea_orm::Value::String(None) => sea_orm::Value::ChronoDateTimeUtc(None),
+                raw => raw,
             }
-        }
-        _ => {
-            return Err(AuthError::internal(
-                "Unsupported provider verification SQL parameter",
-            ));
-        }
-    };
+        } else {
+            crate::additional_fields::prepare_value(db, &column, raw).await?
+        };
+        native_values.push((column, value));
+    }
     model = ActiveModelBehavior::before_save(model, db, insert)
         .await
         .map_err(map_db_err)?;
@@ -124,20 +210,23 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     let mut values = Vec::new();
     let mut returning = Vec::new();
     for physical in <M::Entity as EntityTrait>::Column::iter() {
-        let verification_column = physical.to_string() == column.to_string();
+        let native = native_values
+            .iter()
+            .find(|(column, _)| physical.to_string() == column.to_string());
+        let boolean_column = matches!(
+            physical.def().get_column_type(),
+            sea_orm::sea_query::ColumnType::Boolean
+        );
         let staged = match model.take(physical) {
             ActiveValue::Set(original) => Some(original),
             ActiveValue::Unchanged(original) if insert => Some(original),
             _ => None,
         };
-        if let Some(original) = staged {
+        if let Some(original) = native.map(|(_, value)| value.clone()).or(staged) {
             columns.push(physical);
-            let expression = Expr::val(if verification_column {
-                value.clone()
-            } else {
-                original
-            });
-            let expression = if verification_column
+            let expression = Expr::val(original);
+            let expression = if boolean_column
+                && native.is_some()
                 && db.get_database_backend() == sea_orm::DbBackend::Postgres
             {
                 expression.cast_as(sea_orm::sea_query::Alias::new("boolean"))
@@ -146,8 +235,10 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
             };
             values.push(physical.save_as(expression));
         }
-        returning.push(if verification_column && db.get_database_backend() == sea_orm::DbBackend::Sqlite {
+        returning.push(if boolean_column && db.get_database_backend() == sea_orm::DbBackend::Sqlite {
             Expr::cust_with_exprs("CASE WHEN typeof(?) IN ('integer', 'real') THEN ? = 1 WHEN ? IS NULL THEN NULL ELSE ? <> '' END AS ?",[Expr::col(physical),Expr::col(physical),Expr::col(physical),Expr::col(physical),Expr::col(physical)])
+        } else if db.get_database_backend() == sea_orm::DbBackend::Sqlite && matches!(physical.def().get_column_type(), sea_orm::sea_query::ColumnType::TimestampWithTimeZone | sea_orm::sea_query::ColumnType::Timestamp | sea_orm::sea_query::ColumnType::DateTime) {
+            Expr::cust_with_exprs("? AS ?", [sqlite_date_column(physical), Expr::col(physical)])
         } else { Expr::col(physical) });
     }
     let statement = if let Some(id) = id {
@@ -261,6 +352,7 @@ where
         let provider_name = create_user.provider_name.take();
         let provider_image = create_user.provider_image.take();
         let verification = create_user.provider_email_verified.take();
+        let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
         let mut model = S::User::new_active(user_id, create_user, now);
         stage_provider_text::<S::User, _>(db, &mut model, provider_name, provider_image).await?;
         let backend = db.get_database_backend();
@@ -270,7 +362,8 @@ where
         }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
-        let user = save_provider_user::<S::User, _>(model, db, verification, None).await?;
+        let user =
+            save_provider_user::<S::User, _>(model, db, verification, None, native_fields).await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_user(&user, &hook_context).await?;
@@ -408,6 +501,13 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SeaOrmUserModel,
 {
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        native_user_output::<S::User, _>(self.scoped_connection(), id).await
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,
@@ -725,8 +825,14 @@ where
         }
         S::User::prepare_json_metadata(&mut active, connection.get_database_backend())?;
 
-        let user =
-            save_provider_user::<S::User, _>(active, connection, verification, Some(id)).await?;
+        let user = save_provider_user::<S::User, _>(
+            active,
+            connection,
+            verification,
+            Some(id),
+            Default::default(),
+        )
+        .await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_update_user(&user, &hook_context)

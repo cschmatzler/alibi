@@ -40,6 +40,60 @@ pub(super) async fn find_user_by_id<M: SqlxUserModel>(
     exec.fetch_optional(sql).await
 }
 
+pub(super) async fn native_user_output<M: SqlxUserModel>(
+    exec: Exec<'_>,
+    id: &str,
+) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+    let mut output = std::collections::BTreeMap::new();
+    if exec.engine() != Engine::Sqlite {
+        return Ok(output);
+    }
+    for field in [
+        "emailVerified",
+        "banned",
+        "twoFactorEnabled",
+        "isAnonymous",
+        "phoneNumberVerified",
+        "createdAt",
+        "updatedAt",
+        "banExpires",
+    ] {
+        let Some(column) = M::list_users_column(field) else {
+            continue;
+        };
+        let date = matches!(field, "createdAt" | "updatedAt" | "banExpires");
+        let mut sql = Sql::with(exec.engine(), "SELECT ");
+        if date {
+            sql.push("json_quote(");
+            sql.ident(column);
+            sql.push(")");
+        } else {
+            sql.push("CASE typeof(");
+            sql.ident(column);
+            sql.push(") WHEN 'text' THEN json_quote(");
+            sql.ident(column);
+            sql.push(") WHEN 'null' THEN 'null' ELSE CASE WHEN ");
+            sql.ident(column);
+            sql.push(" = 1 THEN 'true' ELSE 'false' END END");
+        }
+        sql.push(" FROM ");
+        sql.ident(M::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(M::TABLE, M::id_column(), " = ", M::parse_id(id)?);
+        sql.push(" LIMIT 1");
+        if let Some(value) = exec.fetch_scalar::<String>(sql).await? {
+            let mut value: serde_json::Value = serde_json::from_str(&value)?;
+            if date && let Some(text) = value.as_str() {
+                value = alibi_core::utils::datetime::parse_date_millis(text)
+                    .map(alibi_core::utils::datetime::json_date_millis)
+                    .map_or(serde_json::Value::Null, serde_json::Value::String);
+            }
+            _ = output.insert(field.to_owned(), value);
+        }
+    }
+    Ok(output)
+}
+
 pub(super) async fn provider_verification_output<M: SqlxUserModel>(
     exec: Exec<'_>,
     id: &str,
@@ -190,6 +244,7 @@ where
         let provider_name = create_user.provider_name.take();
         let provider_image = create_user.provider_image.take();
         let provider_verification = create_user.provider_email_verified.take();
+        let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
         let mut active = S::User::new_active(user_id, create_user, now);
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
         stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
@@ -202,6 +257,29 @@ where
             )
             .await?;
             S::User::set_additional_field(&mut active, column, value, backend)?;
+        }
+        for (field, raw) in native_fields {
+            let Some(column) = S::User::list_users_column(&field) else {
+                continue;
+            };
+            let kind = S::User::column_kind(column);
+            if (raw.is_object() || raw.is_array()) && kind != ColumnKind::Json {
+                return Err(AuthError::internal("Unsupported native user SQL parameter"));
+            }
+            let value =
+                crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
+            let value = if matches!(field.as_str(), "createdAt" | "updatedAt" | "banExpires") {
+                match value {
+                    SqlValue::Text(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
+                        .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
+                        .map_err(|error| AuthError::internal(error.to_string()))?,
+                    SqlValue::Text(None) => SqlValue::Timestamp(None),
+                    value => value,
+                }
+            } else {
+                crate::additional_fields::prepare_value(exec, kind, value).await?
+            };
+            active.set(column, value);
         }
         S::User::prepare_json_metadata(&mut active, backend)?;
 
@@ -412,6 +490,13 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SqlxUserModel,
 {
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        native_user_output::<S::User>(self.exec(), id).await
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,

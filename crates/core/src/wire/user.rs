@@ -59,18 +59,18 @@ impl Serialize for UserView {
         macro_rules! entry {
             ($name:literal, $value:expr) => {
                 if !self.omitted_fields.contains($name) {
-                    map.serialize_entry($name, $value)?;
+                    if let Some(value) = self.extension_fields.get($name) {
+                        map.serialize_entry($name, value)?;
+                    } else {
+                        map.serialize_entry($name, $value)?;
+                    }
                 }
             };
         }
         entry!("id", &self.id);
         entry!("name", &self.name);
         entry!("email", &self.email);
-        if let Some(value) = self.extension_fields.get("emailVerified") {
-            entry!("emailVerified", value);
-        } else {
-            entry!("emailVerified", &self.email_verified);
-        }
+        entry!("emailVerified", &self.email_verified);
         entry!("image", &self.image);
         entry!(
             "createdAt",
@@ -86,38 +86,57 @@ impl Serialize for UserView {
         if let Some(value) = &self.display_username {
             entry!("displayUsername", value);
         }
-        if let Some(value) = &self.two_factor_enabled {
-            entry!("twoFactorEnabled", value);
+        if self.two_factor_enabled.is_some()
+            || self.extension_fields.contains_key("twoFactorEnabled")
+        {
+            entry!("twoFactorEnabled", &self.two_factor_enabled);
         }
         if let Some(value) = &self.role {
             entry!("role", value);
         }
-        if let Some(value) = &self.banned {
-            entry!("banned", value);
+        if self.banned.is_some() || self.extension_fields.contains_key("banned") {
+            entry!("banned", &self.banned);
         }
         if let Some(value) = &self.ban_reason {
             entry!("banReason", value);
         }
-        if let Some(value) = &self.ban_expires {
+        if self.ban_expires.is_some() || self.extension_fields.contains_key("banExpires") {
             entry!(
                 "banExpires",
-                &crate::utils::datetime::json_date_millis(value.timestamp_millis())
+                &self
+                    .ban_expires
+                    .map(|value| crate::utils::datetime::json_date_millis(
+                        value.timestamp_millis()
+                    ))
             );
         }
-        if let Some(value) = &self.is_anonymous {
-            entry!("isAnonymous", value);
+        if self.is_anonymous.is_some() || self.extension_fields.contains_key("isAnonymous") {
+            entry!("isAnonymous", &self.is_anonymous);
         }
         if let Some(value) = &self.phone_number {
             entry!("phoneNumber", value);
         }
-        if let Some(value) = &self.phone_number_verified {
-            entry!("phoneNumberVerified", value);
+        if self.phone_number_verified.is_some()
+            || self.extension_fields.contains_key("phoneNumberVerified")
+        {
+            entry!("phoneNumberVerified", &self.phone_number_verified);
         }
         if let Some(value) = &self.last_login_method {
             entry!("lastLoginMethod", value);
         }
         for (name, value) in &self.extension_fields {
-            if name != "emailVerified" && !self.omitted_fields.contains(name) {
+            if !matches!(
+                name.as_str(),
+                "emailVerified"
+                    | "banned"
+                    | "twoFactorEnabled"
+                    | "isAnonymous"
+                    | "phoneNumberVerified"
+                    | "createdAt"
+                    | "updatedAt"
+                    | "banExpires"
+            ) && !self.omitted_fields.contains(name)
+            {
                 map.serialize_entry(name, value)?;
             }
         }
@@ -236,14 +255,22 @@ impl<T: AuthUser> From<&T> for UserView {
             metadata: user.metadata().clone(),
             omitted_fields: std::collections::BTreeSet::default(),
         };
-        if let Some(value) = user
-            .adapter_snapshot()
-            .and_then(|output| output.values().get("emailVerified"))
-            && !value.is_boolean()
-        {
-            _ = view
-                .extension_fields
-                .insert("emailVerified".into(), value.clone());
+        for field in [
+            "emailVerified",
+            "banned",
+            "twoFactorEnabled",
+            "isAnonymous",
+            "phoneNumberVerified",
+            "createdAt",
+            "updatedAt",
+            "banExpires",
+        ] {
+            if let Some(value) = user
+                .adapter_snapshot()
+                .and_then(|output| output.values().get(field))
+            {
+                _ = view.extension_fields.insert(field.into(), value.clone());
+            }
         }
         view
     }

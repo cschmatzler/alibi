@@ -17,6 +17,8 @@ mod passkeys;
 mod sessions;
 mod teams;
 mod two_factor;
+#[cfg(all(test, feature = "sqlite"))]
+mod user_native_tests;
 mod users;
 mod verifications;
 mod wallets;
@@ -678,6 +680,13 @@ where
             )
             .await
     }
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        users::native_user_output::<S::User>(Exec::tx(self.tx), id).await
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,

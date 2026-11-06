@@ -6,6 +6,9 @@ use validator::Validate;
 /// User creation data
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CreateUser {
+    /// Trusted native adapter inputs; HTTP deserialization cannot populate this channel.
+    #[serde(skip)]
+    pub adapter_native_fields: std::collections::BTreeMap<String, serde_json::Value>,
     /// Trusted provider value before boolean storage conversion. HTTP input
     /// cannot populate this; native accessors retain their boolean interface.
     #[serde(skip)]

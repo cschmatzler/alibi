@@ -298,10 +298,10 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         email: &str,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        self.get_user_by_email(email)
-            .await?
-            .map(AdapterRecord::physical)
-            .transpose()
+        match self.get_user_by_email(email).await? {
+            Some(user) => self.native_user_record(user).await.map(Some),
+            None => Ok(None),
+        }
     }
     async fn get_account_record(
         &self,
@@ -318,7 +318,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         id: &str,
         update: crate::UpdateUser,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        AdapterRecord::physical(self.update_user(id, update).await?)
+        self.native_user_record(self.update_user(id, update).await?)
+            .await
     }
     async fn update_account_record(
         &self,
@@ -356,6 +357,28 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         Err(AuthError::NotImplemented(
             "Transactional SSO provider deletion is unsupported".into(),
         ))
+    }
+
+    /// Build an undecorated retained record without discarding physical scalar output.
+    async fn native_user_record(&self, user: S::User) -> AuthResult<AdapterRecord<S::User>> {
+        use crate::AuthUser as _;
+        let scalars = self.native_user_output(&user.id()).await?;
+        let mut record = AdapterRecord::physical(user)?;
+        record.retain_native_scalars(scalars);
+        Ok(record)
+    }
+
+    /// Retain native scalar output independently of typed authorization accessors.
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(self
+            .provider_verification_output(id)
+            .await?
+            .map(|value| ("emailVerified".to_owned(), value))
+            .into_iter()
+            .collect())
     }
 
     /// Read the provider verification column using the adapter's physical scalar
@@ -440,7 +463,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         create_user: CreateUser,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        AdapterRecord::physical(self.create_user(create_user).await?)
+        self.native_user_record(self.create_user(create_user).await?)
+            .await
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -450,7 +474,8 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         create_user: CreateUser,
         source: UserValidationSource,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+        self.native_user_record(self.create_user_with_source(create_user, source).await?)
+            .await
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -459,16 +484,17 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         prepared: PreparedUserCreation,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+        self.native_user_record(self.create_user_prepared(prepared).await?)
+            .await
     }
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn get_user_by_id_record(&self, id: &str) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        self.get_user_by_id(id)
-            .await?
-            .map(AdapterRecord::physical)
-            .transpose()
+        match self.get_user_by_id(id).await? {
+            Some(user) => self.native_user_record(user).await.map(Some),
+            None => Ok(None),
+        }
     }
 
     /// Return a retained adapter record. The default is the physical model's

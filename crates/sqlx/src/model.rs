@@ -197,8 +197,9 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
         if index > 0 {
             sql.push(", ");
         }
-        let raw_verification =
-            sql.engine() == Engine::Sqlite && M::PROVIDER_VERIFICATION_COLUMN == Some(*column);
+        let raw_verification = sql.engine() == Engine::Sqlite
+            && M::PROVIDER_VERIFICATION_COLUMN.is_some()
+            && M::column_kind(column) == ColumnKind::Boolean;
         let emit_column = |sql: &mut Sql| {
             if qualified {
                 sql.column(M::TABLE, column);
@@ -219,6 +220,32 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
             sql.push(" IS NULL THEN NULL ELSE ");
             emit_column(sql);
             sql.push(" <> '' END AS ");
+            sql.ident(column);
+        } else if sql.engine() == Engine::Sqlite
+            && M::PROVIDER_VERIFICATION_COLUMN.is_some()
+            && matches!(
+                M::column_kind(column),
+                ColumnKind::Other | ColumnKind::NaiveTimestamp
+            )
+            && M::FIELD_COLUMNS.iter().any(|(field, physical)| {
+                physical == column && matches!(*field, "created_at" | "updated_at" | "ban_expires")
+            })
+        {
+            // Keep numeric DATE storage untouched; only adapt the typed model's
+            // projection to SQLite's printable range. Raw output is read separately.
+            sql.push("CASE WHEN typeof(");
+            emit_column(sql);
+            sql.push(") IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ");
+            emit_column(sql);
+            sql.push(" < -8640000000000000 OR ");
+            emit_column(sql);
+            sql.push(" > 253402300799999 THEN 253402300799999 WHEN ");
+            emit_column(sql);
+            sql.push(" < -62135596800000 THEN -62135596800000 ELSE CAST(");
+            emit_column(sql);
+            sql.push(" AS INTEGER) END / 1000.0, 'unixepoch') ELSE ");
+            emit_column(sql);
+            sql.push(" END AS ");
             sql.ident(column);
         } else if sql.engine() == Engine::Postgres && M::column_kind(column) == ColumnKind::BigInt {
             sql.push("CAST(");
@@ -262,7 +289,8 @@ pub(crate) fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value:
         return;
     }
     let cast = sql.engine() == Engine::Postgres
-        && M::PROVIDER_VERIFICATION_COLUMN == Some(column)
+        && M::PROVIDER_VERIFICATION_COLUMN.is_some()
+        && M::column_kind(column) == ColumnKind::Boolean
         && matches!(&value, SqlValue::Text(_));
     if cast {
         sql.push("CAST(");

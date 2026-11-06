@@ -707,6 +707,13 @@ where
             )
             .await
     }
+    async fn native_user_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        users::native_user_output::<S::User, _>(self.tx, id).await
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,
