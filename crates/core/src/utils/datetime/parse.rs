@@ -350,7 +350,57 @@ fn normalize_legacy_time(value: &str) -> Option<String> {
     ))
 }
 
+fn parse_legacy_offset(value: &str) -> Option<(String, i64)> {
+    let start = value.rfind(['+', '-'])?;
+    let tail = &value[start + 1..];
+    let length = tail.bytes().take_while(u8::is_ascii_digit).count();
+    let number = tail[..length].parse::<i64>().ok()?;
+    let mut end = start + 1 + length;
+    let (hour, minute) = if tail[length..].starts_with(':') {
+        end += 1;
+        let minutes = &value[end..];
+        let length = minutes.bytes().take_while(u8::is_ascii_digit).count();
+        let minute = if length == 0 {
+            0
+        } else {
+            minutes[..length].parse::<i64>().ok()?
+        };
+        if minute > 59 {
+            return None;
+        }
+        end += length;
+        (number, minute)
+    } else {
+        match length {
+            1 | 2 => (number, 0),
+            3 | 4 => (number / 100, number % 100),
+            _ => return None,
+        }
+    };
+    let seconds = hour.checked_mul(3600)?.checked_add(minute * 60)?;
+    if seconds > i64::from(i32::MAX) {
+        return None;
+    }
+    let milliseconds = seconds
+        * if value.as_bytes()[start] == b'-' {
+            -1000
+        } else {
+            1000
+        };
+    let mut normalized = value.to_owned();
+    normalized.replace_range(start..end, "+0000");
+    Some((normalized, milliseconds))
+}
+
 fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
+    let offset = if format.contains("%z") {
+        Some(parse_legacy_offset(value)?)
+    } else {
+        None
+    };
+    let value = offset
+        .as_ref()
+        .map_or(value, |(normalized, _)| normalized.as_str());
     let end_of_day = if format.contains("%H:") {
         value.match_indices("24:").find_map(|(index, _)| {
             (index == 0 || value.as_bytes()[index - 1].is_ascii_whitespace()).then_some(index)
@@ -386,7 +436,9 @@ fn parse_legacy_format(value: &str, format: &str) -> Option<i64> {
         0
     };
     let nominal = days.checked_mul(86_400_000)?.checked_add(time)?;
-    let millis = if let Some(offset) = parsed.offset() {
+    let millis = if let Some((_, offset)) = offset {
+        nominal.checked_sub(offset)?
+    } else if let Some(offset) = parsed.offset() {
         nominal.checked_sub(i64::from(offset) * 1000)?
     } else {
         local_millis(nominal)?
@@ -454,6 +506,18 @@ fn normalize_legacy(value: &str) -> String {
                 (second, first)
             };
             parts[..3].copy_from_slice(&[month, day, year]);
+        }
+    }
+    if let Some(last) = parts.last_mut() {
+        for zone in ["GMT", "UTC", "UT"] {
+            if last
+                .get(..zone.len())
+                .is_some_and(|prefix| prefix.eq_ignore_ascii_case(zone))
+                && last[zone.len()..].starts_with(['+', '-'])
+            {
+                *last = &last[zone.len()..];
+                break;
+            }
         }
     }
     // These named North American offsets are accepted by Date.parse. Match a
@@ -532,6 +596,47 @@ mod tests {
             "2024-01-01T12:34:60Z",
             "2024T12:34:60Z",
             "2024-01T12:34:60Z",
+        ] {
+            assert_eq!(parse_date_millis(input), None, "{input}");
+        }
+    }
+
+    #[test]
+    fn legacy_offsets_accept_short_hours_and_unbounded_hhmm_components() {
+        for (input, expected) in [
+            ("Jan 1 2024 12:34:60 GMT+5", "2024-01-01T07:34:00Z"),
+            ("Jan 1 2024 12:34:60 gmt+5", "2024-01-01T07:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT+05:30", "2024-01-01T07:04:00Z"),
+            ("Jan 1 2024 12:34:60 +1", "2024-01-01T11:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT+24", "2023-12-31T12:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT+1260", "2023-12-31T23:34:00Z"),
+            ("Jan 1 2024 12:34:60.5+05:30", "2024-01-01T07:04:05Z"),
+            ("Jan 1 2024 GMT+5", "2023-12-31T19:00:00Z"),
+            ("2024/1/1 12:34:59 -8", "2024-01-01T20:34:59Z"),
+            ("Jan 1 2024 12:34:60 UTC+5", "2024-01-01T07:34:00Z"),
+            ("Jan 1 2024 12:34:60 UT+5", "2024-01-01T07:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT+5:", "2024-01-01T07:34:00Z"),
+            (
+                "Jan 1 2024 12:34:60 GMT+000000005:0",
+                "2024-01-01T07:34:00Z",
+            ),
+            ("Jan 1 2024 12:34:60 GMT+400000:0", "1978-05-15T20:34:00Z"),
+            ("Jan 1 2024 12:34:60 GMT+596523:14", "1955-12-14T09:20:00Z"),
+        ] {
+            assert_eq!(
+                parse_date_millis(input),
+                parse_date_millis(expected),
+                "{input}"
+            );
+        }
+        for input in [
+            "Jan 1 2024 12:34:60 GMT+1:99",
+            "Jan 1 2024 12:34:60 +12345",
+            "Jan 1 2024 12:34:60 GMT+596523:15",
+            "Jan 1 2024 12:34:60 GMT+00005",
+            "Jan 1 2024 12:34:60 +0500BOGUS",
+            "2024-01-01T12:34:00+24:00",
+            "2024-01-01T12:34:00+12:60",
         ] {
             assert_eq!(parse_date_millis(input), None, "{input}");
         }
