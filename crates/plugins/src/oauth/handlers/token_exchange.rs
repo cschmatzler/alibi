@@ -75,16 +75,15 @@ pub(in crate::oauth) async fn refresh_tokens_via_provider(
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
 
-    with_default_access_expiry(
-        provider,
-        parse_token_response(
-            token_data,
-            provider
-                .authorization
-                .as_ref()
-                .is_some_and(|policy| policy.allow_missing_access_token),
-        )?,
-    )
+    let mut tokens = parse_token_response(
+        token_data,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.allow_missing_access_token),
+    )?;
+    tokens.raw = None;
+    with_default_access_expiry(provider, tokens)
 }
 
 pub(in crate::oauth::handlers) async fn provider_token_request(
@@ -577,12 +576,18 @@ mod tests {
                 request.extend_from_slice(&buffer[..count]);
                 if let Some(end) = request.windows(4).position(|bytes| bytes == b"\r\n\r\n") {
                     let headers = String::from_utf8_lossy(&request[..end]);
-                    let length: usize = headers.lines().find_map(|line| {
-                        let (key, value) = line.split_once(':')?;
-                        key.eq_ignore_ascii_case("content-length").then(|| value.trim().parse().unwrap())
-                    }).unwrap();
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| {
+                            let (key, value) = line.split_once(':')?;
+                            key.eq_ignore_ascii_case("content-length")
+                                .then(|| value.trim().parse().unwrap())
+                        })
+                        .unwrap();
                     if request.len() >= end + 4 + length {
-                        sender.send(String::from_utf8(request[end + 4..].to_vec()).unwrap()).unwrap();
+                        sender
+                            .send(String::from_utf8(request[end + 4..].to_vec()).unwrap())
+                            .unwrap();
                         break;
                     }
                 }
@@ -593,7 +598,9 @@ mod tests {
         (endpoint, receiver)
     }
 
-    struct CaptureCodeContext(std::sync::Mutex<Option<crate::oauth::providers::OAuthAuthorizationCodeContext>>);
+    struct CaptureCodeContext(
+        std::sync::Mutex<Option<crate::oauth::providers::OAuthAuthorizationCodeContext>>,
+    );
 
     #[async_trait::async_trait]
     impl crate::oauth::providers::OAuthAuthorizationCodeHandler for CaptureCodeContext {
@@ -607,13 +614,53 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn refresh_tokens_do_not_expose_the_raw_token_response() {
+        let (endpoint, received) = token_endpoint().await;
+        let mut provider =
+            crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+        provider.token_url = endpoint;
+        let tokens = refresh_tokens_via_provider(&provider, "refresh", None)
+            .await
+            .unwrap();
+        assert!(tokens.raw.is_none());
+        assert_eq!(tokens.access_token.as_deref(), Some("access"));
+        assert_eq!(tokens.id_token.as_deref(), Some("id"));
+        received.await.unwrap();
+
+        let (endpoint, received) = token_endpoint().await;
+        provider.token_url = endpoint;
+        let tokens = validate_authorization_code_via_provider(
+            &provider,
+            "code",
+            "https://actual/callback",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        assert_eq!(tokens.raw.as_ref().unwrap()["access_token"], "access");
+        received.await.unwrap();
+    }
+
+    #[tokio::test]
     async fn custom_code_handlers_receive_original_redirect_uri() {
         let capture = std::sync::Arc::new(CaptureCodeContext(std::sync::Mutex::new(None)));
-        let mut provider = crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+        let mut provider =
+            crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
         let policy = provider.authorization.as_mut().unwrap();
         policy.redirect_uri = Some("https://configured/callback".into());
-        policy.authorization_code = Some(crate::oauth::providers::OAuthAuthorizationCodeCallback(capture.clone()));
-        validate_authorization_code_via_provider(&provider, "code", "https://actual/callback", Some("verifier"), Some("device")).await.unwrap();
+        policy.authorization_code = Some(crate::oauth::providers::OAuthAuthorizationCodeCallback(
+            capture.clone(),
+        ));
+        validate_authorization_code_via_provider(
+            &provider,
+            "code",
+            "https://actual/callback",
+            Some("verifier"),
+            Some("device"),
+        )
+        .await
+        .unwrap();
         let context = capture.0.lock().unwrap().take().unwrap();
         assert_eq!(context.redirect_uri, "https://actual/callback");
         assert_eq!(context.code, "code");
@@ -623,23 +670,48 @@ mod tests {
         let (endpoint, received) = token_endpoint().await;
         provider.token_url = endpoint;
         provider.authorization.as_mut().unwrap().authorization_code = None;
-        validate_authorization_code_via_provider(&provider, "code", "https://actual/callback", None, None).await.unwrap();
+        validate_authorization_code_via_provider(
+            &provider,
+            "code",
+            "https://actual/callback",
+            None,
+            None,
+        )
+        .await
+        .unwrap();
         let body = received.await.unwrap();
-        let fields: std::collections::HashMap<_, _> = url::form_urlencoded::parse(body.as_bytes()).collect();
-        assert_eq!(fields.get("redirect_uri").map(|v| v.as_ref()), Some("https://configured/callback"));
+        let fields: std::collections::HashMap<_, _> =
+            url::form_urlencoded::parse(body.as_bytes()).collect();
+        assert_eq!(
+            fields.get("redirect_uri").map(|v| v.as_ref()),
+            Some("https://configured/callback")
+        );
     }
 
     #[tokio::test]
     async fn authorization_code_omits_empty_optional_fields() {
         for optional in ["", "value"] {
             let (endpoint, received) = token_endpoint().await;
-            let mut provider = crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
+            let mut provider =
+                crate::oauth::providers::GenericOAuthConfig::new("client", "secret").provider;
             provider.token_url = endpoint;
-            validate_authorization_code_via_provider(&provider, "code", "https://app/callback", Some(optional), Some(optional)).await.unwrap();
+            validate_authorization_code_via_provider(
+                &provider,
+                "code",
+                "https://app/callback",
+                Some(optional),
+                Some(optional),
+            )
+            .await
+            .unwrap();
             let body = received.await.unwrap();
-            let fields: std::collections::HashMap<_, _> = url::form_urlencoded::parse(body.as_bytes()).collect();
+            let fields: std::collections::HashMap<_, _> =
+                url::form_urlencoded::parse(body.as_bytes()).collect();
             for key in ["code_verifier", "device_id"] {
-                assert_eq!(fields.get(key).map(|value| value.as_ref()), (!optional.is_empty()).then_some(optional));
+                assert_eq!(
+                    fields.get(key).map(|value| value.as_ref()),
+                    (!optional.is_empty()).then_some(optional)
+                );
             }
         }
     }
