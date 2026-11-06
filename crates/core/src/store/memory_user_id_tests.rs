@@ -578,3 +578,95 @@ async fn typed_user_filter_memory_operands() {
 async fn typed_user_filter_stateless_operands() {
     typed_filter_operands::<StatelessSchema>(&StatelessStore::default()).await;
 }
+
+async fn legacy_filter_operands<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    use crate::UserFilterValue::{Multiple, Native, Scalar};
+
+    let user = store
+        .create_user(CreateUser {
+            id: Some("unicode-filter".into()),
+            name: Some("\u{10000}".into()),
+            email: Some("alpha@example.test".into()),
+            email_verified: Some(true),
+            banned: Some(false),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    for (field, operator, operand, expected) in [
+        ("name", "lt", Scalar("\u{e000}".into()), true),
+        ("name", "gte", Scalar("\u{e000}".into()), false),
+        ("email", "lt", Multiple(vec!["z".into()]), true),
+        ("email", "gt", Multiple(vec!["a".into()]), true),
+        (
+            "email",
+            "lte",
+            Multiple(vec!["alpha@example.test".into()]),
+            true,
+        ),
+        ("banned", "eq", Scalar("not-true".into()), true),
+        ("emailVerified", "eq", Scalar("true".into()), true),
+        (
+            "createdAt",
+            "eq",
+            Scalar(user.created_at.to_rfc3339()),
+            false,
+        ),
+        (
+            "createdAt",
+            "ne",
+            Scalar(user.created_at.to_rfc3339()),
+            true,
+        ),
+        (
+            "createdAt",
+            "lte",
+            Scalar(user.created_at.to_rfc3339()),
+            false,
+        ),
+        (
+            "createdAt",
+            "gte",
+            Scalar(user.created_at.timestamp_millis().to_string()),
+            true,
+        ),
+        (
+            "email",
+            "in",
+            Multiple(vec!["alpha@example.test".into()]),
+            true,
+        ),
+    ] {
+        for operand in [operand.clone(), Native(operand.native())] {
+            let (users, count) = store
+                .list_users(ListUsersParams {
+                    filter_field: Some(field.into()),
+                    filter_operator: Some(operator.into()),
+                    filter_value: Some(operand.clone()),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                count,
+                usize::from(expected),
+                "{field} {operator} {operand:?}"
+            );
+            assert_eq!(users.len(), count);
+            if expected {
+                assert_eq!(users[0].id, user.id);
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn legacy_user_filter_memory_operands_match_native_channel() {
+    legacy_filter_operands::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn legacy_user_filter_stateless_operands_match_native_channel() {
+    legacy_filter_operands::<StatelessSchema>(&StatelessStore::default()).await;
+}

@@ -1,7 +1,7 @@
 //! Internal helpers for applying admin user-list query semantics.
 
 use crate::entity::AuthUser;
-use crate::types::{ListUsersParams, UserFilterValue};
+use crate::types::ListUsersParams;
 use crate::utils::{
     javascript::{number_from_i64, string_to_number},
     json::JsValue,
@@ -48,55 +48,6 @@ fn matches_search(user: &impl AuthUser, params: &ListUsersParams) -> bool {
         "contains" => haystack.contains(search_value),
         "starts_with" => haystack.starts_with(search_value),
         "ends_with" => haystack.ends_with(search_value),
-        _ => false,
-    }
-}
-
-fn parse_bool(value: &str) -> Option<bool> {
-    match value {
-        "true" => Some(true),
-        "false" => Some(false),
-        _ => None,
-    }
-}
-
-fn parse_date(value: &str) -> Option<DateTime<Utc>> {
-    DateTime::parse_from_rfc3339(value)
-        .ok()
-        .map(|value| value.with_timezone(&Utc))
-}
-
-fn compare_string(lhs: &str, rhs: &str, operator: &str) -> bool {
-    match operator {
-        "eq" => lhs == rhs,
-        "ne" | "not_in" => lhs != rhs,
-        "lt" => lhs < rhs,
-        "lte" => lhs <= rhs,
-        "gt" => lhs > rhs,
-        "gte" => lhs >= rhs,
-        "contains" => lhs.contains(rhs),
-        "starts_with" => lhs.starts_with(rhs),
-        "ends_with" => lhs.ends_with(rhs),
-        _ => false,
-    }
-}
-
-fn compare_bool(lhs: bool, rhs: bool, operator: &str) -> bool {
-    match operator {
-        "eq" => lhs == rhs,
-        "ne" => lhs != rhs,
-        _ => false,
-    }
-}
-
-fn compare_date(lhs: DateTime<Utc>, rhs: DateTime<Utc>, operator: &str) -> bool {
-    match operator {
-        "eq" => lhs == rhs,
-        "ne" => lhs != rhs,
-        "lt" => lhs < rhs,
-        "lte" => lhs <= rhs,
-        "gt" => lhs > rhs,
-        "gte" => lhs >= rhs,
         _ => false,
     }
 }
@@ -241,45 +192,12 @@ fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
     let Some(filter_value) = params.filter_value.as_ref() else {
         return true;
     };
-
-    let field = params.filter_field.as_deref().unwrap_or("email");
-    let operator = params.filter_operator.as_deref().unwrap_or("eq");
-
-    let filter_value = match filter_value {
-        UserFilterValue::Native(value) => {
-            return matches_typed_filter(user, field, value, operator);
-        }
-        UserFilterValue::Scalar(value) => value.as_str(),
-        UserFilterValue::Multiple(values) => {
-            let Some(value) = string_field(user, field) else {
-                return false;
-            };
-            return match operator {
-                "in" => values.contains(&value),
-                "not_in" => !values.contains(&value),
-                "contains" | "starts_with" | "ends_with" => {
-                    compare_string(&value, &values.join(","), operator)
-                }
-                _ => false,
-            };
-        }
-    };
-
-    if let Some(value) = string_field(user, field) {
-        return compare_string(&value, filter_value, operator);
-    }
-
-    if let Some(value) = bool_field(user, field) {
-        return parse_bool(filter_value)
-            .is_some_and(|filter| compare_bool(value, filter, operator));
-    }
-
-    if let Some(value) = date_field(user, field) {
-        return parse_date(filter_value)
-            .is_some_and(|filter| compare_date(value, filter, operator));
-    }
-
-    false
+    matches_typed_filter(
+        user,
+        params.filter_field.as_deref().unwrap_or("email"),
+        &filter_value.native(),
+        params.filter_operator.as_deref().unwrap_or("eq"),
+    )
 }
 
 fn compare_options<T: Ord + Copy>(lhs: Option<T>, rhs: Option<T>, direction: &str) -> Ordering {
