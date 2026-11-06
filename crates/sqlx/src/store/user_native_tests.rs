@@ -247,3 +247,55 @@ async fn native_creation_rejects_structured_scalar_parameters_without_persistenc
         assert!(store.get_user_by_email(&email).await.unwrap().is_none());
     }
 }
+
+#[tokio::test]
+async fn unrelated_user_update_retains_native_sqlite_scalars() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool.clone());
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let mut input = CreateUser::new().with_email("update-native@fixture.test");
+    input.adapter_native_fields = [
+        ("emailVerified", json!(2)),
+        ("banned", json!(0.5)),
+        ("twoFactorEnabled", json!(-1)),
+        ("isAnonymous", json!("pending")),
+        ("phoneNumberVerified", json!(-2)),
+        ("createdAt", json!(1e20)),
+        ("banExpires", json!(-0.5)),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.to_owned(), value))
+    .collect();
+    let created = store.create_user_record(input).await.unwrap();
+    let updated = store
+        .update_user_record(
+            &created.id(),
+            alibi_core::UpdateUser {
+                name: Some("Changed".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.name(), Some("Changed"));
+    let wire = serde_json::to_value(alibi_core::UserView::from(&updated)).unwrap();
+    assert_eq!(wire["banned"], false);
+    assert_eq!(wire["emailVerified"], false);
+    assert_eq!(wire["twoFactorEnabled"], false);
+    assert_eq!(wire["isAnonymous"], "pending");
+    assert_eq!(wire["phoneNumberVerified"], false);
+    assert_eq!(wire["createdAt"], json!(1e20));
+    assert_eq!(wire["banExpires"], json!(-0.5));
+    let row: (String, f64, f64, f64) = sqlx::query_as(
+        "SELECT typeof(banned), banned, createdAt, banExpires FROM user WHERE id = ?",
+    )
+    .bind(created.id().as_ref())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row, ("real".into(), 0.5, 1e20, -0.5));
+}

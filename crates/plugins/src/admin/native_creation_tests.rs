@@ -382,3 +382,65 @@ async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence(
         assert_eq!(encoded.get("username"), Some(&serde_json::Value::Null));
     }
 }
+
+#[tokio::test]
+async fn unrelated_user_update_retains_native_sqlite_scalars() {
+    use alibi_core::AuthUser;
+    use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+    let database = Database::connect("sqlite::memory:").await.unwrap();
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        .await
+        .unwrap();
+    let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+        test_helpers::create_test_config(),
+        database.clone(),
+    ));
+    let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+    let mut input = types::CreateUserRequest::new("update-native@fixture.test", "Native");
+    input.data = Some(
+        serde_json::json!({
+            "emailVerified": 2, "banned": 0.5, "twoFactorEnabled": -1,
+            "isAnonymous": "pending", "phoneNumberVerified": -2,
+            "createdAt": 1e20, "banExpires": -0.5
+        })
+        .as_object()
+        .unwrap()
+        .clone(),
+    );
+    let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+        .await
+        .unwrap();
+    let updated = ctx
+        .database
+        .update_user_record(
+            &created.user.id,
+            alibi_core::UpdateUser {
+                name: Some("Changed".into()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(updated.name(), Some("Changed"));
+    let wire = serde_json::to_value(alibi_core::UserView::from(&updated)).unwrap();
+    assert_eq!(wire["banned"], false);
+    assert_eq!(wire["emailVerified"], false);
+    assert_eq!(wire["twoFactorEnabled"], false);
+    assert_eq!(wire["isAnonymous"], "pending");
+    assert_eq!(wire["phoneNumberVerified"], false);
+    assert_eq!(wire["createdAt"], serde_json::json!(1e20));
+    assert_eq!(wire["banExpires"], serde_json::json!(-0.5));
+    let row = database
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT typeof(banned) AS kind, banned, createdAt, banExpires FROM user WHERE id = ?",
+            [created.user.id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(row.try_get::<String>("", "kind").unwrap(), "real");
+    assert_eq!(row.try_get::<f64>("", "banned").unwrap(), 0.5);
+    assert_eq!(row.try_get::<f64>("", "createdAt").unwrap(), 1e20);
+    assert_eq!(row.try_get::<f64>("", "banExpires").unwrap(), -0.5);
+}

@@ -160,7 +160,10 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     let insert = id.is_none();
     let verification =
         verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()));
-    if verification.is_none() && native_fields.is_empty() {
+    if verification.is_none()
+        && native_fields.is_empty()
+        && (insert || db.get_database_backend() != sea_orm::DbBackend::Sqlite)
+    {
         return if insert {
             model.insert(db).await.map_err(map_db_err)
         } else {
