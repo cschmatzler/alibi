@@ -121,6 +121,10 @@ struct NaverUserInfo {
 }
 #[async_trait]
 impl OAuthUserInfoHandler for NaverUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -269,6 +273,41 @@ mod tests {
             String::from_utf8(request).unwrap()
         });
         (endpoint, request)
+    }
+
+    #[tokio::test]
+    async fn naver_resultcode_failures_are_not_profile_exceptions() {
+        for profile in [
+            json!(null),
+            json!({"resultcode": 0}),
+            json!({"resultcode": "01"}),
+        ] {
+            let (endpoint, captured) = profile_server(profile).await;
+            let handler = NaverUserInfo {
+                endpoint,
+                mapper: None,
+            };
+            assert!(!handler.errors_are_exceptions());
+            assert_eq!(
+                handler
+                    .get_user_info(OAuthUserInfoRequest::default())
+                    .await
+                    .unwrap_err(),
+                "Invalid Naver resultcode"
+            );
+            captured.await.unwrap();
+        }
+        let handler = NaverUserInfo {
+            endpoint: "http://127.0.0.1:0".into(),
+            mapper: None,
+        };
+        assert!(!handler.errors_are_exceptions());
+        assert!(
+            handler
+                .get_user_info(OAuthUserInfoRequest::default())
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]
