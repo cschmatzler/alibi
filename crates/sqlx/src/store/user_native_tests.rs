@@ -5,6 +5,70 @@ use alibi_core::{AuthUser, CreateUser};
 use serde_json::json;
 
 #[tokio::test]
+async fn false_ban_patch_preserves_omissions_and_applies_explicit_values() {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = SqlxStore::<BundledSchema>::new(alibi_core::AuthConfig::default(), pool);
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    let user = store
+        .create_user(CreateUser::new().with_email("false-ban@fixture.test"))
+        .await
+        .unwrap();
+    let expiry = chrono::Utc::now() + chrono::Duration::hours(1);
+    let _ = store
+        .update_user(
+            &user.id(),
+            alibi_core::UpdateUser {
+                banned: Some(true),
+                ban_reason: Some("preserved".into()),
+                ban_expires: Some(Some(expiry)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    for (update, reason, expected_expiry) in [
+        (
+            alibi_core::UpdateUser {
+                banned: Some(false),
+                ..Default::default()
+            },
+            Some("preserved"),
+            Some(expiry),
+        ),
+        (
+            alibi_core::UpdateUser {
+                banned: Some(false),
+                ban_reason: Some("replacement".into()),
+                ban_expires: Some(Some(expiry + chrono::Duration::hours(1))),
+                ..Default::default()
+            },
+            Some("replacement"),
+            Some(expiry + chrono::Duration::hours(1)),
+        ),
+        (
+            alibi_core::UpdateUser {
+                banned: Some(false),
+                clear_ban_reason: true,
+                ban_expires: Some(None),
+                ..Default::default()
+            },
+            None,
+            None,
+        ),
+    ] {
+        let _ = store.update_user(&user.id(), update).await.unwrap();
+        let stored = store.get_user_by_id(&user.id()).await.unwrap().unwrap();
+        assert!(!stored.banned());
+        assert_eq!(stored.ban_reason(), reason);
+        assert_eq!(stored.ban_expires(), expected_expiry);
+    }
+}
+
+#[tokio::test]
 async fn native_creation_persists_sqlite_scalars_and_retains_boolean_output() {
     let pool = sqlx::sqlite::SqlitePoolOptions::new()
         .max_connections(1)

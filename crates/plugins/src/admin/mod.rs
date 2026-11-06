@@ -240,7 +240,7 @@ impl<S: alibi_core::AuthSchema> alibi_core::store::SessionCreatedHook<S> for Adm
         if ban_expired_at(&user, chrono::Utc::now()) {
             let update = alibi_core::UpdateUser {
                 banned: Some(false),
-                ban_reason: None,
+                clear_ban_reason: true,
                 ban_expires: Some(None),
                 ..Default::default()
             };

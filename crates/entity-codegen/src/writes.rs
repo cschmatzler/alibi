@@ -182,7 +182,6 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
             if has("banned") && has("ban_reason") && has("ban_expires") {
                 let banned = set(&ident("banned"), &Insert::Value(quote! { banned }));
                 let clear_reason = set(&ident("ban_reason"), &Insert::Null);
-                let clear_expires = set(&ident("ban_expires"), &Insert::Null);
                 let reason = set(
                     &ident("ban_reason"),
                     &Insert::Value(quote! { ::std::option::Option::Some(ban_reason) }),
@@ -194,16 +193,10 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
                 statements.push(quote! {
                     if let ::std::option::Option::Some(banned) = update.banned {
                         #banned
-                        if !banned {
-                            #clear_reason
-                            #clear_expires
-                        }
                     }
-                    if update.banned != ::std::option::Option::Some(false) {
-                        if update.clear_ban_reason { #clear_reason }
-                        else if let ::std::option::Option::Some(ban_reason) = update.ban_reason { #reason }
-                        if let ::std::option::Option::Some(ban_expires) = update.ban_expires { #expires }
-                    }
+                    if update.clear_ban_reason { #clear_reason }
+                    else if let ::std::option::Option::Some(ban_reason) = update.ban_reason { #reason }
+                    if let ::std::option::Option::Some(ban_expires) = update.ban_expires { #expires }
                 });
             } else if has("banned") {
                 statements.push(some("banned", direct));

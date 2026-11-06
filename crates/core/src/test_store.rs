@@ -359,10 +359,6 @@ impl UserStore<BundledSchema> for MemoryStore {
         }
         if let Some(banned) = update.banned {
             user.banned = Some(banned);
-            if !banned {
-                user.ban_reason = None;
-                user.ban_expires = None;
-            }
         }
         if update.clear_ban_reason {
             user.ban_reason = None;

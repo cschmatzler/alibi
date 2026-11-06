@@ -729,8 +729,8 @@ pub(crate) async fn unban_user_core(
 
     let update = UpdateUser {
         banned: Some(false),
-        ban_reason: None,
-        ban_expires: None,
+        clear_ban_reason: true,
+        ban_expires: Some(None),
         ..Default::default()
     };
 
@@ -780,8 +780,8 @@ pub(crate) async fn impersonate_user_core(
                     &body.user_id,
                     UpdateUser {
                         banned: Some(false),
-                        ban_reason: None,
-                        ban_expires: None,
+                        clear_ban_reason: true,
+                        ban_expires: Some(None),
                         ..Default::default()
                     },
                 )

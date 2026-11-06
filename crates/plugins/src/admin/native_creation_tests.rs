@@ -1,5 +1,63 @@
 use super::*;
+use alibi_core::UpdateUser;
 use chrono::Datelike;
+
+#[tokio::test]
+async fn false_ban_patch_preserves_omissions_and_honors_explicit_values() {
+    let (ctx, admin, _, user, _) = create_admin_context().await;
+    let expiry = Utc::now() + Duration::hours(1);
+    ctx.database
+        .update_user_record(
+            &user.id,
+            UpdateUser {
+                banned: Some(true),
+                ban_reason: Some("preserved".into()),
+                ban_expires: Some(Some(expiry)),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    for (data, reason, expected_expiry) in [
+        (
+            serde_json::json!({"banned": false}),
+            Some("preserved"),
+            Some(expiry),
+        ),
+        (
+            serde_json::json!({"banned": false, "banReason": "replacement", "banExpires": "2099-01-01T00:00:00Z"}),
+            Some("replacement"),
+            Some(
+                chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+                    .unwrap()
+                    .with_timezone(&Utc),
+            ),
+        ),
+        (
+            serde_json::json!({"banned": false, "banReason": null, "banExpires": null}),
+            None,
+            None,
+        ),
+    ] {
+        handlers::update_user_core(
+            &types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone()),
+            &admin,
+            &AdminConfig::default(),
+            &ctx,
+        )
+        .await
+        .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(!stored.banned());
+        assert_eq!(stored.ban_reason(), reason);
+        assert_eq!(stored.ban_expires(), expected_expiry);
+    }
+}
 
 #[tokio::test]
 async fn admin_creation_native_scalar_affinity_and_nulls_are_persisted() {
@@ -159,7 +217,7 @@ async fn numeric_native_ban_expiry_uses_truthiness_and_date_timeclip() {
         let mut input =
             types::CreateUserRequest::new(format!("numeric-ban-{index}@fixture.test"), "Ban");
         input.data = Some(
-            serde_json::json!({"banned": true, "banExpires": expiry})
+            serde_json::json!({"banned": true, "banExpires": expiry, "banReason": "expired reason"})
                 .as_object()
                 .unwrap()
                 .clone(),
@@ -192,6 +250,15 @@ async fn numeric_native_ban_expiry_uses_truthiness_and_date_timeclip() {
             .unwrap()
             .unwrap();
         assert_eq!(stored.banned(), !expired);
+        assert_eq!(
+            stored.ban_reason(),
+            if expired {
+                None
+            } else {
+                Some("expired reason")
+            }
+        );
+        assert_eq!(stored.ban_expires().is_none(), expired);
     }
 }
 

@@ -9,6 +9,64 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn false_ban_patch_keeps_omissions_and_applies_explicit_values() {
+        let store = StatelessStore::default();
+        let user = store
+            .create_user(CreateUser::new().with_email("false-ban@example.test"))
+            .await
+            .unwrap();
+        let expiry = Utc::now() + chrono::Duration::hours(1);
+        store
+            .update_user(
+                &user.id,
+                UpdateUser {
+                    banned: Some(true),
+                    ban_reason: Some("preserved".into()),
+                    ban_expires: Some(Some(expiry)),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        for (update, reason, expected_expiry) in [
+            (
+                UpdateUser {
+                    banned: Some(false),
+                    ..Default::default()
+                },
+                Some("preserved"),
+                Some(expiry),
+            ),
+            (
+                UpdateUser {
+                    banned: Some(false),
+                    ban_reason: Some("replacement".into()),
+                    ban_expires: Some(Some(expiry + chrono::Duration::hours(1))),
+                    ..Default::default()
+                },
+                Some("replacement"),
+                Some(expiry + chrono::Duration::hours(1)),
+            ),
+            (
+                UpdateUser {
+                    banned: Some(false),
+                    clear_ban_reason: true,
+                    ban_expires: Some(None),
+                    ..Default::default()
+                },
+                None,
+                None,
+            ),
+        ] {
+            store.update_user(&user.id, update).await.unwrap();
+            let stored = store.get_user_by_id(&user.id).await.unwrap().unwrap();
+            assert_eq!(stored.banned, Some(false));
+            assert_eq!(stored.ban_reason.as_deref(), reason);
+            assert_eq!(stored.ban_expires, expected_expiry);
+        }
+    }
+
+    #[tokio::test]
     async fn clear_ban_reason_keeps_stateless_ban_and_expiry() {
         let store = StatelessStore::default();
         let user = store
@@ -214,10 +272,6 @@ impl UserStore<StatelessSchema> for StatelessStore {
         }
         if let Some(banned) = update.banned {
             user.banned = Some(banned);
-            if !banned {
-                user.ban_reason = None;
-                user.ban_expires = None;
-            }
         }
         if update.clear_ban_reason {
             user.ban_reason = None;
