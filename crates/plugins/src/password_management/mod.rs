@@ -925,6 +925,54 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn change_password_uses_context_password_provider() {
+        struct ContextHasher;
+        #[async_trait::async_trait]
+        impl PasswordHasher for ContextHasher {
+            async fn hash(&self, password: &str) -> AuthResult<String> {
+                assert_eq!(password, "NewPassword123!");
+                Ok("context-provider-hash".into())
+            }
+            async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+                assert!(hash.contains(':'));
+                assert_eq!(password, "Password123!");
+                Ok(true)
+            }
+        }
+        let (mut ctx, user, session) = create_test_context_with_user().await;
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
+        crate::EmailPasswordPlugin::new()
+            .password_hasher(Arc::new(ContextHasher))
+            .on_init(&mut init)
+            .await
+            .unwrap();
+        ctx.extensions = init.into_parts().extensions;
+        let req = test_helpers::create_auth_request_no_query(
+            HttpMethod::Post,
+            "/change-password",
+            Some(&session.token),
+            Some(
+                serde_json::to_vec(&serde_json::json!({
+                    "currentPassword": "Password123!", "newPassword": "NewPassword123!"
+                }))
+                .unwrap(),
+            ),
+        );
+        let response = PasswordManagementPlugin::new()
+            .handle_change_password(&req, &ctx)
+            .await
+            .unwrap();
+        assert_eq!(response.status, 200);
+        assert_eq!(
+            ctx.database.get_user_accounts(&user.id).await.unwrap()[0]
+                .password
+                .as_deref(),
+            Some("context-provider-hash")
+        );
+    }
+
+    #[tokio::test]
     async fn test_change_password_success() {
         let plugin = PasswordManagementPlugin::new();
         let (ctx, _user, session) = create_test_context_with_user().await;

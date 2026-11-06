@@ -230,13 +230,16 @@ pub(crate) async fn change_password_core<S: alibi_core::AuthSchema>(
         None
     };
 
-    let password_hash = ctx
-        .hash_password(config.password_hasher.as_ref(), &body.new_password)
-        .await?;
+    let policy = ctx.extensions.get::<crate::EmailPasswordConfig>();
+    let hasher = policy
+        .as_ref()
+        .and_then(|policy| policy.password_hasher.as_ref())
+        .or(config.password_hasher.as_ref());
+    let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
     if let Some(stored_hash) = stored_hash {
         password_utils::verify_password(
-            config.password_hasher.as_ref(),
+            hasher,
             &body.current_password,
             &stored_hash,
         )
