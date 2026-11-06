@@ -107,6 +107,9 @@ pub fn verify_cookie_value(value: &str, secret: &str) -> Option<String> {
         .decode_utf8()
         .ok()?;
     let (payload, signature) = decoded.rsplit_once('.')?;
+    if payload.is_empty() {
+        return None;
+    }
     // Better Call's atob verifier discards unused bits before padding. They
     // do not change the authenticated HMAC bytes or weaken signature checks.
     let decoder = base64::engine::GeneralPurpose::new(
@@ -447,4 +450,21 @@ pub fn delete_session_cookie_headers(config: &AuthConfig) -> AuthResult<Vec<Stri
         config,
     )?);
     Ok(cookies)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signed_cookies_reject_authenticated_empty_payloads() {
+        let secret = "cookie-parity-secret";
+        assert_eq!(verify_cookie_value(&sign_cookie_value("", secret), secret), None);
+        for payload in ["session", ".", "session.with.dots"] {
+            assert_eq!(
+                verify_cookie_value(&sign_cookie_value(payload, secret), secret),
+                Some(payload.to_owned())
+            );
+        }
+    }
 }
