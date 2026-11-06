@@ -429,7 +429,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
                 _ = object.entry("id").or_insert(id);
-                let verified = object.get("email_verified").cloned().unwrap_or(Value::Null);
+                let verified = Value::Bool(super::email_verified_claim(object.get("email_verified")));
                 _ = object.entry("emailVerified").or_insert(verified);
                 if let Some(image) = object.get("picture").cloned() {
                     _ = object.entry("image").or_insert(image);
@@ -460,10 +460,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             if let Some(object) = profile.as_object_mut() {
                 _ = object.insert(
                     "emailVerified".into(),
-                    object
-                        .get("email_verified")
-                        .cloned()
-                        .unwrap_or(Value::Bool(false)),
+                    Value::Bool(super::email_verified_claim(object.get("email_verified"))),
                 );
                 if let Some(image) = object.get("picture").cloned() {
                     _ = object.insert("image".into(), image);
@@ -665,6 +662,34 @@ mod tests {
 
     fn id_token(claims: Value) -> String {
         format!("e30.{}.signature", base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(claims.to_string()))
+    }
+
+    async fn serve_profile(profile: Value) -> String {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = [0; 4096];
+            stream.read(&mut buffer).await.unwrap();
+            let body = profile.to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        endpoint
+    }
+
+    #[tokio::test]
+    async fn generic_profile_aliases_normalize_email_verification() {
+        for (value, expected) in [(Value::Null, false), (serde_json::json!(false), false), (serde_json::json!(true), true), (serde_json::json!("true"), true), (serde_json::json!("false"), false), (serde_json::json!(1), false)] {
+            let profile = serde_json::json!({"sub":"subject", "email":"a@example.com", "email_verified": value});
+            let handler = GenericUserInfo { url: Some(serve_profile(profile.clone()).await), mapper: None, custom: None, verified_oidc: false };
+            let fetched = handler.get_user_info(OAuthUserInfoRequest { access_token: Some("access".into()), ..Default::default() }).await.unwrap();
+            let decoded = handler.get_user_info(OAuthUserInfoRequest { id_token: Some(id_token(profile)), ..Default::default() }).await.unwrap();
+            for response in [fetched, decoded] {
+                assert_eq!(response.data["emailVerified"], Value::Bool(expected));
+                assert_eq!(response.user.email_verified, expected);
+            }
+        }
     }
 
     #[tokio::test]
