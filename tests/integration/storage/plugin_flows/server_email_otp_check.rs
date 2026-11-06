@@ -40,6 +40,7 @@ async fn server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attem
             .decode()?;
             let key = format!("{}-otp-{email}", kind.as_str());
             let proof = db.table("verification").await?;
+            let original = auth.context().verifications().find(&key).await?.unwrap();
             let malformed = Box::pin(auth.dispatch_endpoint(
                 endpoint(&json!({"email":email,"type":kind.as_str(),"otp":42}))?,
                 EndpointOptions::default(),
@@ -55,7 +56,10 @@ async fn server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attem
             let success=Box::pin(auth.dispatch_endpoint(EmailOtpPlugin::check_verification_otp_endpoint(email.to_uppercase(),kind,otp.clone()).with_body(&json!({"email":email.to_uppercase(),"type":kind.as_str(),"otp":otp,"ignored":true}))?,EndpointOptions::default())).await?;
             assert!(success.decode()?.success);
             assert!(success.headers().get_all("set-cookie").next().is_none());
-            assert_eq!(db.table("verification").await?, proof);
+            let restored = auth.context().verifications().find(&key).await?.unwrap();
+            assert_ne!(restored.id(), original.id());
+            assert_eq!(restored.value()?, original.value()?);
+            assert_eq!(restored.expires_at()?, original.expires_at()?);
             for attempt in 1..=3 {
                 let wrong = Box::pin(auth.dispatch_endpoint(
                     endpoint(&json!({"email":email,"type":kind.as_str(),"otp":"wrong"}))?,
@@ -112,6 +116,8 @@ async fn server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attem
         .await?
         .decode()?;
         let proof = db.table("verification").await?;
+        let key = format!("sign-in-otp-{guest}");
+        let original = auth.context().verifications().find(&key).await?.unwrap();
         let missing = Box::pin(auth.dispatch_endpoint(
             endpoint(&json!({"email":guest,"type":"sign-in","otp":otp}))?,
             EndpointOptions::default(),
@@ -123,8 +129,10 @@ async fn server_email_otp_checks_preserve_live_proofs_and_retire_exhausted_attem
             missing.error.error_payload().1.as_deref(),
             Some("USER_NOT_FOUND")
         );
-        assert_eq!(db.table("verification").await?, proof);
-        let key = format!("sign-in-otp-{guest}");
+        assert_ne!(db.table("verification").await?, proof);
+        let restored = auth.context().verifications().find(&key).await?.unwrap();
+        assert_eq!(restored.value()?, original.value()?);
+        assert_eq!(restored.expires_at()?, original.expires_at()?);
         let _ = auth
             .context()
             .verifications()

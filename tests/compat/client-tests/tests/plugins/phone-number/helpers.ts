@@ -93,6 +93,21 @@ export async function readPhoneOtp(
   return parsed.data.code;
 }
 
+export async function seedPhoneOwner(
+  ctx: ScenarioContext,
+  profile: PhoneProfile,
+  userId: string,
+  phoneNumber: string,
+) {
+  const response = await fetch(new URL("/__test/phone-seed-owner", ctx.baseURL), {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ profile, userId, phoneNumber }),
+  });
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ status: true });
+}
+
 const stateSchema = z.object({
   user: z
     .object({

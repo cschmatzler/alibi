@@ -431,6 +431,14 @@ where
         Ok(true)
     }
     async fn end_user_sessions_preserving(&self, user_id: &str) -> AuthResult<bool> {
+        self.end_user_sessions_preserving_with_revocation(user_id, None)
+            .await
+    }
+    async fn end_user_sessions_preserving_with_revocation(
+        &self,
+        user_id: &str,
+        revocation: Option<&dyn alibi_core::store::SessionRevocation>,
+    ) -> AuthResult<bool> {
         let now = Utc::now();
         let user_id = S::Session::parse_user_id(user_id)?;
         let live = || {
@@ -478,6 +486,9 @@ where
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
+        if let Some(revocation) = revocation {
+            revocation.revoke().await?;
+        }
         for session in &sessions {
             for hook in self.hooks() {
                 hook.after_delete_session(session, &context).await?;
@@ -602,6 +613,14 @@ where
     }
 
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        self.delete_user_sessions_with_revocation(user_id, None)
+            .await
+    }
+    async fn delete_user_sessions_with_revocation(
+        &self,
+        user_id: &str,
+        revocation: Option<&dyn alibi_core::store::SessionRevocation>,
+    ) -> AuthResult<()> {
         let user_id = <S::Session as SeaOrmSessionModel>::parse_user_id(user_id)?;
         let sessions = if self.hooks().is_empty() {
             Vec::new()
@@ -629,6 +648,9 @@ where
             .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
+        if let Some(revocation) = revocation {
+            revocation.revoke().await?;
+        }
         for session in &sessions {
             for hook in self.hooks() {
                 hook.after_delete_session(session, &hook_context).await?;

@@ -384,6 +384,16 @@ where
         }
         Ok(())
     }
+    async fn queue_session_revocation(
+        &self,
+        session_ids: &[String],
+        revocation: Arc<dyn alibi_core::store::SessionRevocation>,
+    ) -> AuthResult<()> {
+        self.pending_after
+            .attach_session_revocation(session_ids, revocation)
+            .await;
+        Ok(())
+    }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
         use sea_orm::{ColumnTrait, QueryFilter, QuerySelect};
         <S::Session as SeaOrmSessionModel>::Entity::find()

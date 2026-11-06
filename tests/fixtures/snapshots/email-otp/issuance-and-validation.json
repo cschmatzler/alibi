@@ -893,27 +893,29 @@
   },
   {
     "/email-otp/request-password-reset anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "success": true
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },
   {
     "/email-otp/request-password-reset owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "success": true
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },
@@ -1083,27 +1085,29 @@
   },
   {
     "/forget-password/email-otp anonymous {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "success": true
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },
   {
     "/forget-password/email-otp owner {\"email\":\"not-an-email\",\"otp\":\"123456\",\"type\":\"sign-in\",\"newEmail\":\"x\",\"password\":\"a-native-password-123\"}": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "success": true
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },
@@ -1280,8 +1284,8 @@
         ]
       },
       "body": {
-        "code": "INVALID_OTP",
-        "message": "Invalid OTP"
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },
@@ -1294,8 +1298,8 @@
         ]
       },
       "body": {
-        "code": "INVALID_OTP",
-        "message": "Invalid OTP"
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
       }
     }
   },

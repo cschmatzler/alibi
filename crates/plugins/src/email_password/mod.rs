@@ -1056,6 +1056,65 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn username_sign_in_and_availability_honor_the_same_validation_order() {
+        for order in [
+            None,
+            Some(UsernameValidationOrder::PreNormalization),
+            Some(UsernameValidationOrder::PostNormalization),
+        ] {
+            let observed = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let calls = observed.clone();
+            let plugin = EmailPasswordPlugin::with_config(EmailPasswordConfig {
+                enable_username: true,
+                username: UsernameConfig {
+                    validation_order: order,
+                    validator: Some(Arc::new(move |value: String| {
+                        calls.lock().unwrap().push(value.clone());
+                        async move { Ok(value == "owner") }
+                    })),
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            let ctx = create_test_context().await;
+            let normalized = order == Some(UsernameValidationOrder::PostNormalization);
+            for (path, accepted_status) in
+                [("/is-username-available", 200), ("/sign-in/username", 401)]
+            {
+                let req = AuthRequest::from_parts(
+                    HttpMethod::Post,
+                    path.into(),
+                    HashMap::new(),
+                    Some(
+                        serde_json::json!({"username":"OWNER", "password":"password123"})
+                            .to_string()
+                            .into_bytes(),
+                    ),
+                    HashMap::new(),
+                );
+                let response = if path == "/is-username-available" {
+                    plugin.handle_is_username_available(&req, &ctx).await
+                } else {
+                    plugin.handle_sign_in_username(&req, &ctx).await
+                }
+                .unwrap();
+                assert_eq!(
+                    response.status,
+                    if normalized { accepted_status } else { 422 }
+                );
+            }
+            assert_eq!(
+                *observed.lock().unwrap(),
+                if normalized {
+                    vec!["owner", "owner"]
+                } else {
+                    vec!["OWNER", "OWNER"]
+                }
+            );
+        }
+    }
+
     // Upstream reference: packages/better-auth/src/plugins/username/index.ts ::
     // isUsernameAvailable rejects usernames that fail `defaultUsernameValidator`
     // with UNPROCESSABLE_ENTITY; adapted to the Rust email-password plugin.

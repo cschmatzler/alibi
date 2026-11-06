@@ -29,7 +29,7 @@ pub(in crate::two_factor) async fn get_totp_uri_core(
             issuer,
             user.email().unwrap_or("user"),
             false,
-        ),
+        )?,
     })
 }
 
@@ -167,7 +167,8 @@ pub(in crate::two_factor) fn generate_totp_at(
     } else {
         remainder as u64
     };
-    let mut mac = Hmac::<sha1::Sha1>::new_from_slice(secret.as_bytes())
+    let decoded = totp_secret(secret)?;
+    let mut mac = Hmac::<sha1::Sha1>::new_from_slice(decoded.as_bytes())
         .map_err(|_error| AuthError::internal("Invalid TOTP HMAC input"))?;
     mac.update(&counter.to_be_bytes());
     let digest = mac.finalize().into_bytes();
@@ -221,8 +222,8 @@ pub(in crate::two_factor) fn totp_uri(
     issuer: &str,
     email: &str,
     enrollment: bool,
-) -> String {
-    let secret = totp_rs::Secret::new(secret.as_bytes().to_vec().into_boxed_slice()).to_base32();
+) -> AuthResult<String> {
+    let secret = totp_secret(secret)?.to_base32();
     let digits = js_number_string(totp_digits(config));
     // Enrollment forwards the configured period directly; the authenticator
     // provider and generator use the upstream truthy default for zero.
@@ -237,11 +238,22 @@ pub(in crate::two_factor) fn totp_uri(
         .append_pair("digits", &digits)
         .append_pair("period", &period)
         .finish();
-    format!(
+    Ok(format!(
         "otpauth://totp/{}:{}?{query}",
         uri_component(issuer),
         uri_component(email)
-    )
+    ))
+}
+
+fn totp_secret(secret: &str) -> AuthResult<totp_rs::Secret> {
+    if let Some(encoded) = secret.strip_prefix("base32:") {
+        totp_rs::Secret::try_from_base32(encoded.to_uppercase())
+            .map_err(|_| AuthError::internal("Invalid Base32 TOTP secret"))
+    } else {
+        Ok(totp_rs::Secret::new(
+            secret.as_bytes().to_vec().into_boxed_slice(),
+        ))
+    }
 }
 
 pub(in crate::two_factor) fn generate_secret() -> String {
@@ -250,4 +262,34 @@ pub(in crate::two_factor) fn generate_secret() -> String {
         .take(32)
         .map(char::from)
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // RFC 6238, SHA-1 at Unix time 59 with an imported Base32 secret.
+    #[test]
+    fn imported_base32_secret_uses_decoded_hmac_bytes() {
+        let config = TwoFactorConfig {
+            totp_digits: 8.0,
+            ..Default::default()
+        };
+        let imported = "base32:gezdgnbvgy3tqojqgezdgnbvgy3tqojq";
+        assert_eq!(
+            generate_totp_at(&config, imported, 1.0, 0.0).unwrap(),
+            "94287082"
+        );
+        let uri = totp_uri(&config, imported, "Example", "owner@example.com", false).unwrap();
+        assert_eq!(
+            url::Url::parse(&uri)
+                .unwrap()
+                .query_pairs()
+                .find(|(key, _)| key == "secret")
+                .unwrap()
+                .1,
+            "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"
+        );
+        assert!(generate_totp_at(&config, "base32:!", 1.0, 0.0).is_err());
+    }
 }

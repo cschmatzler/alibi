@@ -177,7 +177,9 @@ alibi_core::impl_auth_plugin! {
             if validation_enabled {ctx.register_user_creation_adapter_default(|mut input| {
                 _ = input.banned.get_or_insert(false); Ok(input)
             });}
+            ctx.register_session_created_hook(std::sync::Arc::new(AdminSessionGuard));
             ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
+            ctx.set_metadata("admin.impersonation_session_duration", serde_json::json!(self.config.impersonation_session_duration.unwrap_or(3600.0)));
             ctx.set_metadata(
                 "admin.default_role",
                 serde_json::Value::String(self.config.default_role.clone()),
@@ -188,6 +190,64 @@ alibi_core::impl_auth_plugin! {
             );
             Ok(())
         }
+    }
+}
+
+struct AdminSessionGuard;
+
+#[async_trait::async_trait]
+impl<S: alibi_core::AuthSchema> alibi_core::store::SessionCreatedHook<S> for AdminSessionGuard {
+    async fn before_create(
+        &self,
+        input: &alibi_core::CreateSession,
+        ctx: &AuthContext<S>,
+        transaction: Option<&dyn alibi_core::AuthTransaction<S>>,
+    ) -> AuthResult<()> {
+        let user = match transaction {
+            Some(transaction) => transaction.get_user_by_id_record(&input.user_id).await?,
+            None => ctx.database.get_user_by_id_record(&input.user_id).await?,
+        };
+        let Some(user) = user else {
+            return Ok(());
+        };
+        if !user.banned() {
+            return Ok(());
+        }
+        if user
+            .ban_expires()
+            .is_some_and(|expiry| expiry < chrono::Utc::now())
+        {
+            let update = alibi_core::UpdateUser {
+                banned: Some(false),
+                ban_reason: None,
+                ban_expires: Some(None),
+                ..Default::default()
+            };
+            _ = match transaction {
+                Some(transaction) => {
+                    transaction
+                        .update_user_record(&input.user_id, update)
+                        .await?
+                }
+                None => {
+                    ctx.database
+                        .update_user_record(&input.user_id, update)
+                        .await?
+                }
+            };
+            return Ok(());
+        }
+        Err(AuthError::banned_user(
+            crate::helpers::resolve_admin_banned_user_message(ctx, &user).await?,
+        ))
+    }
+
+    async fn after_create(
+        &self,
+        _: &S::Session,
+        _: &dyn alibi_core::AuthStore<S>,
+    ) -> AuthResult<()> {
+        Ok(())
     }
 }
 

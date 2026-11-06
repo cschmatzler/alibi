@@ -286,7 +286,13 @@ for (const mode of [
       expect(durableData.token).not.toBe(transientData.token);
 
       const durableCookies = cookieBytes(durableHeaders!, durableData.token);
-      expect(durableCookies).toHaveLength(1);
+      expect(durableCookies.map((row) => row.name)).toEqual([
+        expectedTokenName,
+        expectedPreferenceName,
+      ]);
+      const clearedPreference = Cookie.parse(durableHeaders!.getSetCookie()[1]!)!;
+      expect(clearedPreference.value).toBe("");
+      expect(clearedPreference.maxAge).toBe(0);
       expect(Cookie.parse(durableHeaders!.getSetCookie()[0]!)!.maxAge).toBe(
         mode === "short" ? 60 : 604800,
       );

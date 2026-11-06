@@ -1106,9 +1106,7 @@ for (const mode of ["existing", "anonymous", "after-verification", "confirmation
         foreignRows(before, foreignSignup.data.user.id),
       );
       expect(after.accounts).toEqual(before.accounts);
-      expect(after.sessions.filter((session) => session.userId === original.id)).toHaveLength(
-        mode === "anonymous" || mode === "after-verification" ? 2 : 1,
-      );
+      expect(after.sessions.filter((session) => session.userId === original.id)).toHaveLength(1);
 
       const hooks = after.events.filter((event) =>
         ["before-verification", "after-verification"].includes(String(event.stage)),
@@ -1125,25 +1123,27 @@ for (const mode of ["existing", "anonymous", "after-verification", "confirmation
       });
       expect(
         cookies.filter((cookie) => cookie.startsWith("better-auth.session_token=")),
-      ).toHaveLength(mode === "after-verification" ? 0 : 1);
+      ).toHaveLength(mode === "after-verification" || mode === "anonymous" ? 0 : 1);
       expect(
         cookies.filter((cookie) => cookie.startsWith("better-auth.session_data=")),
-      ).toHaveLength(mode === "after-verification" ? 0 : 1);
+      ).toHaveLength(mode === "after-verification" || mode === "anonymous" ? 0 : 1);
 
       let cache: unknown = null;
       let session: unknown = null;
 
-      if (mode !== "after-verification") {
+      if (mode === "anonymous") {
+        expect((await confirmer.client.getSession()).data).toBeNull();
+      } else if (mode !== "after-verification") {
         cache = await cacheEvidence(cookies);
         const current = await confirmer.client.getSession();
         session = current;
         expect(ctx.snapshot(current.data?.user)).toEqual({ ...original, email: target });
-        expect(current.data?.session.token === signup.data.token).toBe(mode !== "anonymous");
+        expect(current.data?.session.token).toBe(signup.data.token);
       }
 
       await control(ctx, name, "failure", { failure: "" });
       const replay = await confirmer.client.verifyEmail({ query: { token: newMail.token } });
-      expect(replay.error).toMatchObject({ status: 401, code: "USER_NOT_FOUND" });
+      expect(replay.error).toMatchObject({ status: 401, code: "INVALID_TOKEN" });
 
       const replayed = await control(ctx, name);
       expect(replayed.users).toEqual(after.users);
@@ -1265,7 +1265,7 @@ for (const name of ["change", "promotion", "promotion-no-mail"]) {
 
       const after = await control(ctx, name);
       const updated = after.users.find((user) => user.id === original.id)!;
-      expect(updated).toMatchObject({ email: target, emailVerified: name !== "promotion-no-mail" });
+      expect(updated).toMatchObject({ email: target, emailVerified: name === "promotion" });
 
       const current = await owner.client.getSession();
       expect(ctx.snapshot(current.data?.session.token)).toEqual(signup.data.token);
@@ -1274,7 +1274,7 @@ for (const name of ["change", "promotion", "promotion-no-mail"]) {
         expect(ctx.snapshot(current.data?.user)).toEqual({
           ...original,
           email: target,
-          emailVerified: name === "change",
+          emailVerified: false,
         });
       }
 

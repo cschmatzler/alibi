@@ -378,12 +378,15 @@ mod secondary {
         secondary_session_modes_keep_cache_authority_and_physical_database_effects,
         secondary_expiry_and_malformed_credentials_never_fall_back_to_a_preserved_audit_row,
         transactional_secondary_issuance_and_scope_keep_actual_cache_partial_effects_on_rollback,
-        failed_http_secondary_issuance_rolls_back_sql_and_exposes_no_cookie
+        failed_http_secondary_issuance_rolls_back_sql_and_exposes_no_cookie,
+        bulk_revocation_rejects_lost_index_entries_without_revoking_new_sessions,
+        transactional_bulk_veto_preserves_secondary_authority
     );
     postgres_tests!(
         secondary_session_modes_keep_cache_authority_and_physical_database_effects,
         secondary_expiry_and_malformed_credentials_never_fall_back_to_a_preserved_audit_row,
-        transactional_secondary_issuance_and_scope_keep_actual_cache_partial_effects_on_rollback
+        transactional_secondary_issuance_and_scope_keep_actual_cache_partial_effects_on_rollback,
+        bulk_revocation_rejects_lost_index_entries_without_revoking_new_sessions
     );
     use alibi::store::{CacheAdapter, MemoryCacheAdapter};
     use std::sync::Arc;
@@ -610,6 +613,97 @@ mod secondary {
             );
             assert!(physical(&db, &foreign_token).await.is_none());
         }
+    }
+
+    async fn bulk_revocation_rejects_lost_index_entries_without_revoking_new_sessions<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
+        for (stored, preserved) in [(false, false), (true, false), (true, true)] {
+            let cache = Arc::new(MemoryCacheAdapter::new());
+            let (auth, _db) = mode::<B>(db.fresh().await?, cache.clone(), stored, preserved).await;
+            let (owner, token, _) = issued(&auth, "lost-index@secondary.fixture.test").await;
+            let (_, foreign, _) = issued(&auth, "foreign-cutoff@secondary.fixture.test").await;
+            let mut snapshot: Value = serde_json::from_str(&cache.get(&token).await?.unwrap())?;
+            *snapshot
+                .get_mut("session")
+                .unwrap()
+                .get_mut("created_at")
+                .unwrap() = json!((Utc::now() - Duration::seconds(1)).to_rfc3339());
+            let snapshot = serde_json::to_string(&snapshot)?;
+            cache.set(&token, &snapshot, Duration::days(1)).await?;
+            cache.delete(&format!("active-sessions-{owner}")).await?;
+            assert!(auth.store().get_session(&token).await?.is_some());
+            auth.store().delete_user_sessions(&owner).await?;
+            // A delayed writer can restore the old snapshot after the index sweep.
+            cache.set(&token, &snapshot, Duration::days(1)).await?;
+            assert!(auth.store().get_session(&token).await?.is_none());
+            assert!(
+                auth.store()
+                    .get_sessions_by_tokens(&[token])
+                    .await?
+                    .is_empty()
+            );
+            assert!(auth.store().get_user_sessions(&owner).await?.is_empty());
+            let new = auth
+                .store()
+                .create_session(alibi::CreateSession {
+                    user_id: owner,
+                    expires_at: Utc::now() + Duration::hours(1),
+                    additional_fields: Default::default(),
+                    token: None,
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                })
+                .await?;
+            assert!(auth.store().get_session(new.token()).await?.is_some());
+            assert!(auth.store().get_session(&foreign).await?.is_some());
+        }
+        Ok(())
+    }
+
+    async fn transactional_bulk_veto_preserves_secondary_authority<B: Backend>(
+        db: Db,
+    ) -> TestResult {
+        use alibi::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+        struct Veto;
+        #[async_trait::async_trait]
+        impl<S: AuthSchema, H: HookBackend> DatabaseHooks<S, H> for Veto {
+            async fn before_delete_session(
+                &self,
+                _: &S::Session,
+                _: &DatabaseHookContext<'_, H>,
+            ) -> alibi::AuthResult<HookControl> {
+                Ok(HookControl::Cancel)
+            }
+        }
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let mut config =
+            AuthConfig::new("veto-secondary-session-secret-at-least-32").base_url(ORIGIN);
+        config.session.secondary_storage = Some(cache.clone());
+        config.session.store_in_database = true;
+        let connection = B::connect(&db.url, None).await?;
+        let store = B::hook(B::store(Arc::new(config.clone()), &connection), Veto);
+        alibi::store::SchemaMigrator::migrate(&store).await?;
+        let auth = AuthBuilder::new(config).store(store).build().await?;
+        let (owner, token, _) = issued(&auth, "veto@secondary.test").await;
+        let user_id = owner.clone();
+        alibi::store::transaction(auth.store().as_ref(), move |tx| {
+            Box::pin(async move { tx.delete_user_sessions(&user_id).await })
+        })
+        .await?;
+        assert!(auth.store().get_session(&token).await?.is_some());
+        assert!(
+            cache
+                .get(&format!("revoked-sessions-before-{owner}"))
+                .await?
+                .is_none()
+        );
+        B::close(connection).await
     }
 
     async fn secondary_session_modes_keep_cache_authority_and_physical_database_effects<

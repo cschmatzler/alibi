@@ -19,7 +19,9 @@ compatScenario(
     const sent = await client.phoneNumber.sendOtp({ phoneNumber });
     expect(sent.error).toBeNull();
     const code = await readPhoneOtp(ctx, phoneNumber);
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toHaveLength(1);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toHaveLength(1);
     const denied = await client.phoneNumber.verify({ phoneNumber, code });
     expect(denied.error).toMatchObject({
       status: 403,
@@ -35,7 +37,9 @@ compatScenario(
     expect(committed.accounts).toEqual([]);
     expect(committed.sessions).toEqual([]);
     expect((await client.getSession()).data).toBeNull();
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toEqual([]);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toEqual([]);
     expect(await readPhoneState(ctx, "phone-signup", foreign.data!.user.id)).toEqual(foreignBefore);
     const replay = await client.phoneNumber.verify({ phoneNumber, code });
     expect(replay.error!.code).toBe("OTP_NOT_FOUND");

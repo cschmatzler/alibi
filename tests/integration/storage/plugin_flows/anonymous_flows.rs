@@ -1092,7 +1092,7 @@ async fn anonymous_passwordless_completion_paths_transfer_actual_owner<B: Backen
             .build()
             .await?;
         let number = "+15552224444";
-        let target = call(&auth,request("/sign-up/email",Some(json!({"email":"passwordless-target@example.test","password":PASSWORD,"name":"Target","phoneNumber":number})),""),200).await;
+        let target = signup_with_legacy_phone(&auth,json!({"email":"passwordless-target@example.test","password":PASSWORD,"name":"Target","phoneNumber":number})).await;
         let target_id = body(&target)["user"]["id"].as_str().unwrap().to_owned();
         let foreign = signup(&auth, "passwordless-foreign@example.test").await;
         let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();

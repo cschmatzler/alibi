@@ -143,7 +143,7 @@ pub(in crate::two_factor) async fn enable_core(
         issuer,
         user.email().unwrap_or("user"),
         true,
-    );
+    )?;
     Ok((
         TwoFactorEnabled::Totp {
             totp_uri,

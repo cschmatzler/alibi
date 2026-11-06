@@ -346,7 +346,7 @@ for (const variant of [
           : variant === "audience"
             ? { aud: "foreign-client" }
             : variant === "expired"
-              ? { exp: issuedAt - 10 }
+              ? { exp: issuedAt - 60 }
               : variant === "old"
                 ? { iat: issuedAt - 7200 }
                 : variant === "future"

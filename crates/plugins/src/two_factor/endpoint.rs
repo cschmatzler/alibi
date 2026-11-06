@@ -477,7 +477,9 @@ impl TwoFactorPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
-        let (user, session) = crate::helpers::ordinary_session(call, ctx).await?;
+        let (user, session) = super::challenge::require_factor_session(call, ctx)
+            .await
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
         match enable_core(&call.body_as()?, &user, &session, &self.config, ctx).await {
             Ok((value, cookies)) => {
                 let mut response = EndpointResponse::json(&value)?;

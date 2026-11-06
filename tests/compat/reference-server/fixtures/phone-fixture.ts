@@ -123,7 +123,7 @@ export async function createPhoneFixture(
         phoneNumber({
           ...numericOptions(name),
           async sendOTP({ phoneNumber, code }, ctx) {
-            const context = await callbackSnapshot(ctx, phoneNumber);
+            const context = await callbackSnapshot(ctx, `phone-number-otp-${phoneNumber}`);
             outbox.set(`verification:${phoneNumber}`, { code, ...(context ? { context } : {}) });
             if (name.startsWith("phone-notification-")) {
               await notify("verification", phoneNumber, code, ctx);
@@ -133,7 +133,7 @@ export async function createPhoneFixture(
             }
           },
           async sendPasswordResetOTP({ phoneNumber, code }, ctx) {
-            const context = await callbackSnapshot(ctx, `${phoneNumber}-request-password-reset`);
+            const context = await callbackSnapshot(ctx, `phone-number-reset-${phoneNumber}`);
             outbox.set(`password-reset:${phoneNumber}`, { code, ...(context ? { context } : {}) });
             if (name.startsWith("phone-notification-")) {
               await notify("password-reset", phoneNumber, code, ctx);
@@ -165,7 +165,7 @@ export async function createPhoneFixture(
                   { phoneNumber, code }: { phoneNumber: string; code: string },
                   ctx: Parameters<typeof callbackSnapshot>[0],
                 ) {
-                  const context = await callbackSnapshot(ctx, phoneNumber);
+                  const context = await callbackSnapshot(ctx, `phone-number-otp-${phoneNumber}`);
 
                   if (context) {
                     outbox.set(`verifier:${phoneNumber}`, { context });
@@ -190,7 +190,7 @@ export async function createPhoneFixture(
               }
             : {}),
           async callbackOnVerification({ phoneNumber, user }, ctx) {
-            const context = await callbackSnapshot(ctx, phoneNumber);
+            const context = await callbackSnapshot(ctx, `phone-number-otp-${phoneNumber}`);
             const owner = context
               ? await ctx.context.internalAdapter.findUserById(user.id)
               : undefined;

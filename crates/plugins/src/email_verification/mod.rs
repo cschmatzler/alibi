@@ -350,6 +350,7 @@ impl EmailVerificationPlugin {
             None,
             self.config.verification_token_expiry,
             None,
+            Some(&user.id()),
         )?;
         let verification_url = verification_url(&ctx.config, &verification_token, callback_url);
 
@@ -495,6 +496,7 @@ pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
         None,
         config.verification_token_expiry,
         None,
+        Some(&user.id),
     )?;
     let url = verification_url(&ctx.config, &token, callback_url);
     send_custom_verification_email(
@@ -511,6 +513,7 @@ pub(crate) async fn send_signup_verification<S: alibi_core::AuthSchema>(
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
+    mod ownership;
     use super::token::create_email_verification_token;
     use super::*;
     use crate::test_helpers;
@@ -684,18 +687,18 @@ mod tests {
             update_to,
             Duration::hours(1),
             request_type,
+            None,
         )
         .unwrap()
     }
 
-    // The legacy updateTo flow always sets a real session cookie and sends its
-    // follow-up proof with the token helper's default lifetime, despite expiresIn.
+    // A bound updateTo proof refreshes an existing session but cannot create one.
     #[tokio::test]
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_followup() {
+    async fn bound_email_change_never_issues_session_and_uses_default_lifetime_followup() {
         use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
         struct Sender {
@@ -783,12 +786,15 @@ mod tests {
             let mut query = HashMap::new();
             query.insert(
                 "token".into(),
-                jwt_token(
-                    &ctx,
+                create_email_verification_token(
+                    ctx.config.current_secret(),
                     "before@legacy.fixture.test",
                     Some("After@legacy.fixture.test"),
+                    Duration::hours(1),
                     None,
-                ),
+                    Some(&user.id()),
+                )
+                .unwrap(),
             );
             let req = test_helpers::create_auth_request(
                 HttpMethod::Get,
@@ -831,17 +837,19 @@ mod tests {
                 completion.await.unwrap();
             }
             let sessions = ctx.database.get_user_sessions(&user.id()).await.unwrap();
-            assert_eq!(sessions.len(), 1, "Anonymous proof must issue a session");
-            let session = sessions.first().unwrap();
+            assert_eq!(sessions.len(), usize::from(authenticated));
             if let Some(previous) = current {
+                let session = sessions.first().unwrap();
                 assert_eq!(session.id(), previous.id());
                 assert_eq!(session.token(), previous.token());
-            }
-            if let Some(response) = response {
-                assert_eq!(
-                    response.headers.get("set-cookie"),
-                    Some(&create_session_cookie(session.token(), &ctx.config).unwrap())
-                );
+                if let Some(response) = response {
+                    assert_eq!(
+                        response.headers.get("set-cookie"),
+                        Some(&create_session_cookie(session.token(), &ctx.config).unwrap())
+                    );
+                }
+            } else if let Some(response) = response {
+                assert!(response.headers.get("set-cookie").is_none());
             }
             let updated = ctx
                 .database
@@ -1457,22 +1465,26 @@ mod tests {
         let plugin = EmailVerificationPlugin::new().after_email_verification(after_hook);
 
         let ctx = test_helpers::create_test_context().await;
-        _ = ctx
+        let user = ctx
             .database
             .create_user(
                 CreateUser::new()
                     .with_email("change-email@test.com")
+                    .with_email_verified(true)
                     .with_name("ChangeEmail"),
             )
             .await
             .unwrap();
 
-        let token_value = jwt_token(
-            &ctx,
+        let token_value = create_email_verification_token(
+            ctx.config.current_secret(),
             "change-email@test.com",
             Some("updated-email@test.com"),
+            Duration::hours(1),
             Some("change-email-verification"),
-        );
+            Some(&user.id()),
+        )
+        .unwrap();
 
         let mut query = HashMap::new();
         query.insert("token".to_owned(), token_value);

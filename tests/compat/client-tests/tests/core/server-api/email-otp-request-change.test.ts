@@ -103,7 +103,7 @@ for (const current of [false, true]) {
       expect(issued.status).toBe(200);
       expect(issued.body).toEqual({ success: true });
       const otp = await readOtp(ctx, newEmail, "change-email");
-      const identifier = `change-email-otp-${email}-${newEmail}`;
+      const identifier = `change-email-otp-${owner.data!.user.id}:${newEmail}`;
       expect((await storedVerification(ctx, identifier))[0]!.value).toBe(`${otp}:0`);
       expect(await verificationCount(ctx, oldIdentifier)).toBe(current ? 0 : 1);
       expect(await readUserState(ctx, owner.data!.user.id)).toEqual(before);
@@ -114,7 +114,9 @@ for (const current of [false, true]) {
       expect(hidden.status).toBe(200);
       expect(hidden.body).toEqual({ success: true });
       expect(await deliveredOtpCount(ctx, otherEmail, "change-email")).toBe(0);
-      expect(await verificationCount(ctx, `change-email-otp-${email}-${otherEmail}`)).toBe(0);
+      expect(
+        await verificationCount(ctx, `change-email-otp-${owner.data!.user.id}:${otherEmail}`),
+      ).toBe(0);
       expect(await readUserState(ctx, owner.data!.user.id)).toEqual(before);
       const targetProof = await storedVerification(ctx, identifier);
       const disabled = await invoke({ newEmail }, true, "otp-change-disabled-false");

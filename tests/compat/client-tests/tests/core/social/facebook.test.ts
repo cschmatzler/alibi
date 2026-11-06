@@ -612,7 +612,7 @@ for (const variant of [
           : variant === "audience"
             ? { aud: "foreign-client" }
             : variant === "expired"
-              ? { exp: issuedAt - 10 }
+              ? { exp: issuedAt - 60 }
               : variant === "not-before"
                 ? { nbf: issuedAt + 7200 }
                 : variant === "iat-type"

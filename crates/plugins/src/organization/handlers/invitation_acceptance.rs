@@ -279,9 +279,12 @@ pub(in crate::organization) async fn accept<S: AuthSchema>(
                 .create_member(CreateMember {
                     organization_id: accepted_for_tx.organization_id.clone(),
                     user_id: tx_user.id,
-                    role: accepted_for_tx
-                        .role
-                        .ok_or_else(|| AuthError::bad_request("Invitation role is missing"))?,
+                    role: crate::organization::types::RoleInput::One(
+                        accepted_for_tx
+                            .role
+                            .ok_or_else(|| AuthError::bad_request("Invitation role is missing"))?,
+                    )
+                    .joined(),
                 })
                 .await?;
             _ = tx

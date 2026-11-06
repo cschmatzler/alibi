@@ -73,7 +73,16 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     // Source's allowCredentials is a browser hint; verification selects the real
     // current stored credential by its ID and authenticates that credential owner.
     let builder = core
-        .new_challenge_authenticate_builder(Vec::new(), Some(UserVerificationPolicy::Preferred))
+        .new_challenge_authenticate_builder(
+            Vec::new(),
+            Some(
+                match config.authenticator_selection.user_verification.as_deref() {
+                    Some("required") => UserVerificationPolicy::Required,
+                    Some("discouraged") => UserVerificationPolicy::Discouraged_DO_NOT_USE,
+                    _ => UserVerificationPolicy::Preferred,
+                },
+            ),
+        )
         .map_err(|error| {
             AuthError::internal(format!("Failed to generate authenticate options: {error}"))
         })?
@@ -138,9 +147,13 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<(Value, String)> {
     let Some(origin) =
-        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref())
+        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref(), &ctx.config)
     else {
-        return response_message(400, "origin missing");
+        return response_code(
+            500,
+            codes::ORIGIN_NOT_CONFIGURED,
+            "Passkey origin is not configured. Set the `origin` option of the passkey plugin or configure `baseURL`.",
+        );
     };
 
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
@@ -174,6 +187,16 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
             Err(_) => return passkey_authentication_failure(),
         };
     let credential_id = credential_id_from_authentication(&authentication);
+    if config.authenticator_selection.user_verification.as_deref() == Some("required")
+        && authentication
+            .response
+            .authenticator_data
+            .as_ref()
+            .get(32)
+            .is_none_or(|flags| flags & 4 == 0)
+    {
+        return passkey_authentication_failure();
+    }
 
     let Some(passkey) = ctx
         .database

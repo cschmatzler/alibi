@@ -524,7 +524,7 @@ compatScenario(
             ? 400
             : mode.endsWith("foreign-owner")
               ? 401
-              : 500,
+              : 400,
         code: mode.endsWith("foreign-owner")
           ? "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY"
           : "FAILED_TO_VERIFY_REGISTRATION",
@@ -903,7 +903,7 @@ for (const algorithm of ["Ed448", "Ed25519Curve8"] as const) {
             cookies = response.headers.getSetCookie();
           },
         });
-        expect(denied.error).toMatchObject({ status: 500, code: "FAILED_TO_VERIFY_REGISTRATION" });
+        expect(denied.error).toMatchObject({ status: 400, code: "FAILED_TO_VERIFY_REGISTRATION" });
         expect(cookies).toEqual([]);
 
         const events = await fixture.events();
@@ -1185,7 +1185,7 @@ compatScenario(
         },
       );
       expect(denied.error, mode).toMatchObject({
-        status: mode === "foreign-owner" ? 401 : mode === "expired" ? 400 : 500,
+        status: mode === "foreign-owner" ? 401 : 400,
         code:
           mode === "foreign-owner"
             ? "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY"
@@ -1492,7 +1492,10 @@ for (const profile of [
           },
         );
         const accepted =
-          mode !== "wrong-owner" && proofOrigin === (configured ? ctx.baseURL : requestOrigin);
+          mode !== "wrong-owner" &&
+          (configured
+            ? proofOrigin === ctx.baseURL
+            : [ctx.baseURL, alternate].includes(proofOrigin));
         const events = await fixture.events();
         expect(events[0]).toMatchObject({
           stage: "resolved",
@@ -1537,7 +1540,7 @@ for (const profile of [
           current = ctx.snapshot(session);
         } else {
           expect(result.error, `${profile}:${mode}`).toMatchObject({
-            status: mode === "wrong-owner" ? 401 : 500,
+            status: mode === "wrong-owner" ? 401 : 400,
             code:
               mode === "wrong-owner"
                 ? "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY"
@@ -1695,7 +1698,7 @@ for (const [attestation, algorithm, statementAlgorithm] of [
               ? 401
               : failure === "signature" || (failure === "short-signature" && algorithm !== "ES256")
                 ? 400
-                : 500,
+                : 400,
         });
         expect(cookies).toEqual([]);
 

@@ -846,13 +846,12 @@ compatScenario(
           ? { rawBody: JSON.stringify(body) }
           : {}),
       });
-      if (contentType === "application/json") {
+      if (contentType !== "application/x-www-form-urlencoded") {
         expect(response.status).toBe(415);
         const result = await response.json();
         expect(result).toEqual({
           code: "UNSUPPORTED_MEDIA_TYPE",
-          message:
-            'Content-Type "application/json" is not allowed. Allowed types: application/x-www-form-urlencoded',
+          message: `Content-Type "${contentType}" is not allowed. Allowed types: application/x-www-form-urlencoded`,
         });
         expect(response.headers.getSetCookie()).toEqual([]);
         postAuthorizations.push({ contentType, result });
@@ -885,26 +884,11 @@ compatScenario(
         rawBody: nonfiniteBody,
         headers: { accept: "application/json", ...(authenticated ? { cookie } : {}) },
       });
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(415);
       const result = await response.json();
-      const target = new URL(result.url, ctx.baseURL);
-      let stored = null;
-      if (!authenticated) {
-        expect(target.pathname).toBe("/login");
-        expect(target.searchParams.get("extension_scalar")).toBe("Infinity");
-        expect(target.searchParams.getAll("extension_array")).toEqual(["Infinity", "Infinity"]);
-        expect(Number.isFinite(Number(target.searchParams.get("exp")))).toBe(true);
-      } else {
-        const code = target.searchParams.get("code");
-        expect(code).toMatch(/^[a-zA-Z0-9]{32}$/);
-        stored = await (await control({ action: "grant-row", token: code })).json();
-        expect(stored.value.query.extension_scalar).toBeNull();
-        expect(stored.value.query.extension_array).toEqual([null, [null]]);
-        expect(stored.value.query.exp).toBeNull();
-        expect(stored.value.userId).toBe(actualSession.user.id);
-        expect(stored.value.sessionId).toBe(actualSession.session.id);
-      }
-      nonfiniteAuthorizations.push({ authenticated, result, stored });
+      expect(result.code).toBe("UNSUPPORTED_MEDIA_TYPE");
+      expect(response.headers.getSetCookie()).toEqual([]);
+      nonfiniteAuthorizations.push({ authenticated, result });
     }
     return {
       redirectPolicy: ctx.snapshot(

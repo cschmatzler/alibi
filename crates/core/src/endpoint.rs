@@ -729,6 +729,12 @@ impl EndpointResponse {
         }
     }
 
+    /// Retain earlier hook headers, with handler headers winning on overlap.
+    pub fn prepend_headers(&mut self, headers: Headers) {
+        let current = std::mem::replace(&mut self.headers, headers);
+        self.merge_headers(current);
+    }
+
     /// Replace a returned value while retaining the actual handler status and headers.
     pub fn replace(&mut self, value: JsValue) {
         self.result = Ok(value);

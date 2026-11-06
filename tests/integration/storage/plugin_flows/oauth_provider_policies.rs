@@ -82,7 +82,18 @@ async fn client_id_lists_reconfigure_every_transport_that_embeds_them() {
     let sent = remote.take();
     assert_eq!(sent.len(), 2);
     for exchange in &sent {
-        assert_eq!(form(exchange)["appid"], "first,second", "{}", exchange.path);
+        assert_eq!(form(exchange)["appid"], "second", "{}", exchange.path);
+        assert_eq!(
+            url::Url::parse("http://provider.test")
+                .unwrap()
+                .join(&exchange.path)
+                .unwrap()
+                .query_pairs()
+                .filter(|(key, _)| key == "appid")
+                .map(|(_, value)| value.into_owned())
+                .collect::<Vec<_>>(),
+            ["first", "second"]
+        );
     }
 
     let remote = Provider::start("application/json", json!({"user":{"user_id":"vk-1","email":"vk@example.test","first_name":"V","last_name":"K"}}).to_string()).await;

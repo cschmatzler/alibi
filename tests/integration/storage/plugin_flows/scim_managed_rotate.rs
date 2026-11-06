@@ -1,7 +1,10 @@
 //! Credential rotation fences one connection and reuses expired slots atomically.
 use super::*;
 use alibi::endpoint::EndpointOptions;
-use alibi::plugins::scim::{ScimManagedConnectionInput, ScimManagedConnectionOptions, ScimManagedCredentialRotationInput, ScimPlugin};
+use alibi::plugins::scim::{
+    ScimManagedConnectionInput, ScimManagedConnectionOptions, ScimManagedCredentialRotationInput,
+    ScimPlugin,
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest, Sha256};
 backend_tests!(scim_managed_rotation_enforces_slots_and_rolls_back_event_failure);
@@ -35,7 +38,16 @@ async fn scim_managed_rotation_enforces_slots_and_rolls_back_event_failure<B: Ba
     let created = body(&created);
     let cid = created["connection"]["connectionId"].as_str().unwrap();
     let first = created["credential"]["credentialId"].as_str().unwrap();
-    let rotate = |id:&str,domain:&str,actor:&str| ScimPlugin::rotate_managed_credential_endpoint(&ScimManagedCredentialRotationInput{connection_id:id.into(),provisioning_domain_id:domain.into(),actor_id:actor.into(),scopes:vec!["scim.groups.write".into()],expires_at:expiry}).unwrap();
+    let rotate = |id: &str, domain: &str, actor: &str| {
+        ScimPlugin::rotate_managed_credential_endpoint(&ScimManagedCredentialRotationInput {
+            connection_id: id.into(),
+            provisioning_domain_id: domain.into(),
+            actor_id: actor.into(),
+            scopes: vec!["scim.groups.write".into()],
+            expires_at: expiry,
+        })
+        .unwrap()
+    };
     let response = match auth
         .dispatch_endpoint(
             rotate(cid, "  tenant-a  ", "  rotation-operator  "),

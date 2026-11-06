@@ -135,12 +135,12 @@ async fn oauth_max_age_blocks_stale_authority_and_validates_input<B: Backend>(
                 .await?,
             before
         );
-        if content_type == "application/json" {
+        if content_type != "application/x-www-form-urlencoded" {
             assert_eq!(response.status, 415);
             assert_eq!(
                 body(&response),
                 json!({"code":"UNSUPPORTED_MEDIA_TYPE",
-                "message":"Content-Type \"application/json\" is not allowed. Allowed types: application/x-www-form-urlencoded"})
+                "message":format!("Content-Type \"{content_type}\" is not allowed. Allowed types: application/x-www-form-urlencoded")})
             );
             assert!(response.headers.get_all("set-cookie").next().is_none());
             continue;

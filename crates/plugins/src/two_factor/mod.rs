@@ -416,7 +416,9 @@ impl TwoFactorPlugin {
                 Ok(body) => body,
                 Err(response) => return Ok(response),
             };
-        let (user, session) = super::helpers::ordinary_session(req, ctx).await?;
+        let (user, session) = challenge::require_factor_session(req, ctx)
+            .await
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
 
         let (response, set_cookie_headers) =
             match enable_core(&body, &user, &session, &self.config, ctx).await {

@@ -4,7 +4,7 @@ import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, readPhoneOtp, readPhoneState, uniquePhone } from "./helpers";
+import { phoneClient, readPhoneOtp, readPhoneState, seedPhoneOwner, uniquePhone } from "./helpers";
 
 compatScenario(
   "phone delivery failures retain endpoint-specific awaited and background policies and usable proofs",
@@ -66,9 +66,9 @@ compatScenario(
           email: ctx.uniqueEmail(name),
           password: "password123",
           name: "Notification Owner",
-          phoneNumber,
         });
         expect(signup.error).toBeNull();
+        await seedPhoneOwner(ctx, profile, signup.data!.user.id, phoneNumber);
         if (endpoint === "password-reset") {
           const enrollment = await owner.phoneNumber.sendOtp({ phoneNumber });
           expect(enrollment.error).toBeNull();
@@ -83,7 +83,9 @@ compatScenario(
         }
         const before = await readPhoneState(ctx, profile, signup.data!.user.id);
         const identifier =
-          endpoint === "password-reset" ? `${phoneNumber}-request-password-reset` : phoneNumber;
+          endpoint === "password-reset"
+            ? `phone-number-reset-${phoneNumber}`
+            : `phone-number-otp-${phoneNumber}`;
         await control("arm");
         const marker = `${name}-marker`;
         let cookies: string[] = [];

@@ -445,7 +445,7 @@ for (const variant of [
       expect(persisted.users[0]).toMatchObject({
         name: mapped ? "Mapped PayPal Name" : name,
         email: mapped ? "mapped-paypal@example.invalid" : data.email,
-        emailVerified: mapped || !!data.email_verified,
+        emailVerified: mapped || data.email_verified === true || data.email_verified === "true",
         image: mapped
           ? "https://images.example.invalid/mapped-paypal.png"
           : data.picture == null

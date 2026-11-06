@@ -21,7 +21,7 @@ pub use organization::{
     MemberStore, OrganizationStore,
 };
 pub use passkey::PasskeyStore;
-pub use session::SessionStore;
+pub use session::{SessionRevocation, SessionStore};
 pub use transaction::{
     AfterCommitErrorPolicy, AuthTransaction, BoxedTransactionValue, TransactionFuture,
     TransactionStore, TransactionWork, TypedTransactionFuture, transaction,

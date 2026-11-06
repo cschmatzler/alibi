@@ -5,9 +5,9 @@ description: "Which Better Auth version this implementation tracks, how parity i
 
 ## The contract
 
-HTTP behavior targets **better-auth@1.7.12**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
+HTTP behavior targets **better-auth@1.7.18**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against an Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
 
-Newer upstream documentation may describe behavior added after 1.7.12; it is outside the target until the pin moves.
+Newer upstream documentation may describe behavior added after 1.7.18; it is outside the target until the pin moves.
 
 Rust releases use independent Semantic Versioning and record the exact upstream target separately, so fixes can ship independently while retaining the upstream contract. See the [release policy](/guides/releases/) for versioning and compatibility rules.
 
@@ -68,6 +68,10 @@ Alibi both consumes OAuth/OIDC providers (including enterprise IdPs through [Gen
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged through 1.7.12, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 - **Change-password session replacement.** With `revokeOtherSessions`, revocation and the password write commit in one transaction as upstream's do, but the replacement session is created after that commit rather than inside it.
+
+## Upgrading from 1.7.12
+
+1.7.18 binds email-change proofs to the user who requested them, separates phone OTPs from other verification records, and checks stored session authority before changing sign-in methods. Email signup can no longer set a phone number; use phone OTP verification instead. Request new phone OTPs and email-change links after upgrading, and restart pending OAuth account-linking flows. Bulk session revocation also rejects cached sessions missing from the session index. Passkeys use server-configured origins rather than the request's Origin header, and organization invitation lists require invitation-creation permission. No database migration is needed; the schema is unchanged.
 
 ## Upgrading from 1.7.7
 

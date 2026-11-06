@@ -45,7 +45,9 @@ for (const profile of ["otp-change-disabled-omitted", "otp-change-disabled-false
       expect(currentIssued.error).toBeNull();
       const currentOtp = await readOtp(ctx, email, "email-verification");
       expect(
-        await ctx.readVerificationState({ identifier: `change-email-otp-${email}-${newEmail}` }),
+        await ctx.readVerificationState({
+          identifier: `change-email-otp-${signup.data!.user.id}:${newEmail}`,
+        }),
       ).toHaveLength(1);
       expect(
         await ctx.readVerificationState({ identifier: `email-verification-otp-${email}` }),
@@ -101,7 +103,9 @@ for (const profile of ["otp-change-disabled-omitted", "otp-change-disabled-false
       expect(control.error).toBeNull();
       expect((await owner.client.getSession()).data?.user.email).toBe(newEmail);
       expect(
-        await ctx.readVerificationState({ identifier: `change-email-otp-${email}-${newEmail}` }),
+        await ctx.readVerificationState({
+          identifier: `change-email-otp-${signup.data!.user.id}:${newEmail}`,
+        }),
       ).toEqual([]);
       expect(
         await ctx.readVerificationState({ identifier: `email-verification-otp-${email}` }),

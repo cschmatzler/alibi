@@ -130,6 +130,7 @@ pub(crate) async fn change_email_core(
             Some(&new_email),
             expiry,
             None,
+            Some(&user.id()),
         )?;
         return Ok(None);
     }
@@ -154,6 +155,7 @@ pub(crate) async fn change_email_core(
                 None,
                 expiry,
                 None,
+                Some(&user.id()),
             )?;
             send_verification(&projection, &token, body.callback_url.as_deref(), ctx).await?;
         }
@@ -172,6 +174,7 @@ pub(crate) async fn change_email_core(
         Some(&new_email),
         expiry,
         Some(request_type),
+        Some(&user.id()),
     )?;
     if let Some(sender) = config
         .change_email

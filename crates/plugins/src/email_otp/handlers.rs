@@ -191,6 +191,16 @@ impl EmailOtpPlugin {
         key: &str,
         otp: &str,
     ) -> AuthResult<()> {
+        self.verify_code(ctx, key, otp, false).await
+    }
+
+    async fn verify_code(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        key: &str,
+        otp: &str,
+        restore: bool,
+    ) -> AuthResult<()> {
         if let Some(existing) = find_verification(ctx, key).await?
             && existing.is_expired()
         {
@@ -217,6 +227,24 @@ impl EmailOtpPlugin {
                 })
                 .await?;
             return Err(invalid_otp());
+        }
+        if restore {
+            if find_verification(ctx, key).await?.is_some() {
+                return Err(invalid_otp());
+            }
+            _ = ctx
+                .verifications()
+                .create(CreateVerification {
+                    identifier: key.to_owned(),
+                    value: value.value()?.to_owned(),
+                    expires_at: value.expires_at()?,
+                })
+                .await?
+                .ok_or_else(|| AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "Unable to complete OTP verification".into(),
+                })?;
         }
         Ok(())
     }
@@ -254,28 +282,6 @@ impl EmailOtpPlugin {
         })
     }
 
-    /// Whether `otp` matches a stored, unexpired code with attempts left,
-    /// without spending it or counting an attempt.
-    async fn matches_usable_code(
-        &self,
-        ctx: &AuthContext<impl AuthSchema>,
-        key: &str,
-        otp: &str,
-    ) -> AuthResult<bool> {
-        let Some(existing) = find_verification(ctx, key).await? else {
-            return Ok(false);
-        };
-        if existing.is_expired() {
-            return Ok(false);
-        }
-        let (stored, attempts) = split_value(existing.value()?);
-        if super::super::passwordless_numeric::attempts_number(attempts) >= self.allowed_attempts()
-        {
-            return Ok(false);
-        }
-        self.config.storage.verify(stored, otp, &ctx.config).await
-    }
-
     pub(super) async fn send_verification(
         &self,
         req: &AuthRequest,
@@ -309,20 +315,21 @@ impl EmailOtpPlugin {
             Err(error) => return Err(error),
         };
         let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
-        if ctx
-            .database
-            .get_user_by_email_record(&email)
-            .await?
-            .is_none()
-            && !should_send
-        {
+        let user = ctx.database.get_user_by_email_record(&email).await?;
+        if user.is_none() && !should_send {
             ctx.verifications()
                 .delete(&identifier(body.otp_type, &email))
                 .await?;
             return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
         }
-        self.deliver(ctx, request, &email, otp, body.otp_type)
-            .await?;
+        self.deliver(
+            ctx,
+            request,
+            user.as_ref().and_then(AuthUser::email).unwrap_or(&email),
+            otp,
+            body.otp_type,
+        )
+        .await?;
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
@@ -345,37 +352,7 @@ impl EmailOtpPlugin {
     ) -> AuthResult<AuthResponse> {
         let email = parse_email(&body.email)?;
         let key = identifier(body.otp_type, &email);
-        let value = find_verification(ctx, &key)
-            .await?
-            .ok_or_else(invalid_otp)?;
-        if value.is_expired() {
-            ctx.verifications().delete(&key).await?;
-            return Err(expired_otp());
-        }
-        let (stored, attempts) = split_value(value.value()?);
-        if super::super::passwordless_numeric::attempts_number(attempts) >= self.allowed_attempts()
-        {
-            ctx.verifications().delete(&key).await?;
-            return Err(too_many_attempts());
-        }
-        if !self
-            .config
-            .storage
-            .verify(stored, &body.otp, &ctx.config)
-            .await?
-        {
-            _ = ctx
-                .verifications()
-                .update(
-                    &key,
-                    alibi_core::UpdateVerification {
-                        value: Some(format!("{stored}:{}", attempts + 1)),
-                        ..Default::default()
-                    },
-                )
-                .await?;
-            return Err(invalid_otp());
-        }
+        self.verify_code(ctx, &key, &body.otp, true).await?;
         if ctx
             .database
             .get_user_by_email_record(&email)
@@ -542,7 +519,7 @@ impl EmailOtpPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         body: EmailRequest,
     ) -> AuthResult<AuthResponse> {
-        let email = body.email.to_lowercase();
+        let email = parse_email(&body.email)?;
         let otp = match self
             .resolve_code(ctx, request, &email, EmailOtpType::ForgetPassword)
             .await
@@ -551,17 +528,18 @@ impl EmailOtpPlugin {
             Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
         };
-        if ctx
-            .database
-            .get_user_by_email_record(&email)
-            .await?
-            .is_none()
-        {
+        if let Some(user) = ctx.database.get_user_by_email_record(&email).await? {
+            self.deliver(
+                ctx,
+                request,
+                user.email().unwrap_or(&email),
+                otp,
+                EmailOtpType::ForgetPassword,
+            )
+            .await?;
+        } else {
             ctx.verifications()
                 .delete(&identifier(EmailOtpType::ForgetPassword, &email))
-                .await?;
-        } else {
-            self.deliver(ctx, request, &email, otp, EmailOtpType::ForgetPassword)
                 .await?;
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
@@ -584,7 +562,7 @@ impl EmailOtpPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         body: PasswordRequest,
     ) -> AuthResult<AuthResponse> {
-        let email = body.email.to_lowercase();
+        let email = parse_email(&body.email)?;
         let settings = self.password_settings(ctx);
         alibi_core::utils::password::validate_password(
             &body.password,
@@ -592,17 +570,8 @@ impl EmailOtpPlugin {
             settings.maximum,
             ctx,
         )?;
-        // Check the code without spending it, so a rejected password leaves it
-        // usable. A wrong or unusable code goes through consume_code, which
-        // counts the attempt and fails; a correct one is spent just before the
-        // password is written.
         let key = identifier(EmailOtpType::ForgetPassword, &email);
-        let consumed = if self.matches_usable_code(ctx, &key, &body.otp).await? {
-            false
-        } else {
-            self.consume_code(ctx, &key, &body.otp).await?;
-            true
-        };
+        self.verify_code(ctx, &key, &body.otp, true).await?;
         let user = ctx
             .database
             .get_user_by_email_record(&email)
@@ -611,11 +580,7 @@ impl EmailOtpPlugin {
         let password = ctx
             .hash_password(settings.hasher.as_ref(), &body.password)
             .await?;
-        let proof = if consumed {
-            super::super::helpers::ResetProof::Spent
-        } else {
-            self.reset_proof(ctx, &key, &body.otp).await?
-        };
+        let proof = self.reset_proof(ctx, &key, &body.otp).await?;
         super::super::helpers::reset_credential_password(
             ctx,
             &user.id(),
@@ -681,7 +646,10 @@ impl EmailOtpPlugin {
             )
             .await?;
         }
-        let key = identifier(EmailOtpType::ChangeEmail, &format!("{email}-{new_email}"));
+        let key = identifier(
+            EmailOtpType::ChangeEmail,
+            &format!("{}:{new_email}", user.id()),
+        );
         let otp = match self
             .issue_code(
                 ctx,
@@ -746,7 +714,10 @@ impl EmailOtpPlugin {
         }
         self.consume_code(
             ctx,
-            &identifier(EmailOtpType::ChangeEmail, &format!("{email}-{new_email}")),
+            &identifier(
+                EmailOtpType::ChangeEmail,
+                &format!("{}:{new_email}", user.id()),
+            ),
             &otp,
         )
         .await?;

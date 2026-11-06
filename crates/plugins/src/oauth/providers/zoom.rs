@@ -51,7 +51,7 @@ impl OAuthProvider {
         let mut policy = OAuthAuthorizationPolicy {
             preserve_raw_profile_scalars: true,
             source_profile_exceptions: true,
-            honor_factory_options: false,
+            honor_factory_options: true,
             require_client_id: true,
             login_hint: false,
             pkce: true,

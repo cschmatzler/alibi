@@ -198,16 +198,12 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         user_output: context.user_output().cloned(),
         session_output: context.session_output().cloned(),
     };
-    if !ctx
+    let cache_enabled = ctx
         .config
         .session
         .cookie_cache
         .as_ref()
-        .is_some_and(|config| config.enabled)
-    {
-        record_publication(published);
-        return Ok(());
-    }
+        .is_some_and(|config| config.enabled);
     let endpoint = crate::endpoint::current_endpoint_call_context();
     let request = crate::hooks::current_request_hook_context();
     let extensions = endpoint
@@ -234,6 +230,27 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         }
         extensions.get::<PendingIssuance>()
     });
+    let cleared_marker = if !dont_remember && browser_preference(&headers, &ctx.config) {
+        Some(cache::cookie_header(
+            &related_cookie_name(&ctx.config, "dont_remember"),
+            "",
+            Some(0.0),
+            &ctx.config,
+        )?)
+    } else {
+        None
+    };
+    if !cache_enabled {
+        if let Some(pending) = pending {
+            pending
+                .0
+                .lock_unpoisoned()
+                .cache_headers
+                .extend(cleared_marker);
+        }
+        record_publication(published);
+        return Ok(());
+    }
     if let Some(pending) = &pending {
         let token_header = cache::cookie_header(
             &ctx.config.session.cookie_name,
@@ -251,6 +268,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
         )?;
         let mut data = pending.0.lock_unpoisoned();
         data.prior_headers.push(token_header);
+        data.prior_headers.extend(cleared_marker.clone());
         if dont_remember {
             data.prior_headers.push(cache::cookie_header(
                 &related_cookie_name(&ctx.config, "dont_remember"),
@@ -269,6 +287,7 @@ pub(in crate::session::cookie_cache::runtime) async fn emit_snapshot_inner<S: Au
             if let Some(pending) = pending {
                 let mut data = pending.0.lock_unpoisoned();
                 data.prior_headers.clear();
+                data.cache_headers.extend(cleared_marker);
                 data.cache_headers.extend(cache_headers);
             }
             record_publication(published);

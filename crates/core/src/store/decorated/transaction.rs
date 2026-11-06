@@ -174,7 +174,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             return Ok(());
         }
         let tokens = self.record_store.cached_user_tokens(user_id).await?;
+        let mut session_ids = Vec::new();
         if self.record_store.session_uses_database() {
+            let sessions = self.inner.get_user_sessions(user_id).await?;
+            session_ids = sessions
+                .iter()
+                .map(|session| session.id().into_owned())
+                .collect();
             let mut pending = Vec::new();
             if let Some(hooks) = self
                 .record_store
@@ -182,7 +188,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 .extensions
                 .get::<crate::store::SessionDeletionHooks<S>>()
             {
-                for session in self.inner.get_user_sessions(user_id).await? {
+                for session in sessions {
                     let mut works = Vec::new();
                     for hook in &hooks.0 {
                         if let Some(work) = hook
@@ -200,6 +206,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 }
             }
             self.inner.delete_user_sessions(user_id).await?;
+            if !self.inner.get_user_sessions(user_id).await?.is_empty() {
+                return Ok(());
+            }
             for (id, works) in pending {
                 if !works.is_empty() {
                     self.inner
@@ -212,8 +221,15 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 }
             }
         }
-        self.record_store
-            .remove_cached_user_sessions(user_id, tokens)
+        if self.record_store.secondary().is_none() {
+            return Ok(());
+        }
+        let revocation = self
+            .record_store
+            .cached_user_revocation(user_id, tokens)
+            .await?;
+        self.inner
+            .queue_session_revocation(&session_ids, revocation)
             .await
     }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
@@ -381,7 +397,10 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
-        self.inner.get_user_by_email(email).await
+        Ok(self.inner.get_user_by_email(email).await?.filter(|user| {
+            user.email()
+                .is_some_and(|stored| super::user::same_email(stored, email))
+        }))
     }
     async fn get_account(
         &self,
@@ -699,6 +718,14 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     }
 
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
+        for hook in &self.record_store.session_callbacks.callbacks {
+            hook.before_create(
+                &create_session,
+                &self.record_store.projection_context,
+                Some(self.inner),
+            )
+            .await?;
+        }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields

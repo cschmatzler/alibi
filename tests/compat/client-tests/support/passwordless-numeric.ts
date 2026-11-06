@@ -55,7 +55,8 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
             : plugin === "passwordless"
               ? client.emailOtp.sendVerificationOtp({ email, type: "sign-in" })
               : client.signIn.magicLink({ email });
-        const identifier = plugin === "phone" ? phoneNumber : `sign-in-otp-${email}`;
+        const identifier =
+          plugin === "phone" ? `phone-number-otp-${phoneNumber}` : `sign-in-otp-${email}`;
         const generationFails =
           mode === "length-zero" ||
           mode === "length-negative" ||

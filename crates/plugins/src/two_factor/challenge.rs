@@ -158,11 +158,25 @@ pub(crate) async fn begin_sign_in_challenge(
     })
 }
 
+pub(in crate::two_factor) async fn require_factor_session<S: alibi_core::AuthSchema>(
+    req: &impl alibi_core::session::SessionRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
+    if ctx.config.session.stateless || req.virtual_session(ctx).is_some() {
+        ctx.require_cached_session(req).await
+    } else {
+        ctx.require_authoritative_session_record(req)
+            .await
+            .map(|(user, session)| (alibi_core::AuthenticatedUser::Stored(user), session))
+    }
+}
+
 pub(in crate::two_factor) async fn resolve_two_factor_state<S: alibi_core::AuthSchema>(
     req: &impl alibi_core::session::SessionRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<ResolvedTwoFactorState<S>> {
-    if let Ok((user, session)) = Box::pin(ctx.require_cached_session(req)).await {
+    let session = require_factor_session(req, ctx).await;
+    if let Ok((user, session)) = session {
         let key = format!("{}!{}", user.id(), session.id());
         return Ok(ResolvedTwoFactorState::Session {
             user,

@@ -21,6 +21,7 @@ pub const DEFAULT_STATEMENTS: &[(&str, &[&str])] = &[
             "delete",
             "set-password",
             "set-email",
+            "set-phone",
             "get",
             "update",
         ],

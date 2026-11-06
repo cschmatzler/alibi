@@ -419,7 +419,7 @@ compatScenario(
 );
 
 compatScenario(
-  "organization delegated grants follow overlapping permission cache reloads by organization and configured profile",
+  "organization delegated grants retain request-local permissions across overlapping checks",
   async (ctx) => {
     const selected = "org-roles-callback";
     const owner = await teamSignUp(ctx, "cache-owner", selected);
@@ -500,8 +500,7 @@ compatScenario(
       });
       data(revoked);
 
-      // Optionally reload the permission cache mid-flight: for another
-      // organization, for this one, or for this one through another profile.
+      // Concurrent checks must not replace this request's permission snapshot.
       const reloadClient = mode === "other-profile" ? alternate : owner.client;
       const reload =
         mode === "none"
@@ -523,31 +522,17 @@ compatScenario(
       expect(released).toEqual({ status: 200, body: { organizationId, stage: "release" } });
 
       const result = await pending;
-      const rejected = mode === "same" || mode === "other-profile";
-
-      if (rejected) {
-        expect(result.error).toMatchObject({
-          status: 403,
-          code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
-          missingPermissions: ["team:create"],
-        });
-      } else {
-        expect(data(result).statements).toEqual({ team: ["create"] });
-      }
+      expect(data(result).statements).toEqual({ team: ["create"] });
 
       const persisted = await teamState(ctx, organizationId, selected);
-      expect(persisted.parsed.roles.map((role) => role.role)).toEqual(
-        rejected ? ["manager"] : ["manager", "delegated"],
-      );
+      expect(persisted.parsed.roles.map((role) => role.role)).toEqual(["manager", "delegated"]);
       expect(persisted.parsed.roles[0]?.permission).toBe('{"ac":["create"]}');
 
-      const cleanup = rejected
-        ? null
-        : await owner.client.organization.deleteRole({ organizationId, roleName: "delegated" });
-
-      if (cleanup) {
-        expect(data(cleanup).success).toBe(true);
-      }
+      const cleanup = await owner.client.organization.deleteRole({
+        organizationId,
+        roleName: "delegated",
+      });
+      expect(data(cleanup).success).toBe(true);
 
       rounds.push({
         mode,
@@ -959,19 +944,13 @@ compatScenario(
       );
       expect(response).toMatchObject({
         status: 400,
-        body:
-          text === ""
-            ? {
-                code: "VALIDATION_ERROR",
-                message: "[body] Invalid input: expected object, received null",
-              }
-            : { code: "BAD_REQUEST", message: "Invalid JSON in request body" },
+        body: { code: "BAD_REQUEST", message: "Invalid JSON in request body" },
       });
       invalidCreates.push(response);
     }
 
     const noBody = await raw(ctx, "role-validation-owner", profile, "/organization/create-role");
-    expect(noBody.status).toBe(400);
+    expect(noBody.status).toBe(415);
 
     invalidCreates.push(noBody);
 

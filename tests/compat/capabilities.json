@@ -1,5 +1,5 @@
 {
-  "upstreamVersion": "1.7.12",
+  "upstreamVersion": "1.7.18",
   "capabilities": [
     {
       "route": "GET /account-info",
@@ -2567,9 +2567,9 @@
           "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "expired ban impersonation returns original target snapshot while persistent authorization and session state unban",
           "expired ban sign-in returns original user snapshot while persistent authorization and session state unban",
-          "phone signup binds overflowing JSON numbers without accepting duplicate owners",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup rejects overflowing numeric ownership claims",
+          "phone signup rejects integral and exponential ownership claims but admits zero",
+          "phone signup rejects numeric ownership claims including rounded inputs",
           "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
@@ -3112,9 +3112,9 @@
           "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
           "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
-          "phone signup binds overflowing JSON numbers without accepting duplicate owners",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup rejects overflowing numeric ownership claims",
+          "phone signup rejects integral and exponential ownership claims but admits zero",
+          "phone signup rejects numeric ownership claims including rounded inputs",
           "session reads refresh from persisted expiry and renew the signed cookie",
           "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
@@ -6135,12 +6135,12 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+        "success": "phone password reset preserves rejected proofs creates credentials and revokes configured sessions",
         "rejection": "phone endpoint schemas reject every malformed field before any state transition",
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
         },
-        "state": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
+        "state": "phone password reset preserves rejected proofs creates credentials and revokes configured sessions"
       }
     },
     {
@@ -6149,11 +6149,11 @@
       "implemented": true,
       "evidence": {
         "success": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "phone password reset preserves rejected proofs creates credentials and revokes configured sessions",
           "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
         "rejection": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "phone password reset preserves rejected proofs creates credentials and revokes configured sessions",
           "phone endpoint schemas reject every malformed field before any state transition",
           "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ],
@@ -6161,7 +6161,7 @@
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
         },
         "state": [
-          "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
+          "phone password reset preserves rejected proofs creates credentials and revokes configured sessions",
           "compromised phone-number reset keeps actual delivered proof through rejection and retains foreign credentials"
         ]
       }
@@ -9526,9 +9526,9 @@
           "compact negative preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
           "compact negative-infinite preserves the complete signed writer envelope while published decoding rejects it and the server uses storage",
           "compact zero raw max-age preserves actual writer lifetime and header flooring",
-          "phone signup binds overflowing JSON numbers without accepting duplicate owners",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup rejects overflowing numeric ownership claims",
+          "phone signup rejects integral and exponential ownership claims but admits zero",
+          "phone signup rejects numeric ownership claims including rounded inputs",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
@@ -9905,9 +9905,9 @@
           "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "compact zero raw max-age preserves actual writer lifetime and header flooring",
           "official client signs in with imported TypeScript scrypt credentials",
-          "phone signup binds overflowing JSON numbers without accepting duplicate owners",
-          "phone signup binds integral and exponential JSON numbers to exact SQLite text",
-          "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
+          "phone signup rejects overflowing numeric ownership claims",
+          "phone signup rejects integral and exponential ownership claims but admits zero",
+          "phone signup rejects numeric ownership claims including rounded inputs",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
           "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",

@@ -1,10 +1,9 @@
-//! Source-backed Better Auth 1.7.12 declarations.
+//! Source-backed Better Auth 1.7.18 declarations.
 //! Author-time port: tests/compat/reference-server/port-openapi-annotations.ts.
-//! Conversion helpers SHA256: ecbb352aeae990043fa25e1a5c42413aa433f33f015110d85c2bfecff74d67c5.
+//! Conversion helpers SHA256: 20d143dcbb3b0ee2fe9e7a1d4fbf93eae438fb2e4e388c3994df7a6284fe1ac0.
 //! No generated document or fixture response was captured.
 use super::{OpenApiField, OpenApiModel};
 use serde_json::json;
-
 pub(super) fn models(plugin: &str) -> Option<Vec<OpenApiModel>> {
     Some(match plugin {
         "admin" => vec![

@@ -476,6 +476,7 @@ pub(in crate::oauth) async fn callback_core(
     let user_info_result = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
+            client_submitted_id_token: false,
             token_type: tokens.token_type.clone(),
             access_token: tokens.access_token.clone(),
             refresh_token: tokens.refresh_token.clone(),

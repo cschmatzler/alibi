@@ -72,6 +72,85 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn direct_and_transactional_session_creation_enforce_bans_without_an_endpoint() {
+        let config = AuthConfig::new("admin-session-guard-secret-at-least-32-characters");
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await
+            .unwrap();
+        let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
+        let auth = AuthBuilder::new(config)
+            .store_arc(store)
+            .plugin(AdminPlugin::new())
+            .build()
+            .await
+            .unwrap();
+        for transactional in [false, true] {
+            for expired in [false, true] {
+                let mut input = CreateUser::new()
+                    .with_email(format!("banned-{transactional}-{expired}@admin.test"));
+                input.banned = Some(true);
+                let user = auth.store().create_user(input).await.unwrap();
+                if expired {
+                    _ = auth
+                        .store()
+                        .update_user(
+                            &user.id,
+                            alibi::UpdateUser {
+                                ban_expires: Some(Some(
+                                    chrono::Utc::now() - chrono::Duration::seconds(1),
+                                )),
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                        .unwrap();
+                }
+                let session = CreateSession {
+                    user_id: user.id.clone(),
+                    expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
+                    token: None,
+                    ip_address: None,
+                    user_agent: None,
+                    impersonated_by: None,
+                    active_organization_id: None,
+                    active_team_id: None,
+                    additional_fields: Default::default(),
+                };
+                let result = if transactional {
+                    alibi::store::transaction(auth.store().as_ref(), move |tx| {
+                        Box::pin(async move { tx.create_session(session).await })
+                    })
+                    .await
+                } else {
+                    auth.store().create_session(session).await
+                };
+                if expired {
+                    assert!(result.is_ok());
+                    assert!(
+                        !auth
+                            .store()
+                            .get_user_by_id(&user.id)
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .banned()
+                    );
+                } else {
+                    assert!(matches!(result, Err(AuthError::BannedUser(_))));
+                    assert!(
+                        auth.store()
+                            .get_user_sessions(&user.id)
+                            .await
+                            .unwrap()
+                            .is_empty()
+                    );
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"

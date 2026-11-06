@@ -180,6 +180,8 @@ pub struct OAuthCallbackUserName {
 
 #[derive(Debug, Clone, Default)]
 pub struct OAuthUserInfoRequest {
+    /// The route has verified a client-submitted ID token, rather than a code grant.
+    pub client_submitted_id_token: bool,
     pub token_type: Option<String>,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
@@ -228,6 +230,17 @@ pub trait OAuthUserInfoHandler: Send + Sync {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String>;
+
+    async fn get_user_info_from_id_token(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        self.get_user_info(request).await
+    }
+}
+
+pub(crate) fn email_verified_claim(value: Option<&Value>) -> bool {
+    matches!(value, Some(Value::Bool(true))) || value.and_then(Value::as_str) == Some("true")
 }
 
 /// Asynchronous partial application mapping of the original provider profile.
@@ -253,7 +266,7 @@ pub(super) fn apply_application_mapping(
         match key.as_str() {
             "id" => response.user.id = remaining_profile::js_string(&value)?,
             "email" => response.user.email = value.as_str().unwrap_or_default().into(),
-            "emailVerified" => response.user.email_verified = remaining_profile::truthy(&value),
+            "emailVerified" => response.user.email_verified = email_verified_claim(Some(&value)),
             "name" => {
                 response.user.name = remaining_profile::scalar(
                     Some(&value).filter(|value| remaining_profile::truthy(value)),

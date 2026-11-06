@@ -1,59 +1,29 @@
 [
   {
     "signup phone \"+15550001\"": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
-        ],
-        "set-cookie": [
-          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {
-        "token": "<g1>",
-        "user": {
-          "id": "<v2>",
-          "name": "P",
-          "email": "p0@example.test",
-          "emailVerified": false,
-          "image": null,
-          "createdAt": "<date>",
-          "updatedAt": "<date>",
-          "phoneNumber": "+15550001",
-          "displayUsername": null,
-          "phoneNumberVerified": null,
-          "username": null
-        }
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
   {
     "signup phone true": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
-        ],
-        "set-cookie": [
-          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {
-        "token": "<g3>",
-        "user": {
-          "id": "<v4>",
-          "name": "P",
-          "email": "p1@example.test",
-          "emailVerified": false,
-          "image": null,
-          "createdAt": "<date>",
-          "updatedAt": "<date>",
-          "phoneNumber": "1",
-          "displayUsername": null,
-          "phoneNumberVerified": null,
-          "username": null
-        }
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
@@ -69,18 +39,18 @@
         ]
       },
       "body": {
-        "token": "<g5>",
+        "token": "<g1>",
         "user": {
-          "id": "<v6>",
+          "id": "<v2>",
           "name": "P",
           "email": "p2@example.test",
           "emailVerified": false,
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "phoneNumber": "0",
+          "phoneNumberVerified": false,
           "displayUsername": null,
-          "phoneNumberVerified": null,
+          "phoneNumber": null,
           "username": null
         }
       }
@@ -88,88 +58,43 @@
   },
   {
     "signup phone 12345": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
-        ],
-        "set-cookie": [
-          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {
-        "token": "<g7>",
-        "user": {
-          "id": "<v8>",
-          "name": "P",
-          "email": "p3@example.test",
-          "emailVerified": false,
-          "image": null,
-          "createdAt": "<date>",
-          "updatedAt": "<date>",
-          "phoneNumber": "12345",
-          "displayUsername": null,
-          "phoneNumberVerified": null,
-          "username": null
-        }
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
   {
     "signup phone 1.5": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
-        ],
-        "set-cookie": [
-          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {
-        "token": "<g9>",
-        "user": {
-          "id": "<v10>",
-          "name": "P",
-          "email": "p4@example.test",
-          "emailVerified": false,
-          "image": null,
-          "createdAt": "<date>",
-          "updatedAt": "<date>",
-          "phoneNumber": "1.5",
-          "displayUsername": null,
-          "phoneNumberVerified": null,
-          "username": null
-        }
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
   {
     "signup phone 1e400": {
-      "status": 200,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
-        ],
-        "set-cookie": [
-          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {
-        "token": "<g11>",
-        "user": {
-          "id": "<v12>",
-          "name": "P",
-          "email": "p5@example.test",
-          "emailVerified": false,
-          "image": null,
-          "createdAt": "<date>",
-          "updatedAt": "<date>",
-          "phoneNumber": "Inf",
-          "displayUsername": null,
-          "phoneNumberVerified": null,
-          "username": null
-        }
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
@@ -185,18 +110,18 @@
         ]
       },
       "body": {
-        "token": "<g13>",
+        "token": "<g3>",
         "user": {
-          "id": "<v14>",
+          "id": "<v4>",
           "name": "P",
           "email": "p6@example.test",
           "emailVerified": false,
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "phoneNumber": "0.0",
+          "phoneNumberVerified": false,
           "displayUsername": null,
-          "phoneNumberVerified": null,
+          "phoneNumber": null,
           "username": null
         }
       }
@@ -204,29 +129,29 @@
   },
   {
     "signup phone []": {
-      "status": 422,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "code": "FAILED_TO_CREATE_USER",
-        "message": "Failed to create user"
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
   {
     "signup phone {\"number\":1}": {
-      "status": 422,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "code": "FAILED_TO_CREATE_USER",
-        "message": "Failed to create user"
+        "code": "PHONE_NUMBER_CANNOT_BE_SET",
+        "message": "Phone number can only be set by verifying it"
       }
     }
   },
@@ -242,9 +167,9 @@
         ]
       },
       "body": {
-        "token": "<g15>",
+        "token": "<g5>",
         "user": {
-          "id": "<v16>",
+          "id": "<v6>",
           "name": "P",
           "email": "p9@example.test",
           "emailVerified": false,
@@ -269,7 +194,7 @@
       },
       "body": {
         "code": "FIELD_NOT_ALLOWED",
-        "message": "<v17> is not allowed to be set"
+        "message": "<v7> is not allowed to be set"
       }
     }
   },
@@ -283,7 +208,7 @@
       },
       "body": {
         "code": "FIELD_NOT_ALLOWED",
-        "message": "<v17> is not allowed to be set"
+        "message": "<v7> is not allowed to be set"
       }
     }
   },
@@ -297,7 +222,7 @@
       },
       "body": {
         "code": "FIELD_NOT_ALLOWED",
-        "message": "<v17> is not allowed to be set"
+        "message": "<v7> is not allowed to be set"
       }
     }
   },
@@ -311,7 +236,7 @@
       },
       "body": {
         "code": "FIELD_NOT_ALLOWED",
-        "message": "<v17> is not allowed to be set"
+        "message": "<v7> is not allowed to be set"
       }
     }
   },
@@ -327,9 +252,9 @@
         ]
       },
       "body": {
-        "token": "<g18>",
+        "token": "<g8>",
         "user": {
-          "id": "<v19>",
+          "id": "<v9>",
           "name": "P",
           "email": "v4@example.test",
           "emailVerified": false,
@@ -356,9 +281,9 @@
         ]
       },
       "body": {
-        "token": "<g20>",
+        "token": "<g10>",
         "user": {
-          "id": "<v21>",
+          "id": "<v11>",
           "name": "P",
           "email": "v5@example.test",
           "emailVerified": false,
@@ -385,9 +310,9 @@
         ]
       },
       "body": {
-        "token": "<g22>",
+        "token": "<g12>",
         "user": {
-          "id": "<v23>",
+          "id": "<v13>",
           "name": "P",
           "email": "v6@example.test",
           "emailVerified": false,
@@ -414,9 +339,9 @@
         ]
       },
       "body": {
-        "token": "<g24>",
+        "token": "<g14>",
         "user": {
-          "id": "<v25>",
+          "id": "<v15>",
           "name": "P",
           "email": "v7@example.test",
           "emailVerified": false,
@@ -492,6 +417,6 @@
     }
   },
   {
-    "rows": 13
+    "rows": 8
   }
 ]

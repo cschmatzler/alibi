@@ -98,6 +98,19 @@ impl PasskeyPlugin {
         use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
         let projected_user = session.as_ref().map(|(user, _)| ctx.user_view(user));
+        let source =
+            if !self.config.registration.require_session
+                && ctx.config.session.has_server_session_store()
+            {
+                Some(session.as_ref().map_or(
+                    webauthn::RegistrationSource::Resolver,
+                    |(_, session)| webauthn::RegistrationSource::Session {
+                        token_hash: webauthn::session_token_hash(&session.token),
+                    },
+                ))
+            } else {
+                None
+            };
         let user = if let Some((user, _)) = session {
             let id = user.id().into_owned();
             let name = user
@@ -161,6 +174,7 @@ impl PasskeyPlugin {
             passkey_name,
             authenticator_attachment,
             extensions,
+            source,
             &self.config,
             ctx,
         )
@@ -253,7 +267,7 @@ impl PasskeyPlugin {
             alibi_core::wire::SessionView,
         )>,
     > {
-        let session = match ctx.require_cached_session(req).await {
+        let session = match Box::pin(webauthn::registration_session(req, ctx)).await {
             Ok(session) => Some(session),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound)
                 if !self.config.registration.require_session =>
@@ -434,6 +448,20 @@ alibi_core::impl_auth_plugin! {
     }
 
  extra {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
+        if self.config.origin.is_empty() && self.config.origins.is_empty() && !self.config.rp_id.is_empty()
+            && let Some(dynamic) = &ctx.config.dynamic_base_url
+            && dynamic.allowed_hosts.iter().any(|pattern| {
+                let host = pattern.split_once("://").map_or(pattern.as_str(), |(_, host)| host).split([':', '/']).next().unwrap_or_default();
+                let Some(wildcard) = host.rfind(['*', '?']) else { return false; };
+                let suffix = host.get(wildcard + 1..).unwrap_or_default().trim_start_matches('.');
+                suffix.is_empty() || suffix == self.config.rp_id || suffix.ends_with(&format!(".{}", self.config.rp_id)) || self.config.rp_id.ends_with(&format!(".{suffix}"))
+            })
+        {
+            return Err(AuthError::config(format!("Passkey `origin` must be set when a wildcard in `baseURL.allowedHosts` covers the passkey `rpID` \"{}\".", self.config.rp_id)));
+        }
+        Ok(())
+    }
     fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }

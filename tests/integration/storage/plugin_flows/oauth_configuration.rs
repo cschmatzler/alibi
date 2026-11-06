@@ -255,7 +255,7 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                     200,
                 )
                 .await;
-                assert_eq!(body(&session)["user"]["emailVerified"], true);
+                assert_eq!(body(&session)["user"]["emailVerified"], false);
             }
             if mode == "scalars" {
                 let before = db.tables(&["user", "session"]).await?;

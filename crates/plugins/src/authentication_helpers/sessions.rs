@@ -110,9 +110,7 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
                 .unwrap_or_default(),
         ),
     });
-    if req.endpoint_call().is_some() {
-        alibi_core::session::cookie_cache::runtime::set_issuance_preference(req, dont_remember);
-    }
+    alibi_core::session::cookie_cache::runtime::set_issuance_preference(req, dont_remember);
     let issued = crate::helpers::issue_selected_user_session_record(
         &issuing_context,
         user,

@@ -306,6 +306,14 @@ pub(crate) async fn update_user_core(
         });
     }
 
+    if body.data.contains_key("id") {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: codes::USER_ID_CANNOT_BE_UPDATED,
+            message: "User id cannot be updated",
+        });
+    }
+
     let mut update = UpdateUser::default();
 
     if let Some(value) = body.data.get("role") {
@@ -363,6 +371,26 @@ pub(crate) async fn update_user_core(
                 status: 403,
                 code: Some(codes::YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL.into()),
                 message: "You are not allowed to update users email".into(),
+            });
+        }
+    }
+
+    if ["phoneNumber", "phoneNumberVerified"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["set-phone".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::Upstream {
+                status: 403,
+                code: "YOU_ARE_NOT_ALLOWED_TO_SET_USERS_PHONE_NUMBER",
+                message: "You are not allowed to update users phone number",
             });
         }
     }
@@ -631,15 +659,6 @@ pub(crate) async fn unban_user_core(
     })
 }
 
-// The cache issuer uses the active logical frame. Legacy HTTP handlers also
-// retain request extensions, which can be distinct from an Axum endpoint frame.
-fn set_cache_preference(request: &impl alibi_core::session::SessionRequest, dont_remember: bool) {
-    alibi_core::session::cookie_cache::runtime::set_issuance_preference(request, dont_remember);
-    if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
-        alibi_core::session::cookie_cache::runtime::set_issuance_preference(&call, dont_remember);
-    }
-}
-
 pub(crate) async fn impersonate_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
@@ -734,7 +753,7 @@ pub(crate) async fn impersonate_user_core(
             },
             other => other,
         })?;
-    set_cache_preference(request, true);
+    alibi_core::session::cookie_cache::runtime::set_issuance_preference(request, true);
     alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &target, &session).await?;
     let token = session.token().to_owned();
     let response = SessionUserResponse {
@@ -803,7 +822,10 @@ pub(crate) async fn stop_impersonating_core(
         .delete_session(session.token())
         .await?;
 
-    set_cache_preference(request, admin_cookie.dont_remember);
+    alibi_core::session::cookie_cache::runtime::set_issuance_preference(
+        request,
+        admin_cookie.dont_remember,
+    );
     alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &admin_user, &admin_session)
         .await?;
     let token = admin_session.token().to_owned();

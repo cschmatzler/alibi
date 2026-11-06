@@ -640,7 +640,7 @@ pub(super) async fn router(
                             .into_response();
                         response.headers_mut().insert(
                             axum::http::header::CONTENT_TYPE,
-                            axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+                            axum::http::HeaderValue::from_static("application/json"),
                         );
                         response
                     }
@@ -800,7 +800,7 @@ pub(super) async fn router(
                             .into_response();
                         response.headers_mut().insert(
                             axum::http::header::CONTENT_TYPE,
-                            axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+                            axum::http::HeaderValue::from_static("application/json"),
                         );
                         response
                     }

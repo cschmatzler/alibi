@@ -326,7 +326,7 @@ compatScenario(
         currentProof,
       );
       const delivered = await readOtp(ctx, optionalTarget, "change-email");
-      const identifier = `change-email-otp-${email}-${optionalTarget}`;
+      const identifier = `change-email-otp-${user.id}:${optionalTarget}`;
       const proof = z
         .array(z.object({ identifier: z.string(), value: z.string() }))
         .parse(await ctx.readVerificationState({ identifier }));
@@ -347,7 +347,7 @@ compatScenario(
       otp,
     });
     expect(guestChange.error?.status).toBe(401);
-    expect(await verificationCount(ctx, `change-email-otp-${email}-${target}`)).toBe(1);
+    expect(await verificationCount(ctx, `change-email-otp-${user.id}:${target}`)).toBe(1);
 
     const change = await owner.emailOtp.changeEmail({ newEmail: target, otp });
     expect(change.error).toBeNull();
@@ -365,7 +365,7 @@ compatScenario(
 
     const replay = await owner.emailOtp.changeEmail({ newEmail: target, otp });
     expect(replay.error?.message).toBe("Email is the same");
-    expect(await verificationCount(ctx, `change-email-otp-${email}-${target}`)).toBe(0);
+    expect(await verificationCount(ctx, `change-email-otp-${user.id}:${target}`)).toBe(0);
 
     const unauthorized = await passwordlessClient(ctx, "visitor").emailOtp.requestEmailChange({
       newEmail: target,
@@ -819,7 +819,10 @@ async function configuredPasswordlessUsernames(
       expect(denied.accounts).toEqual(before.accounts);
       expect(denied.sessions).toEqual(before.sessions);
       expect(
-        await verificationCount(ctx, method === "email-otp" ? `sign-in-otp-${email}` : phoneNumber),
+        await verificationCount(
+          ctx,
+          method === "email-otp" ? `sign-in-otp-${email}` : `phone-number-otp-${phoneNumber}`,
+        ),
       ).toBe(0);
 
       const invalidReplay = await admit(invalidProof, raw);
@@ -909,7 +912,7 @@ compatScenario(
     const otherBefore = await readUserState(ctx, otherId);
     const preflight = await owner.emailOtp.requestEmailChange({ newEmail: occupied });
     expect(preflight.error).toBeNull();
-    expect(await verificationCount(ctx, `change-email-otp-${email}-${occupied}`)).toBe(0);
+    expect(await verificationCount(ctx, `change-email-otp-${ownerId}:${occupied}`)).toBe(0);
     const noDelivery = await ctx.rawRequest({
       path: `/__test/email-otp?email=${encodeURIComponent(occupied)}&type=change-email`,
     });
@@ -921,7 +924,7 @@ compatScenario(
     const issued = await owner.emailOtp.requestEmailChange({ newEmail: lateEmail });
     expect(issued.error).toBeNull();
     const otp = await readOtp(ctx, lateEmail, "change-email");
-    const identifier = `change-email-otp-${email}-${lateEmail}`;
+    const identifier = `change-email-otp-${ownerId}:${lateEmail}`;
     expect(await verificationCount(ctx, identifier)).toBe(1);
     const late = passwordlessClient(ctx, "late-occupant");
     const lateSignup = await late.signUp.email({

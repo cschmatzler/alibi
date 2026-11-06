@@ -68,6 +68,26 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
+    if ctx.config.session.has_server_session_store()
+        && let Some(encrypted) = &link.encrypted_session_token
+    {
+        let token = crate::token_crypto::decrypt_with_config_for_purpose(
+            encrypted,
+            &ctx.config,
+            crate::token_crypto::EncryptionPurpose::LinkSessionToken,
+        )
+        .map_err(|_| OAuthSignInError::from("unable_to_link_account".to_owned()))?;
+        let session = ctx
+            .database
+            .get_session(&token)
+            .await
+            .map_err(|_| OAuthSignInError::from("unable_to_link_account".to_owned()))?;
+        if !session.is_some_and(|session| {
+            session.user_id() == link.user_id && session.expires_at() > Utc::now()
+        }) {
+            return Err("unable_to_link_account".to_owned().into());
+        }
+    }
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
     let mut candidate = provider_candidate(user_info, &link.user_id);
@@ -198,6 +218,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     let mut user_info = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
+            client_submitted_id_token: true,
             access_token: id_token.access_token.clone(),
             refresh_token: id_token.refresh_token.clone(),
             access_token_expires_at: id_token
@@ -334,6 +355,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     let mut response = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
+            client_submitted_id_token: true,
             access_token: id_token.access_token.clone(),
             refresh_token: id_token.refresh_token.clone(),
             access_token_expires_at: id_token

@@ -19,10 +19,14 @@ compatScenario(
     const callbacks = (await ctx.rawRequest({ path: "/__test/phone-callbacks" })).body;
     expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
     const code = await readPhoneOtp(ctx, phoneNumber);
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toHaveLength(1);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toHaveLength(1);
     const denied = await owner.phoneNumber.verify({ phoneNumber, code, updatePhoneNumber: true });
     expect(denied.error).toMatchObject({ status: 400, code: "PHONE_NUMBER_EXIST" });
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toEqual([]);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toEqual([]);
     expect(await readPhoneState(ctx, profile, userId)).toEqual(before);
     expect((await ctx.rawRequest({ path: "/__test/phone-callbacks" })).body).toEqual(callbacks);
     const session = await owner.getSession();

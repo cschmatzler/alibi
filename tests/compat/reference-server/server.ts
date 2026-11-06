@@ -396,7 +396,7 @@ const captureOtpSender: Parameters<typeof emailOTP>[0]["sendVerificationOTP"] = 
 ) => {
   const identifier =
     type === "change-email"
-      ? `${type}-otp-${ctx?.context.session?.user.email.toLowerCase()}-${email}`
+      ? `${type}-otp-${ctx?.context.session?.user.id}:${email}`
       : `${type}-otp-${email}`;
   const context = await callbackSnapshot(ctx, identifier);
   emailOtpOutbox.set(`${type}:${email}`, {
@@ -4414,6 +4414,17 @@ const server = await serveFixture({
         return adminRoleStateResponse;
       }
 
+      if (url.pathname === "/__test/phone-seed-owner" && request.method === "POST") {
+        const input = await request.json();
+        const selected = phoneFixture.profiles.get(input.profile);
+        if (!selected) return Response.json({ message: "invalid profile" }, { status: 400 });
+        const context = await selected.$context;
+        await context.internalAdapter.updateUser(input.userId, {
+          phoneNumber: input.phoneNumber,
+          phoneNumberVerified: false,
+        });
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/user-state" && request.method === "GET") {
         const userId = url.searchParams.get("userId");
         if (!userId) {

@@ -338,30 +338,36 @@ compatScenario(
         "malformed-allowed",
         "application/foo*+jsonapplication/json",
         JSON.stringify({ email: signup.data!.user.email, password: "password123" }),
-        400,
-        "VALIDATION_ERROR",
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
       ],
       [
         "non-json-allowed",
         "text/plainapplication/json",
         JSON.stringify({ email: signup.data!.user.email, password: "password123" }),
-        400,
-        "VALIDATION_ERROR",
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
       ],
-      ["multipart-missing-boundary", "multipart/form-dataapplication/json", "invalid", 500, null],
+      [
+        "multipart-missing-boundary",
+        "multipart/form-dataapplication/json",
+        "invalid",
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
+      ],
       [
         "multipart-malformed-subtype",
         "multipart/form-dataapplication/json; boundary=dispatch-boundary",
         `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`,
-        500,
-        null,
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
       ],
       [
         "multipart-file-malformed-subtype",
         "multipart/form-dataapplication/json; boundary=dispatch-boundary",
         `--dispatch-boundary\r\nContent-Disposition: form-data; name="email"; filename="email.txt"\r\nContent-Type: text/plain\r\n\r\n${signup.data!.user.email}\r\n--dispatch-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--dispatch-boundary--\r\n`,
-        500,
-        null,
+        415,
+        "UNSUPPORTED_MEDIA_TYPE",
       ],
       [
         "text",
@@ -442,9 +448,7 @@ compatScenario(
         }
         expect(after).toEqual(before);
         expect(callbacks).toEqual(
-          name.endsWith("allowed") || name === "valid-json-foreign-origin"
-            ? [{ path: "/sign-in/email", method: "POST" }]
-            : [],
+          name === "valid-json-foreign-origin" ? [{ path: "/sign-in/email", method: "POST" }] : [],
         );
       } else {
         expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);

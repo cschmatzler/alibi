@@ -95,9 +95,9 @@ impl SendPhoneOtp for Sender {
         _context: &alibi::CallbackContext,
     ) -> AuthResult<()> {
         let identifier = if self.purpose == "password-reset" {
-            format!("{}-request-password-reset", delivery.phone_number)
+            format!("phone-number-reset-{}", delivery.phone_number)
         } else {
-            delivery.phone_number.clone()
+            format!("phone-number-otp-{}", delivery.phone_number)
         };
         let context =
             crate::fixtures::passwordless_context::snapshot(_context, &identifier).await?;
@@ -183,7 +183,7 @@ impl PhoneOtpVerifier for Verifier {
         _context: &alibi::CallbackContext,
     ) -> AuthResult<bool> {
         if let Some(snapshot) =
-            crate::fixtures::passwordless_context::snapshot(_context, &delivery.phone_number)
+            crate::fixtures::passwordless_context::snapshot(_context, &format!("phone-number-otp-{}", delivery.phone_number))
                 .await?
         {
             _ = self.0.outbox.lock().await.insert(
@@ -230,7 +230,7 @@ impl PhoneVerificationHook for Callback {
     ) -> AuthResult<()> {
         let mut event = json!({"phoneNumber":result.phone_number,"userId":result.user.id});
         if let Some(snapshot) =
-            crate::fixtures::passwordless_context::snapshot(_context, &result.phone_number).await?
+            crate::fixtures::passwordless_context::snapshot(_context, &format!("phone-number-otp-{}", result.phone_number)).await?
         {
             event["context"] = snapshot;
             let auth = _context.context::<TestSchema>().unwrap();
@@ -461,6 +461,25 @@ pub(super) async fn build(
         );
     }
     let selected_runtimes = consume_runtimes.clone();
+    let seed_runtimes = consume_runtimes.clone();
+    router = router.route(
+        "/__test/phone-seed-owner",
+        post(move |Json(body): Json<Value>| {
+            let runtimes = seed_runtimes.clone();
+            async move {
+                let selected = runtimes.get(body["profile"].as_str().unwrap()).unwrap();
+                selected.auth.store().update_user(
+                    body["userId"].as_str().unwrap(),
+                    alibi::UpdateUser {
+                        phone_number: Some(Some(body["phoneNumber"].as_str().unwrap().to_owned())),
+                        phone_number_verified: Some(false),
+                        ..Default::default()
+                    },
+                ).await.unwrap();
+                Json(json!({"status": true}))
+            }
+        }),
+    );
     let validator_controls = controls.clone();
     let notification_read = controls.notification.clone();
     let notification_write = controls.notification.clone();

@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { z } from "zod";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, readPhoneOtp, readPhoneState, uniquePhone } from "./helpers";
+import { phoneClient, readPhoneOtp, readPhoneState, seedPhoneOwner, uniquePhone } from "./helpers";
 
 compatScenario(
   "phone required OTP sender guards before validation while an omitted reset sender still issues a usable proof",
@@ -52,8 +52,8 @@ compatScenario(
       email,
       password: "original-password123",
       name: "Optional Sender Owner",
-      phoneNumber,
     });
+    await seedPhoneOwner(ctx, profile, signup.data!.user.id, phoneNumber);
     expect(signup.error).toBeNull();
     expect(signup.data?.user.id).toBeTypeOf("string");
     const issued = await owner.phoneNumber.sendOtp({ phoneNumber });
@@ -70,7 +70,7 @@ compatScenario(
     const reset = await owner.phoneNumber.requestPasswordReset({ phoneNumber });
     expect(reset.data).toEqual({ status: true });
     expect(reset.error).toBeNull();
-    const identifier = `${phoneNumber}-request-password-reset`;
+    const identifier = `phone-number-reset-${phoneNumber}`;
     const proof = z
       .array(z.object({ identifier: z.string(), value: z.string() }).passthrough())
       .parse(await ctx.readVerificationState({ identifier }));

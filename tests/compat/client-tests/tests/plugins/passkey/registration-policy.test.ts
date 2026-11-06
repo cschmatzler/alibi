@@ -332,7 +332,7 @@ compatScenario(
       method: "POST",
       body: { response: invalidCryptoResponse, createSession: true },
     });
-    expect(invalidCrypto.error?.status).toBe(500);
+    expect(invalidCrypto.error?.status).toBe(400);
     expect(code(invalidCrypto)).toBe("FAILED_TO_VERIFY_REGISTRATION");
 
     const cryptoReplay = await client(ctx).$fetch("/passkey/verify-registration", {
@@ -564,7 +564,7 @@ compatScenario(
             }
           : {}),
       });
-      expect(failed.error?.status).toBe(expectedStatus);
+      expect(failed.error?.status, mode).toBe(expectedStatus);
 
       if (mode === "after-dynamic-api") {
         expect(z.object({ message: z.string() }).parse(failed.error).message).toBe(

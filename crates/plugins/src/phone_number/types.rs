@@ -147,44 +147,24 @@ pub(crate) fn reject_verified_input(
     Ok(())
 }
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
 pub(crate) async fn parse_signup_phone(
-    ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
+    _ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
     input: Option<&alibi_core::utils::json::JsValue>,
 ) -> Result<Option<String>, AuthError> {
     use alibi_core::utils::json::JsValue as Value;
-    match input {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        // The pinned SQLite adapter coerces these scalar inputs to its TEXT
-        // column. Arrays and objects fail user insertion, leaving no rows.
-        Some(Value::Bool(value)) => Ok(Some(if *value { "1" } else { "0" }.into())),
-        Some(Value::Number(value)) => {
-            use alibi_core::store::NumericTextInput;
-            // A valid JSON number can overflow the JavaScript f64 range.
-            // Preserve its number type through validation, then apply the same
-            // rounding/overflow before the adapter chooses INTEGER or REAL.
-            let number = *value;
-            // Bun's SQLite binding uses JavaScriptCore isAnyInt(), whose
-            // signed Int52 range excludes negative zero. Other values bind REAL.
-            let input_2 = if (-2_251_799_813_685_248.0..2_251_799_813_685_248.0).contains(&number)
-                && number.fract() == 0.0
-                && !(number == 0.0 && number.is_sign_negative())
-            {
-                NumericTextInput::Integer(number as i64)
-            } else {
-                NumericTextInput::Real(number)
-            };
-            Ok(Some(ctx.database.coerce_user_text_number(input_2).await?))
-        }
-        Some(Value::Date(_) | Value::Array(_) | Value::Object(_)) => Err(phone_error(
-            422,
-            codes::FAILED_TO_CREATE_USER,
-            "Failed to create user",
-        )),
+    if input.is_some_and(|value| match value {
+        Value::Null | Value::Bool(false) => false,
+        Value::String(value) => !value.is_empty(),
+        Value::Number(value) => *value != 0.0 && !value.is_nan(),
+        Value::Bool(true) | Value::Date(_) | Value::Array(_) | Value::Object(_) => true,
+    }) {
+        return Err(phone_error(
+            400,
+            codes::PHONE_NUMBER_CANNOT_BE_SET,
+            "Phone number can only be set by verifying it",
+        ));
     }
+    Ok(input
+        .filter(|value| !value.is_null())
+        .map(|_| String::new()))
 }

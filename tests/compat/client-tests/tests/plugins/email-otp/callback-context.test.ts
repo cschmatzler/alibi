@@ -156,7 +156,7 @@ compatScenario(
       code: delivery.code,
     });
     expect(foreign.status).toBe(400);
-    expect(await verificationCount(ctx, phoneNumber)).toBe(1);
+    expect(await verificationCount(ctx, `phone-number-otp-${phoneNumber}`)).toBe(1);
 
     const consumed = await post("/phone-number/verify", { phoneNumber, code: delivery.code });
     expect(consumed.status).toBe(200);
@@ -196,7 +196,7 @@ compatScenario(
 
     const replay = await post("/phone-number/verify", { phoneNumber, code: delivery.code });
     expect(replay.status).toBe(400);
-    expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+    expect(await verificationCount(ctx, `phone-number-otp-${phoneNumber}`)).toBe(0);
     expect((await readPhoneState(ctx, profile, user.id)).sessions).toHaveLength(1);
 
     // Retain the entire captured request while binding its generated proof to

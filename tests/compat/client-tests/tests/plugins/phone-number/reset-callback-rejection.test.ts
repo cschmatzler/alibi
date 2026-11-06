@@ -1,9 +1,9 @@
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, readPhoneOtp, readPhoneState, uniquePhone } from "./helpers";
+import { phoneClient, readPhoneOtp, readPhoneState, seedPhoneOwner, uniquePhone } from "./helpers";
 compatScenario(
-  "phone reset callback rejects after password commit before configured session revocation",
+  "phone reset callback rejects after password commit and configured session revocation",
   async (ctx) => {
     const profile = "phone-reset-callback";
     const owner = phoneClient(ctx, profile, "owner");
@@ -14,8 +14,8 @@ compatScenario(
       email,
       password: "original-password123",
       name: "Reset owner",
-      phoneNumber,
     });
+    await seedPhoneOwner(ctx, profile, signup.data!.user.id, phoneNumber);
     expect(signup.error).toBeNull();
     expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
     const verified = await owner.phoneNumber.verify({
@@ -61,14 +61,14 @@ compatScenario(
       `/__test/profiles/${profile}/api/auth/phone-number/reset-password`,
     );
     expect(
-      await ctx.readVerificationState({ identifier: `${phoneNumber}-request-password-reset` }),
+      await ctx.readVerificationState({ identifier: `phone-number-reset-${phoneNumber}` }),
     ).toEqual([]);
     const afterFailure = await readPhoneState(ctx, profile, userId);
     expect(afterFailure.user).toEqual(before.user);
     expect(afterFailure.accounts).toEqual(before.accounts);
-    expect(afterFailure.sessions).toEqual(before.sessions);
-    expect((await owner.getSession()).data!.user.id).toBe(userId);
-    expect((await second.getSession()).data!.user.id).toBe(userId);
+    expect(afterFailure.sessions).toEqual([]);
+    expect((await owner.getSession()).data).toBeNull();
+    expect((await second.getSession()).data).toBeNull();
     const fresh = phoneClient(ctx, profile, "fresh");
     const oldPassword = await fresh.signIn.email({ email, password: "original-password123" });
     expect(oldPassword.error!.code).toBe("INVALID_EMAIL_OR_PASSWORD");

@@ -221,7 +221,7 @@ for (const variant of [
           claims = { aud: "foreign-client" };
           break;
         case "expired":
-          claims = { exp: issuedAt - 10 };
+          claims = { exp: issuedAt - 60 };
           break;
         case "old":
           claims = { iat: issuedAt - 7200 };
@@ -878,7 +878,7 @@ for (const variant of [
           ...(Object.hasOwn(decoded, "name") ? { name: decoded.name } : {}),
           email: decoded.email,
           ...(Object.hasOwn(decoded, "picture") ? { image: decoded.picture } : {}),
-          emailVerified: variant === "explicit-null" ? null : variant !== "null-primary",
+          emailVerified: variant !== "explicit-null" && variant !== "null-primary",
         },
         data: decoded,
         account: { id: ownedAccount.id, providerId: "microsoft", accountId: decoded.oid },

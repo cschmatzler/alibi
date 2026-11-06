@@ -542,7 +542,7 @@ compatScenario(
         expect((result.data as any).name).toBeNull();
         expect((result.data as any).user.id).toBe(id);
       } else {
-        expect((result.error as any).status).toBe(500);
+        expect((result.error as any).status).toBe(400);
         expect((result.error as any).code).toBe("FAILED_TO_VERIFY_REGISTRATION");
         expect(await physical(ctx, id)).toEqual(before);
       }

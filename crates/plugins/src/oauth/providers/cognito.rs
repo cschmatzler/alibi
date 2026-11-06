@@ -289,10 +289,7 @@ fn finish_profile(
                 .into(),
             name: Some(scalar(Some(&profile_name(&profile)))?.unwrap_or_default()),
             image: scalar(profile.get("picture"))?,
-            email_verified: profile
-                .get("email_verified")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
+            email_verified: super::email_verified_claim(profile.get("email_verified")),
         },
     };
     Ok(OAuthUserInfoResponse {

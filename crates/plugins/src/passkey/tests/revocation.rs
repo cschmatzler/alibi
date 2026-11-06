@@ -40,10 +40,10 @@ async fn delivered_crl_rejects_revoked_attestation_without_persisting_credential
     let crl =
         include_bytes!("../../../../../tests/compat/fixtures/passkey-attestation/revoked.der");
     for (mode, serial, expected) in [
-        ("revoked", 42, 500),
+        ("revoked", 42, 400),
         ("allowed", 43, 200),
         ("malformed", 42, 200),
-        ("http-error-valid-crl", 42, 500),
+        ("http-error-valid-crl", 42, 400),
         ("unavailable", 42, 200),
     ] {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

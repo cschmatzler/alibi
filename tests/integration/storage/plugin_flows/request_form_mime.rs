@@ -62,8 +62,8 @@ async fn malformed_form_mime_cannot_repair_itself_into_credentials<B: Backend>(
             .headers
             .insert("content-type".into(), content_type.into());
         input.body = Some(raw.as_bytes().to_vec());
-        let response = call(&auth, input, 500).await;
-        assert!(response.body.is_empty());
+        let response = call(&auth, input, 415).await;
+        assert_eq!(body(&response)["code"], "UNSUPPORTED_MEDIA_TYPE");
         assert!(!response.headers.contains_key("set-cookie"));
         assert_eq!(db.tables(&["user", "account", "session"]).await?, original);
     }

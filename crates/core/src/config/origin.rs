@@ -274,33 +274,51 @@ pub(super) fn matches_origin(value: &str, pattern: &str) -> bool {
         return false;
     }
     let parsed = url::Url::parse(value).ok();
-    if pattern.contains(['*', '?']) {
-        if pattern.contains("://") {
-            let origin = parsed
-                .as_ref()
-                .filter(|url| matches!(url.origin(), url::Origin::Tuple(..)))
-                .map(|url| url.origin().ascii_serialization());
-            return wildcard::matches(pattern, origin.as_deref().unwrap_or(value));
-        }
-        return parsed.is_some_and(|url| {
+    let has_wildcard = pattern.contains(['*', '?']);
+    if has_wildcard && !pattern.contains("://") {
+        return parsed.as_ref().is_some_and(|url| {
+            let authority = &url[url::Position::BeforeHost..url::Position::AfterPort];
             url.host_str().is_some()
-                && wildcard::matches(
-                    pattern,
-                    &url[url::Position::BeforeHost..url::Position::AfterPort],
-                )
+                && wildcard::matches(pattern, authority)
+                && allowed_ipv4_host(pattern, authority)
         });
     }
     if parsed
         .as_ref()
         .is_none_or(|url| matches!(url.scheme(), "http" | "https"))
     {
-        return parsed.is_some_and(|url| url.origin().ascii_serialization() == pattern);
+        return parsed.is_some_and(|url| {
+            if !has_wildcard {
+                return url.origin().ascii_serialization() == pattern;
+            }
+            let url::Origin::Tuple(..) = url.origin() else {
+                return false;
+            };
+            let origin = url.origin().ascii_serialization();
+            wildcard::matches(pattern, &origin)
+                && allowed_ipv4_host(
+                    pattern.split_once("://").map_or(pattern, |(_, host)| host),
+                    &url[url::Position::BeforeHost..url::Position::AfterPort],
+                )
+        });
     }
-    let (Some((scheme, authority, path)), Some((pattern_scheme, pattern_authority, pattern_path))) =
-        (custom_parts(value), custom_parts(pattern))
-    else {
+    let (Some((scheme, authority, path)), Some((pattern_scheme, pattern_authority, pattern_path))) = (
+        custom_parts(value, false),
+        custom_parts(pattern, has_wildcard),
+    ) else {
         return false;
     };
+    if scheme != pattern_scheme {
+        return false;
+    }
+    if has_wildcard {
+        return !authority.contains('@')
+            && (pattern_authority.is_empty()
+                || wildcard::matches(&pattern_authority, &authority)
+                    && allowed_ipv4_host(&pattern_authority, &authority))
+            && (pattern_path.is_empty()
+                || wildcard::matches(&pattern_path, if path.is_empty() { "/" } else { &path }));
+    }
     scheme == pattern_scheme
         && (pattern_authority.is_empty() || authority == pattern_authority)
         && (pattern_path.is_empty()
@@ -308,7 +326,22 @@ pub(super) fn matches_origin(value: &str, pattern: &str) -> bool {
             || path.starts_with(&format!("{pattern_path}/")))
 }
 
-fn custom_parts(value: &str) -> Option<(String, String, String)> {
+fn allowed_ipv4_host(pattern: &str, authority: &str) -> bool {
+    let host = pattern.split(':').next().unwrap_or_default();
+    let ip_pattern = host.bytes().any(|c| c.is_ascii_digit())
+        && host
+            .bytes()
+            .all(|c| c.is_ascii_digit() || matches!(c, b'.' | b'*' | b'?'));
+    !ip_pattern
+        || authority
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .parse::<std::net::Ipv4Addr>()
+            .is_ok()
+}
+
+fn custom_parts(value: &str, wildcard_pattern: bool) -> Option<(String, String, String)> {
     if value
         .chars()
         .any(|c| matches!(c, '\u{0000}'..='\u{001f}' | '\u{007f}'..='\u{009f}'))
@@ -321,11 +354,16 @@ fn custom_parts(value: &str) -> Option<(String, String, String)> {
     }
     let mut authority = "";
     if let Some(after) = rest.strip_prefix("//") {
-        let end = after.find(['/', '?', '#']).unwrap_or(after.len());
+        let end = after
+            .find(|c| matches!(c, '/' | '#') || !wildcard_pattern && c == '?')
+            .unwrap_or(after.len());
         authority = after.get(..end)?;
         rest = after.get(end..)?;
     }
-    let path = rest.split(['?', '#']).next().unwrap_or_default();
+    let path = rest
+        .split(|c| c == '#' || !wildcard_pattern && c == '?')
+        .next()
+        .unwrap_or_default();
     // decodeURIComponent leaves the entire input unchanged on invalid escapes.
     let valid_escapes = path.as_bytes().iter().enumerate().all(|(i, c)| {
         *c != b'%'

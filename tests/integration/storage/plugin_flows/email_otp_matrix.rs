@@ -1757,8 +1757,17 @@ async fn server_email_otp_reset_request_aliases_preserve_delivery_and_hidden_mai
                 endpoint(&json!({"email":email}))?,
                 EndpointOptions::default(),
             ))
-            .await?;
-            assert_eq!(hidden.decode()?, json!({"success":true}));
+            .await;
+            if email == "not-an-email" {
+                let error = hidden.unwrap_err();
+                assert_eq!(error.error.status_code(), 400);
+                assert_eq!(
+                    error.error.error_payload().1.as_deref(),
+                    Some("INVALID_EMAIL")
+                );
+            } else {
+                assert_eq!(hidden?.decode()?, json!({"success":true}));
+            }
             assert_eq!(db.count("verification").await?, 0);
             assert!(mailbox.0.lock().unwrap().is_empty());
         }
@@ -1874,6 +1883,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         let new_email = "server-change-new@example.test";
         let other_email = "server-change-other@example.test";
         let owner = Box::pin(signup(&auth, email)).await;
+        let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         let foreign = Box::pin(signup(&auth, other_email)).await;
         let cookie = cookies(&owner);
         let credentials = || EndpointOptions {
@@ -1969,7 +1979,7 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         let delivery = mailbox.take();
         assert_eq!(delivery.email, new_email);
         assert_eq!(delivery.otp_type, EmailOtpType::ChangeEmail);
-        let target_key = format!("change-email-otp-{email}-{new_email}");
+        let target_key = format!("change-email-otp-{owner_id}:{new_email}");
         use alibi::AuthVerification;
         assert_eq!(
             auth.store()
@@ -2009,7 +2019,9 @@ async fn server_email_otp_change_lifecycle_preserves_proof_and_caller_authority<
         assert!(mailbox.0.lock().unwrap().is_empty());
         assert!(
             auth.store()
-                .get_verification_by_identifier(&format!("change-email-otp-{email}-{other_email}"))
+                .get_verification_by_identifier(&format!(
+                    "change-email-otp-{owner_id}:{other_email}"
+                ))
                 .await?
                 .is_none()
         );

@@ -23,23 +23,20 @@ pub enum RoleInput {
 impl RoleInput {
     #[must_use]
     pub fn joined(&self) -> String {
-        match self {
-            Self::One(role) => role.clone(),
-            Self::Many(roles) => roles.join(","),
-        }
+        self.roles().join(",")
     }
 
     pub fn roles(&self) -> Vec<&str> {
         match self {
             Self::One(role) => role
                 .split(',')
-                .map(str::trim)
+                .map(alibi_core::utils::javascript::trim)
                 .filter(|role| !role.is_empty())
                 .collect(),
             Self::Many(roles) => roles
                 .iter()
                 .flat_map(|role| role.split(','))
-                .map(str::trim)
+                .map(alibi_core::utils::javascript::trim)
                 .filter(|role| !role.is_empty())
                 .collect(),
         }
@@ -47,7 +44,7 @@ impl RoleInput {
 }
 
 /// Input to the privileged server-only member-admission operation.
-/// Roles are joined verbatim, including whitespace, duplicates and empty roles.
+/// Roles are trimmed and empty entries are dropped; duplicates are retained.
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AddOrganizationMemberRequest {

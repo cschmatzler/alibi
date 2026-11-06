@@ -253,7 +253,12 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
-    let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
+    let normalized_verification = raw_output
+        .and_then(|output| output.get("emailVerified"))
+        .map(|value| {
+            serde_json::Value::Bool(crate::oauth::providers::email_verified_claim(Some(value)))
+        });
+    let raw_verification = normalized_verification.as_ref();
     let OAuthIdentity {
         provider_name,
         user: user_info,

@@ -53,7 +53,7 @@ for (const mode of ["options", "listed-origin", "foreign-origin", "null-origin"]
         body: { response, name: "Configured RP key" },
       });
       if (mode === "foreign-origin" || mode === "null-origin") {
-        expect(registered.error!.status).toBe(500);
+        expect(registered.error!.status).toBe(400);
         expect(
           (await client.$fetch("/passkey/list-user-passkeys", { method: "GET" })).data,
         ).toEqual([]);
@@ -67,6 +67,7 @@ for (const mode of ["options", "listed-origin", "foreign-origin", "null-origin"]
         method: "GET",
       });
       expect(auth.error).toBeNull();
+      expect(auth.data!.userVerification).toBe(mode === "options" ? "required" : "preferred");
       const authenticated = await client.$fetch<any>("/passkey/verify-authentication", {
         method: "POST",
         body: { response: device.authenticate(auth.data, origin) },

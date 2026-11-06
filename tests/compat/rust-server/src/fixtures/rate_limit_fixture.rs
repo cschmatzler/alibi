@@ -361,7 +361,7 @@ pub(crate) async fn router(
                             }
                             Err(_) => (
                                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                [("content-type", "application/json;charset=utf-8")],
+                                [("content-type", "application/json")],
                                 Json(json!({"message":"Internal server error"})),
                             )
                                 .into_response(),

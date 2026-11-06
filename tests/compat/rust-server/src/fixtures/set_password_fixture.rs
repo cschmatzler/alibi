@@ -231,7 +231,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             if response.status() == StatusCode::INTERNAL_SERVER_ERROR {
                 let _ = response.headers_mut().insert(
                     "content-type",
-                    axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+                    axum::http::HeaderValue::from_static("application/json"),
                 );
             }
             response

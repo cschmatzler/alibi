@@ -239,7 +239,7 @@ compatScenario(
     expect(created).toMatchObject({
       organizationId: s.organization.id,
       userId: s.target.user.id,
-      role: " member ,member,admin",
+      role: "member,member,admin",
     });
 
     const after = await state(ctx);
@@ -250,7 +250,7 @@ compatScenario(
       {
         organizationId: s.organization.id,
         userId: s.target.user.id,
-        role: " member ,member,admin",
+        role: "member,member,admin",
       },
       created,
     );
@@ -259,7 +259,7 @@ compatScenario(
       id: created.id,
       organizationId: s.organization.id,
       userId: s.target.user.id,
-      role: " member ,member,admin",
+      role: "member,member,admin",
     });
     expect(withoutMembers(after.snapshot)).toEqual(withoutMembers(before.snapshot));
     expect(await s.users()).toEqual(usersBefore);

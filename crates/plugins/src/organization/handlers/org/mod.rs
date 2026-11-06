@@ -23,7 +23,7 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
     member
         .role()
         .split(',')
-        .map(str::trim)
+        .map(alibi_core::utils::javascript::trim)
         .any(|candidate| candidate == role)
 }
 
@@ -493,7 +493,7 @@ pub(crate) async fn get_full_organization_core(
 
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
 
-    let response = FullOrganizationResponse {
+    let mut response = FullOrganizationResponse {
         organization: OrganizationResponse::from_stored_organization(&organization)
             .map_err(AuthError::from)?,
         members,
@@ -514,17 +514,39 @@ pub(crate) async fn get_full_organization_core(
             None
         },
     };
-    if ctx
-        .database
-        .get_member(&org_id, &user.id())
-        .await?
-        .is_none()
-    {
+    let member = ctx.database.get_member(&org_id, &user.id()).await?;
+    let Some(member) = member else {
         _ = ctx
             .database
             .update_session_active_organization_record(session.token(), None)
             .await?;
         return Err(AuthError::forbidden("User is not a member of the organization").into());
+    };
+    if !response.invitations.is_empty() {
+        if super::extension_common::has_action(
+            member.role(),
+            "invitation",
+            "create",
+            config,
+            ctx,
+            &org_id,
+        )
+        .await?
+        {
+            let is_creator = has_role(&member, config.effective_creator_role());
+            response.invitations.retain(|invitation| {
+                is_creator
+                    || !invitation
+                        .role
+                        .as_deref()
+                        .unwrap_or_default()
+                        .split(',')
+                        .map(alibi_core::utils::javascript::trim)
+                        .any(|role| role == config.effective_creator_role())
+            });
+        } else {
+            response.invitations.clear();
+        }
     }
 
     Ok(Some(response))

@@ -89,7 +89,7 @@ async fn server_error_uses_physical_url_and_preserves_raw_response_and_hook_head
                 } else {
                     output.http_response().unwrap().clone()
                 };
-                assert!(!returned.headers.contains_key("x-before"));
+                assert_eq!(returned.headers.contains_key("x-before"), forward);
                 assert!(!returned.headers.contains_key("authorization"));
                 assert_eq!(returned.headers.contains_key("x-after"), forward);
                 assert_eq!(
@@ -149,7 +149,7 @@ async fn server_error_uses_physical_url_and_preserves_raw_response_and_hook_head
                 events[1]["returned"]["status"],
                 if profile == "html" { 200 } else { 302 }
             );
-            assert!(!response.headers.contains_key("x-before"));
+            assert!(response.headers.contains_key("x-before"));
             assert!(!response.headers.contains_key("authorization"));
             assert_eq!(
                 response.headers.get("x-after").map(String::as_str),

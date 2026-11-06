@@ -35,7 +35,7 @@ export function requiredScenarios(requirement: Requirement): string[] {
 /** Validated, committed route and scenario requirements. */
 export const inventorySchema = z
   .object({
-    upstreamVersion: z.literal("1.7.12"),
+    upstreamVersion: z.literal("1.7.18"),
     capabilities: z.array(
       z
         .object({

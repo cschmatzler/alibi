@@ -4,7 +4,7 @@ use super::types::{
 };
 use super::{
     EmailPasswordPlugin, MESSAGE_EMAIL_NOT_VERIFIED, MESSAGE_INVALID_USERNAME_OR_PASSWORD,
-    MESSAGE_USERNAME_IS_ALREADY_TAKEN, UsernameValidationOrder, append_dont_remember_cookie,
+    MESSAGE_USERNAME_IS_ALREADY_TAKEN, append_dont_remember_cookie,
     create_session_cookie_for_remember_me, sign_in_core, sign_in_username_core, sign_up_core,
     username_error_response,
 };
@@ -239,7 +239,7 @@ impl EmailPasswordPlugin {
 
         let policy = &self.config.username;
         let validation_input =
-            if policy.validation_order == Some(UsernameValidationOrder::PreNormalization) {
+            if policy.validation_order == Some(super::UsernameValidationOrder::PostNormalization) {
                 policy.normalize(&signin_req.username)?
             } else {
                 signin_req.username.clone()
@@ -247,7 +247,11 @@ impl EmailPasswordPlugin {
         if let Err(error) = policy.validate_value(&validation_input, 422).await {
             return Ok(error.to_auth_response());
         }
-        let username = policy.normalize(&validation_input)?;
+        let username = policy.normalize(&signin_req.username)?;
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
+            req,
+            signin_req.remember_me == Some(false),
+        );
 
         match sign_in_username_core(
             req,
@@ -340,15 +344,17 @@ impl EmailPasswordPlugin {
             return username_error_response(422, codes::INVALID_USERNAME, "Username is invalid");
         }
 
-        if let Err(error) = self
-            .config
-            .username
-            .validate_value(&body.username, 422)
-            .await
-        {
+        let policy = &self.config.username;
+        let validation_input =
+            if policy.validation_order == Some(super::UsernameValidationOrder::PostNormalization) {
+                policy.normalize(&body.username)?
+            } else {
+                body.username.clone()
+            };
+        if let Err(error) = policy.validate_value(&validation_input, 422).await {
             return Ok(error.to_auth_response());
         }
-        let normalized = self.config.username.normalize(&body.username)?;
+        let normalized = policy.normalize(&body.username)?;
         let user = ctx.database.get_user_by_username(&normalized).await?;
         let available = user.is_none();
 

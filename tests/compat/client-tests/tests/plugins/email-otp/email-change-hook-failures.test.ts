@@ -55,7 +55,7 @@ compatScenario(
         const issued = await actor.client.emailOtp.requestEmailChange({ newEmail: target });
         expect(issued.error).toBeNull();
         const otp = await readOtp(ctx, target, "change-email");
-        const identifier = `change-email-otp-${email}-${target}`;
+        const identifier = `change-email-otp-${userId}:${target}`;
         expect(await ctx.readVerificationState({ identifier })).toHaveLength(1);
         await control(stage, error);
         let cookies: string[] = [];
@@ -139,7 +139,7 @@ compatScenario(
         });
         expect(
           await ctx.readVerificationState({
-            identifier: `change-email-otp-${stage === "before" ? email : target}-${recoveryTarget}`,
+            identifier: `change-email-otp-${userId}:${recoveryTarget}`,
           }),
         ).toEqual([]);
         expect((await readUserState(ctx, userId)).sessions).toEqual(before.sessions);

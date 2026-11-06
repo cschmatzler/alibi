@@ -92,7 +92,8 @@
         ],
         "set-cookie": [
           "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
-          "better-auth.admin_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+          "better-auth.admin_session=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
         ]
       },
       "body": {

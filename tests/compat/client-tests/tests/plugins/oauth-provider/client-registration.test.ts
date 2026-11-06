@@ -244,11 +244,12 @@ compatScenario(
           });
           expect(response.status).toBe(201);
           const value = (await response.json()) as any;
-          expect(value.resources).toEqual([a]);
+          const expectedResources = action === "admin-create" ? [a] : [a, b, c];
+          expect(value.resources).toEqual(expectedResources);
           const links = (await (
             await call({ action: "resource-links", clientId: value.client_id })
           ).json()) as any[];
-          expect(links.map((row) => row.resourceId)).toEqual([a]);
+          expect(links.map((row) => row.resourceId)).toEqual(expectedResources);
           results.push({
             mode,
             action: action ?? "managed",
@@ -498,13 +499,17 @@ compatScenario(
             expect(
               token.status,
               `${ctx.baseURL}:${policy}:${source}:${name}:${JSON.stringify(value)}`,
-            ).toBe(success ? 200 : publicClient && name === "missing-verifier" ? 400 : 401);
+            ).toBe(success ? 200 : 400);
             if (success) {
               expect(value.access_token).toBeTypeOf("string");
               expect(value.token_type).toBe("Bearer");
               expect(value.scope).toBe("email");
             } else {
-              expect(value.error).toBe("invalid_request");
+              expect(value.error).toBe(
+                ["malformed", "wrong-verifier"].includes(name)
+                  ? "invalid_grant"
+                  : "invalid_request",
+              );
             }
             exchanges.push({
               name,

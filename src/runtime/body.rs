@@ -20,7 +20,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     if !allowed.is_empty()
         && !allowed
             .iter()
-            .any(|allowed| base.contains(allowed.to_ascii_lowercase().trim()))
+            .any(|allowed| base == allowed.to_ascii_lowercase().trim())
     {
         let message = if content_type.is_empty() {
             format!(

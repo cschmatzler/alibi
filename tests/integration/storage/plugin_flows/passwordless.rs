@@ -295,7 +295,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
         .build()
         .await?;
     let phone = "+15551110003";
-    let owner = call(&auth, request("/sign-up/email", Some(json!({"email":"phone-password@example.test", "name":"Phone Owner", "password":PASSWORD, "phoneNumber":phone})), ""), 200).await;
+    let owner = signup_with_legacy_phone(&auth,json!({"email":"phone-password@example.test", "name":"Phone Owner", "password":PASSWORD, "phoneNumber":phone})).await;
     let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let original = db
         .tables(&["user", "account", "session", "verification"])
@@ -337,7 +337,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     assert_eq!(
         db.text(
             "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
-            &[phone]
+            &[&format!("phone-number-otp-{phone}")]
         )
         .await?
         .as_deref(),
@@ -422,7 +422,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
-            &[&format!("{phone}-request-password-reset")]
+            &[&format!("phone-number-reset-{phone}")]
         )
         .await?,
         1
@@ -432,7 +432,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
-            &[&format!("{phone}-request-password-reset")]
+            &[&format!("phone-number-reset-{phone}")]
         )
         .await?,
         0
@@ -481,7 +481,7 @@ async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
-            &[&format!("{missing}-request-password-reset")]
+            &[&format!("phone-number-reset-{missing}")]
         )
         .await?,
         1

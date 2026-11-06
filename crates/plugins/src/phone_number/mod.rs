@@ -160,9 +160,20 @@ alibi_core::impl_auth_plugin! {
         }
         async fn on_init(&self,ctx:&mut alibi_core::AuthInitContext<S>)->AuthResult<()> {
             ctx.set_metadata("phone-number.enabled",serde_json::json!(true));
+            ctx.register_user_create_transform(|mut user| {
+                if user.phone_number.is_some() && user.phone_number_verified != Some(true) {
+                    user.phone_number = None;
+                    user.phone_number_verified = Some(false);
+                }
+                Ok(user)
+            });
             ctx.register_user_update_transform(|_, mut update| {
                 if matches!(update.phone_number.as_ref(), Some(None)) {
                     update.phone_number_verified = Some(false);
+                } else if update.phone_number.is_some() && update.phone_number_verified != Some(true)
+                    && alibi_core::endpoint::current_endpoint_call_context().is_some_and(|call| call.path() != Some("/admin/update-user"))
+                {
+                    update.phone_number = None;
                 }
                 Ok(update)
             });
@@ -420,7 +431,7 @@ mod tests {
         assert_eq!(initial.phone_number, phone);
         assert_eq!(
             ctx.database
-                .get_latest_verification_by_identifier(phone)
+                .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                 .await
                 .unwrap()
                 .unwrap()
@@ -460,7 +471,7 @@ mod tests {
         let direct_code = outbox.0.lock().unwrap().last().unwrap().code.clone();
         assert_eq!(
             ctx.database
-                .get_latest_verification_by_identifier(phone)
+                .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                 .await
                 .unwrap()
                 .unwrap()
@@ -492,7 +503,7 @@ mod tests {
             json!({"status":true})
         );
         let reset_code = outbox.0.lock().unwrap().last().unwrap().code.clone();
-        let key = format!("{phone}-request-password-reset");
+        let key = format!("phone-number-reset-{phone}");
         assert_eq!(
             ctx.database
                 .get_latest_verification_by_identifier(&key)
@@ -651,7 +662,7 @@ mod tests {
         );
         let deadline = ctx
             .database
-            .get_latest_verification_by_identifier(phone)
+            .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
             .await
             .unwrap()
             .unwrap()
@@ -667,7 +678,7 @@ mod tests {
             );
             assert_eq!(
                 ctx.database
-                    .get_latest_verification_by_identifier(phone)
+                    .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                     .await
                     .unwrap()
                     .unwrap()
@@ -685,7 +696,7 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(phone)
+                .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                 .await
                 .unwrap()
                 .is_none()
@@ -693,7 +704,7 @@ mod tests {
         _ = ctx
             .database
             .create_verification(CreateVerification {
-                identifier: phone.into(),
+                identifier: format!("phone-number-otp-{phone}"),
                 value: "654321:0".into(),
                 expires_at: chrono::Utc::now() - Duration::seconds(1),
             })
@@ -947,7 +958,7 @@ mod tests {
         _ = ctx
             .database
             .create_verification(CreateVerification {
-                identifier: phone.into(),
+                identifier: format!("phone-number-otp-{phone}"),
                 value: "unrelated:100".into(),
                 expires_at: chrono::Utc::now() - Duration::days(1),
             })
@@ -965,7 +976,7 @@ mod tests {
             .unwrap();
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(phone)
+                .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                 .await
                 .unwrap()
                 .is_none()
@@ -1160,7 +1171,7 @@ mod tests {
             _ = ctx
                 .database
                 .create_verification(CreateVerification {
-                    identifier: phone.clone(),
+                    identifier: format!("phone-number-otp-{phone}"),
                     value: format!("654321:{attempts}"),
                     expires_at: chrono::Utc::now() + Duration::minutes(5),
                 })
@@ -1176,7 +1187,7 @@ mod tests {
             );
             assert!(
                 ctx.database
-                    .get_latest_verification_by_identifier(&phone)
+                    .get_latest_verification_by_identifier(&format!("phone-number-otp-{phone}"))
                     .await
                     .unwrap()
                     .is_none()

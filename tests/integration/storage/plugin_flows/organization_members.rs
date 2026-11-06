@@ -733,13 +733,13 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
         .tables(&["user", "account", "session", "organization"])
         .await?;
     let result = serde_json::to_value(auth.dispatch_endpoint(OrganizationPlugin::add_member_endpoint(&serde_json::from_value(json!({"userId":target.id,"organizationId":org,"role":[" member ","member","admin"]}))?)?,EndpointOptions::default()).await?.decode()?)?;
-    assert_eq!(result["role"], " member ,member,admin");
+    assert_eq!(result["role"], "member,member,admin");
     assert_eq!(result["userId"], target.id);
     assert_eq!(
         *hooks.0.lock().unwrap(),
         vec![
-            (" member ,member,admin".into(), target.id.clone()),
-            (" member ,member,admin".into(), target.id.clone())
+            ("member,member,admin".into(), target.id.clone()),
+            ("member,member,admin".into(), target.id.clone())
         ]
     );
     assert_eq!(
@@ -749,7 +749,7 @@ async fn organization_trusted_addition_preserves_literal_role_arrays_and_session
         )
         .await?
         .as_deref(),
-        Some(" member ,member,admin")
+        Some("member,member,admin")
     );
     assert_eq!(
         db.tables(&["user", "account", "session", "organization"])

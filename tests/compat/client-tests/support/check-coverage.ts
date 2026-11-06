@@ -172,7 +172,7 @@ if (process.env.BETTER_AUTH_UPDATE_CAPABILITIES === "1") {
   }));
   await writeArtifact(
     inventoryURL,
-    JSON.stringify({ upstreamVersion: "1.7.12", capabilities }, null, 2) + "\n",
+    JSON.stringify({ upstreamVersion: "1.7.18", capabilities }, null, 2) + "\n",
   );
   console.log(
     `Updated ${capabilities.length} capability records. Review every changed requirement.`,

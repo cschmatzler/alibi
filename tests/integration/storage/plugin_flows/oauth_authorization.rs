@@ -1728,6 +1728,39 @@ async fn assert_nonfinite_authorization<S: AuthSchema>(
             .headers
             .insert("accept".into(), "application/json".into());
         let response = Box::pin(auth.handle_request(physical)).await?;
+        assert_eq!(response.status, 415);
+        assert_eq!(body(&response)["code"], "UNSUPPORTED_MEDIA_TYPE");
+        assert!(response.headers.get_all("set-cookie").next().is_none());
+        let response = auth
+            .dispatch_endpoint(
+                alibi::endpoint::ServerEndpoint::<Value>::new("oauth-provider", "oauth2Authorize")
+                    .with_query_value(alibi::utils::json::parse_value(&raw)?),
+                alibi::endpoint::EndpointOptions {
+                    request: Some(request(
+                        "/oauth2/authorize",
+                        None,
+                        if authenticated { cookie } else { "" },
+                    )),
+                    headers: Some(
+                        [
+                            (
+                                "cookie".into(),
+                                if authenticated {
+                                    cookie.to_owned()
+                                } else {
+                                    String::new()
+                                },
+                            ),
+                            ("accept".into(), "application/json".into()),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                    ..Default::default()
+                },
+            )
+            .await?
+            .into_response()?;
         assert_eq!(response.status, 200);
         let target = url::Url::parse(ORIGIN)?.join(body(&response)["url"].as_str().unwrap())?;
         let target = if !authenticated {

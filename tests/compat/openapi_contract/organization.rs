@@ -681,11 +681,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invite_member_accepts_empty_role_inputs() {
+    async fn test_invite_member_rejects_empty_role_inputs_without_persisting_invitations() {
         let auth = create_test_auth().await;
-        let (owner_token, owner) =
+        let (owner_token, _) =
             signup_user(&auth, "role-owner@example.com", "password123", "Owner").await;
-        let owner_id = owner["user"]["id"].as_str().expect("owner id");
 
         let (status, create_body) = send_request(
             &auth,
@@ -702,9 +701,6 @@ mod tests {
         assert_eq!(status, 200, "create org failed: {create_body}");
         let org_id = create_body["id"].as_str().expect("org id");
 
-        // Published 1.7.6 admits both forms and persists an empty role string.
-        // Separate recipients ensure each reaches creation, not duplicate denial.
-        let mut invitations = Vec::new();
         for (role, email) in [
             (serde_json::json!(""), "empty-string@example.com"),
             (serde_json::json!([]), "empty-array@example.com"),
@@ -722,27 +718,9 @@ mod tests {
                 ),
             )
             .await;
-            assert_eq!(status, 200, "empty role should be admitted: {body}");
-            assert_eq!(body["role"], "");
-            assert_eq!(body["email"], email);
-            assert_eq!(body["organizationId"], org_id);
-            assert_eq!(body["inviterId"], owner_id);
-            assert_eq!(body["status"], "pending");
-            let invitation_id = body["id"].as_str().expect("invitation id");
-            let stored = auth
-                .context()
-                .database
-                .get_invitation_by_id(invitation_id)
-                .await
-                .expect("invitation lookup should succeed")
-                .expect("admitted invitation should be persisted");
-            assert_eq!(stored.role.as_deref(), Some(""));
-            assert_eq!(stored.email, email);
-            assert_eq!(stored.organization_id, org_id);
-            assert_eq!(stored.inviter_id, owner_id);
-            invitations.push(body);
+            assert_eq!(status, 400, "empty role should be rejected: {body}");
+            assert_eq!(body["code"], "ROLE_NOT_FOUND");
         }
-        assert_ne!(invitations[0]["id"], invitations[1]["id"]);
 
         let (status, listed) = send_request(
             &auth,
@@ -755,13 +733,7 @@ mod tests {
         .await;
         assert_eq!(status, 200, "list invitations failed: {listed}");
         let listed = listed.as_array().expect("invitation list");
-        assert_eq!(listed.len(), invitations.len());
-        for invitation in invitations {
-            assert!(
-                listed.contains(&invitation),
-                "persisted invitation: {invitation}"
-            );
-        }
+        assert!(listed.is_empty());
 
         let (status, denied) = send_request(
             &auth,

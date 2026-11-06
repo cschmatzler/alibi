@@ -10,6 +10,8 @@ pub(crate) struct EmailVerificationClaims {
     pub(crate) update_to: Option<String>,
     #[serde(rename = "requestType", skip_serializing_if = "Option::is_none")]
     pub(crate) request_type: Option<String>,
+    #[serde(rename = "userId", skip_serializing_if = "Option::is_none")]
+    pub(crate) user_id: Option<String>,
 }
 
 pub(crate) fn create_email_verification_token(
@@ -18,12 +20,14 @@ pub(crate) fn create_email_verification_token(
     update_to: Option<&str>,
     expires_in: Duration,
     request_type: Option<&str>,
+    user_id: Option<&str>,
 ) -> AuthResult<String> {
     let now = Utc::now();
     let mut claims = serde_json::to_value(EmailVerificationClaims {
         email: email.to_lowercase(),
         update_to: update_to.map(str::to_lowercase),
         request_type: request_type.map(str::to_owned),
+        user_id: user_id.map(str::to_owned),
     })?;
     let fields = claims
         .as_object_mut()
@@ -88,7 +92,7 @@ pub(crate) fn decode_email_verification_token(
             }
         }
     }
-    for field in ["updateTo", "requestType"] {
+    for field in ["updateTo", "requestType", "userId"] {
         if payload.get(field).is_some_and(|value| !value.is_string()) {
             return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
                 "Invalid verification claims",

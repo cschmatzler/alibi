@@ -419,6 +419,13 @@ pub(in crate::oauth) async fn link_social_core(
             link: Some(OAuthStateLink {
                 email: email.to_lowercase(),
                 user_id: session.user_id().to_string(),
+                encrypted_session_token: Some(
+                    crate::token_crypto::encrypt_with_config_for_purpose(
+                        session.token(),
+                        &ctx.config,
+                        crate::token_crypto::EncryptionPurpose::LinkSessionToken,
+                    )?,
+                ),
             }),
             disable_redirect: body.disable_redirect.unwrap_or(false),
         },

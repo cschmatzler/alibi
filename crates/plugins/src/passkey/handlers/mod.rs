@@ -63,7 +63,7 @@ fn generation_origin(
 
 fn passkey_registration_failure<T>() -> PasskeyHandlerResult<T> {
     response_code(
-        500,
+        400,
         codes::FAILED_TO_VERIFY_REGISTRATION,
         "Failed to verify registration",
     )

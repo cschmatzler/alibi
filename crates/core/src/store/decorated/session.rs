@@ -1,8 +1,25 @@
 use crate::AdapterRecord;
 use crate::field_policy::FieldValues;
-use crate::store::{AdapterEvent, PluginStore, SessionStore};
+use crate::store::{AdapterEvent, PluginStore, SessionRevocation, SessionStore};
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
 use async_trait::async_trait;
+
+struct CacheRevocation<'a, S: AuthSchema> {
+    store: &'a PluginStore<S>,
+    user_id: &'a str,
+    tokens: Vec<String>,
+}
+
+#[async_trait]
+impl<S: AuthSchema> crate::store::SessionRevocation for CacheRevocation<'_, S> {
+    async fn revoke(&self) -> AuthResult<()> {
+        self.store
+            .cached_user_revocation(self.user_id, self.tokens.clone())
+            .await?
+            .revoke()
+            .await
+    }
+}
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     async fn get_session_user_record(
@@ -142,6 +159,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.update_session_fields(token, fields).await
     }
     async fn create_session(&self, mut create_session: CreateSession) -> AuthResult<S::Session> {
+        for callback in &self.session_callbacks.callbacks {
+            callback
+                .before_create(&create_session, &self.projection_context, None)
+                .await?;
+        }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
@@ -335,6 +357,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         }
         _ = self.get_user_sessions_record(user_id).await;
         let tokens = self.cached_user_tokens(user_id).await?;
+        let revocation = CacheRevocation {
+            store: self,
+            user_id,
+            tokens,
+        };
         if self.session_uses_database() {
             if self.secondary().is_some() && self.config.session.preserve_in_database {
                 // Retained audit rows are not a new session end. Capture only
@@ -347,7 +374,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                         pending.push((session.token().to_owned(), works));
                     }
                 }
-                if !self.inner.end_user_sessions_preserving(user_id).await? {
+                if !self
+                    .inner
+                    .end_user_sessions_preserving_with_revocation(user_id, Some(&revocation))
+                    .await?
+                {
                     return Ok(());
                 }
                 for (token, works) in pending {
@@ -369,13 +400,18 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                         pending.push((session.token().to_owned(), works));
                     }
                 }
-                self.inner.delete_user_sessions(user_id).await?;
+                self.inner
+                    .delete_user_sessions_with_revocation(user_id, Some(&revocation))
+                    .await?;
                 for (token, works) in pending {
                     self.complete_session_deletion(&token, works).await?;
                 }
             }
         }
-        self.remove_cached_user_sessions(user_id, tokens).await
+        if !self.session_uses_database() {
+            revocation.revoke().await?;
+        }
+        Ok(())
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
         if self.config.session.stateless {

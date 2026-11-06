@@ -153,7 +153,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
     let verified = verified.user.unwrap();
     assert_eq!(verified.id, owner_id.as_str().unwrap());
     assert_eq!(verified.email.as_deref(), Some(new));
-    assert!(verified.email_verified);
+    assert!(!verified.email_verified);
     let original: Vec<Value> = serde_json::from_str(&before[0])?;
     let actual: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
     assert_eq!(actual.len(), original.len());
@@ -161,7 +161,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
         let mut expected = original.clone();
         if actual["id"] == owner_id {
             expected["email"] = json!(new);
-            expected["emailVerified"] = json!(1);
+            expected["emailVerified"] = json!(0);
             expected["updatedAt"] = actual["updatedAt"].clone();
         }
         assert_eq!(actual, &expected);
@@ -186,7 +186,7 @@ async fn server_change_email_delivers_and_redeems_only_authenticated_owner_chall
         .await
         .unwrap_err();
     assert_eq!(replay.error.status_code(), 401);
-    assert!(replay.error.to_string().contains("User not found"));
+    assert!(replay.error.to_string().contains("Invalid token"));
     assert_eq!(
         db.tables(&["user", "account", "session", "verification"])
             .await?,

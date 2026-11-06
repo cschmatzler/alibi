@@ -62,7 +62,34 @@ pub(crate) struct StoredRegistrationState {
     pub user: Option<super::PasskeyRegistrationUser>,
     #[serde(default)]
     pub context: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub registration_source: Option<RegistrationSource>,
     pub state: StoredRegistrationVerifier,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub(crate) enum RegistrationSource {
+    Session { token_hash: String },
+    Resolver,
+}
+
+pub(super) fn session_token_hash(token: &str) -> String {
+    use sha2::Digest;
+    URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(token.as_bytes()))
+}
+
+pub(super) async fn registration_session<S: alibi_core::AuthSchema>(
+    req: &impl alibi_core::session::SessionRequest,
+    ctx: &alibi_core::AuthContext<S>,
+) -> alibi_core::AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
+    if ctx.config.session.stateless {
+        ctx.require_cached_session(req).await
+    } else {
+        ctx.require_authoritative_session_record(req)
+            .await
+            .map(|(user, session)| (alibi_core::AuthenticatedUser::Stored(user), session))
+    }
 }
 
 /// Current registration verification state.
@@ -100,42 +127,50 @@ struct ChallengeCookieClaims {
     iat: usize,
 }
 
-pub(super) fn resolve_origin(
-    config: &PasskeyConfig,
-    req: &impl alibi_core::session::SessionRequest,
-) -> Option<String> {
-    if config.origin.is_empty() {
-        req.session_headers().get("origin").cloned()
-    } else {
-        Some(config.origin.clone())
-    }
-}
-
 /// Select the original signed origin only when it belongs to the explicit allowlist.
 pub(super) fn ceremony_origin(
     config: &PasskeyConfig,
     req: &impl alibi_core::session::SessionRequest,
     response: Option<&alibi_core::utils::json::JsValue>,
+    auth_config: &AuthConfig,
 ) -> Option<String> {
-    if config.origins.is_empty() {
-        return resolve_origin(config, req);
+    let reported = response
+        .and_then(|response| response.get("response"))
+        .and_then(|response| response.get("clientDataJSON"))
+        .and_then(alibi_core::utils::json::JsValue::as_str)
+        .and_then(|encoded| {
+            URL_SAFE_NO_PAD
+                .decode(encoded)
+                .or_else(|_| URL_SAFE.decode(encoded))
+                .ok()
+        })
+        .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
+        .and_then(|client| {
+            client
+                .get("origin")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+        });
+    if !config.origins.is_empty() || !config.origin.is_empty() {
+        return reported
+            .filter(|origin| config.origins.contains(origin) || config.origin == *origin)
+            .or_else(|| (!config.origin.is_empty()).then(|| config.origin.clone()))
+            .or_else(|| config.origins.first().cloned());
     }
-    let encoded = response?.get("response")?.get("clientDataJSON")?.as_str()?;
-    let bytes = URL_SAFE_NO_PAD
-        .decode(encoded)
-        .or_else(|_| URL_SAFE.decode(encoded))
-        .ok()?;
-    let client: Value = serde_json::from_slice(&bytes).ok()?;
-    let origin = client.get("origin")?.as_str()?;
-    if config.origins.iter().any(|allowed| allowed == origin)
-        || (!config.origin.is_empty() && config.origin == origin)
-    {
-        Some(origin.to_owned())
+    let base = if auth_config.base_url.is_empty() {
+        req.physical_request()
+            .and_then(alibi_core::AuthRequest::url)
+            .map(|url| url.origin().ascii_serialization())
     } else {
-        // Keep verification bound to configured policy even when the HTTP
-        // Origin header also claims the unlisted signed origin.
-        config.origins.first().cloned()
-    }
+        Url::parse(&auth_config.base_url)
+            .ok()
+            .map(|url| url.origin().ascii_serialization())
+    };
+    reported
+        .filter(|origin| {
+            base.as_ref() == Some(origin) || auth_config.trusted_origins.contains(origin)
+        })
+        .or(base)
 }
 
 pub(super) fn get_cookie_value(
@@ -516,10 +551,6 @@ pub(super) fn authentication_options_json(options: RequestChallengeResponse) -> 
     _ = root.insert(
         "timeout".to_owned(),
         Value::Number(OPTIONS_TIMEOUT_MS.into()),
-    );
-    _ = root.insert(
-        "userVerification".to_owned(),
-        Value::String("preferred".to_owned()),
     );
     _ = root.remove("hints");
     Ok(value)

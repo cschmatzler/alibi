@@ -1,7 +1,14 @@
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, phoneUser, readPhoneOtp, readPhoneState, uniquePhone } from "./helpers";
+import {
+  phoneClient,
+  phoneUser,
+  readPhoneOtp,
+  readPhoneState,
+  seedPhoneOwner,
+  uniquePhone,
+} from "./helpers";
 
 compatScenario(
   "phone password login distinguishes absent credential account from null and empty hashes",
@@ -47,8 +54,8 @@ compatScenario(
       email: ctx.uniqueEmail("phone-credential"),
       name: "Credential Phone",
       password: "password123",
-      phoneNumber: credentialPhone,
     });
+    await seedPhoneOwner(ctx, profile, signup.data!.user.id, credentialPhone);
     expect(signup.error).toBeNull();
     expect(
       (await credentialOwner.phoneNumber.sendOtp({ phoneNumber: credentialPhone })).error,

@@ -148,7 +148,12 @@ async fn server_link_social_account_preserves_owner_and_redeems_bound_pkce<B: Ba
         assert_eq!(
             payload,
             json!({"callbackURL":callback,"errorURL":callback,"requestSignUp":true,"application":"linked","nested":{"round":round},
-            "link":{"userId":owner_id,"email":"logical-link-owner@example.test"},"codeVerifier":verifier,"oauthState":params["state"],"expiresAt":payload["expiresAt"]})
+            "link":{"userId":owner_id,"email":"logical-link-owner@example.test","encryptedSessionToken":payload["link"]["encryptedSessionToken"]},"codeVerifier":verifier,"oauthState":params["state"],"expiresAt":payload["expiresAt"]})
+        );
+        assert!(
+            payload["link"]["encryptedSessionToken"]
+                .as_str()
+                .is_some_and(|value| !value.is_empty())
         );
         let window = started_at + 600_000..=finished_at + 600_000;
         assert!(window.contains(&payload["expiresAt"].as_i64().unwrap()));

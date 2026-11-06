@@ -195,7 +195,7 @@ async fn phone_number_request_and_proof_matrix<B: Backend>(db: Db) -> TestResult
     db.set_timestamp(
         "verification",
         "expiresAt",
-        ("identifier", phone),
+        ("identifier", &format!("phone-number-otp-{phone}")),
         chrono::Utc::now() - chrono::Duration::seconds(5),
     )
     .await?;
@@ -376,7 +376,7 @@ async fn latest_reset_code(db: &Db, phone: &str) -> TestResult<String> {
     Ok(db
         .text(
             "SELECT \"value\" FROM \"verification\" WHERE \"identifier\" = $1 ORDER BY \"createdAt\" DESC LIMIT 1",
-            &[&format!("{phone}-request-password-reset")],
+            &[&format!("phone-number-reset-{phone}")],
         )
         .await?
         .unwrap()
@@ -522,14 +522,9 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     let email = "retained-phone-owner@example.test";
     let old_password = "original-password123";
     let new_password = "changed-password123";
-    let owner = call(
+    let owner = signup_with_legacy_phone(
         &auth,
-        request(
-            "/sign-up/email",
-            Some(json!({"email":email,"name":"Retained owner","password":old_password,"phoneNumber":phone})),
-            "",
-        ),
-        200,
+        json!({"email":email,"name":"Retained owner","password":old_password,"phoneNumber":phone}),
     )
     .await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
@@ -599,7 +594,7 @@ async fn phone_password_reset_retains_established_sessions_by_default<B: Backend
     assert!(issued.headers().get_all("set-cookie").next().is_none());
     let delivery = outbox.last();
     assert_eq!(delivery.phone_number, phone);
-    let identifier = format!("{phone}-request-password-reset");
+    let identifier = format!("phone-number-reset-{phone}");
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
@@ -780,7 +775,7 @@ async fn phone_signin_distinguishes_missing_null_and_empty_credentials<B: Backen
             .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
             .build()
             .await?;
-        let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"phone-owner@example.test","password":PASSWORD,"name":"Phone Owner","phoneNumber":"+15550000101"})),""),200).await;
+        let owner=signup_with_legacy_phone(&auth,json!({"email":"phone-owner@example.test","password":PASSWORD,"name":"Phone Owner","phoneNumber":"+15550000101"})).await;
         let id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
         _ = call(
             &auth,
@@ -974,7 +969,7 @@ async fn phone_reset_callback_rejection_follows_configured_session_revocation<B:
         .build()
         .await?;
     let phone = "+15550000104";
-    let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"reset-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+    let owner=signup_with_legacy_phone(&auth,json!({"email":"reset-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})).await;
     let sibling = call(
         &auth,
         request(
@@ -1114,7 +1109,7 @@ async fn phone_external_verifier_authorizes_password_reset_and_drops_local_code<
         .build()
         .await?;
     let phone = "+15550000105";
-    let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"provider-reset@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+    let owner=signup_with_legacy_phone(&auth,json!({"email":"provider-reset@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})).await;
     _ = call(
         &auth,
         request(
@@ -1148,7 +1143,7 @@ async fn phone_external_verifier_authorizes_password_reset_and_drops_local_code<
     )
     .await;
     let code = outbox.last().code;
-    let identifier = format!("{phone}-request-password-reset");
+    let identifier = format!("phone-number-reset-{phone}");
     let proof = db
         .text(
             "SELECT \"expiresAt\" FROM \"verification\" WHERE \"identifier\"=$1",
@@ -1211,7 +1206,7 @@ async fn phone_external_verifier_authorizes_password_reset_and_drops_local_code<
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
-            &[phone]
+            &[&format!("phone-number-otp-{phone}")]
         )
         .await?,
         1
@@ -1263,7 +1258,7 @@ async fn phone_verifier_rejection_preserves_local_proof_until_successful_retry<B
             .build()
             .await?;
         let phone = "+15550000106";
-        let owner=call(&auth,request("/sign-up/email",Some(json!({"email":"retry-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})),""),200).await;
+        let owner=signup_with_legacy_phone(&auth,json!({"email":"retry-phone@example.test","password":PASSWORD,"name":"Owner","phoneNumber":phone})).await;
         _ = call(
             &auth,
             request(
@@ -1348,7 +1343,10 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
     #[async_trait]
     impl SendPhoneOtp for Application {
         async fn send(&self, d: &PhoneOtpDelivery, c: &CallbackContext) -> AuthResult<()> {
-            assert!(self.capture("sender", c, &d.phone_number).await?);
+            assert!(
+                self.capture("sender", c, &format!("phone-number-otp-{}", d.phone_number))
+                    .await?
+            );
             self.sent.lock().unwrap().push(d.clone());
             Ok(())
         }
@@ -1356,7 +1354,13 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
     #[async_trait]
     impl PhoneOtpVerifier for Application {
         async fn verify(&self, d: &PhoneOtpDelivery, c: &CallbackContext) -> AuthResult<bool> {
-            let live = self.capture("verifier", c, &d.phone_number).await?;
+            let live = self
+                .capture(
+                    "verifier",
+                    c,
+                    &format!("phone-number-otp-{}", d.phone_number),
+                )
+                .await?;
             Ok(live
                 && self
                     .sent
@@ -1373,7 +1377,15 @@ async fn phone_callback_context_preserves_proof_consumption_and_committed_owner<
             d: &PhoneNumberVerification,
             c: &CallbackContext,
         ) -> AuthResult<()> {
-            assert!(!self.capture("completed", c, &d.phone_number).await?);
+            assert!(
+                !self
+                    .capture(
+                        "completed",
+                        c,
+                        &format!("phone-number-otp-{}", d.phone_number)
+                    )
+                    .await?
+            );
             assert_eq!(self.raw.count_where("SELECT COUNT(*) FROM \"user\" WHERE id=$1 AND \"phoneNumber\"=$2 AND \"phoneNumberVerified\"=1",&[&d.user.id,&d.phone_number]).await.map_err(|e| AuthError::internal(e.to_string()))?,1);
             assert_eq!(
                 self.raw
@@ -1540,7 +1552,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
     assert_eq!(
         db.text(
             "SELECT \"value\" FROM \"verification\" WHERE \"identifier\"=$1",
-            &[phone]
+            &[&format!("phone-number-otp-{phone}")]
         )
         .await?
         .as_deref(),
@@ -1558,7 +1570,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
             Some(json!({"phoneNumber":phone,"code":delivery.code,"updatePhoneNumber":true})),
             &jar,
         ),
-        200,
+        401,
     )
     .await;
     assert!(
@@ -1571,7 +1583,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
         db.text("SELECT \"phoneNumber\" FROM \"user\" WHERE id=$1", &[&id])
             .await?
             .as_deref(),
-        Some(phone)
+        None
     );
     assert_eq!(
         db.count_where(
@@ -1579,7 +1591,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
             &[&id]
         )
         .await?,
-        1
+        0
     );
     assert_eq!(
         db.count_where(
@@ -1592,15 +1604,13 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"verification\" WHERE \"identifier\"=$1",
-            &[phone]
+            &[&format!("phone-number-otp-{phone}")]
         )
         .await?,
         0
     );
     let receipts = hook.0.lock().unwrap().clone();
-    assert_eq!(receipts.len(), 1);
-    assert_eq!(receipts[0]["user"]["id"], id);
-    assert_eq!(receipts[0]["phone"], phone);
+    assert!(receipts.is_empty());
     let after = db
         .tables(&["user", "account", "session", "verification"])
         .await?;
@@ -1619,7 +1629,7 @@ async fn revoked_compact_owner_consumes_local_phone_proof_without_recreating_bro
             .await?,
         after
     );
-    assert_eq!(hook.0.lock().unwrap().len(), 1);
+    assert!(hook.0.lock().unwrap().is_empty());
     for (before, now) in baseline.iter().zip(after.iter()) {
         let before: Vec<Value> = serde_json::from_str(before)?;
         let now: Vec<Value> = serde_json::from_str(now)?;
@@ -1713,7 +1723,7 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
                 .build()
                 .await?;
             let phone = "+15554443333";
-            let signed = call(&auth,request("/sign-up/email",Some(json!({"email":"background-phone@example.test","name":"Phone owner","password":PASSWORD,"phoneNumber":phone})),""),200).await;
+            let signed = signup_with_legacy_phone(&auth,json!({"email":"background-phone@example.test","name":"Phone owner","password":PASSWORD,"phoneNumber":phone})).await;
             let foreign = signup(&auth, "background-foreign@example.test").await;
             if route == "/phone-number/request-password-reset" {
                 let _ = call(
@@ -1799,9 +1809,9 @@ async fn phone_background_notification_lifecycle<B: Backend>(db: Db) -> TestResu
             assert_eq!(marker.as_deref(), Some("owned-context"));
             assert_eq!(delivery.phone_number, phone);
             let identifier = if route == "/phone-number/request-password-reset" {
-                format!("{phone}-request-password-reset")
+                format!("phone-number-reset-{phone}")
             } else {
-                phone.to_owned()
+                format!("phone-number-otp-{phone}")
             };
             let proof = db.tables(&["verification"]).await?;
             assert_eq!(
@@ -1887,7 +1897,7 @@ async fn phone_trusted_device_completion_forwards_rotated_owned_proof<B: Backend
         .build()
         .await?;
     let number = "+15556667777";
-    let signed = call(&auth,request("/sign-up/email",Some(json!({"email":"trusted-phone@example.test","name":"Phone owner","password":PASSWORD,"phoneNumber":number})),""),200).await;
+    let signed = signup_with_legacy_phone(&auth,json!({"email":"trusted-phone@example.test","name":"Phone owner","password":PASSWORD,"phoneNumber":number})).await;
     let id = body(&signed)["user"]["id"].as_str().unwrap().to_owned();
     let foreign = signup(&auth, "trusted-phone-foreign@example.test").await;
     let _ = call(
@@ -2233,7 +2243,7 @@ async fn server_phone_otp_delivery_persists_consumable_proof_without_browser_aut
     assert!(delivered.code.bytes().all(|byte| byte.is_ascii_digit()));
     let proof = auth
         .store()
-        .get_verification_by_identifier(phone)
+        .get_verification_by_identifier(&format!("phone-number-otp-{phone}"))
         .await?
         .unwrap();
     use alibi::AuthVerification;
@@ -2301,16 +2311,9 @@ async fn server_phone_sign_in_publishes_owned_usable_sessions<B: Backend>(db: Db
     .await?;
     let phone = "+15550000377";
     let email = "server-phone-login@example.test";
-    let owner = Box::pin(call(
+    let owner = Box::pin(signup_with_legacy_phone(
         &auth,
-        request(
-            "/sign-up/email",
-            Some(
-                json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
-            ),
-            "",
-        ),
-        200,
+        json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
     ))
     .await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
@@ -2432,16 +2435,9 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     .await?;
     let phone = "+15550000477";
     let email = "server-phone-verification@example.test";
-    let owner = Box::pin(call(
+    let owner = Box::pin(signup_with_legacy_phone(
         &auth,
-        request(
-            "/sign-up/email",
-            Some(
-                json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
-            ),
-            "",
-        ),
-        200,
+        json!({"email":email,"password":PASSWORD,"name":"Phone Owner","phoneNumber":phone}),
     ))
     .await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
@@ -2495,7 +2491,7 @@ async fn server_phone_verification_preserves_consumption_and_authority<B: Backen
     use alibi::AuthVerification;
     assert_eq!(
         auth.store()
-            .get_verification_by_identifier(phone)
+            .get_verification_by_identifier(&format!("phone-number-otp-{phone}"))
             .await?
             .unwrap()
             .value(),

@@ -28,7 +28,9 @@ compatScenario(
     expect(before.sessions).toHaveLength(1);
     expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
     const code = await readPhoneOtp(ctx, phoneNumber);
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toHaveLength(1);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toHaveLength(1);
     const responses = await raceOneTimeProof(
       ctx,
       authProfilePath(profile) + "/phone-number/verify",
@@ -47,7 +49,9 @@ compatScenario(
     expect(after.sessions).toHaveLength(2);
     expect(after.sessions).toContainEqual(before.sessions[0]!);
     expect(await readPhoneState(ctx, profile, foreign.data!.user.id)).toEqual(foreignBefore);
-    expect(await ctx.readVerificationState({ identifier: phoneNumber })).toEqual([]);
+    expect(
+      await ctx.readVerificationState({ identifier: `phone-number-otp-${phoneNumber}` }),
+    ).toEqual([]);
     const replay = await owner.phoneNumber.verify({ phoneNumber, code });
     expect(replay.error!.code).toBe("OTP_NOT_FOUND");
     expect(await readPhoneState(ctx, profile, userId)).toEqual(after);

@@ -169,7 +169,7 @@ async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> Result<alibi_core::SessionView, AuthError> {
-    ctx.require_cached_session(req)
+    ctx.require_authoritative_session(req)
         .await
         .map(|(_, session)| session)
 }
@@ -194,6 +194,28 @@ pub async fn resolve_oauth_account_key(
             .map_err(AuthError::internal)?;
         response.user.id = super::providers::remaining_profile::raw_subject(Some(&subject))
             .map_err(AuthError::internal)?;
+    } else if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.discovery_openid_scope && policy.verify_grant_id_token)
+        && let Some(token) = tokens.id_token.as_deref()
+    {
+        use base64::Engine;
+        let claims = token
+            .split('.')
+            .nth(1)
+            .and_then(|payload| {
+                base64::engine::general_purpose::URL_SAFE_NO_PAD
+                    .decode(payload)
+                    .ok()
+            })
+            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+            .ok_or_else(|| AuthError::internal("Invalid provider subject"))?;
+        claims
+            .get("sub")
+            .and_then(serde_json::Value::as_str)
+            .ok_or_else(|| AuthError::internal("Invalid provider subject"))?
+            .clone_into(&mut response.user.id);
     } else if let Some(subject) = provider.account_subject {
         response.user.id = subject(&response.data).map_err(AuthError::internal)?;
     }

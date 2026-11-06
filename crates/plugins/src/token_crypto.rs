@@ -16,6 +16,7 @@ pub(crate) enum EncryptionPurpose {
     ProxyState,
     ProxyPackage,
     ProxyProfile,
+    LinkSessionToken,
 }
 
 impl EncryptionPurpose {
@@ -25,6 +26,7 @@ impl EncryptionPurpose {
             Self::ProxyState => "oauth-proxy-state",
             Self::ProxyPackage => "oauth-proxy-package",
             Self::ProxyProfile => "oauth-proxy-profile",
+            Self::LinkSessionToken => "oauth-link-session-token",
         }
     }
 }

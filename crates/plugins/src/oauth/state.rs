@@ -24,6 +24,12 @@ pub(crate) struct OAuthStateLink {
     pub email: String,
     #[serde(rename = "userId")]
     pub user_id: String,
+    #[serde(
+        rename = "encryptedSessionToken",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub encrypted_session_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

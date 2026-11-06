@@ -96,8 +96,8 @@ mod tests {
         }
     }
 
-    // The enabled phone schema accepts ownership claims, but its verification field
-    // is server-owned. The disabled instance treats these as unregistered inputs.
+    // Signup cannot claim an unproven sign-in number. Disabled instances ignore
+    // these unregistered fields.
     #[tokio::test]
     async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() {
         use alibi::plugins::EmailPasswordPlugin;
@@ -128,13 +128,9 @@ mod tests {
 
         for (instance, auth) in [("enabled", &enabled), ("disabled", &disabled)] {
             for (index, (input, expected, rejected)) in [
-                (
-                    json!({"phoneNumber":"+12025550911"}),
-                    Some("+12025550911"),
-                    false,
-                ),
-                (json!({"phoneNumber":1234}), Some("1234"), false),
-                (json!({"phoneNumber":true}), Some("1"), false),
+                (json!({"phoneNumber":"+12025550911"}), None, true),
+                (json!({"phoneNumber":1234}), None, true),
+                (json!({"phoneNumber":true}), None, true),
                 (
                     json!({"phoneNumber":null,"phoneNumberVerified":false}),
                     None,
@@ -170,7 +166,11 @@ mod tests {
                     assert_eq!(response.status, 400);
                     assert_eq!(
                         payload,
-                        json!({"code":"FIELD_NOT_ALLOWED","message":"phoneNumberVerified is not allowed to be set"})
+                        if input.get("phoneNumberVerified").is_some() {
+                            json!({"code":"FIELD_NOT_ALLOWED","message":"phoneNumberVerified is not allowed to be set"})
+                        } else {
+                            json!({"code":"PHONE_NUMBER_CANNOT_BE_SET","message":"Phone number can only be set by verifying it"})
+                        }
                     );
                     assert!(stored.is_none());
                     assert!(!response.headers.contains_key("set-cookie"));
@@ -197,10 +197,8 @@ mod tests {
         }
     }
 
-    // The real adapter owns numeric text affinity. The same JS-rounded number can
-    // have a distinct stored value depending on the primitive binding type.
     #[tokio::test]
-    async fn numeric_phone_signup_uses_actual_adapter_text_coercion() {
+    async fn numeric_phone_signup_cannot_claim_an_unproven_number() {
         use alibi::plugins::EmailPasswordPlugin;
         use alibi::store::NumericTextInput;
         use alibi::{AuthRequest, HttpMethod};
@@ -236,19 +234,19 @@ mod tests {
                 .unwrap(),
             "9223372036854775807"
         );
-        for (index, (literal, expected)) in [
-            ("1.0", "1"),
-            ("1e3", "1000"),
-            ("1e-5", "1.0e-05"),
-            ("1e20", "1.0e+20"),
-            ("-0.0", "0.0"),
-            ("2147483648", "2147483648"),
-            ("1e14", "100000000000000"),
-            ("2251799813685247", "2251799813685247"),
-            ("-2251799813685248", "-2251799813685248"),
-            ("47.49", "47.49"),
-            ("1e400", "Inf"),
-            ("-1e400", "-Inf"),
+        for (index, literal) in [
+            "1.0",
+            "1e3",
+            "1e-5",
+            "1e20",
+            "-0.0",
+            "2147483648",
+            "1e14",
+            "2251799813685247",
+            "-2251799813685248",
+            "47.49",
+            "1e400",
+            "-1e400",
         ]
         .into_iter()
         .enumerate()
@@ -265,19 +263,27 @@ mod tests {
                     .insert("origin".into(), "http://localhost:3000".into()),
             );
             let response = auth.handle_request(req).await.unwrap();
-            assert_eq!(response.status, 200, "raw phone number {literal}");
+            if literal != "-0.0" {
+                assert_eq!(response.status, 400, "raw phone number {literal}");
+                assert!(
+                    auth.store()
+                        .get_user_by_email(&email)
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+                assert!(!response.headers.contains_key("set-cookie"));
+                continue;
+            }
+            assert_eq!(response.status, 200);
             let user = auth
                 .store()
                 .get_user_by_email(&email)
                 .await
                 .unwrap()
                 .unwrap();
-            assert_eq!(
-                user.phone_number(),
-                Some(expected),
-                "raw phone number {literal}"
-            );
-            assert_eq!(user.phone_number_verified(), None);
+            assert_eq!(user.phone_number(), None);
+            assert_eq!(user.phone_number_verified(), Some(false));
             let payload: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
             let token = (*(payload).get("token").unwrap_or(&serde_json::Value::Null))
                 .as_str()

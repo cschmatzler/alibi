@@ -255,17 +255,21 @@ impl OAuthIdTokenVerifier for LineVerifier {
         if let Some(nonce) = nonce.filter(|value| !value.is_empty()) {
             body.push(("nonce", nonce));
         }
-        let response: Value = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| error.to_string())?
             .post(&self.endpoint)
             .form(&body)
             .send()
             .await
             .map_err(|error| error.to_string())?
             .error_for_status()
-            .map_err(|error| error.to_string())?
-            .json()
-            .await
             .map_err(|error| error.to_string())?;
+        if response.status().is_redirection() {
+            return Ok(false);
+        }
+        let response: Value = response.json().await.map_err(|error| error.to_string())?;
         if response.get("aud").and_then(Value::as_str) != Some(self.client_id.as_str()) {
             return Ok(false);
         }

@@ -447,17 +447,15 @@ compatScenario(
 
     const path = `/api/auth/callback/google?${new URLSearchParams({ code: "compat-code", state: issued })}`;
     const callback = await ctx.rawRequest({ actor: "rotated-owner", path, redirect: "manual" });
-    expect(callback).toMatchObject({ status: 302, location: "/retired-grant-complete" });
+    expect(callback.status).toBe(302);
+    expect(new URL(callback.location!, ctx.baseURL).searchParams.get("error")).toBe(
+      "unable_to_link_account",
+    );
 
     const after = await ctx.readUserState({ userId: ownerId });
-    expect((after as { accounts: unknown[] }).accounts).toHaveLength(
-      (before as { accounts: unknown[] }).accounts.length + 1,
+    expect((after as { accounts: unknown[] }).accounts).toEqual(
+      (before as { accounts: unknown[] }).accounts,
     );
-    expect(
-      (
-        after as { accounts: { accountId: string; providerId: string; userId: string }[] }
-      ).accounts.find((row) => row.providerId === "google"),
-    ).toMatchObject({ accountId: providerId, providerId: "google", userId: ownerId });
     expect((after as { sessions: unknown }).sessions).toEqual(
       (before as { sessions: unknown }).sessions,
     );

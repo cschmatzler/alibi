@@ -546,7 +546,11 @@ fn dynamic_origin_pattern_contract() {
         ("myapp://client:123/cb", "myapp://client/cb", false),
         ("myapp://user@client/cb", "myapp://client/cb", false),
         ("myapp://client/cb?q=1", "myapp://client/cb", true),
-        ("myapp://client/cb?q=1", "myapp://*", false),
+        ("myapp://client/cb?q=1", "myapp://*", true),
+        ("myapp://user@client/cb", "myapp://*", false),
+        ("https://192.168.attacker.test", "https://192.168.*", false),
+        ("https://192.168.1.2", "https://192.168.*", true),
+        ("myapp://192.168.999.2/cb", "myapp://192.168.*", false),
     ] {
         let cfg = AuthConfig::new(SECRET)
             .base_url("https://unrelated.test")

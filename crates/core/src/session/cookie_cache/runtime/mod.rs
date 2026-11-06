@@ -195,4 +195,7 @@ pub fn set_issuance_preference(request: &impl SessionRequest, dont_remember: boo
     request
         .extensions()
         .insert(IssuancePreference(dont_remember));
+    if let Some(call) = crate::endpoint::current_endpoint_call_context() {
+        call.extensions().insert(IssuancePreference(dont_remember));
+    }
 }

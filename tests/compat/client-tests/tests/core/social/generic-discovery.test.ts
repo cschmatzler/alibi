@@ -344,6 +344,7 @@ for (const variant of [
       );
       const subject = ctx.uniqueToken("oidc-subject");
       const email = ctx.uniqueEmail("oidc");
+      const issuedAt = Math.floor(Date.now() / 1000);
       const token = await new SignJWT({
         sub: subject,
         email,
@@ -359,7 +360,8 @@ for (const variant of [
           variant === "issuer" ? "https://wrong.example.invalid" : "https://issuer.example.invalid",
         )
         .setAudience(variant === "audience" ? "wrong-client" : "discovery-client")
-        .setExpirationTime(variant === "expired" ? 1 : 4102444800)
+        .setIssuedAt(issuedAt)
+        .setExpirationTime(issuedAt + (variant === "expired" ? -60 : 3600))
         .sign(key);
       await control(ctx, {
         profile: { id: "custom-id", sub: subject, email, name: "OIDC Name", emailVerified: true },

@@ -46,12 +46,17 @@ use webauthn_rs_core::proto::AttestationConveyancePreference;
 use webauthn_rs_core::proto::COSEAlgorithm;
 use webauthn_rs_core::proto::RequestRegistrationExtensions;
 use webauthn_rs_core::proto::UserVerificationPolicy;
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Keep ceremony options separate from the authoritative registration source and plugin configuration"
+)]
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
     requested_context: Option<&str>,
     passkey_name: Option<&str>,
     authenticator_attachment: Option<&str>,
     extensions: Option<Value>,
+    registration_source: Option<crate::passkey::webauthn::RegistrationSource>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
@@ -132,6 +137,7 @@ pub(in crate::passkey) async fn generate_register_options_core(
         user_id: user.id.clone(),
         user: Some(user.clone()),
         context: requested_context.map(str::to_owned),
+        registration_source,
         state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
             policy: crate::passkey::raw_none::RawNonePolicy {
                 challenge: base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -223,9 +229,13 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     };
 
     let Some(origin) =
-        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref())
+        crate::passkey::webauthn::ceremony_origin(config, req, body.response.as_ref(), &ctx.config)
     else {
-        return response_null(400);
+        return response_code(
+            500,
+            codes::ORIGIN_NOT_CONFIGURED,
+            "Passkey origin is not configured. Set the `origin` option of the passkey plugin or configure `baseURL`.",
+        );
     };
 
     let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
@@ -252,11 +262,26 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     let optional_session_owner = if config.registration.require_session {
         None
     } else {
-        match ctx.require_cached_session(req).await {
-            Ok((user, _)) => Some(user.id().into_owned()),
+        let session = match Box::pin(crate::passkey::webauthn::registration_session(req, ctx)).await
+        {
+            Ok(session) => Some(session),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
             Err(error) => return Err(error),
+        };
+        if ctx.config.session.has_server_session_store() {
+            use crate::passkey::webauthn::{RegistrationSource, session_token_hash};
+            let matches = match &stored_state.registration_source {
+                Some(RegistrationSource::Resolver) => true,
+                Some(RegistrationSource::Session { token_hash }) => session
+                    .as_ref()
+                    .is_some_and(|(_, session)| session_token_hash(&session.token) == *token_hash),
+                None => false,
+            };
+            if !matches {
+                return response_code(401, codes::SESSION_REQUIRED, "Session required");
+            }
         }
+        session.map(|(user, _)| user.id().into_owned())
     };
     let authenticated_owner = authenticated_owner.or(optional_session_owner.as_deref());
     if authenticated_owner.is_some_and(|owner| stored_state.user_id != owner) {
@@ -283,6 +308,24 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             Ok(registration) => registration,
             Err(_) => return passkey_registration_failure(),
         };
+
+    if config.authenticator_selection.user_verification.as_deref() == Some("required") {
+        let attestation = crate::passkey::raw_none::decode_first(
+            registration.response.attestation_object.as_ref(),
+        );
+        let verified = attestation.is_ok_and(|(object, _)| {
+            if let serde_cbor_2::Value::Map(object) = object
+                && let Some(serde_cbor_2::Value::Bytes(data)) =
+                    object.get(&serde_cbor_2::Value::Text("authData".into()))
+            {
+                return data.get(32).is_some_and(|flags| flags & 4 != 0);
+            }
+            false
+        });
+        if !verified {
+            return passkey_registration_failure();
+        }
+    }
 
     let raw_registration = match &stored_state.state {
         StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
@@ -625,6 +668,10 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     match outcome {
         Ok(value) => Ok(PasskeyHandlerOutcome::Success(value)),
         Err(error) if crate::passkey::registration::is_application_error(&error) => Err(error),
-        Err(_) => passkey_registration_failure(),
+        Err(_) => response_code(
+            500,
+            codes::FAILED_TO_VERIFY_REGISTRATION,
+            "Failed to verify registration",
+        ),
     }
 }

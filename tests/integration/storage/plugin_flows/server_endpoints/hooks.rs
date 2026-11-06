@@ -299,12 +299,14 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
                 assert_eq!(
                     output.headers().get_all("set-cookie").collect::<Vec<_>>(),
                     if mode == Mode::Patch {
-                        [
+                        vec![
+                            "hook1=before; Path=/; HttpOnly",
+                            "hook2=before; Path=/; HttpOnly",
                             "hook1=after; Path=/; HttpOnly",
                             "hook2=after; Path=/; HttpOnly",
                         ]
                     } else {
-                        [
+                        vec![
                             "hook1=before; Path=/; HttpOnly",
                             "hook2=before; Path=/; HttpOnly",
                         ]
@@ -341,7 +343,7 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
                 if mode == Mode::AfterApi {
                     assert_eq!(
                         cookies,
-                        "hook1=after; Path=/; HttpOnly|hook2=after; Path=/; HttpOnly"
+                        "hook1=before; Path=/; HttpOnly|hook2=before; Path=/; HttpOnly|hook1=after; Path=/; HttpOnly|hook2=after; Path=/; HttpOnly"
                     );
                 } else {
                     assert_eq!(cookies, "hook2=before; Path=/; HttpOnly");

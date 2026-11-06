@@ -8,6 +8,8 @@ pub struct VercelOptions {
     pub client_id: String,
     pub client_secret: Option<String>,
     pub client_key: Option<String>,
+    pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
+    pub client_assertion: Option<super::OAuthClientAssertion>,
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
     /// Trusted application transport override; it does not change profile semantics.
@@ -22,6 +24,8 @@ impl VercelOptions {
             client_id: client_id.into(),
             client_secret,
             client_key: None,
+            token_endpoint_auth: None,
+            client_assertion: None,
             authorization_endpoint: None,
             redirect_uri: None,
             user_info_endpoint: None,
@@ -58,7 +62,8 @@ impl OAuthProvider {
             disable_default_scopes: false,
             authorization_code_client_key: options.client_key,
             redirect_uri: options.redirect_uri,
-            token_endpoint_auth: Some(
+            client_assertion: options.client_assertion,
+            token_endpoint_auth: Some(options.token_endpoint_auth.unwrap_or_else(|| {
                 if options
                     .client_secret
                     .as_ref()
@@ -67,8 +72,8 @@ impl OAuthProvider {
                     OAuthTokenEndpointAuth::ClientSecretPost
                 } else {
                     OAuthTokenEndpointAuth::None
-                },
-            ),
+                }
+            })),
             allow_missing_access_token: true,
             preserve_raw_email_errors: true,
             ..OAuthAuthorizationPolicy::default()

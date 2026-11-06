@@ -30,7 +30,7 @@ backend_tests!(
     cache_raw_and_specific_max_age_keep_distinct_lifetimes,
     verification_renews_original_cached_snapshot_and_publishes_it_to_later_hooks,
     pending_factor_discards_completed_cache_authority_until_genuine_otp,
-    factor_ordinary_cache_survives_revocation_while_disable_requires_physical_browser,
+    factor_mutations_require_unrevoked_browser_authority,
     revoked_compact_ordinary_consumers_keep_their_query_admission_contract
 );
 postgres_tests!(
@@ -1304,11 +1304,7 @@ async fn pending_factor_discards_completed_cache_authority_until_genuine_otp<B: 
     B::close(connection).await
 }
 
-async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physical_browser<
-    B: Backend,
->(
-    db: Db,
-) -> TestResult {
+async fn factor_mutations_require_unrevoked_browser_authority<B: Backend>(db: Db) -> TestResult {
     fn fast_cached<B: Backend>(
         connection: &B::Connection,
         strategy: CookieCacheStrategy,
@@ -1358,12 +1354,33 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
             .await?,
         1
     );
-    let enabled = call(
+    let rejected = call(
         &auth,
         request(
             "/two-factor/enable",
             Some(json!({"password":PASSWORD,"method":"otp"})),
             &cookies(&owner),
+        ),
+        401,
+    )
+    .await;
+    assert_eq!(body(&rejected)["code"], "UNAUTHORIZED");
+    let signed_in = call(
+        &auth,
+        request(
+            "/sign-in/email",
+            Some(json!({"email":"owner@example.test","password":PASSWORD})),
+            "",
+        ),
+        200,
+    )
+    .await;
+    let enabled = call(
+        &auth,
+        request(
+            "/two-factor/enable",
+            Some(json!({"password":PASSWORD,"method":"otp"})),
+            &cookies(&signed_in),
         ),
         200,
     )
@@ -1373,11 +1390,6 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     let replacement = current["session"]["token"].as_str().unwrap();
     assert_ne!(replacement, old);
     assert_eq!(current["user"]["twoFactorEnabled"], true);
-    assert_eq!(
-        db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[replacement])
-            .await?,
-        1
-    );
     _ = call(
         &auth,
         request("/two-factor/send-otp", Some(json!({})), &jar),
@@ -1385,14 +1397,18 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     )
     .await;
     let otp = delivery.0.lock().unwrap().clone().unwrap();
+    assert_eq!(
+        db.execute("DELETE FROM \"session\" WHERE \"token\"=$1", &[replacement])
+            .await?,
+        1
+    );
     let verified = call(
         &auth,
         request("/two-factor/verify-otp", Some(json!({"code":otp})), &jar),
-        200,
+        401,
     )
     .await;
-    assert_eq!(body(&verified)["token"], replacement);
-    assert_eq!(body(&verified)["user"]["id"], id);
+    assert_eq!(body(&verified)["message"], "Invalid two factor cookie");
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM \"session\" WHERE \"userId\"=$1",
@@ -1430,7 +1446,7 @@ async fn factor_ordinary_cache_survives_revocation_while_disable_requires_physic
     _ = call(
         &auth,
         request("/two-factor/verify-otp", Some(json!({"code":otp})), &jar),
-        400,
+        401,
     )
     .await;
     assert_eq!(

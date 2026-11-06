@@ -14,6 +14,7 @@ pub struct CloudflareOptions {
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
     pub token_endpoint_auth_method: Option<OAuthTokenEndpointAuth>,
+    pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
     /// Trusted transport override, retaining Cloudflare's API envelope mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original API result. Its ID cannot replace the raw subject.
@@ -30,6 +31,7 @@ impl CloudflareOptions {
             authorization_endpoint: None,
             redirect_uri: None,
             token_endpoint_auth_method: None,
+            token_endpoint_auth: None,
             user_info_endpoint: None,
             map_profile_to_user: None,
         }
@@ -60,13 +62,16 @@ impl OAuthProvider {
     #[must_use]
     pub fn cloudflare_with_options(options: CloudflareOptions) -> Self {
         let client_secret = options.client_secret.unwrap_or_default();
-        let authentication = options.token_endpoint_auth_method.unwrap_or({
-            if client_secret.is_empty() {
-                OAuthTokenEndpointAuth::None
-            } else {
-                OAuthTokenEndpointAuth::ClientSecretBasic
-            }
-        });
+        let authentication = options
+            .token_endpoint_auth
+            .or(options.token_endpoint_auth_method)
+            .unwrap_or({
+                if client_secret.is_empty() {
+                    OAuthTokenEndpointAuth::None
+                } else {
+                    OAuthTokenEndpointAuth::ClientSecretBasic
+                }
+            });
         let user_info_url = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://api.cloudflare.com/client/v4/user".into());

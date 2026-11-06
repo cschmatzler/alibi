@@ -16,7 +16,7 @@ backend_tests!(
     device_missing_owner_preserves_approved_grant_for_recovery,
     device_empty_application_codes_complete_real_grant,
     device_fractional_durations_preserve_persisted_milliseconds,
-    revoked_compact_browser_claims_and_completes_only_its_device_grant,
+    revoked_compact_browser_cannot_claim_or_complete_device_grants,
     device_poller_session_metadata,
     device_overlapping_reviews_retain_first_claim_authority,
     device_custom_user_codes_prefer_exact_lookup,
@@ -930,7 +930,7 @@ async fn device_fractional_durations_preserve_persisted_milliseconds<B: Backend>
     B::close(connection).await
 }
 
-async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: Backend>(
+async fn revoked_compact_browser_cannot_claim_or_complete_device_grants<B: Backend>(
     db: Db,
 ) -> TestResult {
     use alibi::{CookieCacheConfig, CookieCacheStrategy};
@@ -978,6 +978,46 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
                 .await?,
             1
         );
+        let mut review = request("/device", None, &jar);
+        review.set_query_pairs([("user_code", user_code)]);
+        _ = call(&auth, review, 200).await;
+        assert_eq!(
+            db.text(
+                "SELECT \"userId\" FROM \"deviceCode\" WHERE \"deviceCode\"=$1",
+                &[code]
+            )
+            .await?,
+            None
+        );
+        let untouched = db
+            .tables(&["deviceCode", "user", "account", "session"])
+            .await?;
+        _ = call(
+            &auth,
+            request(
+                &format!("/device/{decision}"),
+                Some(json!({"userCode":user_code})),
+                &jar,
+            ),
+            401,
+        )
+        .await;
+        assert_eq!(
+            db.tables(&["deviceCode", "user", "account", "session"])
+                .await?,
+            untouched
+        );
+        let signed_in = call(
+            &auth,
+            request(
+                "/sign-in/email",
+                Some(json!({"email":"owner@example.test","password":PASSWORD})),
+                "",
+            ),
+            200,
+        )
+        .await;
+        let jar = cookies(&signed_in);
         let mut review = request("/device", None, &jar);
         review.set_query_pairs([("user_code", user_code)]);
         _ = call(&auth, review, 200).await;
@@ -1046,15 +1086,15 @@ async fn revoked_compact_browser_claims_and_completes_only_its_device_grant<B: B
                 &[id],
             )
             .await?;
-        assert_eq!(count, if decision == "approve" { 1 } else { 0 });
+        assert_eq!(count, if decision == "approve" { 2 } else { 1 });
         if decision == "approve" {
             let value = body(&redeemed);
             assert_eq!(value["token_type"], "Bearer");
             assert_eq!(value["scope"], "read write");
             assert_eq!(
                 db.text(
-                    "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1",
-                    &[id]
+                    "SELECT \"token\" FROM \"session\" WHERE \"userId\"=$1 AND \"token\"=$2",
+                    &[id, value["access_token"].as_str().unwrap()]
                 )
                 .await?
                 .as_deref(),
@@ -1210,7 +1250,7 @@ async fn device_overlapping_reviews_retain_first_claim_authority<B: Backend>(db:
     #[async_trait::async_trait]
     impl CookieCacheVersionResolver for Gate {
         async fn resolve(&self, c: &CacheVersionContext) -> AuthResult<String> {
-            if self.armed.load(Ordering::SeqCst) && c.source() == CacheVersionSource::Cached {
+            if self.armed.load(Ordering::SeqCst) && c.source() == CacheVersionSource::Stored {
                 let index = self
                     .ids
                     .lock()

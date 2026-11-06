@@ -170,84 +170,85 @@
   },
   {
     "/siwe/nonce as \"x-application/json\"": {
-      "status": 400,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "message": "[body] Invalid input: expected object, received ReadableStream",
-        "code": "VALIDATION_ERROR"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json\" is not allowed. Allowed types: application/json"
       }
     }
   },
   {
     "/siwe/verify as \"x-application/json\"": {
-      "status": 400,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "message": "[body] Invalid input: expected object, received ReadableStream",
-        "code": "VALIDATION_ERROR"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json\" is not allowed. Allowed types: application/json"
       }
     }
   },
   {
     "/siwe/nonce as \"x-application/json image/png\"": {
-      "status": 400,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "message": "[body] Invalid input: expected object, received Blob",
-        "code": "VALIDATION_ERROR"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json image/png\" is not allowed. Allowed types: application/json"
       }
     }
   },
   {
     "/siwe/verify as \"x-application/json image/png\"": {
-      "status": 400,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "message": "[body] Invalid input: expected object, received Blob",
-        "code": "VALIDATION_ERROR"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json image/png\" is not allowed. Allowed types: application/json"
       }
     }
   },
   {
     "/siwe/nonce as \"x-application/json application/octet-stream\"": {
-      "status": 200,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "nonce": "GoldenNonce0001"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json application/octet-stream\" is not allowed. Allowed types: application/json"
       }
     }
   },
   {
     "/siwe/verify as \"x-application/json application/octet-stream\"": {
-      "status": 400,
+      "status": 415,
       "headers": {
         "content-type": [
           "application/json"
         ]
       },
       "body": {
-        "message": "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined",
-        "code": "VALIDATION_ERROR"
+        "code": "UNSUPPORTED_MEDIA_TYPE",
+        "message": "Content-Type \"x-application/json application/octet-stream\" is not allowed. Allowed types: application/json"
       }
     }
   },

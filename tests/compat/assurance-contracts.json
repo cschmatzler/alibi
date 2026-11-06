@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "upstreamVersion": "1.7.12",
-  "commit": "f4260a95cddc0a7640f57c37cf624de019df324f",
+  "upstreamVersion": "1.7.18",
+  "commit": "38f43e390920faa400d51ff0bd18570a424d05ce",
   "excludedPackages": [
     { "package": "@better-auth/oauth-provider", "reason": "Explicit integration exclusion in the compatibility scope." },
     { "package": "@better-auth/mcp", "reason": "Explicit integration exclusion in the compatibility scope." },

@@ -1,7 +1,7 @@
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, readPhoneOtp, readPhoneState, uniquePhone } from "./helpers";
+import { phoneClient, readPhoneOtp, readPhoneState, seedPhoneOwner, uniquePhone } from "./helpers";
 compatScenario(
   "phone password reset retains all established sessions by default while changing credential authority",
   async (ctx) => {
@@ -16,8 +16,8 @@ compatScenario(
       email,
       name: "Retained owner",
       password: oldPassword,
-      phoneNumber,
     });
+    await seedPhoneOwner(ctx, profile, signup.data!.user.id, phoneNumber);
     expect(signup.error).toBeNull();
     expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
     const verified = await owner.phoneNumber.verify({
@@ -47,7 +47,7 @@ compatScenario(
     expect(issued.status).toBe(200);
     expect(issued.body).toEqual({ status: true });
     const otp = await readPhoneOtp(ctx, phoneNumber, "password-reset");
-    const identifier = `${phoneNumber}-request-password-reset`;
+    const identifier = `phone-number-reset-${phoneNumber}`;
     expect(await ctx.readVerificationState({ identifier })).toHaveLength(1);
     const reset = await ctx.rawRequest({
       path: "/__test/server-api/phone-reset-password",

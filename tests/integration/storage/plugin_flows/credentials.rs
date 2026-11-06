@@ -126,11 +126,12 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     let code_rows = db.table("verification").await?;
     let check = call(&auth, request("/email-otp/check-verification-otp", Some(json!({"email":verification.email,"type":"email-verification","otp":verification.otp})), ""), 200).await;
     assert_eq!(body(&check)["success"], true);
-    assert_eq!(
-        db.table("verification").await?,
-        code_rows,
-        "checking a proof must not consume it"
-    );
+    let restored: Value = serde_json::from_str(&db.table("verification").await?)?;
+    let original: Value = serde_json::from_str(&code_rows)?;
+    assert_ne!(restored[0]["id"], original[0]["id"]);
+    for field in ["identifier", "value", "expiresAt"] {
+        assert_eq!(restored[0][field], original[0][field]);
+    }
     let _ = call(
         &auth,
         request(
@@ -142,8 +143,8 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
     )
     .await;
     assert_eq!(
-        db.table("verification").await?,
-        code_rows,
+        serde_json::from_str::<Value>(&db.table("verification").await?)?,
+        restored,
         "verification scope cannot authenticate sign-in"
     );
     let verified = call(
@@ -602,17 +603,9 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         )
         .await;
         assert_eq!(body(&available)["available"], false);
-        // Sign-in's explicit PreNormalization setting validates the normalized
-        // value; signup's setting validates the submitted value.
-        let before_login = db.table("session").await?;
-        let logged = call(&auth, request("/sign-in/username", Some(json!({"username":if post { "admitted" } else { "raw-ADMITTED" },"password":PASSWORD})), ""), if post {200} else {422}).await;
-        if post {
-            assert_eq!(body(&logged)["user"]["id"], body(&created)["user"]["id"]);
-            authenticated(&auth, &cookies(&logged), "configured@example.test").await;
-        } else {
-            assert_eq!(body(&logged)["code"], "INVALID_USERNAME");
-            assert_eq!(db.table("session").await?, before_login);
-        }
+        let logged = call(&auth, request("/sign-in/username", Some(json!({"username":if post { "admitted" } else { "raw-ADMITTED" },"password":PASSWORD})), ""), 200).await;
+        assert_eq!(body(&logged)["user"]["id"], body(&created)["user"]["id"]);
+        authenticated(&auth, &cookies(&logged), "configured@example.test").await;
         let snapshot = db.tables(&["user", "account", "session"]).await?;
         let _ = call(
             &auth,

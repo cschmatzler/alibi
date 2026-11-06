@@ -252,10 +252,13 @@ impl GenericOAuthConfig {
                 oauth_subject
             });
         }
-        if self.provider.get_user_info.is_none() {
+        {
+            let custom = self.provider.get_user_info.take();
             self.provider.get_user_info = Some(Arc::new(GenericUserInfo {
                 url: self.user_info_url,
                 mapper: self.map_profile,
+                custom,
+                verified_oidc: metadata.jwks_url.is_some(),
             }));
         }
         Ok(Some(GenericOAuthResolved {
@@ -353,9 +356,21 @@ fn oidc_subject(profile: &Value) -> Result<String, String> {
 struct GenericUserInfo {
     url: Option<String>,
     mapper: Option<Arc<dyn OAuthProfileMapper>>,
+    custom: Option<Arc<dyn OAuthUserInfoHandler>>,
+    verified_oidc: bool,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for GenericUserInfo {
+    async fn get_user_info_from_id_token(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        self.get_user_info(OAuthUserInfoRequest {
+            id_token: request.id_token,
+            ..Default::default()
+        })
+        .await
+    }
     fn errors_are_exceptions(&self) -> bool {
         false
     }
@@ -365,7 +380,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
     ) -> Result<OAuthUserInfoResponse, String> {
         // Grant tokens have already been verified when discovery supplies keys;
         // direct client tokens are always verified by the shared admission path.
-        let decoded = request
+        let claims = request
             .id_token
             .as_deref()
             .and_then(|token| token.split('.').nth(1))
@@ -374,15 +389,47 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     .decode(payload)
                     .ok()
             })
-            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-            .filter(|profile| {
-                profile
+            .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok());
+        if self.verified_oidc && request.id_token.is_some() && claims.is_none() {
+            return Err("Invalid provider ID token claims".into());
+        }
+        let expected_sub = self
+            .verified_oidc
+            .then(|| {
+                claims
+                    .as_ref()
+                    .and_then(|claims| claims.get("sub"))
+                    .cloned()
+            })
+            .flatten();
+        if let Some(custom) = &self.custom {
+            let mut response = custom.get_user_info(request).await?;
+            if let Some(expected) = expected_sub
+                && response
+                    .data
                     .get("sub")
+                    .filter(|sub| !sub.is_null())
+                    .is_some_and(|sub| {
+                        super::remaining_profile::js_string(sub).ok().as_deref()
+                            != expected.as_str()
+                    })
+            {
+                return Err("UserInfo subject mismatch".into());
+            }
+            if let Some(mapper) = &self.mapper {
+                let mapped = mapper.map_profile(response.data.clone()).await?;
+                super::apply_application_mapping(&mut response, mapped)?;
+            }
+            return Ok(response);
+        }
+        let decoded = claims.filter(|profile| {
+            profile
+                .get("sub")
+                .is_some_and(super::remaining_profile::truthy)
+                && profile
+                    .get("email")
                     .is_some_and(super::remaining_profile::truthy)
-                    && profile
-                        .get("email")
-                        .is_some_and(super::remaining_profile::truthy)
-            });
+        });
         let mut raw = if let Some(mut profile) = decoded {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
@@ -399,9 +446,14 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .url
                 .as_ref()
                 .ok_or("Generic OAuth user info unavailable")?;
+            let access_token = request
+                .access_token
+                .as_deref()
+                .filter(|token| !token.is_empty())
+                .ok_or("Generic OAuth user info unavailable")?;
             let mut profile: Value = reqwest::Client::new()
                 .get(url)
-                .bearer_auth(request.access_token.as_deref().unwrap_or("undefined"))
+                .bearer_auth(access_token)
                 .send()
                 .await
                 .map_err(|_| "Generic OAuth user info unavailable")?
@@ -426,15 +478,26 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             }
             profile
         };
+        if let Some(expected) = expected_sub
+            && raw
+                .get("sub")
+                .map_or_else(
+                    || Ok("undefined".into()),
+                    super::remaining_profile::js_string,
+                )
+                .ok()
+                .as_deref()
+                != expected.as_str()
+        {
+            return Err("UserInfo subject mismatch".into());
+        }
         let user = OAuthUserInfo {
             additional_fields: Map::default(),
             id: string(&raw, "id").unwrap_or_default(),
             email: string(&raw, "email").unwrap_or_default(),
             name: string(&raw, "name"),
             image: string(&raw, "image"),
-            email_verified: raw
-                .get("emailVerified")
-                .is_some_and(super::remaining_profile::truthy),
+            email_verified: super::email_verified_claim(raw.get("emailVerified")),
         };
         let mut response = OAuthUserInfoResponse {
             user_output: None,

@@ -95,7 +95,7 @@ impl OAuthProvider {
                 token_endpoint_auth: Some(authentication),
                 authorization_code_client_key: options.client_key,
                 redirect_uri: options.redirect_uri,
-                login_hint: false,
+                login_hint: true,
                 pkce: false,
                 ..OAuthAuthorizationPolicy::default()
             }),

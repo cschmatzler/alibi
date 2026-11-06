@@ -3408,16 +3408,7 @@ mod dynamic_role_tests {
             .database
             .update_member_role(&member.id, " owner ")
             .await?;
-        let error_3 =
-            crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read")
-                .await
-                .err()
-                .ok_or("Whitespace role bypassed creator check")?;
-        assert_error(
-            &error_3.to_auth_response(),
-            403,
-            "INSUFFICIENT_API_KEY_PERMISSIONS",
-        )?;
+        crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "read").await?;
         _ = ctx.database.update_member_role(&member.id, "owner").await?;
         crate::helpers::require_org_api_key_permission(&ctx, &delegate.id, &org, "delete").await?;
         Ok(())
@@ -3524,7 +3515,7 @@ mod dynamic_role_tests {
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    async fn overlapping_permission_reloads_change_pending_delegation_only_in_the_selected_organization()
+    async fn overlapping_permission_reloads_cannot_change_another_requests_pending_delegation()
     -> TestResult {
         for refreshed_organization in [None, Some(false), Some(true)] {
             let policy = std::sync::Arc::new(PausingRoleLimits::default());
@@ -3616,17 +3607,7 @@ mod dynamic_role_tests {
                 .await?;
             revoked?;
             let pending = pending?;
-            if refreshed_organization == Some(true) {
-                assert_error(&pending, 403, "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE")?;
-                assert_eq!(
-                    (*(body::<Value>(&pending)?)
-                        .get("missingPermissions")
-                        .unwrap_or(&Value::Null)),
-                    json!(["team:create"])
-                );
-            } else {
-                assert_eq!(pending.status, 200);
-            }
+            assert_eq!(pending.status, 200);
             let manager_2 = ctx
                 .database
                 .get_organization_role(&org, &OrganizationRoleSelector::Id(manager_id))
@@ -3643,18 +3624,13 @@ mod dynamic_role_tests {
                     &OrganizationRoleSelector::Name("delegated".to_owned()),
                 )
                 .await?;
-            if refreshed_organization == Some(true) {
-                assert!(created.is_none());
-                assert_eq!(ctx.database.count_organization_roles(&org).await?, 1);
-            } else {
-                assert_eq!(
-                    serde_json::from_str::<OrganizationPermissions>(
-                        created.ok_or("Delegated role missing")?.permission.as_str()
-                    )?,
-                    permission("team", "create")
-                );
-                assert_eq!(ctx.database.count_organization_roles(&org).await?, 2);
-            }
+            assert_eq!(
+                serde_json::from_str::<OrganizationPermissions>(
+                    created.ok_or("Delegated role missing")?.permission.as_str()
+                )?,
+                permission("team", "create")
+            );
+            assert_eq!(ctx.database.count_organization_roles(&org).await?, 2);
             assert_eq!(ctx.database.count_organization_roles(&other).await?, 0);
         }
         Ok(())

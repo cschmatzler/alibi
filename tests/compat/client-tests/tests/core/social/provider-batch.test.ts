@@ -379,8 +379,15 @@ for (const provider of providers) {
 }
 
 for (const [label, provider, profile, expectedName, expectedVerified, physicalVerified] of [
-  ["empty verification", "paypal", { ...inputs.paypal, email_verified: "" }, "Batch Name", "", ""],
-  ["numeric verification", "slack", { ...inputs.slack, email_verified: 2 }, "Batch Name", false, 2],
+  [
+    "empty verification",
+    "paypal",
+    { ...inputs.paypal, email_verified: "" },
+    "Batch Name",
+    false,
+    0,
+  ],
+  ["numeric verification", "slack", { ...inputs.slack, email_verified: 2 }, "Batch Name", false, 0],
   [
     "numeric name and image",
     "notion",
@@ -440,7 +447,7 @@ for (const provider of ["vk", "wechat"] as const) {
       );
       const receipts = (await read(ctx, "receipts")) as Array<Record<string, any>>;
       expect(provider === "wechat" ? receipts[0]!.query.appid : receipts[1]!.body.client_id).toBe(
-        "batch-client,secondary-client",
+        provider === "wechat" ? "secondary-client" : "batch-client,secondary-client",
       );
       await archive(ctx, `${provider}-client-array`, {
         start: completed.start,
@@ -532,7 +539,7 @@ for (const provider of providers) {
       expect(second.response.headers.get("location")).toBe("/dashboard");
       const after = await second.actor.client.getSession();
       expect(after.data?.user.id).toBe(before.data?.user.id);
-      expect(after.data?.user.name).toBe(provider === "zoom" ? "Batch Name" : "Updated Name");
+      expect(after.data?.user.name).toBe("Updated Name");
       const sql: any = await read(ctx, "sql-state");
 
       expect(sql["user"]).toHaveLength(1);
@@ -943,8 +950,7 @@ for (const provider of ["zoom", "roblox"] as const) {
           await control(ctx, provider);
           const completed = await flow(ctx, provider, mode, undefined, requestSignUp);
           const denied =
-            (provider === "roblox" && mode === "signup-disabled") ||
-            (mode === "implicit-disabled" && !requestSignUp);
+            mode === "signup-disabled" || (mode === "implicit-disabled" && !requestSignUp);
           expect(completed.response.status).toBe(302);
           if (denied) expect(status(completed.response, ctx.baseURL).error).toBe("signup_disabled");
           else expect(completed.response.headers.get("location")).toBe("/dashboard");

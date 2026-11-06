@@ -19,32 +19,8 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
     member
         .role()
         .split(',')
-        .map(str::trim)
+        .map(alibi_core::utils::javascript::trim)
         .any(|candidate| candidate == role)
-}
-
-// Source update inputs and the removal requester-owner guard use JS trim.
-// Other stored role checks and generic RoleInput normalization remain separate.
-fn js_role_trim(role: &str) -> &str {
-    role.trim_matches(|character| {
-        matches!(character,
-            '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' |
-            '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' |
-            '\u{205F}' | '\u{3000}' | '\u{FEFF}')
-    })
-}
-
-fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
-    let inputs = match role {
-        super::super::types::RoleInput::One(role) => std::slice::from_ref(role),
-        super::super::types::RoleInput::Many(roles) => roles.as_slice(),
-    };
-    inputs
-        .iter()
-        .flat_map(|role_2| role_2.split(','))
-        .map(js_role_trim)
-        .filter(|role_3| !role_3.is_empty())
-        .collect()
 }
 
 pub(crate) async fn get_active_member_core(
@@ -239,12 +215,13 @@ pub(crate) async fn remove_member_core(
     if target_member
         .role()
         .split(',')
+        .map(alibi_core::utils::javascript::trim)
         .any(|role| role == creator_role)
     {
         if !requester_member
             .role()
             .split(',')
-            .map(js_role_trim)
+            .map(alibi_core::utils::javascript::trim)
             .any(|role| role == creator_role)
         {
             return Err(super::extension_common::org_error(
@@ -263,7 +240,7 @@ pub(crate) async fn remove_member_core(
             .0;
         if page
             .iter()
-            .filter(|candidate| candidate.role().split(',').any(|role| role == creator_role))
+            .filter(|candidate| has_role(*candidate, creator_role))
             .count()
             <= 1
         {
@@ -401,7 +378,7 @@ pub(crate) async fn update_member_role_core(
 
     let requester_is_owner = has_role(&requester_member, config.effective_creator_role());
     let target_is_owner = has_role(&target_member, config.effective_creator_role());
-    let new_role = normalized_update_roles(&body.role).join(",");
+    let new_role = body.role.joined();
     let new_role_contains_owner = new_role
         .split(',')
         .any(|role| role == config.effective_creator_role());
@@ -441,7 +418,9 @@ pub(crate) async fn update_member_role_core(
                 .map(|role| role.role),
         );
     }
-    let unknown = normalized_update_roles(&body.role)
+    let unknown = body
+        .role
+        .roles()
         .into_iter()
         .filter(|role| !valid_roles.contains(*role))
         .collect::<Vec<_>>();
@@ -611,7 +590,7 @@ pub(crate) async fn update_member_role_response(
         .or_else(|| session.active_organization_id())
         .filter(|id| !id.is_empty())
         .ok_or_else(|| super::extension_common::org_error(400, codes::NO_ACTIVE_ORGANIZATION))?;
-    if normalized_update_roles(&body.role).is_empty() {
+    if body.role.roles().is_empty() {
         return Ok(empty());
     }
     let response = match update_member_role_core(body, organization_id, user, config, ctx).await {

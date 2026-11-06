@@ -61,6 +61,7 @@ pub enum AfterHook<S: AuthSchema> {
     SessionUpdated(S::Session),
     SessionUpdateMissing(String),
     SessionDeleted(S::Session),
+    SessionRevocation(Arc<dyn crate::store::SessionRevocation>),
     SessionRetirement {
         works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
         context: Arc<crate::AuthContext<S>>,
@@ -98,7 +99,7 @@ impl<S: AuthSchema> AfterHook<S> {
                 hook.after_update_session_missing(token, ctx).await
             }
             Self::SessionDeleted(session) => hook.after_delete_session(session, ctx).await,
-            Self::SessionRetirement { .. } => Ok(()),
+            Self::SessionRetirement { .. } | Self::SessionRevocation(_) => Ok(()),
             Self::VerificationCreated(verification) => {
                 hook.after_create_verification(verification, ctx).await
             }
@@ -133,6 +134,17 @@ impl<S: AuthSchema> AfterHookQueue<S> {
 
     pub async fn push(&self, event: AfterHook<S>) {
         self.0.lock().await.push(event);
+    }
+
+    pub async fn attach_session_revocation(
+        &self,
+        session_ids: &[String],
+        revocation: Arc<dyn crate::store::SessionRevocation>,
+    ) {
+        use crate::AuthSession as _;
+        let mut events = self.0.lock().await;
+        let index = events.iter().position(|event| matches!(event, AfterHook::SessionDeleted(session) if session_ids.iter().any(|id| id == session.id().as_ref()))).unwrap_or(events.len());
+        events.insert(index, AfterHook::SessionRevocation(revocation));
     }
     /// Keep plugin retirement after the selected row's application after-hooks.
     pub async fn attach_session_retirement(
@@ -172,6 +184,15 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         policy: crate::store::AfterCommitErrorPolicy,
     ) -> AuthResult<()> {
         for event in self.0.into_inner() {
+            if let AfterHook::SessionRevocation(revocation) = &event {
+                if let Err(error) = revocation.revoke().await {
+                    if policy == crate::store::AfterCommitErrorPolicy::Propagate {
+                        return Err(error);
+                    }
+                    tracing::error!("Committed session revocation failed");
+                }
+                continue;
+            }
             if let AfterHook::SessionRetirement { works, context } = event {
                 for work in works {
                     if let Err(error) = work.complete(&context).await {

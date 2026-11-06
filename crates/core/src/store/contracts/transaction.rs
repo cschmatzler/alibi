@@ -190,6 +190,17 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Transactional session retirement is unsupported",
         ))
     }
+
+    /// Revoke cached authority after commit, before the user's delete-after hooks.
+    async fn queue_session_revocation(
+        &self,
+        _session_ids: &[String],
+        _revocation: std::sync::Arc<dyn crate::store::SessionRevocation>,
+    ) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional session revocation is unsupported",
+        ))
+    }
     /// Read session deletion candidates on this transaction's connection.
     async fn get_user_sessions(&self, _user_id: &str) -> AuthResult<Vec<S::Session>> {
         Err(AuthError::not_implemented(

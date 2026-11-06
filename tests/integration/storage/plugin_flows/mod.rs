@@ -208,6 +208,32 @@ async fn authenticated<S: AuthSchema>(auth: &Alibi<S>, cookie: &str, email: &str
     );
 }
 
+/// Seed an imported, unverified phone after signup; public signup cannot claim it.
+async fn signup_with_legacy_phone<S: AuthSchema>(
+    auth: &Alibi<S>,
+    mut input: Value,
+) -> AuthResponse {
+    let phone = input
+        .as_object_mut()
+        .unwrap()
+        .remove("phoneNumber")
+        .unwrap();
+    let response = call(auth, request("/sign-up/email", Some(input), ""), 200).await;
+    _ = auth
+        .store()
+        .update_user(
+            body(&response)["user"]["id"].as_str().unwrap(),
+            alibi::UpdateUser {
+                phone_number: Some(Some(phone.as_str().unwrap().to_owned())),
+                phone_number_verified: Some(false),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    response
+}
+
 #[derive(Clone)]
 struct Exchange {
     method: axum::http::Method,
@@ -594,12 +620,12 @@ mod oauth_resource_token_policy;
 mod oauth_server_refresh_issuance;
 
 mod oauth_claims_request;
+mod oauth_dpop_proof;
+mod oauth_extension_authentication;
+mod oauth_extension_claims;
 mod oauth_extension_grants;
 mod oauth_extension_metadata;
 mod oauth_pairwise_subject;
-mod oauth_extension_claims;
-mod oauth_extension_authentication;
-#[cfg(feature="axum")]
-mod session_post_media;
 mod request_form_mime;
-mod oauth_dpop_proof;
+#[cfg(feature = "axum")]
+mod session_post_media;

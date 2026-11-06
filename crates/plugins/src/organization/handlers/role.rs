@@ -1,7 +1,5 @@
 use super::super::OrganizationConfig;
-use super::extension_common::{
-    cached_has_permissions, org_error, organization_roles, role_has_permissions,
-};
+use super::extension_common::{org_error, organization_roles, role_has_permissions};
 use super::validation;
 use alibi_core::entity::AuthUser;
 use alibi_core::error::codes;
@@ -12,6 +10,7 @@ use alibi_core::types::{
 use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
+use std::collections::HashMap;
 struct RoleUpdates {
     role_name: Option<String>,
     permission: Option<OrganizationPermissions>,
@@ -98,7 +97,7 @@ fn missing_permissions(
     role: &str,
     permissions: &OrganizationPermissions,
     config: &OrganizationConfig,
-    organization_id: &str,
+    roles: &HashMap<String, OrganizationPermissions>,
 ) -> AuthResult<Vec<String>> {
     let ac = config
         .access_control
@@ -110,12 +109,11 @@ fn missing_permissions(
     let mut missing = Vec::new();
     for (resource, actions) in permissions {
         for action in actions {
-            if !cached_has_permissions(
+            if !role_has_permissions(
                 role,
                 &[(resource.clone(), vec![action.clone()])].into(),
-                config,
-                organization_id,
-            )? {
+                roles,
+            ) {
                 missing.push(format!("{resource}:{action}"));
             }
         }
@@ -329,7 +327,7 @@ pub(in crate::organization) async fn role_core<
         if ctx.database.count_organization_roles(&org).await? as f64 >= maximum {
             return Err(org_error(400, codes::TOO_MANY_ROLES));
         }
-        let missing = missing_permissions(&member.role, &permission, config, &org)?;
+        let missing = missing_permissions(&member.role, &permission, config, &roles)?;
         if !missing.is_empty() {
             return Ok(Some(AuthResponse::json(
                 403,
@@ -403,7 +401,7 @@ pub(in crate::organization) async fn role_core<
             // with the same name and normalize their literal permission JSON.
             let mut update = UpdateOrganizationRole::default();
             if let Some(permission) = &updates.permission {
-                let missing = missing_permissions(&member.role, permission, config, &org)?;
+                let missing = missing_permissions(&member.role, permission, config, &roles)?;
                 if !missing.is_empty() {
                     return Ok(Some(AuthResponse::json(
                         403,

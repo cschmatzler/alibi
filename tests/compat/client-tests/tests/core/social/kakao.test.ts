@@ -169,7 +169,7 @@ for (const mode of [
       expect(url.searchParams.get("state")).not.toBe("stale");
       expect(url.searchParams.has("code_challenge_method")).toBe(false);
       expect(url.searchParams.has("code_challenge")).toBe(false);
-      expect(url.searchParams.has("login_hint")).toBe(false);
+      expect(url.searchParams.get("login_hint")).toBe("ignored@example.invalid");
       expect(url.searchParams.get("custom")).toBe("value with space");
       expect(url.searchParams.get("redirect_uri")).toBe(
         mode === "configured-endpoint"

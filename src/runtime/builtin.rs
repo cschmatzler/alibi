@@ -52,9 +52,6 @@ impl<S: AuthSchema> Alibi<S> {
             .extensions()
             .get::<super::http_hooks::HttpEndpointFrame>()
         {
-            // The handler constructs a fresh Response; Source's new endpoint
-            // header accumulator replaces headers emitted by before hooks.
-            _ = req.take_response_headers();
             *frame
                 .returned_response
                 .lock()

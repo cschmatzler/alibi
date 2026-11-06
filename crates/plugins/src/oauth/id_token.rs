@@ -24,31 +24,37 @@ pub trait OAuthIdTokenClaimsVerifier: Send + Sync {
 /// HTTP transport for an application-configured provider key authority.
 pub struct HttpOAuthJwksSource {
     url: String,
-    client: reqwest::Client,
+    client: Result<reqwest::Client, String>,
 }
 impl HttpOAuthJwksSource {
     #[must_use]
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
-            client: reqwest::Client::new(),
+            client: reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|error| error.to_string()),
         }
     }
 }
 #[async_trait]
 impl OAuthJwksSource for HttpOAuthJwksSource {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String> {
-        let bytes = self
+        let response = self
             .client
+            .as_ref()
+            .map_err(Clone::clone)?
             .get(&self.url)
             .send()
             .await
             .map_err(|error| error.to_string())?
             .error_for_status()
-            .map_err(|error| error.to_string())?
-            .bytes()
-            .await
             .map_err(|error| error.to_string())?;
+        if response.status().is_redirection() {
+            return Err("Provider key request refused a redirect".into());
+        }
+        let bytes = response.bytes().await.map_err(|error| error.to_string())?;
         let data: Value =
             alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
         data.get("keys")

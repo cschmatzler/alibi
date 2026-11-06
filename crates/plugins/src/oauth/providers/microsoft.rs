@@ -310,7 +310,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             .unwrap_or_default()
             .to_owned();
         let verified = match profile.get("email_verified") {
-            Some(value) => truthy(value),
+            Some(value) => super::email_verified_claim(Some(value)),
             None => {
                 !email.is_empty()
                     && (email_list_includes(profile.get("verified_primary_email"), &email)?
@@ -328,13 +328,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                         _ = output.insert(target.into(), value.clone());
                     }
                 }
-                _ = output.insert(
-                    "emailVerified".into(),
-                    profile
-                        .get("email_verified")
-                        .cloned()
-                        .unwrap_or(Value::Bool(verified)),
-                );
+                _ = output.insert("emailVerified".into(), Value::Bool(verified));
                 output
             },
             |user| user.public_profile(true),
@@ -378,15 +372,6 @@ fn email_list_includes(value: Option<&Value>, email: &str) -> Result<bool, Strin
         Some(Value::Array(values)) => Ok(values.iter().any(|value| value.as_str() == Some(email))),
         Some(Value::String(value)) => Ok(value.contains(email)),
         _ => Err("Invalid Microsoft verified email list".into()),
-    }
-}
-fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
     }
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {

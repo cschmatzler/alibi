@@ -459,7 +459,12 @@ pub(crate) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        let response = handler.get_user_info(request).await.map_err(|error| {
+        let mut response = if request.client_submitted_id_token {
+            handler.get_user_info_from_id_token(request).await
+        } else {
+            handler.get_user_info(request).await
+        }
+        .map_err(|error| {
             if provider
                 .authorization
                 .as_ref()
@@ -478,6 +483,14 @@ pub(crate) async fn fetch_user_info_from_provider(
                 AuthError::internal(error)
             }
         })?;
+        if let Some(value) = response
+            .user_output
+            .as_ref()
+            .and_then(|output| output.get("emailVerified"))
+        {
+            response.user.email_verified =
+                crate::oauth::providers::email_verified_claim(Some(value));
+        }
         return Ok(response);
     }
 

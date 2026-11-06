@@ -633,10 +633,9 @@ mod tests {
         }
     }
 
-    // Upstream checkVerificationOTP rejects once when a database update hook
-    // returns false. Hook cancellation must not be retried as CAS contention.
+    // Preflight consumes and recreates the record instead of updating it.
     #[tokio::test]
-    async fn cancelled_attempt_update_rejects_once_without_hanging_or_consuming_proof() {
+    async fn preflight_counts_attempts_without_running_verification_update_hooks() {
         use alibi_seaorm::store::__private_test_support::{
             bundled_schema::BundledSchema, migrator,
         };
@@ -684,15 +683,18 @@ mod tests {
             serde_json::from_slice::<Value>(&rejected.body).unwrap(),
             json!({"code":"INVALID_OTP","message":"Invalid OTP"})
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
         let after = ctx
             .database
             .get_latest_verification_by_identifier(identifier)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(after.id(), before.id());
-        assert_eq!(after.value(), before.value());
+        assert_ne!(after.id(), before.id());
+        assert_eq!(
+            after.value(),
+            format!("{}:1", before.value().split(':').next().unwrap())
+        );
         assert_eq!(after.expires_at(), before.expires_at());
         let accepted = post(
             &plugin,
@@ -706,7 +708,7 @@ mod tests {
             serde_json::from_slice::<Value>(&accepted.body).unwrap(),
             json!({"success":true})
         );
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
     }
 
     // Upstream: email-otp/routes.ts :: sendVerificationOTP anti-enumeration branch.

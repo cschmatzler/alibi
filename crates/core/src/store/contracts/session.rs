@@ -2,6 +2,12 @@ use crate::field_policy::FieldValues;
 use crate::{AdapterRecord, AuthSession};
 use crate::{AuthError, AuthResult, AuthSchema, CreateSession};
 use async_trait::async_trait;
+
+/// Cache revocation performed after a bulk write and before delete-after hooks.
+#[async_trait]
+pub trait SessionRevocation: Send + Sync {
+    async fn revoke(&self) -> AuthResult<()>;
+}
 use std::collections::BTreeSet;
 #[async_trait]
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
@@ -264,6 +270,30 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
     async fn delete_session(&self, token: &str) -> AuthResult<()>;
 
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()>;
+
+    async fn delete_user_sessions_with_revocation(
+        &self,
+        user_id: &str,
+        revocation: Option<&dyn SessionRevocation>,
+    ) -> AuthResult<()> {
+        self.delete_user_sessions(user_id).await?;
+        if let Some(revocation) = revocation {
+            revocation.revoke().await?;
+        }
+        Ok(())
+    }
+
+    async fn end_user_sessions_preserving_with_revocation(
+        &self,
+        user_id: &str,
+        revocation: Option<&dyn SessionRevocation>,
+    ) -> AuthResult<bool> {
+        let ended = self.end_user_sessions_preserving(user_id).await?;
+        if ended && let Some(revocation) = revocation {
+            revocation.revoke().await?;
+        }
+        Ok(ended)
+    }
 
     async fn delete_expired_sessions(&self) -> AuthResult<usize>;
 

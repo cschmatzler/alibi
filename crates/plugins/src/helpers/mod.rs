@@ -19,7 +19,7 @@ pub(crate) use sessions::{
     issue_selected_user_session_in_transaction, issue_selected_user_session_record,
     ordinary_session, publish_committed_session, record_completed_session,
     record_completed_session_record, record_completed_session_user_view,
-    response_has_session_cookie,
+    resolve_admin_banned_user_message, response_has_session_cookie,
 };
 
 /// Join the configured auth origin and mount path for links sent to users.

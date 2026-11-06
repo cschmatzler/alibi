@@ -282,7 +282,10 @@ impl FacebookUserInfo {
             return Err("Facebook client ID and secret are required".into());
         }
         let app_access_token = format!("{}|{}", self.client_id, self.client_secret);
-        let inspected: Value = reqwest::Client::new()
+        let response = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(http_error)?
             .get(&self.inspection_endpoint)
             .query(&[
                 ("input_token", access_token),
@@ -292,10 +295,11 @@ impl FacebookUserInfo {
             .await
             .map_err(http_error)?
             .error_for_status()
-            .map_err(http_error)?
-            .json()
-            .await
             .map_err(http_error)?;
+        if response.status().is_redirection() {
+            return Err("Facebook token inspection refused a redirect".into());
+        }
+        let inspected: Value = response.json().await.map_err(http_error)?;
         let data = inspected
             .get("data")
             .ok_or("Facebook inspection returned no data")?;

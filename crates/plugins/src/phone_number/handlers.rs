@@ -120,11 +120,12 @@ impl PhoneNumberPlugin {
                 request,
                 phone_number,
                 code,
-                phone_number,
+                &otp_identifier(phone_number),
             )
             .await;
         }
-        self.consume_local(ctx, phone_number, code).await
+        self.consume_local(ctx, &otp_identifier(phone_number), code)
+            .await
     }
     /// Check the code with `verify_otp`, then drop the code stored under `identifier`.
     async fn verify_with_custom_verifier(
@@ -150,32 +151,21 @@ impl PhoneNumberPlugin {
         }
         ctx.verifications().delete(identifier).await
     }
-    /// Whether `provided_code` matches a stored, unexpired code with attempts
-    /// left, without spending it or counting an attempt.
-    async fn matches_usable_code(
-        &self,
-        ctx: &AuthContext<impl AuthSchema>,
-        identifier: &str,
-        provided_code: &str,
-    ) -> AuthResult<bool> {
-        let Some(existing) = find_verification(ctx, identifier).await? else {
-            return Ok(false);
-        };
-        if existing.is_expired() {
-            return Ok(false);
-        }
-        let (code, attempts) = split_code(existing.value()?);
-        Ok(
-            super::super::passwordless_numeric::attempts_number(attempts)
-                < self.config.allowed_attempts
-                && code == provided_code,
-        )
-    }
     async fn consume_local(
         &self,
         ctx: &AuthContext<impl AuthSchema>,
         identifier: &str,
         provided_code: &str,
+    ) -> AuthResult<()> {
+        self.verify_local(ctx, identifier, provided_code, false)
+            .await
+    }
+    async fn verify_local(
+        &self,
+        ctx: &AuthContext<impl AuthSchema>,
+        identifier: &str,
+        provided_code: &str,
+        restore: bool,
     ) -> AuthResult<()> {
         let existing = find_verification(ctx, identifier)
             .await?
@@ -220,6 +210,24 @@ impl PhoneNumberPlugin {
                 })
                 .await?;
             return Err(invalid_otp());
+        }
+        if restore {
+            if find_verification(ctx, identifier).await?.is_some() {
+                return Err(invalid_otp());
+            }
+            _ = ctx
+                .verifications()
+                .create(CreateVerification {
+                    identifier: identifier.to_owned(),
+                    value: consumed.value()?.to_owned(),
+                    expires_at: consumed.expires_at()?,
+                })
+                .await?
+                .ok_or_else(|| AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "Unable to complete OTP verification".into(),
+                })?;
         }
         Ok(())
     }
@@ -289,7 +297,10 @@ impl PhoneNumberPlugin {
             )
         })?;
         self.validate_phone(&body.phone_number).await?;
-        let code = match self.issue(ctx, &body.phone_number, true).await {
+        let code = match self
+            .issue(ctx, &otp_identifier(&body.phone_number), true)
+            .await
+        {
             Ok(code) => code,
             Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
@@ -339,7 +350,10 @@ impl PhoneNumberPlugin {
             .await?
             .ok_or_else(invalid_credentials)?;
         if self.config.require_verification && user.phone_number_verified() != Some(true) {
-            let code = match self.issue(ctx, &body.phone_number, false).await {
+            let code = match self
+                .issue(ctx, &otp_identifier(&body.phone_number), false)
+                .await
+            {
                 Ok(code) => code,
                 Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
                 Err(error) => return Err(error),
@@ -470,43 +484,43 @@ impl PhoneNumberPlugin {
         self.verify_and_consume(ctx, req.physical_request(), &body.phone_number, &body.code)
             .await?;
         if body.update_phone_number == Some(true) {
-            let (user, session) =
-                ctx.require_cached_session(req)
-                    .await
-                    .map_err(|error| match error {
-                        AuthError::Unauthenticated | AuthError::SessionNotFound => {
-                            phone_error(401, codes::USER_NOT_FOUND, "User not found")
-                        }
-                        error @ (AuthError::Api { .. }
-                        | AuthError::Upstream { .. }
-                        | AuthError::BadRequest(_)
-                        | AuthError::InvalidRequest(_)
-                        | AuthError::Validation(_)
-                        | AuthError::InvalidCredentials
-                        | AuthError::AuthenticationFailed(_)
-                        | AuthError::Forbidden(_)
-                        | AuthError::UserCreationCancelled
-                        | AuthError::SessionCreationCancelled
-                        | AuthError::BannedUser(_)
-                        | AuthError::Unauthorized
-                        | AuthError::UserNotFound
-                        | AuthError::NotFound(_)
-                        | AuthError::Conflict(_)
-                        | AuthError::MethodNotAllowed(_)
-                        | AuthError::PayloadTooLarge(_)
-                        | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited { .. }
-                        | AuthError::NotImplemented(_)
-                        | AuthError::Config(_)
-                        | AuthError::Database(_)
-                        | AuthError::Serialization(_)
-                        | AuthError::Plugin { .. }
-                        | AuthError::CallbackFailure(_)
-                        | AuthError::Internal(_)
-                        | AuthError::Encryption(_)
-                        | AuthError::PasswordHash(_)
-                        | AuthError::Jwt(_)) => error,
-                    })?;
+            let (user, session) = ctx
+                .require_session(req)
+                .await
+                .map_err(|error| match error {
+                    AuthError::Unauthenticated | AuthError::SessionNotFound => {
+                        phone_error(401, codes::USER_NOT_FOUND, "User not found")
+                    }
+                    error @ (AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::BadRequest(_)
+                    | AuthError::InvalidRequest(_)
+                    | AuthError::Validation(_)
+                    | AuthError::InvalidCredentials
+                    | AuthError::AuthenticationFailed(_)
+                    | AuthError::Forbidden(_)
+                    | AuthError::UserCreationCancelled
+                    | AuthError::SessionCreationCancelled
+                    | AuthError::BannedUser(_)
+                    | AuthError::Unauthorized
+                    | AuthError::UserNotFound
+                    | AuthError::NotFound(_)
+                    | AuthError::Conflict(_)
+                    | AuthError::MethodNotAllowed(_)
+                    | AuthError::PayloadTooLarge(_)
+                    | AuthError::UnprocessableEntity(_)
+                    | AuthError::RateLimited { .. }
+                    | AuthError::NotImplemented(_)
+                    | AuthError::Config(_)
+                    | AuthError::Database(_)
+                    | AuthError::Serialization(_)
+                    | AuthError::Plugin { .. }
+                    | AuthError::CallbackFailure(_)
+                    | AuthError::Internal(_)
+                    | AuthError::Encryption(_)
+                    | AuthError::PasswordHash(_)
+                    | AuthError::Jwt(_)) => error,
+                })?;
             if ctx
                 .database
                 .get_user_by_phone_number_record(&body.phone_number)
@@ -636,19 +650,16 @@ impl PhoneNumberPlugin {
         // Unlike email OTP anti-enumeration, upstream retains the issued reset
         // verification even when the phone has no registered user.
         let code = match self
-            .issue(
-                ctx,
-                &format!("{}-request-password-reset", body.phone_number),
-                true,
-            )
+            .issue(ctx, &reset_identifier(&body.phone_number), true)
             .await
         {
             Ok(code) => code,
             Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
         };
-        if user.is_some()
-            && let Some(sender) = &self.config.send_password_reset_otp
+        if user.as_ref().is_some_and(|user| {
+            !self.config.require_verification || user.phone_number_verified() == Some(true)
+        }) && let Some(sender) = &self.config.send_password_reset_otp
         {
             self.deliver(
                 ctx,
@@ -682,21 +693,15 @@ impl PhoneNumberPlugin {
         request: Option<&AuthRequest>,
         body: ResetRequest,
     ) -> AuthResult<AuthResponse> {
-        let identifier = format!("{}-request-password-reset", body.phone_number);
+        let identifier = reset_identifier(&body.phone_number);
         let settings = password_settings(ctx);
-        // Check the code without spending it, so a rejected password leaves it
-        // usable. A wrong or unusable code goes through consume_local, which
-        // counts the attempt and fails; a correct one is spent just before the
-        // password is written. A custom verifier spends the code itself, so a
-        // password with an invalid length is rejected before calling it.
-        let mut consumed = false;
+        alibi_core::utils::password::validate_password(
+            &body.new_password,
+            settings.minimum,
+            settings.maximum,
+            ctx,
+        )?;
         if let Some(verifier) = &self.config.verify_otp {
-            alibi_core::utils::password::validate_password(
-                &body.new_password,
-                settings.minimum,
-                settings.maximum,
-                ctx,
-            )?;
             Self::verify_with_custom_verifier(
                 verifier.as_ref(),
                 ctx,
@@ -706,29 +711,25 @@ impl PhoneNumberPlugin {
                 &identifier,
             )
             .await?;
-            consumed = true;
-        } else if !self
-            .matches_usable_code(ctx, &identifier, &body.otp)
-            .await?
-        {
-            self.consume_local(ctx, &identifier, &body.otp).await?;
-            consumed = true;
+        } else {
+            self.verify_local(ctx, &identifier, &body.otp, true).await?;
         }
         let user = ctx
             .database
             .get_user_by_phone_number_record(&body.phone_number)
             .await?
             .ok_or_else(|| phone_error(400, codes::UNEXPECTED_ERROR, "Unexpected error"))?;
-        alibi_core::utils::password::validate_password(
-            &body.new_password,
-            settings.minimum,
-            settings.maximum,
-            ctx,
-        )?;
+        if self.config.require_verification && user.phone_number_verified() != Some(true) {
+            return Err(phone_error(
+                400,
+                codes::PHONE_NUMBER_PENDING_VERIFICATION,
+                "Phone number requires account ownership proof",
+            ));
+        }
         let hash = ctx
             .hash_password(settings.hasher.as_ref(), &body.new_password)
             .await?;
-        let proof = if consumed {
+        let proof = if self.config.verify_otp.is_some() {
             crate::helpers::ResetProof::Spent
         } else {
             self.reset_proof(ctx, &identifier, &body.otp).await?
@@ -740,6 +741,14 @@ impl PhoneNumberPlugin {
         }
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }
+}
+
+fn otp_identifier(phone: &str) -> String {
+    format!("phone-number-otp-{phone}")
+}
+
+fn reset_identifier(phone: &str) -> String {
+    format!("phone-number-reset-{phone}")
 }
 
 const fn invalid_otp() -> AuthError {

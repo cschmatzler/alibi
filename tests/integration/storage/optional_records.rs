@@ -288,6 +288,14 @@ async fn workflow<S: AuthSchema>(
     observe(&mut trace, "/sign-up/email", &other);
     assert_eq!(other.status, 200);
     let other_cookie = cookies(&other);
+    let registration =
+        Box::pin(auth.handle_request(request("/passkey/generate-register-options", None, &cookie)))
+            .await?;
+    assert_eq!(registration.status, 200, "{registration:?}");
+    assert_eq!(
+        body(&registration)["user"]["name"],
+        "optional172@fixture.test"
+    );
     let enable = Box::pin(auth.handle_request(request(
         "/two-factor/enable",
         Some(json!({"password":"Password123!"})),
@@ -301,7 +309,7 @@ async fn workflow<S: AuthSchema>(
             serde_json::to_vec_pretty(&trace)?,
         )?;
     }
-    assert_eq!(enable.status, 200, "{}", body(&enable));
+    assert_eq!(enable.status, 200, "{enable:?}");
     let enabled_cookie = cookies(&enable);
     let factor = auth
         .store()

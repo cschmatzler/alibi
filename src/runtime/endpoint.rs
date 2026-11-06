@@ -203,6 +203,7 @@ impl<S: AuthSchema> Alibi<S> {
             Err(error) if is_endpoint_api_error(&error) => EndpointResponse::error(error),
             Err(error) => return Err(error.into()),
         };
+        response.prepend_headers(before_headers);
         response.merge_headers(call.take_response_headers());
         let (cache_headers, ordinary_error) =
             alibi_core::session::cookie_cache::runtime::take_issuance(call.extensions());

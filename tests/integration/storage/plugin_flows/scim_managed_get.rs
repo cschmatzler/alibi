@@ -36,9 +36,7 @@ async fn scim_managed_get_redacts_scopes_expiry_and_domain_denials_after_restart
     let created = body(&created);
     let cid = created["connection"]["connectionId"].as_str().unwrap();
     let kid = created["credential"]["credentialId"].as_str().unwrap();
-    let get = |id: &str, domain: &str| {
-        ScimPlugin::get_managed_connection_endpoint(id, domain)
-    };
+    let get = |id: &str, domain: &str| ScimPlugin::get_managed_connection_endpoint(id, domain);
     let response = match auth
         .dispatch_endpoint(get(cid, "  tenant-a  ")?, EndpointOptions::default())
         .await

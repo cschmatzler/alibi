@@ -13,6 +13,19 @@ use alibi_core::entity::AuthUser;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateDeviceCode};
 use chrono::Utc;
 
+async fn device_session<S: alibi_core::AuthSchema>(
+    req: &impl alibi_core::session::SessionRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
+    if ctx.config.session.stateless {
+        ctx.require_cached_session(req).await
+    } else {
+        ctx.require_authoritative_session_record(req)
+            .await
+            .map(|(user, session)| (alibi_core::AuthenticatedUser::Stored(user), session))
+    }
+}
+
 impl DeviceAuthorizationPlugin {
     pub(in crate::device_authorization) async fn handle_device_code(
         &self,
@@ -92,7 +105,7 @@ impl DeviceAuthorizationPlugin {
         // A signed-in caller claims the code here; `/device/approve` and
         // `/device/deny` refuse to act on a code nobody has claimed. The
         // session is optional — anyone may look up the status.
-        let user_id = match ctx.require_cached_session(req).await {
+        let user_id = match device_session(req, ctx).await {
             Ok((user, _)) => Some(user.id().into_owned()),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => None,
             Err(err) => return Err(err),
@@ -171,7 +184,7 @@ impl DeviceAuthorizationPlugin {
         decision: DeviceDecision,
         body: DeviceActionRequest,
     ) -> AuthResult<AuthResponse> {
-        let user = match ctx.require_cached_session(req).await {
+        let user = match device_session(req, ctx).await {
             Ok((user, _session)) => user,
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return device_error_response(401, "unauthorized", AUTHENTICATION_REQUIRED);

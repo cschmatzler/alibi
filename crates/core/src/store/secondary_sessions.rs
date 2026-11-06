@@ -19,6 +19,22 @@ struct Reference {
     expires_at: DateTime<Utc>,
 }
 
+struct CachedUserRevocation<S: AuthSchema> {
+    store: PluginStore<S>,
+    user_id: String,
+    tokens: Vec<String>,
+    cutoff: i64,
+}
+
+#[async_trait::async_trait]
+impl<S: AuthSchema> super::SessionRevocation for CachedUserRevocation<S> {
+    async fn revoke(&self) -> AuthResult<()> {
+        self.store
+            .apply_cached_user_revocation(&self.user_id, self.tokens.clone(), self.cutoff)
+            .await
+    }
+}
+
 impl CachedSession {
     fn absent_fields(raw: &str) -> BTreeSet<String> {
         serde_json::from_str::<Self>(raw)
@@ -167,10 +183,23 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         token: &str,
     ) -> AuthResult<Option<(S::Session, S::User)>> {
-        Ok(self
-            .stored_session(token)
-            .await?
-            .filter(|(session, _)| session.expires_at() > Utc::now()))
+        let Some((session, user)) = self.stored_session(token).await? else {
+            return Ok(None);
+        };
+        if session.expires_at() <= Utc::now() {
+            return Ok(None);
+        }
+        if let Some(cache) = self.secondary() {
+            let cutoff = cache
+                .get(&format!("revoked-sessions-before-{}", session.user_id()))
+                .await?
+                .and_then(|value| value.parse::<i64>().ok())
+                .unwrap_or(0);
+            if session.created_at().timestamp_millis() < cutoff {
+                return Ok(None);
+            }
+        }
+        Ok(Some((session, user)))
     }
 
     pub(super) async fn mirror_session(
@@ -327,6 +356,55 @@ impl<S: AuthSchema> PluginStore<S> {
         let removed = BTreeSet::from_iter(tokens);
         current.retain(|reference| !removed.contains(&reference.token));
         self.write_references(user_id, current).await
+    }
+
+    pub(super) async fn cached_user_revocation(
+        &self,
+        user_id: &str,
+        mut tokens: Vec<String>,
+    ) -> AuthResult<std::sync::Arc<dyn super::SessionRevocation>> {
+        tokens.extend(self.cached_user_tokens(user_id).await?);
+        tokens.sort();
+        tokens.dedup();
+        Ok(std::sync::Arc::new(CachedUserRevocation {
+            store: self.clone(),
+            user_id: user_id.to_owned(),
+            tokens,
+            cutoff: Utc::now().timestamp_millis(),
+        }))
+    }
+
+    async fn apply_cached_user_revocation(
+        &self,
+        user_id: &str,
+        tokens: Vec<String>,
+        revoked_at: i64,
+    ) -> AuthResult<()> {
+        let Some(cache) = self.secondary() else {
+            return Ok(());
+        };
+        let key = format!("revoked-sessions-before-{user_id}");
+        let previous = cache
+            .get(&key)
+            .await?
+            .and_then(|value| value.parse::<i64>().ok())
+            .unwrap_or(0);
+        let cutoff = revoked_at.max(previous);
+        let impersonation_ttl = self
+            .projection_context
+            .get_metadata("admin.impersonation_session_duration")
+            .and_then(serde_json::Value::as_f64)
+            .and_then(|seconds| std::time::Duration::try_from_secs_f64(seconds).ok())
+            .and_then(|duration| Duration::from_std(duration).ok())
+            .unwrap_or_default();
+        let ttl = self
+            .config
+            .session
+            .expires_in
+            .max(Duration::days(1))
+            .max(impersonation_ttl);
+        cache.set(&key, &cutoff.to_string(), ttl).await?;
+        self.remove_cached_user_sessions(user_id, tokens).await
     }
 
     pub(super) async fn remove_cached_session(&self, token: &str) -> AuthResult<()> {

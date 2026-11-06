@@ -101,6 +101,12 @@ pub(crate) async fn invite_member_core(
     }
 
     let roles = body.role.roles();
+    if roles.is_empty() {
+        return Err(super::extension_common::org_error(
+            400,
+            codes::ROLE_NOT_FOUND,
+        ));
+    }
 
     let mut valid_roles = vec!["owner".to_owned(), "admin".to_owned(), "member".to_owned()];
     valid_roles.extend(
@@ -138,7 +144,7 @@ pub(crate) async fn invite_member_core(
     let member_is_creator = member
         .role()
         .split(',')
-        .map(str::trim)
+        .map(alibi_core::utils::javascript::trim)
         .any(|role| role == config.effective_creator_role());
     let invites_creator_role = roles
         .iter()
@@ -196,6 +202,21 @@ pub(crate) async fn invite_member_core(
     };
     if let Some(existing) = existing {
         if body.resend == Some(true) {
+            if !member_is_creator
+                && existing
+                    .role
+                    .as_deref()
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(alibi_core::utils::javascript::trim)
+                    .any(|role| role == config.effective_creator_role())
+            {
+                return Err(AuthError::Upstream {
+                    status: 403,
+                    code: codes::YOU_ARE_NOT_ALLOWED_TO_INVITE_USER_WITH_THIS_ROLE,
+                    message: "You are not allowed to invite a user with this role",
+                });
+            }
             let updated = ctx
                 .database
                 .update_invitation_expiry(
@@ -434,15 +455,50 @@ pub(crate) async fn list_invitations_core(
     let org_id =
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?;
 
-    _ = ctx
+    let member = ctx
         .database
         .get_member(&org_id, &user.id())
         .await?
         .ok_or_else(|| AuthError::forbidden("Not a member of this organization"))?;
 
+    let config = ctx
+        .extensions
+        .get::<crate::organization::OrganizationConfig>()
+        .unwrap_or_default();
+    if !super::extension_common::has_action(
+        member.role(),
+        "invitation",
+        "create",
+        &config,
+        ctx,
+        &org_id,
+    )
+    .await?
+    {
+        return Err(AuthError::Upstream {
+            status: 403,
+            code: codes::YOU_ARE_NOT_ALLOWED_TO_LIST_INVITATIONS,
+            message: "You are not allowed to list invitations for this organization",
+        });
+    }
+    let is_creator = member
+        .role()
+        .split(',')
+        .map(alibi_core::utils::javascript::trim)
+        .any(|role| role == config.effective_creator_role());
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
     Ok(invitations
         .iter()
+        .filter(|invitation| {
+            is_creator
+                || !invitation
+                    .role
+                    .as_deref()
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(alibi_core::utils::javascript::trim)
+                    .any(|role| role == config.effective_creator_role())
+        })
         .map(|invitation| ctx.invitation_view(invitation))
         .collect())
 }

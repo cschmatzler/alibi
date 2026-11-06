@@ -58,7 +58,10 @@
           "application/json"
         ]
       },
-      "body": null
+      "body": {
+        "code": "CHALLENGE_NOT_FOUND",
+        "message": "Challenge not found"
+      }
     }
   },
   {
@@ -303,7 +306,7 @@
   },
   {
     "core packed algorithm mismatch": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -317,7 +320,7 @@
   },
   {
     "core packed on another curve": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"

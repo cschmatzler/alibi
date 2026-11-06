@@ -36,20 +36,22 @@ impl Inbox {
 #[async_trait]
 impl SendVerificationEmail for Inbox {
     async fn send(&self, user: &UserView, url: &str, token: &str) -> AuthResult<()> {
-        self.0
-            .lock()
-            .unwrap()
-            .push((user.email.clone().unwrap(), url.to_owned(), token.to_owned()));
+        self.0.lock().unwrap().push((
+            user.email.clone().unwrap(),
+            url.to_owned(),
+            token.to_owned(),
+        ));
         Ok(())
     }
 }
 #[async_trait]
 impl SendChangeEmailConfirmation for Inbox {
     async fn send(&self, user: &UserInfo, _: &str, url: &str, token: &str) -> AuthResult<()> {
-        self.0
-            .lock()
-            .unwrap()
-            .push((user.email.clone().unwrap(), url.to_owned(), token.to_owned()));
+        self.0.lock().unwrap().push((
+            user.email.clone().unwrap(),
+            url.to_owned(),
+            token.to_owned(),
+        ));
         Ok(())
     }
 }
@@ -303,7 +305,10 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
             confirmation
         );
         assert_eq!(
-            url.query_pairs().find(|(key, _)| key == "callbackURL").unwrap().1,
+            url.query_pairs()
+                .find(|(key, _)| key == "callbackURL")
+                .unwrap()
+                .1,
             "/done"
         );
         let status = if callback.is_some() { 302 } else { 200 };
@@ -320,11 +325,14 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
         // Reading an uncached browser session may refresh its data cookie;
         // confirmation itself must not issue a new session-token cookie.
         assert!(
-            !confirmed.headers.get_all("set-cookie")
+            !confirmed
+                .headers
+                .get_all("set-cookie")
                 .any(|cookie| cookie.starts_with("better-auth.session_token="))
         );
         assert_eq!(
-            db.tables(&["user", "account", "session", "verification"]).await?,
+            db.tables(&["user", "account", "session", "verification"])
+                .await?,
             before
         );
         let (sent_to, url, verification_token) = inbox.delivery();
@@ -339,11 +347,17 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
             let denied = call(&auth, verify(&verification_token, None, &accounts[1]), 401).await;
             assert_eq!(body(&denied)["code"], "INVALID_USER");
             assert_eq!(
-                db.tables(&["user", "account", "session", "verification"]).await?,
+                db.tables(&["user", "account", "session", "verification"])
+                    .await?,
                 before
             );
         }
-        let finished = call(&auth, verify(&verification_token, callback, finish_cookie), status).await;
+        let finished = call(
+            &auth,
+            verify(&verification_token, callback, finish_cookie),
+            status,
+        )
+        .await;
         if status == 200 {
             assert_eq!(body(&finished)["status"], true);
             assert_eq!(body(&finished)["user"]["email"], target);
@@ -355,12 +369,16 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
                 callback
             );
         }
-        assert!(finished.headers.contains_key("set-cookie"));
-        assert!(
-            finished.headers.get_all("set-cookie")
-                .any(|cookie| cookie.starts_with("better-auth.session_data=")),
-            "configured email-change completion must publish its cache cookie"
-        );
+        if label == "json" {
+            assert!(!finished.headers.contains_key("set-cookie"));
+        } else {
+            assert!(
+                finished
+                    .headers
+                    .get_all("set-cookie")
+                    .any(|cookie| cookie.starts_with("better-auth.session_data="))
+            );
+        }
         let original: Vec<Value> = serde_json::from_str(&before[0])?;
         let actual: Vec<Value> = serde_json::from_str(&db.table("user").await?)?;
         assert_eq!(actual.len(), original.len());
@@ -379,19 +397,27 @@ async fn verify_email_change_confirmation_chain<B: Backend>(db: Db) -> TestResul
         assert_eq!(after[3], before[3]);
         let prior_sessions: Vec<Value> = serde_json::from_str(&before[2])?;
         let sessions: Vec<Value> = serde_json::from_str(&after[2])?;
-        assert_eq!(
-            sessions.len(),
-            prior_sessions.len() + usize::from(label == "json")
-        );
+        assert_eq!(sessions.len(), prior_sessions.len());
         assert!(prior_sessions.iter().all(|row| sessions.contains(row)));
-        authenticated(&auth, &cookies(&finished), target).await;
+        let active_cookie = if label == "json" {
+            accounts[0].clone()
+        } else {
+            cookies(&finished)
+        };
+        let mut active = request("/get-session", None, &active_cookie);
+        active.set_query_pairs([("disableCookieCache", "true")]);
+        assert_eq!(
+            body(&call(&auth, active, 200).await)["user"]["email"],
+            target
+        );
         authenticated(&auth, &accounts[1], "other@example.test").await;
         let replay = call(&auth, verify(&verification_token, None, &accounts[0]), 401).await;
-        assert_eq!(body(&replay)["code"], "USER_NOT_FOUND");
+        assert_eq!(body(&replay)["code"], "INVALID_TOKEN");
         assert!(!replay.headers.contains_key("location"));
         assert!(!replay.headers.contains_key("set-cookie"));
         assert_eq!(
-            db.tables(&["user", "account", "session", "verification"]).await?,
+            db.tables(&["user", "account", "session", "verification"])
+                .await?,
             after
         );
         accounts[0] = cookies(&finished);

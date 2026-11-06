@@ -165,7 +165,12 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.inner.list_users_by_ids_page(ids, limit).await
     }
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
-        self.inner.get_user_by_email(email).await
+        use crate::AuthUser;
+        Ok(self
+            .inner
+            .get_user_by_email(email)
+            .await?
+            .filter(|user| user.email().is_some_and(|stored| same_email(stored, email))))
     }
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>> {
         self.inner.get_user_by_username(username).await
@@ -200,4 +205,10 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
         self.inner.list_users(params).await
     }
+}
+
+pub(super) fn same_email(left: &str, right: &str) -> bool {
+    use unicode_normalization::UnicodeNormalization;
+    let normalize = |value: &str| value.nfc().collect::<String>().to_lowercase();
+    normalize(left) == normalize(right)
 }

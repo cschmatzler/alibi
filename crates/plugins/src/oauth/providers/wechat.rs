@@ -70,7 +70,7 @@ impl OAuthProvider {
             .user_info_endpoint
             .unwrap_or_else(|| "https://api.weixin.qq.com/sns/userinfo".into());
         let grants = Arc::new(WeChatGrants {
-            client_id: options.client_id.clone(),
+            client_ids: vec![options.client_id.clone()],
             client_secret: options.client_secret.clone(),
             token_endpoint: token_endpoint.clone(),
             refresh_endpoint,
@@ -132,23 +132,33 @@ impl OAuthProvider {
 }
 #[derive(Clone)]
 struct WeChatGrants {
-    client_id: String,
+    client_ids: Vec<String>,
     client_secret: String,
     token_endpoint: String,
     refresh_endpoint: String,
 }
-async fn token_request(endpoint: &str, query: &[(&str, &str)]) -> Result<OAuthTokenSet, String> {
-    let raw: Value = reqwest::Client::new()
+async fn token_request(
+    endpoint: &str,
+    client_ids: &[String],
+    query: &[(&str, &str)],
+) -> Result<OAuthTokenSet, String> {
+    let appids: Vec<_> = client_ids.iter().map(|id| ("appid", id)).collect();
+    let response = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| error.to_string())?
         .get(endpoint)
+        .query(&appids)
         .query(query)
         .send()
         .await
         .map_err(|e| e.to_string())?
         .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
         .map_err(|e| e.to_string())?;
+    if response.status().is_redirection() {
+        return Err("WeChat token request refused a redirect".into());
+    }
+    let raw: Value = response.json().await.map_err(|e| e.to_string())?;
     if !super::remaining_profile::truthy(&raw)
         || raw
             .get("errcode")
@@ -187,7 +197,7 @@ impl OAuthAuthorizationCodeHandler for WeChatGrants {
         ids: &[String],
     ) -> Option<Arc<dyn OAuthAuthorizationCodeHandler>> {
         let mut handler = self.clone();
-        handler.client_id = ids.join(",");
+        handler.client_ids = ids.to_vec();
         Some(Arc::new(handler))
     }
     async fn validate_authorization_code(
@@ -196,8 +206,8 @@ impl OAuthAuthorizationCodeHandler for WeChatGrants {
     ) -> Result<OAuthTokenSet, String> {
         token_request(
             &self.token_endpoint,
+            &self.client_ids,
             &[
-                ("appid", &self.client_id),
                 ("secret", &self.client_secret),
                 ("code", &context.code),
                 ("grant_type", "authorization_code"),
@@ -210,14 +220,14 @@ impl OAuthAuthorizationCodeHandler for WeChatGrants {
 impl OAuthRefreshTokenHandler for WeChatGrants {
     fn configured_client_ids(&self, ids: &[String]) -> Option<Arc<dyn OAuthRefreshTokenHandler>> {
         let mut handler = self.clone();
-        handler.client_id = ids.join(",");
+        handler.client_ids = ids.to_vec();
         Some(Arc::new(handler))
     }
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String> {
         token_request(
             &self.refresh_endpoint,
+            &self.client_ids,
             &[
-                ("appid", &self.client_id),
                 ("grant_type", "refresh_token"),
                 ("refresh_token", refresh_token),
             ],

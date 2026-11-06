@@ -49,6 +49,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
             None,
             config.verification_token_expiry,
             None,
+            Some(&user.id()),
         )?;
         let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
         let user = ctx.user_view(user);
@@ -79,6 +80,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                     None,
                     config.verification_token_expiry,
                     None,
+                    Some(&user.id()),
                 )?;
                 let url = verification_url(&ctx.config, &token, body.callback_url.as_deref());
                 let user = ctx.user_view(&user);
@@ -108,6 +110,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                 &body.email,
                 None,
                 config.verification_token_expiry,
+                None,
                 None,
             )?;
             Ok(())
@@ -205,22 +208,23 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         Err(error) => return Err(error),
     };
 
-    let Some(user) = ctx
-        .database
-        .get_user_by_email_record(&claims.email.to_lowercase())
-        .await?
-    else {
-        return verification_error(query, codes::USER_NOT_FOUND, "User not found");
-    };
-
     if let Some(update_to) = claims
         .update_to
         .as_deref()
         .filter(|email| !email.is_empty())
     {
+        let Some(user_id) = claims.user_id.as_deref() else {
+            return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
+        };
+        let Some(user) = ctx.database.get_user_by_id_record(user_id).await? else {
+            return verification_error(query, codes::USER_NOT_FOUND, "User not found");
+        };
+        if user.email().unwrap_or_default().to_lowercase() != claims.email {
+            return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
+        }
         let current_session = verification_session(request, ctx).await;
         if let Some((ref session_user, _)) = current_session
-            && session_user.email().unwrap_or_default() != claims.email
+            && session_user.id != user_id
         {
             return verification_error(query, codes::INVALID_USER, "Invalid user");
         }
@@ -233,6 +237,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     Some(update_to),
                     config.verification_token_expiry,
                     Some("change-email-verification"),
+                    Some(user_id),
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let mut updated_user = ctx.user_view(&user);
@@ -266,48 +271,42 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 });
             }
             Some("change-email-verification") => {
-                let (mut session_user, session): (UserView, SessionView) =
-                    if let Some((user_2, session)) = current_session {
-                        (user_2, session)
-                    } else {
-                        let session =
-                            create_user_session_record(ctx, &user.id(), ip_address, user_agent)
-                                .await
-                                .map_err(SessionIssueError::into_auth_error)?
-                                .session;
-                        (ctx.user_view(&user), ctx.session_view(&session))
-                    };
-
+                let email_verified = user.email_verified();
                 let updated_user = ctx
                     .database
                     .update_user_record(
                         &user.id(),
                         UpdateUser {
                             email: Some(update_to.to_owned()),
-                            email_verified: Some(true),
+                            email_verified: Some(email_verified),
                             ..Default::default()
                         },
                     )
                     .await?;
 
-                if let Some(ref hook) = config.after_email_verification {
+                if email_verified && let Some(ref hook) = config.after_email_verification {
                     let hook_user = ctx.user_view(&updated_user);
                     hook(&hook_user).await?;
                 }
 
-                session_user.email = Some(update_to.to_owned());
-                session_user.email_verified = true;
-                super::super::user_management::handlers::renew_session_snapshot(
-                    &session_user,
-                    &session,
-                    ctx,
-                )
-                .await?;
+                let session_token = if let Some((mut session_user, session)) = current_session {
+                    session_user.email = Some(update_to.to_owned());
+                    session_user.email_verified = email_verified;
+                    super::super::user_management::handlers::renew_session_snapshot(
+                        &session_user,
+                        &session,
+                        ctx,
+                    )
+                    .await?;
+                    Some(session.token().to_owned())
+                } else {
+                    None
+                };
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
-                        session_token: Some(session.token().to_owned()),
+                        session_token,
                     });
                 }
 
@@ -316,21 +315,10 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                         "status": true,
                         "user": ctx.user_view(&updated_user),
                     }),
-                    session_token: Some(session.token().to_owned()),
+                    session_token,
                 });
             }
             _ => {
-                let (mut session_user, session) =
-                    if let Some((session_user, session)) = current_session {
-                        (session_user, session)
-                    } else {
-                        let session =
-                            create_user_session_record(ctx, &user.id(), ip_address, user_agent)
-                                .await
-                                .map_err(SessionIssueError::into_auth_error)?
-                                .session;
-                        (ctx.user_view(&user), ctx.session_view(&session))
-                    };
                 let updated_user = ctx
                     .database
                     .update_user_record(
@@ -348,6 +336,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     None,
                     chrono::Duration::hours(1),
                     None,
+                    Some(user_id),
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let wire_user = ctx.user_view(&updated_user);
@@ -367,19 +356,24 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                     .await?;
                 }
 
-                session_user.email = Some(update_to.to_owned());
-                session_user.email_verified = false;
-                super::super::user_management::handlers::renew_session_snapshot(
-                    &session_user,
-                    &session,
-                    ctx,
-                )
-                .await?;
+                let session_token = if let Some((mut session_user, session)) = current_session {
+                    session_user.email = Some(update_to.to_owned());
+                    session_user.email_verified = false;
+                    super::super::user_management::handlers::renew_session_snapshot(
+                        &session_user,
+                        &session,
+                        ctx,
+                    )
+                    .await?;
+                    Some(session.token().to_owned())
+                } else {
+                    None
+                };
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
-                        session_token: Some(session.token().to_owned()),
+                        session_token,
                     });
                 }
 
@@ -388,12 +382,18 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                         "status": true,
                         "user": ctx.user_view(&updated_user),
                     }),
-                    session_token: Some(session.token().to_owned()),
+                    session_token,
                 });
             }
         }
     }
 
+    let Some(user) = ctx.database.get_user_by_email_record(&claims.email).await? else {
+        return verification_error(query, codes::USER_NOT_FOUND, "User not found");
+    };
+    if claims.user_id.as_deref().is_some_and(|id| id != user.id()) {
+        return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
+    }
     if user.email_verified() {
         if let Some(callback_url) = query.callback_url.as_deref() {
             return Ok(VerifyEmailResult::Redirect {

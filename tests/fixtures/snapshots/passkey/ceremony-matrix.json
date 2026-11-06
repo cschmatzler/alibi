@@ -1,7 +1,7 @@
 [
   {
     "unlisted origin": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -15,7 +15,7 @@
   },
   {
     "not present": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -29,7 +29,7 @@
   },
   {
     "backed up without eligibility": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -112,7 +112,7 @@
   },
   {
     "token binding \"bound\"": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -149,7 +149,7 @@
   },
   {
     "token binding {\"status\":\"unknown\"}": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -163,7 +163,7 @@
   },
   {
     "token binding []": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"
@@ -200,7 +200,7 @@
   },
   {
     "multi-device from second origin": {
-      "status": 500,
+      "status": 400,
       "headers": {
         "content-type": [
           "application/json"

@@ -4,17 +4,8 @@ use alibi_core::types::OrganizationPermissions;
 use alibi_core::wire::SessionView;
 use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
 
 type OrganizationRoles = HashMap<String, OrganizationPermissions>;
-
-// The pinned runtime's cacheAllRoles map is shared by organization plugin
-// instances. Fresh permission checks replace only the selected organization's
-// snapshot; delegated role grants subsequently use that snapshot.
-fn role_cache() -> &'static Mutex<HashMap<String, OrganizationRoles>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, OrganizationRoles>>> = OnceLock::new();
-    CACHE.get_or_init(Mutex::default)
-}
 
 #[must_use]
 pub(crate) fn org_error(status: u16, code: &'static str) -> AuthError {
@@ -200,11 +191,11 @@ fn configured_roles(config: &OrganizationConfig) -> OrganizationRoles {
     roles
 }
 
-/// Loads the roles of an organization through the shared role cache.
+/// Loads roles from this auth instance's organization store.
 ///
 /// # Errors
 ///
-/// Returns errors from organization-role storage or the shared role cache.
+/// Returns errors from organization-role storage.
 pub async fn organization_roles<S: AuthSchema>(
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
@@ -232,28 +223,7 @@ pub async fn organization_roles<S: AuthSchema>(
             }
         }
     }
-    _ = role_cache()
-        .lock()
-        .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?
-        .insert(org_id.to_owned(), roles.clone());
     Ok(roles)
-}
-
-pub(super) fn cached_has_permissions(
-    role: &str,
-    required: &OrganizationPermissions,
-    config: &OrganizationConfig,
-    org_id: &str,
-) -> AuthResult<bool> {
-    let mut cache = role_cache()
-        .lock()
-        .map_err(|_error| AuthError::internal("Organization role cache unavailable"))?;
-    let roles = cache
-        .entry(org_id.to_owned())
-        .or_insert_with(|| configured_roles(config));
-    let permitted = role_has_permissions(role, required, roles);
-    drop(cache);
-    Ok(permitted)
 }
 
 /// Checks whether a role grants every required permission.
@@ -279,18 +249,21 @@ pub(crate) fn role_has_permissions<H: std::hash::BuildHasher>(
     roles: &HashMap<String, OrganizationPermissions, H>,
 ) -> bool {
     use crate::access::{Connector, authorize};
-    role.split(',').any(|name| {
-        roles.get(name).is_some_and(|permissions| {
-            authorize(
-                |resource| permissions.get(resource).map(Vec::as_slice),
-                required.iter().map(|(resource, actions)| {
-                    (resource.as_str(), actions.as_slice(), Connector::And)
-                }),
-                Connector::And,
-            )
-            .success()
+    role.split(',')
+        .map(alibi_core::utils::javascript::trim)
+        .filter(|name| !name.is_empty())
+        .any(|name| {
+            roles.get(name).is_some_and(|permissions| {
+                authorize(
+                    |resource| permissions.get(resource).map(Vec::as_slice),
+                    required.iter().map(|(resource, actions)| {
+                        (resource.as_str(), actions.as_slice(), Connector::And)
+                    }),
+                    Connector::And,
+                )
+                .success()
+            })
         })
-    })
 }
 
 ///
