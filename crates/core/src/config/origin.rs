@@ -100,10 +100,13 @@ impl AuthConfig {
                 });
             let accepted = host.as_deref().filter(|host| {
                 dynamic.allowed_hosts.iter().any(|pattern| {
-                    wildcard::matches(
-                        &normalize_host_pattern(pattern),
-                        &normalize_host_pattern(host),
-                    )
+                    let pattern = normalize_host_pattern(pattern);
+                    let host = normalize_host_pattern(host);
+                    if pattern.contains(['*', '?']) {
+                        wildcard::matches(&pattern, &host)
+                    } else {
+                        pattern == host
+                    }
                 })
             });
             config.base_url = if let Some(host) = accepted {
@@ -192,6 +195,33 @@ impl AuthConfig {
                 .collect();
         }
         Ok(config)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn dynamic_hosts_only_unescape_patterns_with_wildcards() {
+        let mut request = AuthRequest::new(crate::HttpMethod::Get, "/");
+        _ = request.headers.insert("host".into(), "example.com".into());
+        for (pattern, expected) in [
+            (r"example\.com", "https://fallback.test"),
+            ("EXAMPLE.COM", "https://example.com"),
+            (r"example\.*", "https://example.com"),
+        ] {
+            let config = AuthConfig::default().dynamic_base_url(DynamicBaseUrl {
+                allowed_hosts: vec![pattern.into()],
+                protocol: Some(BaseUrlProtocol::Https),
+                fallback: Some("https://fallback.test".into()),
+            });
+            assert_eq!(
+                config.resolve_request(&request).await.unwrap().base_url,
+                expected,
+                "{pattern}"
+            );
+        }
     }
 }
 
