@@ -1,13 +1,13 @@
 //! Paybin PKCE grants and decoded ID-token profile bound by its original subject.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 #[cfg(test)]
 use base64::Engine;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Paybin configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -25,7 +25,7 @@ pub struct PaybinOptions {
     pub issuer: Option<String>,
     pub prompt: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl PaybinOptions {
     #[must_use]
@@ -129,7 +129,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct PaybinUserInfo {
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for PaybinUserInfo {
@@ -175,7 +175,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
-        let mut output = serde_json::Map::new();
+        let mut output = Map::new();
         for (source, target) in [("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
                 _ = output.insert(target.into(), value.clone());
@@ -186,7 +186,7 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .filter(|v| truthy(v))
             .or_else(|| profile.get("preferred_username").filter(|v| truthy(v)))
             .cloned()
-            .unwrap_or_else(|| Value::String(String::new()));
+            .unwrap_or_else(|| Value::String(String::new().into()));
         _ = output.insert("name".into(), name.clone());
         _ = output.insert(
             "emailVerified".into(),
@@ -197,32 +197,12 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
                 .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
-            output.extend(user.public_profile(true));
+            output.extend(user.clone());
         }
-        let user_output = Some(output);
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: profile
-                    .get("sub")
-                    .map(super::remaining_profile::js_string)
-                    .transpose()?
-                    .unwrap_or_default(),
-                name: scalar(Some(&name))?,
-                email: profile
-                    .get("email")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(profile.get("picture"))?,
-                email_verified: profile.get("email_verified").is_some_and(truthy),
-            },
-        };
         let mut response = OAuthUserInfoResponse {
-            user_output,
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         };
         if let Some(mapped) = application_output {
             super::apply_application_mapping(&mut response, mapped)?;
@@ -231,24 +211,9 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
     }
 }
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) | Value::Bool(true) => true,
-    }
+    value.is_truthy()
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
-    }
-}
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }
 
@@ -259,7 +224,7 @@ fn decode_profile(token: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use crate::oauth::providers::js as json;
 
     #[tokio::test]
     async fn paybin_omits_empty_authorization_prompts() {
@@ -334,6 +299,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.data["sub"], "paybin");
-        assert_eq!(response.user.email, "paybin@example.com");
+        assert_eq!(response.user["email"], "paybin@example.com");
     }
 }

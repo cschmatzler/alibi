@@ -560,7 +560,10 @@ where
             .remove_scim_projection_grants_with_exec(Exec::tx(self.tx), domain, user_id, ids)
             .await
     }
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+    async fn get_user_by_email(
+        &self,
+        email: &alibi_core::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
         self.store
             .get_user_by_email_with_connection(Exec::tx(self.tx), email)
             .await
@@ -568,7 +571,7 @@ where
     async fn get_account(
         &self,
         provider: &str,
-        account_id: &str,
+        account_id: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         self.store
             .get_account_with_connection(Exec::tx(self.tx), provider, account_id)

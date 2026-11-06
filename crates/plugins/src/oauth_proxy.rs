@@ -21,7 +21,6 @@ use alibi_core::{
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -90,23 +89,10 @@ struct StatePackage {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ProxyUser {
-    id: String,
-    email: String,
-    name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    image: Option<String>,
-    #[serde(flatten)]
-    additional_fields: alibi_core::field_policy::FieldOutput,
-    #[serde(default)]
-    email_verified: bool,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ProxyAccount {
     provider_id: String,
-    account_id: String,
+    #[serde(skip)]
+    account_id: alibi_core::utils::json::JsString,
     #[serde(skip_serializing_if = "Option::is_none")]
     access_token: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -130,13 +116,11 @@ struct ProxyAccount {
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ProxyPayload {
-    user_info: ProxyUser,
+    #[serde(skip)]
+    user_info: alibi_core::utils::json::JsObject,
     account: ProxyAccount,
-    #[serde(
-        default,
-        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
-    )]
-    profile: Option<Value>,
+    #[serde(skip)]
+    profile: Option<alibi_core::utils::json::JsValue>,
     scopes: Option<Vec<String>>,
     state: String,
     #[serde(rename = "callbackURL")]
@@ -148,6 +132,40 @@ struct ProxyPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     disable_sign_up: Option<bool>,
     timestamp: f64,
+}
+
+impl ProxyPayload {
+    fn to_js_value(&self) -> AuthResult<alibi_core::utils::json::JsValue> {
+        use alibi_core::utils::json::JsValue;
+        let mut value = JsValue::from(serde_json::to_value(self)?);
+        value["userInfo"] = JsValue::Object(self.user_info.clone());
+        value["account"]["accountId"] = JsValue::String(self.account.account_id.clone());
+        if let Some(profile) = &self.profile {
+            value["profile"] = profile.clone();
+        }
+        Ok(value)
+    }
+    fn from_js_value(mut value: alibi_core::utils::json::JsValue) -> AuthResult<Self> {
+        use alibi_core::utils::json::JsValue;
+        let fields = value
+            .as_object_mut()
+            .ok_or_else(|| AuthError::bad_request("Invalid proxy profile"))?;
+        let Some(JsValue::Object(user_info)) = fields.shift_remove("userInfo") else {
+            return Err(AuthError::bad_request("Invalid proxy user"));
+        };
+        let profile = fields.shift_remove("profile");
+        let account_id = fields
+            .get_mut("account")
+            .and_then(JsValue::as_object_mut)
+            .and_then(|account| account.shift_remove("accountId"))
+            .and_then(|id| id.as_js_string().cloned())
+            .ok_or_else(|| AuthError::bad_request("Invalid proxy account"))?;
+        let mut payload: Self = serde_json::from_value(value.to_json_value()?)?;
+        payload.user_info = user_info;
+        payload.profile = profile;
+        payload.account.account_id = account_id;
+        Ok(payload)
+    }
 }
 
 /// Query accepted by the legacy public OAuth Proxy server operation.
@@ -527,7 +545,11 @@ impl OAuthProxyPlugin {
                 None,
             )?));
         }
-        if info.user.email.is_empty() {
+        if !info
+            .user
+            .get("email")
+            .is_some_and(alibi_core::utils::json::JsValue::is_truthy)
+        {
             return Ok(Some(error_redirect(&error_url, "email_not_found", None)?));
         }
         let mut callback = url::Url::parse(&state.callback_url)
@@ -540,19 +562,12 @@ impl OAuthProxyPlugin {
                 |(_, value)| value.into_owned(),
             );
         let payload = ProxyPayload {
-            user_info: ProxyUser {
-                id: info.user.id.clone(),
-                email: info.user.email,
-                name: info.user.name.unwrap_or_default(),
-                image: info.user.image,
-                additional_fields: Map::default(),
-                email_verified: info.user.email_verified,
-            },
+            user_info: info.user.clone(),
             profile: Some(info.data),
             scopes: Some(tokens.scopes.clone()),
             account: ProxyAccount {
                 provider_id: provider_id.to_owned(),
-                account_id: info.user.id,
+                account_id: info.account_subject.clone().unwrap_or_default(),
                 access_token: tokens.access_token,
                 refresh_token: tokens.refresh_token,
                 id_token: tokens.id_token,
@@ -576,7 +591,11 @@ impl OAuthProxyPlugin {
         _ = callback.query_pairs_mut().append_pair(
             "profile",
             &self.encrypt(
-                &alibi_core::utils::json::to_string(&payload)?,
+                &String::from_utf8(
+                    alibi_core::utils::json::stringify(&payload.to_js_value()?)?
+                        .ok_or_else(|| AuthError::internal("Missing proxy JSON"))?,
+                )
+                .map_err(|error| AuthError::internal(error.to_string()))?,
                 ctx,
                 EncryptionPurpose::ProxyProfile,
             )?,
@@ -624,14 +643,16 @@ impl OAuthProxyPlugin {
         let Ok(plain) = self.decrypt(profile, ctx, EncryptionPurpose::ProxyProfile) else {
             return error_redirect(&default_error, "invalid_profile", None);
         };
-        let Ok(raw) = alibi_core::utils::json::from_slice::<Value>(plain.as_bytes()) else {
+        let Ok(raw) = alibi_core::utils::json::parse_value(&plain) else {
             return error_redirect(&default_error, "invalid_payload", None);
         };
         if raw.get("profile").is_some_and(|value| !value.is_object())
             || raw.get("scopes").is_some_and(|value| {
-                !value
-                    .as_array()
-                    .is_some_and(|items| items.iter().all(Value::is_string))
+                !value.as_array().is_some_and(|items| {
+                    items
+                        .iter()
+                        .all(alibi_core::utils::json::JsValue::is_string)
+                })
             })
             || ["newUserURL", "errorURL"]
                 .iter()
@@ -642,8 +663,7 @@ impl OAuthProxyPlugin {
         {
             return error_redirect(&default_error, "invalid_payload", None);
         }
-        let Ok(payload) = alibi_core::utils::json::from_slice::<ProxyPayload>(plain.as_bytes())
-        else {
+        let Ok(payload) = ProxyPayload::from_js_value(raw.clone()) else {
             return error_redirect(&default_error, "invalid_payload", None);
         };
         if payload
@@ -748,16 +768,8 @@ impl OAuthProxyPlugin {
             req.extensions()
                 .insert(RecoveredOAuthServerContext(context));
         }
-        let user = OAuthUserInfo {
-            additional_fields: payload.user_info.additional_fields,
-            // Account authority comes from the account key, never the loose
-            // display profile's id. Forwarding resolves both to the same key.
-            id: payload.account.account_id,
-            email: payload.user_info.email.to_lowercase(),
-            name: Some(payload.user_info.name),
-            image: payload.user_info.image,
-            email_verified: payload.user_info.email_verified,
-        };
+        let user =
+            OAuthUserInfo::from_fields(&payload.user_info, Some(&payload.account.account_id));
         let tokens = OAuthTokenSet {
             access_token: payload.account.access_token,
             refresh_token: payload.account.refresh_token,
@@ -773,7 +785,9 @@ impl OAuthProxyPlugin {
             }),
             ..Default::default()
         };
-        let profile = payload.profile.unwrap_or(Value::Null);
+        let profile = payload
+            .profile
+            .unwrap_or(alibi_core::utils::json::JsValue::Null);
         if let Some(link) = state.link.as_ref() {
             return match complete_link_social(
                 &payload.account.provider_id,
@@ -800,12 +814,12 @@ impl OAuthProxyPlugin {
         }
         let user_output = raw
             .get("userInfo")
-            .and_then(Value::as_object)
+            .and_then(alibi_core::utils::json::JsValue::as_object)
             .map(|values| {
                 values
                     .iter()
                     .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect::<alibi_core::field_policy::FieldOutput>()
+                    .collect::<alibi_core::utils::json::JsObject>()
             });
         let outcome = match super::oauth::handlers::process_oauth_sign_in_with_output(
             super::oauth::handlers::OAuthIdentity {

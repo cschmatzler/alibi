@@ -66,9 +66,11 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
 
     async fn get_user_by_email_record(
         &self,
-        email: &str,
+        email: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        let user = self.get_user_by_email(email).await?;
+        let user = self
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
+            .await?;
         self.optional_user_record(user).await
     }
 
@@ -184,11 +186,14 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn list_users_by_ids_page(&self, ids: &[String], limit: f64) -> AuthResult<Vec<S::User>> {
         self.inner.list_users_by_ids_page(ids, limit).await
     }
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
         use crate::AuthUser;
         Ok(self
             .inner
-            .get_user_by_email(email)
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
             .await?
             .filter(|user| user.email().is_some_and(|stored| same_email(stored, email))))
     }
@@ -234,8 +239,10 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     }
 }
 
-pub(super) fn same_email(left: &str, right: &str) -> bool {
+pub(super) fn same_email(left: &str, right: &crate::utils::json::JsString) -> bool {
     use unicode_normalization::UnicodeNormalization;
     let normalize = |value: &str| value.nfc().collect::<String>().to_lowercase();
-    normalize(left) == normalize(right)
+    right
+        .as_str()
+        .is_some_and(|right| normalize(left) == normalize(right))
 }

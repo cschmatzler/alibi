@@ -40,7 +40,11 @@ pub(crate) async fn request_password_reset_core(
         message: PASSWORD_RESET_SUCCESS_MESSAGE.to_owned(),
     };
 
-    let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
+    let Some(user) = ctx
+        .database
+        .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&body.email))
+        .await?
+    else {
         _ = alibi_core::utils::id::generate_id(24);
         _ = ctx.verifications().find("dummy-verification-token").await?;
         tracing::warn!("Reset Password: User not found");

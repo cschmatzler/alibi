@@ -101,7 +101,7 @@ where
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         self.get_account_with_connection(self.scoped_connection(), provider, provider_account_id)
             .await
@@ -215,11 +215,14 @@ where
         &self,
         connection: &C,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         let mut accounts = <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::provider_id_column().eq(provider))
-            .filter(<S::Account as SeaOrmAccountModel>::account_id_column().eq(provider_account_id))
+            .filter(
+                <S::Account as SeaOrmAccountModel>::account_id_column()
+                    .eq(provider_account_id.to_utf8_binding()),
+            )
             .limit(2)
             .all(connection)
             .await

@@ -583,7 +583,7 @@ mod tests {
             assert_eq!(proof.value(), format!("{}:0", delivery.otp));
             assert!(
                 ctx.database
-                    .get_user_by_email(email)
+                    .get_user_by_email(&alibi_core::utils::json::JsString::from(email))
                     .await
                     .unwrap()
                     .is_none()
@@ -598,7 +598,7 @@ mod tests {
             assert_eq!(received.status, 200);
             let user = ctx
                 .database
-                .get_user_by_email(email)
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(email))
                 .await
                 .unwrap()
                 .unwrap();
@@ -804,7 +804,9 @@ mod tests {
                 let token = payload.get("token").and_then(Value::as_str).unwrap();
                 let user = ctx
                     .database
-                    .get_user_by_email("owner@example.com")
+                    .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                        "owner@example.com",
+                    ))
                     .await
                     .unwrap()
                     .unwrap();
@@ -920,7 +922,9 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_user_by_email("attempts@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "attempts@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -1061,7 +1065,9 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_user_by_email("wrong-scope@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "wrong-scope@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -1084,7 +1090,7 @@ mod tests {
                 .create_account(CreateAccount {
                     additional_fields: alibi_core::field_policy::FieldValues::default(),
                     user_id: user.id().to_string(),
-                    account_id: format!("{provider}-identity"),
+                    account_id: format!("{provider}-identity").into(),
                     provider_id: provider.into(),
                     access_token: None,
                     refresh_token: None,
@@ -1218,7 +1224,11 @@ mod tests {
                     "{}",
                     String::from_utf8_lossy(&response.body)
                 );
-                let user = ctx.database.get_user_by_email_record(email).await.unwrap();
+                let user = ctx
+                    .database
+                    .get_user_by_email_record(&alibi_core::utils::json::JsString::from(email))
+                    .await
+                    .unwrap();
                 if status == 200 {
                     assert_eq!(user.unwrap().role().as_deref(), Some("editor"));
                 } else {
@@ -1261,7 +1271,7 @@ mod tests {
             );
             let user = ctx
                 .database
-                .get_user_by_email(&email)
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(&email))
                 .await
                 .unwrap()
                 .unwrap();
@@ -1562,7 +1572,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id().to_string(),
-                account_id: user.id().to_string(),
+                account_id: user.id().to_string().into(),
                 provider_id: "credential".into(),
                 access_token: None,
                 refresh_token: None,
@@ -1629,7 +1639,10 @@ mod tests {
         );
         let updated = ctx
             .database
-            .get_account("credential", account.account_id())
+            .get_account(
+                "credential",
+                &alibi_core::utils::json::JsString::from(account.account_id()),
+            )
             .await
             .unwrap()
             .unwrap();
@@ -2147,7 +2160,9 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_user_by_email("missing@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "missing@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()

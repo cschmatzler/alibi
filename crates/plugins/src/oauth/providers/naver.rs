@@ -1,11 +1,12 @@
 //! Naver's resultcode gate and original envelope account authority.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Naver configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -22,7 +23,7 @@ pub struct NaverOptions {
     /// Trusted transport override retaining Naver's actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl NaverOptions {
     #[must_use]
@@ -123,7 +124,7 @@ impl OAuthProvider {
 struct NaverUserInfo {
     endpoint: String,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for NaverUserInfo {
@@ -154,7 +155,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         let profile = response;
@@ -178,7 +179,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep Source's original JSON publication separate from typed persistence.
-        let mut output = alibi_core::field_policy::FieldOutput::new();
+        let mut output = Map::new();
         let name = account
             .and_then(|value| value.get("name"))
             .filter(|value| truthy(value))
@@ -188,7 +189,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
                     .filter(|value| truthy(value))
             })
             .cloned()
-            .unwrap_or_else(|| Value::String(String::new()));
+            .unwrap_or_else(|| Value::String(String::new().into()));
         _ = output.insert("name".into(), name);
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         for (public, remote) in [("email", "email"), ("image", "profile_image")] {
@@ -197,44 +198,12 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             }
         }
         if let Some(user) = &mapped {
-            output.extend(user.public_profile(true));
-            output.extend(user.additional_fields.clone());
+            output.extend(user.clone());
         }
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: account
-                    .and_then(|value| value.get("id"))
-                    .map(super::remaining_profile::js_string)
-                    .transpose()?
-                    .unwrap_or_default(),
-                name: Some(
-                    scalar(
-                        account
-                            .and_then(|value| value.get("name"))
-                            .filter(|value| truthy(value))
-                            .or_else(|| {
-                                account
-                                    .and_then(|value| value.get("nickname"))
-                                    .filter(|value| truthy(value))
-                            }),
-                    )?
-                    .unwrap_or_default(),
-                ),
-                email: account
-                    .and_then(|value| value.get("email"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(account.and_then(|value| value.get("profile_image")))?,
-                email_verified: false,
-            },
-        };
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         };
         if let Some(mapped) = application_output {
             super::apply_application_mapping(&mut response, mapped)?;
@@ -242,34 +211,18 @@ impl OAuthUserInfoHandler for NaverUserInfo {
         Ok(response)
     }
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
-    }
-}
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("response").and_then(|value| value.get("id")))
 }
 
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) | Value::Bool(true) => true,
-    }
+    value.is_truthy()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use crate::oauth::providers::js as json;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
@@ -314,7 +267,7 @@ mod tests {
         .await
         .unwrap();
         captured.await.unwrap();
-        let output = response.user_output.unwrap();
+        let output = response.user.clone();
         assert_eq!(output["name"], json!({}));
         assert_eq!(output["email"], json!(["raw"]));
         assert_eq!(output["image"], json!([]));
@@ -339,7 +292,8 @@ mod tests {
             .await
             .unwrap();
             captured.await.unwrap();
-            assert_eq!(response.user.id, expected);
+            assert!(!response.user.contains_key("id"));
+            assert_eq!(subject(&response.data).unwrap(), expected);
         }
         for id in [
             json!(null),
@@ -358,10 +312,7 @@ mod tests {
 
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(
-            &self,
-            profile: Value,
-        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile, self.expected);
             if self.fail {
                 return Err("mapping failed".into());
@@ -408,7 +359,7 @@ mod tests {
                 let response = response.unwrap();
                 assert_eq!(response.data, profile);
                 assert_eq!(subject(&response.data).unwrap(), "original");
-                let output = response.user_output.unwrap();
+                let output = response.user.clone();
                 assert_eq!(output["name"], "mapped");
                 assert_eq!(output["email"], "original@example.com");
                 assert_eq!(output["emailVerified"], false);

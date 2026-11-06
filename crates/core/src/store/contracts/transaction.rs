@@ -266,7 +266,10 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
 
-    async fn get_user_by_email(&self, _email: &str) -> AuthResult<Option<S::User>> {
+    async fn get_user_by_email(
+        &self,
+        _email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
         Err(AuthError::NotImplemented(
             "Transactional user lookup is unsupported".into(),
         ))
@@ -274,7 +277,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn get_account(
         &self,
         _provider: &str,
-        _account_id: &str,
+        _account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         Err(AuthError::NotImplemented(
             "Transactional account lookup is unsupported".into(),
@@ -296,9 +299,12 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     }
     async fn get_user_by_email_record(
         &self,
-        email: &str,
+        email: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        match self.get_user_by_email(email).await? {
+        match self
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
+            .await?
+        {
             Some(user) => self.native_user_record(user).await.map(Some),
             None => Ok(None),
         }
@@ -306,9 +312,9 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     async fn get_account_record(
         &self,
         provider: &str,
-        account_id: &str,
+        account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
-        self.get_account(provider, account_id)
+        self.get_account(provider, &crate::utils::json::JsString::from(account_id))
             .await?
             .map(AdapterRecord::physical)
             .transpose()

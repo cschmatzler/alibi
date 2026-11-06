@@ -1,6 +1,6 @@
 //! Application provisioning after successful SSO account and session creation.
+use alibi_core::utils::json::JsValue as Value;
 use alibi_core::{AuthResult, store::SsoProvider, wire::UserView};
-use serde_json::Value;
 use std::sync::Arc;
 
 /// Successful SSO identity, protocol profile, and optional OIDC tokens.

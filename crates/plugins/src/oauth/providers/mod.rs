@@ -1,3 +1,8 @@
+macro_rules! js {
+    ($($tokens:tt)*) => { alibi_core::utils::json::JsValue::from(serde_json::json!($($tokens)*)) };
+}
+pub(crate) use js;
+
 mod discord;
 mod generic;
 mod github;
@@ -67,12 +72,11 @@ mod apple;
 pub use apple::AppleOptions;
 
 mod microsoft;
+use alibi_core::utils::json::{JsObject as Map, JsString, JsValue as Value};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 pub use microsoft::{MicrosoftOptions, MicrosoftProfilePhotoSize};
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
-use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -137,29 +141,52 @@ pub struct OAuthTokenSet {
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfo {
     /// Trusted mapped application values; writes select initialized declared input fields.
-    pub additional_fields: alibi_core::field_policy::FieldOutput,
-    pub id: String,
-    pub email: String,
-    pub name: Option<String>,
-    pub image: Option<String>,
+    pub additional_fields: Map,
+    pub id: JsString,
+    pub email: JsString,
+    pub name: Option<JsString>,
+    pub image: Option<JsString>,
     pub email_verified: bool,
 }
 
 impl OAuthUserInfo {
+    pub(crate) fn from_fields(fields: &Map, subject: Option<&JsString>) -> Self {
+        let scalar = |name| match fields.get(name) {
+            Some(Value::String(value)) => Some(value.clone()),
+            Some(Value::Number(value)) => Some(ryu_js::Buffer::new().format(*value).into()),
+            Some(Value::Bool(value)) => Some(value.to_string().into()),
+            _ => None,
+        };
+        Self {
+            id: subject
+                .cloned()
+                .or_else(|| scalar("id"))
+                .unwrap_or_default(),
+            email: fields
+                .get("email")
+                .and_then(Value::as_js_string)
+                .cloned()
+                .unwrap_or_default(),
+            name: scalar("name"),
+            image: scalar("image"),
+            email_verified: email_verified_claim(fields.get("emailVerified")),
+            additional_fields: fields.clone(),
+        }
+    }
     /// Original mapped public values. This is output, never account authority.
     #[must_use]
-    pub fn public_profile(&self, include_id: bool) -> alibi_core::field_policy::FieldOutput {
+    pub fn public_profile(&self, include_id: bool) -> Map {
         let mut output = self.additional_fields.clone();
-        _ = output.insert("email".into(), Value::String(self.email.clone()));
+        _ = output.insert("email".into(), Value::String(self.email.clone().into()));
         _ = output.insert("emailVerified".into(), Value::Bool(self.email_verified));
         if include_id {
-            _ = output.insert("id".into(), Value::String(self.id.clone()));
+            _ = output.insert("id".into(), Value::String(self.id.clone().into()));
         }
         if let Some(name) = &self.name {
-            _ = output.insert("name".into(), Value::String(name.clone()));
+            _ = output.insert("name".into(), Value::String(name.clone().into()));
         }
         if let Some(image) = &self.image {
-            _ = output.insert("image".into(), Value::String(image.clone()));
+            _ = output.insert("image".into(), Value::String(image.clone().into()));
         }
         output
     }
@@ -195,14 +222,15 @@ pub struct OAuthUserInfoRequest {
 
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfoResponse {
-    /// Original mapped public profile, captured before raw account-subject resolution.
-    pub user_output: Option<alibi_core::field_policy::FieldOutput>,
-    pub user: OAuthUserInfo,
+    /// Source user object, independent from stable account authority.
+    pub user: Map,
     pub data: Value,
+    /// Stable account authority resolved independently from mapped public fields.
+    pub account_subject: Option<JsString>,
 }
 
 /// Resolve a provider's stable account identity from its original profile.
-pub type OAuthAccountSubject = fn(&Value) -> Result<String, String>;
+pub type OAuthAccountSubject = fn(&Value) -> Result<JsString, String>;
 
 #[async_trait]
 pub trait OAuthUserInfoHandler: Send + Sync {
@@ -253,36 +281,14 @@ pub(crate) fn email_verified_claim(value: Option<&Value>) -> bool {
 /// typed persistence, and returned IDs never replace original account authority.
 #[async_trait]
 pub trait OAuthProfileMapper: Send + Sync {
-    async fn map_profile(
-        &self,
-        profile: Value,
-    ) -> Result<alibi_core::field_policy::FieldOutput, String>;
+    async fn map_profile(&self, profile: Value) -> Result<Map, String>;
 }
 
 pub(super) fn apply_application_mapping(
     response: &mut OAuthUserInfoResponse,
-    mapped: alibi_core::field_policy::FieldOutput,
+    mapped: Map,
 ) -> Result<(), String> {
-    let output = response
-        .user_output
-        .get_or_insert_with(|| response.user.public_profile(true));
-    output.extend(mapped.clone());
-    for (key, value) in mapped {
-        match key.as_str() {
-            "id" => response.user.id = remaining_profile::scalar(Some(&value))?.unwrap_or_default(),
-            "email" => response.user.email = value.as_str().unwrap_or_default().into(),
-            "emailVerified" => response.user.email_verified = email_verified_claim(Some(&value)),
-            "name" => {
-                response.user.name = remaining_profile::scalar(
-                    Some(&value).filter(|value| remaining_profile::truthy(value)),
-                )?;
-            }
-            "image" => response.user.image = remaining_profile::scalar(Some(&value))?,
-            _ => {
-                _ = response.user.additional_fields.insert(key, value);
-            }
-        }
-    }
+    response.user.extend(mapped);
     Ok(())
 }
 
@@ -401,7 +407,7 @@ pub struct OAuthProvider {
     pub allowed_request_params: Vec<String>,
     /// Selects the factory account subject from the original provider profile.
     pub account_subject: Option<OAuthAccountSubject>,
-    pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_user_info: Option<fn(Value) -> Result<Map, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,
     /// Application override takes precedence over the trusted built-in JWKS policy.
@@ -787,7 +793,7 @@ mod tests {
                     } else {
                         (
                             "404 Not Found",
-                            serde_json::json!({ "error": "not found" }).to_string(),
+                            crate::oauth::providers::js!({ "error": "not found" }).to_string(),
                         )
                     };
 
@@ -828,14 +834,14 @@ mod tests {
     #[tokio::test]
     async fn github_provider_get_user_info_uses_email_fallback_and_login_name() {
         let (user_url, emails_url, requests) = start_github_mock_server(
-            serde_json::json!({
+            crate::oauth::providers::js!({
                 "id": 42,
                 "login": "octocat",
                 "name": null,
                 "email": null,
                 "avatar_url": "https://avatars.githubusercontent.com/u/42?v=4",
             }),
-            serde_json::json!([
+            crate::oauth::providers::js!([
                 {
                     "email": "octocat@example.com",
                     "primary": true,
@@ -870,19 +876,27 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.user.id, "42");
-        assert_eq!(response.user.email, "octocat@example.com");
-        assert_eq!(response.user.name.as_deref(), Some("octocat"));
+        assert_eq!(response.user["id"], "42");
+        assert_eq!(response.user["email"], "octocat@example.com");
         assert_eq!(
-            response.user.image.as_deref(),
+            response.user.get("name").and_then(Value::as_str),
+            Some("octocat")
+        );
+        assert_eq!(
+            response.user.get("image").and_then(Value::as_str),
             Some("https://avatars.githubusercontent.com/u/42?v=4")
         );
-        assert!(response.user.email_verified);
+        assert!(
+            response
+                .user
+                .get("emailVerified")
+                .is_some_and(Value::is_truthy)
+        );
         assert_eq!(
             (*(response.data)
                 .get("email")
                 .expect("fixture contains the requested index")),
-            serde_json::json!("octocat@example.com")
+            crate::oauth::providers::js!("octocat@example.com")
         );
 
         let requests = requests.lock().await;
@@ -898,14 +912,14 @@ mod tests {
     #[tokio::test]
     async fn github_provider_get_user_info_keeps_inline_email() {
         let (user_url, emails_url, _) = start_github_mock_server(
-            serde_json::json!({
+            crate::oauth::providers::js!({
                 "id": "github-inline-email",
                 "login": "octocat",
                 "name": "Octo Cat",
                 "email": "public@example.com",
                 "avatar_url": null,
             }),
-            serde_json::json!([
+            crate::oauth::providers::js!([
                 {
                     "email": "primary@example.com",
                     "primary": true,
@@ -940,9 +954,17 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.user.email, "public@example.com");
-        assert_eq!(response.user.name.as_deref(), Some("Octo Cat"));
-        assert!(!response.user.email_verified);
+        assert_eq!(response.user["email"], "public@example.com");
+        assert_eq!(
+            response.user.get("name").and_then(Value::as_str),
+            Some("Octo Cat")
+        );
+        assert!(
+            !response
+                .user
+                .get("emailVerified")
+                .is_some_and(Value::is_truthy)
+        );
     }
 }
 // LCOV_EXCL_STOP

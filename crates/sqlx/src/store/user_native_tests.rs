@@ -355,7 +355,13 @@ async fn native_creation_rejects_structured_scalar_parameters_without_persistenc
             .adapter_native_fields
             .insert(field.to_owned(), json!({"unsupported": true}));
         assert!(store.create_user(input).await.is_err());
-        assert!(store.get_user_by_email(&email).await.unwrap().is_none());
+        assert!(
+            store
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(&email))
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }
 

@@ -104,14 +104,17 @@ pub(in crate::oauth::handlers) fn provider_fields(
     let fallback =
         alibi_core::field_policy::SessionFields(ctx.config.user.additional_fields.clone());
     let fields = registered.as_ref().map_or(&fallback, |fields| &fields.0);
-    let input = user_info
+    let input: alibi_core::utils::json::JsObject = user_info
         .additional_fields
         .iter()
         .filter(|(name, _)| {
             !matches!(
                 name.as_str(),
-                "id" | "email" | "emailVerified" | "name" | "image"
-            ) && fields.0.get(*name).is_some_and(|field| field.input)
+                Some("id" | "email" | "emailVerified" | "name" | "image")
+            ) && name
+                .as_str()
+                .and_then(|name| fields.0.get(name))
+                .is_some_and(|field| field.input)
         })
         .map(|(name, value)| {
             (
@@ -148,16 +151,35 @@ pub(in crate::oauth::handlers) fn provider_candidate(
 ) -> CreateUser {
     let mut candidate = CreateUser::new();
     candidate.id = Some(user_id.to_owned());
-    candidate.email = Some(user_info.email.to_lowercase());
-    candidate.name.clone_from(&user_info.name);
-    candidate.image.clone_from(&user_info.image);
+    candidate.email = user_info.email.to_lowercase().as_str().map(str::to_owned);
+    candidate.provider_email = Some(alibi_core::utils::json::JsValue::String(
+        user_info.email.to_lowercase(),
+    ));
+    candidate.name = user_info
+        .name
+        .as_ref()
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    candidate.provider_name = user_info
+        .name
+        .clone()
+        .map(alibi_core::utils::json::JsValue::String);
+    candidate.image = user_info
+        .image
+        .as_ref()
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    candidate.provider_image = user_info
+        .image
+        .clone()
+        .map(alibi_core::utils::json::JsValue::String);
     candidate.email_verified = Some(user_info.email_verified);
     candidate
 }
 
 pub(in crate::oauth::handlers) fn identity_source(
     provider: &str,
-    profile: &serde_json::Value,
+    profile: &alibi_core::utils::json::JsValue,
     action: UserValidationAction,
     policy: &OAuthProcessPolicy,
 ) -> UserValidationSource {
@@ -177,7 +199,7 @@ pub(in crate::oauth::handlers) fn identity_source(
 }
 pub(in crate::oauth::handlers) async fn validate_provider_identity(
     provider: &str,
-    profile: &serde_json::Value,
+    profile: &alibi_core::utils::json::JsValue,
     user: &OAuthUserInfo,
     user_id: &str,
     action: UserValidationAction,
@@ -190,7 +212,15 @@ pub(in crate::oauth::handlers) async fn validate_provider_identity(
     };
     // Sign-in completion supplies an empty name before the shared policy.
     // Explicit linking validates the original mapped optional name instead.
-    data.user.name = Some(user.name.as_deref().unwrap_or_default().to_owned());
+    data.user.name = user
+        .name
+        .as_ref()
+        .and_then(|value| value.as_str())
+        .map(str::to_owned);
+    data.user.provider_name = Some(user.name.clone().map_or_else(
+        || alibi_core::utils::json::JsValue::String("".into()),
+        alibi_core::utils::json::JsValue::String,
+    ));
     validate_user_info(&ctx.config, &mut data)
         .await
         .map_err(|error| OAuthSignInError::from_identity_denial(&error))
@@ -198,19 +228,20 @@ pub(in crate::oauth::handlers) async fn validate_provider_identity(
 
 pub(in crate::oauth::handlers) fn verification_override(
     user: &impl AuthUser,
-    email: &str,
-    incoming: Option<&serde_json::Value>,
-) -> Option<serde_json::Value> {
+    email: &alibi_core::utils::json::JsString,
+    incoming: Option<&alibi_core::utils::json::JsValue>,
+) -> Option<alibi_core::utils::json::JsValue> {
     incoming.map(|incoming| {
         if user
             .email()
-            .is_some_and(|stored| stored.eq_ignore_ascii_case(email))
+            .is_some_and(|stored| email.eq_ignore_str(stored))
             && user.email_verified()
         {
             user.adapter_snapshot()
                 .and_then(|output| output.values().get("emailVerified"))
                 .cloned()
-                .unwrap_or(serde_json::Value::Bool(true))
+                .map(alibi_core::utils::json::JsValue::from)
+                .unwrap_or(alibi_core::utils::json::JsValue::Bool(true))
         } else {
             incoming.clone()
         }
@@ -249,14 +280,16 @@ pub(crate) async fn process_oauth_sign_in_with_output(
     meta: &alibi_core::RequestMeta,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_output, raw_policy): (
-        Option<&alibi_core::field_policy::FieldOutput>,
+        Option<&alibi_core::utils::json::JsObject>,
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let normalized_verification = raw_output
         .and_then(|output| output.get("emailVerified"))
         .map(|value| {
-            serde_json::Value::Bool(crate::oauth::providers::email_verified_claim(Some(value)))
+            alibi_core::utils::json::JsValue::Bool(crate::oauth::providers::email_verified_claim(
+                Some(value),
+            ))
         });
     let raw_verification = normalized_verification.as_ref();
     let OAuthIdentity {
@@ -270,7 +303,10 @@ pub(crate) async fn process_oauth_sign_in_with_output(
 
     let linked_account = ctx
         .database
-        .get_account_record(provider_name, &user_info.id)
+        .get_account_record(
+            provider_name,
+            &alibi_core::utils::json::JsString::from(&user_info.id),
+        )
         .await
         .map_err(OAuthSignInError::from_account_lookup)?;
 
@@ -320,7 +356,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             && !user.email_verified()
             && user
                 .email()
-                .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
+                .is_some_and(|email| user_info.email.eq_ignore_str(email))
         {
             let updated = ctx
                 .database
@@ -346,15 +382,24 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                 .update_user_record(
                     &user.id(),
                     UpdateUser {
-                        name: user_info.name.clone(),
-                        image: user_info.image.clone(),
-                        email: Some(user_info.email.to_lowercase()),
+                        name: user_info
+                            .name
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        image: user_info
+                            .image
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        email: user_info.email.to_lowercase().as_str().map(str::to_owned),
                         additional_fields,
                         email_verified: Some(verification.as_ref().map_or_else(
                             || {
-                                (user.email().is_some_and(|email| {
-                                    email.eq_ignore_ascii_case(&user_info.email)
-                                }) && user.email_verified())
+                                (user
+                                    .email()
+                                    .is_some_and(|email| user_info.email.eq_ignore_str(email))
+                                    && user.email_verified())
                                     || user_info.email_verified
                             },
                             raw_truthy,
@@ -422,7 +467,9 @@ pub(crate) async fn process_oauth_sign_in_with_output(
 
     let existing_user = ctx
         .database
-        .get_user_by_email_record(&user_info.email.to_lowercase())
+        .get_user_by_email_record(&alibi_core::utils::json::JsString::from(
+            &user_info.email.to_lowercase(),
+        ))
         .await
         .map_err(|error| error.to_string())?;
 
@@ -477,7 +524,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             && !linked_user.email_verified()
             && linked_user
                 .email()
-                .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
+                .is_some_and(|email| user_info.email.eq_ignore_str(email))
         {
             let updated = ctx
                 .database
@@ -501,8 +548,16 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                 .update_user_record(
                     &linked_user.id(),
                     UpdateUser {
-                        name: user_info.name.clone(),
-                        image: user_info.image.clone(),
+                        name: user_info
+                            .name
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        image: user_info
+                            .image
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
                         ..Default::default()
                     },
                 )
@@ -522,15 +577,24 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                 .update_user_record(
                     &linked_user.id(),
                     UpdateUser {
-                        name: user_info.name.clone(),
-                        image: user_info.image.clone(),
-                        email: Some(user_info.email.to_lowercase()),
+                        name: user_info
+                            .name
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        image: user_info
+                            .image
+                            .as_ref()
+                            .and_then(|value| value.as_str())
+                            .map(str::to_owned),
+                        email: user_info.email.to_lowercase().as_str().map(str::to_owned),
                         additional_fields,
                         email_verified: Some(verification.as_ref().map_or_else(
                             || {
-                                (linked_user.email().is_some_and(|email| {
-                                    email.eq_ignore_ascii_case(&user_info.email)
-                                }) && linked_user.email_verified())
+                                (linked_user
+                                    .email()
+                                    .is_some_and(|email| user_info.email.eq_ignore_str(email))
+                                    && linked_user.email_verified())
                                     || user_info.email_verified
                             },
                             raw_truthy,
@@ -565,15 +629,16 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             return Err(OAuthSignInError::Generic("signup disabled".to_owned()));
         }
 
-        let mut create_user = CreateUser::new()
-            .with_email(user_info.email.to_lowercase())
-            .with_name(user_info.name.as_deref().unwrap_or_default())
-            .with_email_verified(user_info.email_verified);
+        let mut create_user = provider_candidate(user_info, "");
         crate::authentication_helpers::apply_creation_input_defaults(ctx, &mut create_user);
         apply_default_role(ctx, &mut create_user);
         create_user.provider_email_verified =
             raw_verification.filter(|value| !value.is_null()).cloned();
-        create_user.image = user_info.image.clone();
+        create_user.image = user_info
+            .image
+            .as_ref()
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
         let mut create_account = CreateAccount {

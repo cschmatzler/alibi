@@ -1,12 +1,12 @@
 use super::*;
 use crate::oauth::handlers::{callback_core, fetch_user_info_from_provider};
 use crate::oauth::state::{OAuthStatePayload, state_verification_identifier};
+use alibi_core::utils::json::JsObject as Map;
 use alibi_core::{
     AuthError, AuthRequest, AuthResponse, CreateVerification, HttpMethod, OAuthStateStrategy,
 };
 use async_trait::async_trait;
 use chrono::{Duration, Utc};
-use serde_json::Map;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub(super) struct HttpFixture {
@@ -25,7 +25,7 @@ impl HttpFixture {
                 let inspect = request.starts_with(b"GET /inspect?");
                 let status = if inspect { 200 } else { status };
                 let body = if inspect {
-                    serde_json::json!({"data":{"is_valid":true,"app_id":"client","user_id":"1"}})
+                    crate::oauth::providers::js!({"data":{"is_valid":true,"app_id":"client","user_id":"1"}})
                         .to_string()
                 } else {
                     body.to_string()
@@ -47,8 +47,8 @@ impl Drop for HttpFixture {
 struct RawIdMapper(Value);
 #[async_trait]
 impl OAuthProfileMapper for RawIdMapper {
-    async fn map_profile(&self, _: Value) -> Result<Map<String, Value>, String> {
-        Ok(serde_json::json!({"id": self.0})
+    async fn map_profile(&self, _: Value) -> Result<Map, String> {
+        Ok(crate::oauth::providers::js!({"id": self.0})
             .as_object()
             .unwrap()
             .clone())
@@ -59,11 +59,11 @@ impl OAuthProfileMapper for RawIdMapper {
 async fn mapped_public_ids_do_not_run_object_to_primitive_coercion() {
     use base64::Engine;
     for mapped_id in [
-        serde_json::json!({"toString":0}),
-        serde_json::json!([{"toString":0}]),
+        crate::oauth::providers::js!({"toString":0}),
+        crate::oauth::providers::js!([{"toString":0}]),
         Value::Null,
     ] {
-        let profile = serde_json::json!({"sub":"subject","email":"a@example.com"});
+        let profile = crate::oauth::providers::js!({"sub":"subject","email":"a@example.com"});
         let token = format!(
             "h.{}.s",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
@@ -84,7 +84,7 @@ async fn mapped_public_ids_do_not_run_object_to_primitive_coercion() {
             )
             .await
             .unwrap();
-            assert_eq!(response.user_output.as_ref().unwrap()["id"], mapped_id);
+            assert_eq!(response.user["id"], mapped_id);
             assert_eq!(response.data["sub"], "subject");
             assert_eq!(
                 provider.account_subject.unwrap()(&response.data).unwrap(),
@@ -97,7 +97,7 @@ async fn mapped_public_ids_do_not_run_object_to_primitive_coercion() {
 pub(super) struct RejectMapper;
 #[async_trait]
 impl OAuthProfileMapper for RejectMapper {
-    async fn map_profile(&self, _: Value) -> Result<Map<String, Value>, String> {
+    async fn map_profile(&self, _: Value) -> Result<Map, String> {
         Err("application mapping threw".into())
     }
 }
@@ -202,7 +202,7 @@ pub(super) async fn callback(mut provider: OAuthProvider, tokens: OAuthTokenSet)
         None,
         None,
         None,
-        Map::new(),
+        serde_json::Map::new(),
     );
     ctx.verifications()
         .create(CreateVerification {
@@ -261,7 +261,7 @@ pub(super) async fn assert_outcome(
 
 #[tokio::test]
 async fn dedicated_profiles_distinguish_null_transport_and_mapping_exceptions_through_callback() {
-    let profile = serde_json::json!({
+    let profile = crate::oauth::providers::js!({
         "id":"1", "sub":"subject", "oid":"object", "user_id":"user", "account_id":"account",
         "state":"active", "email":"user@example.com", "name":"User",
         "picture":{"data":{"url":"https://example.com/photo"}},
@@ -287,7 +287,7 @@ async fn dedicated_profiles_distinguish_null_transport_and_mapping_exceptions_th
     ] {
         let mut body = profile.clone();
         if name == "linear" {
-            body = serde_json::json!({"data":{"viewer":{"id":"viewer","name":"User"}}});
+            body = crate::oauth::providers::js!({"data":{"viewer":{"id":"viewer","name":"User"}}});
         }
         let server = HttpFixture::new(200, body).await;
         let mapped = provider(name, &server.url).with_profile_mapper(Arc::new(RejectMapper));
@@ -319,20 +319,20 @@ async fn dedicated_raw_fields_and_account_subjects_do_not_require_scalar_profile
         "linkedin",
     ] {
         for subject in [
-            serde_json::json!({}),
-            serde_json::json!(["raw", 7]),
+            crate::oauth::providers::js!({}),
+            crate::oauth::providers::js!(["raw", 7]),
             Value::Null,
         ] {
-            let raw = serde_json::json!({
+            let raw = crate::oauth::providers::js!({
                 "id":subject, "sub":subject, "account_id":subject, "user_id":subject,
                 "email":{"raw":true}, "name":{"raw":true}, "handle":{"raw":true},
                 "picture":{"raw":true}, "img_url":{"raw":true}, "avatarUrl":{"raw":true},
                 "kakao_account":{"email":{"raw":true},"profile":{"nickname":{"raw":true}}},
             });
             let body = match name {
-                "cloudflare" => serde_json::json!({"success":true,"result":raw}),
-                "kick" => serde_json::json!({"data":[raw]}),
-                "linear" => serde_json::json!({"data":{"viewer":raw}}),
+                "cloudflare" => crate::oauth::providers::js!({"success":true,"result":raw}),
+                "kick" => crate::oauth::providers::js!({"data":[raw]}),
+                "linear" => crate::oauth::providers::js!({"data":{"viewer":raw}}),
                 _ => raw.clone(),
             };
             let server = HttpFixture::new(200, body).await;
@@ -347,17 +347,19 @@ async fn dedicated_raw_fields_and_account_subjects_do_not_require_scalar_profile
                 expected,
                 "{name}"
             );
-            assert!(response.user_output.is_some(), "{name}");
+            assert!(!response.user.is_empty(), "{name}");
         }
     }
     let provider = OAuthProvider::facebook("client", "secret");
     for subject in [
-        serde_json::json!({}),
-        serde_json::json!(["raw", 7]),
+        crate::oauth::providers::js!({}),
+        crate::oauth::providers::js!(["raw", 7]),
         Value::Null,
     ] {
         assert_eq!(
-            provider.account_subject.unwrap()(&serde_json::json!({"sub":subject,"id":"fallback"})),
+            provider.account_subject.unwrap()(
+                &crate::oauth::providers::js!({"sub":subject,"id":"fallback"})
+            ),
             super::remaining_profile::raw_subject(Some(&subject))
         );
     }
@@ -367,12 +369,15 @@ async fn dedicated_raw_fields_and_account_subjects_do_not_require_scalar_profile
 async fn kick_profile_indexing_accepts_object_properties_and_bmp_strings() {
     for (rows, expected) in [
         (
-            serde_json::json!({"0":{"user_id":"one","name":"User"}}),
-            serde_json::json!({"user_id":"one","name":"User"}),
+            crate::oauth::providers::js!({"0":{"user_id":"one","name":"User"}}),
+            crate::oauth::providers::js!({"user_id":"one","name":"User"}),
         ),
-        (serde_json::json!("éz"), serde_json::json!("é")),
+        (
+            crate::oauth::providers::js!("éz"),
+            crate::oauth::providers::js!("é"),
+        ),
     ] {
-        let server = HttpFixture::new(200, serde_json::json!({"data":rows})).await;
+        let server = HttpFixture::new(200, crate::oauth::providers::js!({"data":rows})).await;
         let response = fetch_user_info_from_provider(&provider("kick", &server.url), request())
             .await
             .unwrap();
@@ -381,14 +386,14 @@ async fn kick_profile_indexing_accepts_object_properties_and_bmp_strings() {
     struct NullMapper(Arc<std::sync::atomic::AtomicUsize>);
     #[async_trait]
     impl OAuthProfileMapper for NullMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile, Value::Null);
             self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(Map::new())
         }
     }
     let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let server = HttpFixture::new(200, serde_json::json!({"data":{"0":null}})).await;
+    let server = HttpFixture::new(200, crate::oauth::providers::js!({"data":{"0":null}})).await;
     assert_outcome(
         provider("kick", &server.url).with_profile_mapper(Arc::new(NullMapper(calls.clone()))),
         request(),
@@ -402,7 +407,7 @@ async fn kick_profile_indexing_accepts_object_properties_and_bmp_strings() {
 async fn cloudflare_name_join_coercion_is_a_source_exception() {
     let server = HttpFixture::new(
         200,
-        serde_json::json!({
+        crate::oauth::providers::js!({
             "success":true, "result":{"id":"cf","first_name":{"toString":0}}
         }),
     )
@@ -413,10 +418,13 @@ async fn cloudflare_name_join_coercion_is_a_source_exception() {
 #[tokio::test]
 async fn repository_profiles_defer_missing_subject_admission_until_after_mapping() {
     for (name, profile) in [
-        ("github", serde_json::json!({"email":"a@example.com"})),
+        (
+            "github",
+            crate::oauth::providers::js!({"email":"a@example.com"}),
+        ),
         (
             "gitlab",
-            serde_json::json!({"state":"active","email":"a@example.com"}),
+            crate::oauth::providers::js!({"state":"active","email":"a@example.com"}),
         ),
     ] {
         let server = HttpFixture::new(200, profile).await;
@@ -503,7 +511,7 @@ async fn microsoft_verification_throws_after_mapping_and_uses_raw_email() {
     struct CountMapper(Arc<AtomicUsize>);
     #[async_trait]
     impl OAuthProfileMapper for CountMapper {
-        async fn map_profile(&self, _: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, _: Value) -> Result<Map, String> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(Map::new())
         }
@@ -515,11 +523,12 @@ async fn microsoft_verification_throws_after_mapping_and_uses_raw_email() {
         .unwrap()
         .with_profile_mapper(Arc::new(CountMapper(count.clone())));
     for (list, verified) in [
-        (serde_json::json!([7]), true),
-        (serde_json::json!(["7"]), false),
-        (serde_json::json!("prefix7suffix"), true),
+        (crate::oauth::providers::js!([7]), true),
+        (crate::oauth::providers::js!(["7"]), false),
+        (crate::oauth::providers::js!("prefix7suffix"), true),
     ] {
-        let profile = serde_json::json!({"oid":"object","email":7,"verified_primary_email":list});
+        let profile =
+            crate::oauth::providers::js!({"oid":"object","email":7,"verified_primary_email":list});
         let token = format!(
             "e30.{}.sig",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
@@ -533,7 +542,7 @@ async fn microsoft_verification_throws_after_mapping_and_uses_raw_email() {
         )
         .await
         .unwrap();
-        assert_eq!(response.user_output.unwrap()["emailVerified"], verified);
+        assert_eq!(response.user["emailVerified"], verified);
     }
     let token = format!(
         "e30.{}.sig",
@@ -590,7 +599,7 @@ async fn facebook_inspection_null_and_custom_handler_throw_are_distinct() {
 async fn facebook_missing_picture_is_a_source_exception_not_profile_null() {
     let server = HttpFixture::new(
         200,
-        serde_json::json!({"id":"1","email":"user@example.com"}),
+        crate::oauth::providers::js!({"id":"1","email":"user@example.com"}),
     )
     .await;
     assert_outcome(provider("facebook", &server.url), request(), true).await;

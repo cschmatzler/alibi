@@ -325,12 +325,19 @@ impl UserStore<BundledSchema> for MemoryStore {
             .collect())
     }
 
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<UserView>> {
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<UserView>> {
+        let normalized = email.to_lowercase();
+        let Some(normalized) = normalized.as_str() else {
+            return Ok(None);
+        };
         Ok(self
             .lock()
             .users
             .values()
-            .find(|user| user.email.as_deref() == Some(&email.to_lowercase()))
+            .find(|user| user.email.as_deref() == Some(normalized))
             .cloned())
     }
 
@@ -642,7 +649,7 @@ impl AccountStore<BundledSchema> for MemoryStore {
         let now = Utc::now();
         let account = AccountView {
             id: uuid::Uuid::new_v4().to_string(),
-            account_id: create_account.account_id,
+            account_id: create_account.account_id.to_utf8_binding(),
             provider_id: create_account.provider_id,
             user_id: create_account.user_id,
             access_token: create_account.access_token,
@@ -664,11 +671,12 @@ impl AccountStore<BundledSchema> for MemoryStore {
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AccountView>> {
         let storage = self.lock();
         let mut matches = storage.accounts.values().filter(|account| {
-            account.provider_id == provider && account.account_id == provider_account_id
+            account.provider_id == provider
+                && provider_account_id.as_str() == Some(account.account_id.as_str())
         });
         let first = matches.next().cloned();
         if matches.next().is_some() {

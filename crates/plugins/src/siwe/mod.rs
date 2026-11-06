@@ -294,7 +294,7 @@ impl SiwePlugin {
                 claim = Some(identifier);
                 if ctx
                     .database
-                    .get_user_by_email_record(email_2)
+                    .get_user_by_email_record(&alibi_core::utils::json::JsString::from(email_2))
                     .await
                     .map_err(storage_error)?
                     .is_none()
@@ -325,7 +325,11 @@ impl SiwePlugin {
             Ok(user) => Ok(user),
             Err(error) if Some(&user_email) == normalized_email.as_ref() => {
                 let email_3 = normalized_email.as_deref().unwrap_or_default();
-                match ctx.database.get_user_by_email_record(email_3).await {
+                match ctx
+                    .database
+                    .get_user_by_email_record(&alibi_core::utils::json::JsString::from(email_3))
+                    .await
+                {
                     Ok(Some(_)) => {
                         create.email = Some(wallet_email);
                         ctx.database
@@ -372,7 +376,7 @@ impl SiwePlugin {
             .create_account_record(CreateAccount {
                 additional_fields: FieldValues::default(),
                 user_id: user_id.to_owned(),
-                account_id: format!("{address}:{}", number.format(chain_id)),
+                account_id: format!("{address}:{}", number.format(chain_id)).into(),
                 provider_id: "siwe".to_owned(),
                 access_token: None,
                 refresh_token: None,

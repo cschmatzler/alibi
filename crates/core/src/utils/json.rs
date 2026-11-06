@@ -183,6 +183,35 @@ impl JsValue {
         }
     }
     #[must_use]
+    pub fn is_number(&self) -> bool {
+        matches!(self, Self::Number(_))
+    }
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Self> {
+        match self {
+            Self::Object(value) => value.get_mut(key),
+            _ => None,
+        }
+    }
+    pub fn pointer(&self, pointer: &str) -> Option<&Self> {
+        if pointer.is_empty() {
+            return Some(self);
+        }
+        if !pointer.starts_with('/') {
+            return None;
+        }
+        let mut value = self;
+        for token in pointer[1..].split('/') {
+            let key = token.replace("~1", "/").replace("~0", "~");
+            value = match value {
+                Self::Object(object) => object.get(key.as_str())?,
+                Self::Array(array) if key == "0" || !key.starts_with('0') => {
+                    array.get(key.parse::<usize>().ok()?)?
+                }
+                _ => return None,
+            };
+        }
+        Some(value)
+    }
     pub const fn as_object(&self) -> Option<&JsObject> {
         if let Self::Object(m) = self {
             Some(m)
@@ -342,6 +371,61 @@ impl From<Value> for JsValue {
                     .collect(),
             ),
         }
+    }
+}
+
+impl PartialEq<Value> for JsValue {
+    fn eq(&self, other: &Value) -> bool {
+        self == &Self::from(other.clone())
+    }
+}
+impl PartialEq<JsValue> for Value {
+    fn eq(&self, other: &JsValue) -> bool {
+        other == self
+    }
+}
+impl PartialEq<str> for JsValue {
+    fn eq(&self, other: &str) -> bool {
+        self.as_js_string().is_some_and(|value| value == other)
+    }
+}
+impl PartialEq<&str> for JsValue {
+    fn eq(&self, other: &&str) -> bool {
+        self == *other
+    }
+}
+impl PartialEq<String> for JsValue {
+    fn eq(&self, other: &String) -> bool {
+        self == other.as_str()
+    }
+}
+impl PartialEq<i32> for JsValue {
+    fn eq(&self, other: &i32) -> bool {
+        self.as_f64() == Some(f64::from(*other))
+    }
+}
+impl PartialEq<bool> for JsValue {
+    fn eq(&self, other: &bool) -> bool {
+        self.as_bool() == Some(*other)
+    }
+}
+impl fmt::Display for JsValue {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let bytes = stringify(self).map_err(|_| fmt::Error)?.ok_or(fmt::Error)?;
+        formatter.write_str(std::str::from_utf8(&bytes).map_err(|_| fmt::Error)?)
+    }
+}
+impl std::ops::IndexMut<&str> for JsValue {
+    fn index_mut(&mut self, key: &str) -> &mut Self {
+        self.as_object_mut()
+            .expect("object property assignment requires an object")
+            .entry(key.into())
+            .or_insert(Self::Undefined)
+    }
+}
+impl JsIndex for &JsString {
+    fn lookup<'a>(self, value: &'a JsValue) -> Option<&'a JsValue> {
+        value.as_object()?.get(self)
     }
 }
 
@@ -760,6 +844,15 @@ pub fn from_value<T: DeserializeOwned + 'static>(input: JsValue) -> Result<T, se
             .downcast::<T>()
             .map(|value| *value)
             .map_err(|_| invalid("invalid JavaScript value type"));
+    }
+    if TypeId::of::<T>() == TypeId::of::<JsObject>() {
+        let JsValue::Object(object) = input else {
+            return Err(invalid("expected JavaScript object"));
+        };
+        return (Box::new(object) as Box<dyn Any>)
+            .downcast::<T>()
+            .map(|value| *value)
+            .map_err(|_| invalid("invalid JavaScript object type"));
     }
     if TypeId::of::<T>() == TypeId::of::<Value>() {
         let value: Box<dyn Any> = Box::new(input.to_json_value()?);

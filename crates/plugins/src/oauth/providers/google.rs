@@ -1,10 +1,10 @@
 use super::remaining_profile::{decode_grant_jwt, grant_id_token, profile_exception, raw_subject};
 use super::{
-    OAuthAuthorizationPolicy, OAuthProfileMapper, OAuthProvider, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProfileMapper, OAuthProvider, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use serde_json::Map;
-use serde_json::Value;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::JsValue as Value;
 use std::sync::Arc;
 impl OAuthProvider {
     #[must_use]
@@ -51,26 +51,17 @@ impl OAuthProvider {
             authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
             account_subject: Some(|profile| raw_subject(profile.get("sub"))),
             map_user_info: Some(|v| {
-                Ok(OAuthUserInfo {
-                    additional_fields: Map::default(),
-                    id: v
-                        .get("sub")
-                        .and_then(|v| v.as_str())
-                        .ok_or("missing sub")?
-                        .to_owned(),
-                    email: v
-                        .get("email")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or_default()
-                        .to_owned(),
-                    name: v.get("name").and_then(|v| v.as_str()).map(String::from),
-                    image: v.get("picture").and_then(|v| v.as_str()).map(String::from),
-                    // Google may send the claim as the string "true"; One Tap
-                    // reads the mapped value with Better Auth's `toBoolean`.
-                    email_verified: v.get("email_verified").is_some_and(|value| {
-                        value.as_bool() == Some(true) || value.as_str() == Some("true")
-                    }),
-                })
+                let mut output = Map::new();
+                output.insert("id".into(), v.property("sub")?);
+                for (source, target) in [("email", "email"), ("name", "name"), ("picture", "image")]
+                {
+                    output.insert(target.into(), v.property(source)?);
+                }
+                output.insert(
+                    "emailVerified".into(),
+                    Value::Bool(super::email_verified_claim(v.get("email_verified"))),
+                );
+                Ok(output)
             }),
             get_user_info: Some(Arc::new(GoogleUserInfo::default())),
             refresh_access_token: None,
@@ -151,19 +142,12 @@ impl OAuthUserInfoHandler for GoogleUserInfo {
             );
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: String::new(),
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output).map_err(profile_exception)?;
-        response.user.id = raw_subject(response.data.get("sub")).unwrap_or_default();
+
         Ok(response)
     }
 }
@@ -171,8 +155,8 @@ impl OAuthUserInfoHandler for GoogleUserInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::oauth::providers::js as json;
     use base64::Engine;
-    use serde_json::json;
     fn request(profile: Value) -> OAuthUserInfoRequest {
         OAuthUserInfoRequest {
             id_token: Some(format!(
@@ -185,7 +169,7 @@ mod tests {
     struct Mapper;
     #[async_trait::async_trait]
     impl OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["hd"], "workspace.test");
             Ok(json!({"name": null, "custom": [1], "id": "public"})
                 .as_object()
@@ -211,8 +195,13 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(response.data, profile);
-            assert_eq!(response.user_output.unwrap(), json!({"name":null,"email":null,"image":null,"emailVerified":"true","custom":[1],"id":"public"}).as_object().unwrap().clone());
-            assert!(response.user.email_verified);
+            assert_eq!(response.user, json!({"name":null,"email":null,"image":null,"emailVerified":"true","custom":[1],"id":"public"}).as_object().unwrap().clone());
+            assert!(
+                response
+                    .user
+                    .get("emailVerified")
+                    .is_some_and(Value::is_truthy)
+            );
             assert!(
                 crate::oauth::handlers::fetch_user_info_from_provider(
                     &provider,
@@ -230,7 +219,7 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(response.user_output.unwrap().is_empty());
+        assert!(response.user.is_empty());
     }
     #[tokio::test]
     async fn google_invalid_tokens_throw_but_absent_tokens_and_domain_rejections_do_not() {

@@ -281,7 +281,7 @@ pub(in crate::oauth::handlers) fn with_default_access_expiry(
         && !seconds.is_nan()
     {
         tokens.access_token_expires_at = crate::oauth::providers::remaining_profile::grant_expiry(
-            &serde_json::json!(seconds),
+            &alibi_core::utils::json::JsValue::Number(seconds as f64),
             false,
         );
         if tokens.access_token_expires_at.is_none() {
@@ -316,7 +316,10 @@ pub(in crate::oauth::handlers) fn parse_token_response(
         .and_then(|v| v.as_str())
         .map(String::from);
     let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
-        crate::oauth::providers::remaining_profile::grant_expiry(token_data.get(field)?, true)
+        crate::oauth::providers::remaining_profile::grant_expiry(
+            &token_data.get(field)?.clone().into(),
+            true,
+        )
     };
     let access_token_expires_at = expiry("expires_in");
     let refresh_token_expires_at = expiry("refresh_token_expires_in");
@@ -349,7 +352,7 @@ pub(in crate::oauth::handlers) fn parse_token_response(
         refresh_token_expires_at,
         scopes,
         id_token,
-        raw: Some(token_data),
+        raw: Some(token_data.into()),
     })
 }
 
@@ -441,7 +444,7 @@ pub(crate) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        let mut response = if request.client_submitted_id_token {
+        let response = if request.client_submitted_id_token {
             handler.get_user_info_from_id_token(request).await
         } else {
             handler.get_user_info(request).await
@@ -465,14 +468,6 @@ pub(crate) async fn fetch_user_info_from_provider(
                 AuthError::internal(error)
             }
         })?;
-        if let Some(value) = response
-            .user_output
-            .as_ref()
-            .and_then(|output| output.get("emailVerified"))
-        {
-            response.user.email_verified =
-                crate::oauth::providers::email_verified_claim(Some(value));
-        }
         return Ok(response);
     }
 
@@ -490,11 +485,13 @@ pub(crate) async fn fetch_user_info_from_provider(
         let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(payload)
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        let profile: serde_json::Value = serde_json::from_slice(&bytes)
+        let profile: alibi_core::utils::json::JsValue = alibi_core::utils::json::from_slice(&bytes)
             .map_err(|error| AuthError::internal(error.to_string()))?;
         if !crate::oauth::id_token::hosted_domain_allowed(
             provider,
-            profile.get("hd").and_then(serde_json::Value::as_str),
+            profile
+                .get("hd")
+                .and_then(alibi_core::utils::json::JsValue::as_str),
         ) {
             return Err(AuthError::internal("Hosted domain mismatch"));
         }
@@ -503,9 +500,9 @@ pub(crate) async fn fetch_user_info_from_provider(
             .ok_or_else(|| AuthError::internal("Missing user-info mapper"))?;
         let user = mapper(profile.clone()).map_err(AuthError::internal)?;
         let response = OAuthUserInfoResponse {
-            user_output: None,
             user,
             data: profile,
+            account_subject: None,
         };
         return Ok(response);
     }
@@ -541,8 +538,10 @@ pub(crate) async fn fetch_user_info_from_provider(
         )));
     }
 
-    let user_info_json: serde_json::Value = user_info_resp
-        .json()
+    let user_info_json =
+        crate::oauth::providers::remaining_profile::ProfileResponseExt::profile_json(
+            user_info_resp,
+        )
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse user info: {e}")))?;
 
@@ -550,9 +549,9 @@ pub(crate) async fn fetch_user_info_from_provider(
         .map_err(|e| AuthError::internal(format!("Failed to map user info: {e}")))?;
 
     let response = OAuthUserInfoResponse {
-        user_output: None,
         user,
         data: user_info_json,
+        account_subject: None,
     };
     Ok(response)
 }

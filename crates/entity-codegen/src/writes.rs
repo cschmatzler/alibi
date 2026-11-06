@@ -95,10 +95,13 @@ pub fn insert_values(role: EntityRole, fields: &FieldsNamed) -> Vec<(Ident, Inse
             }
         }
         EntityRole::Account => {
+            value(
+                "account_id",
+                quote! { create_account.account_id.to_utf8_binding() },
+            );
             value("created_at", quote! { now });
             value("updated_at", quote! { now });
             for name in [
-                "account_id",
                 "provider_id",
                 "user_id",
                 "access_token",

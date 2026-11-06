@@ -165,9 +165,52 @@ pub struct AccountInfoAccount {
 /// Provider profile and owned account returned by the `accountInfo` server operation.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AccountInfoResponse {
-    pub user: alibi_core::field_policy::FieldOutput,
-    pub data: serde_json::Value,
+    pub user: alibi_core::utils::json::JsObject,
+    pub data: alibi_core::utils::json::JsValue,
     pub account: AccountInfoAccount,
+}
+
+impl AccountInfoResponse {
+    pub(crate) fn into_js_value(self) -> alibi_core::AuthResult<alibi_core::utils::json::JsValue> {
+        use alibi_core::utils::json::JsValue;
+        Ok(JsValue::Object(
+            [
+                ("user".into(), JsValue::Object(self.user)),
+                ("data".into(), self.data),
+                (
+                    "account".into(),
+                    JsValue::from(serde_json::to_value(self.account)?),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        ))
+    }
+}
+impl alibi_core::utils::json::FromJsValue for AccountInfoResponse {
+    type Error = String;
+    fn from_js_value(value: alibi_core::utils::json::JsValue) -> Result<Self, String> {
+        use alibi_core::utils::json::JsValue;
+        let JsValue::Object(mut fields) = value else {
+            return Err("Expected account-info object".into());
+        };
+        let Some(JsValue::Object(user)) = fields.shift_remove("user") else {
+            return Err("Expected account-info user".into());
+        };
+        let data = fields
+            .shift_remove("data")
+            .ok_or("Missing account-info data")?;
+        let account = fields
+            .shift_remove("account")
+            .ok_or("Missing account-info account")?
+            .to_json_value()
+            .map_err(|error| error.to_string())?;
+        Ok(Self {
+            user,
+            data,
+            account: serde_json::from_value(account).map_err(|error| error.to_string())?,
+        })
+    }
 }
 
 impl SocialSignInRequest {

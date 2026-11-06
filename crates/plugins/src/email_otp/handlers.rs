@@ -315,7 +315,10 @@ impl EmailOtpPlugin {
             Err(error) => return Err(error),
         };
         let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
-        let user = ctx.database.get_user_by_email_record(&email).await?;
+        let user = ctx
+            .database
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
+            .await?;
         if user.is_none() && !should_send {
             ctx.verifications()
                 .delete(&identifier(body.otp_type, &email))
@@ -355,7 +358,7 @@ impl EmailOtpPlugin {
         self.verify_code(ctx, &key, &body.otp, true).await?;
         if ctx
             .database
-            .get_user_by_email_record(&email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
             .await?
             .is_none()
         {
@@ -391,7 +394,7 @@ impl EmailOtpPlugin {
         .await?;
         let user = ctx
             .database
-            .get_user_by_email_record(&email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
             .await?
             .ok_or_else(user_not_found)?;
         let settings = self.verification_settings(ctx);
@@ -455,7 +458,11 @@ impl EmailOtpPlugin {
         let email = body.email.to_lowercase();
         self.consume_code(ctx, &identifier(EmailOtpType::SignIn, &email), &body.otp)
             .await?;
-        let user = match ctx.database.get_user_by_email_record(&email).await? {
+        let user = match ctx
+            .database
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
+            .await?
+        {
             Some(user) if !user.email_verified() => revoke_unproven_access(ctx, &user.id())
                 .await?
                 .ok_or_else(invalid_otp)?,
@@ -542,7 +549,11 @@ impl EmailOtpPlugin {
             Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
         };
-        if let Some(user) = ctx.database.get_user_by_email_record(&email).await? {
+        if let Some(user) = ctx
+            .database
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
+            .await?
+        {
             self.deliver(
                 ctx,
                 request,
@@ -588,7 +599,7 @@ impl EmailOtpPlugin {
         self.verify_code(ctx, &key, &body.otp, true).await?;
         let user = ctx
             .database
-            .get_user_by_email_record(&email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
             .await?
             .ok_or_else(user_not_found)?;
         let password = ctx
@@ -680,7 +691,7 @@ impl EmailOtpPlugin {
         };
         if ctx
             .database
-            .get_user_by_email_record(&new_email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&new_email))
             .await?
             .is_some()
         {
@@ -737,12 +748,12 @@ impl EmailOtpPlugin {
         .await?;
         let current = ctx
             .database
-            .get_user_by_email_record(&email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
             .await?
             .ok_or_else(user_not_found)?;
         if ctx
             .database
-            .get_user_by_email_record(&new_email)
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&new_email))
             .await?
             .is_some()
         {

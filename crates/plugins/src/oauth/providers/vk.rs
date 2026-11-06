@@ -1,7 +1,8 @@
 //! Dedicated published Better Auth 1.7.6 Vk factory.
 use super::remaining_profile::{ProfileKind, PublishedProfile};
-use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo};
-use serde_json::Value;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth};
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 
 #[derive(Clone)]
 pub struct VkOptions {
@@ -12,7 +13,7 @@ pub struct VkOptions {
     pub redirect_uri: Option<String>,
     /// Trusted application transport override; it does not change profile semantics.
     pub user_info_endpoint: Option<String>,
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
     pub scope: Vec<String>,
     pub disable_default_scope: bool,
 }
@@ -114,6 +115,6 @@ impl OAuthProvider {
         provider
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::subject(ProfileKind::Vk, profile)
 }

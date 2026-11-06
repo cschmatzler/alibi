@@ -93,7 +93,7 @@ impl SsoPlugin {
                 &ctx.trusted_user_view(&user),
                 provider,
                 ctx,
-                &serde_json::json!({}),
+                &serde_json::json!({}).into(),
                 None,
             )
             .await?;

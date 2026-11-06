@@ -302,7 +302,11 @@ impl MagicLinkPlugin {
             return Ok(error_redirect(error_url, codes::INVALID_TOKEN, None));
         };
         let mut is_new_user = false;
-        let user = match ctx.database.get_user_by_email_record(&data.email).await? {
+        let user = match ctx
+            .database
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&data.email))
+            .await?
+        {
             Some(user) if !user.email_verified() => {
                 match revoke_unproven_access(ctx, &user.id()).await? {
                     Some(user) => user,
@@ -571,7 +575,9 @@ mod tests {
             }
             assert!(
                 ctx.database
-                    .get_user_by_email("cancel-user@example.com")
+                    .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                        "cancel-user@example.com"
+                    ))
                     .await
                     .unwrap()
                     .is_none()
@@ -775,7 +781,9 @@ mod tests {
         let token = payload.get("token").and_then(Value::as_str).unwrap();
         let user = ctx
             .database
-            .get_user_by_email("owner@example.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "owner@example.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -884,7 +892,9 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_user_by_email("disabled@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "disabled@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -946,7 +956,9 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_user_by_email("expired@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "expired@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -997,7 +1009,9 @@ mod tests {
         );
         let promoted = ctx
             .database
-            .get_user_by_email("promote@example.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "promote@example.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -1059,7 +1073,9 @@ mod tests {
         assert_eq!(statuses, [200, 302]);
         let user = ctx
             .database
-            .get_user_by_email("custom@example.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "custom@example.com",
+            ))
             .await
             .unwrap()
             .unwrap();

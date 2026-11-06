@@ -1,11 +1,12 @@
 //! Railway's PKCE grants, ordered scopes and original user-info account identity.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Railway configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -22,7 +23,7 @@ pub struct RailwayOptions {
     /// Trusted transport override retaining Railway's bearer GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl RailwayOptions {
     #[must_use]
@@ -118,7 +119,7 @@ impl OAuthProvider {
 struct RailwayUserInfo {
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for RailwayUserInfo {
@@ -149,7 +150,7 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         if profile.is_null()
@@ -175,7 +176,7 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
             .transpose()
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
-        let mut output = serde_json::Map::new();
+        let mut output = Map::new();
         if let Some(name) = profile.get("name") {
             _ = output.insert("name".into(), name.clone());
         }
@@ -188,32 +189,12 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
         }
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
-            output.extend(user.public_profile(true));
+            output.extend(user.clone());
         }
-        let user_output = Some(output);
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: profile
-                    .get("sub")
-                    .map(super::remaining_profile::js_string)
-                    .transpose()?
-                    .unwrap_or_default(),
-                // Signup uses Source's `user.name || ""`, while account-info
-                // above retains the original raw field.
-                name: scalar(profile.get("name").filter(|value| {
-                    !matches!(value, Value::Bool(false)) && value.as_f64() != Some(0.0)
-                }))?,
-                email: email.and_then(Value::as_str).unwrap_or_default().into(),
-                image: scalar(profile.get("picture"))?,
-                email_verified: false,
-            },
-        };
         let mut response = OAuthUserInfoResponse {
-            user_output,
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         };
         if let Some(mapped) = application_output {
             super::apply_application_mapping(&mut response, mapped)?;
@@ -221,16 +202,6 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
         Ok(response)
     }
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
-    }
-}
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }

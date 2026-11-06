@@ -568,8 +568,11 @@ impl ScimPlugin {
                                     code: None,
                                     message: "The linked Better Auth User no longer exists".into(),
                                 })?;
-                        if let Some(existing) =
-                            database.get_user_by_email(&profile.primary_email).await?
+                        if let Some(existing) = database
+                            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                                &profile.primary_email,
+                            ))
+                            .await?
                             && existing.id() != user.id()
                         {
                             return Err(user_uniqueness(
@@ -820,8 +823,11 @@ impl ScimPlugin {
                                     code: None,
                                     message: "The linked Better Auth User no longer exists".into(),
                                 })?;
-                        if let Some(existing) =
-                            database.get_user_by_email(&profile.primary_email).await?
+                        if let Some(existing) = database
+                            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                                &profile.primary_email,
+                            ))
+                            .await?
                             && existing.id() != user.id()
                         {
                             return Err(user_uniqueness(
@@ -1098,7 +1104,9 @@ impl ScimPlugin {
                     let (user, manage, linked) = match resolution {
                         ScimIdentityResolution::Create => {
                             if database
-                                .get_user_by_email(&profile.primary_email)
+                                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                                    &profile.primary_email,
+                                ))
                                 .await?
                                 .is_some()
                             {
@@ -1157,8 +1165,11 @@ impl ScimPlugin {
                     };
                     let (source, states) = database.create_scim_user(data, roles).await?;
                     if manage && linked {
-                        if let Some(existing) =
-                            database.get_user_by_email(&profile.primary_email).await?
+                        if let Some(existing) = database
+                            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                                &profile.primary_email,
+                            ))
+                            .await?
                             && existing.id() != user.id()
                         {
                             return Err(user_uniqueness(

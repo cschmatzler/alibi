@@ -13,7 +13,7 @@ pub enum SsoProtocol {
 #[serde(rename_all = "camelCase")]
 pub struct SsoAccountKey {
     pub issuer: String,
-    pub account_id: String,
+    pub account_id: alibi_core::utils::json::JsString,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +21,7 @@ pub struct SsoUserResolutionInput {
     pub protocol: SsoProtocol,
     pub provider_id: String,
     pub account_key: SsoAccountKey,
-    pub provider_user: Value,
+    pub provider_user: alibi_core::utils::json::JsValue,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_claims: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -185,7 +185,7 @@ impl super::SsoPlugin {
                     let identity = crate::oauth::handlers::transactional_identity::Identity {
                         provider: &name,
                         user: &user,
-                        profile: &profile,
+                        profile: &profile.clone().into(),
                         policy: &policy,
                         tokens: &tokens,
                         disable_signup: disabled,

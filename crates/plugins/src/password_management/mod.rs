@@ -612,7 +612,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id.clone(),
-                account_id: user.id.clone(),
+                account_id: user.id.clone().into(),
                 provider_id: "credential".to_owned(),
                 access_token: None,
                 refresh_token: None,
@@ -644,7 +644,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id.clone(),
-                account_id: "google-account-id".to_owned(),
+                account_id: "google-account-id".to_owned().into(),
                 provider_id: "google".to_owned(),
                 access_token: Some("oauth-access-token".to_owned()),
                 refresh_token: Some("oauth-refresh-token".to_owned()),

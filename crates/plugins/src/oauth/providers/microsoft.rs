@@ -1,18 +1,17 @@
 //! Microsoft Entra ID's configured authority, tenant and original object ID.
 use super::{
     OAuthAuthorizationPolicy, OAuthClientAssertion, OAuthProvider, OAuthScopeEncoding,
-    OAuthTokenEndpointAuth, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
-    OAuthUserInfoResponse,
+    OAuthTokenEndpointAuth, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use crate::oauth::{
     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
     OAuthJwksSource, OAuthNonceComparison,
 };
+use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::JsValue;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 use base64::Engine;
-use serde_json::Map;
-use serde_json::Value;
 use std::sync::Arc;
 
 const CONSUMER_TENANT: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
@@ -72,7 +71,7 @@ pub struct MicrosoftOptions {
     pub profile_photo_endpoint: Option<String>,
     /// Receives the original claims with any successfully fetched photo applied.
     /// Its mapped ID cannot replace the raw oid account identity.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl MicrosoftOptions {
     #[must_use]
@@ -256,7 +255,7 @@ impl OAuthIdTokenClaimsVerifier for MicrosoftClaims {
 struct MicrosoftUserInfo {
     photo_endpoint: String,
     disable_photo: bool,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -283,7 +282,6 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             .ok_or("Missing Microsoft ID token")?;
         let mut profile = super::remaining_profile::decode_grant_jwt(&token)
             .map_err(super::remaining_profile::profile_exception)?;
-        let id = subject(&profile)?;
         if !self.disable_photo
             && let Some(access) = request.access_token.filter(|value| !value.is_empty())
         {
@@ -299,19 +297,20 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             {
                 _ = object.insert(
                     "picture".into(),
-                    Value::String(format!(
-                        "data:image/jpeg;base64, {}",
-                        base64::engine::general_purpose::STANDARD.encode(bytes)
-                    )),
+                    Value::String(
+                        format!(
+                            "data:image/jpeg;base64, {}",
+                            base64::engine::general_purpose::STANDARD.encode(bytes)
+                        )
+                        .into(),
+                    ),
                 );
             }
         }
         let mut mapped = Map::new();
         if let Some(mapper) = self.mapper {
             mapped.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
@@ -347,16 +346,9 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
         output.insert("emailVerified".into(), Value::Bool(verified));
         output.extend(mapped);
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id,
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -364,7 +356,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
     }
 }
 
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     let id = profile
         .get("oid")
         .and_then(Value::as_str)
@@ -397,15 +389,15 @@ mod tests {
     struct Mapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             let expected = base64::engine::general_purpose::STANDARD
-                .encode(serde_json::json!("photo").to_string());
+                .encode(crate::oauth::providers::js!("photo").to_string());
             assert_eq!(
                 profile["picture"],
                 format!("data:image/jpeg;base64, {expected}")
             );
             Ok(
-                serde_json::json!({"name":"Mapped","id":"public-id","custom":true})
+                crate::oauth::providers::js!({"name":"Mapped","id":"public-id","custom":true})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -414,7 +406,7 @@ mod tests {
     }
     #[tokio::test]
     async fn microsoft_maps_photo_enriched_claims() {
-        let body = serde_json::json!("photo");
+        let body = crate::oauth::providers::js!("photo");
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
@@ -437,7 +429,7 @@ mod tests {
         let provider = OAuthProvider::microsoft(options)
             .unwrap()
             .with_profile_mapper(Arc::new(Mapper));
-        let profile = serde_json::json!({"oid":"object-id","name":"Original","email":"a@example.com","verified_primary_email":["a@example.com"]});
+        let profile = crate::oauth::providers::js!({"oid":"object-id","name":"Original","email":"a@example.com","verified_primary_email":["a@example.com"]});
         let token = format!(
             "e30.{}.sig",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
@@ -453,7 +445,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let output = response.user_output.unwrap();
+        let output = response.user.clone();
         assert_eq!(output["name"], "Mapped");
         assert_eq!(output["email"], "a@example.com");
         assert_eq!(output["emailVerified"], true);
@@ -467,7 +459,7 @@ mod tests {
     }
     #[tokio::test]
     async fn microsoft_accepts_padded_jwt_payload() {
-        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let profile = crate::oauth::providers::js!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
         let mut json = profile.to_string();
         while json.len() % 3 == 0 {
             json.push(' ');

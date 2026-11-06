@@ -31,7 +31,7 @@ async fn admin_supplied_ids_use_string_defaults_and_actual_sqlite_parameters() {
         );
         assert_eq!(
             ctx.database
-                .get_user_by_email(&email)
+                .get_user_by_email(&email.into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -79,7 +79,7 @@ async fn admin_supplied_ids_use_string_defaults_and_actual_sqlite_parameters() {
         assert_eq!(error.status_code(), 500, "{raw:?}: {error:?}");
         assert!(
             ctx.database
-                .get_user_by_email(&email)
+                .get_user_by_email(&email.into())
                 .await
                 .unwrap()
                 .is_none()

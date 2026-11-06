@@ -1,7 +1,8 @@
 //! Atlassian's published scope, PKCE, fixed audience and stable account subject.
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo};
-use serde_json::Map;
-use serde_json::Value;
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 
 /// Atlassian-specific configuration; callback and persistence policies remain
 /// configurable on the returned OAuth provider.
@@ -17,7 +18,7 @@ pub struct AtlassianOptions {
     /// Trusted user-info transport endpoint, retaining the Atlassian mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile. Its ID cannot replace `account_id`.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl AtlassianOptions {
     #[must_use]
@@ -111,14 +112,14 @@ impl OAuthProvider {
         provider
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("account_id"))
 }
 #[expect(
     clippy::needless_pass_by_value,
     reason = "signature fixed by the map_user_info callback type"
 )]
-fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
+fn atlassian_user_info(profile: Value) -> Result<Map, String> {
     let name = super::remaining_profile::scalar(profile.get("name"))?.unwrap_or_default();
     Ok(OAuthUserInfo {
         additional_fields: Map::default(),
@@ -131,12 +132,13 @@ fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
             .into(),
         image: super::remaining_profile::scalar(profile.get("picture"))?,
         email_verified: false,
-    })
+    }
+    .public_profile(true))
 }
 #[derive(Clone)]
 struct AtlassianMappedUserInfo {
     url: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait::async_trait]
@@ -169,7 +171,10 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?;
-        let profile: Value = response.json().await.map_err(|error| error.to_string())?;
+        let profile: Value = response
+            .profile_json()
+            .await
+            .map_err(|error| error.to_string())?;
         if !super::remaining_profile::truthy(&profile) {
             return Err("Missing atlassian profile".into());
         }
@@ -181,26 +186,17 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
         }
         output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
+            output.extend(mapper(profile.clone())?);
         }
         if let Some(mapper) = &self.application_mapper {
             output.extend(mapper.map_profile(profile.clone()).await?);
         }
         let mut response = super::OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: subject(&profile).unwrap_or_default(),
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
-        let name = super::remaining_profile::scalar(output.get("name"))?;
         super::apply_application_mapping(&mut response, output)?;
-        response.user.name = name;
         Ok(response)
     }
 }
@@ -211,9 +207,9 @@ mod tests {
     struct Mapper;
     #[async_trait::async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["account_id"], "account");
-            Ok(serde_json::json!({"custom":true})
+            Ok(crate::oauth::providers::js!({"custom":true})
                 .as_object()
                 .unwrap()
                 .clone())
@@ -221,8 +217,7 @@ mod tests {
     }
     #[tokio::test]
     async fn atlassian_maps_partial_fields_without_sync_mapper() {
-        let body =
-            serde_json::json!({"account_id":"account","name":false,"email":null,"picture":null});
+        let body = crate::oauth::providers::js!({"account_id":"account","name":false,"email":null,"picture":null});
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
@@ -253,9 +248,8 @@ mod tests {
             })
             .await
             .unwrap();
-        let output = response.user_output.unwrap();
+        let output = response.user.clone();
         assert_eq!(output["name"], false);
-        assert_eq!(response.user.name.as_deref(), Some("false"));
         assert_eq!(output["email"], Value::Null);
         assert_eq!(output["image"], Value::Null);
         assert_eq!(output["custom"], true);
@@ -265,13 +259,15 @@ mod tests {
     #[test]
     fn atlassian_preserves_falsy_scalar_names() {
         for (name, expected) in [
-            (serde_json::json!(false), "false"),
-            (serde_json::json!(0), "0"),
-            (serde_json::json!(""), ""),
+            (crate::oauth::providers::js!(false), "false"),
+            (crate::oauth::providers::js!(0), "0"),
+            (crate::oauth::providers::js!(""), ""),
         ] {
-            let user = atlassian_user_info(serde_json::json!({"account_id":"account","name":name}))
-                .unwrap();
-            assert_eq!(user.name.as_deref(), Some(expected));
+            let user = atlassian_user_info(
+                crate::oauth::providers::js!({"account_id":"account","name":name}),
+            )
+            .unwrap();
+            assert_eq!(user.get("name").and_then(Value::as_str), Some(expected));
         }
     }
 }

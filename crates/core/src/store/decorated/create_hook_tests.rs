@@ -159,7 +159,13 @@ async fn ordered_user_create_hooks() {
                 .is_err()
         );
         assert_eq!(*events.lock().unwrap(), expected);
-        assert!(physical.get_user_by_email(email).await.unwrap().is_none());
+        assert!(
+            physical
+                .get_user_by_email(&email.into())
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
     events.lock().unwrap().clear();
     assert!(

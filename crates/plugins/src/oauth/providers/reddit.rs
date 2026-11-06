@@ -1,10 +1,12 @@
 //! Reddit's non-PKCE Basic grants and stable placeholder-email profile.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Value;
 
 /// Application-owned Reddit configuration. Signup policies and asynchronous
 /// user-info/refresh overrides remain available on the returned native provider.
@@ -21,7 +23,7 @@ pub struct RedditOptions {
     /// Trusted application transport override preserving Reddit's mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before account identity resolution.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl RedditOptions {
     #[must_use]
@@ -124,7 +126,7 @@ impl OAuthProvider {
 struct RedditUserInfo {
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for RedditUserInfo {
@@ -156,7 +158,7 @@ impl OAuthUserInfoHandler for RedditUserInfo {
             .map_err(|e| e.to_string())?
             .error_for_status()
             .map_err(|e| e.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|e| e.to_string())?;
         let mapped = if let Some(mapper) = &self.application_mapper {
@@ -169,7 +171,6 @@ impl OAuthUserInfoHandler for RedditUserInfo {
                 .map(|mapper| mapper(profile.clone()))
                 .transpose()
                 .map_err(super::remaining_profile::profile_exception)?
-                .map(|user| user.public_profile(true))
                 .unwrap_or_default()
         };
         if profile.is_null() {
@@ -189,26 +190,27 @@ impl OAuthUserInfoHandler for RedditUserInfo {
                 .transpose()
                 .map_err(super::remaining_profile::profile_exception)?
                 .unwrap_or_else(|| "undefined".into());
-            let email = format!("{identifier}@reddit.placeholder.invalid");
-            if !crate::authentication_helpers::is_valid_email(&email) {
+            let email = identifier.concat(&"@reddit.placeholder.invalid".into());
+            if !email
+                .as_str()
+                .is_some_and(crate::authentication_helpers::is_valid_email)
+            {
                 return Err(super::remaining_profile::profile_exception(
                     "Invalid placeholder email",
                 ));
             }
-            Value::String(email)
+            Value::String(email.into())
         };
         let image = match profile.get("icon_img") {
             None | Some(Value::Null) => None,
-            Some(Value::String(image)) => Some(Value::String(
-                image.split('?').next().unwrap_or_default().into(),
-            )),
+            Some(Value::String(image)) => Some(Value::String(image.before(u16::from(b'?')))),
             _ => {
                 return Err(super::remaining_profile::profile_exception(
                     "Invalid Reddit icon_img",
                 ));
             }
         };
-        let mut output = serde_json::Map::new();
+        let mut output = Map::new();
         if let Some(name) = profile.get("name") {
             _ = output.insert("name".into(), name.clone());
         }
@@ -225,45 +227,13 @@ impl OAuthUserInfoHandler for RedditUserInfo {
                 .cloned()
                 .unwrap_or(Value::Bool(false)),
         );
-        let user = OAuthUserInfo {
-            additional_fields: output
-                .iter()
-                .filter(|(key, _)| {
-                    !matches!(
-                        key.as_str(),
-                        "id" | "name" | "email" | "image" | "emailVerified"
-                    )
-                })
-                .map(|(key, value)| (key.clone(), value.clone()))
-                .collect(),
-            id: profile
-                .get("id")
-                .map(super::remaining_profile::js_string)
-                .transpose()
-                .map_err(super::remaining_profile::profile_exception)?
-                .unwrap_or_default(),
-            name: super::remaining_profile::scalar(
-                output
-                    .get("name")
-                    .filter(|value| super::remaining_profile::truthy(value)),
-            )?,
-            email: output
-                .get("email")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .into(),
-            image: super::remaining_profile::scalar(output.get("image"))?,
-            email_verified: output
-                .get("emailVerified")
-                .is_some_and(super::remaining_profile::truthy),
-        };
         Ok(OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         })
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
 }

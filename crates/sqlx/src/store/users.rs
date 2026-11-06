@@ -127,10 +127,10 @@ pub(super) async fn provider_verification_output<M: SqlxUserModel>(
 
 fn stage_provider_verification<M: SqlxUserModel>(
     active: &mut ActiveRow,
-    value: Option<serde_json::Value>,
+    value: Option<alibi_core::utils::json::JsValue>,
     engine: Engine,
 ) -> AuthResult<()> {
-    let Some(value) = value else {
+    let Some(value) = value.map(|value| value.to_json_value()).transpose()? else {
         return Ok(());
     };
     // Boolean inputs retain the ordinary typed-model path on every engine.
@@ -168,10 +168,11 @@ fn stage_provider_verification<M: SqlxUserModel>(
 async fn stage_provider_text<M: SqlxUserModel>(
     exec: Exec<'_>,
     active: &mut ActiveRow,
-    name: Option<serde_json::Value>,
-    image: Option<serde_json::Value>,
+    name: Option<alibi_core::utils::json::JsValue>,
+    image: Option<alibi_core::utils::json::JsValue>,
+    email: Option<alibi_core::utils::json::JsValue>,
 ) -> AuthResult<()> {
-    for (field, raw) in [("name", name), ("image", image)] {
+    for (field, raw) in [("name", name), ("image", image), ("email", email)] {
         let Some(raw) = raw else {
             continue;
         };
@@ -183,7 +184,7 @@ async fn stage_provider_text<M: SqlxUserModel>(
         let column = if field == "name" {
             Some(M::name_column())
         } else {
-            M::list_users_column("image")
+            M::list_users_column(field)
         }
         .ok_or_else(|| {
             AuthError::internal("The user model does not expose its provider text column")
@@ -253,6 +254,7 @@ where
         fields.apply_adapter_transforms_async().await?;
         let provider_name = create_user.provider_name.take();
         let provider_image = create_user.provider_image.take();
+        let provider_email = create_user.provider_email.take();
         let provider_verification = create_user.provider_email_verified.take();
         let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
         if let Some(raw_id) = native_fields.get("id") {
@@ -262,7 +264,14 @@ where
         }
         let mut active = S::User::new_active(user_id, create_user, now);
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
-        stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
+        stage_provider_text::<S::User>(
+            exec,
+            &mut active,
+            provider_name,
+            provider_image,
+            provider_email,
+        )
+        .await?;
         let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(
@@ -573,7 +582,10 @@ where
         self.users_by_ids(ids, Some(limit)).await
     }
 
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+    async fn get_user_by_email(
+        &self,
+        email: &alibi_core::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
         self.get_user_by_email_with_connection(self.exec(), email)
             .await
     }
@@ -774,11 +786,19 @@ where
         fields.apply_adapter_transforms_async().await?;
         let provider_name = update.provider_name.take();
         let provider_image = update.provider_image.take();
+        let provider_email = update.provider_email.take();
         let provider_verification = update.provider_email_verified.take();
         let native_fields = std::mem::take(&mut update.adapter_native_fields);
         S::User::apply_update(&mut active, update, Utc::now());
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
-        stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
+        stage_provider_text::<S::User>(
+            exec,
+            &mut active,
+            provider_name,
+            provider_image,
+            provider_email,
+        )
+        .await?;
         let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(
@@ -855,9 +875,9 @@ where
     pub(super) async fn get_user_by_email_with_connection(
         &self,
         exec: Exec<'_>,
-        email: &str,
+        email: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::User>> {
-        let email = normalize_user_email(email);
+        let email = normalize_user_email(&email.to_utf8_binding());
         let sql = self.user_lookup(S::User::email_column(), email);
         exec.fetch_optional(sql).await
     }

@@ -394,24 +394,36 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
-        Ok(self.inner.get_user_by_email(email).await?.filter(|user| {
-            user.email()
-                .is_some_and(|stored| super::user::same_email(stored, email))
-        }))
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
+        Ok(self
+            .inner
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
+            .await?
+            .filter(|user| {
+                user.email()
+                    .is_some_and(|stored| super::user::same_email(stored, email))
+            }))
     }
     async fn get_account(
         &self,
         provider: &str,
-        account_id: &str,
+        account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
-        self.inner.get_account(provider, account_id).await
+        self.inner
+            .get_account(provider, &crate::utils::json::JsString::from(account_id))
+            .await
     }
     async fn get_user_by_email_record(
         &self,
-        email: &str,
+        email: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        let Some(model) = self.get_user_by_email(email).await? else {
+        let Some(model) = self
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
+            .await?
+        else {
             return Ok(None);
         };
         Ok(Some(self.transaction_user_record(model).await?))
@@ -419,9 +431,12 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     async fn get_account_record(
         &self,
         provider: &str,
-        account_id: &str,
+        account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
-        let Some(model) = self.get_account(provider, account_id).await? else {
+        let Some(model) = self
+            .get_account(provider, &crate::utils::json::JsString::from(account_id))
+            .await?
+        else {
             return Ok(None);
         };
         Ok(Some(self.record_store.account_record(model).await?))

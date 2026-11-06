@@ -127,7 +127,7 @@ pub(super) fn provider_token_nulls(
             .raw
             .as_ref()
             .and_then(|raw| raw.get(field))
-            .is_some_and(serde_json::Value::is_null)
+            .is_some_and(alibi_core::utils::json::JsValue::is_null)
     })
 }
 
@@ -199,7 +199,10 @@ pub(super) async fn encrypt_provider_token_set(
             })?;
             *target = Some(encrypt_token_with_config(value, &ctx.config)?);
         } else {
-            *target = ctx.database.provider_token_text(value).await?;
+            *target = ctx
+                .database
+                .provider_token_text(&value.to_json_value()?)
+                .await?;
         }
     }
     Ok(result)

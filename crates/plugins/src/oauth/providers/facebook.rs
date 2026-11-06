@@ -1,17 +1,18 @@
 //! Facebook Graph app-bound access tokens and signed Limited Login profiles.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use crate::oauth::{
     HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource,
     id_token::OAuthNonceComparison,
 };
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 #[cfg(test)]
 use base64::Engine;
-use serde_json::Map;
-use serde_json::Value;
 use std::sync::Arc;
 
 /// Application-owned Facebook configuration. User-info/refresh callbacks and
@@ -33,7 +34,7 @@ pub struct FacebookOptions {
     /// Trusted transport overrides retain the actual inspection and mapping.
     pub token_inspection_endpoint: Option<String>,
     pub user_info_endpoint: Option<String>,
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
     /// Application user-info resolution. A client-submitted access token, or an
     /// opaque ID token, must first be bound to a configured app.
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
@@ -168,7 +169,7 @@ struct FacebookUserInfo {
     inspection_endpoint: String,
     endpoint: String,
     fields: Vec<String>,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
     custom: Option<Arc<dyn OAuthUserInfoHandler>>,
 }
@@ -229,9 +230,7 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         let mut mapped = Map::new();
         if let Some(mapper) = self.mapper {
             mapped.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
@@ -282,19 +281,9 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         );
         output.extend(mapped);
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::scalar(
-                    profile.get("sub").or_else(|| profile.get("id")),
-                )?
-                .unwrap_or_default(),
-                name: None,
-                email: String::new(),
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -319,9 +308,8 @@ impl FacebookUserInfo {
             .map_err(http_error)?
             .error_for_status()
             .map_err(http_error)?
-            .json()
-            .await
-            .map_err(http_error)?;
+            .profile_json()
+            .await?;
         if profile.get("id") != Some(&user_id) {
             return Err("Facebook profile does not match inspected identity".into());
         }
@@ -346,11 +334,11 @@ impl FacebookUserInfo {
             .await
             .map_err(http_error)?
             .error_for_status()
-            .map_err(http_error)?;
+            .map_err(|error| http_error(error))?;
         if response.status().is_redirection() {
             return Err("Facebook token inspection refused a redirect".into());
         }
-        let inspected: Value = response.json().await.map_err(http_error)?;
+        let inspected: Value = response.profile_json().await?;
         let data = inspected
             .get("data")
             .ok_or("Facebook inspection returned no data")?;
@@ -377,15 +365,9 @@ fn http_error(error: reqwest::Error) -> String {
     error.without_url().to_string()
 }
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
+    value.is_truthy()
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub").or_else(|| profile.get("id")))
 }
 
@@ -395,10 +377,10 @@ mod tests {
     struct Mapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["email"], Value::Null);
             Ok(
-                serde_json::json!({"name":"Mapped","custom":true,"id":"public-id"})
+                crate::oauth::providers::js!({"name":"Mapped","custom":true,"id":"public-id"})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -413,10 +395,10 @@ mod tests {
         struct PictureMapper(Arc<AtomicUsize>);
         #[async_trait]
         impl super::super::OAuthProfileMapper for PictureMapper {
-            async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            async fn map_profile(&self, profile: Value) -> Result<Map, String> {
                 assert_eq!(profile["id"], "subject");
                 self.0.fetch_add(1, Ordering::SeqCst);
-                Ok(serde_json::json!({"image":"mapped-image"})
+                Ok(crate::oauth::providers::js!({"image":"mapped-image"})
                     .as_object()
                     .unwrap()
                     .clone())
@@ -427,14 +409,20 @@ mod tests {
             (None, false),
             (Some(Value::Null), false),
             (Some(Value::Bool(false)), false),
-            (Some(serde_json::json!({})), false),
-            (Some(serde_json::json!({"data":null})), false),
-            (Some(serde_json::json!({"data":{}})), true),
-            (Some(serde_json::json!({"data":true})), true),
-            (Some(serde_json::json!({"data":{"url":null}})), true),
-            (Some(serde_json::json!({"data":{"url":"photo"}})), true),
+            (Some(crate::oauth::providers::js!({})), false),
+            (Some(crate::oauth::providers::js!({"data":null})), false),
+            (Some(crate::oauth::providers::js!({"data":{}})), true),
+            (Some(crate::oauth::providers::js!({"data":true})), true),
+            (
+                Some(crate::oauth::providers::js!({"data":{"url":null}})),
+                true,
+            ),
+            (
+                Some(crate::oauth::providers::js!({"data":{"url":"photo"}})),
+                true,
+            ),
         ] {
-            let mut profile = serde_json::json!({"id":"subject","name":"Original"});
+            let mut profile = crate::oauth::providers::js!({"id":"subject","name":"Original"});
             if let Some(picture) = picture {
                 profile["picture"] = picture;
             }
@@ -442,7 +430,7 @@ mod tests {
             let endpoint = format!("http://{}", listener.local_addr().unwrap());
             let server = tokio::spawn(async move {
                 for body in [
-                    serde_json::json!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}}),
+                    crate::oauth::providers::js!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}}),
                     profile,
                 ] {
                     let (mut stream, _) = listener.accept().await.unwrap();
@@ -474,8 +462,11 @@ mod tests {
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             if valid {
                 let response = result.unwrap();
-                assert_eq!(response.user.image.as_deref(), Some("mapped-image"));
-                assert_eq!(response.user_output.unwrap()["image"], "mapped-image");
+                assert_eq!(
+                    response.user.get("image").and_then(Value::as_str),
+                    Some("mapped-image")
+                );
+                assert_eq!(response.user["image"], "mapped-image");
             } else {
                 assert!(
                     result
@@ -491,9 +482,9 @@ mod tests {
     async fn facebook_partial_mapping_preserves_transport_defaults() {
         for limited in [true, false] {
             let profile = if limited {
-                serde_json::json!({"sub":"subject","name":"Original","email":null,"picture":null,"email_verified":"true"})
+                crate::oauth::providers::js!({"sub":"subject","name":"Original","email":null,"picture":null,"email_verified":"true"})
             } else {
-                serde_json::json!({"id":"subject","name":"Original","email":null,"picture":{"data":{"url":null}},"email_verified":"true"})
+                crate::oauth::providers::js!({"id":"subject","name":"Original","email":null,"picture":{"data":{"url":null}},"email_verified":"true"})
             };
             let token = format!(
                 "e30.{}.sig",
@@ -519,8 +510,7 @@ mod tests {
 
             let profile_endpoint = endpoint;
             let profile_server = server;
-            let body =
-                serde_json::json!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}});
+            let body = crate::oauth::providers::js!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}});
 
             let body = body.to_string();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -553,7 +543,7 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output["name"], "Mapped");
             assert_eq!(output["email"], Value::Null);
             assert_eq!(output["image"], Value::Null);
@@ -581,7 +571,7 @@ mod tests {
     }
     #[tokio::test]
     async fn facebook_accepts_padded_jwt_payload() {
-        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let profile = crate::oauth::providers::js!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
         let mut json = profile.to_string();
         while json.len() % 3 == 0 {
             json.push(' ');

@@ -594,7 +594,7 @@ impl Fixture {
         ctx.database
             .create_account(CreateAccount {
                 user_id: user.id.clone(),
-                account_id: user.id.clone(),
+                account_id: user.id.clone().into(),
                 provider_id: "credential".into(),
                 password: Some("hash:Password123!".into()),
                 additional_fields: Default::default(),

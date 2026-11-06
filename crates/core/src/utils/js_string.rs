@@ -6,7 +6,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Clone, Eq)]
+#[derive(Clone, Default, Eq)]
 pub struct JsString {
     units: Vec<u16>,
     utf8: Option<String>,
@@ -34,6 +34,13 @@ impl JsString {
         String::from_utf16(&self.units)
     }
 
+    /// JavaScript runtime UTF-8 binding conversion (USVString). Only adapters
+    /// may use this at an actual database/protocol binding, after observers.
+    #[must_use]
+    pub fn to_utf8_binding(&self) -> String {
+        String::from_utf16_lossy(&self.units)
+    }
+
     /// Explicit projection for a pre-existing ordinary UTF-8 string contract.
     pub fn require_str(&self) -> crate::AuthResult<&str> {
         self.as_str().ok_or_else(|| {
@@ -52,6 +59,79 @@ impl JsString {
     }
 
     #[must_use]
+    pub fn starts_with(&self, prefix: &str) -> bool {
+        self.units
+            .iter()
+            .copied()
+            .take(prefix.encode_utf16().count())
+            .eq(prefix.encode_utf16())
+    }
+
+    #[must_use]
+    pub fn trim_matches(&self, predicate: impl Fn(char) -> bool) -> Self {
+        let mut units = self.units.as_slice();
+        while units
+            .first()
+            .is_some_and(|unit| char::from_u32(u32::from(*unit)).is_some_and(&predicate))
+        {
+            units = &units[1..];
+        }
+        while units
+            .last()
+            .is_some_and(|unit| char::from_u32(u32::from(*unit)).is_some_and(&predicate))
+        {
+            units = &units[..units.len() - 1];
+        }
+        Self::from_code_units(units.to_vec())
+    }
+
+    #[must_use]
+    pub fn to_lowercase(&self) -> Self {
+        let mut units = Vec::new();
+        let mut run = String::new();
+        for value in char::decode_utf16(self.units.iter().copied()) {
+            match value {
+                Ok(value) => run.push(value),
+                Err(value) => {
+                    units.extend(run.to_lowercase().encode_utf16());
+                    run.clear();
+                    units.push(value.unpaired_surrogate());
+                }
+            }
+        }
+        units.extend(run.to_lowercase().encode_utf16());
+        Self::from_code_units(units)
+    }
+
+    #[must_use]
+    pub fn eq_ignore_str(&self, other: &str) -> bool {
+        self.to_lowercase()
+            .units
+            .iter()
+            .copied()
+            .eq(other.to_lowercase().encode_utf16())
+    }
+    #[must_use]
+    pub fn eq_ignore_ascii_case(&self, other: &Self) -> bool {
+        self.units
+            .iter()
+            .map(|unit| {
+                if (65..=90).contains(unit) {
+                    unit + 32
+                } else {
+                    *unit
+                }
+            })
+            .eq(other.units.iter().map(|unit| {
+                if (65..=90).contains(unit) {
+                    unit + 32
+                } else {
+                    *unit
+                }
+            }))
+    }
+
+    #[must_use]
     pub fn concat(&self, other: &Self) -> Self {
         let mut units = self.units.clone();
         units.extend_from_slice(&other.units);
@@ -59,6 +139,22 @@ impl JsString {
     }
 
     #[must_use]
+    pub fn contains(&self, other: &Self) -> bool {
+        other.is_empty()
+            || self
+                .units
+                .windows(other.len())
+                .any(|window| window == other.code_units())
+    }
+    pub fn before(&self, delimiter: u16) -> Self {
+        Self::from_code_units(
+            self.units
+                .iter()
+                .copied()
+                .take_while(|unit| *unit != delimiter)
+                .collect::<Vec<_>>(),
+        )
+    }
     pub fn code_unit_at(&self, index: usize) -> Option<u16> {
         self.units.get(index).copied()
     }
@@ -75,6 +171,16 @@ impl From<String> for JsString {
 impl From<&str> for JsString {
     fn from(value: &str) -> Self {
         value.to_owned().into()
+    }
+}
+impl From<&JsString> for JsString {
+    fn from(value: &JsString) -> Self {
+        value.clone()
+    }
+}
+impl From<std::borrow::Cow<'_, str>> for JsString {
+    fn from(value: std::borrow::Cow<'_, str>) -> Self {
+        value.into_owned().into()
     }
 }
 impl From<&String> for JsString {

@@ -333,7 +333,7 @@ async fn admin_creation_malformed_native_fields_reach_storage_failure() {
         assert_eq!(error.status_code(), 500, "{error:?}");
         assert!(
             ctx.database
-                .get_user_by_email(&email)
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(&email))
                 .await
                 .unwrap()
                 .is_none()

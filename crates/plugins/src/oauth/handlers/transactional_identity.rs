@@ -1,14 +1,16 @@
 //! Authentication writes selected by an enterprise application resolver.
-use super::identity::{identity_source, provider_fields, validate_provider_identity};
+use super::identity::{
+    identity_source, provider_candidate, provider_fields, validate_provider_identity,
+};
 use super::{OAuthProcessPolicy, OAuthSignInError, ProcessOAuthUserResult};
 use crate::oauth::providers::{OAuthTokenSet, OAuthUserInfo};
 use crate::sso::{SsoResolvedProfile, SsoUserResolution};
 use alibi_core::user_validation::UserValidationAction;
+use alibi_core::utils::json::JsValue as Value;
 use alibi_core::{
     AdapterRecord, AuthAccount, AuthContext, AuthError, AuthResult, AuthSchema, AuthTransaction,
-    AuthUser, CreateAccount, CreateUser, RequestMeta, UpdateAccount, UpdateUser,
+    AuthUser, CreateAccount, RequestMeta, UpdateAccount, UpdateUser,
 };
-use serde_json::Value;
 pub(crate) struct Identity<'a, S: AuthSchema> {
     pub provider: &'a str,
     pub user: &'a OAuthUserInfo,
@@ -55,7 +57,9 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         meta,
         ctx,
     } = input;
-    let original_account = database.get_account_record(provider, &user.id).await?;
+    let original_account = database
+        .get_account_record(provider, &alibi_core::utils::json::JsString::from(&user.id))
+        .await?;
     let selected = if let SsoUserResolution::Link { user_id, .. } = decision {
         Some(user_id.as_str())
     } else {
@@ -82,7 +86,9 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         )
     } else {
         database
-            .get_user_by_email_record(&user.email.to_lowercase())
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(
+                &user.email.to_lowercase(),
+            ))
             .await?
     };
     let token_bundle =
@@ -158,13 +164,14 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         if *disable_signup {
             return Err(error("signup_disabled", ""));
         }
-        let mut data = CreateUser::new()
-            .with_email(user.email.to_lowercase())
-            .with_name(user.name.as_deref().unwrap_or_default())
-            .with_email_verified(user.email_verified);
+        let mut data = provider_candidate(user, "");
         crate::authentication_helpers::apply_creation_input_defaults(ctx, &mut data);
         crate::helpers::apply_default_role(ctx, &mut data);
-        data.image = user.image.clone();
+        data.image = user
+            .image
+            .as_ref()
+            .and_then(|value| value.as_str())
+            .map(str::to_owned);
         data.additional_fields = provider_fields(user, true, ctx).map_err(oauth_error)?;
         let created = database
             .create_user_with_source_record(
@@ -192,7 +199,7 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         account
     };
     let mut actual_user = existing.ok_or_else(|| error("unable_to_create_user", ""))?;
-    if account.account_id() != user.id
+    if user.id.as_str() != Some(account.account_id())
         || account.provider_id() != *provider
         || account.user_id() != actual_user.id().as_ref()
     {
@@ -208,7 +215,7 @@ pub(crate) async fn authenticate<S: AuthSchema>(
     if !is_register && update_profile {
         let verified = if actual_user
             .email()
-            .is_some_and(|email| email.eq_ignore_ascii_case(&user.email))
+            .is_some_and(|email| user.email.eq_ignore_str(email))
         {
             actual_user.email_verified() || user.email_verified
         } else {
@@ -218,9 +225,20 @@ pub(crate) async fn authenticate<S: AuthSchema>(
             .update_user_record(
                 &actual_user.id(),
                 UpdateUser {
-                    email: Some(user.email.to_lowercase()),
-                    name: Some(user.name.clone().unwrap_or_default()),
-                    image: user.image.clone(),
+                    email: user.email.to_lowercase().as_str().map(str::to_owned),
+                    provider_email: Some(Value::String(user.email.to_lowercase())),
+                    name: user
+                        .name
+                        .as_ref()
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned),
+                    provider_name: user.name.clone().map(Value::String),
+                    image: user
+                        .image
+                        .as_ref()
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned),
+                    provider_image: user.image.clone().map(Value::String),
                     email_verified: Some(verified),
                     additional_fields: provider_fields(user, false, ctx).map_err(oauth_error)?,
                     ..Default::default()
@@ -233,7 +251,7 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         && !actual_user.email_verified()
         && actual_user
             .email()
-            .is_some_and(|email| email.eq_ignore_ascii_case(&user.email))
+            .is_some_and(|email| user.email.eq_ignore_str(email))
     {
         actual_user = database
             .update_user_record(

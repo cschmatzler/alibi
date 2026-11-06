@@ -1,17 +1,18 @@
 //! Cognito's configured hosted domain, authenticated subject and profile fallback.
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeEncoding, OAuthTokenEndpointAuth,
-    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use crate::oauth::{
     HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource,
     OAuthNonceComparison,
 };
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 #[cfg(test)]
 use base64::Engine;
-use serde_json::Map;
-use serde_json::Value;
 use std::sync::Arc;
 
 /// Immutable Cognito settings. Application callback and signup policies remain
@@ -39,7 +40,7 @@ pub struct CognitoOptions {
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile, with the ID-token name fallback applied.
     /// Its mapped ID cannot replace the authenticated raw `sub`.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl CognitoOptions {
     #[must_use]
@@ -186,7 +187,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct CognitoUserInfo {
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -233,7 +234,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         if !super::remaining_profile::truthy(&profile) {
@@ -244,11 +245,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
     }
 }
 impl CognitoUserInfo {
-    async fn map_profile(
-        &self,
-        profile: &Value,
-        id_token: bool,
-    ) -> Result<Map<String, Value>, String> {
+    async fn map_profile(&self, profile: &Value, id_token: bool) -> Result<Map, String> {
         let mut output = Map::new();
         output.insert("name".into(), profile_name(profile));
         for (source, target) in [("email", "email"), ("picture", "image")] {
@@ -267,7 +264,7 @@ impl CognitoUserInfo {
             );
         }
         if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
+            output.extend(mapper(profile.clone())?);
         }
         if let Some(mapper) = &self.application_mapper {
             output.extend(mapper.map_profile(profile.clone()).await?);
@@ -280,12 +277,7 @@ fn decode_profile(token: &str) -> Result<Value, String> {
     super::remaining_profile::decode_grant_jwt(token)
 }
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Bool(true) | Value::Array(_) | Value::Object(_) => true,
-    }
+    value.is_truthy()
 }
 fn profile_name(profile: &Value) -> Value {
     ["name", "given_name", "username"]
@@ -293,29 +285,19 @@ fn profile_name(profile: &Value) -> Value {
         .filter_map(|key| profile.get(key))
         .find(|value| truthy(value))
         .cloned()
-        .unwrap_or_else(|| Value::String(String::new()))
+        .unwrap_or_else(|| Value::String(String::new().into()))
 }
-fn finish_profile(
-    profile: Value,
-    output: Map<String, Value>,
-) -> Result<OAuthUserInfoResponse, String> {
+fn finish_profile(profile: Value, output: Map) -> Result<OAuthUserInfoResponse, String> {
     let mut response = OAuthUserInfoResponse {
-        user_output: Some(output.clone()),
-        user: OAuthUserInfo {
-            additional_fields: Map::new(),
-            id: super::remaining_profile::scalar(profile.get("sub"))?.unwrap_or_default(),
-            email: String::new(),
-            name: None,
-            image: None,
-            email_verified: false,
-        },
+        user: output.clone(),
         data: profile,
+        account_subject: None,
     };
     super::apply_application_mapping(&mut response, output)?;
     Ok(response)
 }
 
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }
 
@@ -324,10 +306,10 @@ mod tests {
     use super::*;
     #[test]
     fn grant_payload_decoder_accepts_jose_forgiving_base64() {
-        for payload in ["e31=", " e\t3\n0\x0c=\r", "77u/e30="] {
+        for payload in ["e31=", " e\t3\n0\x0c=\r", "77u_e30="] {
             assert_eq!(
                 decode_profile(&format!(".{payload}.")).unwrap(),
-                serde_json::json!({})
+                crate::oauth::providers::js!({})
             );
         }
     }
@@ -338,7 +320,7 @@ mod tests {
     }
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             let call = self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             if call == 0 {
                 assert_eq!(profile["name"], "Given");
@@ -349,7 +331,7 @@ mod tests {
                 assert_eq!(profile["sub"], "http-subject");
                 assert!(profile.get("name").is_none());
             }
-            Ok(serde_json::json!({"custom":true})
+            Ok(crate::oauth::providers::js!({"custom":true})
                 .as_object()
                 .unwrap()
                 .clone())
@@ -358,7 +340,7 @@ mod tests {
     #[tokio::test]
     async fn cognito_partial_mapping_can_select_userinfo_fallback() {
         for fallback in [false, true] {
-            let body = serde_json::json!({"sub":"http-subject","given_name":"HTTP","email":null,"picture":null});
+            let body = crate::oauth::providers::js!({"sub":"http-subject","given_name":"HTTP","email":null,"picture":null});
 
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let body = body.to_string();
@@ -385,7 +367,7 @@ mod tests {
             let provider = OAuthProvider::cognito(options)
                 .unwrap()
                 .with_profile_mapper(mapper.clone());
-            let profile = serde_json::json!({"sub":"jwt-subject","given_name":"Given","email":null,"picture":null});
+            let profile = crate::oauth::providers::js!({"sub":"jwt-subject","given_name":"Given","email":null,"picture":null});
             let token = format!(
                 "e30.{}.sig",
                 base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
@@ -400,7 +382,7 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output["name"], if fallback { "HTTP" } else { "Given" });
             assert_eq!(output["email"], Value::Null);
             assert_eq!(output["image"], Value::Null);
@@ -427,7 +409,7 @@ mod tests {
             Some(Value::Bool(false)),
         ] {
             for id_token in [true, false] {
-                let mut body = serde_json::json!({"sub":"subject","name":"Name"});
+                let mut body = crate::oauth::providers::js!({"sub":"subject","name":"Name"});
                 if let Some(value) = &claim {
                     body["email_verified"] = value.clone();
                 }
@@ -465,7 +447,7 @@ mod tests {
                     })
                     .await
                     .unwrap();
-                let output = response.user_output.unwrap();
+                let output = response.user.clone();
                 if id_token {
                     assert_eq!(output.get("emailVerified"), claim.as_ref());
                     server.abort();
@@ -481,7 +463,7 @@ mod tests {
     }
     #[test]
     fn cognito_accepts_padded_jwt_payload() {
-        let profile = serde_json::json!({"sub":"cognito-id","name":"A"});
+        let profile = crate::oauth::providers::js!({"sub":"cognito-id","name":"A"});
         let mut json = profile.to_string();
         while json.len() % 3 == 0 {
             json.push(' ');

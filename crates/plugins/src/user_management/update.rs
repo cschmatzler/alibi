@@ -302,7 +302,7 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
 
     let update_user = UpdateUser {
         additional_fields,
-        provider_image: clear_image.then_some(serde_json::Value::Null),
+        provider_image: clear_image.then_some(serde_json::Value::Null.into()),
         phone_number: clear_phone.then_some(None),
         name: update_req.name,
         image: update_req.image,

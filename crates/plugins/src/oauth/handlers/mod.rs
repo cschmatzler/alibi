@@ -179,12 +179,12 @@ pub async fn resolve_oauth_account_key(
     tokens: &OAuthTokenSet,
     response: &mut OAuthUserInfoResponse,
 ) -> AuthResult<()> {
-    if let Some(resolver) = provider
+    let subject = if let Some(resolver) = provider
         .authorization
         .as_ref()
         .and_then(|policy| policy.account_key.as_ref())
     {
-        let subject = resolver
+        let value = resolver
             .0
             .resolve(super::providers::OAuthAccountKeyContext {
                 tokens: tokens.clone(),
@@ -192,42 +192,32 @@ pub async fn resolve_oauth_account_key(
             })
             .await
             .map_err(AuthError::internal)?;
-        response.user.id = super::providers::remaining_profile::raw_subject(Some(&subject))
-            .map_err(AuthError::internal)?;
+        super::providers::remaining_profile::raw_subject(Some(&value))
+            .map_err(AuthError::internal)?
     } else if provider
         .authorization
         .as_ref()
         .is_some_and(|policy| policy.discovery_openid_scope && policy.verify_grant_id_token)
         && let Some(token) = tokens.id_token.as_deref()
     {
-        use base64::Engine;
-        let claims = token
-            .split('.')
-            .nth(1)
-            .and_then(|payload| {
-                base64::engine::general_purpose::URL_SAFE_NO_PAD
-                    .decode(payload)
-                    .ok()
-            })
-            .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
-            .ok_or_else(|| AuthError::internal("Invalid provider subject"))?;
-        claims
-            .get("sub")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| AuthError::internal("Invalid provider subject"))?
-            .clone_into(&mut response.user.id);
+        let claims = super::providers::remaining_profile::decode_grant_jwt(token)
+            .map_err(AuthError::internal)?;
+        super::providers::remaining_profile::raw_subject(claims.get("sub"))
+            .map_err(AuthError::internal)?
     } else if let Some(subject) = provider.account_subject {
-        response.user.id = subject(&response.data).map_err(AuthError::internal)?;
-    }
-    if response
-        .user
-        .id
+        subject(&response.data).map_err(AuthError::internal)?
+    } else {
+        super::providers::remaining_profile::raw_subject(response.user.get("id"))
+            .map_err(AuthError::internal)?
+    };
+    if subject
         .trim_matches(super::providers::remaining_profile::js_whitespace)
         .is_empty()
-        || matches!(response.user.id.as_str(), "null" | "undefined")
+        || matches!(subject.as_str(), Some("null" | "undefined"))
     {
         return Err(AuthError::internal("Invalid provider subject"));
     }
+    response.account_subject = Some(subject);
     Ok(())
 }
 
@@ -325,22 +315,15 @@ pub(crate) fn parse_callback_user_payload(
     })
 }
 
-fn raw_truthy(value: &serde_json::Value) -> bool {
-    match value {
-        serde_json::Value::Null | serde_json::Value::Bool(false) => false,
-        serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
-        serde_json::Value::String(value) => !value.is_empty(),
-        serde_json::Value::Bool(true)
-        | serde_json::Value::Array(_)
-        | serde_json::Value::Object(_) => true,
-    }
+fn raw_truthy(value: &alibi_core::utils::json::JsValue) -> bool {
+    value.is_truthy()
 }
 
 /// Mapped provider identity together with its original provenance.
 pub(crate) struct OAuthIdentity<'a> {
     pub provider_name: &'a str,
     pub user: &'a OAuthUserInfo,
-    pub profile: &'a serde_json::Value,
+    pub profile: &'a alibi_core::utils::json::JsValue,
 }
 
 enum LinkSocialOutcome {

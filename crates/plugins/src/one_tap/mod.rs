@@ -13,7 +13,6 @@ use alibi_core::{
 };
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
 use serde_json::json;
 use std::sync::Arc;
 
@@ -205,7 +204,10 @@ impl OneTapPlugin {
             )
             .await
             {
-                Ok(info) => (info.user, info.data),
+                Ok(info) => (
+                    OAuthUserInfo::from_fields(&info.user, info.account_subject.as_ref()),
+                    info.data,
+                ),
                 Err(_) => return message(400, "invalid id token"),
             }
         } else {
@@ -216,16 +218,16 @@ impl OneTapPlugin {
                     .map(str::to_owned)
             };
             let user = OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: String::new(),
-                email: text("email").unwrap_or_default(),
-                name: text("name"),
-                image: text("picture"),
+                additional_fields: alibi_core::utils::json::JsObject::default(),
+                id: String::new().into(),
+                email: text("email").unwrap_or_default().into(),
+                name: text("name").map(Into::into),
+                image: text("picture").map(Into::into),
                 email_verified: payload.get("email_verified").is_some_and(|value| {
                     value.as_bool() == Some(true) || value.as_str() == Some("true")
                 }),
             };
-            (user, payload.to_json_value()?)
+            (user, payload.clone())
         };
         if provider_user.email.is_empty() {
             return message(400, "Email not available in token");

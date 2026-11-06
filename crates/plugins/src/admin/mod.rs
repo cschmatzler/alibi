@@ -780,7 +780,11 @@ mod tests {
         let (ctx, admin, _, user, _) = create_admin_context().await;
         let error = update_user_core(
             &types::AdminUpdateUserRequest::new(
-                &user.id, serde_json::json!({"name":null}).as_object().unwrap().clone(),
+                &user.id,
+                serde_json::json!({"name":null})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
             ),
             &admin,
             &AdminConfig::default(),
@@ -789,8 +793,16 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.status_code(), 500);
-        assert_eq!(error.to_string(), "Internal server error: field value cannot be represented by its model column");
-        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        assert_eq!(
+            error.to_string(),
+            "Internal server error: field value cannot be represented by its model column"
+        );
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
         use alibi_core::entity::AuthUser as _;
         assert_eq!(stored.name(), Some("Regular User"));
     }
@@ -798,23 +810,37 @@ mod tests {
     #[tokio::test]
     async fn empty_impersonation_marker_cannot_be_stopped() {
         let (ctx, _, _, user, _) = create_admin_context().await;
-        let session = ctx.database.create_session(CreateSession {
-            user_id: user.id,
-            expires_at: Utc::now() + Duration::hours(24),
-            impersonated_by: Some(String::new()),
-            additional_fields: Default::default(),
-            token: None,
-            ip_address: None,
-            user_agent: None,
-            active_organization_id: None,
-            active_team_id: None,
-        }).await.unwrap();
+        let session = ctx
+            .database
+            .create_session(CreateSession {
+                user_id: user.id,
+                expires_at: Utc::now() + Duration::hours(24),
+                impersonated_by: Some(String::new()),
+                additional_fields: Default::default(),
+                token: None,
+                ip_address: None,
+                user_agent: None,
+                active_organization_id: None,
+                active_team_id: None,
+            })
+            .await
+            .unwrap();
         let session = SessionView::from(&session);
-        let req = make_request(HttpMethod::Post, "/admin/stop-impersonating", &session.token, Some(serde_json::json!({})));
-        let error = stop_impersonating_core(&session, &req, &ctx).await.unwrap_err();
+        let req = make_request(
+            HttpMethod::Post,
+            "/admin/stop-impersonating",
+            &session.token,
+            Some(serde_json::json!({})),
+        );
+        let error = stop_impersonating_core(&session, &req, &ctx)
+            .await
+            .unwrap_err();
         assert_eq!(error.status_code(), 400);
         assert_eq!(error.to_string(), "You are not impersonating anyone");
-        let error = AdminPlugin::new().handle_stop_impersonating(&req, &ctx).await.unwrap_err();
+        let error = AdminPlugin::new()
+            .handle_stop_impersonating(&req, &ctx)
+            .await
+            .unwrap_err();
         assert_eq!(error.status_code(), 400);
         assert_eq!(error.to_string(), "You are not impersonating anyone");
     }
@@ -822,19 +848,35 @@ mod tests {
     #[tokio::test]
     async fn admin_update_null_ban_expiry_clears_without_unbanning() {
         let (ctx, admin, _, user, _) = create_admin_context().await;
-        ctx.database.update_user_record(&user.id, alibi_core::UpdateUser {
-            banned: Some(true),
-            ban_reason: Some("retained".into()),
-            ban_expires: Some(Some(Utc::now() + Duration::hours(1))),
-            ..Default::default()
-        }).await.unwrap();
+        ctx.database
+            .update_user_record(
+                &user.id,
+                alibi_core::UpdateUser {
+                    banned: Some(true),
+                    ban_reason: Some("retained".into()),
+                    ban_expires: Some(Some(Utc::now() + Duration::hours(1))),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
 
         let body = types::AdminUpdateUserRequest::new(
             &user.id,
-            serde_json::json!({"banExpires": null}).as_object().unwrap().clone(),
+            serde_json::json!({"banExpires": null})
+                .as_object()
+                .unwrap()
+                .clone(),
         );
-        handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx).await.unwrap();
-        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx)
+            .await
+            .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
         use alibi_core::entity::AuthUser as _;
         assert!(stored.banned());
         assert_eq!(stored.ban_reason(), Some("retained"));
@@ -917,27 +959,60 @@ mod tests {
             admin_user_ids: Some(vec![String::new(), "trusted".to_owned()]),
             ..AdminConfig::default()
         };
-        let requested = std::collections::HashMap::from([
-            ("user".to_owned(), vec!["delete".to_owned()]),
-        ]);
-        assert!(!access::has_permission(Some(""), Some("user"), &config, &requested));
-        assert!(!access::has_permission(None, Some("user"), &config, &requested));
-        assert!(access::has_permission(Some("trusted"), Some("user"), &config, &requested));
-        assert!(access::has_permission(Some(""), Some("admin"), &config, &requested));
+        let requested =
+            std::collections::HashMap::from([("user".to_owned(), vec!["delete".to_owned()])]);
+        assert!(!access::has_permission(
+            Some(""),
+            Some("user"),
+            &config,
+            &requested
+        ));
+        assert!(!access::has_permission(
+            None,
+            Some("user"),
+            &config,
+            &requested
+        ));
+        assert!(access::has_permission(
+            Some("trusted"),
+            Some("user"),
+            &config,
+            &requested
+        ));
+        assert!(access::has_permission(
+            Some(""),
+            Some("admin"),
+            &config,
+            &requested
+        ));
     }
 
     #[tokio::test]
     async fn admin_update_phone_fields_persist_and_can_clear_number() {
         let (ctx, admin, _, user, _) = create_admin_context().await;
         for (data, expected_phone, expected_verified) in [
-            (serde_json::json!({"phoneNumber": "+15551234567", "phoneNumberVerified": true}), Some("+15551234567"), true),
-            (serde_json::json!({"phoneNumber": null, "phoneNumberVerified": false}), None, false),
+            (
+                serde_json::json!({"phoneNumber": "+15551234567", "phoneNumberVerified": true}),
+                Some("+15551234567"),
+                true,
+            ),
+            (
+                serde_json::json!({"phoneNumber": null, "phoneNumberVerified": false}),
+                None,
+                false,
+            ),
         ] {
-            let body = types::AdminUpdateUserRequest::new(
-                &user.id, data.as_object().unwrap().clone(),
-            );
-            handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx).await.unwrap();
-            let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+            let body =
+                types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
+            handlers::update_user_core(&body, &admin, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let stored = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
             use alibi_core::entity::AuthUser as _;
             assert_eq!(stored.phone_number(), expected_phone);
             assert_eq!(stored.phone_number_verified(), Some(expected_verified));
@@ -954,16 +1029,30 @@ mod tests {
                 .read_only(),
         );
         let mut ctx = test_helpers::create_test_context_with_config(config).await;
-        let init = alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
+        let init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         ctx.database = init.database_with_registered_transforms();
-        let admin = test_helpers::create_user(&ctx,
-            CreateUser::new().with_email("admin@fixture.test").with_role("admin")).await;
-        let user = test_helpers::create_user(&ctx,
-            CreateUser::new().with_email("profile@fixture.test")).await;
+        let admin = test_helpers::create_user(
+            &ctx,
+            CreateUser::new()
+                .with_email("admin@fixture.test")
+                .with_role("admin"),
+        )
+        .await;
+        let user =
+            test_helpers::create_user(&ctx, CreateUser::new().with_email("profile@fixture.test"))
+                .await;
         let data = serde_json::json!({"profileLabel":"Trusted label","unconfigured":"Ignored"});
         let input = types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
-        let output = handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx).await.unwrap();
-        let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+        let output = handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx)
+            .await
+            .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
         use alibi_core::entity::AuthUser as _;
         assert_eq!(stored.display_username(), Some("Trusted label"));
         assert_eq!(output.values()["profileLabel"], "Trusted label");
@@ -974,12 +1063,28 @@ mod tests {
     async fn admin_update_preserves_plugin_profile_fields() {
         let (ctx, admin, _, user, _) = create_admin_context().await;
         for (data, anonymous, method) in [
-            (serde_json::json!({"isAnonymous": true, "lastLoginMethod": "email"}), true, Some("email")),
-            (serde_json::json!({"isAnonymous": false, "lastLoginMethod": null}), false, None),
+            (
+                serde_json::json!({"isAnonymous": true, "lastLoginMethod": "email"}),
+                true,
+                Some("email"),
+            ),
+            (
+                serde_json::json!({"isAnonymous": false, "lastLoginMethod": null}),
+                false,
+                None,
+            ),
         ] {
-            let input = types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
-            handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx).await.unwrap();
-            let stored = ctx.database.get_user_by_id_record(&user.id).await.unwrap().unwrap();
+            let input =
+                types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone());
+            handlers::update_user_core(&input, &admin, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let stored = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
             use alibi_core::entity::AuthUser as _;
             assert_eq!(stored.is_anonymous(), Some(anonymous));
             assert_eq!(stored.last_login_method(), method);
@@ -991,15 +1096,27 @@ mod tests {
         let (ctx, _, _, _, _) = create_admin_context().await;
         let mut input = types::CreateUserRequest::new("native-data@fixture.test", "Outer name");
         input.role = Some(types::RoleInput::One("user".to_owned()));
-        input.data = Some(serde_json::json!({
-            "email": "ignored@fixture.test", "name": "Ignored name", "role": "admin",
-            "emailVerified": true, "image": "https://example.com/image.png",
-            "username": "native-data", "displayUsername": "Native Data",
-            "isAnonymous": true, "phoneNumber": "+15559876543", "phoneNumberVerified": true,
-            "lastLoginMethod": "email", "twoFactorEnabled": true, "banned": true
-        }).as_object().unwrap().clone());
-        let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx).await.unwrap();
-        let stored = ctx.database.get_user_by_id_record(&created.user.id).await.unwrap().unwrap();
+        input.data = Some(
+            serde_json::json!({
+                "email": "ignored@fixture.test", "name": "Ignored name", "role": "admin",
+                "emailVerified": true, "image": "https://example.com/image.png",
+                "username": "native-data", "displayUsername": "Native Data",
+                "isAnonymous": true, "phoneNumber": "+15559876543", "phoneNumberVerified": true,
+                "lastLoginMethod": "email", "twoFactorEnabled": true, "banned": true
+            })
+            .as_object()
+            .unwrap()
+            .clone(),
+        );
+        let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+            .await
+            .unwrap();
+        let stored = ctx
+            .database
+            .get_user_by_id_record(&created.user.id)
+            .await
+            .unwrap()
+            .unwrap();
         use alibi_core::entity::AuthUser as _;
         assert_eq!(stored.email(), Some("native-data@fixture.test"));
         assert_eq!(stored.name(), Some("Outer name"));
@@ -1531,7 +1648,9 @@ mod tests {
         assert_eq!(response.status, 200);
         let created = ctx
             .database
-            .get_user_by_email("metadata-user@fixture.test")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "metadata-user@fixture.test",
+            ))
             .await
             .unwrap()
             .unwrap();

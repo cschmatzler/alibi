@@ -2,10 +2,11 @@
 use super::{
     OAuthAuthorizationCodeCallback, OAuthAuthorizationCodeContext, OAuthAuthorizationCodeHandler,
     OAuthAuthorizationPolicy, OAuthProvider, OAuthRefreshTokenHandler, OAuthTokenSet,
-    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use serde_json::Map;
-use serde_json::Value;
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -26,7 +27,7 @@ pub struct WeChatOptions {
     pub token_endpoint: Option<String>,
     pub refresh_endpoint: Option<String>,
     pub user_info_endpoint: Option<String>,
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl WeChatOptions {
     #[must_use]
@@ -161,7 +162,10 @@ async fn token_request(
     if response.status().is_redirection() {
         return Err(failure("WeChat token request refused a redirect".into()));
     }
-    let raw: Value = response.json().await.map_err(|e| failure(e.to_string()))?;
+    let raw: Value = response
+        .profile_json()
+        .await
+        .map_err(|e| failure(e.to_string()))?;
     if !super::remaining_profile::truthy(&raw)
         || raw
             .get("errcode")
@@ -173,7 +177,9 @@ async fn token_request(
             .map(super::remaining_profile::js_string)
             .transpose()?
             .unwrap_or_else(|| "Unknown error".into());
-        return Err(failure(message));
+        return Err(failure(
+            message.to_utf8().map_err(|error| error.to_string())?,
+        ));
     }
     let scope = raw
         .get("scope")
@@ -245,8 +251,8 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
         )
         .await?;
         if let Some(Value::Object(raw)) = &mut tokens.raw {
-            _ = raw.remove("openid");
-            _ = raw.remove("unionid");
+            _ = raw.shift_remove("openid");
+            _ = raw.shift_remove("unionid");
         }
         Ok(tokens)
     }
@@ -255,7 +261,7 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
 struct WeChatProfile {
     application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for WeChatProfile {
@@ -295,7 +301,13 @@ impl OAuthUserInfoHandler for WeChatProfile {
             .get(&self.endpoint)
             .query(&[
                 ("access_token", access_token.as_str()),
-                ("openid", openid.as_str()),
+                (
+                    "openid",
+                    openid
+                        .to_utf8()
+                        .map_err(|error| error.to_string())?
+                        .as_str(),
+                ),
                 ("lang", "zh_CN"),
             ])
             .send()
@@ -303,7 +315,7 @@ impl OAuthUserInfoHandler for WeChatProfile {
             .map_err(|e| e.to_string())?
             .error_for_status()
             .map_err(|e| e.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|e| e.to_string())?;
         if !super::remaining_profile::truthy(&profile)
@@ -347,15 +359,18 @@ impl OAuthUserInfoHandler for WeChatProfile {
         {
             value.clone()
         } else {
-            let email = format!("{id}@wechat.placeholder.invalid");
-            if !crate::authentication_helpers::is_valid_email(&email) {
+            let email = id.concat(&"@wechat.placeholder.invalid".into());
+            if !email
+                .as_str()
+                .is_some_and(crate::authentication_helpers::is_valid_email)
+            {
                 return Err(super::remaining_profile::profile_exception(
                     "Invalid WeChat placeholder email",
                 ));
             }
-            Value::String(email)
+            Value::String(email.into())
         };
-        let mut output = serde_json::Map::new();
+        let mut output = Map::new();
         for (key, field) in [("name", "nickname"), ("image", "headimgurl")] {
             if let Some(value) = profile.get(field) {
                 _ = output.insert(key.into(), value.clone());
@@ -364,27 +379,12 @@ impl OAuthUserInfoHandler for WeChatProfile {
         _ = output.insert("email".into(), email.clone());
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
-            output.extend(user.public_profile(true));
+            output.extend(user.clone());
         }
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id,
-                name: super::remaining_profile::scalar(
-                    profile
-                        .get("nickname")
-                        .filter(|v| super::remaining_profile::truthy(v)),
-                )?,
-                email: email.as_str().unwrap_or_default().into(),
-                image: super::remaining_profile::scalar(profile.get("headimgurl"))?,
-                email_verified: false,
-            },
-        };
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         };
         if let Some(mapped) = application_output {
             super::apply_application_mapping(&mut response, mapped)?;
@@ -392,7 +392,7 @@ impl OAuthUserInfoHandler for WeChatProfile {
         Ok(response)
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     let value = profile
         .get("unionid")
         .filter(|value| super::remaining_profile::truthy(value))
@@ -403,7 +403,7 @@ fn subject(profile: &Value) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
+    use crate::oauth::providers::js as json;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
@@ -589,6 +589,6 @@ mod tests {
             captured.starts_with("GET /?access_token=&openid=openid&lang=zh_CN HTTP/1.1"),
             "{captured}"
         );
-        assert_eq!(response.user.email, "openid@wechat.placeholder.invalid");
+        assert_eq!(response.user["email"], "openid@wechat.placeholder.invalid");
     }
 }

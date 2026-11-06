@@ -214,11 +214,7 @@ impl OAuthPlugin {
                 }
                 Err(error) => return Err(error),
             };
-            (
-                serde_json::to_value(value)
-                    .map_err(|error| AuthError::internal(error.to_string()))?,
-                cookies,
-            )
+            (value.into_js_value()?, cookies)
         } else if call.operation_id() == "refreshToken" {
             let (tokens, account, cookies) = Box::pin(super::account::refresh_token_for_selection(
                 &self.config,
@@ -229,7 +225,7 @@ impl OAuthPlugin {
             ))
             .await?;
             (
-                super::account::refresh_token_body(&self.config, &tokens, &account)?,
+                super::account::refresh_token_body(&self.config, &tokens, &account)?.into(),
                 cookies,
             )
         } else {
@@ -242,12 +238,14 @@ impl OAuthPlugin {
             )
             .await?;
             (
-                serde_json::to_value(OAuthAccessToken::from(tokens))
-                    .map_err(|error| AuthError::internal(error.to_string()))?,
+                JsValue::from(
+                    serde_json::to_value(OAuthAccessToken::from(tokens))
+                        .map_err(|error| AuthError::internal(error.to_string()))?,
+                ),
                 cookies,
             )
         };
-        let mut response = EndpointResponse::json(&value)?;
+        let mut response = EndpointResponse::value(value.into());
         for cookie in cookies {
             response = response.with_header("set-cookie", cookie);
         }

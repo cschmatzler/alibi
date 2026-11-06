@@ -8,12 +8,13 @@ use super::{
     OAuthUserInfoResponse,
 };
 use crate::oauth::id_token::{CLOCK_TOLERANCE_SECS, REQUIRED_CLAIMS};
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use crate::oauth::{HttpOAuthJwksSource, OAuthJwksSource};
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 use base64::Engine;
 use jsonwebtoken::{Algorithm, DecodingKey};
-use serde_json::Map;
-use serde_json::Value;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Duration;
@@ -320,7 +321,7 @@ impl DeferredDiscovery {
     }
 }
 fn string(value: &Value, key: &str) -> Option<String> {
-    value.get(key).and_then(Value::as_str).map(str::to_owned)
+    value.get(key).and_then(Value::as_str).map(Into::into)
 }
 async fn fetch_discovery(
     url: &str,
@@ -340,7 +341,7 @@ async fn fetch_discovery(
         .ok()?
         .error_for_status()
         .ok()?
-        .json()
+        .profile_json()
         .await
         .ok()?;
     if let Some(issuer) = string(&document, "issuer").filter(|issuer| !issuer.is_empty())
@@ -350,10 +351,10 @@ async fn fetch_discovery(
     }
     Some(document)
 }
-fn oauth_subject(profile: &Value) -> Result<String, String> {
+fn oauth_subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
 }
-fn oidc_subject(profile: &Value) -> Result<String, String> {
+fn oidc_subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }
 struct GenericUserInfo {
@@ -410,8 +411,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     .get("sub")
                     .filter(|sub| !sub.is_null())
                     .is_some_and(|sub| {
-                        super::remaining_profile::js_string(sub).ok().as_deref()
-                            != expected.as_str()
+                        super::remaining_profile::js_string(sub).ok()
+                            != expected.as_js_string().cloned()
                     })
             {
                 return Err("UserInfo subject mismatch".into());
@@ -423,10 +424,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     .map_err(super::remaining_profile::profile_exception)?;
                 super::apply_application_mapping(&mut response, mapped)?;
             }
-            if let Some(output) = &mut response.user_output
-                && output.get("image").is_some_and(Value::is_null)
-            {
-                _ = output.remove("image");
+            if response.user.get("image").is_some_and(Value::is_null) {
+                _ = response.user.insert("image".into(), Value::Undefined);
             }
             return Ok(response);
         }
@@ -438,15 +437,15 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     .get("email")
                     .is_some_and(super::remaining_profile::truthy)
         });
-        let mut raw = if let Some(mut profile) = decoded {
+        let raw = if let Some(mut profile) = decoded {
             if let Some(object) = profile.as_object_mut() {
                 let id = object.get("sub").cloned().unwrap_or(Value::Null);
-                _ = object.entry("id").or_insert(id);
+                _ = object.entry("id".into()).or_insert(id);
                 let verified =
                     Value::Bool(super::email_verified_claim(object.get("email_verified")));
-                _ = object.entry("emailVerified").or_insert(verified);
+                _ = object.entry("emailVerified".into()).or_insert(verified);
                 if let Some(image) = object.get("picture").cloned() {
-                    _ = object.entry("image").or_insert(image);
+                    _ = object.entry("image".into()).or_insert(image);
                 }
             }
             profile
@@ -467,22 +466,25 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 .map_err(|_| "Generic OAuth user info unavailable")?
                 .error_for_status()
                 .map_err(|_| "Generic OAuth user info unavailable")?
-                .json()
+                .profile_json()
                 .await
                 .map_err(|_| "Generic OAuth user info unavailable")?;
             if !super::remaining_profile::truthy(&profile) {
                 return Err("Generic OAuth user info unavailable".into());
             }
-            let mut object = super::remaining_profile::object_spread(profile);
-            _ = object.insert(
-                "emailVerified".into(),
-                Value::Bool(super::email_verified_claim(object.get("email_verified"))),
-            );
-            if let Some(image) = object.get("picture").cloned() {
-                _ = object.insert("image".into(), image);
-            } else {
-                _ = object.remove("image");
+            let mut object = super::remaining_profile::object_spread(profile.clone());
+            for (source, target) in [("email", "email"), ("picture", "image"), ("name", "name")] {
+                object.insert(
+                    target.into(),
+                    profile
+                        .property(source)
+                        .map_err(super::remaining_profile::profile_exception)?,
+                );
             }
+            object.insert(
+                "emailVerified".into(),
+                Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
+            );
             Value::Object(object)
         };
         if let Some(expected) = expected_sub
@@ -493,28 +495,27 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     super::remaining_profile::js_string,
                 )
                 .ok()
-                .as_deref()
-                != expected.as_str()
+                != expected.as_js_string().cloned()
         {
             return Err("UserInfo subject mismatch".into());
         }
-        let user = OAuthUserInfo {
-            additional_fields: Map::default(),
-            id: string(&raw, "id").unwrap_or_default(),
-            email: string(&raw, "email").unwrap_or_default(),
-            name: string(&raw, "name"),
-            image: string(&raw, "image"),
-            email_verified: super::email_verified_claim(raw.get("emailVerified")),
-        };
-        let mut output: Map<String, Value> = ["email", "name", "image"]
+        let mut output: Map = ["email", "name", "image"]
             .into_iter()
-            .filter_map(|key| raw.get(key).cloned().map(|value| (key.into(), value)))
+            .map(|key| {
+                (
+                    key.into(),
+                    raw.get(key).cloned().unwrap_or(Value::Undefined),
+                )
+            })
             .collect();
-        _ = output.insert("emailVerified".into(), Value::Bool(user.email_verified));
+        output.insert(
+            "emailVerified".into(),
+            Value::Bool(super::email_verified_claim(raw.get("emailVerified"))),
+        );
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
-            data: raw.take(),
+            user: output,
+            data: raw,
+            account_subject: None,
         };
         if let Some(mapper) = &self.mapper {
             let mapped = mapper
@@ -528,10 +529,8 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 })?;
             super::apply_application_mapping(&mut response, mapped)?;
         }
-        if let Some(output) = &mut response.user_output
-            && output.get("image").is_some_and(Value::is_null)
-        {
-            _ = output.remove("image");
+        if response.user.get("image").is_some_and(Value::is_null) {
+            _ = response.user.insert("image".into(), Value::Undefined);
         }
         Ok(response)
     }
@@ -566,7 +565,7 @@ impl DiscoveryVerifier {
         ) {
             return Some(false);
         }
-        let raw_header: Value = serde_json::from_slice(
+        let raw_header: Value = alibi_core::utils::json::from_slice(
             &base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .decode(token.split('.').next()?)
                 .ok()?,
@@ -585,11 +584,9 @@ impl DiscoveryVerifier {
         let matching: Vec<_> = keys
             .iter()
             .filter(|key| {
-                header
-                    .kid
-                    .as_ref()
-                    .is_none_or(|kid| key.get("kid").and_then(Value::as_str) == Some(kid))
-                    && key.get("d").is_none()
+                header.kid.as_ref().is_none_or(|kid| {
+                    key.get("kid").and_then(serde_json::Value::as_str) == Some(kid)
+                }) && key.get("d").is_none()
                     && key.get("alg").is_none_or(|alg| alg == &alg_name)
                     && key
                         .get("use")
@@ -609,11 +606,15 @@ impl DiscoveryVerifier {
                         | Algorithm::RS512
                         | Algorithm::PS256
                         | Algorithm::PS384
-                        | Algorithm::PS512 => key.get("kty").and_then(Value::as_str) == Some("RSA"),
-                        Algorithm::ES256 | Algorithm::ES384 => {
-                            key.get("kty").and_then(Value::as_str) == Some("EC")
+                        | Algorithm::PS512 => {
+                            key.get("kty").and_then(serde_json::Value::as_str) == Some("RSA")
                         }
-                        Algorithm::EdDSA => key.get("kty").and_then(Value::as_str) == Some("OKP"),
+                        Algorithm::ES256 | Algorithm::ES384 => {
+                            key.get("kty").and_then(serde_json::Value::as_str) == Some("EC")
+                        }
+                        Algorithm::EdDSA => {
+                            key.get("kty").and_then(serde_json::Value::as_str) == Some("OKP")
+                        }
                         _ => false,
                     }
             })
@@ -621,7 +622,11 @@ impl DiscoveryVerifier {
         if matching.len() != 1 {
             return Some(false);
         }
-        if matching.first()?.get("kty").and_then(Value::as_str) == Some("RSA")
+        if matching
+            .first()?
+            .get("kty")
+            .and_then(serde_json::Value::as_str)
+            == Some("RSA")
             && !crate::oauth::id_token::remote_rsa_public_key(matching.first()?)
         {
             return Some(false);
@@ -633,7 +638,7 @@ impl DiscoveryVerifier {
         if !jsonwebtoken::crypto::verify(signature, signed.as_bytes(), &key, header.alg).ok()? {
             return Some(false);
         }
-        let claims: Value = serde_json::from_slice(
+        let claims: Value = alibi_core::utils::json::from_slice(
             &base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .decode(token.split('.').nth(1)?)
                 .ok()?,
@@ -706,6 +711,47 @@ mod tests {
         endpoint
     }
 
+    struct UndefinedMapper;
+    #[async_trait]
+    impl OAuthProfileMapper for UndefinedMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
+            let fields = profile.as_object().unwrap();
+            for name in ["email", "image", "name"] {
+                assert_eq!(fields.get(name), Some(&Value::Undefined), "{name}");
+            }
+            assert_eq!(fields.get("emailVerified"), Some(&Value::Bool(false)));
+            assert_eq!(fields["0"], "é");
+            assert_eq!(fields["1"].as_js_string().unwrap().code_units(), &[0xd83d]);
+            assert_eq!(fields["2"].as_js_string().unwrap().code_units(), &[0xde00]);
+            Ok([("image".into(), Value::Null)].into_iter().collect())
+        }
+    }
+    #[tokio::test]
+    async fn generic_mapper_retains_own_undefined_and_utf16_spread() {
+        let handler = GenericUserInfo {
+            url: Some(serve_profile(Value::String("é😀".into())).await),
+            mapper: Some(Arc::new(UndefinedMapper)),
+            custom: None,
+            verified_oidc: false,
+        };
+        let response = handler
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        for name in ["email", "name", "image"] {
+            assert_eq!(response.user.get(name), Some(&Value::Undefined), "{name}");
+        }
+        let bytes = alibi_core::utils::json::stringify(&Value::Object(response.user))
+            .unwrap()
+            .unwrap();
+        let wire = String::from_utf8(bytes).unwrap();
+        assert!(!wire.contains("image"));
+        assert!(!wire.contains("name"));
+    }
+
     struct CustomProfile(bool);
     #[async_trait]
     impl OAuthUserInfoHandler for CustomProfile {
@@ -717,26 +763,24 @@ mod tests {
                 return Err("custom profile failed".into());
             }
             Ok(OAuthUserInfoResponse {
-                user_output: None,
-                user: OAuthUserInfo {
+                account_subject: None,
+                user: (OAuthUserInfo {
                     additional_fields: Map::new(),
                     id: "user".into(),
                     email: "a@example.com".into(),
                     name: None,
                     image: None,
                     email_verified: false,
-                },
-                data: serde_json::json!({"id":"user", "email":"a@example.com"}),
+                })
+                .public_profile(true),
+                data: crate::oauth::providers::js!({"id":"user", "email":"a@example.com"}),
             })
         }
     }
     struct ImageMapper(Value);
     #[async_trait]
     impl OAuthProfileMapper for ImageMapper {
-        async fn map_profile(
-            &self,
-            _: Value,
-        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+        async fn map_profile(&self, _: Value) -> Result<Map, String> {
             Ok(Map::from_iter([("image".into(), self.0.clone())]))
         }
     }
@@ -745,9 +789,9 @@ mod tests {
     async fn generic_user_info_preserves_raw_bearer_values() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for token in [
-            serde_json::json!(42),
-            serde_json::json!(true),
-            serde_json::json!(["access", "token"]),
+            crate::oauth::providers::js!(42),
+            crate::oauth::providers::js!(true),
+            crate::oauth::providers::js!(["access", "token"]),
         ] {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let url = format!("http://{}", listener.local_addr().unwrap());
@@ -776,12 +820,12 @@ mod tests {
             };
             let response = handler
                 .get_user_info(OAuthUserInfoRequest {
-                    raw: Some(serde_json::json!({"access_token":token})),
+                    raw: Some(crate::oauth::providers::js!({"access_token":token})),
                     ..Default::default()
                 })
                 .await
                 .unwrap();
-            assert_eq!(response.user.email, "a@example.com");
+            assert_eq!(response.user["email"], "a@example.com");
             let request = receiver.await.unwrap();
             let authorization = request
                 .lines()
@@ -795,7 +839,10 @@ mod tests {
                 authorization,
                 format!(
                     "Bearer {}",
-                    super::super::remaining_profile::js_string(&token).unwrap()
+                    super::super::remaining_profile::js_string(&token)
+                        .unwrap()
+                        .to_utf8()
+                        .unwrap()
                 )
             );
         }
@@ -809,7 +856,7 @@ mod tests {
             handler
                 .get_user_info(OAuthUserInfoRequest {
                     access_token: Some("typed-access".into()),
-                    raw: Some(serde_json::json!({"access_token":false})),
+                    raw: Some(crate::oauth::providers::js!({"access_token":false})),
                     ..Default::default()
                 })
                 .await
@@ -821,20 +868,20 @@ mod tests {
     async fn generic_profiles_spread_truthy_payloads() {
         for (profile, expected) in [
             (
-                serde_json::json!(42),
-                serde_json::json!({"emailVerified":false}),
+                crate::oauth::providers::js!(42),
+                crate::oauth::providers::js!({"emailVerified":false}),
             ),
             (
-                serde_json::json!(true),
-                serde_json::json!({"emailVerified":false}),
+                crate::oauth::providers::js!(true),
+                crate::oauth::providers::js!({"emailVerified":false}),
             ),
             (
-                serde_json::json!(["a", 2]),
-                serde_json::json!({"0":"a", "1":2, "emailVerified":false}),
+                crate::oauth::providers::js!(["a", 2]),
+                crate::oauth::providers::js!({"0":"a", "1":2, "emailVerified":false}),
             ),
             (
-                serde_json::json!("ab"),
-                serde_json::json!({"0":"a", "1":"b", "emailVerified":false}),
+                crate::oauth::providers::js!("ab"),
+                crate::oauth::providers::js!({"0":"a", "1":"b", "emailVerified":false}),
             ),
         ] {
             let handler = GenericUserInfo {
@@ -850,7 +897,13 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            assert_eq!(response.data, expected);
+            assert_eq!(
+                response.data.to_json_value().unwrap(),
+                expected.to_json_value().unwrap()
+            );
+            for field in ["email", "image", "name"] {
+                assert_eq!(response.data.get(field), Some(&Value::Undefined));
+            }
         }
     }
 
@@ -859,8 +912,8 @@ mod tests {
         for profile in [
             Value::Null,
             Value::Bool(false),
-            serde_json::json!(0),
-            serde_json::json!(""),
+            crate::oauth::providers::js!(0),
+            crate::oauth::providers::js!(""),
         ] {
             let handler = GenericUserInfo {
                 url: Some(serve_profile(profile).await),
@@ -885,7 +938,7 @@ mod tests {
             for image in [
                 Value::Null,
                 Value::Bool(false),
-                Value::String(String::new()),
+                Value::String(String::new().into()),
             ] {
                 let handler = GenericUserInfo {
                     url: None,
@@ -895,11 +948,23 @@ mod tests {
                     verified_oidc: false,
                 };
                 let response = handler.get_user_info(OAuthUserInfoRequest {
-                    id_token: Some(id_token(serde_json::json!({"sub":"subject", "email":"a@example.com", "picture":"original"}))),
+                    id_token: Some(id_token(crate::oauth::providers::js!({"sub":"subject", "email":"a@example.com", "picture":"original"}))),
                     ..Default::default()
                 }).await.unwrap();
-                let output = response.user_output.unwrap();
-                assert_eq!(output.get("image"), (!image.is_null()).then_some(&image));
+                let output = response.user.clone();
+                let expected = if image.is_null() {
+                    &Value::Undefined
+                } else {
+                    &image
+                };
+                assert_eq!(output.get("image"), Some(expected));
+                let wire = Value::Object(output).to_json_value().unwrap();
+                assert_eq!(
+                    wire.get("image"),
+                    (!image.is_null())
+                        .then(|| image.to_json_value().unwrap())
+                        .as_ref()
+                );
             }
         }
     }
@@ -907,10 +972,7 @@ mod tests {
     struct FailingMapper;
     #[async_trait]
     impl OAuthProfileMapper for FailingMapper {
-        async fn map_profile(
-            &self,
-            _: Value,
-        ) -> Result<alibi_core::field_policy::FieldOutput, String> {
+        async fn map_profile(&self, _: Value) -> Result<Map, String> {
             Err("custom mapper failed".into())
         }
     }
@@ -924,10 +986,10 @@ mod tests {
             verified_oidc: false,
         };
         let response = handler.get_user_info(OAuthUserInfoRequest {
-            id_token: Some(id_token(serde_json::json!({"sub":"subject", "email":"a@example.com", "name":42, "picture":false}))),
+            id_token: Some(id_token(crate::oauth::providers::js!({"sub":"subject", "email":"a@example.com", "name":42, "picture":false}))),
             ..Default::default()
         }).await.unwrap();
-        assert_eq!(response.user_output.unwrap(), serde_json::json!({"email":"a@example.com", "emailVerified":false, "name":42, "image":false}).as_object().unwrap().clone());
+        assert_eq!(response.user, crate::oauth::providers::js!({"email":"a@example.com", "emailVerified":false, "name":42, "image":false}).as_object().unwrap().clone());
         let provider = GenericOAuthConfig::new("client", "secret")
             .resolve()
             .await
@@ -964,13 +1026,13 @@ mod tests {
     async fn generic_profile_aliases_normalize_email_verification() {
         for (value, expected) in [
             (Value::Null, false),
-            (serde_json::json!(false), false),
-            (serde_json::json!(true), true),
-            (serde_json::json!("true"), true),
-            (serde_json::json!("false"), false),
-            (serde_json::json!(1), false),
+            (crate::oauth::providers::js!(false), false),
+            (crate::oauth::providers::js!(true), true),
+            (crate::oauth::providers::js!("true"), true),
+            (crate::oauth::providers::js!("false"), false),
+            (crate::oauth::providers::js!(1), false),
         ] {
-            let profile = serde_json::json!({"sub":"subject", "email":"a@example.com", "email_verified": value});
+            let profile = crate::oauth::providers::js!({"sub":"subject", "email":"a@example.com", "email_verified": value});
             let handler = GenericUserInfo {
                 url: Some(serve_profile(profile.clone()).await),
                 mapper: None,
@@ -993,7 +1055,13 @@ mod tests {
                 .unwrap();
             for response in [fetched, decoded] {
                 assert_eq!(response.data["emailVerified"], Value::Bool(expected));
-                assert_eq!(response.user.email_verified, expected);
+                assert_eq!(
+                    response
+                        .user
+                        .get("emailVerified")
+                        .is_some_and(Value::is_truthy),
+                    expected
+                );
             }
         }
     }
@@ -1006,7 +1074,8 @@ mod tests {
             custom: None,
             verified_oidc: false,
         };
-        let token = id_token(serde_json::json!({"sub":"subject", "email":"a@example.com"}));
+        let token =
+            id_token(crate::oauth::providers::js!({"sub":"subject", "email":"a@example.com"}));
         let response = handler
             .get_user_info(OAuthUserInfoRequest {
                 id_token: Some(token.clone()),
@@ -1014,11 +1083,12 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(response.user.id, "subject");
+        assert!(!response.user.contains_key("id"));
+        assert_eq!(response.data["sub"], "subject");
         for malformed in [
             token.rsplit_once('.').unwrap().0.to_owned(),
             format!("{token}.extra"),
-            id_token(serde_json::json!([])),
+            id_token(crate::oauth::providers::js!([])),
         ] {
             assert!(
                 handler

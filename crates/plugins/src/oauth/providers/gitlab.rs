@@ -1,7 +1,8 @@
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
 use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
 use async_trait::async_trait;
-use serde_json::Map;
 use std::sync::Arc;
 impl OAuthProvider {
     /// GitLab.com social login with the published `read_user` scope and PKCE.
@@ -88,7 +89,7 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         if profile.is_null() {
@@ -96,7 +97,11 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
                 "Null GitLab profile",
             ));
         }
-        let user = gitlab_user_info(profile.clone())?;
+        if profile.get("state").and_then(Value::as_str) != Some("active")
+            || profile.get("locked").is_some_and(Value::is_truthy)
+        {
+            return Err("GitLab account is inactive or locked".into());
+        }
         let mut output = Map::new();
         _ = output.insert(
             "name".into(),
@@ -105,7 +110,7 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
                 .filter(|value| !value.is_null())
                 .or_else(|| profile.get("username").filter(|value| !value.is_null()))
                 .cloned()
-                .unwrap_or(Value::String(String::new())),
+                .unwrap_or(Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("avatar_url", "image")] {
             if let Some(value) = profile.get(source) {
@@ -129,9 +134,9 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
             );
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user,
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -161,17 +166,13 @@ pub(in crate::oauth::providers) fn gitlab_endpoint(issuer: &str, suffix: &str) -
     clippy::needless_pass_by_value,
     reason = "Match the public provider callback type, which owns its JSON profile"
 )]
-pub(in crate::oauth::providers) fn gitlab_user_info(
-    profile: Value,
-) -> Result<OAuthUserInfo, String> {
+pub(in crate::oauth::providers) fn gitlab_user_info(profile: Value) -> Result<Map, String> {
     let locked = profile.get("locked").is_some_and(|value| match value {
-        Value::Null => false,
+        Value::Null | Value::Undefined => false,
         Value::Bool(value) => *value,
-        Value::Number(value) => value
-            .as_f64()
-            .is_some_and(|value| value != 0.0 && !value.is_nan()),
+        Value::Number(value) => *value != 0.0 && !value.is_nan(),
         Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
+        Value::Array(_) | Value::Object(_) | Value::Date(_) => true,
     });
     if profile.get("state").and_then(Value::as_str) != Some("active") || locked {
         return Err("GitLab account is inactive or locked".into());
@@ -197,12 +198,13 @@ pub(in crate::oauth::providers) fn gitlab_user_info(
         image: profile
             .get("avatar_url")
             .and_then(Value::as_str)
-            .map(String::from),
+            .map(Into::into),
         email_verified: profile
             .get("email_verified")
             .and_then(Value::as_bool)
             .unwrap_or(false),
-    })
+    }
+    .public_profile(true))
 }
 
 #[cfg(test)]
@@ -212,19 +214,19 @@ mod tests {
     struct GuardedMapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for GuardedMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["state"], "active");
             assert_eq!(profile["locked"], false);
-            Ok(
-                serde_json::from_value(serde_json::json!({"id":"public-id","custom":true}))
-                    .unwrap(),
+            Ok(alibi_core::utils::json::from_value(
+                crate::oauth::providers::js!({"id":"public-id","custom":true}),
             )
+            .unwrap())
         }
     }
     #[tokio::test]
     async fn gitlab_admission_precedes_partial_mapping() {
         for (state, locked) in [("active", false), ("blocked", false), ("active", true)] {
-            let body = serde_json::json!({"id":42,"state":state,"locked":locked,"name":"","username":"fallback","email":null,"avatar_url":null,"email_verified":"true"});
+            let body = crate::oauth::providers::js!({"id":42,"state":state,"locked":locked,"name":"","username":"fallback","email":null,"avatar_url":null,"email_verified":"true"});
 
             use tokio::io::{AsyncReadExt, AsyncWriteExt};
             let body = body.to_string();
@@ -263,24 +265,29 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "42"
             );
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output["name"], "");
             assert_eq!(output["email"], Value::Null);
             assert_eq!(output["image"], Value::Null);
             assert_eq!(output["emailVerified"], "true");
             assert_eq!(output["id"], "public-id");
             assert_eq!(output["custom"], true);
-            assert!(response.user.email_verified);
+            assert!(
+                response
+                    .user
+                    .get("emailVerified")
+                    .is_some_and(Value::is_truthy)
+            );
         }
     }
 
     #[test]
     fn gitlab_optional_email_does_not_reject_active_accounts() {
-        let profile = serde_json::json!({"id":42,"state":"active","username":"user"});
-        assert_eq!(gitlab_user_info(profile.clone()).unwrap().email, "");
+        let profile = crate::oauth::providers::js!({"id":42,"state":"active","username":"user"});
+        assert_eq!(gitlab_user_info(profile.clone()).unwrap()["email"], "");
         let mut profile = profile;
         profile["email"] = Value::Null;
-        assert_eq!(gitlab_user_info(profile.clone()).unwrap().email, "");
+        assert_eq!(gitlab_user_info(profile.clone()).unwrap()["email"], "");
         profile["locked"] = Value::Bool(true);
         assert!(gitlab_user_info(profile).is_err());
     }

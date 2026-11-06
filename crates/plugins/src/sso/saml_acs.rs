@@ -244,12 +244,12 @@ impl SsoPlugin {
             });
         let verified = self.config.trust_email_verified && super::provider_email_verified(verified);
         let user = OAuthUserInfo {
-            id: identity.id,
-            email: identity.email,
-            name: Some(identity.name),
+            id: identity.id.into(),
+            email: identity.email.into(),
+            name: Some(identity.name.into()),
             image: None,
             email_verified: verified,
-            additional_fields: serde_json::Map::new(),
+            additional_fields: alibi_core::utils::json::JsObject::new(),
         };
         let mut scoped = ctx.clone();
         let mut config = (*ctx.config).clone();
@@ -261,8 +261,8 @@ impl SsoPlugin {
         if provider.domain_verified == Some(true)
             && user
                 .email
-                .split('@')
-                .nth(1)
+                .as_str()
+                .and_then(|email| email.split('@').nth(1))
                 .is_some_and(|domain| super::domains::matches(domain, &provider.domain))
         {
             config
@@ -291,7 +291,7 @@ impl SsoPlugin {
                     issuer: identity.issuer.clone(),
                     account_id: user.id.clone(),
                 },
-                provider_user: Value::Object(user.public_profile(false)),
+                provider_user: alibi_core::utils::json::JsValue::Object(user.public_profile(false)),
                 provider_claims: None,
                 verified_id_token_claims: None,
                 provider_attributes: Some(identity.attributes.clone()),
@@ -304,7 +304,7 @@ impl SsoPlugin {
                 identity: crate::oauth::handlers::transactional_identity::Identity {
                     provider: provider_id,
                     user: &user,
-                    profile: &identity.attributes,
+                    profile: &identity.attributes.clone().into(),
                     policy: &policy,
                     tokens: &tokens,
                     disable_signup: self.config.disable_implicit_sign_up,
@@ -341,7 +341,7 @@ impl SsoPlugin {
                 OAuthIdentity {
                     provider_name: provider_id,
                     user: &user,
-                    profile: &identity.attributes,
+                    profile: &identity.attributes.clone().into(),
                 },
                 &policy,
                 &tokens,
@@ -368,10 +368,21 @@ impl SsoPlugin {
             }
         };
         self.provision(&issued, &user, None, &provider).await?;
-        self.provision_organization(&issued.user, &provider, ctx, &identity.attributes, None)
-            .await?;
+        self.provision_organization(
+            &issued.user,
+            &provider,
+            ctx,
+            &identity.attributes.clone().into(),
+            None,
+        )
+        .await?;
         if self.config.saml_enable_single_logout {
-            let key = format!("saml-session:{provider_id}:{}", user.id);
+            let key = format!(
+                "saml-session:{provider_id}:{}",
+                user.id
+                    .to_utf8()
+                    .map_err(|error| AuthError::internal(error.to_string()))?
+            );
             let mut data = json!({"sessionId":issued.session.id,"sessionToken":issued.session.token,"providerId":provider_id,"nameID":user.id});
             if let Some(index) = identity.session_index {
                 _ = data

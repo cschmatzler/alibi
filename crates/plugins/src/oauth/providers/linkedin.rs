@@ -1,11 +1,12 @@
 //! `LinkedIn`'s non-PKCE grants and original subject with nullish email verification.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned `LinkedIn` configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -22,7 +23,7 @@ pub struct LinkedInOptions {
     /// Trusted transport override retaining `LinkedIn`'s actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl LinkedInOptions {
     #[must_use]
@@ -119,7 +120,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct LinkedInUserInfo {
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -152,7 +153,7 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         let profile = response;
@@ -176,9 +177,7 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         );
         if let Some(mapper) = self.mapper {
             output.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
@@ -195,23 +194,16 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
             ));
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::scalar(profile.get("sub"))?.unwrap_or_default(),
-                name: None,
-                email: String::new(),
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }
 
@@ -224,21 +216,23 @@ mod tests {
     struct PartialMapper(Value);
     #[async_trait]
     impl super::super::OAuthProfileMapper for PartialMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile, self.0);
-            Ok(serde_json::from_value(serde_json::json!({
-                "id": "public-id", "name": "Mapped", "custom": true
-            }))
-            .unwrap())
+            Ok(
+                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
+                    "id": "public-id", "name": "Mapped", "custom": true
+                }))
+                .unwrap(),
+            )
         }
     }
 
     #[tokio::test]
     async fn linkedin_http_partial_profile_mapping() {
         for mapped in [false, true] {
-            let mut profile = serde_json::json!({"sub":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
+            let mut profile = crate::oauth::providers::js!({"sub":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
             if mapped {
-                profile["name"] = serde_json::json!({"requiresMapping": true});
+                profile["name"] = crate::oauth::providers::js!({"requiresMapping": true});
             }
             let body = (profile.clone()).to_string();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -276,12 +270,12 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "raw-id"
             );
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output.get("email"), Some(&Value::Null));
             assert_eq!(output.get("image"), Some(&Value::Null));
             assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
             assert_eq!(
-                response.user.name.as_deref(),
+                response.user.get("name").and_then(Value::as_str),
                 Some(if mapped { "Mapped" } else { "Original" })
             );
             if mapped {

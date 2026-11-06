@@ -394,7 +394,11 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
         super::phone_number::reject_verified_input(body.phone_number_verified.as_ref())?;
     }
 
-    if let Some(user) = ctx.database.get_user_by_email(&body.email).await? {
+    if let Some(user) = ctx
+        .database
+        .get_user_by_email(&alibi_core::utils::json::JsString::from(&body.email))
+        .await?
+    {
         if config.require_email_verification || !config.auto_sign_in {
             _ = ctx
                 .hash_password(config.password_hasher.as_ref(), &body.password)
@@ -502,7 +506,7 @@ pub(crate) async fn sign_up_core<S: alibi_core::AuthSchema>(
                 .create_account_record(CreateAccount {
                     additional_fields: FieldValues::default(),
                     user_id: user.id().to_string(),
-                    account_id: user.id().to_string(),
+                    account_id: user.id().to_string().into(),
                     provider_id: "credential".to_owned(),
                     access_token: None,
                     refresh_token: None,
@@ -765,7 +769,9 @@ mod tests {
             );
             let user = ctx
                 .database
-                .get_user_by_email("cancel@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "cancel@example.com",
+                ))
                 .await
                 .unwrap()
                 .unwrap();
@@ -866,7 +872,9 @@ mod tests {
             }
             assert!(
                 ctx.database
-                    .get_user_by_email("cancel-signup@example.com")
+                    .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                        "cancel-signup@example.com"
+                    ))
                     .await
                     .unwrap()
                     .is_none()
@@ -1000,7 +1008,9 @@ mod tests {
         // Verify the stored hash uses our custom hasher
         let user = ctx
             .database
-            .get_user_by_email("hasher@example.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "hasher@example.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -1137,7 +1147,7 @@ mod tests {
         ctx.database
             .create_account(CreateAccount {
                 user_id: user.id().to_string(),
-                account_id: user.id().to_string(),
+                account_id: user.id().to_string().into(),
                 provider_id: "credential".into(),
                 password: Some(String::new()),
                 additional_fields: Default::default(),

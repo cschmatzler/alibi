@@ -521,17 +521,22 @@ pub(in crate::oauth) async fn callback_core(
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
+    let canonical_user = crate::oauth::providers::OAuthUserInfo::from_fields(
+        &user_info.user,
+        user_info.account_subject.as_ref(),
+    );
+
     let raw_email = provider
         .authorization
         .as_ref()
         .filter(|policy| policy.preserve_raw_email_errors)
-        .and(user_info.user_output.as_ref())
+        .map(|_| &user_info.user)
         .and_then(|output| output.get("email"));
 
     if let Some(link) = payload.link.as_ref() {
         let link_result = complete_link_social_with_raw_email(
             provider_name,
-            &user_info.user,
+            &canonical_user,
             &user_info.data,
             &tokens,
             link,
@@ -562,7 +567,10 @@ pub(in crate::oauth) async fn callback_core(
         // in the caught email lookup (new identity) or uncaught validation (owned).
         let existing_account = ctx
             .database
-            .get_account_record(provider_name, &user_info.user.id)
+            .get_account_record(
+                provider_name,
+                &alibi_core::utils::json::JsString::from(&canonical_user.id),
+            )
             .await;
         return Ok(match existing_account {
             Ok(Some(_)) => AuthResponse::new(500),
@@ -583,7 +591,7 @@ pub(in crate::oauth) async fn callback_core(
     let outcome = match process_oauth_sign_in_with_output(
         OAuthIdentity {
             provider_name,
-            user: &user_info.user,
+            user: &canonical_user,
             profile: &user_info.data,
         },
         &OAuthProcessPolicy::for_provider(provider, Some(payload.callback_url.clone())),
@@ -596,7 +604,7 @@ pub(in crate::oauth) async fn callback_core(
                 .authorization
                 .as_ref()
                 .filter(|policy| policy.preserve_raw_profile_scalars)
-                .and(user_info.user_output.as_ref()),
+                .map(|_| &user_info.user),
             provider.authorization.as_ref(),
         ),
     )

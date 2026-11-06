@@ -151,13 +151,16 @@ pub(super) async fn provider_verification_output<M: SeaOrmUserModel, C: Connecti
 async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     mut model: M::ActiveModel,
     db: &C,
-    verification: Option<serde_json::Value>,
+    verification: Option<alibi_core::utils::json::JsValue>,
     id: Option<&str>,
     native_fields: std::collections::BTreeMap<String, serde_json::Value>,
 ) -> AuthResult<M> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
     let insert = id.is_none();
+    let verification = verification
+        .map(|value| value.to_json_value())
+        .transpose()?;
     let verification =
         verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()));
     if verification.is_none()
@@ -284,10 +287,11 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
 async fn stage_provider_text<M: SeaOrmUserModel, C: ConnectionTrait>(
     db: &C,
     active: &mut M::ActiveModel,
-    name: Option<serde_json::Value>,
-    image: Option<serde_json::Value>,
+    name: Option<alibi_core::utils::json::JsValue>,
+    image: Option<alibi_core::utils::json::JsValue>,
+    email: Option<alibi_core::utils::json::JsValue>,
 ) -> AuthResult<()> {
-    for (field, raw) in [("name", name), ("image", image)] {
+    for (field, raw) in [("name", name), ("image", image), ("email", email)] {
         let Some(raw) = raw else {
             continue;
         };
@@ -299,7 +303,7 @@ async fn stage_provider_text<M: SeaOrmUserModel, C: ConnectionTrait>(
         let column = if field == "name" {
             Some(M::name_column())
         } else {
-            M::list_users_column("image")
+            M::list_users_column(field)
         }
         .ok_or_else(|| {
             AuthError::internal("The user model does not expose its provider text column")
@@ -372,6 +376,7 @@ where
         fields.apply_adapter_transforms_async().await?;
         let provider_name = create_user.provider_name.take();
         let provider_image = create_user.provider_image.take();
+        let provider_email = create_user.provider_email.take();
         let verification = create_user.provider_email_verified.take();
         let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
         if let Some(raw_id) = native_fields.get("id") {
@@ -380,7 +385,14 @@ where
                 .insert("id".into(), raw_id.clone());
         }
         let mut model = S::User::new_active(user_id, create_user, now);
-        stage_provider_text::<S::User, _>(db, &mut model, provider_name, provider_image).await?;
+        stage_provider_text::<S::User, _>(
+            db,
+            &mut model,
+            provider_name,
+            provider_image,
+            provider_email,
+        )
+        .await?;
         let backend = db.get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(db, &column, value).await?;
@@ -633,7 +645,10 @@ where
             .map_err(map_db_err)
     }
 
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
+    async fn get_user_by_email(
+        &self,
+        email: &alibi_core::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>> {
         self.get_user_by_email_with_connection(self.scoped_connection(), email)
             .await
     }
@@ -848,14 +863,21 @@ where
         fields.apply_adapter_transforms_async().await?;
         let provider_name = update.provider_name.take();
         let provider_image = update.provider_image.take();
+        let provider_email = update.provider_email.take();
         let verification = update.provider_email_verified.take();
         let native_fields = std::mem::take(&mut update.adapter_native_fields);
         if native_fields.keys().any(|field| field != "banExpires") {
             return Err(AuthError::internal("Unsupported native user update field"));
         }
         S::User::apply_update(&mut active, update, Utc::now());
-        stage_provider_text::<S::User, _>(connection, &mut active, provider_name, provider_image)
-            .await?;
+        stage_provider_text::<S::User, _>(
+            connection,
+            &mut active,
+            provider_name,
+            provider_image,
+            provider_email,
+        )
+        .await?;
         let backend = connection.get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(connection, &column, value).await?;
@@ -913,9 +935,9 @@ where
     pub(super) async fn get_user_by_email_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
-        email: &str,
+        email: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::User>> {
-        let email = normalize_user_email(email);
+        let email = normalize_user_email(&email.to_utf8_binding());
         user_query::<S::User>(connection.get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::email_column().eq(email))
             .one(connection)

@@ -1,9 +1,22 @@
 //! Profile transports and projections shared by the remaining dedicated factories.
 //! Public JSON and typed persistence are kept separate; account identity always
 //! comes from the original provider profile, before application mapping.
-use super::{OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
+
+use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
+use alibi_core::utils::json::{JsObject as Map, JsString, JsValue as Value};
 use base64::Engine;
-use serde_json::{Map, Value};
+
+pub(crate) trait ProfileResponseExt {
+    async fn profile_json(self) -> Result<Value, String>;
+}
+impl ProfileResponseExt for reqwest::Response {
+    async fn profile_json(self) -> Result<Value, String> {
+        let bytes = self.bytes().await.map_err(|error| error.to_string())?;
+        let text = String::from_utf8_lossy(&bytes);
+        alibi_core::utils::json::parse_value(text.strip_prefix('\u{feff}').unwrap_or(&text))
+            .map_err(|error| error.to_string())
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(super) enum ProfileKind {
@@ -24,7 +37,7 @@ pub(super) struct PublishedProfile {
     pub endpoint: Option<String>,
     pub email_endpoint: Option<String>,
     pub client_id: String,
-    pub mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub mapper: Option<fn(Value) -> Result<Map, String>>,
     pub application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 
@@ -34,28 +47,21 @@ pub(super) fn profile_exception(error: impl std::fmt::Display) -> String {
 }
 
 pub(in crate::oauth) fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        _ => true,
-    }
+    value.is_truthy()
 }
 
-pub(super) fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
+pub(super) fn scalar(value: Option<&Value>) -> Result<Option<JsString>, String> {
     match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
+        Some(value @ (Value::String(_) | Value::Number(_) | Value::Bool(_))) => {
+            value.coerce_js_string().map(Some).map_err(str::to_owned)
+        }
         _ => Ok(None),
     }
 }
 
-pub(super) fn js_string(value: &Value) -> Result<String, String> {
+pub(super) fn js_string(value: &Value) -> Result<JsString, String> {
     alibi_core::utils::json::JsValue::from(value.clone())
-        .coerce_string()
+        .coerce_js_string()
         .map_err(str::to_owned)
 }
 
@@ -78,11 +84,11 @@ pub(in crate::oauth) fn js_number(value: &Value) -> Option<f64> {
     match value {
         Value::Null => Some(0.0),
         Value::Bool(value) => Some(if *value { 1.0 } else { 0.0 }),
-        Value::Number(value) => value.as_f64(),
-        Value::Object(_) => None,
+        Value::Number(value) => Some(*value),
+        Value::Undefined | Value::Date(_) | Value::Object(_) => None,
         Value::Array(_) => js_number(&Value::String(js_string(value).ok()?)),
         Value::String(value) => {
-            let value = value.trim_matches(js_whitespace);
+            let value = value.as_str()?.trim_matches(js_whitespace);
             if value.is_empty() {
                 return Some(0.0);
             }
@@ -157,8 +163,10 @@ pub(super) fn bearer_access_token(request: &OAuthUserInfoRequest) -> Result<Stri
         Some(raw) => raw
             .get("access_token")
             .map(js_string)
-            .transpose()
-            .map(|value| value.unwrap_or_else(|| "undefined".into())),
+            .transpose()?
+            .unwrap_or_else(|| "undefined".into())
+            .to_utf8()
+            .map_err(|error| error.to_string()),
         None => Ok(request
             .access_token
             .clone()
@@ -166,7 +174,7 @@ pub(super) fn bearer_access_token(request: &OAuthUserInfoRequest) -> Result<Stri
     }
 }
 
-pub(super) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
+pub(in crate::oauth) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
     let parts: Vec<_> = token.split('.').collect();
     let [_, payload, _] = parts.as_slice() else {
         return Err("Invalid grant ID token".into());
@@ -212,7 +220,7 @@ pub(super) fn strict_primitive_equal(left: &Value, right: &Value) -> bool {
         (Value::Null, Value::Null) => true,
         (Value::String(left), Value::String(right)) => left == right,
         (Value::Bool(left), Value::Bool(right)) => left == right,
-        (Value::Number(left), Value::Number(right)) => left.as_f64() == right.as_f64(),
+        (Value::Number(left), Value::Number(right)) => left == right,
         _ => false,
     }
 }
@@ -221,24 +229,26 @@ pub(super) fn grant_id_token(request: &OAuthUserInfoRequest) -> Result<Option<St
     match &request.raw {
         Some(raw) => match raw.get("id_token").filter(|value| truthy(value)) {
             None => Ok(None),
-            Some(Value::String(value)) => Ok(Some(value.clone())),
+            Some(Value::String(value)) => {
+                value.to_utf8().map(Some).map_err(|error| error.to_string())
+            }
             _ => Err("Non-string grant ID token".into()),
         },
         None => Ok(request.id_token.clone().filter(|value| !value.is_empty())),
     }
 }
 
-pub(in crate::oauth) fn raw_subject(value: Option<&Value>) -> Result<String, String> {
+pub(in crate::oauth) fn raw_subject(value: Option<&Value>) -> Result<JsString, String> {
     let subject = js_string(value.ok_or("Missing provider subject")?)?;
     if subject.trim_matches(js_whitespace).is_empty()
-        || matches!(subject.as_str(), "null" | "undefined")
+        || matches!(subject.as_str(), Some("null" | "undefined"))
     {
         return Err("Invalid provider subject".into());
     }
     Ok(subject)
 }
 
-pub(super) fn subject(kind: ProfileKind, profile: &Value) -> Result<String, String> {
+pub(super) fn subject(kind: ProfileKind, profile: &Value) -> Result<JsString, String> {
     let value = match kind {
         ProfileKind::Roblox | ProfileKind::Twitch | ProfileKind::Vercel => profile.get("sub"),
         ProfileKind::Salesforce => profile.get("user_id"),
@@ -250,7 +260,7 @@ pub(super) fn subject(kind: ProfileKind, profile: &Value) -> Result<String, Stri
     raw_subject(value)
 }
 
-fn copy(output: &mut Map<String, Value>, key: &str, value: Option<&Value>) {
+fn copy(output: &mut Map, key: &str, value: Option<&Value>) {
     if let Some(value) = value {
         _ = output.insert(key.into(), value.clone());
     }
@@ -261,7 +271,7 @@ fn or_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Value {
         .flatten()
         .find(|value| truthy(value))
         .cloned()
-        .unwrap_or_else(|| Value::String(String::new()))
+        .unwrap_or_else(|| Value::String(String::new().into()))
 }
 fn nullish_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Value {
     values
@@ -269,7 +279,7 @@ fn nullish_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Val
         .flatten()
         .find(|value| !value.is_null())
         .cloned()
-        .unwrap_or_else(|| Value::String(String::new()))
+        .unwrap_or_else(|| Value::String(String::new().into()))
 }
 fn placeholder(identifier: Option<&Value>, namespace: &str) -> Result<Value, String> {
     let identifier = identifier
@@ -277,13 +287,16 @@ fn placeholder(identifier: Option<&Value>, namespace: &str) -> Result<Value, Str
         .transpose()
         .map_err(profile_exception)?
         .unwrap_or_else(|| "undefined".into());
-    let email = format!("{identifier}@{namespace}.placeholder.invalid");
+    let email = identifier.concat(&format!("@{namespace}.placeholder.invalid").into());
     // The published helper validates the generated address rather than accepting
     // routing characters supplied by a malformed profile identifier.
-    if !crate::authentication_helpers::is_valid_email(&email) {
+    if !email
+        .as_str()
+        .is_some_and(crate::authentication_helpers::is_valid_email)
+    {
         return Err(profile_exception("Invalid placeholder email"));
     }
-    Ok(Value::String(email))
+    Ok(Value::String(email.into()))
 }
 
 #[async_trait::async_trait]
@@ -346,7 +359,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 .map_err(|error| error.to_string())?
                 .error_for_status()
                 .map_err(|error| error.to_string())?
-                .json()
+                .profile_json()
                 .await
                 .map_err(|error| error.to_string())?
         };
@@ -365,7 +378,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 .send()
                 .await
                 && response.status().is_success()
-                && let Ok(email_profile) = response.json::<Value>().await
+                && let Ok(email_profile) = response.profile_json().await
                 && let Some(email) = email_profile
                     .pointer("/data/confirmed_email")
                     .filter(|value| truthy(value))
@@ -518,7 +531,9 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     .filter(|value| !value.is_null())
                     .ok_or_else(|| profile_exception("Missing VK user"))?;
                 if !user.get("email").is_some_and(truthy)
-                    && mapped.as_ref().is_none_or(|user| user.email.is_empty())
+                    && mapped
+                        .as_ref()
+                        .is_none_or(|user| !user.get("email").is_some_and(Value::is_truthy))
                     && !application_output
                         .as_ref()
                         .and_then(|output| output.get("email"))
@@ -529,20 +544,21 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 for field in ["first_name", "last_name", "birthday", "sex"] {
                     copy(&mut output, field, user.get(field));
                 }
-                let template = |value: Option<&Value>| -> Result<String, String> {
-                    match value {
-                        None => Ok("undefined".into()),
-                        Some(Value::Null) => Ok("null".into()),
-                        Some(value) => js_string(value),
-                    }
-                };
+                let template =
+                    |value: Option<&Value>| -> Result<alibi_core::utils::json::JsString, String> {
+                        match value {
+                            None => Ok("undefined".into()),
+                            Some(Value::Null) => Ok("null".into()),
+                            Some(value) => js_string(value),
+                        }
+                    };
                 _ = output.insert(
                     "name".into(),
-                    Value::String(format!(
-                        "{} {}",
-                        template(user.get("first_name"))?,
-                        template(user.get("last_name"))?
-                    )),
+                    Value::String(
+                        template(user.get("first_name"))?
+                            .concat(&" ".into())
+                            .concat(&template(user.get("last_name"))?),
+                    ),
                 );
                 copy(&mut output, "email", user.get("email"));
                 copy(&mut output, "image", user.get("avatar"));
@@ -559,38 +575,14 @@ impl OAuthUserInfoHandler for PublishedProfile {
             }
         }
         if let Some(mapped) = &mapped {
-            output.extend(mapped.public_profile(true));
+            output.extend(mapped.clone());
         }
         if let Some(mapped) = application_output {
             output.extend(mapped);
         }
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: output
-                    .iter()
-                    .filter(|(key, _)| {
-                        !matches!(
-                            key.as_str(),
-                            "id" | "name" | "email" | "image" | "emailVerified"
-                        )
-                    })
-                    .map(|(key, value)| (key.clone(), value.clone()))
-                    .collect(),
-                id: subject(self.kind, &profile).unwrap_or_default(),
-                name: scalar(output.get("name").filter(|value| truthy(value)))?,
-                email: output
-                    .get("email")
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .into(),
-                image: scalar(output.get("image"))?,
-                email_verified: output.get("emailVerified").is_some_and(truthy),
-            },
-        };
         Ok(OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
+            user: output,
+            account_subject: None,
             data: if matches!(self.kind, ProfileKind::Roblox | ProfileKind::Zoom) {
                 Value::Object(object_spread(profile))
             } else {
@@ -600,26 +592,8 @@ impl OAuthUserInfoHandler for PublishedProfile {
     }
 }
 
-pub(super) fn object_spread(value: Value) -> Map<String, Value> {
-    match value {
-        Value::Object(object) => object,
-        Value::Array(values) => values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| (index.to_string(), value))
-            .collect(),
-        Value::String(value) => value
-            .encode_utf16()
-            .enumerate()
-            .map(|(index, unit)| {
-                (
-                    index.to_string(),
-                    Value::String(String::from_utf16_lossy(&[unit])),
-                )
-            })
-            .collect(),
-        _ => Map::new(),
-    }
+pub(super) fn object_spread(value: Value) -> Map {
+    value.spread()
 }
 
 #[cfg(test)]
@@ -631,7 +605,7 @@ mod tests {
         for payload in ["e30", "e30=", "e31", "e31=", " e\t3\n0\x0c=\r", "77u_e30="] {
             assert_eq!(
                 decode_grant_jwt(&format!(".{payload}.")).unwrap(),
-                serde_json::json!({})
+                crate::oauth::providers::js!({})
             );
         }
         for payload in ["e30==", "e30===", "e30\x0b=", "e=30", "e", "===="] {
@@ -655,7 +629,7 @@ mod tests {
         }
         assert_eq!(
             decode_grant_jwt(".eyJ4Ijoi77-9In0.").unwrap(),
-            serde_json::json!({"x": "\u{fffd}"})
+            crate::oauth::providers::js!({"x": "\u{fffd}"})
         );
     }
 
@@ -669,7 +643,7 @@ mod tests {
         }
         assert_eq!(
             decode_grant_jwt(".eyJuYW1lIjoi8J-kmSJ9.").unwrap(),
-            serde_json::json!({"name": "🤙"})
+            crate::oauth::providers::js!({"name": "🤙"})
         );
     }
 
@@ -691,19 +665,43 @@ mod tests {
     async fn copied_profiles_spread_arrays_and_primitives() {
         for kind in [ProfileKind::Roblox, ProfileKind::Zoom] {
             for (profile, expected) in [
-                (serde_json::json!(42), serde_json::json!({})),
-                (serde_json::json!(false), serde_json::json!({})),
                 (
-                    serde_json::json!(["a", 2]),
-                    serde_json::json!({"0":"a","1":2}),
+                    crate::oauth::providers::js!(42),
+                    crate::oauth::providers::js!({}),
                 ),
                 (
-                    serde_json::json!("ab"),
-                    serde_json::json!({"0":"a","1":"b"}),
+                    crate::oauth::providers::js!(false),
+                    crate::oauth::providers::js!({}),
                 ),
                 (
-                    serde_json::json!({"sub":"one", "id":"two"}),
-                    serde_json::json!({"sub":"one", "id":"two"}),
+                    crate::oauth::providers::js!(["a", 2]),
+                    crate::oauth::providers::js!({"0":"a","1":2}),
+                ),
+                (
+                    crate::oauth::providers::js!("ab"),
+                    crate::oauth::providers::js!({"0":"a","1":"b"}),
+                ),
+                (
+                    Value::String("é😀".into()),
+                    Value::Object(
+                        [
+                            ("0".into(), Value::String("é".into())),
+                            (
+                                "1".into(),
+                                Value::String(JsString::from_code_units(vec![0xd83d])),
+                            ),
+                            (
+                                "2".into(),
+                                Value::String(JsString::from_code_units(vec![0xde00])),
+                            ),
+                        ]
+                        .into_iter()
+                        .collect(),
+                    ),
+                ),
+                (
+                    crate::oauth::providers::js!({"sub":"one", "id":"two"}),
+                    crate::oauth::providers::js!({"sub":"one", "id":"two"}),
                 ),
             ] {
                 let handler = PublishedProfile {
@@ -726,11 +724,14 @@ mod tests {
     #[tokio::test]
     async fn twitch_malformed_id_tokens_are_profile_exceptions() {
         let provider = super::super::OAuthProvider::twitch("client", Some("secret"));
-        for token in [serde_json::json!("malformed"), serde_json::json!(42)] {
+        for token in [
+            crate::oauth::providers::js!("malformed"),
+            crate::oauth::providers::js!(42),
+        ] {
             let error = crate::oauth::handlers::fetch_user_info_from_provider(
                 &provider,
                 OAuthUserInfoRequest {
-                    raw: Some(serde_json::json!({"id_token": token})),
+                    raw: Some(crate::oauth::providers::js!({"id_token": token})),
                     ..Default::default()
                 },
             )

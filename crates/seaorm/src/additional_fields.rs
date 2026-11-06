@@ -14,7 +14,7 @@ pub fn raw_value(value: &JsValue) -> AuthResult<Value> {
         RawFieldValue::Bool(value) => Value::Bool(Some(value)),
         RawFieldValue::Integer(value) => Value::BigInt(Some(value)),
         RawFieldValue::Number(value) => Value::Double(Some(value)),
-        RawFieldValue::Text(value) => Value::String(Some(value)),
+        RawFieldValue::Text(value) => Value::String(Some(value.to_utf8_binding())),
         RawFieldValue::Json(value) => Value::Json(Some(Box::new(value))),
     })
 }

@@ -66,7 +66,7 @@ async fn admin_username_creation_validates_raw_fields_and_preserves_display_fall
         assert_eq!(error.status_code(), status, "{error:?}");
         assert!(
             ctx.database
-                .get_user_by_email(&email)
+                .get_user_by_email(&(email).into())
                 .await
                 .unwrap()
                 .is_none()
@@ -208,7 +208,7 @@ async fn admin_username_async_validator_runs_between_application_hooks_and_stops
     assert_eq!(*events.lock().unwrap(), ["before", "validator"]);
     assert!(
         ctx.database
-            .get_user_by_email("validator-error@fixture.test")
+            .get_user_by_email(&("validator-error@fixture.test").into())
             .await
             .unwrap()
             .is_none()
@@ -235,7 +235,7 @@ async fn admin_username_duplicate_hook_uses_current_transaction_and_endpoint_ski
                 }
             ));
             assert!(
-                tx.get_user_by_email("username-tx-second@fixture.test")
+                tx.get_user_by_email(&("username-tx-second@fixture.test").into())
                     .await?
                     .is_none()
             );
@@ -299,7 +299,7 @@ async fn admin_username_memory_scalars_keep_strict_lookup_and_preserved_case() {
         assert_eq!(wire["displayUsername"], value);
         let stored = ctx
             .database
-            .get_user_by_email(email)
+            .get_user_by_email(&(email).into())
             .await
             .unwrap()
             .unwrap();
@@ -346,7 +346,7 @@ async fn admin_username_hidden_display_is_not_persisted_and_without_plugin_case_
     assert!(wire.get("displayUsername").is_none());
     let stored = ctx
         .database
-        .get_user_by_email("hidden-display@fixture.test")
+        .get_user_by_email(&("hidden-display@fixture.test").into())
         .await
         .unwrap()
         .unwrap();

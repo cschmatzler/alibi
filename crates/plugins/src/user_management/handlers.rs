@@ -120,7 +120,7 @@ pub(crate) async fn change_email_core(
     );
     if ctx
         .database
-        .get_user_by_email_record(&new_email)
+        .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&new_email))
         .await?
         .is_some()
     {

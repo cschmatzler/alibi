@@ -84,7 +84,9 @@ pub(crate) async fn add_member_with_session<S: AuthSchema>(
         .ok_or_else(|| AuthError::internal("Member admission requires a target email"))?;
     if let Some(email_user) = ctx
         .database
-        .get_user_by_email(&email.to_lowercase())
+        .get_user_by_email(&alibi_core::utils::json::JsString::from(
+            &email.to_lowercase(),
+        ))
         .await?
         && ctx
             .database

@@ -21,7 +21,7 @@ impl super::SsoPlugin {
         user: &alibi_core::wire::UserView,
         provider: &alibi_core::store::SsoProvider,
         ctx: &alibi_core::AuthContext<S>,
-        profile: &serde_json::Value,
+        profile: &alibi_core::utils::json::JsValue,
         token: Option<&crate::oauth::OAuthTokenSet>,
     ) -> alibi_core::AuthResult<()> {
         if self.config.organization_provisioning.disabled

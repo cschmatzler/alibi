@@ -1,11 +1,12 @@
 //! Kick's PKCE grants and first envelope profile bound by original `user_id`.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Kick configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -22,7 +23,7 @@ pub struct KickOptions {
     /// Trusted transport override retaining Kick's actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl KickOptions {
     #[must_use]
@@ -118,7 +119,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct KickUserInfo {
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -149,67 +150,59 @@ impl OAuthUserInfoHandler for KickUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
-        let profile = match response.get("data") {
-            Some(Value::Array(rows)) => rows.first().cloned(),
-            Some(Value::Object(rows)) => rows.get("0").cloned(),
-            Some(Value::String(rows)) => rows.chars().next().and_then(|character| {
-                (character.len_utf16() == 1).then(|| Value::String(character.to_string()))
-            }),
-            _ => None,
-        }
-        .ok_or_else(|| super::remaining_profile::profile_exception("Missing Kick profile"))?;
-        let mut output = Map::new();
-        for (value, target) in [
-            (profile.get("name"), "name"),
-            (profile.get("email"), "email"),
-            (profile.get("profile_picture"), "image"),
-        ] {
-            if let Some(value) = value {
-                _ = output.insert(target.into(), value.clone());
-            }
-        }
-        _ = output.insert("emailVerified".into(), Value::Bool(false));
-        if let Some(mapper) = self.mapper {
-            output.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
-            );
-        }
-        if let Some(mapper) = &self.application_mapper {
-            output.extend(
+        let collection = response
+            .property("data")
+            .map_err(super::remaining_profile::profile_exception)?;
+        let profile = collection
+            .property("0")
+            .map_err(super::remaining_profile::profile_exception)?;
+        let mapped = self
+            .mapper
+            .map(|mapper| mapper(profile.clone()))
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?;
+        let application = if let Some(mapper) = &self.application_mapper {
+            Some(
                 mapper
                     .map_profile(profile.clone())
                     .await
                     .map_err(super::remaining_profile::profile_exception)?,
+            )
+        } else {
+            None
+        };
+        let mut output = Map::new();
+        for (source, target) in [
+            ("name", "name"),
+            ("email", "email"),
+            ("profile_picture", "image"),
+        ] {
+            output.insert(
+                target.into(),
+                profile
+                    .property(source)
+                    .map_err(super::remaining_profile::profile_exception)?,
             );
         }
-        if profile.is_null() {
-            return Err(super::remaining_profile::profile_exception(
-                "Null Kick profile",
-            ));
+        output.insert("emailVerified".into(), Value::Bool(false));
+        if let Some(mapped) = mapped {
+            output.extend(mapped);
         }
-        let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::scalar(profile.get("user_id"))?.unwrap_or_default(),
-                name: None,
-                email: String::new(),
-                image: None,
-                email_verified: false,
-            },
+        if let Some(mapped) = application {
+            output.extend(mapped);
+        }
+        let response = OAuthUserInfoResponse {
+            user: output,
             data: profile,
+            account_subject: None,
         };
-        super::apply_application_mapping(&mut response, output)
-            .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("user_id"))
 }
 
@@ -219,26 +212,148 @@ mod tests {
     use std::sync::Arc;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    struct ObservedMapper {
+        expected: Value,
+        reject: bool,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+    #[async_trait]
+    impl super::super::OAuthProfileMapper for ObservedMapper {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            assert_eq!(profile, self.expected);
+            if self.reject {
+                return Err("mapper rejected before property access".into());
+            }
+            Ok([("name".into(), Value::String("override".into()))]
+                .into_iter()
+                .collect())
+        }
+    }
+    async fn fetch_observed(
+        body: Value,
+        mapper: Arc<ObservedMapper>,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            stream.read(&mut request).await.unwrap();
+            let body = body.to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+        });
+        let handler = KickUserInfo {
+            endpoint,
+            mapper: None,
+            application_mapper: Some(mapper),
+        };
+        let result = handler
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await;
+        server.await.unwrap();
+        result
+    }
+    #[tokio::test]
+    async fn kick_missing_element_calls_mapper_before_property_error() {
+        for collection in [
+            Value::Array(vec![]),
+            Value::Object(Map::new()),
+            Value::String("".into()),
+            Value::Bool(true),
+        ] {
+            let mapper = Arc::new(ObservedMapper {
+                expected: Value::Undefined,
+                reject: false,
+                calls: Default::default(),
+            });
+            let error = fetch_observed(
+                Value::Object([("data".into(), collection)].into_iter().collect()),
+                mapper.clone(),
+            )
+            .await
+            .unwrap_err();
+            assert!(error.contains("Cannot read properties"), "{error}");
+            assert_eq!(mapper.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        }
+    }
+    #[tokio::test]
+    async fn kick_mapper_rejection_wins_over_missing_profile_property_error() {
+        let mapper = Arc::new(ObservedMapper {
+            expected: Value::Undefined,
+            reject: true,
+            calls: Default::default(),
+        });
+        let error = fetch_observed(crate::oauth::providers::js!({"data":[]}), mapper.clone())
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("mapper rejected before property access"),
+            "{error}"
+        );
+        assert!(!error.contains("Cannot read properties"));
+        assert_eq!(mapper.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+    #[tokio::test]
+    async fn kick_nullish_collection_fails_before_mapper() {
+        for body in [
+            crate::oauth::providers::js!({}),
+            crate::oauth::providers::js!({"data":null}),
+            Value::Null,
+        ] {
+            let mapper = Arc::new(ObservedMapper {
+                expected: Value::Undefined,
+                reject: true,
+                calls: Default::default(),
+            });
+            let error = fetch_observed(body, mapper.clone()).await.unwrap_err();
+            assert!(error.contains("Cannot read properties"), "{error}");
+            assert_eq!(mapper.calls.load(std::sync::atomic::Ordering::SeqCst), 0);
+        }
+    }
+    #[tokio::test]
+    async fn kick_string_collection_passes_own_utf16_index_and_undefined_fields() {
+        let unit = JsString::from_code_units(vec![0xd83d]);
+        let mapper = Arc::new(ObservedMapper {
+            expected: Value::String(unit.clone()),
+            reject: false,
+            calls: Default::default(),
+        });
+        let response = fetch_observed(crate::oauth::providers::js!({"data":"😀"}), mapper.clone())
+            .await
+            .unwrap();
+        assert_eq!(response.data, Value::String(unit));
+        assert_eq!(response.user.get("email"), Some(&Value::Undefined));
+        assert_eq!(response.user.get("image"), Some(&Value::Undefined));
+        assert_eq!(response.user["name"], "override");
+        assert_eq!(mapper.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
     struct PartialMapper(Value);
     #[async_trait]
     impl super::super::OAuthProfileMapper for PartialMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile, self.0);
-            Ok(serde_json::from_value(serde_json::json!({
-                "id": "public-id", "name": "Mapped", "custom": true
-            }))
-            .unwrap())
+            Ok(
+                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
+                    "id": "public-id", "name": "Mapped", "custom": true
+                }))
+                .unwrap(),
+            )
         }
     }
 
     #[tokio::test]
     async fn kick_http_partial_profile_mapping() {
         for mapped in [false, true] {
-            let mut profile = serde_json::json!({"user_id":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
+            let mut profile = crate::oauth::providers::js!({"user_id":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
             if mapped {
-                profile["name"] = serde_json::json!({"requiresMapping": true});
+                profile["name"] = crate::oauth::providers::js!({"requiresMapping": true});
             }
-            let body = (serde_json::json!({"data": [profile.clone()]})).to_string();
+            let body = (crate::oauth::providers::js!({"data": [profile.clone()]})).to_string();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let endpoint = format!("http://{}", listener.local_addr().unwrap());
             let server = tokio::spawn(async move {
@@ -274,12 +389,12 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "raw-id"
             );
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output.get("email"), Some(&Value::Null));
             assert_eq!(output.get("image"), Some(&Value::Null));
             assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
             assert_eq!(
-                response.user.name.as_deref(),
+                response.user.get("name").and_then(Value::as_str),
                 Some(if mapped { "Mapped" } else { "Original" })
             );
             if mapped {

@@ -99,7 +99,7 @@ pub(super) async fn set_password_for_user<S: AuthSchema>(
             .create_account_record(CreateAccount {
                 additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id().into_owned(),
-                account_id: user.id().into_owned(),
+                account_id: user.id().into_owned().into(),
                 provider_id: "credential".to_owned(),
                 access_token: None,
                 refresh_token: None,

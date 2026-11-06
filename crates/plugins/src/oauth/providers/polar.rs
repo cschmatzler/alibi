@@ -1,11 +1,12 @@
 //! Polar's PKCE grants, ordered scopes and original user-info account identity.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Polar configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -23,7 +24,7 @@ pub struct PolarOptions {
     /// Trusted transport override retaining Polar's bearer GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl PolarOptions {
     #[must_use]
@@ -125,7 +126,7 @@ impl OAuthProvider {
 struct PolarUserInfo {
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for PolarUserInfo {
@@ -156,7 +157,7 @@ impl OAuthUserInfoHandler for PolarUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         let application_output = if let Some(mapper) = &self.application_mapper {
@@ -180,7 +181,7 @@ impl OAuthUserInfoHandler for PolarUserInfo {
             ));
         }
         // Keep the published raw JSON independently from typed persistence.
-        let mut output = serde_json::Map::new();
+        let mut output = Map::new();
         _ = output.insert(
             "name".into(),
             profile
@@ -188,7 +189,7 @@ impl OAuthUserInfoHandler for PolarUserInfo {
                 .filter(|v| truthy(v))
                 .or_else(|| profile.get("username").filter(|v| truthy(v)))
                 .cloned()
-                .unwrap_or_else(|| Value::String(String::new())),
+                .unwrap_or_else(|| Value::String(String::new().into())),
         );
         let email = profile.get("email");
         if let Some(email) = email {
@@ -206,34 +207,12 @@ impl OAuthUserInfoHandler for PolarUserInfo {
                 .unwrap_or(Value::Bool(false)),
         );
         if let Some(user) = &mapped {
-            output.extend(user.public_profile(true));
+            output.extend(user.clone());
         }
-        let user_output = Some(output);
-        let user = match mapped {
-            Some(user) => user,
-            None => OAuthUserInfo {
-                additional_fields: Map::default(),
-                id: profile
-                    .get("id")
-                    .map(super::remaining_profile::js_string)
-                    .transpose()?
-                    .unwrap_or_default(),
-                name: scalar(
-                    profile
-                        .get("public_name")
-                        .filter(|v| truthy(v))
-                        .or_else(|| profile.get("username").filter(|v| truthy(v))),
-                )?
-                .or_else(|| Some(String::new())),
-                email: email.and_then(Value::as_str).unwrap_or_default().into(),
-                image: scalar(profile.get("avatar_url"))?,
-                email_verified: profile.get("email_verified").is_some_and(truthy),
-            },
-        };
         let mut response = OAuthUserInfoResponse {
-            user_output,
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         };
         if let Some(mapped) = application_output {
             super::apply_application_mapping(&mut response, mapped)?;
@@ -242,23 +221,8 @@ impl OAuthUserInfoHandler for PolarUserInfo {
     }
 }
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) | Value::Bool(true) => true,
-    }
+    value.is_truthy()
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|error| error.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        None | Some(Value::Null | Value::Array(_) | Value::Object(_)) => Ok(None),
-    }
-}
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
 }

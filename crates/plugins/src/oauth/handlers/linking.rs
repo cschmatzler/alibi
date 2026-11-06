@@ -38,7 +38,7 @@ use chrono::Utc;
 pub(crate) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
-    profile: &serde_json::Value,
+    profile: &alibi_core::utils::json::JsValue,
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
@@ -59,12 +59,12 @@ pub(crate) async fn complete_link_social(
 pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     provider_name: &str,
     user_info: &OAuthUserInfo,
-    profile: &serde_json::Value,
+    profile: &alibi_core::utils::json::JsValue,
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_email, raw_policy): (
-        Option<&serde_json::Value>,
+        Option<&alibi_core::utils::json::JsValue>,
         Option<&crate::oauth::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
@@ -91,7 +91,11 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
     let mut candidate = provider_candidate(user_info, &link.user_id);
-    candidate.email = (!user_info.email.is_empty()).then(|| user_info.email.clone());
+    candidate.email = user_info
+        .email
+        .as_str()
+        .filter(|email| !email.is_empty())
+        .map(str::to_owned);
     validate_user_info(
         &ctx.config,
         &mut UserValidationData {
@@ -119,13 +123,16 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
         return Ok(LinkSocialOutcome::InvalidRawEmail);
     }
 
-    if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
+    if !linking.allow_different_emails && !user_info.email.eq_ignore_str(&link.email) {
         return Err("email_does_not_match".to_owned().into());
     }
 
     if let Some(existing_account) = ctx
         .database
-        .get_account(provider_name, &user_info.id)
+        .get_account(
+            provider_name,
+            &alibi_core::utils::json::JsString::from(&user_info.id),
+        )
         .await
         .map_err(OAuthSignInError::from_account_lookup)?
     {
@@ -237,7 +244,11 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         message: "Failed to get user info",
     })?;
 
-    if user_info.user.email.is_empty() {
+    if user_info
+        .user
+        .get("email")
+        .is_none_or(|value| !value.is_truthy())
+    {
         return Err(AuthError::Upstream {
             status: 401,
             code: codes::USER_EMAIL_NOT_FOUND,
@@ -269,7 +280,7 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
     let outcome = process_oauth_sign_in(
         OAuthIdentity {
             provider_name: &body.provider,
-            user: &user_info.user,
+            user: &OAuthUserInfo::from_fields(&user_info.user, user_info.account_subject.as_ref()),
             profile: &user_info.data,
         },
         &OAuthProcessPolicy::for_provider(provider, body.callback_url.clone()),
@@ -374,7 +385,9 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         message: "Failed to get user info",
     })?;
 
-    if response.user.email.is_empty() {
+    let canonical_user =
+        OAuthUserInfo::from_fields(&response.user, response.account_subject.as_ref());
+    if canonical_user.email.is_empty() {
         return Err(AuthError::Upstream {
             status: 401,
             code: codes::USER_EMAIL_NOT_FOUND,
@@ -405,7 +418,10 @@ pub(in crate::oauth) async fn link_with_id_token_core(
 
     let linked_account = ctx
         .database
-        .get_account(&body.provider, &response.user.id)
+        .get_account(
+            &body.provider,
+            &alibi_core::utils::json::JsString::from(&canonical_user.id),
+        )
         .await?;
     if linked_account
         .as_ref()
@@ -419,7 +435,8 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     }
     let existing_accounts = ctx.database.get_user_accounts(&session.user_id()).await?;
     if existing_accounts.iter().any(|account| {
-        account.provider_id() == body.provider && account.account_id() == response.user.id
+        account.provider_id() == body.provider
+            && canonical_user.id.as_str() == Some(account.account_id())
     }) {
         return Ok(SocialSignInResponse {
             url: Some(String::new()),
@@ -443,12 +460,12 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         .iter()
         .any(|trusted| trusted == &body.provider);
 
-    if !linking.enabled || (!trusted_provider && !response.user.email_verified) {
+    if !linking.enabled || (!trusted_provider && !canonical_user.email_verified) {
         return Err(AuthError::forbidden(
             "Account not linked - linking not allowed",
         ));
     }
-    if !linking.allow_different_emails && !response.user.email.eq_ignore_ascii_case(current_email) {
+    if !linking.allow_different_emails && !canonical_user.email.eq_ignore_str(current_email) {
         return Err(AuthError::forbidden(
             "Account not linked - different emails not allowed",
         ));
@@ -466,7 +483,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
             additional_fields: FieldValues::default(),
             user_id: session.user_id().to_string(),
             provider_id: body.provider.clone(),
-            account_id: response.user.id,
+            account_id: canonical_user.id,
             access_token: token_bundle.access_token,
             refresh_token: token_bundle.refresh_token,
             id_token: token_bundle.id_token,
@@ -488,8 +505,16 @@ pub(in crate::oauth) async fn link_with_id_token_core(
             .update_user_record(
                 &session.user_id(),
                 UpdateUser {
-                    name: response.user.name.clone(),
-                    image: response.user.image.clone(),
+                    name: canonical_user
+                        .name
+                        .as_ref()
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned),
+                    image: canonical_user
+                        .image
+                        .as_ref()
+                        .and_then(|value| value.as_str())
+                        .map(str::to_owned),
                     ..Default::default()
                 },
             )

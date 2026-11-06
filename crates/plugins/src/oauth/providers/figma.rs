@@ -1,11 +1,12 @@
 //! Figma's ordered scopes, Basic token exchanges and stable raw profile identity.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Figma configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -22,7 +23,7 @@ pub struct FigmaOptions {
     /// Trusted transport override retaining Figma's actual GET and mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl FigmaOptions {
     #[must_use]
@@ -114,7 +115,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct FigmaUserInfo {
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -145,7 +146,7 @@ impl OAuthUserInfoHandler for FigmaUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|error| error.to_string())?;
         if !super::remaining_profile::truthy(&profile) {
@@ -163,28 +164,21 @@ impl OAuthUserInfoHandler for FigmaUserInfo {
         }
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
+            output.extend(mapper(profile.clone())?);
         }
         if let Some(mapper) = &self.application_mapper {
             output.extend(mapper.map_profile(profile.clone()).await?);
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::scalar(profile.get("id"))?.unwrap_or_default(),
-                name: None,
-                email: String::new(),
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)?;
         Ok(response)
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
 }
 
@@ -197,21 +191,23 @@ mod tests {
     struct PartialMapper(Value);
     #[async_trait]
     impl super::super::OAuthProfileMapper for PartialMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile, self.0);
-            Ok(serde_json::from_value(serde_json::json!({
-                "id": "public-id", "name": "Mapped", "custom": true
-            }))
-            .unwrap())
+            Ok(
+                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
+                    "id": "public-id", "name": "Mapped", "custom": true
+                }))
+                .unwrap(),
+            )
         }
     }
 
     #[tokio::test]
     async fn figma_http_partial_profile_mapping() {
         for mapped in [false, true] {
-            let mut profile = serde_json::json!({"id":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
+            let mut profile = crate::oauth::providers::js!({"id":"raw-id","name":"Original","handle":"Original","email":null,"profile_photo_url":null,"img_url":null,"picture":null,"profile_picture":null,"avatarUrl":null,"email_verified":"true"});
             if mapped {
-                profile["handle"] = serde_json::json!({"requiresMapping": true});
+                profile["handle"] = crate::oauth::providers::js!({"requiresMapping": true});
             }
             let body = (profile.clone()).to_string();
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -249,12 +245,12 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "raw-id"
             );
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output.get("email"), Some(&Value::Null));
             assert_eq!(output.get("image"), Some(&Value::Null));
             assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
             assert_eq!(
-                response.user.name.as_deref(),
+                response.user.get("name").and_then(Value::as_str),
                 Some(if mapped { "Mapped" } else { "Original" })
             );
             if mapped {

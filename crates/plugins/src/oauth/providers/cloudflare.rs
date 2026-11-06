@@ -1,7 +1,8 @@
 //! Cloudflare's API profile, scope ordering and OAuth credential transport.
-use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo};
-use serde_json::Map;
-use serde_json::Value;
+use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth};
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 
 /// Cloudflare configuration. Generic callback/signup policies remain available
 /// on the returned provider.
@@ -18,7 +19,7 @@ pub struct CloudflareOptions {
     /// Trusted transport override, retaining Cloudflare's API envelope mapping.
     pub user_info_endpoint: Option<String>,
     /// Receives the original API result. Its ID cannot replace the raw subject.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl CloudflareOptions {
     #[must_use]
@@ -120,20 +121,15 @@ impl OAuthProvider {
     }
 }
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null | Value::Bool(false) => false,
-        Value::Number(value) => value.as_f64() != Some(0.0),
-        Value::String(value) => !value.is_empty(),
-        _ => true,
-    }
+    value.is_truthy()
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
 }
 #[derive(Clone)]
 struct CloudflareUserInfo {
     url: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait::async_trait]
@@ -166,7 +162,10 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .map_err(|error| error.to_string())?
             .error_for_status()
             .map_err(|error| error.to_string())?;
-        let envelope: Value = response.json().await.map_err(|error| error.to_string())?;
+        let envelope: Value = response
+            .profile_json()
+            .await
+            .map_err(|error| error.to_string())?;
         if !envelope.get("success").is_some_and(truthy)
             || !envelope.get("result").is_some_and(truthy)
         {
@@ -182,7 +181,10 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .map(super::remaining_profile::js_string)
             .collect::<Result<Vec<_>, _>>()
             .map_err(super::remaining_profile::profile_exception)?;
-        let name = names.join(" ");
+        let name = names
+            .into_iter()
+            .reduce(|name, next| name.concat(&" ".into()).concat(&next))
+            .unwrap_or_default();
         let mut output = Map::new();
         if name.is_empty() {
             if let Some(email) = profile.get("email") {
@@ -197,9 +199,7 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
         output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
             output.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
@@ -211,16 +211,9 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             );
         }
         let mut response = super::OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: subject(profile).unwrap_or_default(),
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile.clone(),
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -234,18 +227,21 @@ mod tests {
     struct Mapper;
     #[async_trait::async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["id"], "cf-id");
             assert!(profile.get("result").is_none());
-            Ok(serde_json::json!({"name":"Mapped","custom":true})
-                .as_object()
-                .unwrap()
-                .clone())
+            Ok(
+                crate::oauth::providers::js!({"name":"Mapped","custom":true})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
         }
     }
     #[tokio::test]
     async fn cloudflare_maps_unwrapped_result_with_partial_defaults() {
-        let body = serde_json::json!({"success":true,"result":{"id":"cf-id","email":null}});
+        let body =
+            crate::oauth::providers::js!({"success":true,"result":{"id":"cf-id","email":null}});
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
@@ -276,7 +272,7 @@ mod tests {
             })
             .await
             .unwrap();
-        let output = response.user_output.unwrap();
+        let output = response.user.clone();
         assert_eq!(output["name"], "Mapped");
         assert_eq!(output["email"], Value::Null);
         assert_eq!(output["emailVerified"], false);
@@ -287,7 +283,7 @@ mod tests {
     }
     #[tokio::test]
     async fn cloudflare_string_coerces_truthy_name_parts() {
-        let body = serde_json::json!({"success":true,"result":{"id":"cf-id","first_name":["Cloud","Flare"],"last_name":true,"email":"fallback@example.com"}});
+        let body = crate::oauth::providers::js!({"success":true,"result":{"id":"cf-id","first_name":["Cloud","Flare"],"last_name":true,"email":"fallback@example.com"}});
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
@@ -317,7 +313,10 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(response.user.name.as_deref(), Some("Cloud,Flare true"));
+        assert_eq!(
+            response.user.get("name").and_then(Value::as_str),
+            Some("Cloud,Flare true")
+        );
         server.await.unwrap();
     }
 }

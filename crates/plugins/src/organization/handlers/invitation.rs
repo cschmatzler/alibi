@@ -163,7 +163,10 @@ pub(crate) async fn invite_member_core(
         });
     }
 
-    if let Some(existing_user) = ctx.database.get_user_by_email(&body.email).await?
+    if let Some(existing_user) = ctx
+        .database
+        .get_user_by_email(&alibi_core::utils::json::JsString::from(&body.email))
+        .await?
         && ctx
             .database
             .get_member(&org_id, &existing_user.id())

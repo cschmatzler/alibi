@@ -12,13 +12,16 @@ pub struct CreateUser {
     /// Trusted provider value before boolean storage conversion. HTTP input
     /// cannot populate this; native accessors retain their boolean interface.
     #[serde(skip)]
-    pub provider_email_verified: Option<serde_json::Value>,
+    pub provider_email_verified: Option<crate::utils::json::JsValue>,
     /// Trusted raw provider text scalars, never accepted from HTTP user input.
     #[serde(skip)]
-    pub provider_name: Option<serde_json::Value>,
+    pub provider_name: Option<crate::utils::json::JsValue>,
     /// Trusted raw provider image scalar.
     #[serde(skip)]
-    pub provider_image: Option<serde_json::Value>,
+    pub provider_image: Option<crate::utils::json::JsValue>,
+    /// Trusted original provider email; retained through admission and hooks.
+    #[serde(skip)]
+    pub provider_email: Option<crate::utils::json::JsValue>,
     #[serde(flatten, default)]
     pub additional_fields: FieldValues,
     pub id: Option<String>,
@@ -55,13 +58,16 @@ pub struct UpdateUser {
     pub adapter_native_fields: std::collections::BTreeMap<String, serde_json::Value>,
     /// Trusted provider value, independent from the typed boolean authority.
     #[serde(skip)]
-    pub provider_email_verified: Option<serde_json::Value>,
+    pub provider_email_verified: Option<crate::utils::json::JsValue>,
     /// Trusted raw provider text scalars, never accepted from HTTP user input.
     #[serde(skip)]
-    pub provider_name: Option<serde_json::Value>,
+    pub provider_name: Option<crate::utils::json::JsValue>,
     /// Trusted raw image scalar, also used for validated profile image removal.
     #[serde(skip)]
-    pub provider_image: Option<serde_json::Value>,
+    pub provider_image: Option<crate::utils::json::JsValue>,
+    /// Trusted original provider email; retained through admission and hooks.
+    #[serde(skip)]
+    pub provider_email: Option<crate::utils::json::JsValue>,
     #[serde(flatten, default)]
     pub additional_fields: FieldValues,
     pub email: Option<String>,
@@ -118,7 +124,7 @@ pub struct CreateSession {
 pub struct CreateAccount {
     pub additional_fields: FieldValues,
     pub user_id: String,
-    pub account_id: String,
+    pub account_id: crate::utils::json::JsString,
     pub provider_id: String,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,

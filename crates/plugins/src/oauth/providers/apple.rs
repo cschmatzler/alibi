@@ -1,14 +1,15 @@
 //! The pinned Apple factory: JWT profile data, stable subject and JWKS authority.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use crate::oauth::{OAuthIdTokenConfig, OAuthJwksSource};
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::JsValue as Value;
 use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 #[cfg(test)]
 use base64::Engine;
-use serde_json::Map;
 use std::sync::Arc;
 
 /// Apple-specific immutable configuration. Generic provider policy and trusted
@@ -24,7 +25,7 @@ pub struct AppleOptions {
     pub disable_id_token_sign_in: bool,
     pub jwks_source: Option<Arc<dyn OAuthJwksSource>>,
     /// Receives the enriched original profile. Its mapped ID cannot replace `sub`.
-    pub map_profile_to_user: Option<fn(serde_json::Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl AppleOptions {
     #[must_use]
@@ -99,7 +100,9 @@ impl OAuthProvider {
             }),
             allowed_request_params: Vec::new(),
             authorization_params: Vec::new(),
-            account_subject: None,
+            account_subject: Some(|profile| {
+                super::remaining_profile::raw_subject(profile.get("sub"))
+            }),
             map_user_info: None,
             get_user_info: Some(Arc::new(AppleUserInfo {
                 map_profile_to_user: options.map_profile_to_user,
@@ -118,7 +121,7 @@ impl OAuthProvider {
 }
 #[derive(Clone)]
 struct AppleUserInfo {
-    map_profile_to_user: Option<fn(serde_json::Value) -> Result<OAuthUserInfo, String>>,
+    map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -165,10 +168,6 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                 .cloned()
                 .unwrap_or_else(|| JsValue::String(String::new().into()))
         };
-        let id = profile
-            .get("sub")
-            .and_then(|value| value.coerce_string().ok())
-            .unwrap_or_default();
         let email_verified = match profile.get("email_verified") {
             Some(JsValue::Bool(value)) => *value,
             Some(JsValue::String(value)) => value == "true",
@@ -178,46 +177,34 @@ impl OAuthUserInfoHandler for AppleUserInfo {
             return Err("Invalid Apple profile".into());
         };
         _ = object.insert("name".into(), name_value);
-        let data = profile.to_json_value().map_err(|error| error.to_string())?;
+        let data = profile;
         let mut output = Map::new();
-        output.insert("name".into(), data["name"].clone());
-        output.insert(
-            "emailVerified".into(),
-            serde_json::Value::Bool(email_verified),
-        );
+        output.insert("name".into(), data["name"].clone().into());
+        output.insert("emailVerified".into(), Value::Bool(email_verified));
         if let Some(email) = data.get("email") {
-            output.insert("email".into(), email.clone());
+            output.insert("email".into(), email.clone().into());
         }
         if let Some(mapper) = self.map_profile_to_user {
             output.extend(
-                mapper(data.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(data.clone().into()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
             output.extend(
                 mapper
-                    .map_profile(data.clone())
+                    .map_profile(data.clone().into())
                     .await
                     .map_err(super::remaining_profile::profile_exception)?,
             );
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: id.clone(),
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
-            data,
+            user: output.clone(),
+            data: data.into(),
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
-        response.user.id = id;
+
         Ok(response)
     }
 }
@@ -232,20 +219,19 @@ mod tests {
     struct Mapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(
-            &self,
-            profile: serde_json::Value,
-        ) -> Result<Map<String, serde_json::Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["name"], "Ada Lovelace");
-            Ok(serde_json::json!({"id":"public-id","custom":true})
-                .as_object()
-                .unwrap()
-                .clone())
+            Ok(
+                crate::oauth::providers::js!({"id":"public-id","custom":true})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
         }
     }
     #[tokio::test]
     async fn apple_maps_enriched_callback_name_without_changing_subject() {
-        let profile = serde_json::json!({"sub":"subject","name":"Token","email":null,"email_verified":"true"});
+        let profile = crate::oauth::providers::js!({"sub":"subject","name":"Token","email":null,"email_verified":"true"});
         let token = format!(
             "e30.{}.sig",
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(profile.to_string())
@@ -268,18 +254,21 @@ mod tests {
             })
             .await
             .unwrap();
-        let output = response.user_output.unwrap();
+        let output = response.user.clone();
         assert_eq!(output["name"], "Ada Lovelace");
-        assert_eq!(output["email"], serde_json::Value::Null);
+        assert_eq!(output["email"], Value::Null);
         assert_eq!(output["emailVerified"], true);
         assert_eq!(output["custom"], true);
         assert_eq!(output["id"], "public-id");
-        assert_eq!(response.user.id, "subject");
+        assert_eq!(
+            provider.account_subject.unwrap()(&response.data).unwrap(),
+            "subject"
+        );
         assert!(!output.contains_key("image"));
     }
     #[tokio::test]
     async fn apple_accepts_padded_jwt_payload() {
-        let profile = serde_json::json!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
+        let profile = crate::oauth::providers::js!({"sub":"subject","oid":"object-id","name":"A","email":"a@example.com"});
         let mut json = profile.to_string();
         while json.len() % 3 == 0 {
             json.push(' ');

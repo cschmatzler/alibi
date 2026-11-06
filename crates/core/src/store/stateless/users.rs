@@ -9,6 +9,30 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn utf16_email_queries_do_not_match_absent_emails() {
+        async fn check<S: crate::AuthSchema>(store: &impl UserStore<S>) {
+            use crate::AuthUser as _;
+            store.create_user(CreateUser::new()).await.unwrap();
+            let user = store
+                .create_user(CreateUser::new().with_email("person@example.test"))
+                .await
+                .unwrap();
+            for units in [vec![0xd800], vec![0xdc00], vec![0x61, 0xd800]] {
+                let email = crate::utils::json::JsString::from_code_units(units);
+                assert!(store.get_user_by_email(&email).await.unwrap().is_none());
+            }
+            let found = store
+                .get_user_by_email(&"PERSON@EXAMPLE.TEST".into())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(found.id(), user.id());
+        }
+        check::<StatelessSchema>(&StatelessStore::default()).await;
+        check::<crate::test_store::BundledSchema>(&crate::test_store::MemoryStore::default()).await;
+    }
+
+    #[tokio::test]
     async fn false_ban_patch_keeps_omissions_and_applies_explicit_values() {
         let store = StatelessStore::default();
         let user = store
@@ -223,12 +247,19 @@ impl UserStore<StatelessSchema> for StatelessStore {
         Ok(users)
     }
 
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<UserView>> {
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<UserView>> {
+        let normalized = email.to_lowercase();
+        let Some(normalized) = normalized.as_str() else {
+            return Ok(None);
+        };
         Ok(self
             .lock()?
             .users
             .values()
-            .find(|user| user.email.as_deref() == Some(&email.to_lowercase()))
+            .find(|user| user.email.as_deref() == Some(normalized))
             .cloned())
     }
 
@@ -288,7 +319,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
         if let Some(image) = update.image {
             user.image = Some(image);
         }
-        if update.provider_image == Some(serde_json::Value::Null) {
+        if update.provider_image == Some(crate::utils::json::JsValue::Null) {
             user.image = None;
         }
         if let Some(email_verified) = update.email_verified {

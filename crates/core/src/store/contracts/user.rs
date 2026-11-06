@@ -88,9 +88,12 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn get_user_by_email_record(
         &self,
-        email: &str,
+        email: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::User>>> {
-        match self.get_user_by_email(email).await? {
+        match self
+            .get_user_by_email(&crate::utils::json::JsString::from(email))
+            .await?
+        {
             Some(user) => self.native_user_record(user).await.map(Some),
             None => Ok(None),
         }
@@ -213,7 +216,10 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
             "Raw numeric user pages are not supported by this store".into(),
         ))
     }
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>>;
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
     /// Look up an untyped username using the adapter's actual parameter semantics.
     async fn get_user_by_username_value(

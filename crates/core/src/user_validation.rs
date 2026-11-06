@@ -25,7 +25,7 @@ pub struct UserValidationProvider {
     /// Only a provider's actual object response is supplied. Arrays and scalar
     /// responses have no profile record.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub profile: Option<serde_json::Value>,
+    pub profile: Option<crate::utils::json::JsValue>,
 }
 
 /// Identity provenance supplied by the endpoint, never by its request body.
@@ -57,7 +57,7 @@ impl UserValidationSource {
     #[must_use]
     pub fn oauth(
         provider_id: impl Into<String>,
-        profile: &serde_json::Value,
+        profile: &crate::utils::json::JsValue,
         action: UserValidationAction,
     ) -> Self {
         Self {

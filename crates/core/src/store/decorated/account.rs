@@ -23,9 +23,14 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn get_account_record(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
-        let account = self.get_account(provider, provider_account_id).await?;
+        let account = self
+            .get_account(
+                provider,
+                &crate::utils::json::JsString::from(provider_account_id),
+            )
+            .await?;
         self.optional_account_record(account).await
     }
 
@@ -76,9 +81,14 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
-        self.inner.get_account(provider, provider_account_id).await
+        self.inner
+            .get_account(
+                provider,
+                &crate::utils::json::JsString::from(provider_account_id),
+            )
+            .await
     }
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {
         self.inner.get_user_accounts(user_id).await

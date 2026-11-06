@@ -1,8 +1,9 @@
 use super::{
-    Arc, Deserialize, DeserializeOwned, OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse, Value, async_trait,
+    Arc, OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse, Value, async_trait,
 };
-use serde_json::Map;
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
 impl OAuthProvider {
     #[must_use]
     pub fn github(client_id: &str, client_secret: &str) -> Self {
@@ -65,15 +66,6 @@ impl OAuthProvider {
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub(in crate::oauth::providers) struct GitHubEmailAddress {
-    pub(in crate::oauth::providers) email: String,
-    #[serde(default)]
-    pub(in crate::oauth::providers) primary: bool,
-    #[serde(default)]
-    pub(in crate::oauth::providers) verified: bool,
-}
-
 #[derive(Clone)]
 pub(in crate::oauth::providers) struct GitHubUserInfoHandler {
     pub(in crate::oauth::providers) user_url: String,
@@ -90,12 +82,12 @@ impl GitHubUserInfoHandler {
         }
     }
 
-    pub(in crate::oauth::providers) async fn fetch_json<T: DeserializeOwned>(
+    pub(in crate::oauth::providers) async fn fetch_json(
         &self,
         client: &reqwest::Client,
         url: &str,
         access_token: &str,
-    ) -> Result<T, String> {
+    ) -> Result<Value, String> {
         let response = client
             .get(url)
             .bearer_auth(access_token)
@@ -114,7 +106,7 @@ impl GitHubUserInfoHandler {
         }
 
         response
-            .json()
+            .profile_json()
             .await
             .map_err(|error| format!("Failed to parse GitHub user info: {error}"))
     }
@@ -152,9 +144,10 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             return Err("Missing github profile".into());
         }
         let emails = self
-            .fetch_json::<Vec<GitHubEmailAddress>>(&client, &self.emails_url, access_token)
+            .fetch_json(&client, &self.emails_url, access_token)
             .await
-            .ok();
+            .ok()
+            .and_then(|value| value.as_array().map(<[_]>::to_vec));
 
         if !profile
             .get("email")
@@ -164,23 +157,26 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         {
             if let Some(record) = emails
                 .iter()
-                .find(|record| record.primary)
+                .find(|record| record.get("primary").is_some_and(Value::is_truthy))
                 .or_else(|| emails.first())
             {
-                _ = profile_object.insert("email".to_owned(), Value::String(record.email.clone()));
+                _ = profile_object.insert(
+                    "email".to_owned().into(),
+                    record.get("email").cloned().unwrap_or(Value::Undefined),
+                );
             } else {
-                _ = profile_object.remove("email");
+                _ = profile_object.insert("email".into(), Value::Undefined);
             }
         }
 
         let email_verified = emails
             .as_ref()
             .and_then(|emails| {
-                emails.iter().find(|record| {
-                    profile.get("email").and_then(Value::as_str) == Some(record.email.as_str())
-                })
+                emails
+                    .iter()
+                    .find(|record| profile.get("email") == record.get("email"))
             })
-            .is_some_and(|record| record.verified);
+            .is_some_and(|record| record.get("verified").is_some_and(Value::is_truthy));
 
         let mut output = Map::new();
         output.insert(
@@ -190,12 +186,13 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 .filter_map(|key| profile.get(key))
                 .find(|value| super::remaining_profile::truthy(value))
                 .cloned()
-                .unwrap_or_else(|| Value::String(String::new())),
+                .unwrap_or_else(|| Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("avatar_url", "image")] {
-            if let Some(value) = profile.get(source) {
-                output.insert(target.into(), value.clone());
-            }
+            output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         output.insert("emailVerified".into(), Value::Bool(email_verified));
         if let Some(mapper) = &self.mapper {
@@ -207,16 +204,9 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             );
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::raw_subject(profile.get("id")).unwrap_or_default(),
-                email: String::new(),
-                name: None,
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -230,10 +220,10 @@ mod tests {
     struct Mapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["email"], "primary@example.com");
             Ok(
-                serde_json::json!({"name":"Mapped","custom":true,"id":"public-id"})
+                crate::oauth::providers::js!({"name":"Mapped","custom":true,"id":"public-id"})
                     .as_object()
                     .unwrap()
                     .clone(),
@@ -246,17 +236,17 @@ mod tests {
         struct EmailMapper(Option<Value>);
         #[async_trait]
         impl super::super::OAuthProfileMapper for EmailMapper {
-            async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+            async fn map_profile(&self, profile: Value) -> Result<Map, String> {
                 assert_eq!(profile.get("email"), self.0.as_ref());
                 Ok(Map::new())
             }
         }
 
-        for email in [Value::Null, Value::String(String::new())] {
+        for email in [Value::Null, Value::String(String::new().into())] {
             for status in ["200 OK", "500 Internal Server Error"] {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let endpoint = format!("http://{}", listener.local_addr().unwrap());
-                let profile = serde_json::json!({"id":42,"login":"login","email":email});
+                let profile = crate::oauth::providers::js!({"id":42,"login":"login","email":email});
                 let server = tokio::spawn(async move {
                     for (status, body) in [("200 OK", profile.to_string()), (status, "[]".into())] {
                         let (mut stream, _) = listener.accept().await.unwrap();
@@ -269,7 +259,11 @@ mod tests {
                         stream.write_all(response.as_bytes()).await.unwrap();
                     }
                 });
-                let expected_email = (status != "200 OK").then_some(email.clone());
+                let expected_email = Some(if status == "200 OK" {
+                    Value::Undefined
+                } else {
+                    email.clone()
+                });
                 let provider = OAuthProvider::github_with_endpoints(
                     "client", "secret", "auth", "token", &endpoint, &endpoint,
                 )
@@ -285,12 +279,14 @@ mod tests {
                     .await
                     .unwrap();
                 assert_eq!(response.data.get("email"), expected_email.as_ref());
-                assert_eq!(
-                    response.user_output.as_ref().unwrap().get("email"),
-                    expected_email.as_ref()
+                assert_eq!(response.user.get("email"), expected_email.as_ref());
+                assert!(
+                    !response
+                        .user
+                        .get("emailVerified")
+                        .is_some_and(Value::is_truthy)
                 );
-                assert!(!response.user.email_verified);
-                assert_eq!(response.user.email, "");
+                assert_eq!(response.user.get("email"), response.data.get("email"));
                 server.await.unwrap();
             }
         }
@@ -298,8 +294,7 @@ mod tests {
 
     #[tokio::test]
     async fn github_maps_after_primary_email_enrichment() {
-        let body =
-            serde_json::json!({"id":42,"login":"login","name":null,"email":null,"avatar_url":null});
+        let body = crate::oauth::providers::js!({"id":42,"login":"login","name":null,"email":null,"avatar_url":null});
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
@@ -319,7 +314,7 @@ mod tests {
 
         let user_endpoint = endpoint;
         let user_server = server;
-        let body = serde_json::json!([
+        let body = crate::oauth::providers::js!([
             {"email":"first@example.com","primary":false,"verified":false},
             {"email":"primary@example.com","primary":true,"verified":true}
         ]);
@@ -358,11 +353,19 @@ mod tests {
             })
             .await
             .unwrap();
-        assert_eq!(response.user.name.as_deref(), Some("Mapped"));
-        assert_eq!(response.user.email, "primary@example.com");
-        assert!(response.user.email_verified);
-        assert_eq!(response.user_output.as_ref().unwrap()["image"], Value::Null);
-        assert_eq!(response.user_output.as_ref().unwrap()["id"], "public-id");
+        assert_eq!(
+            response.user.get("name").and_then(Value::as_str),
+            Some("Mapped")
+        );
+        assert_eq!(response.user["email"], "primary@example.com");
+        assert!(
+            response
+                .user
+                .get("emailVerified")
+                .is_some_and(Value::is_truthy)
+        );
+        assert_eq!(response.user["image"], Value::Null);
+        assert_eq!(response.user["id"], "public-id");
         assert_eq!(
             provider.account_subject.unwrap()(&response.data).unwrap(),
             "42"

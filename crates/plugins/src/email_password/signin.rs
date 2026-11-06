@@ -37,7 +37,9 @@ pub(crate) async fn sign_in_core(
     }
     let user = ctx
         .database
-        .get_user_by_email_record(&body.email.to_lowercase())
+        .get_user_by_email_record(&alibi_core::utils::json::JsString::from(
+            &body.email.to_lowercase(),
+        ))
         .await?;
     let Some(user) = user else {
         _ = ctx

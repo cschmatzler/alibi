@@ -122,7 +122,7 @@ where
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         self.get_account_with_connection(self.exec(), provider, provider_account_id)
             .await
@@ -238,7 +238,7 @@ where
         &self,
         exec: Exec<'_>,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &alibi_core::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>> {
         let table = <S::Account as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Account>(exec);
@@ -249,7 +249,7 @@ where
             table,
             S::Account::account_id_column(),
             " = ",
-            provider_account_id,
+            provider_account_id.to_utf8_binding(),
         );
         sql.push(" LIMIT ");
         sql.bind(2_i64);

@@ -1,10 +1,11 @@
 //! `TikTok`'s client-key grants, comma-separated scopes and nested profile.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use serde_json::Map;
-use serde_json::Value;
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 
 #[derive(Clone)]
 pub struct TikTokOptions {
@@ -91,7 +92,7 @@ impl OAuthProvider {
         }
     }
 }
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.pointer("/data/user/open_id"))
 }
 struct TikTokProfile {
@@ -116,7 +117,7 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .map_err(|e| e.to_string())?
             .error_for_status()
             .map_err(|e| e.to_string())?
-            .json()
+            .profile_json()
             .await
             .map_err(|e| e.to_string())?;
         let data = profile
@@ -135,13 +136,16 @@ impl OAuthUserInfoHandler for TikTokProfile {
         {
             email.clone()
         } else {
-            let email = format!("{raw_id}@tiktok.placeholder.invalid");
-            if !crate::authentication_helpers::is_valid_email(&email) {
+            let email = raw_id.concat(&"@tiktok.placeholder.invalid".into());
+            if !email
+                .as_str()
+                .is_some_and(crate::authentication_helpers::is_valid_email)
+            {
                 return Err(super::remaining_profile::profile_exception(
                     "Invalid TikTok placeholder email",
                 ));
             }
-            Value::String(email)
+            Value::String(email.into())
         };
         let name = data
             .get("display_name")
@@ -151,26 +155,18 @@ impl OAuthUserInfoHandler for TikTokProfile {
                     .filter(|value| super::remaining_profile::truthy(value))
             })
             .cloned()
-            .unwrap_or_else(|| Value::String(String::new()));
-        let mut output = serde_json::Map::new();
+            .unwrap_or_else(|| Value::String(String::new().into()));
+        let mut output = Map::new();
         _ = output.insert("name".into(), name.clone());
         _ = output.insert("email".into(), email.clone());
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(image) = data.get("avatar_large_url") {
             _ = output.insert("image".into(), image.clone());
         }
-        let user = OAuthUserInfo {
-            additional_fields: Map::default(),
-            id: raw_id,
-            name: super::remaining_profile::scalar(Some(&name))?,
-            email: email.as_str().unwrap_or_default().into(),
-            image: super::remaining_profile::scalar(data.get("avatar_large_url"))?,
-            email_verified: false,
-        };
         Ok(OAuthUserInfoResponse {
-            user_output: Some(output),
-            user,
+            user: output,
             data: profile,
+            account_subject: None,
         })
     }
 }

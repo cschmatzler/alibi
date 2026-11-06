@@ -111,7 +111,7 @@ pub(crate) async fn reset_credential_password<S: alibi_core::AuthSchema>(
                     .create_account_record(alibi_core::CreateAccount {
                         additional_fields: alibi_core::field_policy::FieldValues::default(),
                         user_id: user_id.clone(),
-                        account_id: user_id,
+                        account_id: user_id.into(),
                         provider_id: "credential".to_owned(),
                         access_token: None,
                         refresh_token: None,

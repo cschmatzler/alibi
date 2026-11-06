@@ -625,7 +625,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: alibi_core::field_policy::FieldValues::default(),
                 user_id: user.id().to_string(),
-                account_id: user.id().to_string(),
+                account_id: user.id().to_string().into(),
                 provider_id: "credential".into(),
                 access_token: None,
                 refresh_token: None,

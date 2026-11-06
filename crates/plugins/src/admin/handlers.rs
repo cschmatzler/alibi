@@ -214,7 +214,7 @@ pub(crate) async fn create_user_core(
     }
     if ctx
         .database
-        .get_user_by_email_record(&email)
+        .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
         .await?
         .is_some()
     {
@@ -322,7 +322,7 @@ pub(crate) async fn create_user_core(
             .create_account_record(CreateAccount {
                 additional_fields: FieldValues::default(),
                 user_id: user.id().to_string(),
-                account_id: user.id().to_string(),
+                account_id: user.id().to_string().into(),
                 provider_id: "credential".to_owned(),
                 access_token: None,
                 refresh_token: None,
@@ -459,7 +459,10 @@ pub(crate) async fn update_user_core(
                 message: "Invalid email".into(),
             });
         }
-        if let Some(existing) = ctx.database.get_user_by_email_record(&email).await?
+        if let Some(existing) = ctx
+            .database
+            .get_user_by_email_record(&alibi_core::utils::json::JsString::from(&email))
+            .await?
             && existing.id().as_ref() != body.user_id
         {
             return Err(AuthError::Api {
@@ -474,13 +477,13 @@ pub(crate) async fn update_user_core(
         update.name = Some(value.to_owned());
     }
     if body.data.get("name") == Some(&serde_json::Value::Null) {
-        update.provider_name = Some(serde_json::Value::Null);
+        update.provider_name = Some(serde_json::Value::Null.into());
     }
     if let Some(value) = body.data.get("image").and_then(|value| value.as_str()) {
         update.image = Some(value.to_owned());
     }
     if body.data.get("image") == Some(&serde_json::Value::Null) {
-        update.provider_image = Some(serde_json::Value::Null);
+        update.provider_image = Some(serde_json::Value::Null.into());
     }
     if let Some(value) = body
         .data
@@ -506,16 +509,26 @@ pub(crate) async fn update_user_core(
             _ => {}
         }
     }
-    if let Some(value) = body.data.get("phoneNumberVerified").and_then(serde_json::Value::as_bool) {
+    if let Some(value) = body
+        .data
+        .get("phoneNumberVerified")
+        .and_then(serde_json::Value::as_bool)
+    {
         update.phone_number_verified = Some(value);
     }
-    if let Some(value) = body.data.get("isAnonymous").and_then(serde_json::Value::as_bool) {
+    if let Some(value) = body
+        .data
+        .get("isAnonymous")
+        .and_then(serde_json::Value::as_bool)
+    {
         update.is_anonymous = Some(value);
     }
     if let Some(value) = body.data.get("lastLoginMethod") {
         match value {
             serde_json::Value::Null => update.last_login_method = Some(None),
-            serde_json::Value::String(value) => update.last_login_method = Some(Some(value.clone())),
+            serde_json::Value::String(value) => {
+                update.last_login_method = Some(Some(value.clone()))
+            }
             _ => {}
         }
     }
@@ -570,7 +583,9 @@ pub(crate) async fn update_user_core(
         .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
     for name in fields.keys() {
         if let Some(value) = body.data.get(name) {
-            update.additional_fields.insert(name.clone(), value.clone().into());
+            update
+                .additional_fields
+                .insert(name.clone(), value.clone().into());
         }
     }
 
@@ -1030,7 +1045,7 @@ pub(crate) async fn set_user_password_core(
             .create_account_record(CreateAccount {
                 additional_fields: FieldValues::default(),
                 user_id: body.user_id.clone(),
-                account_id: target.id().to_string(),
+                account_id: target.id().to_string().into(),
                 provider_id: "credential".into(),
                 password: Some(password_hash),
                 access_token: None,

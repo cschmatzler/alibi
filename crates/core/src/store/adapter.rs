@@ -248,7 +248,7 @@ pub enum RawFieldValue {
     Bool(bool),
     Integer(i64),
     Number(f64),
-    Text(String),
+    Text(crate::utils::json::JsString),
     Json(serde_json::Value),
 }
 
@@ -276,12 +276,12 @@ impl RawFieldValue {
                 Self::Integer(*value as i64)
             }
             JsValue::Number(value) => Self::Number(*value),
-            JsValue::String(value) => {
-                Self::Text(value.to_utf8().map_err(serde::ser::Error::custom)?)
-            }
-            JsValue::Date(value) => {
-                Self::Text(value.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
-            }
+            JsValue::String(value) => Self::Text(value.clone()),
+            JsValue::Date(value) => Self::Text(
+                value
+                    .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+                    .into(),
+            ),
             JsValue::Array(_) | JsValue::Object(_) => Self::Json(value.to_json_value()?),
         })
     }

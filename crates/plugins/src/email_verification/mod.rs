@@ -716,7 +716,9 @@ mod tests {
         assert!(!unchanged.email_verified());
         assert!(
             ctx.database
-                .get_user_by_email("new-binding@example.com")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "new-binding@example.com"
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -1056,7 +1058,9 @@ mod tests {
             }
             let updated = ctx
                 .database
-                .get_user_by_email("after@legacy.fixture.test")
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                    "after@legacy.fixture.test",
+                ))
                 .await
                 .unwrap()
                 .unwrap();
@@ -1592,7 +1596,7 @@ mod tests {
         // User should now be verified in the database
         let updated = ctx
             .database
-            .get_user_by_email("verify@test.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from("verify@test.com"))
             .await
             .unwrap()
             .unwrap();
@@ -1703,7 +1707,9 @@ mod tests {
 
         let updated_user = ctx
             .database
-            .get_user_by_email("updated-email@test.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "updated-email@test.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -1763,7 +1769,9 @@ mod tests {
 
         let source_user = ctx
             .database
-            .get_user_by_email("duplicate-source@test.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "duplicate-source@test.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -1803,7 +1811,9 @@ mod tests {
         // User should still be unverified
         let u = ctx
             .database
-            .get_user_by_email("hook-err@test.com")
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                "hook-err@test.com",
+            ))
             .await
             .unwrap()
             .unwrap();
@@ -2171,7 +2181,11 @@ mod tests {
                 calls.load(Ordering::SeqCst),
                 u32::from(existing == Some(false))
             );
-            let after = ctx.database.get_user_by_email(email).await.unwrap();
+            let after = ctx
+                .database
+                .get_user_by_email(&alibi_core::utils::json::JsString::from(email))
+                .await
+                .unwrap();
             assert_eq!(after.as_ref().map(AuthUser::email_verified), existing);
             if let Some(user) = user {
                 assert_eq!(after.as_ref().unwrap().id(), user.id());

@@ -343,7 +343,8 @@ impl SsoPlugin {
             let user = OAuthUserInfo {
                 id: text("id", "sub")
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| AuthError::internal("missing_user_info"))?,
+                    .ok_or_else(|| AuthError::internal("missing_user_info"))?
+                    .into(),
                 // Some IdPs send a list of addresses, such as Azure AD B2C's `emails`.
                 email: match profile.get(field("email", "email")) {
                     Some(Value::Array(values)) => values
@@ -354,14 +355,15 @@ impl SsoPlugin {
                 }
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
-                .ok_or_else(|| AuthError::internal("missing_user_info"))?,
-                name: text("name", "name"),
-                image: text("image", "picture"),
+                .ok_or_else(|| AuthError::internal("missing_user_info"))?
+                .into(),
+                name: text("name", "name").map(Into::into),
+                image: text("image", "picture").map(Into::into),
                 email_verified: self.config.trust_email_verified
                     && super::provider_email_verified(
                         profile.get(field("emailVerified", "email_verified")),
                     ),
-                additional_fields: serde_json::Map::new(),
+                additional_fields: alibi_core::utils::json::JsObject::new(),
             };
             let tokens = OAuthTokenSet {
                 id_token: raw
@@ -404,7 +406,7 @@ impl SsoPlugin {
                     },
                     |scope| scope.split(' ').map(str::to_owned).collect(),
                 ),
-                raw: Some(raw.clone()),
+                raw: Some(raw.clone().into()),
                 ..Default::default()
             };
             Ok((user, tokens, profile, verified_claims))
@@ -424,8 +426,8 @@ impl SsoPlugin {
         if provider.domain_verified == Some(true)
             && user
                 .email
-                .split('@')
-                .nth(1)
+                .as_str()
+                .and_then(|email| email.split('@').nth(1))
                 .is_some_and(|domain| super::domains::matches(domain, &provider.domain))
         {
             scoped_config
@@ -449,7 +451,9 @@ impl SsoPlugin {
             let claims =
                 verified_claims.ok_or_else(|| api(400, "id_token_required_for_user_resolution"))?;
             let mut provider_user = user.public_profile(false);
-            _ = provider_user.entry("name").or_insert_with(|| json!(""));
+            _ = provider_user
+                .entry("name".into())
+                .or_insert_with(|| json!("").into());
             let input = super::SsoUserResolutionInput {
                 protocol: super::SsoProtocol::Oidc,
                 provider_id: provider.provider_id.clone(),
@@ -461,7 +465,7 @@ impl SsoPlugin {
                         .into(),
                     account_id: user.id.clone(),
                 },
-                provider_user: Value::Object(provider_user),
+                provider_user: alibi_core::utils::json::JsValue::Object(provider_user),
                 provider_claims: Some(profile.clone()),
                 verified_id_token_claims: Some(claims),
                 provider_attributes: None,
@@ -474,7 +478,7 @@ impl SsoPlugin {
                 identity: crate::oauth::handlers::transactional_identity::Identity {
                     provider: provider_id,
                     user: &user,
-                    profile: &profile,
+                    profile: &profile.clone().into(),
                     policy: &policy,
                     tokens: &tokens,
                     disable_signup: self.config.disable_implicit_sign_up
@@ -506,7 +510,7 @@ impl SsoPlugin {
                 OAuthIdentity {
                     provider_name: provider_id,
                     user: &user,
-                    profile: &profile,
+                    profile: &profile.clone().into(),
                 },
                 &policy,
                 &tokens,
@@ -534,7 +538,7 @@ impl SsoPlugin {
             &issued.user,
             &provider,
             ctx,
-            &Value::Object(user.public_profile(true)),
+            &alibi_core::utils::json::JsValue::Object(user.public_profile(true)),
             Some(&tokens),
         )
         .await?;

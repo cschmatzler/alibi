@@ -1,13 +1,14 @@
 //! LINE scopes, delegated direct proof and decoded/fallback profile identity.
 use super::{
     OAuthAuthorizationPolicy, OAuthIdTokenVerifier, OAuthProvider, OAuthTokenEndpointAuth,
-    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
+use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
+use alibi_core::utils::json::JsObject as Map;
+use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
 #[cfg(test)]
 use base64::Engine;
-use serde_json::Map;
-use serde_json::Value;
 
 /// Application-owned Line configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
@@ -26,7 +27,7 @@ pub struct LineOptions {
     /// Trusted transport override retaining LINE's actual delegated POST proof.
     pub verification_endpoint: Option<String>,
     /// Receives the original profile before its raw account identity is resolved.
-    pub map_profile_to_user: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub map_profile_to_user: Option<fn(Value) -> Result<Map, String>>,
 }
 impl LineOptions {
     #[must_use]
@@ -129,7 +130,7 @@ impl OAuthProvider {
 #[derive(Clone)]
 struct LineUserInfo {
     endpoint: String,
-    mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    mapper: Option<fn(Value) -> Result<Map, String>>,
     application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 #[async_trait]
@@ -171,7 +172,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .map_err(|error| error.to_string())?
                 .error_for_status()
                 .map_err(|error| error.to_string())?
-                .json::<Value>()
+                .profile_json()
                 .await
                 .map_err(|error| error.to_string())?
         };
@@ -185,7 +186,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .get("name")
                 .filter(|value| truthy(value))
                 .cloned()
-                .unwrap_or_else(|| Value::String(String::new())),
+                .unwrap_or_else(|| Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("picture", "image")] {
             if let Some(value) = profile.get(source) {
@@ -195,9 +196,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
         output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
             output.extend(
-                mapper(profile.clone())
-                    .map_err(super::remaining_profile::profile_exception)?
-                    .public_profile(true),
+                mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,
             );
         }
         if let Some(mapper) = &self.application_mapper {
@@ -209,16 +208,9 @@ impl OAuthUserInfoHandler for LineUserInfo {
             );
         }
         let mut response = OAuthUserInfoResponse {
-            user_output: Some(output.clone()),
-            user: OAuthUserInfo {
-                additional_fields: Map::new(),
-                id: super::remaining_profile::scalar(profile.get("sub"))?.unwrap_or_default(),
-                name: None,
-                email: String::new(),
-                image: None,
-                email_verified: false,
-            },
+            user: output.clone(),
             data: profile,
+            account_subject: None,
         };
         super::apply_application_mapping(&mut response, output)
             .map_err(super::remaining_profile::profile_exception)?;
@@ -226,18 +218,12 @@ impl OAuthUserInfoHandler for LineUserInfo {
     }
 }
 
-fn subject(profile: &Value) -> Result<String, String> {
+fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
 }
 
 fn truthy(value: &Value) -> bool {
-    match value {
-        Value::Null => false,
-        Value::Bool(value) => *value,
-        Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
-        Value::String(value) => !value.is_empty(),
-        Value::Array(_) | Value::Object(_) => true,
-    }
+    value.is_truthy()
 }
 
 struct LineVerifier {
@@ -265,7 +251,10 @@ impl OAuthIdTokenVerifier for LineVerifier {
         if response.status().is_redirection() {
             return Ok(false);
         }
-        let response: Value = response.json().await.map_err(|error| error.to_string())?;
+        let response: Value = response
+            .profile_json()
+            .await
+            .map_err(|error| error.to_string())?;
         if response.get("aud").and_then(Value::as_str) != Some(self.client_id.as_str()) {
             return Ok(false);
         }
@@ -292,10 +281,10 @@ mod tests {
     use super::*;
     #[test]
     fn grant_payload_decoder_accepts_jose_forgiving_base64() {
-        for payload in ["e31=", " e\t3\n0\x0c=\r", "77u/e30="] {
+        for payload in ["e31=", " e\t3\n0\x0c=\r", "77u_e30="] {
             assert_eq!(
                 decode_profile(&format!(".{payload}.")).unwrap(),
-                serde_json::json!({})
+                crate::oauth::providers::js!({})
             );
         }
     }
@@ -303,19 +292,20 @@ mod tests {
     struct Mapper;
     #[async_trait]
     impl super::super::OAuthProfileMapper for Mapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
             assert_eq!(profile["sub"], "line-id");
-            Ok(serde_json::json!({"name":"Mapped","custom":true})
-                .as_object()
-                .unwrap()
-                .clone())
+            Ok(
+                crate::oauth::providers::js!({"name":"Mapped","custom":true})
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+            )
         }
     }
     #[tokio::test]
     async fn line_maps_decoded_and_fallback_profiles() {
         for id_token_valid in [true, false] {
-            let body =
-                serde_json::json!({"sub":"line-id","name":"Original","email":null,"picture":null});
+            let body = crate::oauth::providers::js!({"sub":"line-id","name":"Original","email":null,"picture":null});
             let token = format!(
                 "e30.{}.sig",
                 base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(body.to_string())
@@ -354,7 +344,7 @@ mod tests {
                 })
                 .await
                 .unwrap();
-            let output = response.user_output.unwrap();
+            let output = response.user.clone();
             assert_eq!(output["name"], "Mapped");
             assert_eq!(output["email"], Value::Null);
             assert_eq!(output["image"], Value::Null);

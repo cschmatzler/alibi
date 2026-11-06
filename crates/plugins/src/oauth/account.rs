@@ -196,7 +196,7 @@ async fn persist_tokens(
         .raw
         .as_ref()
         .and_then(|raw| raw.get("access_token"))
-        .is_some_and(serde_json::Value::is_null);
+        .is_some_and(alibi_core::utils::json::JsValue::is_null);
     let update = UpdateAccount {
         provider_token_nulls: [nulls[0], false, false],
         access_token: encrypted
@@ -477,21 +477,21 @@ pub(super) fn refresh_token_body(
             .ok_or_else(|| AuthError::internal("Invalid refresh output"))?;
         match raw.get("access_token") {
             Some(value) => {
-                _ = object.insert("accessToken".into(), value.clone());
+                _ = object.insert("accessToken".into(), value.to_json_value()?);
             }
             None => {
                 _ = object.remove("accessToken");
             }
         }
         if let Some(value) = raw.get("refresh_token").filter(|value| !value.is_null()) {
-            _ = object.insert("refreshToken".into(), value.clone());
+            _ = object.insert("refreshToken".into(), value.to_json_value()?);
         }
         if let Some(value) = raw
             .get("id_token")
             .filter(|_| !policy.is_some_and(|policy| policy.token_response_omits_id_token))
             .filter(|value| super::providers::remaining_profile::truthy(value))
         {
-            _ = object.insert("idToken".into(), value.clone());
+            _ = object.insert("idToken".into(), value.to_json_value()?);
         }
     }
     Ok(response)
@@ -527,7 +527,7 @@ pub(super) async fn handle_account_info(
             }) if code == "OAUTH_PROFILE_EXCEPTION" => return Ok(AuthResponse::new(500)),
             Err(error) => return Err(error),
         };
-    let mut response = AuthResponse::json(200, &value)?;
+    let mut response = AuthResponse::json_value(200, &value.into_js_value()?)?;
     for header in headers {
         response.headers.append("set-cookie", header);
     }
@@ -566,9 +566,7 @@ pub(super) async fn account_info_for_selection(
     )
     .await?;
     let response = AccountInfoResponse {
-        user: info
-            .user_output
-            .unwrap_or_else(|| info.user.public_profile(false)),
+        user: info.user,
         data: info.data,
         account: AccountInfoAccount {
             id: account.id.clone(),

@@ -205,7 +205,9 @@ pub(crate) async fn remove_member_core(
     let target_member = if by_email {
         let target_user = ctx
             .database
-            .get_user_by_email(&body.member_id_or_email)
+            .get_user_by_email(&alibi_core::utils::json::JsString::from(
+                &body.member_id_or_email,
+            ))
             .await?
             .filter(|target| {
                 target.email() == Some(body.member_id_or_email.to_lowercase().as_str())

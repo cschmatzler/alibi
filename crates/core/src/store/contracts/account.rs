@@ -34,12 +34,15 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
     async fn get_account_record(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<AdapterRecord<S::Account>>> {
-        self.get_account(provider, provider_account_id)
-            .await?
-            .map(AdapterRecord::physical)
-            .transpose()
+        self.get_account(
+            provider,
+            &crate::utils::json::JsString::from(provider_account_id),
+        )
+        .await?
+        .map(AdapterRecord::physical)
+        .transpose()
     }
 
     /// Return a retained adapter record. The default is the physical model's
@@ -88,7 +91,7 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &crate::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>>;
     /// Return all scoped physical rows in the adapter's native order. Do not
     /// select or collapse duplicate provider identities, or sort by mutable dates.
