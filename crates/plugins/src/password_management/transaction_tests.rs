@@ -186,6 +186,59 @@ impl CookieCacheVersionResolver for Hooks {
 }
 
 #[tokio::test]
+async fn cached_session_envelope_without_rust_metadata_remains_usable() {
+    use alibi_core::store::CacheAdapter;
+    let cache = RecordingCache::new(false);
+    let fixture =
+        Fixture::with_secondary(Failure::None, Some(cache.clone()), false, false, false).await;
+    fixture.hooks.armed.store(false, Ordering::SeqCst);
+    let token = &fixture.sessions[0].token;
+    let mut snapshot: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    snapshot.as_object_mut().unwrap().remove("absent_fields");
+    cache
+        .set(token, &snapshot.to_string(), Duration::hours(1))
+        .await
+        .unwrap();
+    assert!(fixture.raw.get_session(token).await.unwrap().is_none());
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session(token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let owner = fixture
+        .ctx
+        .database
+        .get_session_user_record(token)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(owner.stored().id, fixture.user.id);
+    let expires_at = chrono::Utc::now() + Duration::hours(2);
+    let updated = fixture
+        .ctx
+        .database
+        .refresh_session(token, expires_at)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(updated.expires_at, expires_at);
+    assert!(
+        fixture
+            .ctx
+            .database
+            .get_session(token)
+            .await
+            .unwrap()
+            .is_some()
+    );
+}
+
+#[tokio::test]
 async fn secondary_session_index_uses_typescript_expiry_shape_for_listing_and_revocation() {
     use alibi_core::store::CacheAdapter;
 

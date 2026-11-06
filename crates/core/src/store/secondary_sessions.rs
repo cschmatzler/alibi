@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 struct CachedSession {
     session: serde_json::Value,
     user: serde_json::Value,
+    #[serde(default)]
     absent_fields: BTreeSet<String>,
 }
 
