@@ -571,7 +571,7 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                 .get("teamId")
                 .filter(|id| !id.is_empty())
                 .map(String::as_str)
-                .or(current.active_team_id.as_deref())
+                .or(current.active_team_id.as_deref().filter(|id| !id.is_empty()))
                 .ok_or_else(|| org_error(400, codes::YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM))?;
             let team = ctx
                 .database
@@ -606,10 +606,11 @@ pub(in crate::organization) async fn team_core<S: AuthSchema>(
                         Some(value)
                     }
                 }
-            };
+            }
+            .filter(|id| !id.is_empty());
             if team_id.is_none() {
                 let mut response = AuthResponse::json(200, &serde_json::Value::Null)?;
-                if current.active_team_id.is_some() {
+                if current.active_team_id.as_deref().is_some_and(|id| !id.is_empty()) {
                     let updated = ctx
                         .database
                         .update_session_active_team_record(&current.token, None)

@@ -756,6 +756,45 @@ mod extension_tests {
     }
 
     #[tokio::test]
+    async fn team_selectors_treat_empty_active_team_as_absent() -> TestResult {
+        let plugin = OrganizationPlugin::with_config(configuration());
+        let ctx = context(&plugin).await?;
+        let (_, session) = actor(&ctx, "empty-active-team").await;
+        ctx.database
+            .update_session_active_team(&session.token, Some(""))
+            .await?;
+        let members = call(
+            &plugin,
+            &ctx,
+            Some(&session.token),
+            HttpMethod::Get,
+            "/organization/list-team-members",
+            None,
+            &[],
+        )
+        .await?;
+        assert_error(&members, 400, "YOU_DO_NOT_HAVE_AN_ACTIVE_TEAM")?;
+        for data in [json!({}), json!({"teamId":""}), json!({"teamId":null})] {
+            let response = call(
+                &plugin,
+                &ctx,
+                Some(&session.token),
+                HttpMethod::Post,
+                "/organization/set-active-team",
+                Some(data),
+                &[],
+            )
+            .await?;
+            assert_eq!(response.status, 200);
+            assert!(body::<Value>(&response)?.is_null());
+            assert!(!response.headers.contains_key("set-cookie"));
+            let stored = ctx.database.get_session(&session.token).await?.unwrap();
+            assert_eq!(stored.active_team_id.as_deref(), Some(""));
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn organization_reads_return_null_for_empty_active_organization() -> TestResult {
         let plugin = OrganizationPlugin::with_config(configuration());
         let ctx = context(&plugin).await?;
