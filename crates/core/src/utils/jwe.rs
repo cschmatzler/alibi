@@ -229,6 +229,9 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
     }
     let claims = parse_value(std::str::from_utf8(&ciphertext).map_err(|_| invalid())?)
         .map_err(|_| invalid())?;
+    if !claims.is_object() {
+        return Err(invalid());
+    }
     let now = serde_json::Number::from(Utc::now().timestamp())
         .as_f64()
         .ok_or_else(invalid)?;
@@ -294,6 +297,17 @@ mod tests {
 
     fn header_with_zip() -> serde_json::Value {
         json!({"alg":"dir","enc":"A256CBC-HS512","zip":"DEF"})
+    }
+
+    #[test]
+    fn encrypted_jwt_claims_must_be_an_object() {
+        let header = json!({"alg":"dir","enc":"A256CBC-HS512"});
+        for plaintext in ["null", "true", "123", "\"session\"", "[]", "[{}]"] {
+            let token = seal(&header, plaintext.as_bytes());
+            assert!(decode_parsed(SECRET, SALT, &token).is_err(), "{plaintext}");
+        }
+        let token = seal(&header, b"{}");
+        assert_eq!(decode_parsed(SECRET, SALT, &token).unwrap(), json!({}));
     }
 
     #[test]
