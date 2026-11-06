@@ -51,7 +51,7 @@ pub(in crate::oauth::providers) fn discord_user_info(
     let email = profile
         .get("email")
         .and_then(Value::as_str)
-        .ok_or("missing email")?;
+        .unwrap_or_default();
     let image = if profile.get("avatar").is_some_and(Value::is_null) {
         let discriminator = profile
             .get("discriminator")
@@ -109,4 +109,22 @@ pub(in crate::oauth::providers) fn discord_user_info(
             .and_then(Value::as_bool)
             .unwrap_or(false),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn discord_optional_email_does_not_reject_profile() {
+        let profile = json!({"id":"42","username":"discord-user","avatar":"hash","verified":false});
+        assert_eq!(discord_user_info(profile.clone()).unwrap().email, "");
+        let mut null_email = profile.clone();
+        null_email["email"] = Value::Null;
+        assert_eq!(discord_user_info(null_email).unwrap().email, "");
+        let mut with_email = profile;
+        with_email["email"] = json!("user@example.com");
+        assert_eq!(discord_user_info(with_email).unwrap().email, "user@example.com");
+    }
 }
