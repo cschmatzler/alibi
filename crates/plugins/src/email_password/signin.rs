@@ -95,6 +95,14 @@ pub(crate) async fn sign_in_core(
         ctx,
     )
     .await
+    .map_err(|error| match error {
+        AuthError::SessionCreationCancelled => AuthError::Upstream {
+            status: 401,
+            code: codes::FAILED_TO_CREATE_SESSION,
+            message: "Failed to create session",
+        },
+        error => error,
+    })
 }
 
 /// Core sign-in by username.
@@ -181,5 +189,14 @@ pub(crate) async fn sign_in_username_core(
         ctx,
     )
     .await
-    .map_err(SignInUsernameFailure::Auth)
+    .map_err(|error| {
+        SignInUsernameFailure::Auth(match error {
+            AuthError::SessionCreationCancelled => AuthError::Upstream {
+                status: 500,
+                code: codes::FAILED_TO_CREATE_SESSION,
+                message: "Failed to create session",
+            },
+            error => error,
+        })
+    })
 }

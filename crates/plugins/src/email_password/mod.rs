@@ -713,6 +713,107 @@ mod tests {
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
+    #[tokio::test]
+    async fn cancelled_password_signin_sessions_use_endpoint_failure_status() {
+        use alibi_seaorm::{
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
+        };
+        struct Hook(bool);
+        #[async_trait]
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
+            async fn before_create_session(
+                &self,
+                _: &mut CreateSession,
+                _: &SeaOrmHookContext<'_>,
+            ) -> AuthResult<HookControl> {
+                if self.0 {
+                    Ok(HookControl::Cancel)
+                } else {
+                    Err(AuthError::forbidden("application session policy"))
+                }
+            }
+        }
+
+        for cancelled in [true, false] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                .await
+                .unwrap();
+            let config = Arc::new(crate::test_helpers::create_test_config());
+            let ctx = AuthContext::new(
+                Arc::clone(&config),
+                Arc::new(
+                    SeaOrmStore::<TestSchema>::new(config, db)
+                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                ),
+            );
+            let plugin = EmailPasswordPlugin::new()
+                .auto_sign_in(false)
+                .enable_username(true);
+            let signup = crate::test_helpers::create_auth_json_request_no_query(
+                HttpMethod::Post,
+                "/sign-up/email",
+                None,
+                Some(
+                    serde_json::json!({"email":"cancel@example.com","name":"Owner",
+                    "username":"cancelled","password":"Password123!"}),
+                ),
+            );
+            assert_eq!(
+                plugin.handle_sign_up(&signup, &ctx).await.unwrap().status,
+                200
+            );
+            let user = ctx
+                .database
+                .get_user_by_email("cancel@example.com")
+                .await
+                .unwrap()
+                .unwrap();
+            for (path, body, status) in [
+                (
+                    "/sign-in/email",
+                    serde_json::json!({"email":"cancel@example.com","password":"Password123!"}),
+                    401,
+                ),
+                (
+                    "/sign-in/username",
+                    serde_json::json!({"username":"cancelled","password":"Password123!"}),
+                    500,
+                ),
+            ] {
+                let req = crate::test_helpers::create_auth_json_request_no_query(
+                    HttpMethod::Post,
+                    path,
+                    None,
+                    Some(body),
+                );
+                let error = if path == "/sign-in/email" {
+                    plugin.handle_sign_in(&req, &ctx).await.unwrap_err()
+                } else {
+                    plugin
+                        .handle_sign_in_username(&req, &ctx)
+                        .await
+                        .unwrap_err()
+                };
+                assert_eq!(error.status_code(), if cancelled { status } else { 403 });
+                if cancelled {
+                    let response = error.to_auth_response();
+                    let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+                    assert_eq!(body["code"], "FAILED_TO_CREATE_SESSION");
+                } else {
+                    assert_eq!(error.to_string(), "application session policy");
+                }
+                assert!(
+                    ctx.database
+                        .get_user_sessions(&user.id())
+                        .await
+                        .unwrap()
+                        .is_empty()
+                );
+            }
+        }
+    }
+
     async fn create_test_context() -> AuthContext<TestSchema> {
         let config = AuthConfig::new("test-secret-key-at-least-32-chars-long");
         let config = Arc::new(config);
