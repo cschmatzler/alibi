@@ -419,6 +419,11 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     .map_err(super::remaining_profile::profile_exception)?;
                 super::apply_application_mapping(&mut response, mapped)?;
             }
+            if let Some(output) = &mut response.user_output
+                && output.get("image").is_some_and(Value::is_null)
+            {
+                _ = output.remove("image");
+            }
             return Ok(response);
         }
         let decoded = claims.filter(|profile| {
@@ -500,9 +505,6 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             .filter_map(|key| raw.get(key).cloned().map(|value| (key.into(), value)))
             .collect();
         _ = output.insert("emailVerified".into(), Value::Bool(user.email_verified));
-        if output.get("image").is_some_and(Value::is_null) {
-            _ = output.remove("image");
-        }
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output),
             user,
@@ -519,6 +521,11 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                     )
                 })?;
             super::apply_application_mapping(&mut response, mapped)?;
+        }
+        if let Some(output) = &mut response.user_output
+            && output.get("image").is_some_and(Value::is_null)
+        {
+            _ = output.remove("image");
         }
         Ok(response)
     }
@@ -704,6 +711,34 @@ mod tests {
             })
         }
     }
+    struct ImageMapper(Value);
+    #[async_trait]
+    impl OAuthProfileMapper for ImageMapper {
+        async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
+            Ok(Map::from_iter([("image".into(), self.0.clone())]))
+        }
+    }
+
+    #[tokio::test]
+    async fn generic_mapped_null_images_are_omitted() {
+        for custom in [false, true] {
+            for image in [Value::Null, Value::Bool(false), Value::String(String::new())] {
+                let handler = GenericUserInfo {
+                    url: None,
+                    mapper: Some(Arc::new(ImageMapper(image.clone()))),
+                    custom: custom.then(|| Arc::new(CustomProfile(false)) as Arc<dyn OAuthUserInfoHandler>),
+                    verified_oidc: false,
+                };
+                let response = handler.get_user_info(OAuthUserInfoRequest {
+                    id_token: Some(id_token(serde_json::json!({"sub":"subject", "email":"a@example.com", "picture":"original"}))),
+                    ..Default::default()
+                }).await.unwrap();
+                let output = response.user_output.unwrap();
+                assert_eq!(output.get("image"), (!image.is_null()).then_some(&image));
+            }
+        }
+    }
+
     struct FailingMapper;
     #[async_trait]
     impl OAuthProfileMapper for FailingMapper {
