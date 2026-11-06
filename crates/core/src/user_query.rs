@@ -214,6 +214,13 @@ fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> crate::Auth
     )
 }
 
+pub(crate) fn matches_list_user(
+    user: &impl AuthUser,
+    params: &ListUsersParams,
+) -> AuthResult<bool> {
+    Ok(matches_search(user, params) && matches_filter(user, params)?)
+}
+
 fn compare_options<T: Ord + Copy>(lhs: Option<T>, rhs: Option<T>, direction: &str) -> Ordering {
     match direction {
         "asc" => lhs.cmp(&rhs),
@@ -252,7 +259,7 @@ fn apply<T: AuthUser + Clone>(
 ) -> crate::AuthResult<(Vec<T>, usize)> {
     let mut filtered = Vec::new();
     for user in users {
-        if matches_search(&user, params) && matches_filter(&user, params)? {
+        if matches_list_user(&user, params)? {
             filtered.push(user);
         }
     }

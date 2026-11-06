@@ -983,3 +983,162 @@ async fn ordinary_string_collation_memory_matches_locale_compare() {
 async fn ordinary_string_collation_stateless_matches_locale_compare() {
     ordinary_string_collation::<StatelessSchema>(&StatelessStore::default()).await;
 }
+
+async fn homogeneous_id_sorting<S: AuthSchema<User = UserView>>(
+    store: &impl UserStore<S>,
+    numeric: bool,
+) {
+    use crate::utils::json::JsValue;
+    let fixtures: Vec<(JsValue, &str)> = if numeric {
+        vec![
+            (JsValue::Number(20.0), "n20"),
+            (JsValue::Number(2.0), "n2"),
+            (JsValue::Number(10.0), "n10"),
+            (JsValue::Number(-2.0), "negative"),
+            (JsValue::Number(1.5), "fraction"),
+            (JsValue::Number(f64::INFINITY), "infinity"),
+            (JsValue::Number(f64::NEG_INFINITY), "negative-infinity"),
+        ]
+    } else {
+        [
+            ("z", "z"),
+            ("A", "upper-a"),
+            ("a", "lower-a"),
+            ("é", "accent"),
+            ("e\u{301}", "decomposed"),
+            ("E", "upper-e"),
+            ("e", "lower-e"),
+            ("Z", "upper-z"),
+            ("b", "lower-b"),
+            ("B", "upper-b"),
+            ("É", "upper-accent"),
+        ]
+        .into_iter()
+        .map(|(id, label)| (JsValue::String(id.into()), label))
+        .collect()
+    };
+    for (id, label) in &fixtures {
+        store
+            .create_user(CreateUser {
+                name: Some((*label).into()),
+                email: Some(format!("{label}@source-id.example.test")),
+                adapter_native_fields: [("id".into(), id.clone())].into(),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+
+    // Better Auth 1.7.18 memory-adapter.ts:176-225; Node en-US oracle.
+    for field in ["id", "_id"] {
+        for direction in [None, Some("asc"), Some("desc")] {
+            for filtered in [false, true] {
+                let expected = match (numeric, direction, filtered) {
+                    (true, Some("desc"), false) => {
+                        "infinity n20 n10 n2 fraction negative negative-infinity"
+                    }
+                    (true, _, false) => "negative-infinity negative fraction n2 n10 n20 infinity",
+                    (true, Some("desc"), true) => "infinity n20 n10",
+                    (true, _, true) => "n10 n20 infinity",
+                    (false, Some("desc"), false) => {
+                        "upper-z z upper-accent accent decomposed upper-e lower-e upper-b lower-b upper-a lower-a"
+                    }
+                    (false, _, false) => {
+                        "lower-a upper-a lower-b upper-b lower-e upper-e accent decomposed upper-accent z upper-z"
+                    }
+                    (false, Some("desc"), true) => "upper-accent accent decomposed",
+                    (false, _, true) => "accent decomposed upper-accent",
+                };
+                let params = ListUsersParams {
+                    sort_by: Some(field.into()),
+                    sort_direction: direction.map(str::to_owned),
+                    filter_field: filtered.then(|| field.into()),
+                    filter_operator: filtered.then(|| if numeric { "gte" } else { "in" }.into()),
+                    filter_value: filtered.then(|| {
+                        serde_json::from_value(if numeric {
+                            json!(10)
+                        } else {
+                            json!(["é", "e\u{301}", "É"])
+                        })
+                        .unwrap()
+                    }),
+                    ..Default::default()
+                };
+                let expected = expected.split(' ').collect::<Vec<_>>();
+                for (offset, limit) in [(0, 20), (0, 4), (2, 5), (9, 6), (13, 2), (0, 0)] {
+                    let (users, count) = store
+                        .list_users(ListUsersParams {
+                            offset: Some(offset),
+                            limit: Some(limit),
+                            ..params.clone()
+                        })
+                        .await
+                        .unwrap();
+                    assert_eq!(count, expected.len(), "{numeric} {field} {direction:?}");
+                    assert_eq!(
+                        users
+                            .iter()
+                            .map(|user| user.name.as_deref().unwrap())
+                            .collect::<Vec<_>>(),
+                        expected
+                            .iter()
+                            .copied()
+                            .skip(offset)
+                            .take(limit)
+                            .collect::<Vec<_>>(),
+                        "{numeric} {field} {direction:?} {filtered} {offset} {limit}",
+                    );
+                }
+            }
+        }
+    }
+
+    if numeric {
+        store
+            .create_user(CreateUser {
+                id: Some("string-outsider".into()),
+                email: Some("outside@other.test".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        let (users, count) = store
+            .list_users(ListUsersParams {
+                sort_by: Some("id".into()),
+                search_field: Some("email".into()),
+                search_operator: Some("ends_with".into()),
+                search_value: Some("@source-id.example.test".into()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(count, 7);
+        assert_eq!(
+            users
+                .iter()
+                .map(|user| user.name.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            [
+                "negative-infinity",
+                "negative",
+                "fraction",
+                "n2",
+                "n10",
+                "n20",
+                "infinity"
+            ],
+        );
+    }
+}
+
+#[tokio::test]
+async fn homogeneous_id_sorting_memory_uses_physical_numbers_and_collated_strings() {
+    homogeneous_id_sorting::<BundledSchema>(&MemoryStore::default(), true).await;
+    homogeneous_id_sorting::<BundledSchema>(&MemoryStore::default(), false).await;
+}
+
+#[tokio::test]
+async fn homogeneous_id_sorting_stateless_uses_physical_numbers_and_collated_strings() {
+    homogeneous_id_sorting::<StatelessSchema>(&StatelessStore::default(), true).await;
+    homogeneous_id_sorting::<StatelessSchema>(&StatelessStore::default(), false).await;
+}
