@@ -34,11 +34,19 @@ fn date_field(user: &impl AuthUser, field: &str) -> Option<DateTime<Utc>> {
 }
 
 fn matches_search(user: &impl AuthUser, params: &ListUsersParams) -> bool {
-    let Some(search_value) = params.search_value.as_deref() else {
+    let Some(search_value) = params
+        .search_value
+        .as_deref()
+        .filter(|value| !value.is_empty())
+    else {
         return true;
     };
 
-    let field = params.search_field.as_deref().unwrap_or("email");
+    let field = params
+        .search_field
+        .as_deref()
+        .filter(|field| !field.is_empty())
+        .unwrap_or("email");
     let operator = params.search_operator.as_deref().unwrap_or("contains");
     let Some(haystack) = string_field(user, field) else {
         return false;
@@ -194,7 +202,11 @@ fn matches_filter(user: &impl AuthUser, params: &ListUsersParams) -> bool {
     };
     matches_typed_filter(
         user,
-        params.filter_field.as_deref().unwrap_or("email"),
+        params
+            .filter_field
+            .as_deref()
+            .filter(|field| !field.is_empty())
+            .unwrap_or("email"),
         &filter_value.native(),
         params.filter_operator.as_deref().unwrap_or("eq"),
     )

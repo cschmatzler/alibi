@@ -792,3 +792,81 @@ async fn optional_user_sort_memory_preserves_insertion_order() {
 async fn optional_user_sort_stateless_preserves_insertion_order() {
     optional_user_sort::<StatelessSchema>(&StatelessStore::default()).await;
 }
+
+async fn empty_user_list_selectors<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    store
+        .create_user(CreateUser {
+            id: Some("no-email".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+    store
+        .create_user(CreateUser {
+            id: Some("with-email".into()),
+            email: Some("alpha@example.test".into()),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    for (params, expected) in [
+        (
+            ListUsersParams {
+                search_value: Some("".into()),
+                ..Default::default()
+            },
+            vec!["no-email", "with-email"],
+        ),
+        (
+            ListUsersParams {
+                search_value: Some("".into()),
+                search_field: Some("username".into()),
+                search_operator: Some("starts_with".into()),
+                ..Default::default()
+            },
+            vec!["no-email", "with-email"],
+        ),
+        (
+            ListUsersParams {
+                search_value: Some("alpha".into()),
+                search_field: Some("".into()),
+                ..Default::default()
+            },
+            vec!["with-email"],
+        ),
+        (
+            ListUsersParams {
+                filter_field: Some("".into()),
+                filter_value: Some("alpha@example.test".into()),
+                ..Default::default()
+            },
+            vec!["with-email"],
+        ),
+        (
+            ListUsersParams {
+                filter_value: Some("".into()),
+                ..Default::default()
+            },
+            vec![],
+        ),
+    ] {
+        let (users, count) = store.list_users(params.clone()).await.unwrap();
+        let ids = users
+            .iter()
+            .map(|user| user.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, expected, "{params:?}");
+        assert_eq!(count, expected.len());
+    }
+}
+
+#[tokio::test]
+async fn empty_user_list_selectors_memory_follow_admin_truthiness() {
+    empty_user_list_selectors::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn empty_user_list_selectors_stateless_follow_admin_truthiness() {
+    empty_user_list_selectors::<StatelessSchema>(&StatelessStore::default()).await;
+}
