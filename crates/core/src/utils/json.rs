@@ -6,6 +6,9 @@
 #[path = "js_string.rs"]
 mod js_string;
 pub use js_string::JsString;
+#[path = "json_serializer.rs"]
+mod native_serializer;
+pub use native_serializer::to_js_value;
 pub type JsObject = IndexMap<JsString, JsValue>;
 
 use chrono::Datelike;
@@ -431,9 +434,40 @@ impl JsIndex for &JsString {
 
 impl Serialize for JsValue {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        finite_value(self)
-            .map_err(serde::ser::Error::custom)?
-            .serialize(serializer)
+        serializer
+            .serialize_newtype_struct(native_serializer::VALUE_PROTOCOL, &NativeValuePayload(self))
+    }
+}
+struct NativeValuePayload<'a>(&'a JsValue);
+impl Serialize for NativeValuePayload<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            return finite_value(self.0)
+                .map_err(serde::ser::Error::custom)?
+                .serialize(serializer);
+        }
+        let name = native_serializer::VALUE_ENUM;
+        match self.0 {
+            JsValue::Undefined => serializer.serialize_unit_variant(name, 0, "Undefined"),
+            JsValue::Null => serializer.serialize_unit_variant(name, 1, "Null"),
+            JsValue::Bool(value) => serializer.serialize_newtype_variant(name, 2, "Bool", value),
+            JsValue::Number(value) => {
+                serializer.serialize_newtype_variant(name, 3, "Number", value)
+            }
+            JsValue::String(value) => {
+                serializer.serialize_newtype_variant(name, 4, "String", value)
+            }
+            JsValue::Date(value) => serializer.serialize_newtype_variant(
+                name,
+                5,
+                "Date",
+                &(value.timestamp(), value.timestamp_subsec_nanos()),
+            ),
+            JsValue::Array(value) => serializer.serialize_newtype_variant(name, 6, "Array", value),
+            JsValue::Object(value) => {
+                serializer.serialize_newtype_variant(name, 7, "Object", value)
+            }
+        }
     }
 }
 

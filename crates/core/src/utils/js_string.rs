@@ -234,10 +234,24 @@ impl fmt::Debug for JsString {
 }
 impl Serialize for JsString {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(
-            self.as_str()
-                .ok_or_else(|| serde::ser::Error::custom("isolated UTF-16 surrogate"))?,
+        serializer.serialize_newtype_struct(
+            super::native_serializer::UTF16_PROTOCOL,
+            &Utf16Payload(self),
         )
+    }
+}
+struct Utf16Payload<'a>(&'a JsString);
+impl Serialize for Utf16Payload<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(
+                self.0
+                    .as_str()
+                    .ok_or_else(|| serde::ser::Error::custom("isolated UTF-16 surrogate"))?,
+            )
+        } else {
+            self.0.code_units().serialize(serializer)
+        }
     }
 }
 impl<'de> Deserialize<'de> for JsString {
