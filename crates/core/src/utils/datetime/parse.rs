@@ -229,10 +229,14 @@ fn strip_weekday(value: &str) -> &str {
         .iter()
         .any(|weekday| prefix.eq_ignore_ascii_case(weekday))
     {
-        return value
-            .get(3..)
-            .unwrap_or(value)
-            .trim_start_matches([',', ' ']);
+        let end = value
+            .bytes()
+            .position(|byte| !byte.is_ascii_alphabetic())
+            .unwrap_or(value.len());
+        let rest = &value[end..];
+        if rest.is_empty() || rest.starts_with([',', ' ']) {
+            return rest.trim_start_matches([',', ' ']);
+        }
     }
     value
 }
@@ -284,6 +288,25 @@ fn normalize_legacy(value: &str) -> String {
         *last = offset;
     }
     parts.join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_dates_accept_full_weekday_tokens() {
+        let expected = parse_date_millis("2024-01-01T12:00:00Z");
+        for weekday in ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday", "mOnDaY"] {
+            assert_eq!(
+                parse_date_millis(&format!("{weekday}, 01 Jan 2024 12:00:00 GMT")),
+                expected,
+                "{weekday}"
+            );
+        }
+        assert_eq!(parse_date_millis("Monday01 Jan 2024 12:00:00 GMT"), None);
+        assert_eq!(parse_date_millis("Mon01 Jan 2024 12:00:00 GMT"), None);
+    }
 }
 
 fn remove_comments(value: &str) -> Option<String> {
