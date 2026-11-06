@@ -43,6 +43,7 @@ struct DeferredSessionPublication<S: AuthSchema> {
     store: PluginStore<S>,
     session: S::Session,
     created_at: DateTime<Utc>,
+    creation_fields: FieldValues,
 }
 
 #[async_trait::async_trait]
@@ -50,7 +51,7 @@ impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublic
     async fn publish(&self) {
         if let Err(error) = self
             .store
-            .mirror_created_session(&self.session, self.created_at)
+            .mirror_created_session(&self.session, self.created_at, &self.creation_fields)
             .await
         {
             tracing::error!(%error, "Failed to mirror committed session to secondary storage");
@@ -361,11 +362,13 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: S::Session,
         created_at: DateTime<Utc>,
+        creation_fields: FieldValues,
     ) -> std::sync::Arc<dyn crate::session::SessionPublication> {
         std::sync::Arc::new(DeferredSessionPublication {
             store: self.clone(),
             session,
             created_at,
+            creation_fields,
         })
     }
 
@@ -373,11 +376,13 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: &S::Session,
         created_at: DateTime<Utc>,
+        creation_fields: &FieldValues,
     ) -> AuthResult<()> {
         let user_id = session.user_id();
         self.mirror_session_creation(
             session,
             created_at,
+            creation_fields,
             self.inner.get_user_by_id_record(user_id.as_ref()),
         )
         .await
@@ -387,6 +392,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         session: &S::Session,
         created_at: DateTime<Utc>,
+        creation_fields: &FieldValues,
         user: impl Future<Output = AuthResult<Option<AdapterRecord<S::User>>>> + Send,
     ) -> AuthResult<()> {
         if self.secondary().is_none() {
@@ -418,7 +424,7 @@ impl<S: AuthSchema> PluginStore<S> {
                 session.token(),
                 session,
                 user,
-                None,
+                Some(creation_fields),
                 Some(created_at),
                 ttl,
             )
@@ -659,7 +665,7 @@ mod creation_order_tests {
             context,
         );
         let result = store
-            .mirror_session_creation(&session, session.created_at(), async {
+            .mirror_session_creation(&session, session.created_at(), &FieldValues::new(), async {
                 let index = cache.get("active-sessions-owner").await?.unwrap();
                 assert!(index.contains(session.token()));
                 Err(AuthError::internal("owner lookup failed"))

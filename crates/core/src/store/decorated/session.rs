@@ -223,6 +223,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
+        let creation_fields = create_session.additional_fields.clone();
         let session = if self.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)
@@ -235,7 +236,8 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             self.inner.create_session(create_session).await?
         };
         self.remember_ephemeral_session(&session)?;
-        self.mirror_created_session(&session, created_at).await?;
+        self.mirror_created_session(&session, created_at, &creation_fields)
+            .await?;
         if self.secondary().is_some() || self.config.session.stateless {
             self.inner
                 .complete_secondary_session_creation(&session)

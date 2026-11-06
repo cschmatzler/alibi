@@ -803,6 +803,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
+        let creation_fields = create_session.additional_fields.clone();
         let session = if self.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)
@@ -821,8 +822,11 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                 self.inner
                     .queue_session_publication(
                         model.id().as_ref(),
-                        self.record_store
-                            .deferred_session_publication(model.clone(), created_at),
+                        self.record_store.deferred_session_publication(
+                            model.clone(),
+                            created_at,
+                            creation_fields,
+                        ),
                     )
                     .await?;
             } else {
@@ -831,6 +835,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                     .mirror_session_creation(
                         &model,
                         created_at,
+                        &creation_fields,
                         self.inner.get_user_by_id_record(user_id.as_ref()),
                     )
                     .await?;

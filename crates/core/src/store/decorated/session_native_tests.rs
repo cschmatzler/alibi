@@ -76,6 +76,53 @@ async fn envelope(cache: &MemoryCacheAdapter, token: &str) -> Value {
 }
 
 #[tokio::test]
+async fn session_creation_distinguishes_explicit_null_from_omitted_fields() {
+    let cache = Arc::new(MemoryCacheAdapter::new());
+    let config = config(cache.clone());
+    let inner = Arc::new(StatelessStore::default());
+    let store = decorated::<StatelessSchema>(inner.clone(), config.clone());
+    let user = store
+        .create_user(CreateUser::new().with_email("session-null@fixture.test"))
+        .await
+        .unwrap();
+    for explicit_null in [false, true] {
+        let token = if explicit_null {
+            "explicit-null"
+        } else {
+            "omitted"
+        };
+        let mut input = creation(&user.id, token);
+        if explicit_null {
+            input
+                .additional_fields
+                .insert("optional".into(), JsValue::Null);
+            input
+                .additional_fields
+                .insert("activeTeamId".into(), JsValue::Null);
+        }
+        store.create_session(input).await.unwrap();
+        let reader = decorated::<StatelessSchema>(inner.clone(), config.clone());
+        let record = reader.get_session_record(token).await.unwrap().unwrap();
+        let raw = envelope(&cache, token).await;
+        for name in ["optional", "activeTeamId"] {
+            if explicit_null {
+                assert_eq!(record.raw_snapshot().values()[name], Value::Null);
+                assert!(!record.raw_snapshot().field_is_undefined(name));
+                assert!(
+                    !raw["absent_fields"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|field| field == name)
+                );
+            } else {
+                assert!(record.raw_snapshot().field_is_undefined(name));
+            }
+        }
+    }
+}
+
+#[tokio::test]
 async fn stateless_secondary_session_creation_read_update_and_revocation_are_native() {
     let cache = Arc::new(MemoryCacheAdapter::new());
     let config = config(cache.clone());

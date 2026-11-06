@@ -1400,6 +1400,81 @@ async fn seed_native_owner(fixture: &Fixture) {
 }
 
 #[tokio::test]
+async fn explicit_null_session_fields_survive_ordinary_inline_and_deferred_creation() {
+    use alibi_core::store::CacheAdapter;
+    use alibi_core::utils::json::JsValue;
+    for (persist, transactional, deferred) in [
+        (false, false, false),
+        (false, true, false),
+        (true, false, false),
+        (true, true, false),
+        (true, true, true),
+    ] {
+        let cache = RecordingCache::new(false);
+        let fixture =
+            Fixture::with_secondary(Failure::None, Some(cache.clone()), persist, false, false)
+                .await;
+        fixture.hooks.armed.store(false, Ordering::SeqCst);
+        let mut config = (*fixture.ctx.config).clone();
+        config.session.additional_fields.insert(
+            "activeTeamId".into(),
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type": "string"})),
+        );
+        let database =
+            alibi_core::plugin::AuthInitContext::new(Arc::new(config), fixture.raw.clone())
+                .database_with_registered_transforms();
+        let mut fields = alibi_core::field_policy::FieldValues::new();
+        fields.insert("activeTeamId".into(), JsValue::Null);
+        let input = CreateSession {
+            user_id: fixture.user.id.clone(),
+            expires_at: chrono::Utc::now() + Duration::hours(1),
+            token: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: fields,
+        };
+        let session =
+            if transactional {
+                alibi_core::store::write_transaction(database.as_ref(), move |tx| {
+                    Box::pin(async move {
+                        tx.create_session_record_with_policy(
+                        input,
+                        if deferred {
+                            alibi_core::session::SessionCreationPolicy::DeferSecondaryStorageWrites
+                        } else {
+                            alibi_core::session::SessionCreationPolicy::Inline
+                        },
+                    ).await.map(|record| record.into_stored())
+                    })
+                })
+                .await
+                .unwrap()
+            } else {
+                database.create_session(input).await.unwrap()
+            };
+        let token = &session.token;
+        let cached: serde_json::Value =
+            serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+        assert!(
+            !cached["absent_fields"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|name| name == "activeTeamId")
+        );
+        let record = database.get_session_record(token).await.unwrap().unwrap();
+        assert_eq!(
+            record.raw_snapshot().values()["activeTeamId"],
+            serde_json::Value::Null
+        );
+        assert!(!record.raw_snapshot().field_is_undefined("activeTeamId"));
+    }
+}
+
+#[tokio::test]
 async fn inline_transaction_session_creation_reads_native_owner_on_transaction_connection() {
     use alibi_core::store::CacheAdapter;
     let cache = RecordingCache::new(false);
