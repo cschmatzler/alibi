@@ -186,6 +186,13 @@ struct MemoryTransaction<'a> {
 
 #[async_trait]
 impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
+    async fn native_user_output_for(
+        &self,
+        user: &crate::UserView,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(user.native_user_fields())
+    }
+
     async fn create_verification_record(
         &self,
         data: crate::verification::VerificationCreation,
@@ -307,6 +314,13 @@ impl UserStore<BundledSchema> for MemoryStore {
         user.retain_native_user_fields(native_fields);
         self.lock().users.insert(physical_id, user.clone());
         Ok(user)
+    }
+
+    async fn native_user_output_for(
+        &self,
+        user: &UserView,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(user.native_user_fields())
     }
 
     async fn native_user_output(

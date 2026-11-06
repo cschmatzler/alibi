@@ -85,6 +85,13 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
 
 #[async_trait]
 impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
+    async fn native_user_output_for(
+        &self,
+        user: &crate::UserView,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(user.native_user_fields())
+    }
+
     async fn get_team(&self, org: &str, id: &str) -> AuthResult<Option<Team>> {
         TeamStore::get_team(&self.snapshot, Some(org), id).await
     }

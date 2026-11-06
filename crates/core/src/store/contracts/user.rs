@@ -14,11 +14,19 @@ pub enum NumericTextInput {
 pub trait UserStore<S: AuthSchema>: Send + Sync {
     /// Build an undecorated retained record without discarding physical scalar output.
     async fn native_user_record(&self, user: S::User) -> AuthResult<AdapterRecord<S::User>> {
-        use crate::AuthUser as _;
-        let scalars = self.native_user_output(&user.id()).await?;
+        let scalars = self.native_user_output_for(&user).await?;
         let mut record = AdapterRecord::physical(user)?;
         record.retain_native_scalars(scalars);
         Ok(record)
+    }
+
+    /// Project the actual returned model when public identity differs from its stored scalar.
+    async fn native_user_output_for(
+        &self,
+        user: &S::User,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        use crate::AuthUser as _;
+        self.native_user_output(&user.id()).await
     }
 
     /// Retain native scalar output independently of typed authorization accessors.

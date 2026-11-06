@@ -8,6 +8,13 @@ use crate::{AuthResult, AuthSchema, CreateUser, ListUsersParams, UpdateUser};
 use async_trait::async_trait;
 #[async_trait]
 impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
+    async fn native_user_output_for(
+        &self,
+        user: &S::User,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        self.inner.native_user_output_for(user).await
+    }
+
     async fn native_user_output(
         &self,
         id: &str,

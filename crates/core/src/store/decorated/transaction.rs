@@ -112,7 +112,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         &self,
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        let scalars = self.inner.native_user_output(&user.id()).await?;
+        let scalars = self.inner.native_user_output_for(&user).await?;
         self.record_store
             .user_record_with_native_output(
                 user,
@@ -509,6 +509,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .delete_sso_provider_and_accounts(id, provider_id)
             .await
     }
+    async fn native_user_output_for(
+        &self,
+        user: &S::User,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        self.inner.native_user_output_for(user).await
+    }
+
     async fn native_user_output(
         &self,
         id: &str,

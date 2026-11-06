@@ -563,7 +563,7 @@ impl<S: AuthSchema> PluginStore<S> {
                     None => {
                         let native = AdapterOutput::from_values(
                             self.inner
-                                .native_user_output(user.id().as_ref())
+                                .native_user_output_for(user)
                                 .await?
                                 .into_iter()
                                 .collect(),

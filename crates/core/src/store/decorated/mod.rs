@@ -3,7 +3,9 @@ use crate::store::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateStep, UserCreationDefaults,
     UserUpdateStep,
 };
-use crate::{AuthAccount, AuthSession, AuthUser};
+use crate::{AuthAccount, AuthSession};
+#[cfg(test)]
+use crate::AuthUser;
 use crate::{AuthError, AuthResult, AuthSchema, AuthStore};
 use std::sync::Arc;
 mod account;
@@ -141,7 +143,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         user: S::User,
     ) -> AuthResult<AdapterRecord<S::User>> {
-        let scalars = self.inner.native_user_output(&user.id()).await?;
+        let scalars = self.inner.native_user_output_for(&user).await?;
         self.user_record_with_native_output(
             user,
             crate::AdapterOutput::from_values(scalars.into_iter().collect()),

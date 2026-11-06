@@ -215,6 +215,13 @@ impl UserStore<StatelessSchema> for StatelessStore {
         Ok(user)
     }
 
+    async fn native_user_output_for(
+        &self,
+        user: &UserView,
+    ) -> AuthResult<std::collections::BTreeMap<String, serde_json::Value>> {
+        Ok(user.native_user_fields())
+    }
+
     async fn native_user_output(
         &self,
         id: &str,

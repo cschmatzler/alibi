@@ -290,3 +290,180 @@ async fn cached_user_fields_use_effective_config_without_database_or_transforms(
         assert!(inner.get_user_by_id(&user.id).await.unwrap().is_none());
     }
 }
+
+async fn physical_identity_projection<S: AuthSchema<User = UserView>>(
+    inner: Arc<dyn crate::AuthStore<S>>,
+) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let count = Arc::new(AtomicUsize::new(0));
+    let calls = count.clone();
+    let mut config = crate::AuthConfig::default();
+    let cache = Arc::new(crate::MemoryCacheAdapter::new());
+    config.session.secondary_storage = Some(cache.clone());
+    config.user.additional_fields.insert(
+        "emailVerified".into(),
+        FieldConfig::new(serde_json::json!({"type": "boolean"})).transform_output(move |value| {
+            calls.fetch_add(1, Ordering::SeqCst);
+            async move {
+                let Some(crate::utils::json::JsValue::String(value)) = value else {
+                    panic!("expected actual raw verification string")
+                };
+                Ok(Some(crate::utils::json::JsValue::String(
+                    format!("projected {}", value.require_str()?).into(),
+                )))
+            }
+        }),
+    );
+    let config = Arc::new(config);
+    let store = PluginStore::new(
+        inner.clone(),
+        config.clone(),
+        UserTransforms::default(),
+        SessionCreatedCallbacks::default(),
+        crate::field_policy::SessionFields::default(),
+        crate::field_policy::SessionAdapterFields::default(),
+        AuthContext::<S>::new(config, inner.clone()),
+    );
+    for (id, marker, created, image) in [
+        (
+            serde_json::json!("2"),
+            "string",
+            serde_json::json!(-0.5),
+            serde_json::json!(42),
+        ),
+        (
+            serde_json::json!(2),
+            "number",
+            serde_json::json!(1e20),
+            serde_json::json!({"raw": true}),
+        ),
+    ] {
+        let data = CreateUser {
+            name: Some(marker.into()),
+            email: Some(format!("{marker}@identity.test")),
+            adapter_native_fields: [
+                ("id".into(), id),
+                ("emailVerified".into(), serde_json::json!(marker)),
+                ("createdAt".into(), created.clone()),
+                ("image".into(), image.clone()),
+            ]
+            .into(),
+            ..Default::default()
+        };
+        let before = count.load(Ordering::SeqCst);
+        let created_record = store.create_user_record(data).await.unwrap();
+        let wire = serde_json::to_value(UserView::from(&created_record)).unwrap();
+        assert_eq!(wire["id"], "2");
+        assert_eq!(wire["emailVerified"], format!("projected {marker}"));
+        assert_eq!(wire["createdAt"], created);
+        assert_eq!(wire["image"], image);
+        assert_eq!(count.load(Ordering::SeqCst), before + 1);
+        let physical = inner
+            .get_user_by_email(&format!("{marker}@identity.test").into())
+            .await
+            .unwrap()
+            .unwrap();
+        let native = inner.native_user_record(physical.clone()).await.unwrap();
+        assert_eq!(
+            native.raw_snapshot().values()["emailVerified"],
+            serde_json::json!(marker)
+        );
+        assert_eq!(native.raw_snapshot().values()["createdAt"], created);
+        let before = count.load(Ordering::SeqCst);
+        let record = store
+            .get_user_by_email_record(&format!("{marker}@identity.test").into())
+            .await
+            .unwrap()
+            .unwrap();
+        let wire = serde_json::to_value(UserView::from(&record)).unwrap();
+        assert_eq!(wire["emailVerified"], format!("projected {marker}"));
+        assert_eq!(wire["createdAt"], created);
+        assert_eq!(wire["image"], image);
+        assert_eq!(count.load(Ordering::SeqCst), before + 1);
+    }
+    let before = count.load(Ordering::SeqCst);
+    let (records, total) = store
+        .list_users_record(crate::ListUsersParams::default())
+        .await
+        .unwrap();
+    assert_eq!(total, 2);
+    assert_eq!(count.load(Ordering::SeqCst), before + 2);
+    for record in records {
+        let wire = serde_json::to_value(UserView::from(&record)).unwrap();
+        let marker = wire["name"].as_str().unwrap();
+        assert_eq!(wire["emailVerified"], format!("projected {marker}"));
+        assert_eq!(
+            wire["createdAt"],
+            if marker == "number" {
+                serde_json::json!(1e20)
+            } else {
+                serde_json::json!(-0.5)
+            }
+        );
+    }
+    let row = store.get_user_by_id_record("2").await.unwrap().unwrap();
+    assert_eq!(row.name(), Some("string"));
+
+    use crate::store::CacheAdapter;
+    let now = chrono::Utc::now();
+    let expires = now + chrono::Duration::hours(1);
+    let token = "physical-native-owner";
+    let owner = inner.get_user_by_id("2").await.unwrap().unwrap();
+    cache
+        .set(
+            token,
+            &serde_json::json!({
+                "session": {
+                    "id": "physical-session",
+                    "token": token,
+                    "userId": "2",
+                    "expiresAt": expires,
+                    "createdAt": now,
+                    "updatedAt": now,
+                },
+                "user": owner.secondary_snapshot().unwrap(),
+            })
+            .to_string(),
+            chrono::Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    cache
+        .set(
+            "active-sessions-2",
+            &serde_json::json!([{
+                "token": token,
+                "expiresAt": expires.timestamp_millis(),
+            }])
+            .to_string(),
+            chrono::Duration::hours(1),
+        )
+        .await
+        .unwrap();
+    let numeric = inner
+        .get_user_by_email(&"number@identity.test".into())
+        .await
+        .unwrap()
+        .unwrap();
+    let before = count.load(Ordering::SeqCst);
+    store.refresh_cached_user(&numeric).await.unwrap();
+    assert_eq!(count.load(Ordering::SeqCst), before + 1);
+    let cached: serde_json::Value =
+        serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
+    assert_eq!(cached["user"]["emailVerified"], "projected number");
+    assert_eq!(cached["user"]["createdAt"], serde_json::json!(1e20));
+    assert_eq!(cached["user"]["image"], serde_json::json!({"raw": true}));
+}
+
+#[tokio::test]
+async fn memory_native_projection_uses_actual_physical_user_not_public_id() {
+    physical_identity_projection::<BundledSchema>(Arc::new(MemoryStore::default())).await;
+}
+
+#[tokio::test]
+async fn stateless_native_projection_uses_actual_physical_user_not_public_id() {
+    physical_identity_projection::<crate::store::stateless::StatelessSchema>(Arc::new(
+        crate::store::stateless::StatelessStore::default(),
+    ))
+    .await;
+}
