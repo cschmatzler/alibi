@@ -229,6 +229,13 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         } else {
             self.graph_profile(request.access_token.as_deref()).await?
         };
+        let mut mapped = Map::new();
+        if let Some(mapper) = self.mapper {
+            mapped.extend(mapper(profile.clone())?.public_profile(true));
+        }
+        if let Some(mapper) = &self.application_mapper {
+            mapped.extend(mapper.map_profile(profile.clone()).await?);
+        }
         let mut output = Map::new();
         for key in ["name", "email"] {
             if let Some(value) = profile.get(key) {
@@ -238,10 +245,19 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         let image = if limited_login {
             profile.get("picture")
         } else {
-            profile
+            let picture = profile
                 .get("picture")
-                .and_then(|picture| picture.get("data"))
-                .and_then(|data| data.get("url"))
+                .filter(|value| !value.is_null())
+                .ok_or_else(|| {
+                    super::remaining_profile::profile_exception("Missing Facebook picture")
+                })?;
+            let data = picture
+                .get("data")
+                .filter(|value| !value.is_null())
+                .ok_or_else(|| {
+                    super::remaining_profile::profile_exception("Missing Facebook picture data")
+                })?;
+            data.get("url")
         };
         if let Some(image) = image {
             output.insert("image".into(), image.clone());
@@ -258,12 +274,7 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
                     .unwrap_or(Value::Bool(false))
             },
         );
-        if let Some(mapper) = self.mapper {
-            output.extend(mapper(profile.clone())?.public_profile(true));
-        }
-        if let Some(mapper) = &self.application_mapper {
-            output.extend(mapper.map_profile(profile.clone()).await?);
-        }
+        output.extend(mapped);
         let mut response = OAuthUserInfoResponse {
             user_output: Some(output.clone()),
             user: OAuthUserInfo {
@@ -407,6 +418,88 @@ mod tests {
             )
         }
     }
+    #[tokio::test]
+    async fn facebook_graph_picture_containers_are_required_after_mapping() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        struct PictureMapper(Arc<AtomicUsize>);
+        #[async_trait]
+        impl super::super::OAuthProfileMapper for PictureMapper {
+            async fn map_profile(&self, profile: Value) -> Result<Map<String, Value>, String> {
+                assert_eq!(profile["id"], "subject");
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Ok(serde_json::json!({"image":"mapped-image"})
+                    .as_object()
+                    .unwrap()
+                    .clone())
+            }
+        }
+
+        for (picture, valid) in [
+            (None, false),
+            (Some(Value::Null), false),
+            (Some(Value::Bool(false)), false),
+            (Some(serde_json::json!({})), false),
+            (Some(serde_json::json!({"data":null})), false),
+            (Some(serde_json::json!({"data":{}})), true),
+            (Some(serde_json::json!({"data":true})), true),
+            (Some(serde_json::json!({"data":{"url":null}})), true),
+            (Some(serde_json::json!({"data":{"url":"photo"}})), true),
+        ] {
+            let mut profile = serde_json::json!({"id":"subject","name":"Original"});
+            if let Some(picture) = picture {
+                profile["picture"] = picture;
+            }
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            let server = tokio::spawn(async move {
+                for body in [
+                    serde_json::json!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}}),
+                    profile,
+                ] {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let mut request = [0; 8192];
+                    let _ = stream.read(&mut request).await.unwrap();
+                    let body = body.to_string();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    stream.write_all(response.as_bytes()).await.unwrap();
+                }
+            });
+            let mut options = FacebookOptions::new("client", Some("secret".into()));
+            options.user_info_endpoint = Some(endpoint.clone());
+            options.token_inspection_endpoint = Some(endpoint);
+            let calls = Arc::new(AtomicUsize::new(0));
+            let provider = OAuthProvider::facebook_with_options(options)
+                .with_profile_mapper(Arc::new(PictureMapper(calls.clone())));
+            let result = provider
+                .get_user_info
+                .as_ref()
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await;
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+            if valid {
+                let response = result.unwrap();
+                assert_eq!(response.user.image.as_deref(), Some("mapped-image"));
+                assert_eq!(response.user_output.unwrap()["image"], "mapped-image");
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .starts_with("oauth-profile-exception:Missing Facebook picture")
+                );
+            }
+            server.await.unwrap();
+        }
+    }
+
     #[tokio::test]
     async fn facebook_partial_mapping_preserves_transport_defaults() {
         for limited in [true, false] {
