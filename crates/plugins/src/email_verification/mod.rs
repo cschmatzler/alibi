@@ -645,6 +645,91 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn change_email_rejects_empty_user_binding_as_invalid_token() {
+        let ctx = test_helpers::create_test_context().await;
+        let user = ctx
+            .database
+            .create_user(CreateUser::new().with_email("change-binding@example.com"))
+            .await
+            .unwrap();
+        let plugin = EmailVerificationPlugin::new();
+        for user_id in [None, Some(""), Some("missing-user")] {
+            for callback in [None, Some("http://localhost:3000/callback")] {
+                let mut claims = serde_json::json!({
+                    "email": "change-binding@example.com",
+                    "updateTo": "new-binding@example.com",
+                    "requestType": "change-email-verification"
+                });
+                if let Some(id) = user_id {
+                    claims["userId"] = serde_json::json!(id);
+                }
+                let token = external_verification_token(
+                    &ctx.config.secret,
+                    jsonwebtoken::Algorithm::HS256,
+                    &claims,
+                );
+                let mut query = HashMap::from([("token".into(), token)]);
+                if let Some(url) = callback {
+                    query.insert("callbackURL".into(), url.into());
+                }
+                let req = test_helpers::create_auth_request(
+                    HttpMethod::Get,
+                    "/verify-email",
+                    None,
+                    None,
+                    query,
+                );
+                let code = if user_id == Some("missing-user") {
+                    "USER_NOT_FOUND"
+                } else {
+                    "INVALID_TOKEN"
+                };
+                let result = plugin.handle_verify_email(&req, &ctx).await;
+                if callback.is_some() {
+                    let response = result.unwrap();
+                    assert_eq!(response.status, 302);
+                    assert!(
+                        response
+                            .headers
+                            .get("location")
+                            .unwrap()
+                            .ends_with(&format!("error={code}"))
+                    );
+                } else {
+                    let error = result.unwrap_err();
+                    assert_eq!(error.status_code(), 401);
+                    assert_eq!(error.error_payload().1.as_deref(), Some(code));
+                }
+            }
+        }
+        let unchanged = ctx
+            .database
+            .get_user_by_id(&user.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            unchanged.email().as_deref(),
+            Some("change-binding@example.com")
+        );
+        assert!(!unchanged.email_verified());
+        assert!(
+            ctx.database
+                .get_user_by_email("new-binding@example.com")
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            ctx.database
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
     struct DummySender;
 
     #[async_trait]

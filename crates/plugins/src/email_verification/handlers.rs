@@ -213,7 +213,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
         .as_deref()
         .filter(|email| !email.is_empty())
     {
-        let Some(user_id) = claims.user_id.as_deref() else {
+        let Some(user_id) = claims.user_id.as_deref().filter(|id| !id.is_empty()) else {
             return verification_error(query, codes::INVALID_TOKEN, "Invalid token");
         };
         let Some(user) = ctx.database.get_user_by_id_record(user_id).await? else {
