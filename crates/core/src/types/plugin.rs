@@ -109,11 +109,11 @@ pub struct UpdateTwoFactor {
 }
 
 /// Passkey response shape.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Passkey {
     pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<crate::utils::json::JsString>,
+    #[serde(default)]
+    pub name: crate::utils::json::JsValue,
     #[serde(rename = "publicKey")]
     pub public_key: String,
     #[serde(rename = "userId")]
@@ -125,26 +125,51 @@ pub struct Passkey {
     pub device_type: String,
     #[serde(rename = "backedUp")]
     pub backed_up: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transports: Option<String>,
-    #[serde(rename = "createdAt")]
-    pub created_at: Option<DateTime<Utc>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aaguid: Option<String>,
+    #[serde(default)]
+    pub transports: crate::utils::json::JsValue,
+    #[serde(default, rename = "createdAt")]
+    pub created_at: crate::utils::json::JsValue,
+    #[serde(default)]
+    pub aaguid: crate::utils::json::JsValue,
+}
+
+impl Serialize for Passkey {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        crate::wire::PasskeyView::from(self).serialize(serializer)
+    }
 }
 
 /// Input for creating a new passkey.
 #[derive(Debug, Clone)]
 pub struct CreatePasskey {
     pub user_id: String,
-    pub name: Option<crate::utils::json::JsString>,
+    pub name: crate::utils::json::JsValue,
     pub credential_id: String,
     pub public_key: String,
     pub counter: u64,
     pub device_type: String,
     pub backed_up: bool,
-    pub transports: Option<String>,
-    pub aaguid: Option<String>,
+    pub transports: crate::utils::json::JsValue,
+    pub created_at: crate::utils::json::JsValue,
+    pub aaguid: crate::utils::json::JsValue,
+}
+
+impl CreatePasskey {
+    pub fn normalize_created_at(&mut self) -> crate::AuthResult<()> {
+        if let crate::utils::json::JsValue::String(value) = &self.created_at {
+            let date = value
+                .as_str()
+                .and_then(crate::utils::datetime::parse_date_millis)
+                .and_then(DateTime::from_timestamp_millis)
+                .ok_or_else(|| {
+                    crate::AuthError::not_implemented(
+                        "Invalid JavaScript Date passkey values are unsupported",
+                    )
+                })?;
+            self.created_at = crate::utils::json::JsValue::Date(date);
+        }
+        Ok(())
+    }
 }
 
 /// Input for updating a passkey.
@@ -507,8 +532,8 @@ impl AuthPasskey for Passkey {
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
-    fn name(&self) -> Option<&crate::utils::json::JsString> {
-        self.name.as_ref()
+    fn name(&self) -> &crate::utils::json::JsValue {
+        &self.name
     }
     fn public_key(&self) -> &str {
         &self.public_key
@@ -528,14 +553,14 @@ impl AuthPasskey for Passkey {
     fn backed_up(&self) -> bool {
         self.backed_up
     }
-    fn transports(&self) -> Option<&str> {
-        self.transports.as_deref()
+    fn transports(&self) -> &crate::utils::json::JsValue {
+        &self.transports
     }
-    fn created_at(&self) -> Option<DateTime<Utc>> {
-        self.created_at
+    fn created_at(&self) -> &crate::utils::json::JsValue {
+        &self.created_at
     }
-    fn aaguid(&self) -> Option<&str> {
-        self.aaguid.as_deref()
+    fn aaguid(&self) -> &crate::utils::json::JsValue {
+        &self.aaguid
     }
 }
 
@@ -543,17 +568,17 @@ impl<T: AuthPasskey> From<&T> for Passkey {
     fn from(passkey: &T) -> Self {
         Self {
             id: passkey.id().into_owned(),
-            name: passkey.name().cloned(),
+            name: passkey.name().clone(),
             public_key: passkey.public_key().to_owned(),
             user_id: passkey.user_id().into_owned(),
             credential_id: passkey.credential_id().to_owned(),
             counter: passkey.counter(),
             device_type: passkey.device_type().to_owned(),
             backed_up: passkey.backed_up(),
-            transports: passkey.transports().map(str::to_owned),
-            created_at: passkey.created_at(),
+            transports: passkey.transports().clone(),
+            created_at: passkey.created_at().clone(),
 
-            aaguid: passkey.aaguid().map(str::to_owned),
+            aaguid: passkey.aaguid().clone(),
         }
     }
 }

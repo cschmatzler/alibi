@@ -351,10 +351,14 @@ async fn workflow<S: AuthSchema>(
     assert_eq!(replay.status, 401, "{}", body(&replay));
     let mut input = passkey_input(&user_id);
     if physical.is_some() {
-        input.name = None;
-        input.transports = None;
+        input.name = alibi::utils::json::JsValue::Undefined;
+        input.transports = alibi::utils::json::JsValue::Undefined;
     }
-    let expected_name = input.name.clone();
+    let expected_name = if physical.is_some() && input.name.is_undefined() {
+        alibi::utils::json::JsValue::Null
+    } else {
+        input.name.clone()
+    };
     let passkey = auth.store().create_passkey(input).await?;
     let before_list = if let Some(db) = physical {
         let rows: Value = serde_json::from_str(&db.raw.table("passkey").await?)?;
@@ -405,9 +409,8 @@ async fn workflow<S: AuthSchema>(
             .get_passkey_by_id(&passkey.id)
             .await?
             .unwrap()
-            .name
-            .as_ref(),
-        expected_name.as_ref()
+            .name,
+        expected_name
     );
     let rename = Box::pin(auth.handle_request(request(
         "/passkey/update-passkey",
@@ -423,8 +426,7 @@ async fn workflow<S: AuthSchema>(
             .await?
             .unwrap()
             .name
-            .as_ref()
-            .and_then(|name| name.as_str()),
+            .as_str(),
         Some("Renamed")
     );
     let remove = Box::pin(auth.handle_request(request(
@@ -467,14 +469,15 @@ async fn workflow<S: AuthSchema>(
 fn passkey_input(user_id: &str) -> CreatePasskey {
     CreatePasskey {
         user_id: user_id.to_owned(),
-        name: Some("Original".into()),
+        name: alibi::utils::json::JsValue::String("Original".into()),
         credential_id: "Y3JlZGVudGlhbDE3Mg".into(),
         public_key: "fixture-public-key".into(),
         counter: 1,
         device_type: "singleDevice".into(),
         backed_up: false,
-        transports: Some("internal".into()),
-        aaguid: None,
+        transports: alibi::utils::json::JsValue::String("internal".into()),
+        created_at: alibi::utils::json::JsValue::Date(Utc::now()),
+        aaguid: alibi::utils::json::JsValue::Undefined,
     }
 }
 

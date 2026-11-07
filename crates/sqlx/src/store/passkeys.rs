@@ -8,7 +8,6 @@ use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::PasskeyStore;
 use alibi_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use async_trait::async_trait;
-use chrono::Utc;
 use uuid::Uuid;
 
 impl<S> SqlxStore<S>
@@ -18,8 +17,9 @@ where
     pub(super) async fn create_passkey_with_connection(
         &self,
         exec: Exec<'_>,
-        input: CreatePasskey,
+        mut input: CreatePasskey,
     ) -> AuthResult<Passkey> {
+        input.normalize_created_at()?;
         let counter = i64::try_from(input.counter)
             .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
@@ -30,17 +30,40 @@ where
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
-        active.set("name", input.name.map(|name| name.to_utf8_binding()));
+        for (field, value) in [
+            ("name", &input.name),
+            ("transports", &input.transports),
+            ("aaguid", &input.aaguid),
+        ] {
+            if !value.is_undefined() {
+                active.set(
+                    field,
+                    crate::additional_fields::prepare_string_value(
+                        exec,
+                        crate::additional_fields::raw_value(value)?,
+                    )
+                    .await?,
+                );
+            }
+        }
         active.set("publicKey", input.public_key);
         active.set("userId", input.user_id);
         active.set("credentialID", input.credential_id);
         active.set("counter", counter);
         active.set("deviceType", input.device_type);
         active.set("backedUp", input.backed_up);
-        active.set("transports", input.transports);
-
-        active.set("aaguid", input.aaguid);
-        active.set("createdAt", Utc::now());
+        match input.created_at {
+            alibi_core::utils::json::JsValue::Undefined => {}
+            alibi_core::utils::json::JsValue::Null => {
+                active.set("createdAt", None::<chrono::DateTime<chrono::Utc>>)
+            }
+            alibi_core::utils::json::JsValue::Date(value) => active.set("createdAt", Some(value)),
+            _ => {
+                return Err(AuthError::not_implemented(
+                    "Non-date passkey SQL timestamps are unsupported",
+                ));
+            }
+        }
 
         model::insert::<Model>(exec, &active)
             .await

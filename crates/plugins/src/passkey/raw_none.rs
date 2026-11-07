@@ -26,7 +26,7 @@ pub(super) enum RawCredential {
         backup_eligible: bool,
         backup_state: bool,
         aaguid: [u8; 16],
-        transports: Option<Vec<String>>,
+        transports: JsValue,
     },
 }
 
@@ -37,7 +37,10 @@ pub(super) enum StoredCredential {
 
 impl StoredCredential {
     /// Construct the disposable verifier state from the TypeScript row columns.
-    pub(super) fn from_columns<P: alibi_core::AuthPasskey>(row: &P) -> Result<Self, WebauthnError> {
+    pub(super) fn from_columns<P: alibi_core::AuthPasskey>(
+        row: &P,
+        transports: JsValue,
+    ) -> Result<Self, WebauthnError> {
         use base64::engine::general_purpose::STANDARD;
         let public_key = STANDARD.decode(row.public_key()).map_err(|_| malformed())?;
         let credential_id = URL_SAFE_NO_PAD
@@ -70,9 +73,10 @@ impl StoredCredential {
             backup_state: row.backed_up(),
             aaguid: row
                 .aaguid()
+                .as_str()
                 .and_then(|value| uuid::Uuid::parse_str(value).ok())
                 .map_or([0; 16], |value| *value.as_bytes()),
-            transports: row.transports().map(super::webauthn::parse_transports_csv),
+            transports,
         }))
     }
 }
@@ -599,11 +603,17 @@ pub(super) fn register_raw_key(
         backup_eligible: flags & 8 != 0,
         backup_state: flags & 0x10 != 0,
         aaguid,
-        transports: registration
-            .response
-            .transports
-            .as_ref()
-            .map(|values| values.iter().map(ToString::to_string).collect()),
+        transports: registration.response.transports.as_ref().map_or(
+            JsValue::Undefined,
+            |values| {
+                JsValue::Array(
+                    values
+                        .iter()
+                        .map(|value| JsValue::String(value.to_string().into()))
+                        .collect(),
+                )
+            },
+        ),
     }))
 }
 

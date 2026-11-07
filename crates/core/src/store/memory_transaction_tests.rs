@@ -74,14 +74,15 @@ async fn stateless_transactions_keep_related_identity_records_atomic() {
                     .await?;
                     tx.create_passkey(crate::CreatePasskey {
                         user_id: "owner".into(),
-                        name: None,
+                        name: JsValue::Undefined,
                         credential_id: "credential".into(),
                         public_key: "public".into(),
                         counter: 0,
                         device_type: "singleDevice".into(),
                         backed_up: false,
-                        transports: None,
-                        aaguid: None,
+                        transports: JsValue::Undefined,
+                        created_at: JsValue::Undefined,
+                        aaguid: JsValue::Undefined,
                     })
                     .await?;
                     entered.send(()).unwrap();

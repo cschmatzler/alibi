@@ -123,7 +123,16 @@ async fn check_passkey_names<S: AuthSchema>(
             assert!(registered["session"].is_object());
             let id = registered["id"].as_str().unwrap();
             let wire = native::to_string(&registered).unwrap();
-            assert_eq!(native::parse_value(&wire).unwrap(), registered);
+            let decoded = native::parse_value(&wire).unwrap();
+            assert_eq!(decoded["name"], case["create"]);
+            assert_eq!(decoded["id"], registered["id"]);
+            let created_at = registered["createdAt"].as_date().unwrap();
+            assert_eq!(
+                chrono::DateTime::parse_from_rfc3339(decoded["createdAt"].as_str().unwrap())
+                    .unwrap()
+                    .timestamp_millis(),
+                created_at.timestamp_millis()
+            );
             let renamed = Box::pin(auth.dispatch_endpoint(
                 PasskeyPlugin::update_passkey_endpoint(
                     id,
@@ -156,9 +165,8 @@ async fn check_passkey_names<S: AuthSchema>(
                     .await
                     .unwrap()
                     .unwrap()
-                    .name
-                    .as_ref(),
-                case["list"].as_js_string()
+                    .name,
+                case["list"]
             );
         }
     }

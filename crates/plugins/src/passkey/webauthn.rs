@@ -661,14 +661,23 @@ pub(super) fn extract_registration_metadata(
     })
 }
 
-pub(super) fn transports_to_csv(transports: Option<&[String]>) -> Option<String> {
-    transports
-        .filter(|transports| !transports.is_empty())
-        .map(|transports| transports.join(","))
-}
-
-pub(super) fn parse_transports_csv(transports: &str) -> Vec<String> {
-    transports.split(',').map(str::to_owned).collect()
+pub(super) fn stored_transports(
+    value: &alibi_core::utils::json::JsValue,
+) -> AuthResult<alibi_core::utils::json::JsValue> {
+    use alibi_core::utils::json::{JsString, JsValue};
+    match value {
+        JsValue::Undefined | JsValue::Null => Ok(JsValue::Undefined),
+        JsValue::String(value) => Ok(JsValue::Array(
+            value
+                .code_units()
+                .split(|unit| *unit == u16::from(b','))
+                .map(|units| JsValue::String(JsString::from_code_units(units.to_vec())))
+                .collect(),
+        )),
+        _ => Err(AuthError::internal(
+            "Passkey transports.split is not a function",
+        )),
+    }
 }
 
 pub(super) fn credential_id_from_authentication(authentication: &PublicKeyCredential) -> String {

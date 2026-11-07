@@ -436,16 +436,16 @@ pub trait AuthApiKey: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stati
 /// Trait representing a passkey entity.
 pub trait AuthPasskey: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
     fn id(&self) -> Cow<'_, str>;
-    fn name(&self) -> Option<&crate::utils::json::JsString>;
+    fn name(&self) -> &crate::utils::json::JsValue;
     fn public_key(&self) -> &str;
     fn user_id(&self) -> Cow<'_, str>;
     fn credential_id(&self) -> &str;
     fn counter(&self) -> u64;
     fn device_type(&self) -> &str;
     fn backed_up(&self) -> bool;
-    fn transports(&self) -> Option<&str>;
-    fn created_at(&self) -> Option<DateTime<Utc>>;
-    fn aaguid(&self) -> Option<&str>;
+    fn transports(&self) -> &crate::utils::json::JsValue;
+    fn created_at(&self) -> &crate::utils::json::JsValue;
+    fn aaguid(&self) -> &crate::utils::json::JsValue;
 }
 
 /// Minimal user info for member-related API responses.

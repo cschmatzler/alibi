@@ -146,7 +146,9 @@ pub struct PasskeyAuthenticated {
     pub user: Value,
 }
 
-fn verification_response(output: alibi_core::AuthResponse) -> AuthResult<EndpointResponse> {
+pub(super) fn verification_response(
+    output: alibi_core::AuthResponse,
+) -> AuthResult<EndpointResponse> {
     let body =
         alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&output.body).ok();
     let mut response = if output.status >= 400 {
@@ -282,16 +284,15 @@ impl PasskeyPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let output = self
-            .verify_registration(&call.body_as()?, call, ctx)
+        self.verify_registration(&call.body_as()?, call, ctx)
             .await
-            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
-        verification_response(output)
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)
     }
 
     /// Issue an authentication challenge, optionally limiting browser hints to the signed owner.
     #[must_use]
-    pub fn generate_passkey_authentication_options_endpoint() -> ServerEndpoint<Value> {
+    pub fn generate_passkey_authentication_options_endpoint()
+    -> ServerEndpoint<alibi_core::utils::json::JsValue> {
         ServerEndpoint::new("passkey", "generatePasskeyAuthenticationOptions")
     }
 
@@ -300,12 +301,7 @@ impl PasskeyPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let output = self.generate_authentication_options(call, ctx).await?;
-        let mut response = EndpointResponse::json(&alibi_core::utils::json::from_slice::<
-            alibi_core::utils::json::JsValue,
-        >(&output.body)?)?;
-        response.merge_headers(output.headers);
-        Ok(response)
+        self.generate_authentication_options(call, ctx).await
     }
 
     /// Generate a challenge for registering a credential under the current owner.
@@ -325,22 +321,9 @@ impl PasskeyPlugin {
             .and_then(alibi_core::utils::json::JsValue::as_object)
             .cloned()
             .unwrap_or_default();
-        let output = self
-            .generate_register_options(call, &query, ctx)
+        self.generate_register_options(call, &query, ctx)
             .await
-            .map_err(crate::helpers::unauthorized_if_unauthenticated)?;
-        if output.status >= 400 {
-            let headers = output.headers.clone();
-            let mut response = EndpointResponse::error(crate::endpoint::error_response(output));
-            response.merge_headers(headers);
-            Ok(response)
-        } else {
-            let mut response = EndpointResponse::json(&alibi_core::utils::json::from_slice::<
-                alibi_core::utils::json::JsValue,
-            >(&output.body)?)?;
-            response.merge_headers(output.headers);
-            Ok(response)
-        }
+            .map_err(crate::helpers::unauthorized_if_unauthenticated)
     }
 
     /// Rename a registered credential under its owner's signed session.

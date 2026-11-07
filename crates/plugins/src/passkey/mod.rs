@@ -96,7 +96,9 @@ impl PasskeyPlugin {
                 )
             })
             .collect();
-        self.generate_register_options(req, &query, ctx).await
+        self.generate_register_options(req, &query, ctx)
+            .await?
+            .to_response()
     }
 
     async fn generate_register_options<S: alibi_core::AuthSchema>(
@@ -104,7 +106,7 @@ impl PasskeyPlugin {
         req: &impl alibi_core::session::SessionRequest,
         query: &alibi_core::utils::json::JsObject,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<AuthResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
         let projected_user = session
@@ -138,7 +140,7 @@ impl PasskeyPlugin {
             }
         } else {
             let Some(resolver) = &self.config.registration.resolve_user else {
-                return Ok(AuthResponse::json(
+                return endpoint::verification_response(AuthResponse::json(
                     400,
                     &serde_json::json!({"code":codes::RESOLVE_USER_REQUIRED,"message":"Passkey registration requires either an authenticated session or a resolveUser callback when requireSession is false"}),
                 )?);
@@ -160,13 +162,13 @@ impl PasskeyPlugin {
             {
                 Ok(Some(user)) if !user.id.is_empty() && !user.name.is_empty() => user,
                 Ok(_) => {
-                    return Ok(AuthResponse::json(
+                    return endpoint::verification_response(AuthResponse::json(
                         400,
                         &serde_json::json!({"code":codes::RESOLVED_USER_INVALID,"message":"Resolved user is invalid"}),
                     )?);
                 }
                 Err(error) if registration::is_application_error(&error) => return Err(error),
-                Err(_) => return Ok(AuthResponse::new(500)),
+                Err(_) => return endpoint::verification_response(AuthResponse::new(500)),
             }
         };
         let extensions = if let Some(input) = &self.config.registration.extensions {
@@ -203,7 +205,8 @@ impl PasskeyPlugin {
             ctx,
         )
         .await?;
-        Ok(AuthResponse::json(200, &result)?.with_header("Set-Cookie", cookie_header))
+        Ok(alibi_core::endpoint::EndpointResponse::value(result)
+            .with_header("Set-Cookie", cookie_header))
     }
 
     /// POST /passkey/verify-registration
@@ -216,7 +219,9 @@ impl PasskeyPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        self.verify_registration(&body, req, ctx).await
+        self.verify_registration(&body, req, ctx)
+            .await?
+            .to_response()
     }
 
     async fn verify_registration<S: alibi_core::AuthSchema>(
@@ -224,7 +229,7 @@ impl PasskeyPlugin {
         body: &VerifyRegistrationRequest,
         req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<AuthResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         let session = if self.config.registration.require_session {
             self.registration_session(req, ctx).await?
         } else {
@@ -238,9 +243,10 @@ impl PasskeyPlugin {
                 let token = result
                     .get("session")
                     .and_then(|session_2| session_2.get("token"))
-                    .and_then(alibi_core::utils::json::JsValue::as_str);
-                let response = AuthResponse::json(200, &result)?;
-                if let Some(token) = token {
+                    .and_then(alibi_core::utils::json::JsValue::as_str)
+                    .map(str::to_owned);
+                let response = alibi_core::endpoint::EndpointResponse::value(result);
+                if let Some(token) = token.as_deref() {
                     use alibi_core::utils::cookie_utils::{
                         create_session_cookie_with_max_age, create_session_like_cookie,
                         related_cookie_name, sign_cookie_value, verify_cookie_value,
@@ -249,7 +255,7 @@ impl PasskeyPlugin {
                     let dont_remember = crate::helpers::get_cookie(req, &preference)
                         .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
                         .is_some_and(|value| !value.is_empty());
-                    let mut response = response.with_appended_header(
+                    let mut response = response.with_header(
                         "Set-Cookie",
                         create_session_cookie_with_max_age(
                             Some(token),
@@ -262,7 +268,7 @@ impl PasskeyPlugin {
                         )?,
                     );
                     if dont_remember {
-                        response.headers.append(
+                        response = response.with_header(
                             "Set-Cookie",
                             create_session_like_cookie(
                                 &preference,
@@ -277,7 +283,7 @@ impl PasskeyPlugin {
                     Ok(response)
                 }
             }
-            PasskeyHandlerOutcome::Response(response) => Ok(response),
+            PasskeyHandlerOutcome::Response(response) => endpoint::verification_response(response),
         }
     }
 
@@ -319,14 +325,16 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        self.generate_authentication_options(req, ctx).await
+        self.generate_authentication_options(req, ctx)
+            .await?
+            .to_response()
     }
 
     async fn generate_authentication_options<S: alibi_core::AuthSchema>(
         &self,
         req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<AuthResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
         let projected_user = maybe_user
             .as_ref()
@@ -350,7 +358,8 @@ impl PasskeyPlugin {
         let (result, cookie_header) =
             generate_authenticate_options_core(maybe_user.as_ref(), extensions, &self.config, ctx)
                 .await?;
-        Ok(AuthResponse::json(200, &result)?.with_header("Set-Cookie", cookie_header))
+        Ok(alibi_core::endpoint::EndpointResponse::value(result)
+            .with_header("Set-Cookie", cookie_header))
     }
 
     /// POST /passkey/verify-authentication
@@ -517,6 +526,7 @@ mod tests {
     mod revocation;
     use super::*;
     use crate::test_helpers;
+    use alibi_core::utils::json::JsValue;
     use alibi_core::{CreatePasskey, CreateUser, HttpMethod};
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
@@ -589,15 +599,16 @@ mod tests {
         ctx.database
             .create_passkey(CreatePasskey {
                 user_id: user.id.clone(),
-                name: Some("Existing Key".into()),
+                name: JsValue::String("Existing Key".into()),
                 credential_id: credential_id("cred-existing"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
-                transports: Some("usb,nfc".to_owned()),
+                transports: JsValue::String("usb,nfc".into()),
+                created_at: JsValue::Date(chrono::Utc::now()),
 
-                aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
+                aaguid: JsValue::String("00000000-0000-0000-0000-000000000000".into()),
             })
             .await
             .unwrap();
@@ -700,15 +711,16 @@ mod tests {
         ctx.database
             .create_passkey(CreatePasskey {
                 user_id: user.id.clone(),
-                name: Some("Authenticator".into()),
+                name: JsValue::String("Authenticator".into()),
                 credential_id: credential_id("cred-auth"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
-                transports: Some("internal".to_owned()),
+                transports: JsValue::String("internal".into()),
+                created_at: JsValue::Date(chrono::Utc::now()),
 
-                aaguid: None,
+                aaguid: JsValue::Undefined,
             })
             .await
             .unwrap();
@@ -845,15 +857,16 @@ mod tests {
         ctx.database
             .create_passkey(CreatePasskey {
                 user_id: user.id.clone(),
-                name: None,
+                name: JsValue::Undefined,
                 credential_id: credential_id("cred-list"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
-                transports: None,
+                transports: JsValue::Undefined,
+                created_at: JsValue::Date(chrono::Utc::now()),
 
-                aaguid: Some("00000000-0000-0000-0000-000000000000".to_owned()),
+                aaguid: JsValue::String("00000000-0000-0000-0000-000000000000".into()),
             })
             .await
             .unwrap();
@@ -907,15 +920,16 @@ mod tests {
             .database
             .create_passkey(CreatePasskey {
                 user_id: other.id.clone(),
-                name: Some("Other Key".into()),
+                name: JsValue::String("Other Key".into()),
                 credential_id: credential_id("cred-other-delete"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
-                transports: None,
+                transports: JsValue::Undefined,
+                created_at: JsValue::Date(chrono::Utc::now()),
 
-                aaguid: None,
+                aaguid: JsValue::Undefined,
             })
             .await
             .unwrap();
@@ -936,10 +950,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            preserved.name.as_ref().and_then(|name| name.as_str()),
-            Some("Other Key")
-        );
+        assert_eq!(preserved.name.as_str(), Some("Other Key"));
     }
 
     #[tokio::test]
@@ -964,15 +975,16 @@ mod tests {
             .database
             .create_passkey(CreatePasskey {
                 user_id: other.id.clone(),
-                name: Some("Other Key".into()),
+                name: JsValue::String("Other Key".into()),
                 credential_id: credential_id("cred-other-update"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
                 device_type: "singleDevice".to_owned(),
                 backed_up: false,
-                transports: None,
+                transports: JsValue::Undefined,
+                created_at: JsValue::Date(chrono::Utc::now()),
 
-                aaguid: None,
+                aaguid: JsValue::Undefined,
             })
             .await
             .unwrap();
@@ -1000,10 +1012,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(
-            preserved.name.as_ref().and_then(|name| name.as_str()),
-            Some("Other Key")
-        );
+        assert_eq!(preserved.name.as_str(), Some("Other Key"));
     }
 
     /// Previously persisted ceremonies keep both their codec and original Required policy.

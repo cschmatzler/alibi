@@ -22,17 +22,17 @@
         ]
       },
       "body": {
-        "id": "<v3>",
-        "credentialID": "aG9vay1rZXktNzE",
+        "name": null,
+        "publicKey": "<v3>+<v4>",
         "userId": "<m2>",
-        "publicKey": "<v4>+<v5>",
+        "credentialID": "aG9vay1rZXktNzE",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>",
-        "name": null
+        "aaguid": "<v5>",
+        "id": "<v6>"
       }
     }
   },
@@ -101,17 +101,17 @@
         ]
       },
       "body": {
-        "id": "<v7>",
         "name": "Override name",
-        "credentialID": "aG9vay1rZXktODA",
+        "publicKey": "<v7>/G/G1JGhJUjnjfau+y18LBkMP3jO8/UL",
         "userId": "<m1>",
-        "publicKey": "<v8>/G/G1JGhJUjnjfau+y18LBkMP3jO8/UL",
+        "credentialID": "aG9vay1rZXktODA",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>"
+        "aaguid": "<v5>",
+        "id": "<v8>"
       }
     }
   },
@@ -138,17 +138,17 @@
         ]
       },
       "body": {
-        "id": "<v9>",
-        "credentialID": "aG9vay1rZXktODI",
+        "name": null,
+        "publicKey": "<v9>+BIbVV+jGYUHtiSAXfX63",
         "userId": "<m2>",
-        "publicKey": "<v10>+BIbVV+jGYUHtiSAXfX63",
+        "credentialID": "aG9vay1rZXktODI",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>",
-        "name": null
+        "aaguid": "<v5>",
+        "id": "<v10>"
       }
     }
   },
@@ -161,17 +161,17 @@
         ]
       },
       "body": {
-        "id": "<v11>",
         "name": "Given",
-        "credentialID": "aG9vay1rZXktODM",
+        "publicKey": "<v11>+ZoxCuQgfgMG+gI2EQsGgnu7jQ",
         "userId": "<m1>",
-        "publicKey": "<v12>+ZoxCuQgfgMG+gI2EQsGgnu7jQ",
+        "credentialID": "aG9vay1rZXktODM",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>"
+        "aaguid": "<v5>",
+        "id": "<v12>"
       }
     }
   },
@@ -241,17 +241,17 @@
         ]
       },
       "body": {
-        "id": "<v13>",
         "name": "Override name",
-        "credentialID": "aG9vay1rZXktOTA",
+        "publicKey": "<v13>",
         "userId": "<m2>",
-        "publicKey": "<v14>",
+        "credentialID": "aG9vay1rZXktOTA",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>",
+        "aaguid": "<v5>",
+        "id": "<v14>",
         "user": {
           "id": "<m2>",
           "name": "Native owner",
@@ -260,8 +260,8 @@
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "displayUsername": null,
-          "username": null
+          "username": null,
+          "displayUsername": null
         },
         "session": {
           "id": "<v15>",
@@ -341,17 +341,17 @@
         ]
       },
       "body": {
-        "id": "<v17>",
-        "credentialID": "cGFja2VkLTM",
+        "name": null,
+        "publicKey": "<v17>+Wx0FfL4AzSPLwF+BbnqHa",
         "userId": "<m2>",
-        "publicKey": "<v18>+Wx0FfL4AzSPLwF+BbnqHa",
+        "credentialID": "cGFja2VkLTM",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v6>",
-        "name": null
+        "aaguid": "<v5>",
+        "id": "<v18>"
       }
     }
   }

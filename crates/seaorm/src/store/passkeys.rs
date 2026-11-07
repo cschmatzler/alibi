@@ -5,11 +5,24 @@ use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::PasskeyStore;
 use alibi_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use async_trait::async_trait;
-use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
 };
 use uuid::Uuid;
+
+async fn optional_text<C: ConnectionTrait>(
+    db: &C,
+    value: alibi_core::utils::json::JsValue,
+) -> AuthResult<sea_orm::ActiveValue<Option<String>>> {
+    if value.is_undefined() {
+        return Ok(sea_orm::NotSet);
+    }
+    Ok(Set(crate::additional_fields::prepare_string_value(
+        db,
+        crate::additional_fields::raw_value(&value)?,
+    )
+    .await?))
+}
 
 impl<S> SeaOrmStore<S>
 where
@@ -18,8 +31,9 @@ where
     pub(super) async fn create_passkey_with_connection<C: ConnectionTrait>(
         &self,
         db: &C,
-        input: CreatePasskey,
+        mut input: CreatePasskey,
     ) -> AuthResult<Passkey> {
+        input.normalize_created_at()?;
         let counter = i64::try_from(input.counter)
             .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
@@ -28,17 +42,26 @@ where
                 .generated_id(&self.db, "passkey", "passkey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
-            name: Set(input.name.map(|name| name.to_utf8_binding())),
+            name: optional_text(db, input.name).await?,
             public_key: Set(input.public_key),
             user_id: Set(input.user_id),
             credential_id: Set(input.credential_id),
             counter: Set(crate::Integer(counter)),
             device_type: Set(input.device_type),
             backed_up: Set(input.backed_up),
-            transports: Set(input.transports),
+            transports: optional_text(db, input.transports).await?,
 
-            aaguid: Set(input.aaguid),
-            created_at: Set(Some(Utc::now())),
+            aaguid: optional_text(db, input.aaguid).await?,
+            created_at: match input.created_at {
+                alibi_core::utils::json::JsValue::Undefined => sea_orm::NotSet,
+                alibi_core::utils::json::JsValue::Null => Set(None),
+                alibi_core::utils::json::JsValue::Date(value) => Set(Some(value)),
+                _ => {
+                    return Err(AuthError::not_implemented(
+                        "Non-date passkey SQL timestamps are unsupported",
+                    ));
+                }
+            },
         }
         .insert(db)
         .await

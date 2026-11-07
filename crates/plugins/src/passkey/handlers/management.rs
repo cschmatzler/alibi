@@ -1,6 +1,5 @@
 use super::PasskeyHandlerOutcome;
 use super::PasskeyHandlerResult;
-use super::registration_value;
 use crate::StatusResponse;
 use crate::passkey::types::DeletePasskeyRequest;
 use crate::passkey::types::PasskeyResponse;
@@ -22,14 +21,7 @@ pub(in crate::passkey) async fn list_user_passkeys_core(
     passkeys
         .iter()
         .map(|passkey| {
-            let mut value = registration_value(passkey)?;
-            // Source lists adapter rows, retaining an own SQL NULL property.
-            if passkey.transports.is_none()
-                && let Some(object) = value.as_object_mut()
-            {
-                _ = object.insert("transports".into(), Value::Null);
-            }
-            Ok(value)
+            alibi_core::utils::json::to_js_value(&PasskeyView::from(passkey)).map_err(Into::into)
         })
         .collect()
 }

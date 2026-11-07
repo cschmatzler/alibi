@@ -4,7 +4,6 @@ mod registration_flow;
 
 use super::PasskeyConfig;
 use alibi_core::error::codes;
-use alibi_core::wire::PasskeyView;
 use alibi_core::{AuthContext, AuthError, AuthResult};
 pub(super) use authentication_flow::generate_authenticate_options_core;
 pub(super) use authentication_flow::verify_authentication_core;
@@ -20,6 +19,23 @@ pub(super) type PasskeyHandlerResult<T> = AuthResult<PasskeyHandlerOutcome<T>>;
 pub(super) enum PasskeyHandlerOutcome<T> {
     Success(T),
     Response(alibi_core::AuthResponse),
+}
+
+fn credential_descriptor(
+    passkey: &impl alibi_core::AuthPasskey,
+) -> AuthResult<alibi_core::utils::json::JsValue> {
+    use alibi_core::utils::json::JsValue;
+    Ok(JsValue::Object(
+        [
+            ("id".into(), JsValue::String(passkey.credential_id().into())),
+            ("type".into(), JsValue::String("public-key".into())),
+            (
+                "transports".into(),
+                super::webauthn::stored_transports(passkey.transports())?,
+            ),
+        ]
+        .into(),
+    ))
 }
 
 fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
@@ -75,19 +91,4 @@ fn passkey_authentication_failure<T>() -> PasskeyHandlerResult<T> {
 
 fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
     response_code(401, codes::PASSKEY_NOT_FOUND, "Passkey not found")
-}
-
-// The pinned adapter returns the database's nullable name in passkey rows.
-// Keep this serialization local to passkey endpoints.
-pub(super) fn registration_value(
-    passkey: &alibi_core::Passkey,
-) -> AuthResult<alibi_core::utils::json::JsValue> {
-    use alibi_core::utils::json::{self, JsValue};
-    let mut value = json::to_js_value(&PasskeyView::from(passkey))?;
-    if passkey.name.is_none()
-        && let Some(object) = value.as_object_mut()
-    {
-        _ = object.insert("name".into(), JsValue::Null);
-    }
-    Ok(value)
 }

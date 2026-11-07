@@ -3,7 +3,6 @@ use super::PasskeyHandlerResult;
 use super::challenge_not_found;
 use super::generation_origin;
 use super::passkey_registration_failure;
-use super::registration_value;
 use super::response_code;
 use super::response_null;
 use crate::passkey::PasskeyConfig;
@@ -22,10 +21,8 @@ use crate::passkey::webauthn::extract_registration_metadata;
 use crate::passkey::webauthn::finish_core_registration;
 use crate::passkey::webauthn::generate_ts_user_handle;
 use crate::passkey::webauthn::get_cookie_value;
-use crate::passkey::webauthn::parse_transports_csv;
 use crate::passkey::webauthn::registration_options_json;
 use crate::passkey::webauthn::snapshot_passkey;
-use crate::passkey::webauthn::transports_to_csv;
 use alibi_core::AuthContext;
 use alibi_core::AuthError;
 use alibi_core::AuthPasskey;
@@ -69,19 +66,8 @@ pub(in crate::passkey) async fn generate_register_options_core(
         .collect::<Vec<_>>();
     let exclude_credentials_json = existing_passkeys
         .iter()
-        .map(|passkey| {
-            let mut descriptor = json!({
-                "id": passkey.credential_id(),
-                "type": "public-key",
-            });
-            if let Some(transports) = passkey.transports().map(parse_transports_csv)
-                && let Some(object) = descriptor.as_object_mut()
-            {
-                _ = object.insert("transports".to_owned(), json!(transports));
-            }
-            descriptor
-        })
-        .collect::<Vec<_>>();
+        .map(super::credential_descriptor)
+        .collect::<AuthResult<Vec<_>>>()?;
 
     let default_name = if user.name.is_empty() {
         JsString::from(&user.id)
@@ -208,13 +194,8 @@ pub(in crate::passkey) async fn generate_register_options_core(
             _ = object.insert("extensions".into(), extensions);
         }
     }
-    if let Some(object) = response.as_object_mut() {
-        _ = object.insert(
-            "excludeCredentials".to_owned(),
-            Value::Array(exclude_credentials_json),
-        );
-    }
     let mut response = native_json::to_js_value(&response)?;
+    response["excludeCredentials"] = JsValue::Array(exclude_credentials_json);
     response["user"]["name"] = JsValue::String(user_name);
     response["user"]["displayName"] = JsValue::String(user_display_name);
     Ok((response, cookie))
@@ -420,21 +401,11 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             .get("response")
             .and_then(|response| response.get("transports"))
         {
-            None | Some(JsValue::Null) => Ok(None),
-            Some(JsValue::Array(values)) => match values
-                .iter()
-                .map(|value| {
-                    if value.is_null() {
-                        Ok(String::new())
-                    } else {
-                        value.coerce_string()
-                    }
-                })
-                .collect::<Result<Vec<_>, _>>()
-            {
-                Ok(values) => Ok(Some(values)),
-                Err(_) => Err(AuthError::internal("Invalid transports")),
-            },
+            None | Some(JsValue::Null | JsValue::Undefined) => Ok(None),
+            Some(value @ JsValue::Array(_)) => value
+                .coerce_js_string()
+                .map(Some)
+                .map_err(|_| AuthError::internal("Invalid transports")),
             Some(_) => Err(AuthError::internal("Invalid transports")),
         }
     } else {
@@ -443,6 +414,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
+                .join(",")
+                .into()
         }))
     };
 
@@ -470,15 +443,19 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             .as_ref()
             .and_then(alibi_core::utils::json::JsValue::as_js_string)
             .map(|name| name.trim_matches(crate::passkey::registration::is_name_whitespace))
-            .filter(|name| !name.is_empty()),
+            .filter(|name| !name.is_empty())
+            .map_or(JsValue::Undefined, JsValue::String),
         credential_id,
         public_key: metadata.public_key,
         counter: snapshot.counter,
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
-        transports: None,
+        transports: JsValue::Undefined,
+        created_at: JsValue::Undefined,
 
-        aaguid: metadata.aaguid,
+        aaguid: metadata
+            .aaguid
+            .map_or(JsValue::Undefined, |value| JsValue::String(value.into())),
     };
     let callback = config.registration.after_verification.clone();
     let client_data = response.clone();
@@ -519,22 +496,23 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     }
                     input_2.user_id = user_id;
                 }
-                if input_2.name.is_none() {
+                if input_2.name.is_undefined() {
                     input_2.name = result
                         .name
                         .map(|name| {
                             name.trim_matches(crate::passkey::registration::is_name_whitespace)
                         })
-                        .filter(|name| !name.is_empty());
+                        .filter(|name| !name.is_empty())
+                        .map_or(JsValue::Undefined, JsValue::String);
                 }
             }
         }
         // Source joins transport metadata after the verification callback.
         let transports = transports?;
         input_2.transports = if source_transports {
-            Some(transports.unwrap_or_default().join(","))
+            JsValue::String(transports.unwrap_or_default())
         } else {
-            transports_to_csv(transports.as_deref())
+            transports.map_or(JsValue::Undefined, JsValue::String)
         };
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
@@ -583,6 +561,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                             message: "User not found",
                         })?;
                     let user_id = input.user_id.clone();
+                    input.created_at = JsValue::Date(Utc::now());
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
                         .create_session_record(alibi_core::CreateSession {
@@ -651,7 +630,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     .map_err(|_error| {
                         AuthError::internal("invalid passkey registration transaction result")
                     })?;
-                let mut result = registration_value(&passkey)?;
+                let mut result =
+                    native_json::to_js_value(&alibi_core::wire::PasskeyView::from(&passkey))?;
                 if let Some(object) = result.as_object_mut() {
                     _ = object.insert(
                         "user".into(),
@@ -668,11 +648,16 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         }
     } else {
         match apply_policy(input).await {
-            Ok(input) => ctx
-                .database
-                .create_passkey(input)
-                .await
-                .and_then(|passkey| registration_value(&passkey)),
+            Ok(mut input) => {
+                input.created_at = JsValue::Date(Utc::now());
+                ctx.database
+                    .create_passkey(input)
+                    .await
+                    .and_then(|passkey| {
+                        native_json::to_js_value(&alibi_core::wire::PasskeyView::from(&passkey))
+                            .map_err(Into::into)
+                    })
+            }
             Err(error) => Err(error),
         }
     };

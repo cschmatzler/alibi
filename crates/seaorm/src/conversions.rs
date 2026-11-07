@@ -96,17 +96,35 @@ impl From<&entities::passkey::Model> for Passkey {
     fn from(model: &entities::passkey::Model) -> Self {
         Self {
             id: model.id.clone(),
-            name: model.name.clone().map(Into::into),
+            name: model
+                .name
+                .clone()
+                .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                    alibi_core::utils::json::JsValue::String(value.into())
+                }),
             public_key: model.public_key.clone(),
             user_id: model.user_id.clone(),
             credential_id: model.credential_id.clone(),
             counter: u64::try_from(model.counter.0).unwrap_or_default(),
             device_type: model.device_type.clone(),
             backed_up: model.backed_up,
-            transports: model.transports.clone(),
-            created_at: model.created_at,
+            transports: model
+                .transports
+                .clone()
+                .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                    alibi_core::utils::json::JsValue::String(value.into())
+                }),
+            created_at: model.created_at.map_or(
+                alibi_core::utils::json::JsValue::Null,
+                alibi_core::utils::json::JsValue::Date,
+            ),
 
-            aaguid: model.aaguid.clone(),
+            aaguid: model
+                .aaguid
+                .clone()
+                .map_or(alibi_core::utils::json::JsValue::Null, |value| {
+                    alibi_core::utils::json::JsValue::String(value.into())
+                }),
         }
     }
 }

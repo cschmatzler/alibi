@@ -50,17 +50,17 @@
         ]
       },
       "body": {
-        "id": "<v1>",
         "name": "matrix key",
-        "credentialID": "<v2>",
-        "userId": "<v3>",
-        "publicKey": "<v4>",
+        "publicKey": "<v1>",
+        "userId": "<v2>",
+        "credentialID": "<v3>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v5>"
       }
     }
   },
@@ -73,17 +73,17 @@
         ]
       },
       "body": {
-        "id": "<v6>",
         "name": "matrix key",
-        "credentialID": "<v7>",
-        "userId": "<v3>",
-        "publicKey": "<v8>+<v9>",
+        "publicKey": "<v6>+<v7>",
+        "userId": "<v2>",
+        "credentialID": "<v8>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v9>"
       }
     }
   },
@@ -96,17 +96,17 @@
         ]
       },
       "body": {
-        "id": "<v10>",
         "name": "matrix key",
-        "credentialID": "<v11>",
-        "userId": "<v3>",
-        "publicKey": "<v12>/<v13>",
+        "publicKey": "<v10>/<v11>",
+        "userId": "<v2>",
+        "credentialID": "<v12>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v13>"
       }
     }
   },
@@ -133,17 +133,17 @@
         ]
       },
       "body": {
-        "id": "<v14>",
         "name": "matrix key",
-        "credentialID": "<v15>",
-        "userId": "<v3>",
-        "publicKey": "<v16>/<v17>/",
+        "publicKey": "<v14>/<v15>/",
+        "userId": "<v2>",
+        "credentialID": "<v16>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v17>"
       }
     }
   },
@@ -184,17 +184,17 @@
         ]
       },
       "body": {
-        "id": "<v18>",
         "name": "matrix key",
+        "publicKey": "pAEBAycgBiFYIGa+<v18>",
+        "userId": "<v2>",
         "credentialID": "<v19>",
-        "userId": "<v3>",
-        "publicKey": "pAEBAycgBiFYIGa+<v20>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v20>"
       }
     }
   },
@@ -221,17 +221,17 @@
         ]
       },
       "body": {
-        "id": "<v21>",
         "name": "matrix key",
+        "publicKey": "<v21>",
+        "userId": "<v2>",
         "credentialID": "<v22>",
-        "userId": "<v3>",
-        "publicKey": "<v23>",
         "counter": 1,
         "deviceType": "multiDevice",
         "backedUp": true,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v23>"
       }
     }
   },
@@ -245,82 +245,82 @@
       },
       "body": [
         {
-          "id": "<v1>",
           "name": "matrix key",
-          "credentialID": "<v2>",
-          "userId": "<v3>",
-          "publicKey": "<v4>",
+          "publicKey": "<v1>",
+          "userId": "<v2>",
+          "credentialID": "<v3>",
           "counter": 1,
           "deviceType": "singleDevice",
           "backedUp": false,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v5>"
         },
         {
-          "id": "<v6>",
           "name": "matrix key",
-          "credentialID": "<v7>",
-          "userId": "<v3>",
-          "publicKey": "<v8>+<v9>",
+          "publicKey": "<v6>+<v7>",
+          "userId": "<v2>",
+          "credentialID": "<v8>",
           "counter": 1,
           "deviceType": "singleDevice",
           "backedUp": false,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v9>"
         },
         {
-          "id": "<v10>",
           "name": "matrix key",
-          "credentialID": "<v11>",
-          "userId": "<v3>",
-          "publicKey": "<v12>/<v13>",
+          "publicKey": "<v10>/<v11>",
+          "userId": "<v2>",
+          "credentialID": "<v12>",
           "counter": 1,
           "deviceType": "singleDevice",
           "backedUp": false,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v13>"
         },
         {
-          "id": "<v14>",
           "name": "matrix key",
-          "credentialID": "<v15>",
-          "userId": "<v3>",
-          "publicKey": "<v16>/<v17>/",
+          "publicKey": "<v14>/<v15>/",
+          "userId": "<v2>",
+          "credentialID": "<v16>",
           "counter": 1,
           "deviceType": "singleDevice",
           "backedUp": false,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v17>"
         },
         {
-          "id": "<v18>",
           "name": "matrix key",
+          "publicKey": "pAEBAycgBiFYIGa+<v18>",
+          "userId": "<v2>",
           "credentialID": "<v19>",
-          "userId": "<v3>",
-          "publicKey": "pAEBAycgBiFYIGa+<v20>",
           "counter": 1,
           "deviceType": "singleDevice",
           "backedUp": false,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v20>"
         },
         {
-          "id": "<v21>",
           "name": "matrix key",
+          "publicKey": "<v21>",
+          "userId": "<v2>",
           "credentialID": "<v22>",
-          "userId": "<v3>",
-          "publicKey": "<v23>",
           "counter": 1,
           "deviceType": "multiDevice",
           "backedUp": true,
           "transports": "internal",
           "createdAt": "<date>",
-          "aaguid": "<v5>"
+          "aaguid": "<v4>",
+          "id": "<v23>"
         }
       ]
     }
@@ -401,18 +401,18 @@
           "updatedAt": "<date>",
           "ipAddress": "",
           "userAgent": "",
-          "userId": "<v3>"
+          "userId": "<v2>"
         },
         "user": {
-          "id": "<v3>",
+          "id": "<v2>",
           "name": "Native owner",
           "email": "passkey-matrix@example.com",
           "emailVerified": false,
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "displayUsername": null,
-          "username": null
+          "username": null,
+          "displayUsername": null
         }
       }
     }
@@ -437,18 +437,18 @@
           "updatedAt": "<date>",
           "ipAddress": "",
           "userAgent": "",
-          "userId": "<v3>"
+          "userId": "<v2>"
         },
         "user": {
-          "id": "<v3>",
+          "id": "<v2>",
           "name": "Native owner",
           "email": "passkey-matrix@example.com",
           "emailVerified": false,
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "displayUsername": null,
-          "username": null
+          "username": null,
+          "displayUsername": null
         }
       }
     }

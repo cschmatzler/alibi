@@ -108,10 +108,48 @@ fn canonical_public_rename_output_keeps_utf16() {
 }
 
 #[tokio::test]
+async fn canonical_passkey_optional_fields_keep_memory_undefined() {
+    let fixture = json::parse_value(include_str!(
+        "../../../core/src/store/passkey_field_presence_cases.json"
+    ))
+    .unwrap();
+    let source = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["mode"] == "absent" && case["backend"] == "memory")
+        .unwrap();
+    let store = alibi_core::store::stateless::StatelessStore::default();
+    use alibi_core::store::PasskeyStore;
+    let row = store
+        .create_passkey(alibi_core::CreatePasskey {
+            user_id: "owner".into(),
+            name: JsValue::Undefined,
+            credential_id: "credential".into(),
+            public_key: "public".into(),
+            counter: 0,
+            device_type: "singleDevice".into(),
+            backed_up: false,
+            transports: JsValue::Undefined,
+            created_at: JsValue::Undefined,
+            aaguid: JsValue::Undefined,
+        })
+        .await
+        .unwrap();
+    let output = json::to_js_value(&alibi_core::wire::PasskeyView::from(&row)).unwrap();
+    for field in source["undefined"].as_array().unwrap() {
+        assert_eq!(
+            output.get(field.as_str().unwrap()),
+            Some(&JsValue::Undefined),
+            "{}",
+            field.as_str().unwrap()
+        );
+    }
+}
+
+#[tokio::test]
 async fn canonical_passkey_names_survive_memory_rename_and_list() {
-    use super::handlers::{
-        PasskeyHandlerOutcome, list_user_passkeys_core, registration_value, update_passkey_core,
-    };
+    use super::handlers::{PasskeyHandlerOutcome, list_user_passkeys_core, update_passkey_core};
     let fixture = json::parse_value(include_str!(
         "../../../core/src/store/passkey_name_cases.json"
     ))
@@ -137,19 +175,20 @@ async fn canonical_passkey_names_survive_memory_rename_and_list() {
             .database
             .create_passkey(alibi_core::CreatePasskey {
                 user_id: user.id.clone(),
-                name: Some(case["registration"].as_js_string().unwrap().clone()),
+                name: case["registration"].clone(),
                 credential_id: case["mode"].as_str().unwrap().into(),
                 public_key: "public".into(),
                 counter: 0,
                 device_type: "singleDevice".into(),
                 backed_up: false,
-                transports: None,
-                aaguid: None,
+                transports: JsValue::Undefined,
+                created_at: JsValue::Date(chrono::DateTime::from_timestamp_millis(0).unwrap()),
+                aaguid: JsValue::Undefined,
             })
             .await
             .unwrap();
         assert_eq!(
-            registration_value(&created).unwrap()["name"],
+            json::to_js_value(&alibi_core::wire::PasskeyView::from(&created)).unwrap()["name"],
             case["create"]
         );
         let request: super::types::UpdatePasskeyRequest = json::from_value(JsValue::Object(
@@ -178,14 +217,33 @@ async fn canonical_passkey_names_survive_memory_rename_and_list() {
             case["list"]
         );
         let wire = json::to_string(&listed).unwrap();
-        assert_eq!(json::parse_value(&wire).unwrap(), JsValue::Array(listed));
+        let expected_wire = JsValue::Array(
+            listed
+                .into_iter()
+                .map(|mut row| {
+                    let fields = row.as_object_mut().unwrap();
+                    assert_eq!(fields.shift_remove("transports"), Some(JsValue::Undefined));
+                    assert_eq!(fields.shift_remove("aaguid"), Some(JsValue::Undefined));
+                    assert_eq!(
+                        fields["createdAt"],
+                        JsValue::Date(chrono::DateTime::from_timestamp_millis(0).unwrap())
+                    );
+                    _ = fields.insert(
+                        "createdAt".into(),
+                        JsValue::String("1970-01-01T00:00:00.000Z".into()),
+                    );
+                    row
+                })
+                .collect(),
+        );
+        assert_eq!(json::parse_value(&wire).unwrap(), expected_wire);
         let stored = ctx
             .database
             .get_passkey_by_id(&created.id)
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(stored.name.as_ref(), case["list"].as_js_string());
+        assert_eq!(stored.name, case["list"]);
     }
     assert_eq!(count, 6);
 }

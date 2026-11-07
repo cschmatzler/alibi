@@ -154,8 +154,8 @@ impl TwoFactorStore for StatelessStore {
 
 #[async_trait]
 impl PasskeyStore for StatelessStore {
-    async fn create_passkey(&self, input: CreatePasskey) -> AuthResult<Passkey> {
-        let now = Utc::now();
+    async fn create_passkey(&self, mut input: CreatePasskey) -> AuthResult<Passkey> {
+        input.normalize_created_at()?;
         let record = Passkey {
             id: uuid::Uuid::new_v4().to_string(),
             user_id: input.user_id,
@@ -168,7 +168,7 @@ impl PasskeyStore for StatelessStore {
             transports: input.transports,
 
             aaguid: input.aaguid,
-            created_at: Some(now),
+            created_at: input.created_at,
         };
         _ = self
             .lock()?
@@ -219,7 +219,7 @@ impl PasskeyStore for StatelessStore {
         name: &crate::utils::json::JsString,
     ) -> AuthResult<Passkey> {
         mutate_record(&mut self.lock()?.passkeys, id, |record| {
-            record.name = Some(name.to_owned());
+            record.name = crate::utils::json::JsValue::String(name.clone());
 
             true
         })

@@ -80,11 +80,11 @@ impl<T: AuthInvitation> From<&T> for InvitationView {
 }
 
 /// Public passkey response shape.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct PasskeyView {
     pub id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<crate::utils::json::JsString>,
+    #[serde(default)]
+    pub name: crate::utils::json::JsValue,
     #[serde(rename = "credentialID")]
     pub credential_id: String,
     #[serde(rename = "userId")]
@@ -96,30 +96,67 @@ pub struct PasskeyView {
     pub device_type: String,
     #[serde(rename = "backedUp")]
     pub backed_up: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub transports: Option<String>,
-    #[serde(rename = "createdAt")]
-    pub created_at: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aaguid: Option<String>,
+    #[serde(default)]
+    pub transports: crate::utils::json::JsValue,
+    #[serde(default, rename = "createdAt")]
+    pub created_at: crate::utils::json::JsValue,
+    #[serde(default)]
+    pub aaguid: crate::utils::json::JsValue,
+}
+
+impl Serialize for PasskeyView {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use crate::utils::json::JsValue;
+        JsValue::Object(
+            [
+                ("name".into(), self.name.clone()),
+                (
+                    "publicKey".into(),
+                    JsValue::String(self.public_key.clone().into()),
+                ),
+                (
+                    "userId".into(),
+                    JsValue::String(self.user_id.clone().into()),
+                ),
+                (
+                    "credentialID".into(),
+                    JsValue::String(self.credential_id.clone().into()),
+                ),
+                (
+                    "counter".into(),
+                    crate::utils::json::to_js_value(&self.counter)
+                        .map_err(serde::ser::Error::custom)?,
+                ),
+                (
+                    "deviceType".into(),
+                    JsValue::String(self.device_type.clone().into()),
+                ),
+                ("backedUp".into(), JsValue::Bool(self.backed_up)),
+                ("transports".into(), self.transports.clone()),
+                ("createdAt".into(), self.created_at.clone()),
+                ("aaguid".into(), self.aaguid.clone()),
+                ("id".into(), JsValue::String(self.id.clone().into())),
+            ]
+            .into(),
+        )
+        .serialize(serializer)
+    }
 }
 
 impl<T: AuthPasskey> From<&T> for PasskeyView {
     fn from(pk: &T) -> Self {
         Self {
             id: pk.id().into_owned(),
-            name: pk.name().cloned(),
+            name: pk.name().clone(),
             credential_id: pk.credential_id().to_owned(),
             user_id: pk.user_id().into_owned(),
             public_key: pk.public_key().to_owned(),
             counter: pk.counter(),
             device_type: pk.device_type().to_owned(),
             backed_up: pk.backed_up(),
-            transports: pk.transports().map(str::to_owned),
-            created_at: pk
-                .created_at()
-                .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)),
-            aaguid: pk.aaguid().map(str::to_owned),
+            transports: pk.transports().clone(),
+            created_at: pk.created_at().clone(),
+            aaguid: pk.aaguid().clone(),
         }
     }
 }

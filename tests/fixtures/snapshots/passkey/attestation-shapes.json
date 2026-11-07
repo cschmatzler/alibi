@@ -8,17 +8,17 @@
         ]
       },
       "body": {
-        "id": "<v1>",
         "name": "packed mismatched key",
+        "publicKey": "<v1>/<v2>+O5/a7Zxg",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTYw",
-        "userId": "<v2>",
-        "publicKey": "<v3>/<v4>+O5/a7Zxg",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v5>"
       }
     }
   },
@@ -31,17 +31,17 @@
         ]
       },
       "body": {
-        "id": "<v6>",
         "name": "packed statement alg -7",
+        "publicKey": "<v6>",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTYx",
-        "userId": "<v2>",
-        "publicKey": "<v7>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v7>"
       }
     }
   },
@@ -138,17 +138,17 @@
         ]
       },
       "body": {
-        "id": "<v8>",
         "name": "none on curve 8",
+        "publicKey": "<v8>+<v9>",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTY4",
-        "userId": "<v2>",
-        "publicKey": "<v9>+<v10>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v10>"
       }
     }
   },
@@ -259,17 +259,17 @@
         ]
       },
       "body": {
-        "id": "<v11>",
         "name": "extensions array",
+        "publicKey": "<v11>+j5hEL9tUMQC3",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTc2",
-        "userId": "<v2>",
-        "publicKey": "<v12>+j5hEL9tUMQC3",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v12>"
       }
     }
   },
@@ -282,17 +282,17 @@
         ]
       },
       "body": {
-        "id": "<v13>",
         "name": "extensions text",
+        "publicKey": "<v13>+",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTc3",
-        "userId": "<v2>",
-        "publicKey": "<v14>+",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v14>"
       }
     }
   },
@@ -431,17 +431,17 @@
         ]
       },
       "body": {
-        "id": "<v15>",
         "name": "token binding supported",
+        "publicKey": "<v15>/jNeF+31+apbsFB0",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTEwNA",
-        "userId": "<v2>",
-        "publicKey": "<v16>/jNeF+31+apbsFB0",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "internal",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v16>"
       }
     }
   },
@@ -524,17 +524,17 @@
         ]
       },
       "body": {
-        "id": "<v17>",
         "name": "transports null",
+        "publicKey": "<v17>+nI6z8ArGcNalu+<v18>",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTEyNQ",
-        "userId": "<v2>",
-        "publicKey": "<v18>+nI6z8ArGcNalu+<v19>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v19>"
       }
     }
   },
@@ -547,17 +547,17 @@
         ]
       },
       "body": {
-        "id": "<v20>",
         "name": "transports with a null",
+        "publicKey": "pAEBAycgBiFYIFG/rn+<v20>",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTEyNg",
-        "userId": "<v2>",
-        "publicKey": "pAEBAycgBiFYIFG/rn+<v21>",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "usb,",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v21>"
       }
     }
   },
@@ -570,17 +570,17 @@
         ]
       },
       "body": {
-        "id": "<v22>",
         "name": "transports with an object",
+        "publicKey": "<v22>/<v23>/7",
+        "userId": "<v3>",
         "credentialID": "YXR0ZXN0LTEyNw",
-        "userId": "<v2>",
-        "publicKey": "<v23>/<v24>/7",
         "counter": 1,
         "deviceType": "singleDevice",
         "backedUp": false,
         "transports": "[object Object]",
         "createdAt": "<date>",
-        "aaguid": "<v5>"
+        "aaguid": "<v4>",
+        "id": "<v24>"
       }
     }
   }

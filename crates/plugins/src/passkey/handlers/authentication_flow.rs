@@ -21,7 +21,6 @@ use crate::passkey::webauthn::credential_id_from_authentication;
 use crate::passkey::webauthn::decode_challenge_cookie;
 use crate::passkey::webauthn::finish_core_authentication;
 use crate::passkey::webauthn::get_cookie_value;
-use crate::passkey::webauthn::parse_transports_csv;
 use crate::passkey::webauthn::snapshot_passkey;
 use alibi_core::AuthContext;
 use alibi_core::AuthError;
@@ -36,7 +35,6 @@ use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
 use serde_json::Value;
-use serde_json::json;
 use uuid::Uuid;
 use webauthn_rs::prelude::PublicKeyCredential;
 use webauthn_rs_core::error::WebauthnError;
@@ -46,7 +44,7 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     extensions: Option<Value>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<(Value, String)> {
+) -> AuthResult<(alibi_core::utils::json::JsValue, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
 
     let stored_passkeys = if let Some(user) = maybe_user {
@@ -56,19 +54,8 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     };
     let allow_credentials_json = stored_passkeys
         .iter()
-        .map(|passkey| {
-            let mut descriptor = json!({
-                "id": passkey.credential_id(),
-                "type": "public-key",
-            });
-            if let Some(transports) = passkey.transports().map(parse_transports_csv)
-                && let Some(object) = descriptor.as_object_mut()
-            {
-                _ = object.insert("transports".to_owned(), json!(transports));
-            }
-            descriptor
-        })
-        .collect::<Vec<_>>();
+        .map(super::credential_descriptor)
+        .collect::<AuthResult<Vec<_>>>()?;
 
     // Source's allowCredentials is a browser hint; verification selects the real
     // current stored credential by its ID and authenticates that credential owner.
@@ -121,15 +108,15 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
             _ = object.insert("extensions".into(), extensions);
         }
     }
-    if let Some(object) = response.as_object_mut() {
-        if allow_credentials_json.is_empty() {
-            _ = object.remove("allowCredentials");
-        } else {
-            _ = object.insert(
-                "allowCredentials".to_owned(),
-                Value::Array(allow_credentials_json),
-            );
-        }
+    let mut response = alibi_core::utils::json::to_js_value(&response)?;
+    if allow_credentials_json.is_empty() {
+        _ = response
+            .as_object_mut()
+            .unwrap()
+            .shift_remove("allowCredentials");
+    } else {
+        response["allowCredentials"] =
+            alibi_core::utils::json::JsValue::Array(allow_credentials_json);
     }
     Ok((response, cookie))
 }
@@ -206,7 +193,10 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
         return passkey_not_found();
     };
 
-    let Ok(mut stored) = crate::passkey::raw_none::StoredCredential::from_columns(&passkey) else {
+    let transports = crate::passkey::webauthn::stored_transports(passkey.transports())?;
+    let Ok(mut stored) =
+        crate::passkey::raw_none::StoredCredential::from_columns(&passkey, transports)
+    else {
         return passkey_authentication_failure();
     };
     let Ok(counter) = u32::try_from(passkey.counter()) else {
