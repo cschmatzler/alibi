@@ -45,6 +45,7 @@ mod passkey_hooks;
 mod passkey_matrix;
 mod passkey_presence;
 mod passkey_query;
+mod passkey_raw_optional;
 mod passkey_transports;
 mod password_management_matrix;
 mod passwordless;

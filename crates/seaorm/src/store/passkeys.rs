@@ -19,7 +19,24 @@ async fn optional_text<C: ConnectionTrait>(
     }
     Ok(Set(crate::additional_fields::prepare_string_value(
         db,
-        crate::additional_fields::raw_value(&value)?,
+        if db.get_database_backend() == sea_orm::DbBackend::Sqlite {
+            match &value {
+                alibi_core::utils::json::JsValue::Date(_) => {
+                    return Err(AuthError::internal(
+                        "Date cannot bind to a SQLite text field",
+                    ));
+                }
+                alibi_core::utils::json::JsValue::Number(value) => {
+                    alibi_core::store::adapter::RawFieldValue::Number(*value)
+                }
+                alibi_core::utils::json::JsValue::Bool(value) => {
+                    alibi_core::store::adapter::RawFieldValue::Number(f64::from(*value))
+                }
+                _ => crate::additional_fields::raw_value(&value)?,
+            }
+        } else {
+            crate::additional_fields::raw_value(&value)?
+        },
     )
     .await?))
 }
