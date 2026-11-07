@@ -27,7 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<Alibi<S>> {
 }
 ```
 
-The development version is Alibi `0.12.0`. See [Installation](/installation/) for the library dependency and matching schema generator.
+The development version is Alibi `0.12.1`. See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 
