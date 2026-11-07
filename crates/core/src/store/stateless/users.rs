@@ -345,10 +345,10 @@ impl UserStore<StatelessSchema> for StatelessStore {
         update.apply_adapter_transforms().await?;
         let mut state = self.lock()?;
         let locator = crate::store::memory_user_id::MemoryUserId::string(id);
-        let mut user = state
+        let (index, mut user) = state
             .users
-            .get(&locator)
-            .cloned()
+            .get_full(&locator)
+            .map(|(index, _, user)| (index, user.clone()))
             .ok_or(AuthError::UserNotFound)?;
         let data = update
             .data
@@ -357,11 +357,14 @@ impl UserStore<StatelessSchema> for StatelessStore {
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
         user.apply_user_update(data)?;
+        let identity = crate::store::memory_user_id::MemoryUserId::string(&user.id);
+        if identity != locator && state.users.contains_key(&identity) {
+            return Err(AuthError::not_implemented(
+                "Duplicate UPDATE identity requires a canonical USER row identity API",
+            ));
+        }
         _ = state.users.shift_remove(&locator);
-        _ = state.users.insert(
-            crate::store::memory_user_id::MemoryUserId::string(&user.id),
-            user.clone(),
-        );
+        _ = state.users.shift_insert(index, identity, user.clone());
         Ok(user)
     }
 

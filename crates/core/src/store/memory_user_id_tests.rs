@@ -1142,3 +1142,115 @@ async fn homogeneous_id_sorting_stateless_uses_physical_numbers_and_collated_str
     homogeneous_id_sorting::<StatelessSchema>(&StatelessStore::default(), true).await;
     homogeneous_id_sorting::<StatelessSchema>(&StatelessStore::default(), false).await;
 }
+
+async fn update_preserves_row_order<S: AuthSchema<User = UserView>>(store: &impl UserStore<S>) {
+    use crate::utils::json::{self, JsValue};
+    let fixture = json::parse_value(include_str!("memory_user_update_order_cases.json")).unwrap();
+    assert_eq!(fixture["better_auth"], "1.7.18");
+    for id in ["first", "middle", "last"] {
+        store
+            .create_user(CreateUser {
+                id: Some(id.into()),
+                name: Some("tie".into()),
+                email: Some(format!("{id}@test")),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+    }
+    let cases = fixture["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 4);
+    for (index, case) in cases.iter().enumerate() {
+        let id = case["id"].as_str().unwrap();
+        if index == 0 {
+            store
+                .update_user(
+                    id,
+                    UpdateUser {
+                        email: Some(case["update"]["email"].as_str().unwrap().into()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+        } else {
+            store
+                .update_user_prepared(
+                    id,
+                    crate::store::PreparedUserUpdate {
+                        data: case["update"].as_object().unwrap().clone(),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+        }
+        for (key, params) in [
+            ("ids", ListUsersParams::default()),
+            (
+                "tied",
+                ListUsersParams {
+                    sort_by: Some("name".into()),
+                    sort_direction: Some("asc".into()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "page",
+                ListUsersParams {
+                    offset: Some(1),
+                    limit: Some(1),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let (users, count) = store.list_users(params).await.unwrap();
+            assert_eq!(count, 3, "step {index}/{key}");
+            let ids = JsValue::Array(
+                users
+                    .iter()
+                    .map(|user| JsValue::String(user.id.clone().into()))
+                    .collect(),
+            );
+            assert_eq!(ids, case[key], "step {index}/{key}");
+        }
+        let first = store
+            .get_user_by_id(case["ids"][0].as_str().unwrap())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(first.email.as_deref(), Some("CASE@TEST"));
+    }
+    let collision = store
+        .update_user_prepared(
+            "renamed-first",
+            crate::store::PreparedUserUpdate {
+                data: [("id".into(), JsValue::String("middle".into()))].into(),
+                ..Default::default()
+            },
+        )
+        .await;
+    assert!(matches!(
+        collision,
+        Err(crate::AuthError::NotImplemented(_))
+    ));
+    let (users, count) = store.list_users(ListUsersParams::default()).await.unwrap();
+    assert_eq!(count, 3);
+    assert_eq!(
+        users
+            .iter()
+            .map(|user| user.id.as_str())
+            .collect::<Vec<_>>(),
+        ["renamed-first", "middle", "last"]
+    );
+}
+
+#[tokio::test]
+async fn memory_user_update_order_survives_typed_and_prepared_writes() {
+    update_preserves_row_order::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn stateless_user_update_order_survives_typed_and_prepared_writes() {
+    update_preserves_row_order::<StatelessSchema>(&StatelessStore::default()).await;
+}
