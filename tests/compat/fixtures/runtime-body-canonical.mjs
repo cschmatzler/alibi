@@ -43,6 +43,20 @@ for (const [mode, encoding, value, filename] of [
   )]);
 }
 const cases = [];
+for (const [mode, type] of [
+  ["multipart-file-default-type", undefined],
+  ["multipart-file-empty-type", ""],
+  ["multipart-file-mixed-case-type", "Application/JSON; Charset=UTF-8"],
+  ["multipart-file-non-mime-type", "not a mime type"],
+  ["multipart-file-non-ascii-type", "text/é"],
+  ["multipart-file-tab-type", "text/\tplain"],
+]) {
+  inputs.push([mode, "multipart/form-data; boundary=canonical", Buffer.from(
+    '--canonical\r\nContent-Disposition: form-data; name="value"; filename="file.txt"\r\n' +
+    (type === undefined ? "" : `Content-Type: ${type}\r\n`) +
+    "\r\nhello\r\n--canonical--\r\n"
+  )]);
+}
 for (const [mode, content_type, bytes] of inputs) {
   const request = new Request("https://body.test", { method: "POST", headers: { "content-type": content_type }, body: bytes });
   const expected = await getBody(request);
@@ -54,7 +68,7 @@ for (const [mode, content_type, bytes] of inputs) {
   }
   cases.push({ mode, content_type, bytes: [...bytes], expected, wire: JSON.stringify(expected), files });
 }
-assert.equal(cases.length, 25);
+assert.equal(cases.length, 31);
 await writeFile(new URL("../../../src/runtime/body_canonical_cases.json", import.meta.url),
   JSON.stringify({ better_auth: auth.version, better_call: pkg.version, cases }) + "\n");
 console.log(cases.length + " actual Better Call" + pkg.version + " body cases under Better Auth" + auth.version);

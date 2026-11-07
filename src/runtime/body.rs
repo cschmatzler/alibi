@@ -88,7 +88,18 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 continue;
             };
             let filename = field.file_name().map(str::to_owned);
-            let content_type = field.content_type().map(ToString::to_string);
+            // File.type normalizes the raw header, not a parsed MIME value.
+            let content_type = field.headers().get("content-type").map_or_else(
+                || "text/plain".to_owned(),
+                |header| {
+                    let value = header.to_str().unwrap_or("").trim_matches([' ', '\t']);
+                    if value.bytes().all(|byte| (0x20..=0x7e).contains(&byte)) {
+                        value.to_ascii_lowercase()
+                    } else {
+                        String::new()
+                    }
+                },
+            );
             let base64 = field
                 .headers()
                 .get("content-transfer-encoding")
@@ -109,7 +120,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                     name.clone(),
                     alibi_core::types::MultipartFile {
                         filename,
-                        content_type,
+                        content_type: Some(content_type),
                         bytes,
                     },
                 );
@@ -203,7 +214,7 @@ mod canonical_tests {
         assert_eq!(fixture["better_auth"], "1.7.18");
         assert_eq!(fixture["better_call"], "1.4.5");
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 25);
+        assert_eq!(cases.len(), 31);
         for case in cases {
             let mode = case["mode"].as_str().unwrap();
             let content_type = case["content_type"].as_str().unwrap();
