@@ -40,7 +40,12 @@ where
                     field,
                     crate::additional_fields::prepare_string_value(
                         exec,
-                        if exec.engine() == crate::pool::Engine::Sqlite {
+                        if exec.engine() == crate::pool::Engine::Postgres {
+                            alibi_core::store::postgres_parameter::text_parameter(value)?.map_or(
+                                alibi_core::store::adapter::RawFieldValue::Null,
+                                alibi_core::store::adapter::RawFieldValue::Text,
+                            )
+                        } else if exec.engine() == crate::pool::Engine::Sqlite {
                             match value {
                                 alibi_core::utils::json::JsValue::Date(_) => {
                                     return Err(AuthError::internal(

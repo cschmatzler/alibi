@@ -19,7 +19,12 @@ async fn optional_text<C: ConnectionTrait>(
     }
     Ok(Set(crate::additional_fields::prepare_string_value(
         db,
-        if db.get_database_backend() == sea_orm::DbBackend::Sqlite {
+        if db.get_database_backend() == sea_orm::DbBackend::Postgres {
+            alibi_core::store::postgres_parameter::text_parameter(&value)?.map_or(
+                alibi_core::store::adapter::RawFieldValue::Null,
+                alibi_core::store::adapter::RawFieldValue::Text,
+            )
+        } else if db.get_database_backend() == sea_orm::DbBackend::Sqlite {
             match &value {
                 alibi_core::utils::json::JsValue::Date(_) => {
                     return Err(AuthError::internal(

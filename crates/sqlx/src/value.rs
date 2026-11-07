@@ -136,6 +136,8 @@ pub enum ColumnKind {
     Boolean,
     /// Timestamps, bytes, UUIDs and custom values: bound unchanged.
     Other,
+    /// Timezone-aware timestamps, bound as PostgreSQL `TIMESTAMPTZ`.
+    Timestamp,
     /// UTC wall-clock timestamps, bound as PostgreSQL `TIMESTAMP`.
     NaiveTimestamp,
 }
@@ -212,7 +214,7 @@ sqlx_value!(
     f32 => Float, Float,
     f64 => Double, Double,
     Vec<u8> => Bytes, Other,
-    DateTime<Utc> => Timestamp, Other,
+    DateTime<Utc> => Timestamp, Timestamp,
     NaiveDateTime => NaiveTimestamp, NaiveTimestamp,
     uuid::Uuid => Uuid, Other,
 );

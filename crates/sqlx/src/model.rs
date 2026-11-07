@@ -225,7 +225,7 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
             && M::PROVIDER_VERIFICATION_COLUMN.is_some()
             && matches!(
                 M::column_kind(column),
-                ColumnKind::Other | ColumnKind::NaiveTimestamp
+                ColumnKind::Other | ColumnKind::Timestamp | ColumnKind::NaiveTimestamp
             )
             && M::FIELD_COLUMNS.iter().any(|(field, physical)| {
                 physical == column && matches!(*field, "created_at" | "updated_at" | "ban_expires")

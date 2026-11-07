@@ -3,11 +3,14 @@ use alibi::store::{PasskeyStore, UserStore};
 use alibi::utils::json::{self as native, JsValue};
 
 backend_tests!(passkey_raw_optional_values_match_actual_adapter);
+postgres_tests!(passkey_raw_optional_values_match_actual_adapter);
 
 async fn check_raw_values(store: &impl PasskeyStore, backend: &str) -> TestResult {
-    let fixture = native::parse_value(include_str!(
-        "../../../../crates/core/src/store/passkey_raw_optional_cases.json"
-    ))?;
+    let fixture = native::parse_value(if backend == "postgres" {
+        include_str!("../../../../crates/core/src/store/passkey_postgres_raw_cases.json")
+    } else {
+        include_str!("../../../../crates/core/src/store/passkey_raw_optional_cases.json")
+    })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     let mut count = 0;
     for case in fixture["cases"]
@@ -70,7 +73,7 @@ async fn check_raw_values(store: &impl PasskeyStore, backend: &str) -> TestResul
         let persisted = store.get_passkey_by_id(&row.id).await?.unwrap();
         assert_eq!(native::to_js_value(&persisted)?[field], expected);
     }
-    assert_eq!(count, 18);
+    assert_eq!(count, if backend == "postgres" { 30 } else { 18 });
     Ok(())
 }
 
@@ -84,7 +87,15 @@ async fn passkey_raw_optional_values_match_actual_adapter<B: Backend>(db: Db) ->
             ..Default::default()
         })
         .await?;
-    check_raw_values(&store, "sqlite").await?;
+    check_raw_values(
+        &store,
+        if db.raw.is_postgres() {
+            "postgres"
+        } else {
+            "sqlite"
+        },
+    )
+    .await?;
     B::close(connection).await
 }
 
