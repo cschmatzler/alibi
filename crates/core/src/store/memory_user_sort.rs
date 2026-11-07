@@ -120,7 +120,7 @@ impl<F: Fn(usize, usize) -> Ordering> Sort<F> {
         let (mut base_a, mut length_a) = self.runs[at];
         let (base_b, mut length_b) = self.runs[at + 1];
         self.runs[at].1 += length_b;
-        self.runs.remove(at + 1);
+        _ = self.runs.remove(at + 1);
         let skip = gallop(
             &self.work,
             self.work[base_b],
