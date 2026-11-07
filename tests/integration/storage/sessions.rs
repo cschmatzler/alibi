@@ -136,7 +136,10 @@ async fn session_cancel_preserves_default_wire_error_and_transaction_rollback<B:
             );
             assert!(store.get_session("cancel-token").await?.is_none());
             assert_eq!(
-                store.get_user_by_email(email).await?.is_none(),
+                store
+                    .get_user_by_email(&alibi::utils::json::JsString::from(email))
+                    .await?
+                    .is_none(),
                 in_transaction
             );
             B::close(connection).await?;

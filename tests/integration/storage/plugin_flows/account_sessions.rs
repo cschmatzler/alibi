@@ -37,7 +37,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
                 .store()
                 .create_account(CreateAccount {
                     user_id: user.clone(),
-                    account_id: format!("remote-{user}"),
+                    account_id: format!("remote-{user}").into(),
                     provider_id: "google".into(),
                     access_token: Some("private-access".into()),
                     refresh_token: Some("private-refresh".into()),

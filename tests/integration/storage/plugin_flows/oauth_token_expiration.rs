@@ -53,7 +53,7 @@ async fn oauth_configured_token_lifetimes_survive_refresh_rotation<B: Backend>(
         };
         let mut params = OAuthTokenIssueParams::new(client.clone(), scopes);
         if with_user {
-            params.user = Some(auth.context().trusted_user_view(&user));
+            params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         }
         let issued = provider
             .issue_tokens(auth.context(), &call, Some("urn:fixture:server"), &params)

@@ -173,9 +173,12 @@ async fn server_admin_get_user_validates_query_and_rejects_stale_admin_authority
             ]
         );
         let decoded = output.decode()?;
-        assert_eq!(decoded.values().get("id"), Some(&json!(target)));
+        assert_eq!(decoded.values().get("id"), Some(&json!(target).into()));
         let value = output.value();
-        assert_eq!(value.get("id"), Some(&JsValue::String(target.clone())));
+        assert_eq!(
+            value.get("id"),
+            Some(&JsValue::String(target.clone().into()))
+        );
         assert_eq!(value.get("role"), Some(&JsValue::String("user".into())));
         for private in ["password", "token", "user"] {
             assert!(value.get(private).is_none());

@@ -157,10 +157,13 @@ async fn server_admin_impersonate_user_publishes_usable_signed_session<B: Backen
         let session = output.value().get("session").unwrap();
         let token = session.get("token").and_then(JsValue::as_str).unwrap();
         assert_ne!(token, admin_token);
-        assert_eq!(session.get("userId"), Some(&JsValue::String(id.clone())));
+        assert_eq!(
+            session.get("userId"),
+            Some(&JsValue::String(id.clone().into()))
+        );
         assert_eq!(
             session.get("impersonatedBy"),
-            Some(&JsValue::String(admin_id.clone()))
+            Some(&JsValue::String(admin_id.clone().into()))
         );
         assert_eq!(output.headers().get("x-admin-principal"), Some(&admin_id));
         let stored = auth

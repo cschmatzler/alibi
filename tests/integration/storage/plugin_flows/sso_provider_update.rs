@@ -234,7 +234,10 @@ async fn sso_saml_update_merges_nested_credentials_and_guards_linked_identity<B:
     assert_eq!(completed.status, 302);
     assert!(
         store
-            .get_account("saml-update-provider", "saml-updated-user@example.test")
+            .get_account(
+                "saml-update-provider",
+                &"saml-updated-user@example.test".into()
+            )
             .await?
             .is_some()
     );

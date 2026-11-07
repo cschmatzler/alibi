@@ -62,9 +62,9 @@ impl OAuthUserInfoHandler for CookieIssuerProfile {
         _: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         Ok(OAuthUserInfoResponse {
-            user_output: None,
-            user: self.0.clone(),
-            data: json!({}),
+            account_subject: None,
+            user: self.0.public_profile(true),
+            data: json!({"sub":self.0.id}).into(),
         })
     }
 }
@@ -150,7 +150,7 @@ async fn setup_user_with_account<S: alibi::AuthSchema>(
         .create_account(CreateAccount {
             additional_fields: Default::default(),
             user_id: user_id.clone(),
-            account_id: format!("{provider}-account-id"),
+            account_id: format!("{provider}-account-id").into(),
             provider_id: provider.to_owned(),
             access_token,
             refresh_token,
@@ -223,8 +223,8 @@ async fn issue_account_cookie<S: alibi::AuthSchema>(
     provider.get_user_info = Some(Arc::new(CookieIssuerProfile(OAuthUserInfo {
         additional_fields: Default::default(),
         id: account.account_id().to_owned(),
-        email: user.email().unwrap().to_owned(),
-        name: user.name().map(str::to_owned),
+        email: user.email().unwrap().into(),
+        name: user.name().map(Into::into),
         image: None,
         email_verified: true,
     })));
@@ -373,22 +373,27 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         allowed_request_params: Vec::new(),
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
-            Ok(OAuthUserInfo {
-                additional_fields: Default::default(),
-                id: (*(v).get("sub").unwrap_or(&serde_json::Value::Null))
-                    .as_str()
-                    .unwrap_or("mock-user-id-123")
-                    .to_owned(),
-                email: (*(v).get("email").unwrap_or(&serde_json::Value::Null))
-                    .as_str()
-                    .unwrap_or("unknown@example.com")
-                    .to_owned(),
-                name: (*(v).get("name").unwrap_or(&serde_json::Value::Null))
-                    .as_str()
-                    .map(String::from),
-                image: None,
-                email_verified: true,
-            })
+            let mut fields = alibi::utils::json::JsObject::new();
+            _ = fields.insert(
+                "id".into(),
+                v.get("sub").cloned().unwrap_or_else(|| {
+                    alibi::utils::json::JsValue::String("mock-user-id-123".into())
+                }),
+            );
+            _ = fields.insert(
+                "email".into(),
+                v.get("email").cloned().unwrap_or_else(|| {
+                    alibi::utils::json::JsValue::String("unknown@example.com".into())
+                }),
+            );
+            if let Some(name) = v.get("name") {
+                _ = fields.insert("name".into(), name.clone());
+            }
+            _ = fields.insert(
+                "emailVerified".into(),
+                alibi::utils::json::JsValue::Bool(true),
+            );
+            Ok(fields)
         }),
         get_user_info: None,
         refresh_access_token: None,
@@ -634,7 +639,7 @@ mod tests {
         let foreign_account = db
             .create_account(CreateAccount {
                 user_id: foreign_user.id().to_string(),
-                provider_id: "google".into(),
+                provider_id: "google".to_owned(),
                 account_id: "foreign-subject".into(),
                 access_token: Some("foreign-access-token".into()),
                 refresh_token: Some("foreign-refresh-token".into()),
@@ -1272,7 +1277,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: Default::default(),
                 user_id: user_id.clone(),
-                account_id: "google-id".to_owned(),
+                account_id: "google-id".into(),
                 provider_id: "google".to_owned(),
                 access_token: Some("google-token".to_owned()),
                 refresh_token: None,
@@ -1288,7 +1293,7 @@ mod tests {
         db.create_account(CreateAccount {
             additional_fields: Default::default(),
             user_id: user_id.clone(),
-            account_id: "github-id".to_owned(),
+            account_id: "github-id".into(),
             provider_id: "github".to_owned(),
             access_token: Some("github-token".to_owned()),
             refresh_token: None,
@@ -1363,7 +1368,7 @@ mod tests {
         db.create_account(CreateAccount {
             additional_fields: Default::default(),
             user_id: user.id().to_string(),
-            account_id: "old-github-id".to_owned(),
+            account_id: "old-github-id".into(),
             provider_id: "github".to_owned(),
             access_token: Some("old-token".to_owned()),
             refresh_token: None,
@@ -1582,7 +1587,7 @@ mod tests {
 
                 // Verify the user was created and tokens are stored encrypted
                 let user = db
-                    .get_user_by_email("newuser@example.com")
+                    .get_user_by_email(&"newuser@example.com".into())
                     .await
                     .unwrap()
                     .expect("User should have been created");

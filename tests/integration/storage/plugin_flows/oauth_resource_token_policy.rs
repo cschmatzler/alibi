@@ -108,7 +108,7 @@ async fn oauth_resource_token_policy_controls_lifetimes_claims_and_signing<B: Ba
         params.access_token_claims =
             Some(json!({"role":"per-request","requestOnly":true,"cnf":{"jkt":"injected"}}));
         if with_user {
-            params.user = Some(auth.context().trusted_user_view(&user));
+            params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         }
         let mint = if name == "scope-cap" {
             OAuthProviderPlugin::with_config(OAuthProviderConfig {

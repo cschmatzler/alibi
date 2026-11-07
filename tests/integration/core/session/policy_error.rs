@@ -33,6 +33,100 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn policy_store_forwards_canonical_prepared_updates_to_physical_and_transaction_hooks() {
+        use alibi::seaorm::{DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext};
+        use alibi::store::PreparedUserUpdate;
+        use alibi::utils::json::{JsObject, JsString, JsValue};
+        struct Observe(Arc<std::sync::Mutex<Vec<JsObject>>>);
+        #[async_trait::async_trait]
+        impl DatabaseHooks<Schema, SeaOrmBackend> for Observe {
+            async fn before_update_user(
+                &self,
+                _: &str,
+                data: &mut JsObject,
+                _: &SeaOrmHookContext<'_>,
+            ) -> alibi::AuthResult<HookControl> {
+                self.0.lock().unwrap().push(data.clone());
+                Ok(HookControl::Continue)
+            }
+        }
+        let config = AuthConfig::new("prepared-policy-store-secret-at-least-32-characters");
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await
+            .unwrap();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let raw =
+            Arc::new(SeaOrmStore::<Schema>::new(config, database).hook(Observe(seen.clone())));
+        let user = raw
+            .create_user(CreateUser::new().with_email("prepared-policy@fixture.test"))
+            .await
+            .unwrap();
+        let store = PolicyStore {
+            inner: raw.clone(),
+            reject: Arc::new(AtomicBool::new(false)),
+            rejected_reads: Arc::new(AtomicUsize::new(0)),
+        };
+        let data: JsObject = [
+            ("name".into(), JsValue::Number(42.0)),
+            (
+                "image".into(),
+                JsValue::String(JsString::from_code_units(vec![0xd800])),
+            ),
+            ("ownUndefined".into(), JsValue::Undefined),
+            (
+                "ownDate".into(),
+                JsValue::Date(chrono::DateTime::from_timestamp_millis(42).unwrap()),
+            ),
+        ]
+        .into();
+        let prepared = PreparedUserUpdate {
+            data: data.clone(),
+            ..Default::default()
+        };
+        let updated = store
+            .update_user_prepared(&user.id(), prepared.clone())
+            .await
+            .unwrap();
+        assert_eq!(updated.name(), Some("42"));
+        assert_eq!(
+            raw.get_user_by_id(&user.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .name(),
+            Some("42")
+        );
+        let id = user.id().into_owned();
+        let rollback: alibi::AuthResult<()> = alibi::store::transaction(&store, move |tx| {
+            Box::pin(async move {
+                let mut prepared = prepared;
+                _ = prepared.data.insert("name".into(), JsValue::Number(43.0));
+                let updated = tx.update_user_prepared(&id, prepared).await?;
+                assert_eq!(updated.name(), Some("43"));
+                assert_eq!(tx.get_user_by_id(&id).await?.unwrap().name(), Some("43"));
+                Err(alibi::AuthError::internal("force prepared update rollback"))
+            })
+        })
+        .await;
+        assert!(rollback.is_err());
+        assert_eq!(
+            raw.get_user_by_id(&user.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .name(),
+            Some("42")
+        );
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 2);
+        assert_eq!(seen[0], data);
+        let mut transactional = data;
+        _ = transactional.insert("name".into(), JsValue::Number(43.0));
+        assert_eq!(seen[1], transactional);
+    }
+
+    #[tokio::test]
     async fn explicit_store_policy_reaches_get_session_and_nested_middleware_still_rejects_authentication()
      {
         let config =

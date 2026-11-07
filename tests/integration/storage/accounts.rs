@@ -66,7 +66,7 @@ async fn independent_connections_admit_duplicate_account_rows_without_selecting_
     }
     assert!(matches!(
         second
-            .get_account("gitlab", "shared-provider-identity")
+            .get_account("gitlab", &"shared-provider-identity".into())
             .await,
         Err(AuthError::Database(DatabaseError::AmbiguousAccount { .. }))
     ));

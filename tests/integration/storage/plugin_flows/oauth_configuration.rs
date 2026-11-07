@@ -23,41 +23,34 @@ impl alibi::plugins::oauth::OAuthUserInfoHandler for RawProfile {
         _: alibi::plugins::oauth::OAuthUserInfoRequest,
     ) -> Result<alibi::plugins::oauth::OAuthUserInfoResponse, String> {
         Ok(alibi::plugins::oauth::OAuthUserInfoResponse {
-            user: alibi::plugins::oauth::OAuthUserInfo {
-                id: "raw-oauth-id".into(),
-                email: "mapping@example.test".into(),
-                name: Some("Initial".into()),
-                image: None,
-                email_verified: false,
-                additional_fields: Default::default(),
-            },
-            data: json!({"id":"raw-oauth-id"}),
-            user_output: Some(
-                [
-                    ("id".into(), json!("raw-oauth-id")),
-                    ("email".into(), json!("mapping@example.test")),
-                    (
-                        "name".into(),
-                        if self.0.load(std::sync::atomic::Ordering::SeqCst) == 2 {
-                            json!({"invalid":"scalar"})
-                        } else {
-                            json!(37 + self.0.load(std::sync::atomic::Ordering::SeqCst))
-                        },
-                    ),
-                    (
-                        "image".into(),
-                        json!(self.0.load(std::sync::atomic::Ordering::SeqCst) == 1),
-                    ),
-                    (
-                        "emailVerified".into(),
-                        json!(u8::from(
-                            self.0.load(std::sync::atomic::Ordering::SeqCst) == 1
-                        )),
-                    ),
-                ]
-                .into_iter()
-                .collect(),
-            ),
+            account_subject: None,
+            data: json!({"id":"raw-oauth-id"}).into(),
+            user: [
+                ("id".into(), json!("raw-oauth-id").into()),
+                ("email".into(), json!("mapping@example.test").into()),
+                (
+                    "name".into(),
+                    if self.0.load(std::sync::atomic::Ordering::SeqCst) == 2 {
+                        json!({"invalid":"scalar"})
+                    } else {
+                        json!(37 + self.0.load(std::sync::atomic::Ordering::SeqCst))
+                    }
+                    .into(),
+                ),
+                (
+                    "image".into(),
+                    json!(self.0.load(std::sync::atomic::Ordering::SeqCst) == 1).into(),
+                ),
+                (
+                    "emailVerified".into(),
+                    json!(u8::from(
+                        self.0.load(std::sync::atomic::Ordering::SeqCst) == 1
+                    ))
+                    .into(),
+                ),
+            ]
+            .into_iter()
+            .collect(),
         })
     }
 }
@@ -66,12 +59,12 @@ impl alibi::plugins::oauth::OAuthUserInfoHandler for RawProfile {
 impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
-        profile: Value,
-    ) -> Result<alibi::field_policy::FieldOutput, String> {
+        profile: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         assert_eq!(profile["id"], "raw-oauth-id");
         Ok([
-            ("id".into(), json!("foreign-presentation-id")),
-            ("name".into(), json!("Application Name")),
+            ("id".into(), json!("foreign-presentation-id").into()),
+            ("name".into(), json!("Application Name").into()),
         ]
         .into_iter()
         .collect())
@@ -80,15 +73,18 @@ impl OAuthProfileMapper for Mapper {
 struct AccountKey(&'static str);
 #[async_trait]
 impl OAuthAccountKeyResolver for AccountKey {
-    async fn resolve(&self, context: OAuthAccountKeyContext) -> Result<Value, String> {
+    async fn resolve(
+        &self,
+        context: OAuthAccountKeyContext,
+    ) -> Result<alibi::utils::json::JsValue, String> {
         assert_eq!(context.profile["id"], "raw-oauth-id");
         assert_eq!(
             context.tokens.access_token.as_deref(),
             Some("access-from-grant")
         );
         match self.0 {
-            "custom" => Ok(json!("tenant:raw-oauth-id")),
-            "invalid" => Ok(Value::Null),
+            "custom" => Ok(json!("tenant:raw-oauth-id").into()),
+            "invalid" => Ok(alibi::utils::json::JsValue::Null),
             _ => Err("private account resolver failure".into()),
         }
     }
@@ -203,14 +199,14 @@ async fn generic_oauth_fallback_mapping_and_account_authority<B: Backend>(db: Db
                 assert_eq!(db.count(table).await?, 0);
             }
         } else {
-            assert_eq!(destination.path(), "/done", "{mode}");
+            assert_eq!(destination.path(), "/done", "{mode}: {destination}");
             authenticated(&auth, &cookies(&response), "mapping@example.test").await;
             if mode == "scalars" {
                 assert_eq!(
                     db.text("SELECT \"name\" FROM \"user\"", &[])
                         .await?
                         .as_deref(),
-                    Some("Initial")
+                    Some("37")
                 );
                 reject_raw.store(1, std::sync::atomic::Ordering::SeqCst);
                 let (authorization, cookie) = super::oauth_profiles::begin(&auth, "generic").await;

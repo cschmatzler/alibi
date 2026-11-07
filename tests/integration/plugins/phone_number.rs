@@ -161,7 +161,11 @@ mod tests {
                 );
                 let response = auth.handle_request(req).await.unwrap();
                 let payload: Value = serde_json::from_slice(&response.body).unwrap();
-                let stored = auth.store().get_user_by_email(&email).await.unwrap();
+                let stored = auth
+                    .store()
+                    .get_user_by_email(&alibi::utils::json::JsString::from(&email))
+                    .await
+                    .unwrap();
                 if instance == "enabled" && rejected {
                     assert_eq!(response.status, 400);
                     assert_eq!(
@@ -267,7 +271,7 @@ mod tests {
                 assert_eq!(response.status, 400, "raw phone number {literal}");
                 assert!(
                     auth.store()
-                        .get_user_by_email(&email)
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&email))
                         .await
                         .unwrap()
                         .is_none()
@@ -278,7 +282,7 @@ mod tests {
             assert_eq!(response.status, 200);
             let user = auth
                 .store()
-                .get_user_by_email(&email)
+                .get_user_by_email(&alibi::utils::json::JsString::from(&email))
                 .await
                 .unwrap()
                 .unwrap();

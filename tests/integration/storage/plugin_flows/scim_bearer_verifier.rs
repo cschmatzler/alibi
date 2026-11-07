@@ -29,7 +29,7 @@ impl<S: AuthSchema> ScimBearerTokenVerifier<S> for Verifier {
         );
         self.observed.lock().unwrap().push(input.token.clone());
         let owner = database
-            .get_user_by_email("verifier-owner@example.com")
+            .get_user_by_email(&"verifier-owner@example.com".into())
             .await?
             .ok_or_else(|| alibi::AuthError::internal("owner missing"))?;
         _ = database

@@ -105,7 +105,7 @@ async fn server_profile_cache_renews_owned_account_cookie<B: Backend>(db: Db) ->
     assert_eq!(db.tables(&["account", "session"]).await?, rows);
     assert_eq!(
         auth.store()
-            .get_user_by_email("social@example.com")
+            .get_user_by_email(&"social@example.com".into())
             .await?
             .unwrap()
             .name(),
@@ -358,15 +358,15 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
         let mut user = social.profile.user.lock().unwrap();
         drop(
             user.additional_fields
-                .insert("role".into(), json!("member")),
+                .insert("role".into(), json!("member").into()),
         );
         drop(
             user.additional_fields
-                .insert("email".into(), json!("ignored@example.com")),
+                .insert("email".into(), json!("ignored@example.com").into()),
         );
         drop(
             user.additional_fields
-                .insert("unregistered".into(), json!("ignored")),
+                .insert("unregistered".into(), json!("ignored").into()),
         );
     }
     trace.response("registered with fields", &sign_in(&auth, "").await);
@@ -385,7 +385,7 @@ async fn provider_supplied_fields_and_identity_denials<B: Backend>(db: Db) -> Te
         .lock()
         .unwrap()
         .additional_fields
-        .insert("role".into(), json!("owner"));
+        .insert("role".into(), json!("owner").into());
     trace.response("returning with fields", &sign_in(&auth, "").await);
     assert_eq!(
         db.text(

@@ -186,8 +186,11 @@ async fn server_admin_update_user_preserves_authority_and_targets_mutations<B: B
                 options(&admin),
             )
             .await?;
-        assert_eq!(output.decode()?.values().get("id"), Some(&json!(id)));
-        assert_eq!(output.value().get("id"), Some(&JsValue::String(id.clone())));
+        assert_eq!(output.decode()?.values().get("id"), Some(&json!(id).into()));
+        assert_eq!(
+            output.value().get("id"),
+            Some(&JsValue::String(id.clone().into()))
+        );
         assert!(output.value().get("user").is_none());
         assert!(output.value().get("password").is_none());
         for (key, value) in data.as_object().unwrap() {

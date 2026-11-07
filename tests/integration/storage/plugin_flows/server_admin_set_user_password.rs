@@ -53,7 +53,7 @@ async fn server_admin_set_user_password_creates_or_replaces_credentials<B: Backe
             auth.store()
                 .create_account(CreateAccount {
                     user_id: owner.clone(),
-                    account_id: format!("remote-{owner}"),
+                    account_id: format!("remote-{owner}").into(),
                     provider_id: "mock".into(),
                     access_token: Some("private-access".into()),
                     refresh_token: Some("private-refresh".into()),

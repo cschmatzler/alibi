@@ -135,11 +135,11 @@ async fn server_admin_stop_impersonating_restores_owner_and_remember_policy<B: B
         assert_eq!(stopped.decode()?.user.id, admin_id);
         assert_eq!(
             stopped.value().get("user").unwrap().get("id"),
-            Some(&JsValue::String(admin_id.clone()))
+            Some(&JsValue::String(admin_id.clone().into()))
         );
         assert_eq!(
             stopped.value().get("session").unwrap().get("token"),
-            Some(&JsValue::String(short_token.clone()))
+            Some(&JsValue::String(short_token.clone().into()))
         );
         assert_eq!(stopped.headers().get("x-admin-principal"), Some(&id));
         let raw = stopped

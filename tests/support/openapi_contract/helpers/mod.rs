@@ -198,22 +198,24 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             _request: OAuthUserInfoRequest,
         ) -> Result<OAuthUserInfoResponse, String> {
             Ok(OAuthUserInfoResponse {
-                user_output: None,
+                account_subject: None,
                 user: OAuthUserInfo {
                     additional_fields: Default::default(),
-                    id: "mock-account-id".to_owned(),
-                    email: "mock@example.com".to_owned(),
-                    name: Some("Mock OAuth User".to_owned()),
+                    id: "mock-account-id".into(),
+                    email: "mock@example.com".into(),
+                    name: Some("Mock OAuth User".into()),
                     image: None,
                     email_verified: true,
-                },
+                }
+                .public_profile(true),
                 data: serde_json::json!({
                     "id": "mock-account-id",
                     "email": "mock@example.com",
                     "name": "Mock OAuth User",
                     "image": null,
                     "emailVerified": true,
-                }),
+                })
+                .into(),
             })
         }
     }
@@ -241,12 +243,13 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             map_user_info: Some(|_value| {
                 Ok(OAuthUserInfo {
                     additional_fields: Default::default(),
-                    id: "mock-account-id".to_owned(),
-                    email: "mock@example.com".to_owned(),
-                    name: Some("Mock OAuth User".to_owned()),
+                    id: "mock-account-id".into(),
+                    email: "mock@example.com".into(),
+                    name: Some("Mock OAuth User".into()),
                     image: None,
                     email_verified: true,
-                })
+                }
+                .public_profile(true))
             }),
             get_user_info: Some(Arc::new(MockUserInfoHandler)),
             refresh_access_token: None,

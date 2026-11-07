@@ -45,7 +45,7 @@ async fn public_store_distinguishes_omitted_and_literal_null_metadata<B: Backend
             CreateOrganization::new("Literal", "literal").with_metadata(Value::Null),
         )
         .await?;
-    assert_eq!(literal.metadata, Some(Value::Null));
+    assert_eq!(literal.metadata, Some(alibi::utils::json::JsValue::Null));
     assert_eq!(raw_metadata(&db, &literal.id).await?, Some("null".into()));
     for organization in [&absent, &literal] {
         let renamed = store
@@ -75,7 +75,7 @@ async fn public_store_distinguishes_omitted_and_literal_null_metadata<B: Backend
                 },
             )
             .await?;
-        assert_eq!(updated.metadata, Some(value.clone()));
+        assert_eq!(updated.metadata, Some(value.clone().into()));
         assert_eq!(
             raw_metadata(&db, &absent.id).await?,
             Some(alibi::utils::json::to_string(&value)?)
@@ -84,20 +84,23 @@ async fn public_store_distinguishes_omitted_and_literal_null_metadata<B: Backend
             .get_organization_by_id(&absent.id)
             .await?
             .ok_or("organization disappeared")?;
-        assert_eq!(read.metadata, Some(value));
+        assert_eq!(read.metadata, Some(value.into()));
     }
     assert_eq!(
         store
             .get_organization_by_slug("literal")
             .await?
             .map(|row| row.metadata),
-        Some(Some(Value::Null))
+        Some(Some(alibi::utils::json::JsValue::Null))
     );
     let rows = store
         .list_organizations_by_ids(&[absent.id, literal.id])
         .await?;
     assert_eq!(rows.len(), 2);
-    assert!(rows.iter().all(|row| row.metadata == Some(Value::Null)));
+    assert!(
+        rows.iter()
+            .all(|row| row.metadata == Some(alibi::utils::json::JsValue::Null))
+    );
     B::close(connection).await
 }
 

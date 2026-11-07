@@ -205,7 +205,8 @@ async fn organization_creation_persists_and_selection_refreshes_http_and_native_
                 }
                 let stored: Value = serde_json::to_value(
                     auth.context()
-                        .session_view(&auth.store().get_session(token).await.unwrap().unwrap()),
+                        .session_view(&auth.store().get_session(token).await.unwrap().unwrap())
+                        .unwrap(),
                 )
                 .unwrap();
                 let expected_stored = match step {

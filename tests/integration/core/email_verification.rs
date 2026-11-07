@@ -245,7 +245,7 @@ mod tests {
             assert_eq!(response.status, 200, "{body}");
             let user = auth
                 .store()
-                .get_user_by_email(email)
+                .get_user_by_email(&alibi::utils::json::JsString::from(email))
                 .await
                 .unwrap()
                 .unwrap();
@@ -310,7 +310,7 @@ mod tests {
             assert_eq!(payload.pointer("/user/emailVerified"), Some(&json!(false)));
             let user = auth
                 .store()
-                .get_user_by_email(EMAIL)
+                .get_user_by_email(&alibi::utils::json::JsString::from(EMAIL))
                 .await
                 .unwrap()
                 .unwrap();
@@ -365,7 +365,7 @@ mod tests {
             if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
                 assert!(
                     auth.store()
-                        .get_user_by_email(EMAIL)
+                        .get_user_by_email(&alibi::utils::json::JsString::from(EMAIL))
                         .await
                         .unwrap()
                         .is_none()
@@ -405,7 +405,7 @@ mod tests {
             };
             let user = auth
                 .store()
-                .get_user_by_email(EMAIL)
+                .get_user_by_email(&alibi::utils::json::JsString::from(EMAIL))
                 .await
                 .unwrap()
                 .unwrap();

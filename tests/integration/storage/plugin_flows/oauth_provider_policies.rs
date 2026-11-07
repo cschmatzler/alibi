@@ -122,7 +122,7 @@ async fn client_id_lists_reconfigure_every_transport_that_embeds_them() {
     let github = OAuthProvider::github("client", "secret");
     let handler = github.get_user_info.as_ref().unwrap();
     assert!(handler.configured_client_ids(&ids()).is_none());
-    assert!(handler.errors_are_exceptions());
+    assert!(!handler.errors_are_exceptions());
 }
 
 #[test]
@@ -247,28 +247,34 @@ fn discord_default_avatars_follow_the_snowflake_or_discriminator() {
         for (key, value) in extra.as_object().unwrap() {
             profile[key] = value.clone();
         }
-        map(profile)
+        map(profile.into())
     };
     assert_eq!(
-        profile(json!({})).unwrap().image.as_deref(),
+        profile(json!({}))
+            .unwrap()
+            .get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://cdn.discordapp.com/embed/avatars/2.png")
     );
     assert_eq!(
         profile(json!({"discriminator":"1234"}))
             .unwrap()
-            .image
-            .as_deref(),
+            .get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://cdn.discordapp.com/embed/avatars/4.png")
     );
     assert_eq!(
-        profile(json!({"avatar":"hash"})).unwrap().image.as_deref(),
+        profile(json!({"avatar":"hash"}))
+            .unwrap()
+            .get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://cdn.discordapp.com/avatars/175928847299117063/hash.png")
     );
     assert_eq!(
         profile(json!({"avatar":"a_hash"}))
             .unwrap()
-            .image
-            .as_deref(),
+            .get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://cdn.discordapp.com/avatars/175928847299117063/a_hash.gif")
     );
     for (extra, expected) in [
@@ -288,32 +294,47 @@ fn discord_default_avatars_follow_the_snowflake_or_discriminator() {
     }
 }
 
-#[test]
-fn gitlab_admits_only_active_unlocked_accounts() {
-    let gitlab = OAuthProvider::gitlab("client", "secret");
-    let map = gitlab.map_user_info.unwrap();
+#[tokio::test]
+async fn gitlab_admits_only_active_unlocked_accounts() {
+    let remote = Provider::start("application/json", "{}").await;
+    let gitlab = OAuthProvider::gitlab_with_issuer(
+        "client",
+        "secret",
+        remote.url.as_str().trim_end_matches('/'),
+    );
     let profile = |extra: Value| {
         let mut profile = json!({"id":7,"state":"active","email":"g@example.test","name":"Git Lab","username":"gl"});
         for (key, value) in extra.as_object().unwrap() {
             profile[key] = value.clone();
         }
-        map(profile)
+        remote.respond(200, "application/json", profile.to_string());
+        fetch(&gitlab, None)
     };
-    assert_eq!(profile(json!({})).unwrap().id, "7");
+    let response = profile(json!({})).await.unwrap();
+    assert!(!response.user.contains_key("id"));
+    assert_eq!(
+        gitlab.account_subject.unwrap()(&response.data).unwrap(),
+        alibi::utils::json::JsString::from("7")
+    );
+    assert_eq!(
+        response.data["id"],
+        alibi::utils::json::JsValue::Number(7.0)
+    );
     for locked in [json!(false), json!(0), json!(""), Value::Null] {
-        assert!(profile(json!({"locked": locked})).is_ok(), "{locked}");
+        assert!(profile(json!({"locked": locked})).await.is_ok(), "{locked}");
     }
     for locked in [json!(true), json!(1), json!("yes"), json!([]), json!({})] {
         assert_eq!(
-            profile(json!({"locked": locked})).unwrap_err(),
+            profile(json!({"locked": locked})).await.unwrap_err(),
             "GitLab account is inactive or locked",
             "{locked}"
         );
     }
-    assert!(profile(json!({"state":"blocked"})).is_err());
+    assert!(profile(json!({"state":"blocked"})).await.is_err());
+    let missing = profile(json!({"id":null})).await.unwrap();
     assert_eq!(
-        profile(json!({"id":null})).unwrap_err(),
-        "Missing GitLab account ID"
+        gitlab.account_subject.unwrap()(&missing.data).unwrap_err(),
+        "Invalid provider subject"
     );
 }
 
@@ -353,7 +374,7 @@ async fn published_profile_handlers_reject_malformed_grants_and_failed_mappers()
     ] {
         assert_eq!(
             fetch(&provider, Some(token.into())).await.unwrap_err(),
-            expected
+            format!("oauth-profile-exception:{expected}")
         );
     }
     assert_eq!(
@@ -369,7 +390,10 @@ async fn published_profile_handlers_reject_malformed_grants_and_failed_mappers()
         .await
         .unwrap();
     assert_eq!(
-        response.user.image.as_deref(),
+        response
+            .user
+            .get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://images.test/object-image")
     );
 
@@ -455,10 +479,13 @@ struct ImageMapper;
 
 #[async_trait::async_trait]
 impl OAuthProfileMapper for ImageMapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
+    async fn map_profile(
+        &self,
+        _: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         Ok([
-            ("name".into(), json!("Application name")),
-            ("image".into(), json!(42)),
+            ("name".into(), json!("Application name").into()),
+            ("image".into(), json!(42).into()),
         ]
         .into_iter()
         .collect())
@@ -474,8 +501,12 @@ async fn application_mappers_may_publish_scalar_images() {
     let remote = Provider::start("application/json", polar.profile.to_string()).await;
     let provider = (polar.factory)(remote.url.as_str()).with_profile_mapper(Arc::new(ImageMapper));
     let user = fetch(&provider, None).await.unwrap().user;
-    assert_eq!(user.image.as_deref(), Some("42"));
-    assert_eq!(user.name.as_deref(), Some("Application name"));
+    assert_eq!(user["image"], alibi::utils::json::JsValue::Number(42.0));
+    assert_eq!(
+        user.get("name")
+            .and_then(alibi::utils::json::JsValue::as_str),
+        Some("Application name")
+    );
 }
 
 #[tokio::test]
@@ -486,29 +517,37 @@ async fn wechat_profiles_bind_unionid_then_profile_openid_then_token_openid() {
     let provider = OAuthProvider::wechat_with_options(options);
     let request = |raw: Value| OAuthUserInfoRequest {
         access_token: Some("access".into()),
-        raw: Some(raw),
+        raw: Some(raw.into()),
         ..Default::default()
     };
     let handler = provider.get_user_info.as_ref().unwrap();
-    for (profile, expected) in [
+    for (profile, expected, email) in [
         (
             json!({"unionid":"union","openid":"profile-open","nickname":"N"}),
             Ok("union"),
+            Some("union@wechat.placeholder.invalid"),
         ),
         (
             json!({"openid":"profile-open","nickname":"N"}),
             Ok("profile-open"),
+            Some("profile-open@wechat.placeholder.invalid"),
         ),
         (
             json!({"unionid":"","openid":"profile-open"}),
             Ok("profile-open"),
+            Some("profile-open@wechat.placeholder.invalid"),
         ),
-        (json!({"nickname":"N"}), Ok("token-open")),
+        (
+            json!({"nickname":"N"}),
+            Err("Missing provider subject"),
+            Some("token-open@wechat.placeholder.invalid"),
+        ),
         (
             json!({"errcode":40001,"errmsg":"invalid"}),
             Err("Missing WeChat profile"),
+            None,
         ),
-        (Value::Null, Err("Missing WeChat profile")),
+        (Value::Null, Err("Missing WeChat profile"), None),
     ] {
         remote.respond(200, "application/json", profile.to_string());
         let outcome = handler
@@ -516,8 +555,13 @@ async fn wechat_profiles_bind_unionid_then_profile_openid_then_token_openid() {
                 json!({"openid":"token-open","access_token":"access"}),
             ))
             .await
-            .map(|response| response.user.id);
-        let expected: Result<String, String> = expected.map(Into::into).map_err(Into::into);
+            .and_then(|response| {
+                assert!(!response.user.contains_key("id"));
+                assert_eq!(response.user["email"], email.unwrap());
+                provider.account_subject.unwrap()(&response.data)
+            });
+        let expected: Result<alibi::utils::json::JsString, String> =
+            expected.map(Into::into).map_err(Into::into);
         assert_eq!(outcome, expected, "{profile}");
     }
     assert_eq!(

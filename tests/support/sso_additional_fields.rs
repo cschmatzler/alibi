@@ -37,14 +37,14 @@ pub(crate) fn configure_callbacks(config: &mut alibi::AuthConfig) {
         Ok(value
             .and_then(JsValue::as_str)
             .filter(|value| *value != "omit")
-            .map(|value| JsValue::String(format!("input:{value}"))))
+            .map(|value| JsValue::String(format!("input:{value}").into())))
     }));
     label.output_transform = Some(std::sync::Arc::new(|value| {
         Box::pin(async move {
             Ok(value.and_then(|value| {
                 value
                     .as_str()
-                    .map(|value| JsValue::String(format!("output:{value}")))
+                    .map(|value| JsValue::String(format!("output:{value}").into()))
             }))
         })
     }));

@@ -447,7 +447,9 @@ mod tests {
             assert!(auth.store().create_user(collision).await.is_err());
             assert!(
                 auth.store()
-                    .get_user_by_email(&format!("collision-{index}@numeric.fixture.test"))
+                    .get_user_by_email(&alibi::utils::json::JsString::from(&format!(
+                        "collision-{index}@numeric.fixture.test"
+                    )))
                     .await
                     .unwrap()
                     .is_none()

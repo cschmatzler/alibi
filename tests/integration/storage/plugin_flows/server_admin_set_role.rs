@@ -166,7 +166,7 @@ async fn server_admin_set_role_validates_and_mutates_only_the_requested_user<B: 
             .await?;
         assert_eq!(
             output.decode()?.user.values().get("role"),
-            Some(&json!(stored))
+            Some(&json!(stored).into())
         );
         assert_eq!(output.headers().get("x-admin-principal"), Some(&owner_id));
         assert_eq!(
@@ -182,7 +182,7 @@ async fn server_admin_set_role_validates_and_mutates_only_the_requested_user<B: 
         );
         assert_eq!(
             output.value().get("user").and_then(|user| user.get("id")),
-            Some(&JsValue::String(target_id.clone()))
+            Some(&JsValue::String(target_id.clone().into()))
         );
         assert_eq!(
             output.value().get("user").and_then(|user| user.get("role")),

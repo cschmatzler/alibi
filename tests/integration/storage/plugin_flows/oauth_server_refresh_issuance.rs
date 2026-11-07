@@ -53,7 +53,7 @@ async fn oauth_trusted_refresh_issuance_uses_row_identity_and_caller_authorizati
         client.clone(),
         vec!["email".into(), "offline_access".into()],
     );
-    seed_params.user = Some(auth.context().trusted_user_view(&user));
+    seed_params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     seed_params.session_id = Some(session.id().as_ref().into());
     seed_params.auth_time = Some(session.created_at());
     seed_params.reference_id = Some("seed-ref".into());
@@ -90,7 +90,7 @@ async fn oauth_trusted_refresh_issuance_uses_row_identity_and_caller_authorizati
             .get("revoked")
             .is_none_or(Value::is_null)
     );
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.reference_id = Some("next-ref".into());
     params.refresh_token.as_mut().unwrap().token = "snapshot-not-a-lookup-key".into();
     let issued = provider

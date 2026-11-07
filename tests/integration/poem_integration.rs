@@ -383,7 +383,7 @@ async fn disconnect_continues_persistence<B: Backend>(db: Db) -> TestResult {
     tokio::time::timeout(Duration::from_secs(5), finished.notified()).await?;
     assert_eq!(
         auth.store()
-            .get_user_by_email("disconnect@example.com")
+            .get_user_by_email(&"disconnect@example.com".into())
             .await?
             .unwrap()
             .name(),

@@ -21,8 +21,8 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 macro_rules! user_contract {
     () => {
         impl AuthUser for Model {
-            fn additional_fields(&self) -> alibi::field_policy::FieldOutput {
-                serde_json::json!({"score":self.score,"reviewedAt":self.reviewed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"profile":self.profile}).as_object().cloned().unwrap_or_default()
+            fn additional_js_fields(&self) -> AuthResult<alibi::utils::json::JsObject> {
+                Ok(alibi::utils::json::JsValue::from(serde_json::json!({"score":self.score,"reviewedAt":self.reviewed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"profile":self.profile})).spread())
             }
             fn id(&self) -> Cow<'_, str> {
                 Cow::Owned(self.id.to_string())
@@ -60,8 +60,8 @@ macro_rules! user_contract {
             fn banned(&self) -> bool { self.banned }
             fn ban_reason(&self) -> Option<&str> { self.ban_reason.as_deref() }
             fn ban_expires(&self) -> Option<chrono::DateTime<Utc>> { self.ban_expires }
-            fn metadata(&self) -> &serde_json::Value {
-                &serde_json::Value::Null
+            fn metadata(&self) -> alibi::utils::json::JsValue {
+                alibi::utils::json::JsValue::Null
             }
         }
     };
@@ -1224,7 +1224,7 @@ async fn no_database_strict_expiry() -> TestResult {
     let _account = store
         .create_account(alibi::CreateAccount {
             user_id: target.id().into_owned(),
-            account_id: target.id().into_owned(),
+            account_id: target.id().into_owned().into(),
             provider_id: "credential".into(),
             password: Some(auth.context().hash_password(None, "Password123!").await?),
             additional_fields: Default::default(),

@@ -4,7 +4,7 @@ use super::*;
 use alibi::plugins::oauth::*;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
-type Mapper = fn(Value) -> Result<OAuthUserInfo, String>;
+type Mapper = fn(alibi::utils::json::JsValue) -> Result<alibi::utils::json::JsObject, String>;
 type Build = fn(&str, Option<Mapper>) -> OAuthProvider;
 
 macro_rules! build {
@@ -89,7 +89,9 @@ fn plain_mapper(name: &str) -> Option<Mapper> {
     (name == "atlassian").then_some(mapped as Mapper)
 }
 
-pub(super) fn mapped(_: Value) -> Result<OAuthUserInfo, String> {
+pub(super) fn mapped(
+    _: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     Ok(OAuthUserInfo {
         id: "mapped-id".into(),
         email: "mapped@example.test".into(),
@@ -97,7 +99,8 @@ pub(super) fn mapped(_: Value) -> Result<OAuthUserInfo, String> {
         image: Some("https://images.test/mapped".into()),
         email_verified: true,
         additional_fields: Default::default(),
-    })
+    }
+    .public_profile(true))
 }
 
 pub(super) fn wire(name: &str) -> (Value, &'static str) {
@@ -128,11 +131,20 @@ pub(super) async fn fetch(
 pub(super) async fn admitted(
     provider: &OAuthProvider,
     id_token: Option<String>,
-) -> Result<String, String> {
+) -> Result<alibi::utils::json::JsString, String> {
     let response = fetch(provider, id_token).await?;
     match provider.account_subject {
         Some(subject) => subject(&response.data),
-        None => Ok(response.user.id),
+        None => response
+            .account_subject
+            .or_else(|| {
+                response
+                    .user
+                    .get("id")
+                    .and_then(alibi::utils::json::JsValue::as_js_string)
+                    .cloned()
+            })
+            .ok_or_else(|| "Missing account subject".into()),
     }
 }
 
@@ -147,13 +159,19 @@ async fn handlers_publish_application_mapped_profiles() {
         let remote = Provider::start("application/json", profile.to_string()).await;
         let provider = build(remote.url.as_str(), Some(mapped));
         let response = fetch(&provider, None).await.unwrap();
-        assert_eq!(response.user.email, "mapped@example.test", "{name}");
+        assert_eq!(response.user["email"], "mapped@example.test", "{name}");
         if !matches!(name, "reddit" | "atlassian" | "cloudflare") {
-            assert_eq!(response.user.id, "mapped-id", "{name}");
+            assert_eq!(response.user["id"], "mapped-id", "{name}");
         }
-        if let Some(output) = response.user_output {
-            assert_eq!(output["email"], "mapped@example.test", "{name}");
-        }
+        let case = profiles()
+            .into_iter()
+            .find(|case| case.name == name && case.variant == "default")
+            .unwrap();
+        assert_eq!(
+            provider.account_subject.unwrap()(&response.data).unwrap(),
+            alibi::utils::json::JsString::from(case.account),
+            "{name} account authority must not use mapped-id"
+        );
     }
 }
 
@@ -175,7 +193,11 @@ async fn account_subjects_accept_numbers_and_reject_blank_or_literal_nulls() {
             let provider = build(remote.url.as_str(), plain_mapper(name));
             let outcome = admitted(&provider, None).await;
             match expected {
-                Some(subject) => assert_eq!(outcome.as_deref(), Ok(subject), "{name}"),
+                Some(subject) => assert_eq!(
+                    outcome.as_ref().map(|subject| subject.as_str().unwrap()),
+                    Ok(subject),
+                    "{name}"
+                ),
                 None => assert!(outcome.is_err(), "{name} {replacement}: {outcome:?}"),
             }
         }
@@ -205,9 +227,20 @@ async fn kakao_profile_falls_back_through_name_and_thumbnail() {
     let build: Build = build!(KakaoOptions, kakao_with_options, optional());
     let provider = build(remote.url.as_str(), None);
     let user = fetch(&provider, None).await.unwrap().user;
-    assert_eq!(user.name.as_deref(), Some("Account Name"));
-    assert_eq!(user.image.as_deref(), Some("https://images.test/thumb"));
-    assert!(user.email_verified);
+    assert_eq!(
+        user.get("name")
+            .and_then(alibi::utils::json::JsValue::as_str),
+        Some("Account Name")
+    );
+    assert_eq!(
+        user.get("image")
+            .and_then(alibi::utils::json::JsValue::as_str),
+        Some("https://images.test/thumb")
+    );
+    assert_eq!(
+        user["emailVerified"],
+        alibi::utils::json::JsValue::Bool(true)
+    );
 }
 
 #[tokio::test]
@@ -255,7 +288,8 @@ async fn id_token_profiles_are_decoded_before_any_remote_lookup() {
         assert_eq!(
             admitted(&provider, Some(unsigned(&claims)))
                 .await
-                .as_deref(),
+                .as_ref()
+                .map(|subject| subject.as_str().unwrap()),
             Ok("42"),
             "{name}"
         );
@@ -268,7 +302,7 @@ async fn id_token_profiles_are_decoded_before_any_remote_lookup() {
         let response = fetch(&make(Some(mapped)), Some(unsigned(&claims)))
             .await
             .unwrap();
-        assert_eq!(response.user.id, "mapped-id", "{name}");
+        assert_eq!(response.user["id"], "mapped-id", "{name}");
         assert!(remote.take().is_empty(), "{name} must not call out");
     }
 }
@@ -292,11 +326,27 @@ async fn undecodable_id_tokens_defer_to_the_profile_endpoint_or_fail() {
     let cognito = OAuthProvider::cognito(options).unwrap();
     for token in ["one-part", &unsigned(&json!([1]))] {
         let response = fetch(&cognito, Some(token.into())).await.unwrap();
-        assert_eq!(response.user.id, "remote-sub");
+        assert!(!response.user.contains_key("id"));
+        assert_eq!(
+            cognito.account_subject.unwrap()(&response.data).unwrap(),
+            alibi::utils::json::JsString::from("remote-sub")
+        );
     }
+    assert_eq!(
+        remote.take().len(),
+        2,
+        "both Cognito decode failures must fetch the remote profile"
+    );
     let mut options = FacebookOptions::new("native-client", optional());
     options.user_info_endpoint = Some(endpoint);
     let facebook = OAuthProvider::facebook_with_options(options);
     let outcome = fetch(&facebook, Some(unsigned(&json!([1])))).await;
-    assert_eq!(outcome.unwrap_err(), "Invalid Facebook ID profile");
+    assert_eq!(
+        outcome.unwrap_err(),
+        "oauth-profile-exception:Invalid grant ID-token claims"
+    );
+    assert!(
+        remote.take().is_empty(),
+        "Facebook must reject malformed claims without fetching a profile"
+    );
 }

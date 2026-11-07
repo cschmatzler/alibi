@@ -335,7 +335,9 @@ async fn facebook_graph_inspection_binds_app_and_profile<B: Backend>(db: Db) -> 
     B::close(connection).await
 }
 
-fn fallback_mapper(profile: Value) -> Result<OAuthUserInfo, String> {
+fn fallback_mapper(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     if profile["source"] == "claims" {
         return Err("Application needs remote profile".into());
     }
@@ -346,7 +348,8 @@ fn fallback_mapper(profile: Value) -> Result<OAuthUserInfo, String> {
         image: None,
         email_verified: false,
         additional_fields: Default::default(),
-    })
+    }
+    .public_profile(true))
 }
 
 async fn access_grant_profile_fallback_preserves_raw_subject<B: Backend>(db: Db) -> TestResult {

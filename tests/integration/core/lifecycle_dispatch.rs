@@ -336,7 +336,7 @@ fn virtual_session() -> SessionView {
         impersonated_by: None,
         active_organization_id: None,
         active_team_id: None,
-        extension_fields: std::collections::BTreeMap::default(),
+        extension_fields: Default::default(),
     }
 }
 
@@ -758,7 +758,7 @@ mod tests {
             );
             let persisted = configured
                 .store()
-                .get_user_by_email("telemetry@example.com")
+                .get_user_by_email(&"telemetry@example.com".into())
                 .await
                 .unwrap()
                 .unwrap();

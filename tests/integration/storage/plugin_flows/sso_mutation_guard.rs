@@ -143,7 +143,7 @@ async fn sso_provider_mutation_guards_share_transaction_rollback_and_namespace_r
     );
     assert!(
         store
-            .get_account("guard-provider", "linked-subject")
+            .get_account("guard-provider", &"linked-subject".into())
             .await?
             .is_some()
     );
@@ -159,7 +159,7 @@ async fn sso_provider_mutation_guards_share_transaction_rollback_and_namespace_r
     assert!(store.get_sso_provider("guard-provider").await?.is_none());
     assert!(
         store
-            .get_account("guard-provider", "linked-subject")
+            .get_account("guard-provider", &"linked-subject".into())
             .await?
             .is_none()
     );

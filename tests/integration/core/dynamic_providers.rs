@@ -346,7 +346,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     // A trusted callback must not transfer a provider identity already owned by another actor.
     let foreign = auth
         .store()
-        .get_user_by_email("foreign@example.test")
+        .get_user_by_email(&"foreign@example.test".into())
         .await?
         .unwrap();
     let foreign_account = auth
@@ -368,7 +368,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     let foreign_before = physical_account(&db, foreign_account.id().as_ref()).await?;
     let actor = auth
         .store()
-        .get_user_by_email("actor@example.test")
+        .get_user_by_email(&"actor@example.test".into())
         .await?
         .unwrap();
     let session = SessionManager::new(Arc::new(auth.config().clone()), auth.store().clone())
@@ -389,7 +389,11 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         foreign_result.headers.get("location").unwrap(),
         "https://a.example.test/failed?error=account_already_linked_to_different_user"
     );
-    let unchanged = auth.store().get_account("gitlab", "actor").await?.unwrap();
+    let unchanged = auth
+        .store()
+        .get_account("gitlab", &"actor".into())
+        .await?
+        .unwrap();
     assert_eq!(unchanged.id(), foreign_account.id());
     assert_eq!(unchanged.user_id(), foreign.id());
     assert_eq!(unchanged.access_token(), Some("foreign-token"));

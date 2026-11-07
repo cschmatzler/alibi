@@ -128,7 +128,9 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                     grant["assertionId"].as_str().unwrap()
                 ))
                 .await?;
-            let account = store.get_account(&provider_id, &email).await?;
+            let account = store
+                .get_account(&provider_id, &alibi::utils::json::JsString::from(&email))
+                .await?;
             if wrong_key || !allowed {
                 assert_eq!(
                     location
@@ -241,7 +243,10 @@ async fn idp_initiated_flow<B: Backend>(db: &Db, global: Option<&str>) -> TestRe
                 );
                 assert!(
                     store
-                        .get_account(&provider_id, correlated_email)
+                        .get_account(
+                            &provider_id,
+                            &alibi::utils::json::JsString::from(correlated_email)
+                        )
                         .await?
                         .is_none()
                 );

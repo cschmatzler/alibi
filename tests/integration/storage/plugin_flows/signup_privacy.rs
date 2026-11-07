@@ -713,10 +713,9 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
                     value
                         .as_str()
                         .map(|v| {
-                            alibi::utils::json::JsValue::String(format!(
-                                "parsed:{}",
-                                v.trim().to_lowercase()
-                            ))
+                            alibi::utils::json::JsValue::String(
+                                format!("parsed:{}", v.trim().to_lowercase()).into(),
+                            )
                         })
                         .ok_or_else(|| "tier must be a string".into())
                 }),

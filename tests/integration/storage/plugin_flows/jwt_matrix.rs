@@ -38,7 +38,14 @@ fn capture(value: &JsValue) -> Value {
         JsValue::Object(values) => Value::Object(
             values
                 .iter()
-                .map(|(key, value)| (key.clone(), capture(value)))
+                .map(|(key, value)| {
+                    (
+                        key.as_str()
+                            .expect("wire capture requires a UTF-8 key")
+                            .to_owned(),
+                        capture(value),
+                    )
+                })
                 .collect(),
         ),
         value => value.to_json_value().unwrap(),

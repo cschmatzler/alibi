@@ -490,7 +490,12 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
                     .await?
                     .is_none()
             );
-            assert!(store.get_account(provider_id, email).await?.is_none());
+            assert!(
+                store
+                    .get_account(provider_id, &alibi::utils::json::JsString::from(email))
+                    .await?
+                    .is_none()
+            );
             assert!(
                 !completed
                     .headers
@@ -528,7 +533,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
             assert_eq!(proof["issuer"], "https://idp.example.test/entity");
             assert_eq!(proof["providerId"], provider_id);
             let account = store
-                .get_account(provider_id, email)
+                .get_account(provider_id, &alibi::utils::json::JsString::from(email))
                 .await?
                 .ok_or("SAML account missing")?;
             assert_eq!(

@@ -63,7 +63,9 @@ impl alibi::seaorm::DatabaseHooks<Schema, alibi::seaorm::SeaOrmBackend> for Meta
         {
             _ = metadata.insert(
                 "hookRounded".into(),
-                alibi::utils::json::JsValue::from(9_007_199_254_740_993_u64),
+                alibi::utils::json::JsValue::from(serde_json::Value::from(
+                    9_007_199_254_740_993_u64,
+                )),
             );
         }
         Ok(alibi::seaorm::HookControl::Continue)
@@ -97,14 +99,18 @@ mod tests {
         let prepared = JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20}))
             .prepare(DbBackend::Sqlite)
             .unwrap();
-        let mut value: serde_json::Value = prepared.into();
+        let mut value = prepared.to_js_value();
         drop(
             value
                 .as_object_mut()
                 .expect("metadata is an object")
-                .insert("version".to_owned(), serde_json::json!("edited")),
+                .insert(
+                    "version".into(),
+                    alibi::utils::json::JsValue::from(serde_json::json!("edited")),
+                ),
         );
-        let prepared_2 = JsonMetadata::from(value)
+        let prepared_2 = JsonMetadata::try_from(value)
+            .unwrap()
             .prepare(DbBackend::Sqlite)
             .unwrap();
         let inserted = organization::ActiveModel {
@@ -118,22 +124,32 @@ mod tests {
         .insert(&db)
         .await
         .unwrap();
-        assert_eq!(inserted.metadata.as_ref().unwrap()["version"], "edited");
-        let mut value_2: serde_json::Value = inserted.metadata.clone().unwrap().into();
+        assert_eq!(
+            inserted.metadata.as_ref().unwrap().to_js_value()["version"],
+            "edited"
+        );
+        let mut value_2 = inserted.metadata.as_ref().unwrap().to_js_value();
         drop(
             value_2
                 .as_object_mut()
                 .expect("metadata is an object")
-                .insert("version".to_owned(), serde_json::json!("updated")),
+                .insert(
+                    "version".into(),
+                    alibi::utils::json::JsValue::from(serde_json::json!("updated")),
+                ),
         );
         let mut active = inserted.into_active_model();
         active.metadata = Set(Some(
-            JsonMetadata::from(value_2)
+            JsonMetadata::try_from(value_2)
+                .unwrap()
                 .prepare(DbBackend::Sqlite)
                 .unwrap(),
         ));
         let updated = active.update(&db).await.unwrap();
-        assert_eq!(updated.metadata.as_ref().unwrap()["version"], "updated");
+        assert_eq!(
+            updated.metadata.as_ref().unwrap().to_js_value()["version"],
+            "updated"
+        );
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
@@ -162,7 +178,11 @@ mod tests {
             .execute(&builder.create_table_from_entity(custom_user::Entity))
             .await
             .unwrap();
-        let config = AuthConfig::new("user-json-persistence-secret-minimum-32-characters");
+        let mut config = AuthConfig::new("user-json-persistence-secret-minimum-32-characters");
+        _ = config.user.additional_fields.insert(
+            "metadata".into(),
+            alibi::field_policy::FieldConfig::new(serde_json::json!({"type":"json"})),
+        );
         let auth = AuthBuilder::new(config.clone())
             .store(SeaOrmStore::<Schema>::new(config, db.clone()).hook(MetadataHook))
             .build()
@@ -179,8 +199,14 @@ mod tests {
             .await
             .unwrap();
         let id = user.id().into_owned();
-        assert_eq!(user.metadata()["rounded"], 9_007_199_254_740_992_u64);
-        assert_eq!(user.metadata()["hookRounded"], 9_007_199_254_740_992_u64);
+        assert_eq!(
+            user.metadata()["rounded"].as_u64(),
+            Some(9_007_199_254_740_992_u64)
+        );
+        assert_eq!(
+            user.metadata()["hookRounded"].as_u64(),
+            Some(9_007_199_254_740_992_u64)
+        );
         assert_eq!(
             user.metadata()["tiny"].as_f64().unwrap().to_bits(),
             0x3151_1b97_697f_234c
@@ -188,11 +214,11 @@ mod tests {
         assert_eq!(
             (*(*(*(user.metadata())
                 .get("private")
-                .unwrap_or(&serde_json::Value::Null))
+                .unwrap_or(&alibi::utils::json::JsValue::Null))
             .get(1)
-            .unwrap_or(&serde_json::Value::Null))
+            .unwrap_or(&alibi::utils::json::JsValue::Null))
             .get("$serde_json::private::RawValue")
-            .unwrap_or(&serde_json::Value::Null)),
+            .unwrap_or(&alibi::utils::json::JsValue::Null)),
             "hello"
         );
         let read = auth.store().get_user_by_id(&id).await.unwrap().unwrap();
@@ -235,10 +261,13 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated.id().as_ref(), id);
-        assert_eq!(updated.metadata()["rounded"], 9_007_199_254_740_992_u64);
+        assert_eq!(
+            updated.metadata()["rounded"].as_u64(),
+            Some(9_007_199_254_740_992_u64)
+        );
         assert_eq!(
             auth.store()
-                .get_user_by_email("metadata@user-json.fixture.test")
+                .get_user_by_email(&"metadata@user-json.fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -271,7 +300,11 @@ mod tests {
             .execute(&schema.create_table_from_entity(custom_user::Entity))
             .await
             .unwrap();
-        let config = AuthConfig::new("custom-json-persistence-secret-minimum-32-characters");
+        let mut config = AuthConfig::new("custom-json-persistence-secret-minimum-32-characters");
+        _ = config.user.additional_fields.insert(
+            "metadata".into(),
+            alibi::field_policy::FieldConfig::new(serde_json::json!({"type":"json"})),
+        );
         let auth = AuthBuilder::new(config.clone())
             .store(SeaOrmStore::<CustomSchema>::new(config, db.clone()))
             .build()
@@ -289,7 +322,10 @@ mod tests {
             .unwrap();
         assert!(user.tenant.is_none());
         assert_eq!(user.metadata()["$serde_json::private::RawValue"], "hello");
-        assert_eq!(user.metadata()["rounded"], 9_007_199_254_740_992_u64);
+        assert_eq!(
+            user.metadata()["rounded"].as_u64(),
+            Some(9_007_199_254_740_992_u64)
+        );
         assert_eq!(
             user.metadata()["tiny"].as_f64().unwrap().to_bits(),
             0x3151_1b97_697f_234c
@@ -315,7 +351,10 @@ mod tests {
             updated.metadata()["$serde_json::private::RawValue"],
             "hello"
         );
-        assert_eq!(updated.metadata()["rounded"], 9_007_199_254_740_992_u64);
+        assert_eq!(
+            updated.metadata()["rounded"].as_u64(),
+            Some(9_007_199_254_740_992_u64)
+        );
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,

@@ -169,7 +169,8 @@ async fn age(auth: &Alibi<Schema>, db: &DatabaseConnection, token: &str, expired
         .unwrap();
     serde_json::to_value(
         auth.context()
-            .session_view(&auth.store().get_session(token).await.unwrap().unwrap()),
+            .session_view(&auth.store().get_session(token).await.unwrap().unwrap())
+            .unwrap(),
     )
     .unwrap()
 }
@@ -277,7 +278,7 @@ mod tests {
                 (*(*(claims).get("snapshot").unwrap_or(&Value::Null))
                     .get("session")
                     .unwrap_or(&Value::Null)),
-                json!(auth.context().session_view(&stored)),
+                json!(auth.context().session_view(&stored).unwrap()),
                 "{case}"
             );
             assert_eq!(
@@ -336,7 +337,7 @@ mod tests {
                 );
             } else {
                 assert_eq!(
-                    json!(auth.context().session_view(&stored)),
+                    json!(auth.context().session_view(&stored).unwrap()),
                     before,
                     "{case}: no state changes"
                 );
@@ -401,7 +402,7 @@ mod tests {
             let stored = auth.store().get_session(&token).await.unwrap().unwrap();
             assert_eq!(
                 (*(body).get("session").unwrap_or(&Value::Null)),
-                json!(auth.context().session_view(&stored))
+                json!(auth.context().session_view(&stored).unwrap())
             );
             assert_eq!(
                 response_2
@@ -523,14 +524,16 @@ mod tests {
         );
         assert_eq!(
             json!(
-                auth.context().session_view(
-                    &auth
-                        .store()
-                        .get_session(&cookie_token)
-                        .await
-                        .unwrap()
-                        .unwrap()
-                )
+                auth.context()
+                    .session_view(
+                        &auth
+                            .store()
+                            .get_session(&cookie_token)
+                            .await
+                            .unwrap()
+                            .unwrap()
+                    )
+                    .unwrap()
             ),
             foreign_before
         );
@@ -623,6 +626,7 @@ mod tests {
                 json!(
                     auth.context()
                         .session_view(&auth.store().get_session(&token).await.unwrap().unwrap())
+                        .unwrap()
                 ),
                 before
             );
@@ -658,8 +662,8 @@ mod tests {
         for path in ["/get-session", "/token"] {
             let req = request(path, "");
             req.set_session_hook_snapshot(
-                auth.context().user_view(&user),
-                auth.context().session_view(&session),
+                auth.context().user_view(&user).unwrap(),
+                auth.context().session_view(&session).unwrap(),
             );
             let response = auth.handle_request(req).await.unwrap();
             let body: Value = serde_json::from_slice(&response.body).unwrap();
@@ -681,6 +685,7 @@ mod tests {
                 json!(
                     auth.context()
                         .session_view(&auth.store().get_session(&token).await.unwrap().unwrap())
+                        .unwrap()
                 ),
                 before
             );

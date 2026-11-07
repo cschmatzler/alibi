@@ -151,10 +151,9 @@ fn config() -> (AuthConfig, AsyncObservation) {
                 if value.as_str() == Some("reject-at-binding") {
                     return Ok(Some(JsValue::String("reject".into())));
                 }
-                Ok(Some(JsValue::String(format!(
-                    "stored:{}",
-                    value.as_str().unwrap()
-                ))))
+                Ok(Some(JsValue::String(
+                    format!("stored:{}", value.as_str().unwrap()).into(),
+                )))
             }),
         ),
         (
@@ -167,7 +166,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
                         return Err(alibi::AuthError::internal("adapter callback veto"));
                     }
                     tokio::task::yield_now().await;
-                    Ok(Some(JsValue::String(format!("adapter:{value}"))))
+                    Ok(Some(JsValue::String(format!("adapter:{value}").into())))
                 },
             ),
         ),

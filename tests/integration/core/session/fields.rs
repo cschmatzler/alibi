@@ -325,10 +325,13 @@ mod tests {
                 FieldConfig::new(json!({"type":"string"}))
                     .default_value(json!("must-not-overwrite-native-hook"))
                     .transform(|value| {
-                        Ok(Some(JsValue::String(format!(
-                            "stored:{}",
-                            value.and_then(JsValue::as_str).unwrap_or("undefined")
-                        ))))
+                        Ok(Some(JsValue::String(
+                            format!(
+                                "stored:{}",
+                                value.and_then(JsValue::as_str).unwrap_or("undefined")
+                            )
+                            .into(),
+                        )))
                     }),
             ),
         );
@@ -374,7 +377,10 @@ mod tests {
             initial.active_organization_id.as_deref(),
             Some("stored:native-organization")
         );
-        assert_eq!(&*initial.payload, &json!({"initial":true}));
+        assert_eq!(
+            &initial.payload.to_js_value().to_json_value().unwrap(),
+            &json!({"initial":true})
+        );
         let owner = initial.user_id.clone();
         _ = db
             .execute_raw(Statement::from_sql_and_values(
@@ -389,7 +395,8 @@ mod tests {
             Arc::clone(auth.store()),
         );
         let stored = auth.store().get_session(token).await.unwrap().unwrap();
-        let projection = serde_json::to_value(manual_context.session_view(&stored)).unwrap();
+        let projection =
+            serde_json::to_value(manual_context.session_view(&stored).unwrap()).unwrap();
         assert!(
             projection.get("validated").is_none(),
             "undeclared physical sentinel must stay private in manually constructed contexts"
@@ -426,7 +433,9 @@ mod tests {
             assert_eq!(stored_2.label.as_deref(), Some(expected));
             assert_eq!(stored_2.hidden, initial.hidden);
             assert_eq!(
-                alibi::AuthSession::additional_fields(&stored_2).get("validated"),
+                alibi::AuthSession::additional_fields(&stored_2)
+                    .unwrap()
+                    .get("validated"),
                 Some(&json!("unregistered-storage-secret"))
             );
         }
@@ -445,13 +454,16 @@ mod tests {
         assert_eq!(value["session"]["label"], "model-override");
         assert_eq!(value["session"]["payload"], payload);
         assert_eq!(
-            &*auth
+            &auth
                 .store()
                 .get_session(token)
                 .await
                 .unwrap()
                 .unwrap()
-                .payload,
+                .payload
+                .to_js_value()
+                .to_json_value()
+                .unwrap(),
             &payload
         );
         assert_eq!(

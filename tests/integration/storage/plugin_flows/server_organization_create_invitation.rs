@@ -142,7 +142,7 @@ async fn server_create_invitation_delivers_stored_invitation_without_request<B: 
     );
     assert_eq!(
         invitation.get("inviterId"),
-        Some(&JsValue::String(owner_id.clone()))
+        Some(&JsValue::String(owner_id.clone().into()))
     );
     assert_eq!(
         invitation.get("role"),

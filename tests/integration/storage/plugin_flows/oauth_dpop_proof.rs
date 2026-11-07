@@ -76,7 +76,7 @@ async fn oauth_dpop_userinfo_checks_sender_before_releasing_claims<B: Backend>(
             client.clone(),
             vec!["openid".into(), "email".into(), "profile".into()],
         );
-        params.user = Some(auth.context().trusted_user_view(&user));
+        params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         params.confirmation = Some(json!({"jkt":"yAJQz9pEsZrW3t2ISLq2eQ2bDNmV0AHCGdbF-8RSbko"}));
         params.resources = (kind == "jwt").then(|| vec![uri.clone()]);
         let issued = provider
@@ -173,7 +173,7 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         .unwrap();
     let mut params =
         OAuthTokenIssueParams::new(client, vec!["email".into(), "offline_access".into()]);
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     let definition = EndpointDefinition {
         name: "issueTokensFixture",
         operation_id: "issueTokensFixture",

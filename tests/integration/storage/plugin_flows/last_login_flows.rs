@@ -327,9 +327,9 @@ impl OAuthUserInfoHandler for Profile {
             email_verified: true,
         };
         Ok(OAuthUserInfoResponse {
-            user_output: None,
-            data: json!({"sub": user.id, "email": user.email}),
-            user,
+            account_subject: None,
+            data: json!({"sub": user.id, "email": user.email}).into(),
+            user: user.public_profile(true),
         })
     }
 }

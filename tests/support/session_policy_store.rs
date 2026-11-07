@@ -41,16 +41,17 @@ forwarding!(UserStore<Schema> {
     fn create_user(create_user: CreateUser) -> AuthResult<<Schema as AuthSchema>::User>;
     fn get_user_by_id(id: &str) -> AuthResult<Option<<Schema as AuthSchema>::User>>;
     fn list_users_by_ids(ids: &[String]) -> AuthResult<Vec<<Schema as AuthSchema>::User>>;
-    fn get_user_by_email(email: &str) -> AuthResult<Option<<Schema as AuthSchema>::User>>;
+    fn get_user_by_email(email: &alibi::utils::json::JsString) -> AuthResult<Option<<Schema as AuthSchema>::User>>;
     fn get_user_by_username(username: &str) -> AuthResult<Option<<Schema as AuthSchema>::User>>;
     fn update_user(id: &str, update: UpdateUser) -> AuthResult<<Schema as AuthSchema>::User>;
+    fn update_user_prepared(id: &str, update: PreparedUserUpdate) -> AuthResult<<Schema as AuthSchema>::User>;
     fn delete_user(id: &str) -> AuthResult<()>;
     fn list_users(params: ListUsersParams) -> AuthResult<(Vec<<Schema as AuthSchema>::User>, usize)>;
 });
 
 forwarding!(AccountStore<Schema> {
     fn create_account(create_account: CreateAccount) -> AuthResult<<Schema as AuthSchema>::Account>;
-    fn get_account(provider: &str, provider_account_id: &str) -> AuthResult<Option<<Schema as AuthSchema>::Account>>;
+    fn get_account(provider: &str, provider_account_id: &alibi::utils::json::JsString) -> AuthResult<Option<<Schema as AuthSchema>::Account>>;
     fn get_user_accounts(user_id: &str) -> AuthResult<Vec<<Schema as AuthSchema>::Account>>;
     fn update_account(id: &str, update: UpdateAccount) -> AuthResult<<Schema as AuthSchema>::Account>;
     fn delete_account(id: &str) -> AuthResult<()>;

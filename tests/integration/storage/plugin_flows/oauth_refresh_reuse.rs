@@ -703,7 +703,7 @@ async fn check_generation_edges<S: AuthSchema>(
     let user = auth.store().get_user_by_id(&user_id).await?.unwrap();
     let mut params =
         OAuthTokenIssueParams::new(client, vec!["email".into(), "offline_access".into()]);
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.session_id = Some(session_id.clone());
     let call = EndpointCall::new(
         &EndpointDefinition {

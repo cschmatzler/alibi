@@ -649,7 +649,7 @@ async fn without_database_account_authority_and_verification_generations() -> Te
     let right = store.create_account(input("foreign")).await?;
     assert_ne!(left.id, right.id);
     assert!(matches!(
-        store.get_account("oidc", "shared").await,
+        store.get_account("oidc", &"shared".into()).await,
         Err(AuthError::Database(DatabaseError::AmbiguousAccount { .. }))
     ));
     assert_eq!(store.get_user_accounts("owner").await?.len(), 1);
@@ -682,11 +682,15 @@ async fn without_database_account_authority_and_verification_generations() -> Te
     );
     store.delete_account(&right.id).await?;
     assert_eq!(
-        store.get_account("oidc", "shared").await?.unwrap().id,
+        store
+            .get_account("oidc", &"shared".into())
+            .await?
+            .unwrap()
+            .id,
         left.id
     );
     assert_eq!(
-        serde_json::to_value(store.get_account("oidc", "shared").await?.unwrap())?,
+        serde_json::to_value(store.get_account("oidc", &"shared".into()).await?.unwrap())?,
         serde_json::to_value(&updated)?
     );
     assert!(store.get_user_accounts("foreign").await?.is_empty());

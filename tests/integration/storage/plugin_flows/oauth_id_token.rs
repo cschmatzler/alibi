@@ -197,7 +197,7 @@ async fn oauth_openid_code_issues_verified_client_and_access_bound_id_token<B: B
         client,
         vec!["openid".into(), "email".into(), "profile".into()],
     );
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.session_id = Some(session_id.clone());
     params.auth_time = chrono::DateTime::from_timestamp(actual_time, 0);
     params.nonce = Some("api-nonce".into());

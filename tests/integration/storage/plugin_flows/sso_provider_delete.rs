@@ -74,13 +74,13 @@ async fn sso_provider_delete_retires_linked_accounts_and_preserves_other_provide
     assert_eq!(denied.error.status_code(), 403);
     assert!(
         store
-            .get_account("delete-provider", "owner-subject")
+            .get_account("delete-provider", &"owner-subject".into())
             .await?
             .is_some()
     );
     assert!(
         store
-            .get_account("delete-provider", "foreign-subject")
+            .get_account("delete-provider", &"foreign-subject".into())
             .await?
             .is_some()
     );
@@ -111,13 +111,13 @@ async fn sso_provider_delete_retires_linked_accounts_and_preserves_other_provide
     );
     assert!(
         store
-            .get_account("delete-provider", "owner-subject")
+            .get_account("delete-provider", &"owner-subject".into())
             .await?
             .is_some()
     );
     assert!(
         store
-            .get_account("delete-provider", "foreign-subject")
+            .get_account("delete-provider", &"foreign-subject".into())
             .await?
             .is_some()
     );
@@ -150,19 +150,19 @@ async fn sso_provider_delete_retires_linked_accounts_and_preserves_other_provide
     );
     assert!(
         store
-            .get_account("delete-provider", "owner-subject")
+            .get_account("delete-provider", &"owner-subject".into())
             .await?
             .is_none()
     );
     assert!(
         store
-            .get_account("delete-provider", "foreign-subject")
+            .get_account("delete-provider", &"foreign-subject".into())
             .await?
             .is_none()
     );
     assert!(
         store
-            .get_account("keep-provider", "kept-subject")
+            .get_account("keep-provider", &"kept-subject".into())
             .await?
             .is_some()
     );

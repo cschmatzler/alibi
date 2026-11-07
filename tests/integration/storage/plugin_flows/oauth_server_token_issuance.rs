@@ -82,7 +82,7 @@ async fn oauth_server_issue_tokens_persists_machine_user_and_signed_authority<B:
         params.token_response =
             Some(json!({"access_token":"injected","scope":"injected","custom":"receipt"}));
         if with_user {
-            params.user = Some(auth.context().trusted_user_view(&user));
+            params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         }
         if name == "user" {
             params.session_id = Some(session.id().as_ref().into());
@@ -243,7 +243,7 @@ async fn oauth_sender_confirmation_survives_validation_and_introspection<B: Back
             client.clone(),
             vec!["email".into(), "offline_access".into()],
         );
-        params.user = Some(auth.context().trusted_user_view(&user));
+        params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         params.confirmation = Some(confirmation.clone());
         let issued = provider
             .issue_tokens(
@@ -334,7 +334,7 @@ async fn oauth_jwt_introspection_uses_live_resource_peer_authority<B: Backend>(
     let user = auth.store().get_user_by_id(&owner_id).await?.unwrap();
     let mut params =
         OAuthTokenIssueParams::new(client, vec!["email".into(), "offline_access".into()]);
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.resources = Some(vec![resource.into()]);
     params.confirmation = Some(json!({"jkt":"trusted-binding"}));
     let call = EndpointCall::new(
@@ -433,7 +433,7 @@ async fn oauth_requested_userinfo_claims_follow_opaque_refresh_authority<B: Back
     let user_id = client.user_id.clone().unwrap();
     let mut params =
         OAuthTokenIssueParams::new(client, vec!["openid".into(), "offline_access".into()]);
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.requested_user_info_claims = Some(vec!["email".into()]);
     let call = EndpointCall::new(
         &EndpointDefinition {

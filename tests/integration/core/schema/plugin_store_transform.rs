@@ -242,7 +242,7 @@ mod tests {
         assert_eq!(user.role(), Some("member"));
         assert_eq!(
             user.raw_snapshot().values().get("role"),
-            Some(&serde_json::json!({"stored":"member"}))
+            Some(&serde_json::json!({"stored":"member"}).into())
         );
         let account = database
             .create_account_record(CreateAccount {
@@ -263,7 +263,7 @@ mod tests {
         assert_eq!(account.scope(), Some("read write"));
         assert_eq!(
             account.raw_snapshot().values().get("scope"),
-            Some(&serde_json::json!({"stored":"read write"}))
+            Some(&serde_json::json!({"stored":"read write"}).into())
         );
         assert_eq!(
             *seen.lock().unwrap(),
@@ -371,7 +371,12 @@ mod tests {
                 .await
                 .is_err()
         );
-        assert!(raw.get_user_by_email(email).await.unwrap().is_none());
+        assert!(
+            raw.get_user_by_email(&alibi::utils::json::JsString::from(email))
+                .await
+                .unwrap()
+                .is_none()
+        );
 
         let actual = auth
             .store()
@@ -400,7 +405,7 @@ mod tests {
         assert_eq!(persisted.name(), actual.name());
         assert_eq!(persisted.email(), actual.email());
         assert!(
-            raw.get_user_by_email("replacement@transforms.fixture.test")
+            raw.get_user_by_email(&"replacement@transforms.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none()
@@ -430,7 +435,7 @@ mod tests {
         .unwrap();
         assert_eq!(committed.name(), Some("original:first:second"));
         let persisted = raw
-            .get_user_by_email("committed@transforms.fixture.test")
+            .get_user_by_email(&"committed@transforms.fixture.test".into())
             .await
             .unwrap()
             .unwrap();
@@ -453,7 +458,7 @@ mod tests {
         .await;
         assert!(result.is_err());
         assert!(
-            raw.get_user_by_email("rolled-back@transforms.fixture.test")
+            raw.get_user_by_email(&"rolled-back@transforms.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none()
@@ -498,7 +503,7 @@ mod tests {
             .build()
             .await
             .unwrap();
-        let json = serde_json::to_value(enabled.context().user_view(&existing)).unwrap();
+        let json = serde_json::to_value(enabled.context().user_view(&existing).unwrap()).unwrap();
         assert_eq!(json.get("twoFactorEnabled"), Some(&serde_json::Value::Null));
         assert_eq!(json.get("banned"), Some(&serde_json::Value::Null));
         assert!(!existing.two_factor_enabled());
@@ -545,7 +550,8 @@ mod tests {
         assert_eq!(explicit.two_factor_enabled_value(), Some(true));
         assert_eq!(explicit.banned_value(), Some(true));
         assert_eq!(explicit.role(), Some("admin"));
-        let hidden = serde_json::to_value(disabled.context().user_view(&explicit)).unwrap();
+        let hidden =
+            serde_json::to_value(disabled.context().user_view(&explicit).unwrap()).unwrap();
         assert!(hidden.get("twoFactorEnabled").is_none());
         assert!(hidden.get("banned").is_none());
         assert!(hidden.get("role").is_none());
@@ -683,7 +689,7 @@ mod tests {
                 .is_none()
         );
         assert!(
-            raw.get_user_by_email("sql-rejected@lifecycle.fixture.test")
+            raw.get_user_by_email(&"sql-rejected@lifecycle.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none()

@@ -89,7 +89,7 @@ fn user_filters_cover_every_operator_and_field_kind() {
         ("unknown", "eq", "x", ""),
     ];
     for (field, operator, value, expected) in cases {
-        let (users, total) = apply_list_users(roster(), &filter(field, operator, value));
+        let (users, total) = apply_list_users(roster(), &filter(field, operator, value)).unwrap();
         assert_eq!(ids(&users), expected, "{field} {operator} {value}");
         assert_eq!(total, users.len());
     }
@@ -114,7 +114,7 @@ fn multiple_value_filters_search_sort_and_paging() {
         ("ends_with", &["ol"][..], "c"),
         ("eq", &["Bob"][..], ""),
     ] {
-        let (users, _) = apply_list_users(roster(), &multiple(operator, values));
+        let (users, _) = apply_list_users(roster(), &multiple(operator, values)).unwrap();
         assert_eq!(ids(&users), expected, "{operator}");
     }
     let unknown_field = ListUsersParams {
@@ -122,7 +122,12 @@ fn multiple_value_filters_search_sort_and_paging() {
         filter_value: Some(UserFilterValue::Multiple(vec!["x".into()])),
         ..Default::default()
     };
-    assert!(apply_list_users(roster(), &unknown_field).0.is_empty());
+    assert!(
+        apply_list_users(roster(), &unknown_field)
+            .unwrap()
+            .0
+            .is_empty()
+    );
 
     let search = |field: &str, operator: &str, value: &str| ListUsersParams {
         search_field: Some(field.into()),
@@ -132,19 +137,33 @@ fn multiple_value_filters_search_sort_and_paging() {
         ..Default::default()
     };
     assert_eq!(
-        ids(&apply_list_users(roster(), &search("name", "ends_with", "l")).0),
+        ids(
+            &apply_list_users(roster(), &search("name", "ends_with", "l"))
+                .unwrap()
+                .0
+        ),
         "c"
     );
     assert_eq!(
-        ids(&apply_list_users(roster(), &search("name", "starts_with", "B")).0),
+        ids(
+            &apply_list_users(roster(), &search("name", "starts_with", "B"))
+                .unwrap()
+                .0
+        ),
         "b"
     );
     assert_eq!(
-        ids(&apply_list_users(roster(), &search("name", "eq", "Bob")).0),
+        ids(&apply_list_users(roster(), &search("name", "eq", "Bob"))
+            .unwrap()
+            .0),
         ""
     );
     assert_eq!(
-        ids(&apply_list_users(roster(), &search("banned", "contains", "t")).0),
+        ids(
+            &apply_list_users(roster(), &search("banned", "contains", "t"))
+                .unwrap()
+                .0
+        ),
         ""
     );
 
@@ -166,7 +185,7 @@ fn multiple_value_filters_search_sort_and_paging() {
             ..Default::default()
         };
         assert_eq!(
-            ids(&apply_list_users(roster(), &params).0),
+            ids(&apply_list_users(roster(), &params).unwrap().0),
             expected,
             "{sort_by:?}"
         );
@@ -178,7 +197,7 @@ fn multiple_value_filters_search_sort_and_paging() {
         sort_by: Some("id".into()),
         ..Default::default()
     };
-    let (users, total) = apply_list_users_presorted(roster(), &paged);
+    let (users, total) = apply_list_users_presorted(roster(), &paged).unwrap();
     assert_eq!((ids(&users).as_str(), total), ("a", 3));
 }
 
@@ -484,7 +503,7 @@ fn wire_views_round_trip_through_their_entity_traits() {
     assert!(AuthUser::two_factor_enabled(&user));
     let _ = user
         .extension_fields
-        .insert("emailVerified".into(), json!("yes"));
+        .insert("emailVerified".into(), json!("yes").into());
     assert_eq!(serde_json::to_value(&user).unwrap()["emailVerified"], "yes");
 }
 

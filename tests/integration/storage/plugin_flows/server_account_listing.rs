@@ -75,7 +75,7 @@ async fn server_account_listing_retains_logical_authority_projection_and_headers
             .store()
             .create_account(CreateAccount {
                 user_id: id.clone(),
-                account_id: format!("remote-{id}"),
+                account_id: format!("remote-{id}").into(),
                 provider_id: "google".into(),
                 access_token: Some("private-access".into()),
                 refresh_token: Some("private-refresh".into()),

@@ -75,7 +75,7 @@ async fn oauth_scope_expiration_preserves_absolute_numeric_zero_and_relative_bou
             client,
             vec!["email".into(), "profile".into(), "offline_access".into()],
         );
-        params.user = Some(auth.context().trusted_user_view(&user));
+        params.user = Some(auth.context().trusted_user_view(&user).unwrap());
         let issued = provider
             .issue_tokens(auth.context(), &call, Some("urn:fixture:server"), &params)
             .await?;

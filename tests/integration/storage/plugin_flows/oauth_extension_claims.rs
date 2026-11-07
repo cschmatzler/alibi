@@ -83,7 +83,7 @@ async fn oauth_opaque_validation_rederives_live_access_claims<B: Backend>(db: Db
         })
         .await?;
     let mut params = OAuthTokenIssueParams::new(client, vec!["email".into(), "profile".into()]);
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     let session = auth
         .store()
         .get_user_sessions(&user_id)
@@ -334,7 +334,7 @@ async fn oauth_extension_claims_receive_live_trusted_issuance_context<B: Backend
         client.clone(),
         vec!["openid".into(), "profile".into(), "email".into()],
     );
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     let session = auth
         .store()
         .get_user_sessions(user.id().as_ref())

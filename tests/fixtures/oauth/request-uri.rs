@@ -48,7 +48,7 @@ impl OAuthRequestUriResolver for RequestRegistry {
                         if input.request_uri == "urn:fixture:invalid-max-age" {
                             _ = parameters.insert("max_age".into(), JsValue::Number(f64::INFINITY));
                         }
-                        Ok(Some(parameters))
+                        Ok(Some(alibi::utils::json::utf8_keys(&parameters)?))
                     }
                     _ => Ok(None),
                 }

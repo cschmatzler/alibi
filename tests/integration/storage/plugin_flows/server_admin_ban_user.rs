@@ -172,7 +172,10 @@ async fn server_admin_ban_user_applies_policy_and_revokes_target_sessions<B: Bac
             AdminPlugin::ban_user_endpoint(&input)?
                 .with_body(&json!({"userId":id,"banReason":reason,"banExpiresIn":duration,"banned":false}))?
                 .with_query(&json!({"userId":foreign_id}))?, options(&admin)).await?;
-        assert_eq!(output.decode()?.user.values().get("id"), Some(&json!(id)));
+        assert_eq!(
+            output.decode()?.user.values().get("id"),
+            Some(&json!(id).into())
+        );
         let stored = auth.store().get_user_by_id(&id).await?.unwrap();
         assert!(stored.banned());
         assert_eq!(stored.ban_reason(), Some(expected_reason));
@@ -187,7 +190,7 @@ async fn server_admin_ban_user_applies_policy_and_revokes_target_sessions<B: Bac
             original_foreign
         );
         let user = output.value().get("user").unwrap();
-        assert_eq!(user.get("id"), Some(&JsValue::String(id.clone())));
+        assert_eq!(user.get("id"), Some(&JsValue::String(id.clone().into())));
         assert_eq!(user.get("banned"), Some(&JsValue::Bool(true)));
         assert_eq!(
             user.get("banReason"),

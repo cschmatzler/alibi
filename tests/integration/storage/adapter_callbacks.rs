@@ -133,8 +133,9 @@ async fn adapter_observers_see_all_committed_record_kinds_and_respect_output_fai
                     if fail.load(Ordering::SeqCst) {
                         return Err(AuthError::internal("output callback failed"));
                     }
-                    Ok(value
-                        .map(|value| JsValue::String(format!("shown:{}", value.as_str().unwrap()))))
+                    Ok(value.map(|value| {
+                        JsValue::String(format!("shown:{}", value.as_str().unwrap()).into())
+                    }))
                 }
             }),
         ));

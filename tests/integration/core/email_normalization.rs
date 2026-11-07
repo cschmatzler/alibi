@@ -28,13 +28,13 @@ mod tests {
 
         let lower = auth
             .store()
-            .get_user_by_email("mixed.case@test.com")
+            .get_user_by_email(&"mixed.case@test.com".into())
             .await
             .unwrap()
             .expect("lowercase lookup should find the user");
         let upper = auth
             .store()
-            .get_user_by_email("MIXED.CASE@TEST.COM")
+            .get_user_by_email(&"MIXED.CASE@TEST.COM".into())
             .await
             .unwrap()
             .expect("uppercase lookup should find the user");
@@ -69,7 +69,7 @@ mod tests {
 
         let fetched = auth
             .store()
-            .get_user_by_email("UPDATED.CASE@TEST.COM")
+            .get_user_by_email(&"UPDATED.CASE@TEST.COM".into())
             .await
             .unwrap()
             .expect("normalized lookup should find the updated user");

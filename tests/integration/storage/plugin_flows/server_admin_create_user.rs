@@ -224,11 +224,14 @@ async fn server_admin_create_user_scopes_provisioning_and_creates_usable_credent
             .await?;
         assert_eq!(
             output.decode()?.user.values().get("email"),
-            Some(&json!(email))
+            Some(&json!(email).into())
         );
         let user = output.value().get("user").unwrap();
         let id = user.get("id").and_then(JsValue::as_str).unwrap();
-        assert_eq!(user.get("email"), Some(&JsValue::String(email.clone())));
+        assert_eq!(
+            user.get("email"),
+            Some(&JsValue::String(email.clone().into()))
+        );
         assert_eq!(user.get("role"), Some(&JsValue::String(role.into())));
         assert!(user.get("password").is_none());
         assert_eq!(

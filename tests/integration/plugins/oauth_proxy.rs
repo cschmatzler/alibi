@@ -386,7 +386,7 @@ async fn restored_cookie_state_replays_create_sessions_without_rebinding_owner<B
     let owner = fixture
         .preview
         .store()
-        .get_user_by_email("proxy-owner@fixture.test")
+        .get_user_by_email(&"proxy-owner@fixture.test".into())
         .await?
         .unwrap();
     let owner_id = owner.id().into_owned();
@@ -793,13 +793,19 @@ async fn proxy_loose_profile_retains_resolved_account_key_authority<B: Backend>(
     struct Key;
     #[async_trait::async_trait]
     impl OAuthAccountKeyResolver for Key {
-        async fn resolve(&self, c: OAuthAccountKeyContext) -> Result<Value, String> {
-            assert_eq!(c.profile.get("id").unwrap(), 777);
+        async fn resolve(
+            &self,
+            c: OAuthAccountKeyContext,
+        ) -> Result<alibi::utils::json::JsValue, String> {
+            assert_eq!(
+                c.profile.get("id").unwrap(),
+                &alibi::utils::json::JsValue::Number(777.0)
+            );
             assert_eq!(
                 c.tokens.access_token.as_deref(),
                 Some("real-provider-access")
             );
-            Ok(json!("stable-custom-account"))
+            Ok(json!("stable-custom-account").into())
         }
     }
     let mut fixture = Fixture::<B>::new(db).await;
@@ -1237,7 +1243,7 @@ mod tests {
             let owner = fixture
                 .preview
                 .store()
-                .get_user_by_email("proxy-owner@fixture.test")
+                .get_user_by_email(&"proxy-owner@fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap();

@@ -117,8 +117,18 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for TransactionCreationH
         row: &S::Account,
         context: &DatabaseHookContext<'_, B>,
     ) -> AuthResult<()> {
-        self.observe(format!("account:{}", row.account_id()), context)
-            .await
+        self.observe(
+            format!(
+                "account:{}",
+                row.account_id()
+                    .as_str()
+                    .ok_or_else(|| alibi::AuthError::internal(
+                        "fixture event requires a UTF-8 account ID"
+                    ))?
+            ),
+            context,
+        )
+        .await
     }
     async fn after_create_verification(
         &self,
@@ -286,7 +296,7 @@ async fn transactional_verification_creation_rolls_back_with_signup_work<B: Back
                         tx.create_account(CreateAccount {
                             additional_fields: Default::default(),
                             user_id: user.id().into_owned(),
-                            account_id: identifier.to_owned(),
+                            account_id: identifier.to_owned().into(),
                             provider_id: "credential".to_owned(),
                             access_token: None,
                             refresh_token: None,

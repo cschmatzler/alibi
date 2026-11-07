@@ -73,7 +73,7 @@ async fn oauth_pairwise_presentation_preserves_internal_identity_and_retires_ses
         client.clone(),
         vec!["openid".into(), "profile".into(), "offline_access".into()],
     );
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.session_id = Some(session.id().as_ref().into());
     let call = EndpointCall::new(
         &EndpointDefinition {

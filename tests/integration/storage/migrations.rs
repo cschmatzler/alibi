@@ -93,7 +93,7 @@ async fn installed_by<From: Backend, To: Backend>(db: Db) -> TestResult {
     assert_eq!(db.count("better_auth_migrations").await?, 3);
     assert_eq!(db.count("oauthClient").await?, 0);
     assert_eq!(
-        to.get_user_by_email("switch@fixture.test")
+        to.get_user_by_email(&"switch@fixture.test".into())
             .await?
             .map(|user| user.id().into_owned()),
         Some(created.id().into_owned())

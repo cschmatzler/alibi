@@ -218,7 +218,7 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
         );
         assert!(
             store
-                .get_account("callback-provider", "employee-subject")
+                .get_account("callback-provider", &"employee-subject".into())
                 .await?
                 .is_none()
         );
@@ -290,7 +290,7 @@ async fn callback_flow<B: Backend>(db: Db, case: CallbackCase) -> TestResult {
             .is_none()
     );
     let account = store
-        .get_account("callback-provider", "employee-subject")
+        .get_account("callback-provider", &"employee-subject".into())
         .await?
         .ok_or("SSO account was not created")?;
     assert_eq!(account.scope(), Some("openid,email"));
@@ -434,13 +434,13 @@ async fn sso_callback_verifies_id_token_authority_claims_and_userinfo_subject<B:
             assert_eq!(error["error_description"], description);
             assert!(
                 store
-                    .get_account(provider, "employee-subject")
+                    .get_account(provider, &"employee-subject".into())
                     .await?
                     .is_none()
             );
             assert!(
                 store
-                    .get_account(provider, "other-subject")
+                    .get_account(provider, &"other-subject".into())
                     .await?
                     .is_none()
             );
@@ -450,7 +450,7 @@ async fn sso_callback_verifies_id_token_authority_claims_and_userinfo_subject<B:
             assert!(body(&session)["session"].is_object());
             assert_eq!(body(&session)["user"]["emailVerified"], false);
             let account = store
-                .get_account(provider, "employee-subject")
+                .get_account(provider, &"employee-subject".into())
                 .await?
                 .ok_or("ID token did not create account")?;
             assert!(account.id_token().is_some());
@@ -682,7 +682,14 @@ async fn sso_validation_receives_protocol_source_before_identity_writes<B: Backe
         }
         assert!(
             store
-                .get_account(provider, if saml { email } else { "employee-subject" })
+                .get_account(
+                    provider,
+                    &alibi::utils::json::JsString::from(if saml {
+                        email
+                    } else {
+                        "employee-subject"
+                    })
+                )
                 .await?
                 .is_some()
         );
@@ -801,8 +808,18 @@ async fn sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests<
                     })
                 );
                 assert_eq!(location.path(), if saml { "/complete" } else { "/failed" });
-                assert!(store.get_account(provider, &subject).await?.is_none());
-                assert!(store.get_user_by_email(&email).await?.is_none());
+                assert!(
+                    store
+                        .get_account(provider, &alibi::utils::json::JsString::from(&subject))
+                        .await?
+                        .is_none()
+                );
+                assert!(
+                    store
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&email))
+                        .await?
+                        .is_none()
+                );
             } else {
                 assert!(!query.contains_key("error"));
                 let session = call(
@@ -812,7 +829,12 @@ async fn sso_signup_policy_gates_new_identity_and_honors_oidc_explicit_requests<
                 )
                 .await;
                 assert_eq!(body(&session)["user"]["email"], email);
-                assert!(store.get_account(provider, &subject).await?.is_some());
+                assert!(
+                    store
+                        .get_account(provider, &alibi::utils::json::JsString::from(&subject))
+                        .await?
+                        .is_some()
+                );
             }
         }
     }
@@ -950,7 +972,12 @@ async fn sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_e
                         "account not linked"
                     })
                 );
-                assert!(store.get_account(provider, &subject).await?.is_none());
+                assert!(
+                    store
+                        .get_account(provider, &alibi::utils::json::JsString::from(&subject))
+                        .await?
+                        .is_none()
+                );
                 assert!(completed.headers.get_all("set-cookie").all(|raw| {
                     raw.split(';')
                         .next()
@@ -968,7 +995,7 @@ async fn sso_verified_domain_links_subdomain_accounts_without_trusting_foreign_e
                 assert_eq!(body(&session)["user"]["id"], existing_id);
                 assert_eq!(
                     store
-                        .get_account(provider, &subject)
+                        .get_account(provider, &alibi::utils::json::JsString::from(&subject))
                         .await?
                         .unwrap()
                         .user_id()
@@ -1086,7 +1113,14 @@ async fn sso_configured_providers_issue_bound_state_and_complete_oidc_and_saml_l
             assert_eq!(body(&session)["user"]["email"], email);
             assert!(
                 store
-                    .get_account(provider, if saml { &email } else { "configured-subject" })
+                    .get_account(
+                        provider,
+                        &alibi::utils::json::JsString::from(if saml {
+                            &email
+                        } else {
+                            "configured-subject"
+                        })
+                    )
                     .await?
                     .is_some()
             );
@@ -1212,8 +1246,18 @@ async fn sso_configured_state_rejects_reconfigured_authority_before_identity_wri
                     query.get("error_description").map(String::as_str),
                     Some("sso_provider_changed_during_authentication")
                 );
-                assert!(store.get_user_by_email(&email).await?.is_none());
-                assert!(store.get_account(provider, subject).await?.is_none());
+                assert!(
+                    store
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&email))
+                        .await?
+                        .is_none()
+                );
+                assert!(
+                    store
+                        .get_account(provider, &alibi::utils::json::JsString::from(subject))
+                        .await?
+                        .is_none()
+                );
                 if !saml {
                     assert!(idp.exchanges.lock().unwrap().is_empty());
                 }
@@ -1237,7 +1281,12 @@ async fn sso_configured_state_rejects_reconfigured_authority_before_identity_wri
                 )
                 .await;
                 assert_eq!(body(&session)["user"]["email"], email);
-                assert!(store.get_account(provider, subject).await?.is_some());
+                assert!(
+                    store
+                        .get_account(provider, &alibi::utils::json::JsString::from(subject))
+                        .await?
+                        .is_some()
+                );
             }
             assert!(
                 store
@@ -1342,10 +1391,18 @@ async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_mis
                 Some("no_private_key_available")
             );
             assert!(idp.exchanges.lock().unwrap().is_empty());
-            assert!(store.get_user_by_email(&email).await?.is_none());
             assert!(
                 store
-                    .get_account("configured-jwt", &subject)
+                    .get_user_by_email(&alibi::utils::json::JsString::from(&email))
+                    .await?
+                    .is_none()
+            );
+            assert!(
+                store
+                    .get_account(
+                        "configured-jwt",
+                        &alibi::utils::json::JsString::from(&subject)
+                    )
                     .await?
                     .is_none()
             );
@@ -1377,7 +1434,10 @@ async fn sso_private_key_jwt_authenticates_actual_token_requests_and_rejects_mis
             jtis.push(jti);
             assert!(
                 store
-                    .get_account("configured-jwt", &subject)
+                    .get_account(
+                        "configured-jwt",
+                        &alibi::utils::json::JsString::from(&subject)
+                    )
                     .await?
                     .is_some()
             );
@@ -1486,7 +1546,15 @@ async fn sso_private_key_resolver_admits_persisted_clients_and_resolves_each_tok
             .await;
             assert_eq!(body(&session)["user"]["email"], email);
             assert_eq!(idp.exchanges.lock().unwrap().len(), 1);
-            assert!(store.get_account("resolved-jwt", &subject).await?.is_some());
+            assert!(
+                store
+                    .get_account(
+                        "resolved-jwt",
+                        &alibi::utils::json::JsString::from(&subject)
+                    )
+                    .await?
+                    .is_some()
+            );
         } else {
             assert_eq!(location.path(), "/failed");
             assert_eq!(
@@ -1498,8 +1566,21 @@ async fn sso_private_key_resolver_admits_persisted_clients_and_resolves_each_tok
                 "no_private_key_available"
             );
             assert!(idp.exchanges.lock().unwrap().is_empty());
-            assert!(store.get_account("resolved-jwt", &subject).await?.is_none());
-            assert!(store.get_user_by_email(&email).await?.is_none());
+            assert!(
+                store
+                    .get_account(
+                        "resolved-jwt",
+                        &alibi::utils::json::JsString::from(&subject)
+                    )
+                    .await?
+                    .is_none()
+            );
+            assert!(
+                store
+                    .get_user_by_email(&alibi::utils::json::JsString::from(&email))
+                    .await?
+                    .is_none()
+            );
         }
         assert_eq!(
             store.get_sso_provider("resolved-jwt").await?.unwrap(),
@@ -1654,7 +1735,14 @@ async fn sso_user_provisioning_observes_first_and_every_login_after_success<B: B
                 }
                 assert!(
                     store
-                        .get_account(&provider, if saml { &email } else { "employee-subject" })
+                        .get_account(
+                            &provider,
+                            &alibi::utils::json::JsString::from(if saml {
+                                &email
+                            } else {
+                                "employee-subject"
+                            })
+                        )
                         .await?
                         .is_some()
                 );
@@ -1846,7 +1934,14 @@ async fn sso_organization_membership_respects_policy_invitation_and_existing_rol
                 }
                 assert!(
                     store
-                        .get_account(&provider, if saml { &email } else { "employee-subject" })
+                        .get_account(
+                            &provider,
+                            &alibi::utils::json::JsString::from(if saml {
+                                &email
+                            } else {
+                                "employee-subject"
+                            })
+                        )
                         .await?
                         .is_some()
                 );

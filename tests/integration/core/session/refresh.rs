@@ -329,7 +329,7 @@ mod tests {
             .unwrap()
             .unwrap();
         let mut request = AuthRequest::new(HttpMethod::Post, "/revoke-session");
-        request.set_virtual_session(auth.context().session_view(&foreign));
+        request.set_virtual_session(auth.context().session_view(&foreign).unwrap());
         assert!(
             auth.context()
                 .require_authoritative_session(&request)
@@ -950,7 +950,7 @@ mod secondary {
             assert!(response.headers.get_all("set-cookie").next().is_none());
             assert!(
                 auth.store()
-                    .get_user_by_email("failed@secondary.fixture.test")
+                    .get_user_by_email(&"failed@secondary.fixture.test".into())
                     .await
                     .unwrap()
                     .is_none()

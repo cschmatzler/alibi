@@ -266,7 +266,10 @@ async fn sso_custom_sp_metadata_drives_authorization_and_validates_effective_pol
     assert_eq!(body(&session)["user"]["email"], email);
     assert!(
         store
-            .get_account("custom-sp-provider", email)
+            .get_account(
+                "custom-sp-provider",
+                &alibi::utils::json::JsString::from(email)
+            )
             .await?
             .is_some()
     );

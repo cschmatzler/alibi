@@ -370,7 +370,7 @@ mod tests {
                 assert_eq!(calls.load(Ordering::SeqCst), 0);
                 assert!(
                     auth.store()
-                        .get_user_by_email("oauth-owner@fixture.test")
+                        .get_user_by_email(&"oauth-owner@fixture.test".into())
                         .await
                         .unwrap()
                         .is_none()
@@ -384,7 +384,7 @@ mod tests {
                 assert_eq!(calls.load(Ordering::SeqCst), 2);
                 let new = auth
                     .store()
-                    .get_user_by_email("oauth-owner@fixture.test")
+                    .get_user_by_email(&"oauth-owner@fixture.test".into())
                     .await
                     .unwrap()
                     .unwrap();

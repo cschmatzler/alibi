@@ -249,7 +249,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .store()
         .create_account(alibi::CreateAccount {
             user_id: user.clone(),
-            account_id: user.clone(),
+            account_id: user.clone().into(),
             provider_id: "credential".into(),
             password: Some(String::new()),
             access_token: None,
@@ -866,7 +866,7 @@ async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) 
     let physical = auth.store().get_session(&foreign_token).await?.unwrap();
     let before = db.tables(&["user", "account", "session"]).await?;
     let mut guest = request("/trusted", None, "");
-    guest.set_virtual_session(auth.context().session_view(&physical));
+    guest.set_virtual_session(auth.context().session_view(&physical).unwrap());
     let error = alibi::plugins::password_management::set_password(
         &guest,
         "owner-password-123",
@@ -877,7 +877,7 @@ async fn server_password_discards_foreign_virtual_authority<B: Backend>(db: Db) 
     assert_eq!(error.status_code(), 401);
     assert_eq!(db.tables(&["user", "account", "session"]).await?, before);
     let mut owned = request("/trusted", None, &cookies(&owner));
-    owned.set_virtual_session(auth.context().session_view(&physical));
+    owned.set_virtual_session(auth.context().session_view(&physical).unwrap());
     alibi::plugins::password_management::set_password(&owned, "owner-password-123", auth.context())
         .await?;
     assert_eq!(

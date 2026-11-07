@@ -576,19 +576,25 @@ fn legacy_user() -> OAuthUserInfo {
         additional_fields: Default::default(),
     }
 }
-fn legacy_atlassian(profile: Value) -> Result<OAuthUserInfo, String> {
+fn legacy_atlassian(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     assert_eq!(profile["name"], "Atlassian User");
-    Ok(legacy_user())
+    Ok(legacy_user().public_profile(true))
 }
-fn legacy_cloudflare(profile: Value) -> Result<OAuthUserInfo, String> {
+fn legacy_cloudflare(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     assert!(profile.get("success").is_none());
     assert_eq!(profile["email"], "cloudflare@example.test");
-    Ok(legacy_user())
+    Ok(legacy_user().public_profile(true))
 }
-fn legacy_naver(profile: Value) -> Result<OAuthUserInfo, String> {
+fn legacy_naver(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     assert_eq!(profile["resultcode"], "00");
     assert_eq!(profile["response"]["email"], "naver@example.test");
-    Ok(legacy_user())
+    Ok(legacy_user().public_profile(true))
 }
 
 pub(super) async fn begin<S: AuthSchema>(
@@ -614,27 +620,59 @@ pub(super) async fn complete<S: AuthSchema>(
     call(auth, callback, 302).await
 }
 
-pub(super) struct PartialProfileMapper(pub(super) Arc<Mutex<Vec<Value>>>);
+pub(super) struct PartialProfileMapper(pub(super) Arc<Mutex<Vec<alibi::utils::json::JsValue>>>);
 #[async_trait::async_trait]
 impl OAuthProfileMapper for PartialProfileMapper {
     async fn map_profile(
         &self,
-        profile: Value,
-    ) -> Result<alibi::field_policy::FieldOutput, String> {
+        profile: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         self.0.lock().unwrap().push(profile);
         Ok([
-            ("id".into(), json!("application-presentation-id")),
-            ("name".into(), json!("Application display")),
+            ("id".into(), json!("application-presentation-id").into()),
+            ("name".into(), json!("Application display").into()),
         ]
         .into_iter()
         .collect())
     }
 }
 
+#[tokio::test]
+async fn canonical_profile_callback_retains_native_own_values_without_json_projection() {
+    use alibi::utils::json::{JsObject, JsString, JsValue};
+    let own: JsObject = [
+        ("id".into(), JsValue::String("raw-subject".into())),
+        ("undefined".into(), JsValue::Undefined),
+        (
+            "date".into(),
+            JsValue::Date(chrono::DateTime::from_timestamp_millis(42).unwrap()),
+        ),
+        ("nonfinite".into(), JsValue::Number(f64::INFINITY)),
+        (
+            JsString::from_code_units(vec![0xd800]),
+            JsValue::String(JsString::from_code_units(vec![0xdc00])),
+        ),
+    ]
+    .into();
+    let profile = JsValue::Object(own);
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mapped = PartialProfileMapper(seen.clone())
+        .map_profile(profile.clone())
+        .await
+        .unwrap();
+    assert_eq!(seen.lock().unwrap().as_slice(), &[profile]);
+    assert_eq!(mapped.len(), 2);
+    assert_eq!(mapped["id"], "application-presentation-id");
+    assert_eq!(mapped["name"], "Application display");
+}
+
 pub(super) struct FailedMapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for FailedMapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
+    async fn map_profile(
+        &self,
+        _: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         Err("Application profile rejected".into())
     }
 }
@@ -654,9 +692,10 @@ impl OAuthUserInfoHandler for CustomProfile {
                 image: None,
                 email_verified: false,
                 additional_fields: Default::default(),
-            },
-            data: json!({"sub":"custom-raw-subject"}),
-            user_output: None,
+            }
+            .public_profile(true),
+            data: json!({"sub":"custom-raw-subject"}).into(),
+            account_subject: None,
         })
     }
 }

@@ -255,7 +255,7 @@ impl<S: AuthSchema> alibi::plugins::scim::ScimIdentity<S> for CreateIdentity {
             return Err(AuthError::internal("incorrect resolver resource"));
         }
         let user = database
-            .get_user_by_email("new-work@example.com")
+            .get_user_by_email(&"new-work@example.com".into())
             .await?
             .ok_or_else(|| AuthError::internal("resolver target missing"))?;
         Ok(Resolution::Link {

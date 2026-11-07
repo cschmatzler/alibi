@@ -257,12 +257,22 @@ mod tests {
                     Ok(_) => panic!("{name}: invalid role configuration initialized"),
                 }
                 assert!(
-                    store.get_user_by_email(&marker).await.unwrap().is_none(),
+                    store
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&marker))
+                        .await
+                        .unwrap()
+                        .is_none(),
                     "invalid configuration must not run application bootstrap"
                 );
             } else {
                 let auth = result.unwrap();
-                assert!(store.get_user_by_email(&marker).await.unwrap().is_some());
+                assert!(
+                    store
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&marker))
+                        .await
+                        .unwrap()
+                        .is_some()
+                );
                 let created = auth
                     .store()
                     .create_user(
@@ -356,7 +366,7 @@ mod tests {
         }
         assert!(
             store
-                .get_user_by_email("invalid-bootstrap@message.fixture.test")
+                .get_user_by_email(&"invalid-bootstrap@message.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none()
@@ -377,7 +387,7 @@ mod tests {
             .unwrap();
         assert!(
             store
-                .get_user_by_email("valid-bootstrap@message.fixture.test")
+                .get_user_by_email(&"valid-bootstrap@message.fixture.test".into())
                 .await
                 .unwrap()
                 .is_some()

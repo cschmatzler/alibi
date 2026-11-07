@@ -84,7 +84,7 @@ async fn without_database_optional_record_workflow() -> TestResult {
     // lose actual provisioned state, rather than merely miss an arbitrary ID.
     let owner = auth
         .store()
-        .get_user_by_email("optional172@fixture.test")
+        .get_user_by_email(&"optional172@fixture.test".into())
         .await?
         .unwrap();
     let factor = auth

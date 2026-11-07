@@ -158,7 +158,10 @@ async fn domain_membership_flow<B: Backend>(db: Db, http: bool) -> TestResult {
         let user_id = body(&session)["user"]["id"].as_str().unwrap().to_owned();
         assert!(
             store
-                .get_account("gitlab", &subject.to_string())
+                .get_account(
+                    "gitlab",
+                    &alibi::utils::json::JsString::from(&subject.to_string())
+                )
                 .await?
                 .is_some()
         );

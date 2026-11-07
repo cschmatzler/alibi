@@ -907,7 +907,7 @@ async fn organization_membership_resolver_keeps_target_snapshots_and_raw_falsy_r
         let seen = policy.seen.lock().unwrap().last().unwrap().clone();
         assert_eq!(seen.0.id, target.id);
         assert_eq!(seen.0.email.as_deref(), Some("target@example.test"));
-        assert_eq!(seen.1.metadata, Some(json!(raw)));
+        assert_eq!(seen.1.metadata, Some(json!(raw).into()));
         assert_eq!(policy.seen.lock().unwrap().len(), mode + 1);
     }
     let count = policy.seen.lock().unwrap().len();

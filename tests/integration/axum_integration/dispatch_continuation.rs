@@ -311,7 +311,8 @@ mod tests {
         assert_eq!(
             next_runtime
                 .block_on(
-                    evaluated_store.get_user_by_email("second-runtime@transport.fixture.test")
+                    evaluated_store
+                        .get_user_by_email(&"second-runtime@transport.fixture.test".into())
                 )
                 .unwrap()
                 .unwrap()
@@ -353,7 +354,7 @@ mod tests {
         bounded(&observations.entered).await;
         assert_eq!(
             store
-                .get_user_by_email("disconnected@transport.fixture.test")
+                .get_user_by_email(&"disconnected@transport.fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -375,7 +376,7 @@ mod tests {
         bounded(&observations.finished).await;
         assert_eq!(
             store
-                .get_user_by_email("disconnected@transport.fixture.test")
+                .get_user_by_email(&"disconnected@transport.fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -483,7 +484,7 @@ mod tests {
         assert!(!String::from_utf8_lossy(&body).contains("private application panic detail"));
         assert!(
             store
-                .get_user_by_email("panic@transport.fixture.test")
+                .get_user_by_email(&"panic@transport.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none()
@@ -495,7 +496,7 @@ mod tests {
         assert_eq!(next.status(), StatusCode::CREATED);
         assert_eq!(
             store
-                .get_user_by_email("next@transport.fixture.test")
+                .get_user_by_email(&"next@transport.fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -562,7 +563,7 @@ mod tests {
         assert_eq!(observations.calls.load(Ordering::SeqCst), 1);
         assert_eq!(
             store
-                .get_user_by_email("body-control@transport.fixture.test")
+                .get_user_by_email(&"body-control@transport.fixture.test".into())
                 .await
                 .unwrap()
                 .unwrap()
@@ -595,7 +596,7 @@ mod tests {
             bounded(&observations.entered).await;
             assert_eq!(
                 store
-                    .get_user_by_email(&email)
+                    .get_user_by_email(&alibi::utils::json::JsString::from(&email))
                     .await
                     .unwrap()
                     .unwrap()
@@ -608,7 +609,7 @@ mod tests {
                 observations.release.notify_one();
                 assert_eq!(
                     store
-                        .get_user_by_email(&email)
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&email))
                         .await
                         .unwrap()
                         .unwrap()
@@ -660,7 +661,7 @@ mod tests {
                 bounded(&observations.finished).await;
                 assert_eq!(
                     store
-                        .get_user_by_email(&email)
+                        .get_user_by_email(&alibi::utils::json::JsString::from(&email))
                         .await
                         .unwrap()
                         .unwrap()
@@ -697,7 +698,7 @@ async fn application_middleware_short_circuits_and_errors_preserve_dispatch_effe
         let response = router.oneshot(input).await.unwrap();
         assert_eq!(response.status().as_u16(), expected);
         let stored = store
-            .get_user_by_email("middleware@example.test")
+            .get_user_by_email(&"middleware@example.test".into())
             .await
             .unwrap();
         assert_eq!(stored.is_some(), written);

@@ -84,7 +84,7 @@ async fn oauth_resource_issuance_admission_rejects_without_changing_authority<B:
         client,
         vec!["email".into(), "profile".into(), "offline_access".into()],
     );
-    params.user = Some(auth.context().trusted_user_view(&user));
+    params.user = Some(auth.context().trusted_user_view(&user).unwrap());
     params.session_id = Some(session.id().as_ref().into());
     let seed = provider
         .issue_tokens(auth.context(), &call, Some("urn:fixture:server"), &params)

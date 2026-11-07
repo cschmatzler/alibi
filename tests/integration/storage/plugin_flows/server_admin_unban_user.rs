@@ -167,9 +167,12 @@ async fn server_admin_unban_user_clears_ban_fields_without_restoring_sessions<B:
                 options(&admin),
             )
             .await?;
-        assert_eq!(output.decode()?.user.values().get("id"), Some(&json!(id)));
+        assert_eq!(
+            output.decode()?.user.values().get("id"),
+            Some(&json!(id).into())
+        );
         let user = output.value().get("user").unwrap();
-        assert_eq!(user.get("id"), Some(&JsValue::String(id.clone())));
+        assert_eq!(user.get("id"), Some(&JsValue::String(id.clone().into())));
         assert_eq!(user.get("banned"), Some(&JsValue::Bool(false)));
         assert_eq!(user.get("banReason"), Some(&JsValue::Null));
         assert_eq!(user.get("banExpires"), Some(&JsValue::Null));

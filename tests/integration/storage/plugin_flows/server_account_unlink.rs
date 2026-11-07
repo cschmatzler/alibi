@@ -53,7 +53,7 @@ async fn remote_account<S: AuthSchema>(auth: &Alibi<S>, user_id: &str) -> TestRe
         .store()
         .create_account(CreateAccount {
             user_id: user_id.into(),
-            account_id: format!("owned-remote-{user_id}"),
+            account_id: format!("owned-remote-{user_id}").into(),
             provider_id: "google".into(),
             access_token: Some("retained-private-access".into()),
             refresh_token: Some("retained-private-refresh".into()),

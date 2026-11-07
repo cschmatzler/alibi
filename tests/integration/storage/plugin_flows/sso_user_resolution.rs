@@ -309,7 +309,12 @@ async fn resolution_flow<B: Backend>(db: Db, mode: &str, oidc: bool) -> TestResu
         1
     };
     let account_id = if oidc { "employee-subject" } else { email };
-    let account = store.get_account("resolver-provider", account_id).await?;
+    let account = store
+        .get_account(
+            "resolver-provider",
+            &alibi::utils::json::JsString::from(account_id),
+        )
+        .await?;
     let proof = store
         .get_latest_verification_by_identifier(&format!("sso-resolver-write:{}", ordinal.max(1)))
         .await?;
@@ -369,7 +374,12 @@ async fn resolution_flow<B: Backend>(db: Db, mode: &str, oidc: bool) -> TestResu
         assert_eq!(query["error"], expected.0);
         assert_eq!(query["error_description"], expected.1);
         assert!(proof.is_none());
-        assert!(store.get_user_by_email(email).await?.is_none());
+        assert!(
+            store
+                .get_user_by_email(&alibi::utils::json::JsString::from(email))
+                .await?
+                .is_none()
+        );
         if mode == "ownership-conflict" {
             assert_eq!(
                 account.unwrap().user_id(),

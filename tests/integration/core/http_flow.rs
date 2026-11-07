@@ -50,7 +50,7 @@ async fn create_test_user_and_session(auth: Arc<Alibi<TestSchema>>) -> (String, 
 
 async fn user_id_from_email(auth: &Arc<Alibi<TestSchema>>, email: &str) -> String {
     auth.store()
-        .get_user_by_email(email)
+        .get_user_by_email(&alibi::utils::json::JsString::from(email))
         .await
         .unwrap()
         .map_or_else(|| panic!("expected user for email {email}"), |user| user.id)
@@ -732,7 +732,7 @@ mod tests {
         );
         assert_eq!(
             auth.store()
-                .get_user_by_email("existing@test.com")
+                .get_user_by_email(&"existing@test.com".into())
                 .await
                 .unwrap()
                 .unwrap()

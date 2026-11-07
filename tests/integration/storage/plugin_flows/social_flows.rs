@@ -52,8 +52,8 @@ fn user(sub: &str, email: &str, verified: bool) -> OAuthUserInfo {
         additional_fields: Default::default(),
         id: sub.into(),
         email: email.into(),
-        name: Some(format!("Provider {sub}")),
-        image: Some(format!("https://images.example/{sub}")),
+        name: Some(format!("Provider {sub}").into()),
+        image: Some(format!("https://images.example/{sub}").into()),
         email_verified: verified,
     }
 }
@@ -69,9 +69,9 @@ impl OAuthUserInfoHandler for Profile {
         }
         let user = self.user.lock().unwrap().clone();
         Ok(OAuthUserInfoResponse {
-            user_output: None,
-            data: json!({"sub": user.id, "email": user.email, "name": user.name}),
-            user,
+            account_subject: None,
+            data: json!({"sub": user.id, "email": user.email, "name": user.name}).into(),
+            user: user.public_profile(true),
         })
     }
 }

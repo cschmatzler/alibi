@@ -96,7 +96,7 @@ async fn exercise<S: alibi::AuthSchema>(store: &dyn alibi::store::AuthStore<S>) 
                 additional_fields: Default::default(),
                 user_id: user_id.clone(),
                 provider_id: "credential".into(),
-                account_id: user_id.clone(),
+                account_id: user_id.clone().into(),
                 access_token: None,
                 refresh_token: None,
                 id_token: None,
@@ -118,7 +118,7 @@ async fn exercise<S: alibi::AuthSchema>(store: &dyn alibi::store::AuthStore<S>) 
     );
     assert_eq!(
         store
-            .get_user_by_email("generated@fixture.test")
+            .get_user_by_email(&"generated@fixture.test".into())
             .await?
             .map(|user| user.id().into_owned()),
         Some(user_id.clone())

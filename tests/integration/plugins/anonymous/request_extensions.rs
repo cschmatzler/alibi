@@ -232,7 +232,7 @@ mod tests {
         );
         let user = auth
             .store()
-            .get_user_by_email("sequential-owner@example.test")
+            .get_user_by_email(&"sequential-owner@example.test".into())
             .await
             .unwrap()
             .unwrap();
@@ -300,7 +300,7 @@ mod tests {
 
         let user = auth
             .store()
-            .get_user_by_email("concurrent-owner@example.test")
+            .get_user_by_email(&"concurrent-owner@example.test".into())
             .await
             .unwrap()
             .unwrap();

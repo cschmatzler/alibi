@@ -29,7 +29,7 @@ impl OAuthUserInfoHandler for Profile {
         _: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
                 id: "google-transaction-owner".into(),
@@ -37,8 +37,9 @@ impl OAuthUserInfoHandler for Profile {
                 name: Some("Atomic OAuth Owner".into()),
                 image: None,
                 email_verified: true,
-            },
-            data: json!({}),
+            }
+            .public_profile(true),
+            data: json!({"sub":"google-transaction-owner"}).into(),
         })
     }
 }
@@ -78,6 +79,10 @@ mod tests {
         provider.get_user_info = Some(Arc::new(Profile));
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
+            .rate_limit(
+                alibi::middleware::RateLimitConfig::new()
+                    .storage(Arc::new(alibi::MemoryRateLimitStorage::new(100))),
+            )
             .plugin(OAuthPlugin::new().add_provider("google", provider))
             .build()
             .await
@@ -103,14 +108,14 @@ mod tests {
         );
         assert!(
             auth.store()
-                .get_account("google", "google-transaction-owner")
+                .get_account("google", &"google-transaction-owner".into())
                 .await
                 .unwrap()
                 .is_none()
         );
         assert!(
             auth.store()
-                .get_user_by_email("atomic@oauth.fixture.test")
+                .get_user_by_email(&"atomic@oauth.fixture.test".into())
                 .await
                 .unwrap()
                 .is_none(),
@@ -137,13 +142,13 @@ mod tests {
             .unwrap();
         let user = auth
             .store()
-            .get_user_by_email("atomic@oauth.fixture.test")
+            .get_user_by_email(&"atomic@oauth.fixture.test".into())
             .await
             .unwrap()
             .unwrap();
         let account = auth
             .store()
-            .get_account("google", "google-transaction-owner")
+            .get_account("google", &"google-transaction-owner".into())
             .await
             .unwrap()
             .unwrap();
