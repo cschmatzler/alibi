@@ -58,6 +58,60 @@ impl<S: AuthSchema> AuthPlugin<S> for Upload {
         )?))
     }
 }
+struct BodyPatch;
+
+#[async_trait]
+impl<S: AuthSchema> alibi::endpoint::EndpointHook<S> for BodyPatch {
+    async fn before(
+        &self,
+        _: &alibi::endpoint::EndpointCall,
+        _: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi::endpoint::BeforeEndpointAction>> {
+        Ok(Some(alibi::endpoint::BeforeEndpointAction::Patch(
+            Box::new(alibi::endpoint::EndpointContextPatch {
+                body: Some(alibi::utils::json::parse_value(r#"{"patched":true}"#)?),
+                ..Default::default()
+            }),
+        )))
+    }
+}
+
+#[tokio::test]
+async fn public_media_explicit_body_patch_updates_native_and_legacy_plugin_inputs()
+-> Result<(), Box<dyn std::error::Error>> {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let auth = AuthBuilder::without_database(
+        AuthConfig::new("native-upload-secret-at-least-32-characters")
+            .base_url("http://media.test"),
+    )
+    .plugin(Upload(calls.clone()))
+    .endpoint_hook(BodyPatch)
+    .build()
+    .await?;
+    let mut request = AuthRequest::new(HttpMethod::Post, "/api/auth/upload");
+    request.headers.extend([
+        ("origin".into(), "http://media.test".into()),
+        (
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        ),
+    ]);
+    request.body = Some(b"unpatched=original".to_vec());
+    let response = auth.handle_request(request).await?;
+    assert_eq!(response.status, 200);
+    let output: Value = serde_json::from_slice(&response.body)?;
+    assert_eq!(
+        output,
+        json!({
+            "parsed":{"unpatched":"original","patched":true},
+            "file":null,
+            "original":br#"{"unpatched":"original","patched":true}"#.as_slice()
+        })
+    );
+    assert_eq!(calls.load(Ordering::SeqCst), 1);
+    Ok(())
+}
+
 #[tokio::test]
 async fn public_media_admission_decodes_fields_and_uploads_before_invoking_plugins()
 -> Result<(), Box<dyn std::error::Error>> {

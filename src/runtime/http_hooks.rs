@@ -15,6 +15,7 @@ pub(super) struct HttpEndpointFrame {
     pub call: EndpointCall,
     pub outer: EndpointCall,
     pub path_patch: Option<String>,
+    pub body_patch: bool,
     pub header_patch: Option<std::collections::HashMap<String, String>>,
     pub legacy_headers: Option<std::collections::HashMap<String, String>>,
     pub error: Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
@@ -88,6 +89,7 @@ impl<S: AuthSchema> Alibi<S> {
             }
         }
         let path_patch = patch.path.clone();
+        let body_patch = patch.body.is_some();
         let header_patch = patch.headers.clone();
         patch.apply(&mut call);
         EndpointContextPatch {
@@ -102,6 +104,7 @@ impl<S: AuthSchema> Alibi<S> {
             call,
             outer,
             path_patch,
+            body_patch,
             header_patch,
             legacy_headers: None,
             error: Arc::default(),
@@ -238,7 +241,9 @@ pub(super) fn apply_http_endpoint_input(
     if let Some(method) = call.method() {
         request.method = method.clone();
     }
-    if let Some(body) = call.body() {
+    if frame.body_patch
+        && let Some(body) = call.body()
+    {
         request.body = Some(alibi_core::utils::json::to_vec(body)?);
         request
             .extensions()
@@ -294,6 +299,7 @@ mod canonical_tests {
             outer: call.clone(),
             call,
             path_patch: None,
+            body_patch: false,
             header_patch: None,
             legacy_headers: None,
             error: Arc::new(Mutex::new(None)),
