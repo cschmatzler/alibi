@@ -227,26 +227,15 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
     ) -> AuthResult<Option<TwoFactor>> {
         let backend = self.scoped_connection().get_database_backend();
         if backend == sea_orm::DbBackend::MySql {
-            let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
-            let locked = factor_select()
-                .filter(Column::Id.eq(id))
-                .lock_exclusive()
-                .one(&tx)
-                .await
-                .map_err(map_db_err)?;
-            let model = if locked.is_some()
-                && query.exec(&tx).await.map_err(map_db_err)?.rows_affected > 0
-            {
-                factor_select()
-                    .filter(Column::Id.eq(id))
-                    .one(&tx)
-                    .await
-                    .map_err(map_db_err)?
-            } else {
-                None
-            };
-            tx.commit().await.map_err(map_db_err)?;
-            return Ok(model.map(|model| TwoFactor::from(&model)));
+            let select = factor_select().filter(Column::Id.eq(id));
+            return super::mysql_snapshot::update(
+                self.scoped_connection(),
+                select.clone(),
+                select,
+                query,
+            )
+            .await
+            .map(|model| model.map(|model| TwoFactor::from(&model)));
         }
         if !matches!(
             backend,

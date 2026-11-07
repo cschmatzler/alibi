@@ -581,6 +581,7 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrator;
+mod mysql_snapshot;
 mod oauth_clients;
 mod organization_roles;
 mod organizations;

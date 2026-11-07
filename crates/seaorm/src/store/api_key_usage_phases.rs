@@ -1,7 +1,7 @@
 //! Source database usage writes are guarded separately, not one transaction.
 use super::{
     SeaOrmStore,
-    entities::api_key::{Column, Entity},
+    entities::api_key::{Column, Entity, Model},
     map_db_err,
 };
 use crate::schema::AuthSchema;
@@ -9,8 +9,8 @@ use alibi_core::store::ConsumeApiKeyResult;
 use alibi_core::{ApiKey, AuthError, AuthResult};
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ColumnTrait, DbBackend, EntityTrait, QueryFilter,
-    sea_query::{Expr, ExprTrait},
+    ColumnTrait, DbBackend, EntityTrait, QueryFilter, UpdateMany,
+    sea_query::{Condition, Expr, ExprTrait},
 };
 
 impl<S: AuthSchema> SeaOrmStore<S> {
@@ -31,10 +31,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         let database = self.scoped_connection();
         if !matches!(
             database.get_database_backend(),
-            DbBackend::Sqlite | DbBackend::Postgres
+            DbBackend::Sqlite | DbBackend::Postgres | DbBackend::MySql
         ) {
             return Err(AuthError::internal(
-                "snapshot-aware API key consumption requires UPDATE RETURNING",
+                "API key consumption does not support this database backend",
             ));
         }
         let mut row = if observed.remaining.is_some() {
@@ -53,32 +53,32 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                     .timestamp_millis()) as f64
                     > interval
             {
-                let mut update = Entity::update_many()
+                let update = Entity::update_many()
                     .col_expr(Column::Remaining, Expr::value(amount - 1.0))
-                    .col_expr(Column::LastRefillAt, Expr::value(now))
-                    .filter(Column::Id.eq(&observed.id));
-                update = match observed.last_refill_at.as_deref() {
-                    Some(value) => update.filter(Column::LastRefillAt.eq(stored_date(value)?)),
-                    None => update.filter(Column::LastRefillAt.is_null()),
+                    .col_expr(Column::LastRefillAt, Expr::value(now));
+                let guard = Condition::all().add(Column::Id.eq(&observed.id));
+                let guard = match observed.last_refill_at.as_deref() {
+                    Some(value) => guard.add(Column::LastRefillAt.eq(stored_date(value)?)),
+                    None => guard.add(Column::LastRefillAt.is_null()),
                 };
-                update
-                    .exec_with_returning(database)
-                    .await
-                    .map_err(map_db_err)?
-                    .pop()
+                self.increment_api_key_snapshot(&observed.id, update, guard)
+                    .await?
             } else {
                 None
             };
             let consumed = match refilled {
                 Some(value) => Some(value),
-                None => Entity::update_many()
-                    .col_expr(Column::Remaining, Expr::col(Column::Remaining).sub(1.0))
-                    .filter(Column::Id.eq(&observed.id))
-                    .filter(Column::Remaining.gt(0.0))
-                    .exec_with_returning(database)
-                    .await
-                    .map_err(map_db_err)?
-                    .pop(),
+                None => {
+                    self.increment_api_key_snapshot(
+                        &observed.id,
+                        Entity::update_many()
+                            .col_expr(Column::Remaining, Expr::col(Column::Remaining).sub(1.0)),
+                        Condition::all()
+                            .add(Column::Id.eq(&observed.id))
+                            .add(Column::Remaining.gt(0.0)),
+                    )
+                    .await?
+                }
             };
             let Some(consumed) = consumed else {
                 return Ok(ConsumeApiKeyResult::UsageExhausted);
@@ -90,13 +90,14 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         loop {
             let now = Utc::now();
             if !global_rate_limit_enabled || !row.rate_limit_enabled {
-                if let Some(updated) = Entity::update_many()
-                    .col_expr(Column::LastRequest, Expr::value(now))
-                    .filter(Column::Id.eq(&row.id))
-                    .exec_with_returning(database)
-                    .await
-                    .map_err(map_db_err)?
-                    .pop()
+                if let Some(updated) = self
+                    .update_api_key_snapshot(
+                        &row.id,
+                        Entity::update_many()
+                            .col_expr(Column::LastRequest, Expr::value(now))
+                            .filter(Column::Id.eq(&row.id)),
+                    )
+                    .await?
                 {
                     row = ApiKey::from(&updated);
                 }
@@ -108,38 +109,33 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             let previous = row.last_request.as_deref().map(stored_date).transpose()?;
             let elapsed =
                 previous.map(|last| (now.timestamp_millis() - last.timestamp_millis()) as f64);
-            let mut update = Entity::update_many()
-                .filter(Column::Id.eq(&row.id))
-                .col_expr(Column::LastRequest, Expr::value(now));
-            update = if let Some(elapsed) = elapsed {
+            let mut update = Entity::update_many().col_expr(Column::LastRequest, Expr::value(now));
+            let guard = Condition::all().add(Column::Id.eq(&row.id));
+            let guard = if let Some(elapsed) = elapsed {
                 if elapsed > window {
-                    update
-                        .col_expr(Column::RequestCount, Expr::value(1.0))
-                        .filter(Column::LastRequest.lte(window_start(now, window)?))
+                    update = update.col_expr(Column::RequestCount, Expr::value(1.0));
+                    guard.add(Column::LastRequest.lte(window_start(now, window)?))
                 } else {
                     if row.request_count.unwrap_or(0.0) >= max {
                         return Ok(ConsumeApiKeyResult::RateLimited {
                             try_again_in: (window - elapsed).ceil(),
                         });
                     }
-                    update
-                        .col_expr(
-                            Column::RequestCount,
-                            Expr::col(Column::RequestCount).add(1.0),
-                        )
-                        .filter(Column::LastRequest.gt(window_start(now, window)?))
-                        .filter(Column::RequestCount.lt(max))
+                    update = update.col_expr(
+                        Column::RequestCount,
+                        Expr::col(Column::RequestCount).add(1.0),
+                    );
+                    guard
+                        .add(Column::LastRequest.gt(window_start(now, window)?))
+                        .add(Column::RequestCount.lt(max))
                 }
             } else {
-                update
-                    .col_expr(Column::RequestCount, Expr::value(1.0))
-                    .filter(Column::LastRequest.is_null())
+                update = update.col_expr(Column::RequestCount, Expr::value(1.0));
+                guard.add(Column::LastRequest.is_null())
             };
-            if let Some(updated) = update
-                .exec_with_returning(database)
-                .await
-                .map_err(map_db_err)?
-                .pop()
+            if let Some(updated) = self
+                .increment_api_key_snapshot(&row.id, update, guard)
+                .await?
             {
                 row = ApiKey::from(&updated);
                 break;
@@ -151,19 +147,72 @@ impl<S: AuthSchema> SeaOrmStore<S> {
                 .map(|model| ApiKey::from(&model))
                 .ok_or_else(invalid_key)?;
         }
-        // A real final UPDATE RETURNING observes current quota/counter fields,
+        // A real final UPDATE observes current quota/counter fields,
         // including claims committed by concurrent verifications before this write.
-        let updated = Entity::update_many()
-            .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
-            .filter(Column::Id.eq(&row.id))
-            .exec_with_returning(database)
-            .await
-            .map_err(map_db_err)?
-            .pop()
+        let updated = self
+            .update_api_key_snapshot(
+                &row.id,
+                Entity::update_many()
+                    .col_expr(Column::UpdatedAt, Expr::value(Utc::now()))
+                    .filter(Column::Id.eq(&row.id)),
+            )
+            .await?
             .ok_or_else(invalid_key)?;
         Ok(ConsumeApiKeyResult::Allowed(Box::new(ApiKey::from(
             &updated,
         ))))
+    }
+
+    async fn increment_api_key_snapshot(
+        &self,
+        id: &str,
+        query: UpdateMany<Entity>,
+        guard: Condition,
+    ) -> AuthResult<Option<Model>> {
+        let database = self.scoped_connection();
+        if database.get_database_backend() == DbBackend::MySql {
+            return super::mysql_snapshot::update(
+                database,
+                Entity::find().filter(guard.clone()),
+                Entity::find_by_id(id),
+                query.filter(guard),
+            )
+            .await;
+        }
+        query
+            .filter(guard)
+            .exec_with_returning(database)
+            .await
+            .map_err(map_db_err)
+            .map(|mut rows| rows.pop())
+    }
+
+    async fn update_api_key_snapshot(
+        &self,
+        id: &str,
+        query: UpdateMany<Entity>,
+    ) -> AuthResult<Option<Model>> {
+        let database = self.scoped_connection();
+        if database.get_database_backend() == DbBackend::MySql {
+            if query
+                .exec(database)
+                .await
+                .map_err(map_db_err)?
+                .rows_affected
+                == 0
+            {
+                return Ok(None);
+            }
+            return Entity::find_by_id(id)
+                .one(database)
+                .await
+                .map_err(map_db_err);
+        }
+        query
+            .exec_with_returning(database)
+            .await
+            .map_err(map_db_err)
+            .map(|mut rows| rows.pop())
     }
 }
 

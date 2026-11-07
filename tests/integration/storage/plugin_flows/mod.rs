@@ -50,6 +50,8 @@ mod passkey_matrix;
 mod mysql_workflow;
 #[cfg(feature = "seaorm-mysql")]
 mod mysql_mapped_factor;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql_api_key;
 mod passkey_presence;
 mod passkey_query;
 mod passkey_raw_optional;

@@ -3,7 +3,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { Kysely, MysqlDialect } from "../../reference-server/node_modules/kysely/dist/index.js";
 
-export async function createMysqlDatabase() {
+export async function createMysqlDatabase({ connectionLimit = 1 } = {}) {
   assert.ok(process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, "requires a disposable MySQL Unix socket");
   assert.ok(process.env.MYSQL2_MODULE_URL, "requires an installed mysql2 module URL");
   const mysql = (await import(process.env.MYSQL2_MODULE_URL)).default;
@@ -14,7 +14,7 @@ export async function createMysqlDatabase() {
     assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
   }
   const database = `alibi_oracle_${randomBytes(8).toString("hex")}`;
-  const config = { socketPath: process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, user: "root", charset: "utf8mb4", timezone: "Z", connectionLimit: 1 };
+  const config = { socketPath: process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, user: "root", charset: "utf8mb4", timezone: "Z", connectionLimit };
   const admin = mysql.createPool(config).promise();
   const [version] = await admin.query("SELECT VERSION() AS version");
   await admin.query(`CREATE DATABASE ${database} CHARACTER SET utf8mb4`);
