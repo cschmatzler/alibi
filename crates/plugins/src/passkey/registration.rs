@@ -101,12 +101,14 @@ impl std::fmt::Debug for PasskeyRegistrationConfig {
 }
 
 pub(super) fn trim_name(value: &str) -> &str {
-    value.trim_matches(|character| {
-        matches!(character,
+    value.trim_matches(is_name_whitespace)
+}
+
+pub(super) fn is_name_whitespace(character: char) -> bool {
+    matches!(character,
         '\u{0009}'..='\u{000D}' | '\u{0020}' | '\u{00A0}' | '\u{1680}' |
         '\u{2000}'..='\u{200A}' | '\u{2028}' | '\u{2029}' | '\u{202F}' |
         '\u{205F}' | '\u{3000}' | '\u{FEFF}')
-    })
 }
 
 /// Domain client errors and explicit public API errors preserve their wire contract.

@@ -432,16 +432,6 @@ fn source_encoded_length(value: &Cbor) -> Result<usize, WebauthnError> {
     }
 }
 
-fn truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
-    }
-}
-
 /// Select before Core verification. Other formats/keys continue through their
 /// existing verifier; a failed verification never falls back into this path.
 #[expect(
@@ -519,7 +509,7 @@ pub(super) fn register_raw_key(
     if client.get("origin").and_then(JsValue::as_str) != Some(verification_origin) {
         return Err(WebauthnError::InvalidRPOrigin);
     }
-    if let Some(binding) = client.get("tokenBinding").filter(|value| truthy(value))
+    if let Some(binding) = client.get("tokenBinding").filter(|value| value.is_truthy())
         && (!binding.is_object()
             || !matches!(
                 binding.get("status").and_then(JsValue::as_str),
@@ -675,7 +665,7 @@ pub(super) fn authenticate_raw(
     if client.get("origin").and_then(JsValue::as_str) != Some(origin) {
         return Err(WebauthnError::InvalidRPOrigin);
     }
-    if let Some(binding) = client.get("tokenBinding").filter(|value| truthy(value))
+    if let Some(binding) = client.get("tokenBinding").filter(|value| value.is_truthy())
         && (!binding.is_object()
             || !matches!(
                 binding.get("status").and_then(JsValue::as_str),

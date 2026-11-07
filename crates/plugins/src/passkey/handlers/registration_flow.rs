@@ -459,7 +459,9 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         name: body
             .name
             .as_ref()
-            .and_then(alibi_core::utils::json::JsValue::as_str)
+            .and_then(alibi_core::utils::json::JsValue::as_js_string)
+            .map(alibi_core::utils::json::JsString::require_str)
+            .transpose()?
             .map(trim_name)
             .filter(|name| !name.is_empty())
             .map(str::to_owned),

@@ -103,6 +103,7 @@ fn registration_input(call: &EndpointCall) -> AuthResult<alibi_core::utils::json
         },
     ] {
         if let Some(value) = object.get(field.name)
+            && !value.is_undefined()
             && let Some(issue) = field_issue(field.kind, Some(value), json_type(Some(value)))
         {
             issues.push(format!("[body.{}] {issue}", field.name));
@@ -112,22 +113,30 @@ fn registration_input(call: &EndpointCall) -> AuthResult<alibi_core::utils::json
         return Err(crate::endpoint::validation(issues.join("; ")));
     }
     Ok(JsValue::Object(
-        object
-            .iter()
-            .filter(|(name, _)| matches!(name.as_str(), "response" | "name" | "createSession"))
-            .map(|(name, value)| {
-                let value = if name == "name" {
-                    JsValue::String(
-                        super::registration::trim_name(value.as_str().unwrap_or_default())
-                            .to_owned(),
-                    )
-                } else {
-                    value.clone()
-                };
-                (name.clone(), value)
+        ["response", "name", "createSession"]
+            .into_iter()
+            .filter_map(|name| {
+                object.get(name).map(|value| {
+                    let value = if name == "name" {
+                        trim_name_value(value)
+                    } else {
+                        value.clone()
+                    };
+                    (name.into(), value)
+                })
             })
             .collect(),
     ))
+}
+
+fn trim_name_value(value: &alibi_core::utils::json::JsValue) -> alibi_core::utils::json::JsValue {
+    use alibi_core::utils::json::JsValue;
+    match value {
+        JsValue::String(name) => {
+            JsValue::String(name.trim_matches(super::registration::is_name_whitespace))
+        }
+        value => value.clone(),
+    }
 }
 
 /// The issued session and credential owner's public user projection.
@@ -175,7 +184,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 &[crate::authentication_helpers::JsonField::string("id", true)],
             )?)
         } else if call.operation_id() == "updatePasskey" {
-            let mut body = crate::endpoint::validate_fields(
+            let body = crate::endpoint::validate_fields(
                 call.body(),
                 "body",
                 &[
@@ -183,24 +192,18 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                     crate::authentication_helpers::JsonField::string("name", true),
                 ],
             )?;
-            let name = super::registration::trim_name(
-                body.get("name")
-                    .and_then(alibi_core::utils::json::JsValue::as_str)
-                    .unwrap_or_default(),
-            );
-            if name.is_empty() {
+            let name = trim_name_value(&body["name"]);
+            if name
+                .as_js_string()
+                .is_some_and(alibi_core::utils::json::JsString::is_empty)
+            {
                 return Err(crate::endpoint::validation(
                     "[body.name] Too small: expected string to have >=1 characters",
                 ));
             }
-            let name = name.to_owned();
-            if let alibi_core::utils::json::JsValue::Object(object) = &mut body {
-                _ = object.insert(
-                    "name".into(),
-                    alibi_core::utils::json::JsValue::String(name),
-                );
-            }
-            Some(body)
+            Some(alibi_core::utils::json::JsValue::Object(
+                [("id".into(), body["id"].clone()), ("name".into(), name)].into(),
+            ))
         } else {
             call.body().cloned()
         },
@@ -265,7 +268,7 @@ impl PasskeyPlugin {
             .into_iter()
             .collect::<indexmap::IndexMap<_, _>>();
         if let Some(name) = input.name {
-            _ = body.insert("name".into(), JsValue::String(name));
+            _ = body.insert("name".into(), JsValue::String(name.into()));
         }
         if let Some(create_session) = input.create_session {
             _ = body.insert("createSession".into(), JsValue::Bool(create_session));
@@ -322,11 +325,16 @@ impl PasskeyPlugin {
             .map(|object| {
                 object
                     .iter()
-                    .filter_map(|(name, value)| {
-                        value.as_str().map(|value| (name.clone(), value.to_owned()))
+                    .filter_map(|(name, value)| value.as_js_string().map(|value| (name, value)))
+                    .map(|(name, value)| {
+                        Ok((
+                            name.require_str()?.to_owned(),
+                            value.require_str()?.to_owned(),
+                        ))
                     })
-                    .collect()
+                    .collect::<AuthResult<std::collections::HashMap<_, _>>>()
             })
+            .transpose()?
             .unwrap_or_default();
         let output = self
             .generate_register_options(call, &query, ctx)
@@ -357,11 +365,11 @@ impl PasskeyPlugin {
                 [
                     (
                         "id".into(),
-                        alibi_core::utils::json::JsValue::String(id.into()),
+                        alibi_core::utils::json::JsValue::String(id.into().into()),
                     ),
                     (
                         "name".into(),
-                        alibi_core::utils::json::JsValue::String(name.into()),
+                        alibi_core::utils::json::JsValue::String(name.into().into()),
                     ),
                 ]
                 .into_iter()
@@ -394,7 +402,7 @@ impl PasskeyPlugin {
             alibi_core::utils::json::JsValue::Object(
                 [(
                     "id".into(),
-                    alibi_core::utils::json::JsValue::String(id.into()),
+                    alibi_core::utils::json::JsValue::String(id.into().into()),
                 )]
                 .into_iter()
                 .collect(),

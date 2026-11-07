@@ -25,6 +25,7 @@ impl Validate for VerifyRegistrationRequest {
             return Err(errors);
         }
         if let Some(name) = &self.name
+            && !name.is_undefined()
             && !name.is_string()
         {
             let mut errors = validator::ValidationErrors::new();
@@ -40,7 +41,7 @@ impl Validate for VerifyRegistrationRequest {
             );
             return Err(errors);
         }
-        if self.create_session.is_boolean() {
+        if self.create_session.is_undefined() || self.create_session.is_boolean() {
             return Ok(());
         }
         let received = if self.create_session.is_null() {
@@ -127,6 +128,7 @@ fn optional_name<'de, D: serde::Deserializer<'de>>(
 fn received_type(value: &alibi_core::utils::json::JsValue) -> &'static str {
     use alibi_core::utils::json::JsValue;
     match value {
+        JsValue::Undefined => "undefined",
         JsValue::Null => "null",
         JsValue::Array(_) => "array",
         JsValue::Object(_) => "object",

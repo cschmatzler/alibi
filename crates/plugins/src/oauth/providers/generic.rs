@@ -4,8 +4,7 @@ use super::OAuthTokenEndpointAuth::{
 };
 use super::{
     OAuthAuthorizationPolicy, OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider,
-    OAuthScopeOrder, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
-    OAuthUserInfoResponse,
+    OAuthScopeOrder, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use crate::oauth::id_token::{CLOCK_TOLERANCE_SECS, REQUIRED_CLAIMS};
 use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
@@ -689,6 +688,7 @@ impl DiscoveryVerifier {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::oauth::OAuthUserInfo;
 
     fn id_token(claims: Value) -> String {
         format!(

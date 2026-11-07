@@ -277,13 +277,7 @@ fn validate_token_binding(
     let Some(binding) = client_data.get("tokenBinding") else {
         return Ok(());
     };
-    let truthy = match binding {
-        JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
-    };
+    let truthy = binding.is_truthy();
     if truthy
         && !binding
             .get("status")
@@ -684,4 +678,48 @@ pub(super) fn credential_id_from_authentication(authentication: &PublicKeyCreden
 
     let raw_id: &Base64UrlSafeData = &authentication.raw_id;
     URL_SAFE_NO_PAD.encode(raw_id.as_ref())
+}
+
+#[cfg(test)]
+mod canonical_tests {
+    use super::validate_token_binding;
+    use alibi_core::utils::json::JsValue;
+
+    #[test]
+    fn canonical_token_binding_uses_source_truthiness_and_ceremony_spellings() {
+        for unsupported in ["not-supported", "notSupported"] {
+            for binding in [
+                JsValue::Undefined,
+                JsValue::Null,
+                JsValue::Bool(false),
+                JsValue::Number(0.0),
+                JsValue::Number(f64::NAN),
+                JsValue::String("".into()),
+            ] {
+                let client = JsValue::Object([("tokenBinding".into(), binding)].into());
+                assert!(validate_token_binding(&client, unsupported).is_ok());
+            }
+            for status in ["present", "supported", unsupported] {
+                let client = JsValue::Object(
+                    [(
+                        "tokenBinding".into(),
+                        JsValue::Object([("status".into(), JsValue::String(status.into()))].into()),
+                    )]
+                    .into(),
+                );
+                assert!(validate_token_binding(&client, unsupported).is_ok());
+            }
+            for binding in [
+                JsValue::Bool(true),
+                JsValue::Number(1.0),
+                JsValue::String("present".into()),
+                JsValue::Array(vec![]),
+                JsValue::Object(Default::default()),
+                JsValue::Object([("status".into(), JsValue::String("unexpected".into()))].into()),
+            ] {
+                let client = JsValue::Object([("tokenBinding".into(), binding)].into());
+                assert!(validate_token_binding(&client, unsupported).is_err());
+            }
+        }
+    }
 }
