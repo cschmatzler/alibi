@@ -428,16 +428,73 @@
   },
   {
     "scalar extensions register session": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v17>",
+          "name": "options-4@example.com",
+          "displayName": "options-4@example.com"
+        },
+        "challenge": "<v18>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
     }
   },
   {
     "scalar extensions authenticate session": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v19>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": 5
+      }
     }
   },
   {
@@ -456,9 +513,22 @@
   },
   {
     "scalar extensions authenticate anonymous": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v20>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": 5
+      }
     }
   },
   {
@@ -551,16 +621,73 @@
   },
   {
     "static scalar extensions register session": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "rp": {
+          "name": "Better Auth",
+          "id": "localhost"
+        },
+        "user": {
+          "id": "<v21>",
+          "name": "options-7@example.com",
+          "displayName": "options-7@example.com"
+        },
+        "challenge": "<v22>",
+        "pubKeyCredParams": [
+          {
+            "alg": -8,
+            "type": "public-key"
+          },
+          {
+            "alg": -7,
+            "type": "public-key"
+          },
+          {
+            "alg": -257,
+            "type": "public-key"
+          }
+        ],
+        "timeout": 60000,
+        "excludeCredentials": [],
+        "authenticatorSelection": {
+          "residentKey": "preferred",
+          "requireResidentKey": false,
+          "userVerification": "preferred"
+        },
+        "attestation": "none",
+        "extensions": {
+          "credProps": true
+        },
+        "hints": []
+      }
     }
   },
   {
     "static scalar extensions authenticate session": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v23>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": "x"
+      }
     }
   },
   {
@@ -579,9 +706,22 @@
   },
   {
     "static scalar extensions authenticate anonymous": {
-      "status": 500,
-      "headers": {},
-      "body": ""
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.better-auth-passkey=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": {
+        "challenge": "<v24>",
+        "timeout": 60000,
+        "rpId": "localhost",
+        "userVerification": "preferred",
+        "extensions": "x"
+      }
     }
   },
   {
@@ -601,11 +741,11 @@
           "id": "localhost"
         },
         "user": {
-          "id": "<v17>",
+          "id": "<v25>",
           "name": "options-8@example.com",
           "displayName": "options-8@example.com"
         },
-        "challenge": "<v18>",
+        "challenge": "<v26>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -647,7 +787,7 @@
         ]
       },
       "body": {
-        "challenge": "<v19>",
+        "challenge": "<v27>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -680,7 +820,7 @@
         ]
       },
       "body": {
-        "challenge": "<v20>",
+        "challenge": "<v28>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -704,11 +844,11 @@
           "id": "localhost"
         },
         "user": {
-          "id": "<v21>",
+          "id": "<v29>",
           "name": "options-9@example.com",
           "displayName": "options-9@example.com"
         },
-        "challenge": "<v22>",
+        "challenge": "<v30>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -750,7 +890,7 @@
         ]
       },
       "body": {
-        "challenge": "<v23>",
+        "challenge": "<v31>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -774,11 +914,11 @@
           "id": "localhost"
         },
         "user": {
-          "id": "<v24>",
+          "id": "<v32>",
           "name": "external",
           "displayName": "external"
         },
-        "challenge": "<v25>",
+        "challenge": "<v33>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -820,7 +960,7 @@
         ]
       },
       "body": {
-        "challenge": "<v26>",
+        "challenge": "<v34>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -844,11 +984,11 @@
           "id": "localhost"
         },
         "user": {
-          "id": "<v27>",
+          "id": "<v35>",
           "name": "options-10@example.com",
           "displayName": "options-10@example.com"
         },
-        "challenge": "<v28>",
+        "challenge": "<v36>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -890,7 +1030,7 @@
         ]
       },
       "body": {
-        "challenge": "<v29>",
+        "challenge": "<v37>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -923,7 +1063,7 @@
         ]
       },
       "body": {
-        "challenge": "<v30>",
+        "challenge": "<v38>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -947,11 +1087,11 @@
           "id": "localhost"
         },
         "user": {
-          "id": "<v31>",
+          "id": "<v39>",
           "name": "options-11@example.com",
           "displayName": "options-11@example.com"
         },
-        "challenge": "<v32>",
+        "challenge": "<v40>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -993,7 +1133,7 @@
         ]
       },
       "body": {
-        "challenge": "<v33>",
+        "challenge": "<v41>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"
@@ -1019,7 +1159,7 @@
         ]
       },
       "body": {
-        "challenge": "<v34>",
+        "challenge": "<v42>",
         "timeout": 60000,
         "rpId": "localhost",
         "userVerification": "preferred"

@@ -93,7 +93,11 @@ Without the client, the same two steps with raw WebAuthn: `GET /passkey/generate
 | `registration(PasskeyRegistrationConfig)` | session required | Passkey-first registration (below) |
 | `authentication(PasskeyAuthenticationConfig)` | none | Post-verification callback |
 
-Both `PasskeyRegistrationConfig` and `PasskeyAuthenticationConfig` accept `extensions: Option<PasskeyExtensions>`. Use `Static(serde_json::Value)` for fixed WebAuthn inputs or `Resolver(Arc<dyn PasskeyExtensionsResolver>)` for an asynchronous application policy. Resolvers receive the request, auth configuration, context extensions, and authenticated user projection. They run before challenge creation; API rejections preserve their code and message, while ordinary failures return an empty 500. Registration always includes `credProps: true`, matching the upstream options generator.
+Both `PasskeyRegistrationConfig` and `PasskeyAuthenticationConfig` accept `extensions: Option<PasskeyExtensions>`. Use `Static(JsValue)` for fixed inputs or `Resolver(Arc<dyn PasskeyExtensionsResolver>)` for an asynchronous policy that returns a `JsValue`. Convert ordinary JSON with `json!({...}).into()`.
+
+Resolvers receive the request, auth configuration, context extensions, and authenticated user projection. They run after the credential read and before challenge creation. Credentials added by a resolver appear on the next request, not the current one. API rejections preserve their code and message; ordinary failures return an empty 500.
+
+Registration spreads the extension value into an object and sets `credProps: true`. Authentication returns the extension value unchanged. Null, scalar, and array values follow the upstream JavaScript behavior rather than causing a configuration error. A falsy static value acts as an absent value; a resolver can return an explicit null or false.
 
 ### Passkey-first registration
 
@@ -106,6 +110,7 @@ use alibi::plugins::{
     PasskeyRegistrationUser, PasskeyUserResolver,
 };
 use alibi::AuthResult;
+use alibi::utils::json::JsString;
 use std::sync::Arc;
 
 struct InviteResolver;
@@ -116,9 +121,9 @@ impl PasskeyUserResolver for InviteResolver {
     async fn resolve_user(
         &self,
         _context: &PasskeyRegistrationContext<'_>,
-        requested_context: Option<&str>,
+        requested_context: Option<&JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationUser>> {
-        let Some(invite) = requested_context else { return Ok(None) };
+        let Some(invite) = requested_context.and_then(JsString::as_str) else { return Ok(None) };
         // Look up the invite in your own storage here.
         Ok(Some(PasskeyRegistrationUser {
             id: format!("user-for-{invite}"),
@@ -136,6 +141,7 @@ fn plugin() -> PasskeyPlugin {
             require_session: false,
             resolve_user: Some(Arc::new(InviteResolver)),
             after_verification: None,
+            ..Default::default()
         },
         ..Default::default()
     })

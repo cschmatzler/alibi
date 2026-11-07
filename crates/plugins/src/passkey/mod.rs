@@ -168,23 +168,22 @@ impl PasskeyPlugin {
                     )?);
                 }
                 Err(error) if registration::is_application_error(&error) => return Err(error),
-                Err(_) => return endpoint::verification_response(AuthResponse::new(500)),
+                Err(error) => return Err(AuthError::CallbackFailure(Box::new(error))),
             }
         };
+        let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
         let extensions = if let Some(input) = &self.config.registration.extensions {
-            Some(
-                input
-                    .resolve(&PasskeyOptionsContext {
-                        request: req.physical_request(),
-                        endpoint: req.endpoint_call(),
-                        auth_config: &ctx.config,
-                        extensions: &ctx.extensions,
-                        user: projected_user.as_ref(),
-                    })
-                    .await?,
-            )
+            input
+                .resolve(&PasskeyOptionsContext {
+                    request: req.physical_request(),
+                    endpoint: req.endpoint_call(),
+                    auth_config: &ctx.config,
+                    extensions: &ctx.extensions,
+                    user: projected_user.as_ref(),
+                })
+                .await?
         } else {
-            None
+            alibi_core::utils::json::JsValue::Undefined
         };
         let passkey_name = query
             .get("name")
@@ -194,6 +193,7 @@ impl PasskeyPlugin {
             .and_then(alibi_core::utils::json::JsValue::as_str);
         let (result, cookie_header) = generate_register_options_core(
             &user,
+            &existing_passkeys,
             query
                 .get("context")
                 .and_then(alibi_core::utils::json::JsValue::as_js_string),
@@ -340,23 +340,28 @@ impl PasskeyPlugin {
             .as_ref()
             .map(|user| ctx.user_view(user))
             .transpose()?;
-        let extensions = if let Some(input) = &self.config.authentication.extensions {
-            Some(
-                input
-                    .resolve(&PasskeyOptionsContext {
-                        request: req.physical_request(),
-                        endpoint: req.endpoint_call(),
-                        auth_config: &ctx.config,
-                        extensions: &ctx.extensions,
-                        user: projected_user.as_ref(),
-                    })
-                    .await?,
-            )
+        let stored_passkeys = if let Some(user) = &maybe_user {
+            ctx.database
+                .list_passkeys_by_user(&alibi_core::AuthUser::id(user))
+                .await?
         } else {
-            None
+            Vec::new()
+        };
+        let extensions = if let Some(input) = &self.config.authentication.extensions {
+            input
+                .resolve(&PasskeyOptionsContext {
+                    request: req.physical_request(),
+                    endpoint: req.endpoint_call(),
+                    auth_config: &ctx.config,
+                    extensions: &ctx.extensions,
+                    user: projected_user.as_ref(),
+                })
+                .await?
+        } else {
+            alibi_core::utils::json::JsValue::Undefined
         };
         let (result, cookie_header) =
-            generate_authenticate_options_core(maybe_user.as_ref(), extensions, &self.config, ctx)
+            generate_authenticate_options_core(&stored_passkeys, extensions, &self.config, ctx)
                 .await?;
         Ok(alibi_core::endpoint::EndpointResponse::value(result)
             .with_header("Set-Cookie", cookie_header))

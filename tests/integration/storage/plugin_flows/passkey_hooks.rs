@@ -750,12 +750,12 @@ async fn passkey_registration_forces_credential_properties_over_static_false<B: 
             PasskeyPlugin::new()
                 .origins(vec![ORIGIN.into()])
                 .registration(PasskeyRegistrationConfig {
-                    extensions: Some(PasskeyExtensions::Static(json!({"credProps":false}))),
+                    extensions: Some(PasskeyExtensions::Static(json!({"credProps":false}).into())),
                     ..Default::default()
                 })
                 .authentication(PasskeyAuthenticationConfig {
                     extensions: Some(PasskeyExtensions::Static(
-                        json!({"appid":"https://extensions.fixture.test/static"}),
+                        json!({"appid":"https://extensions.fixture.test/static"}).into(),
                     )),
                     after_verification: None,
                 }),

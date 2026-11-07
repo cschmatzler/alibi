@@ -50,16 +50,16 @@ use webauthn_rs_core::proto::UserVerificationPolicy;
 )]
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
+    existing_passkeys: &[alibi_core::Passkey],
     requested_context: Option<&JsString>,
     passkey_name: Option<&JsString>,
     authenticator_attachment: Option<&str>,
-    extensions: Option<Value>,
+    extensions: JsValue,
     registration_source: Option<crate::passkey::webauthn::RegistrationSource>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(JsValue, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
-    let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
     let exclude_credentials = existing_passkeys
         .iter()
         .filter_map(|passkey| decode_credential_id(passkey.credential_id()).ok())
@@ -185,16 +185,10 @@ pub(in crate::passkey) async fn generate_register_options_core(
     {
         _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
     }
-    if let Some(mut extensions) = extensions {
-        let object = extensions
-            .as_object_mut()
-            .ok_or_else(|| AuthError::bad_request("Passkey extensions must be an object"))?;
-        _ = object.insert("credProps".into(), json!(true));
-        if let Some(object) = response.as_object_mut() {
-            _ = object.insert("extensions".into(), extensions);
-        }
-    }
     let mut response = native_json::to_js_value(&response)?;
+    let mut extensions = extensions.spread();
+    _ = extensions.insert("credProps".into(), JsValue::Bool(true));
+    response["extensions"] = JsValue::Object(extensions);
     response["excludeCredentials"] = JsValue::Array(exclude_credentials_json);
     response["user"]["name"] = JsValue::String(user_name);
     response["user"]["displayName"] = JsValue::String(user_display_name);

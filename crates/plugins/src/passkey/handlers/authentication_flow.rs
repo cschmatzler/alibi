@@ -39,19 +39,14 @@ use uuid::Uuid;
 use webauthn_rs::prelude::PublicKeyCredential;
 use webauthn_rs_core::error::WebauthnError;
 use webauthn_rs_core::proto::UserVerificationPolicy;
-pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
-    maybe_user: Option<&U>,
-    extensions: Option<Value>,
+pub(in crate::passkey) async fn generate_authenticate_options_core(
+    stored_passkeys: &[alibi_core::Passkey],
+    extensions: alibi_core::utils::json::JsValue,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(alibi_core::utils::json::JsValue, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
 
-    let stored_passkeys = if let Some(user) = maybe_user {
-        ctx.database.list_passkeys_by_user(&user.id()).await?
-    } else {
-        Vec::new()
-    };
     let allow_credentials_json = stored_passkeys
         .iter()
         .map(super::credential_descriptor)
@@ -97,27 +92,14 @@ pub(in crate::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
         .await?;
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
-    let mut response = authentication_options_json(options)?;
-    if let Some(extensions) = extensions {
-        if !extensions.is_object() {
-            return Err(AuthError::bad_request(
-                "Passkey extensions must be an object",
-            ));
-        }
-        if let Some(object) = response.as_object_mut() {
-            _ = object.insert("extensions".into(), extensions);
-        }
-    }
+    let response = authentication_options_json(options)?;
     let mut response = alibi_core::utils::json::to_js_value(&response)?;
-    if allow_credentials_json.is_empty() {
-        _ = response
-            .as_object_mut()
-            .unwrap()
-            .shift_remove("allowCredentials");
+    response["allowCredentials"] = if allow_credentials_json.is_empty() {
+        alibi_core::utils::json::JsValue::Undefined
     } else {
-        response["allowCredentials"] =
-            alibi_core::utils::json::JsValue::Array(allow_credentials_json);
-    }
+        alibi_core::utils::json::JsValue::Array(allow_credentials_json)
+    };
+    response["extensions"] = extensions;
     Ok((response, cookie))
 }
 

@@ -48,7 +48,7 @@ impl alibi::plugins::passkey::PasskeyExtensionsResolver for ExtensionInputs {
     async fn resolve(
         &self,
         context: &alibi::plugins::passkey::PasskeyOptionsContext<'_>,
-    ) -> AuthResult<Value> {
+    ) -> AuthResult<alibi::utils::json::JsValue> {
         if self.mode == "coded" {
             return Err(alibi::AuthError::Api {
                 status: 403,
@@ -72,10 +72,10 @@ impl alibi::plugins::passkey::PasskeyExtensionsResolver for ExtensionInputs {
                     "actual registration session required",
                 ));
             }
-            Ok(json!({"credProps": false, "minPinLength": marker == "registration-marker"}))
+            Ok(json!({"credProps": false, "minPinLength": marker == "registration-marker"}).into())
         } else {
             let path = context.request.unwrap().path().rsplit('/').next().unwrap();
-            Ok(json!({"appid":format!("https://extensions.fixture.test/{marker}/{path}")}))
+            Ok(json!({"appid":format!("https://extensions.fixture.test/{marker}/{path}")}).into())
         }
     }
 }
@@ -134,11 +134,14 @@ pub(crate) async fn router(
             };
             let input = |registration| {
                 if mode == "static" {
-                    PasskeyExtensions::Static(if registration {
-                        json!({"credProps":true})
-                    } else {
-                        json!({"appid":"https://extensions.fixture.test/static"})
-                    })
+                    PasskeyExtensions::Static(
+                        (if registration {
+                            json!({"credProps":true})
+                        } else {
+                            json!({"appid":"https://extensions.fixture.test/static"})
+                        })
+                        .into(),
+                    )
                 } else {
                     PasskeyExtensions::Resolver(Arc::new(ExtensionInputs {
                         mode: mode.into(),

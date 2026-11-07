@@ -12,6 +12,53 @@ struct QueryResolver {
     resolved: JsValue,
 }
 
+#[tokio::test]
+async fn passkey_null_extensions_match_actual_registration_options() {
+    let fixture = native::parse_value(include_str!(
+        "../../../../crates/plugins/src/passkey/generation_extension_cases.json"
+    ))
+    .unwrap();
+    let expected = fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| {
+            case["operation"] == "registration"
+                && case["resolver"] == false
+                && case["mode"] == "null"
+        })
+        .unwrap();
+    let auth = AuthBuilder::without_database(AuthConfig::new(SECRET).base_url(ORIGIN))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(
+            PasskeyPlugin::new()
+                .rp_id("localhost")
+                .origin(ORIGIN)
+                .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
+                    extensions: Some(alibi::plugins::passkey::PasskeyExtensions::Static(
+                        json!(null).into(),
+                    )),
+                    ..Default::default()
+                }),
+        )
+        .build()
+        .await
+        .unwrap();
+    let cookie = cookies(&signup(&auth, "null-extensions@example.com").await);
+    let output = Box::pin(auth.dispatch_endpoint(
+        PasskeyPlugin::generate_passkey_registration_options_endpoint(),
+        alibi::endpoint::EndpointOptions {
+            headers: Some([("cookie".into(), cookie)].into()),
+            ..Default::default()
+        },
+    ))
+    .await
+    .unwrap()
+    .decode()
+    .unwrap();
+    assert_eq!(output["extensions"], expected["extensions"]);
+}
+
 #[async_trait::async_trait]
 impl PasskeyUserResolver for QueryResolver {
     async fn resolve_user(

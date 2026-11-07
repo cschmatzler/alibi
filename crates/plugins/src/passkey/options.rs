@@ -1,7 +1,7 @@
 //! Application inputs resolved before a passkey challenge is persisted.
+use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthConfig, AuthRequest, AuthResult, ContextExtensions, wire::UserView};
 use async_trait::async_trait;
-use serde_json::Value;
 use std::sync::Arc;
 
 pub struct PasskeyOptionsContext<'a> {
@@ -16,12 +16,12 @@ pub struct PasskeyOptionsContext<'a> {
 
 #[async_trait]
 pub trait PasskeyExtensionsResolver: Send + Sync {
-    async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<Value>;
+    async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<JsValue>;
 }
 
 #[derive(Clone)]
 pub enum PasskeyExtensions {
-    Static(Value),
+    Static(JsValue),
     Resolver(Arc<dyn PasskeyExtensionsResolver>),
 }
 impl std::fmt::Debug for PasskeyExtensions {
@@ -33,9 +33,13 @@ impl std::fmt::Debug for PasskeyExtensions {
     }
 }
 impl PasskeyExtensions {
-    pub(super) async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<Value> {
-        let value = match self {
-            Self::Static(value) => Ok(value.clone()),
+    pub(super) async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<JsValue> {
+        match self {
+            Self::Static(value) => Ok(if value.is_truthy() {
+                value.clone()
+            } else {
+                JsValue::Undefined
+            }),
             Self::Resolver(resolver) => resolver.resolve(context).await.map_err(|error| {
                 if alibi_core::endpoint::is_endpoint_api_error(&error) {
                     error
@@ -43,13 +47,7 @@ impl PasskeyExtensions {
                     alibi_core::AuthError::CallbackFailure(Box::new(error))
                 }
             }),
-        }?;
-        if !value.is_object() {
-            return Err(alibi_core::AuthError::config(
-                "Passkey extensions must be an object",
-            ));
         }
-        Ok(value)
     }
 }
 

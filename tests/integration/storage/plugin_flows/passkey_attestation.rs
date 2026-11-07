@@ -11,6 +11,7 @@ use alibi::plugins::passkey::{
     PasskeyUserResolver,
 };
 use alibi::plugins::{PasskeyPlugin, passkey::PasskeyRegistrationConfig};
+use alibi::utils::json::JsValue;
 use alibi::{AuthError, AuthResult};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer as _;
@@ -477,12 +478,12 @@ struct Extensions(&'static str);
 
 #[async_trait::async_trait]
 impl PasskeyExtensionsResolver for Extensions {
-    async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<Value> {
+    async fn resolve(&self, context: &PasskeyOptionsContext<'_>) -> AuthResult<JsValue> {
         match self.0 {
             "fail" => Err(AuthError::internal("extensions unavailable")),
             "deny" => Err(AuthError::forbidden("extensions denied")),
-            "scalar" => Ok(json!(5)),
-            _ => Ok(json!({"user": context.user.map(|user| user.email.clone())})),
+            "scalar" => Ok(json!(5).into()),
+            _ => Ok(json!({"user": context.user.map(|user| user.email.clone())}).into()),
         }
     }
 }
@@ -510,11 +511,11 @@ async fn passkey_option_policy<B: Backend>(db: Db) -> TestResult {
             "static extensions",
             PasskeyPlugin::new()
                 .registration(PasskeyRegistrationConfig {
-                    extensions: Some(PasskeyExtensions::Static(json!({"appid": "x"}))),
+                    extensions: Some(PasskeyExtensions::Static(json!({"appid": "x"}).into())),
                     ..Default::default()
                 })
                 .authentication(alibi::plugins::passkey::PasskeyAuthenticationConfig {
-                    extensions: Some(PasskeyExtensions::Static(json!({"appid": "y"}))),
+                    extensions: Some(PasskeyExtensions::Static(json!({"appid": "y"}).into())),
                     after_verification: None,
                 }),
         ),
@@ -526,11 +527,11 @@ async fn passkey_option_policy<B: Backend>(db: Db) -> TestResult {
             "static scalar extensions",
             PasskeyPlugin::new()
                 .registration(PasskeyRegistrationConfig {
-                    extensions: Some(PasskeyExtensions::Static(json!([]))),
+                    extensions: Some(PasskeyExtensions::Static(json!([]).into())),
                     ..Default::default()
                 })
                 .authentication(alibi::plugins::passkey::PasskeyAuthenticationConfig {
-                    extensions: Some(PasskeyExtensions::Static(json!("x"))),
+                    extensions: Some(PasskeyExtensions::Static(json!("x").into())),
                     after_verification: None,
                 }),
         ),
@@ -885,20 +886,20 @@ async fn passkey_resolver_physical_request_context<B: Backend>(db: Db) -> TestRe
     struct Capture(Mutex<Vec<Value>>);
     #[async_trait::async_trait]
     impl PasskeyExtensionsResolver for Capture {
-        async fn resolve(&self, c: &PasskeyOptionsContext<'_>) -> AuthResult<Value> {
+        async fn resolve(&self, c: &PasskeyOptionsContext<'_>) -> AuthResult<JsValue> {
             let marker = c.request.unwrap().headers.get("x-option-marker").unwrap();
             self.0.lock().unwrap().push(json!({"path":c.request.unwrap().path,"method":format!("{:?}",c.request.unwrap().method),"marker":marker,"user":c.user,"baseURL":c.auth_config.base_url}));
-            Ok(
-                if c.request
-                    .unwrap()
-                    .path
-                    .ends_with("generate-register-options")
-                {
-                    json!({"credProps":false,"minPinLength":true,"appid":marker})
-                } else {
-                    json!({"appid":marker})
-                },
-            )
+            Ok(if c
+                .request
+                .unwrap()
+                .path
+                .ends_with("generate-register-options")
+            {
+                json!({"credProps":false,"minPinLength":true,"appid":marker})
+            } else {
+                json!({"appid":marker})
+            }
+            .into())
         }
     }
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -969,7 +970,7 @@ async fn passkey_extension_rejection_before_challenge_write<B: Backend>(db: Db) 
     struct Resolver(Mutex<&'static str>);
     #[async_trait::async_trait]
     impl PasskeyExtensionsResolver for Resolver {
-        async fn resolve(&self, _: &PasskeyOptionsContext<'_>) -> AuthResult<Value> {
+        async fn resolve(&self, _: &PasskeyOptionsContext<'_>) -> AuthResult<JsValue> {
             match *self.0.lock().unwrap() {
                 "internal" => Err(AuthError::internal("private resolver error")),
                 "coded" => Err(AuthError::Api {
@@ -977,7 +978,7 @@ async fn passkey_extension_rejection_before_challenge_write<B: Backend>(db: Db) 
                     code: Some("APPLICATION_EXTENSIONS_DENIED".into()),
                     message: "Application option policy denied".into(),
                 }),
-                _ => Ok(json!({})),
+                _ => Ok(json!({}).into()),
             }
         }
     }
