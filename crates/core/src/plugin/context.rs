@@ -223,15 +223,7 @@ impl<S: AuthSchema> AuthContext<S> {
         if let Some(view) = user.retained_user_view() {
             let mut view = view.clone();
             if public {
-                let registered = self.extensions.get::<crate::field_policy::UserFields>();
-                let fields = registered
-                    .as_ref()
-                    .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
-                view.extension_fields.retain(|name, _| {
-                    name.as_str()
-                        .and_then(|name| fields.get(name))
-                        .is_none_or(|field| field.returned)
-                });
+                self.filter_hidden_user_fields(&mut view);
             }
             self.filter_disabled_user_fields(&mut view);
             return Ok(view);
@@ -370,7 +362,7 @@ impl<S: AuthSchema> AuthContext<S> {
                 }
             }
         }
-        if self.config.session.stateless {
+        if self.config.session.stateless && user.adapter_snapshot().is_none() {
             for (name, absent) in [
                 ("image", view.image.is_none()),
                 ("username", view.username.is_none()),
@@ -389,7 +381,23 @@ impl<S: AuthSchema> AuthContext<S> {
             }
         }
         self.filter_disabled_user_fields(&mut view);
+        if public {
+            self.filter_hidden_user_fields(&mut view);
+        }
         Ok(view)
+    }
+
+    fn filter_hidden_user_fields(&self, view: &mut UserView) {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        for (name, field) in fields {
+            if !field.returned {
+                _ = view.extension_fields.shift_remove(name);
+                _ = view.omitted_fields.insert(name.clone());
+            }
+        }
     }
 
     fn filter_disabled_user_fields(&self, view: &mut UserView) {

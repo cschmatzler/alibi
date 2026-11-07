@@ -114,6 +114,7 @@ mod social_proxy;
 mod two_factor;
 mod two_factor_matrix;
 mod user_defaults;
+mod user_core_visibility;
 mod user_lifecycle;
 mod user_management_matrix;
 mod user_output_schema;
