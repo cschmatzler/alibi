@@ -185,7 +185,6 @@ impl OAuthUserInfoHandler for DropboxUserInfo {
                 "name",
             ),
             (profile.get("email"), "email"),
-            (profile.get("profile_photo_url"), "image"),
         ] {
             _ = output.insert(target.into(), value.cloned().unwrap_or(Value::Undefined));
         }
@@ -196,6 +195,13 @@ impl OAuthUserInfoHandler for DropboxUserInfo {
                 .filter(|value| super::remaining_profile::truthy(value))
                 .cloned()
                 .unwrap_or(Value::Bool(false)),
+        );
+        _ = output.insert(
+            "image".into(),
+            profile
+                .get("profile_photo_url")
+                .cloned()
+                .unwrap_or(Value::Undefined),
         );
         if let Some(mapper) = self.mapper {
             output.extend(

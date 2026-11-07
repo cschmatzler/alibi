@@ -161,7 +161,6 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         for (value, target) in [
             (profile.get("name"), "name"),
             (profile.get("email"), "email"),
-            (profile.get("picture"), "image"),
         ] {
             _ = output.insert(target.into(), value.cloned().unwrap_or(Value::Undefined));
         }
@@ -172,6 +171,10 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
                 .filter(|value| !value.is_null())
                 .cloned()
                 .unwrap_or(Value::Bool(false)),
+        );
+        _ = output.insert(
+            "image".into(),
+            profile.get("picture").cloned().unwrap_or(Value::Undefined),
         );
         if let Some(mapper) = self.mapper {
             output.extend(

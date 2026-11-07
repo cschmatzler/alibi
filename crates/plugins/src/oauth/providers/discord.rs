@@ -215,7 +215,7 @@ mod tests {
     async fn remaining_literal_own_fields_match_upstream_for_discord() {
         super::super::remaining_profile::own_fields_tests::assert_own_fields(
             &["discord"],
-            |_, endpoint| {
+            |_, endpoint, _| {
                 let mut provider = OAuthProvider::discord("client", "secret");
                 provider.get_user_info = Some(Arc::new(DiscordUserInfo {
                     endpoint: endpoint.into(),

@@ -7,7 +7,7 @@ use std::sync::{
     atomic::{AtomicUsize, Ordering},
 };
 
-fn provider(name: &str, endpoint: &str) -> OAuthProvider {
+fn provider(name: &str, endpoint: &str, email_endpoint: &str) -> OAuthProvider {
     macro_rules! with_endpoint {
         ($options:ident, $factory:ident) => {{
             let mut options = $options::new("client", Some("secret".into()));
@@ -16,6 +16,22 @@ fn provider(name: &str, endpoint: &str) -> OAuthProvider {
         }};
     }
     match name {
+        "dropbox" => with_endpoint!(DropboxOptions, dropbox_with_options),
+        "figma" => with_endpoint!(FigmaOptions, figma_with_options),
+        "github" => OAuthProvider::github_with_endpoints(
+            "client",
+            "secret",
+            "auth",
+            "token",
+            endpoint,
+            email_endpoint,
+        ),
+        "google" => OAuthProvider::google("client", "secret"),
+        "huggingface" => with_endpoint!(HuggingFaceOptions, huggingface_with_options),
+        "kakao" => with_endpoint!(KakaoOptions, kakao_with_options),
+        "kick" => with_endpoint!(KickOptions, kick_with_options),
+        "linear" => with_endpoint!(LinearOptions, linear_with_options),
+        "linkedin" => with_endpoint!(LinkedInOptions, linkedin_with_options),
         "roblox" => with_endpoint!(RobloxOptions, roblox_with_options),
         "salesforce" => with_endpoint!(SalesforceOptions, salesforce_with_options),
         "slack" => with_endpoint!(SlackOptions, slack_with_options),
@@ -103,13 +119,57 @@ impl OAuthProfileMapper for Mapper {
 
 pub(in crate::oauth::providers) async fn assert_own_fields(
     provider_names: &[&str],
-    factory: fn(&str, &str) -> OAuthProvider,
+    factory: fn(&str, &str, &str) -> OAuthProvider,
 ) {
     let fixture =
         json::parse_value(include_str!("remaining_profile_own_fields_cases.json")).unwrap();
     assert_eq!(fixture["better_auth"].as_str(), Some("1.7.18"));
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 179);
+    assert_eq!(cases.len(), 276);
+    let metadata = &fixture["metadata"];
+    assert_eq!(
+        metadata["source_revision"],
+        "38f43e390920faa400d51ff0bd18570a424d05ce"
+    );
+    assert_eq!(metadata["case_count"].as_u64(), Some(cases.len() as u64));
+    let factories: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case["factory"].as_str().unwrap())
+        .collect();
+    let branches: std::collections::BTreeSet<_> = cases
+        .iter()
+        .map(|case| case["provider"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        factories.iter().copied().collect::<Vec<_>>(),
+        metadata["factories"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|name| name.as_str().unwrap())
+            .collect::<Vec<_>>(),
+    );
+    assert_eq!(factories.len(), 36);
+    assert_eq!(branches.len(), 39);
+    assert_eq!(
+        metadata["factory_count"].as_u64(),
+        Some(factories.len() as u64)
+    );
+    assert_eq!(
+        metadata["branch_count"].as_u64(),
+        Some(branches.len() as u64)
+    );
+    for branch in &branches {
+        assert_eq!(
+            metadata["branches"][*branch].as_u64(),
+            Some(
+                cases
+                    .iter()
+                    .filter(|case| case["provider"].as_str() == Some(*branch))
+                    .count() as u64
+            )
+        );
+    }
     let mut matched = 0;
     for case in cases {
         let name = case["provider"].as_str().unwrap();
@@ -119,7 +179,18 @@ pub(in crate::oauth::providers) async fn assert_own_fields(
         matched += 1;
         let profile = case["profile"].clone();
         let server = HttpFixture::new(200, profile.clone()).await;
-        let mut provider = factory(name, &server.url);
+        let email_server = if name == "github" {
+            Some(HttpFixture::new(200, case["emails"].clone()).await)
+        } else {
+            None
+        };
+        let mut provider = factory(
+            name,
+            &server.url,
+            email_server
+                .as_ref()
+                .map_or(&server.url, |fixture| &fixture.url),
+        );
         let calls = Arc::new(AtomicUsize::new(0));
         let mapped = !case["mapping"].is_null();
         if mapped {
@@ -180,13 +251,19 @@ pub(in crate::oauth::providers) async fn assert_own_fields(
         if mapped {
             assert_eq!(response.user["id"], JsValue::String("mapped".into()));
         }
-        let wire =
-            json::parse_value(&json::to_string(&JsValue::Object(response.user)).unwrap()).unwrap();
+        let encoded = json::to_string(&JsValue::Object(response.user)).unwrap();
+        assert_eq!(
+            encoded,
+            case["wire"].as_str().unwrap(),
+            "{name}/{}",
+            case["mode"]
+        );
+        let wire = json::parse_value(&encoded).unwrap();
         assert_eq!(wire, case["expected"], "{name}/{}", case["mode"]);
     }
     let expected_count: usize = provider_names
         .iter()
-        .map(|name| if *name == "tiktok" { 5 } else { 6 })
+        .map(|name| metadata["branches"][*name].as_u64().unwrap() as usize)
         .sum();
     assert_eq!(matched, expected_count);
 }
@@ -249,4 +326,24 @@ async fn remaining_literal_own_fields_match_upstream_for_apple_wechat() {
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_tiktok() {
     assert_own_fields(&["tiktok"], provider).await;
+}
+
+#[tokio::test]
+async fn all_literal_own_fields_match_upstream_for_dropbox_figma() {
+    assert_own_fields(&["dropbox", "figma"], provider).await;
+}
+
+#[tokio::test]
+async fn all_literal_own_fields_match_upstream_for_github() {
+    assert_own_fields(&["github"], provider).await;
+}
+
+#[tokio::test]
+async fn all_literal_own_fields_match_upstream_for_google_huggingface_kakao() {
+    assert_own_fields(&["google", "huggingface", "kakao"], provider).await;
+}
+
+#[tokio::test]
+async fn all_literal_own_fields_match_upstream_for_kick_linear_linkedin() {
+    assert_own_fields(&["kick", "linear", "linkedin"], provider).await;
 }

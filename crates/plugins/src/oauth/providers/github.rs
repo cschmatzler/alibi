@@ -149,17 +149,20 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             .ok()
             .and_then(|value| value.as_array().map(<[_]>::to_vec));
 
+        let mut selected_email_index = None;
         if !profile
             .get("email")
             .is_some_and(super::remaining_profile::truthy)
             && let Some(emails) = &emails
             && let Some(profile_object) = profile.as_object_mut()
         {
-            if let Some(record) = emails
+            if let Some((index, record)) = emails
                 .iter()
-                .find(|record| record.get("primary").is_some_and(Value::is_truthy))
-                .or_else(|| emails.first())
+                .enumerate()
+                .find(|(_, record)| record.get("primary").is_some_and(Value::is_truthy))
+                .or_else(|| emails.iter().enumerate().next())
             {
+                selected_email_index = Some(index);
                 _ = profile_object.insert(
                     "email".to_owned().into(),
                     record.get("email").cloned().unwrap_or(Value::Undefined),
@@ -169,14 +172,23 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             }
         }
 
+        let email = profile.get("email").unwrap_or(&Value::Undefined);
         let email_verified = emails
             .as_ref()
             .and_then(|emails| {
-                emails
-                    .iter()
-                    .find(|record| profile.get("email") == record.get("email"))
+                emails.iter().enumerate().find(|(index, record)| {
+                    // Only the fallback assignment can share an object across these responses.
+                    if email.is_object() || email.is_array() {
+                        selected_email_index == Some(*index)
+                    } else {
+                        email == record.get("email").unwrap_or(&Value::Undefined)
+                    }
+                })
             })
-            .is_some_and(|record| record.get("verified").is_some_and(Value::is_truthy));
+            .and_then(|(_, record)| record.get("verified"))
+            .filter(|value| !value.is_null() && !value.is_undefined())
+            .cloned()
+            .unwrap_or(Value::Bool(false));
 
         let mut output = Map::new();
         output.insert(
@@ -194,7 +206,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
-        output.insert("emailVerified".into(), Value::Bool(email_verified));
+        output.insert("emailVerified".into(), email_verified);
         if let Some(mapper) = &self.mapper {
             output.extend(
                 mapper
