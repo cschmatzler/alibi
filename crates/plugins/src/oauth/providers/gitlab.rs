@@ -113,9 +113,10 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
                 .unwrap_or(Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("avatar_url", "image")] {
-            if let Some(value) = profile.get(source) {
-                _ = output.insert(target.into(), value.clone());
-            }
+            _ = output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         _ = output.insert(
             "emailVerified".into(),

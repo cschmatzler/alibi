@@ -41,6 +41,37 @@ fn provider(name: &str, endpoint: &str) -> OAuthProvider {
             options.disable_profile_photo = true;
             OAuthProvider::microsoft(options).unwrap()
         }
+        "atlassian" => {
+            let mut options = AtlassianOptions::new("client", "secret");
+            options.user_info_endpoint = Some(endpoint.into());
+            OAuthProvider::atlassian_with_options(options)
+        }
+        "line-token" | "line-http" => with_endpoint!(LineOptions, line_with_options),
+        "naver" => with_endpoint!(NaverOptions, naver_with_options),
+        "cloudflare" => with_endpoint!(CloudflareOptions, cloudflare_with_options),
+        "paypal" => {
+            let mut options = PayPalOptions::new("client", "secret");
+            options.user_info_endpoint = Some(endpoint.into());
+            OAuthProvider::paypal_with_options(options)
+        }
+        "cognito-token" | "cognito-http" => {
+            let mut options = CognitoOptions::new(
+                "client",
+                Some("secret".into()),
+                "example.com",
+                "us-east-1",
+                "us-east-1_pool",
+            );
+            options.user_info_endpoint = Some(endpoint.into());
+            OAuthProvider::cognito(options).unwrap()
+        }
+        "gitlab" => OAuthProvider::gitlab_with_issuer("client", "secret", endpoint),
+        "apple" => OAuthProvider::apple("client", "secret"),
+        "wechat" => {
+            let mut options = WeChatOptions::new("client", "secret");
+            options.user_info_endpoint = Some(endpoint.into());
+            OAuthProvider::wechat_with_options(options)
+        }
         "paybin" => OAuthProvider::paybin("client", Some("secret")),
         "polar" => with_endpoint!(PolarOptions, polar_with_options),
         "railway" => with_endpoint!(RailwayOptions, railway_with_options),
@@ -78,7 +109,7 @@ pub(in crate::oauth::providers) async fn assert_own_fields(
         json::parse_value(include_str!("remaining_profile_own_fields_cases.json")).unwrap();
     assert_eq!(fixture["better_auth"].as_str(), Some("1.7.18"));
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 113);
+    assert_eq!(cases.len(), 179);
     let mut matched = 0;
     for case in cases {
         let name = case["provider"].as_str().unwrap();
@@ -113,7 +144,11 @@ pub(in crate::oauth::providers) async fn assert_own_fields(
             .unwrap()
             .get_user_info(OAuthUserInfoRequest {
                 access_token: Some("access".into()),
-                id_token: (name != "facebook-graph").then_some(token),
+                id_token: (!["facebook-graph", "cognito-http", "line-http"].contains(&name))
+                    .then_some(token),
+                raw: (name == "wechat").then(
+                    || crate::oauth::providers::js!({"access_token":"access","openid":"subject"}),
+                ),
                 ..Default::default()
             })
             .await
@@ -189,6 +224,26 @@ async fn remaining_literal_own_fields_match_upstream_for_paybin_polar_railway() 
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_reddit_notion() {
     assert_own_fields(&["reddit", "notion"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_atlassian_line_naver() {
+    assert_own_fields(&["atlassian", "line-token", "line-http", "naver"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_cloudflare_paypal() {
+    assert_own_fields(&["cloudflare", "paypal"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_cognito_gitlab() {
+    assert_own_fields(&["cognito-token", "cognito-http", "gitlab"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_apple_wechat() {
+    assert_own_fields(&["apple", "wechat"], provider).await;
 }
 
 #[tokio::test]

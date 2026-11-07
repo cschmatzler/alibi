@@ -206,9 +206,10 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
             ("picture", "image"),
             ("email_verified", "emailVerified"),
         ] {
-            if let Some(value) = profile.get(source) {
-                _ = output.insert(target.into(), value.clone());
-            }
+            _ = output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         if let Some(user) = &mapped {
             output.extend(user.clone());
@@ -341,7 +342,14 @@ mod tests {
                 assert_eq!(output["email"], json!([]));
                 assert_eq!(output["emailVerified"], "raw");
             } else {
-                assert!(output.is_empty());
+                assert_eq!(output.len(), 4);
+                for field in ["name", "email", "image", "emailVerified"] {
+                    assert_eq!(output.get(field), Some(&Value::Undefined));
+                }
+                assert_eq!(
+                    alibi_core::utils::json::to_string(&Value::Object(output)).unwrap(),
+                    "{}"
+                );
             }
         }
         for profile in [Value::Null, json!(false), json!(0), json!("")] {

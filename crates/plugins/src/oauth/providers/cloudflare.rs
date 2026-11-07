@@ -186,16 +186,18 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .reduce(|name, next| name.concat(&" ".into()).concat(&next))
             .unwrap_or_default();
         let mut output = Map::new();
-        if name.is_empty() {
-            if let Some(email) = profile.get("email") {
-                output.insert("name".into(), email.clone());
-            }
-        } else {
-            output.insert("name".into(), Value::String(name));
-        }
-        if let Some(email) = profile.get("email") {
-            output.insert("email".into(), email.clone());
-        }
+        output.insert(
+            "name".into(),
+            if name.is_empty() {
+                profile.get("email").cloned().unwrap_or(Value::Undefined)
+            } else {
+                Value::String(name)
+            },
+        );
+        output.insert(
+            "email".into(),
+            profile.get("email").cloned().unwrap_or(Value::Undefined),
+        );
         output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
             output.extend(

@@ -189,9 +189,10 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .unwrap_or_else(|| Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("picture", "image")] {
-            if let Some(value) = profile.get(source) {
-                output.insert(target.into(), value.clone());
-            }
+            output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {

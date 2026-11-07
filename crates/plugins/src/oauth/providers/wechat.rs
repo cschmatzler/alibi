@@ -371,12 +371,18 @@ impl OAuthUserInfoHandler for WeChatProfile {
             Value::String(email.into())
         };
         let mut output = Map::new();
-        for (key, field) in [("name", "nickname"), ("image", "headimgurl")] {
-            if let Some(value) = profile.get(field) {
-                _ = output.insert(key.into(), value.clone());
-            }
-        }
+        _ = output.insert(
+            "name".into(),
+            profile.get("nickname").cloned().unwrap_or(Value::Undefined),
+        );
         _ = output.insert("email".into(), email.clone());
+        _ = output.insert(
+            "image".into(),
+            profile
+                .get("headimgurl")
+                .cloned()
+                .unwrap_or(Value::Undefined),
+        );
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.clone());

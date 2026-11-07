@@ -249,14 +249,19 @@ impl CognitoUserInfo {
         let mut output = Map::new();
         output.insert("name".into(), profile_name(profile));
         for (source, target) in [("email", "email"), ("picture", "image")] {
-            if let Some(value) = profile.get(source) {
-                output.insert(target.into(), value.clone());
-            }
+            output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         if id_token {
-            if let Some(value) = profile.get("email_verified") {
-                output.insert("emailVerified".into(), value.clone());
-            }
+            output.insert(
+                "emailVerified".into(),
+                profile
+                    .get("email_verified")
+                    .cloned()
+                    .unwrap_or(Value::Undefined),
+            );
         } else {
             output.insert(
                 "emailVerified".into(),
@@ -449,7 +454,11 @@ mod tests {
                     .unwrap();
                 let output = response.user.clone();
                 if id_token {
-                    assert_eq!(output.get("emailVerified"), claim.as_ref());
+                    assert!(output.contains_key("emailVerified"));
+                    assert_eq!(
+                        output.get("emailVerified"),
+                        Some(claim.as_ref().unwrap_or(&Value::Undefined)),
+                    );
                     server.abort();
                 } else {
                     assert_eq!(

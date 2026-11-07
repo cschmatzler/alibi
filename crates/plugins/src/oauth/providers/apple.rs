@@ -181,9 +181,10 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         let mut output = Map::new();
         output.insert("name".into(), data["name"].clone().into());
         output.insert("emailVerified".into(), Value::Bool(email_verified));
-        if let Some(email) = data.get("email") {
-            output.insert("email".into(), email.clone().into());
-        }
+        output.insert(
+            "email".into(),
+            data.get("email").cloned().unwrap_or(Value::Undefined),
+        );
         if let Some(mapper) = self.map_profile_to_user {
             output.extend(
                 mapper(data.clone().into()).map_err(super::remaining_profile::profile_exception)?,
