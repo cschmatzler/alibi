@@ -148,9 +148,10 @@ impl MigrationTrait for RateLimitSchema {
             let sql = match manager.get_database_backend() {
                 sea_orm::DbBackend::Postgres => alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
                 sea_orm::DbBackend::Sqlite => alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
+                sea_orm::DbBackend::MySql => alibi_schema_registry::MYSQL_RATE_LIMIT_SCHEMA,
                 _ => {
                     return Err(DbErr::Custom(
-                        "Rate-limit migrations support SQLite and PostgreSQL".into(),
+                        "Rate-limit migrations support SQLite, PostgreSQL and MySQL".into(),
                     ));
                 }
             };

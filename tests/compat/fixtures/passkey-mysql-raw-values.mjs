@@ -1,26 +1,10 @@
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
-import { Kysely, MysqlDialect } from "../reference-server/node_modules/kysely/dist/index.js";
+import { writeFile } from "node:fs/promises";
 import { kyselyAdapter } from "../reference-server/node_modules/@better-auth/kysely-adapter/dist/index.mjs";
 import { passkey } from "../reference-server/node_modules/@better-auth/passkey/dist/index.mjs";
+import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
-assert.ok(process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, "requires a disposable MySQL Unix socket");
-assert.ok(process.env.MYSQL2_MODULE_URL, "requires an installed mysql2 module URL");
-const mysql = (await import(process.env.MYSQL2_MODULE_URL)).default;
-const driver = JSON.parse(await readFile(new URL("package.json", process.env.MYSQL2_MODULE_URL)));
-const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
-assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-for (const name of ["passkey", "kysely-adapter"]) {
-  assert.equal(JSON.parse(await readFile(new URL(`../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
-}
-const database = `passkey_oracle_${randomBytes(8).toString("hex")}`;
-const config = { socketPath: process.env.BETTER_AUTH_TEST_MYSQL_SOCKET, user: "root", charset: "utf8mb4", timezone: "Z", connectionLimit: 1 };
-const admin = mysql.createPool(config).promise();
-const [version] = await admin.query("SELECT VERSION() AS version");
-await admin.query(`CREATE DATABASE ${database} CHARACTER SET utf8mb4`);
-const pool = mysql.createPool({ ...config, database });
-const db = new Kysely({ dialect: new MysqlDialect({ pool }) });
+const { db, pool, mysqlVersion, mysql2Version, close } = await createMysqlDatabase();
 const cases = [];
 try {
   await pool.promise().query("CREATE TABLE passkey (id VARCHAR(255) PRIMARY KEY, name TEXT, publicKey TEXT, userId VARCHAR(255), credentialID VARCHAR(255), counter INTEGER, deviceType TEXT, backedUp BOOLEAN, transports TEXT, createdAt DATETIME(3), aaguid TEXT)");
@@ -54,11 +38,9 @@ try {
     }
   }
 } finally {
-  await db.destroy();
-  await admin.query(`DROP DATABASE ${database}`);
-  await admin.end();
+  await close();
 }
 assert.equal(cases.length, 48);
 assert.equal(cases.filter(row => row.error).length, 15);
-await writeFile(new URL("../../../crates/core/src/store/passkey_mysql_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", mysql: version[0].version, mysql2: driver.version, cases }) + "\n");
-console.log(`${cases.length} actual MySQL passkey raw-value cases (mysql2 ${driver.version})`);
+await writeFile(new URL("../../../crates/core/src/store/passkey_mysql_raw_cases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", mysql: mysqlVersion, mysql2: mysql2Version, cases }) + "\n");
+console.log(`${cases.length} actual MySQL passkey raw-value cases (mysql2 ${mysql2Version})`);

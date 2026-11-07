@@ -724,20 +724,27 @@ pub fn core_field_names(role: EntityRole) -> Vec<&'static str> {
 /// Exact bundled SQL compiled from the pinned Better Auth TypeScript schema.
 pub const SQLITE_AUTH_SCHEMA: &str = include_str!("../schema/sqlite.sql");
 pub const POSTGRES_AUTH_SCHEMA: &str = include_str!("../schema/postgres.sql");
+pub const MYSQL_AUTH_SCHEMA: &str = include_str!("../schema/mysql.sql");
 pub const SQLITE_OAUTH_SCHEMA: &str = include_str!("../schema/sqlite_oauth_clients.sql");
 pub const POSTGRES_OAUTH_SCHEMA: &str = include_str!("../schema/postgres_oauth_clients.sql");
+pub const MYSQL_OAUTH_SCHEMA: &str = include_str!("../schema/mysql_oauth_clients.sql");
 pub const SQLITE_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/sqlite_rate_limit.sql");
 pub const POSTGRES_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/postgres_rate_limit.sql");
+pub const MYSQL_RATE_LIMIT_SCHEMA: &str = include_str!("../schema/mysql_rate_limit.sql");
 
 pub const SQLITE_SSO_SCHEMA: &str = include_str!("../schema/sqlite_sso.sql");
 pub const POSTGRES_SSO_SCHEMA: &str = include_str!("../schema/postgres_sso.sql");
+pub const MYSQL_SSO_SCHEMA: &str = include_str!("../schema/mysql_sso.sql");
 
 pub const SQLITE_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/sqlite_scim_managed.sql");
 pub const POSTGRES_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/postgres_scim_managed.sql");
+pub const MYSQL_SCIM_MANAGED_SCHEMA: &str = include_str!("../schema/mysql_scim_managed.sql");
 
 pub const SQLITE_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/sqlite_scim_binding.sql");
 pub const POSTGRES_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/postgres_scim_binding.sql");
+pub const MYSQL_SCIM_BINDING_SCHEMA: &str = include_str!("../schema/mysql_scim_binding.sql");
 
 pub const SQLITE_SCIM_CANONICAL_SCHEMA: &str = include_str!("../schema/sqlite_scim_canonical.sql");
 pub const POSTGRES_SCIM_CANONICAL_SCHEMA: &str =
     include_str!("../schema/postgres_scim_canonical.sql");
+pub const MYSQL_SCIM_CANONICAL_SCHEMA: &str = include_str!("../schema/mysql_scim_canonical.sql");

@@ -49,16 +49,24 @@ impl MigrationName for OAuthClientsMigration {
         "m20261013_000002_typescript_oauth_schema"
     }
 }
-async fn apply(manager: &SchemaManager<'_>, sqlite: &str, postgres: &str) -> Result<(), DbErr> {
-    let sql = match manager.get_database_backend() {
+fn dialect_sql<'a>(
+    manager: &SchemaManager<'_>,
+    sqlite: &'a str,
+    postgres: &'a str,
+    mysql: &'a str,
+) -> Result<&'a str, DbErr> {
+    Ok(match manager.get_database_backend() {
         sea_orm::DbBackend::Sqlite => sqlite,
         sea_orm::DbBackend::Postgres => postgres,
+        sea_orm::DbBackend::MySql => mysql,
         _ => {
             return Err(DbErr::Custom(
-                "Bundled migrations support SQLite and PostgreSQL".into(),
+                "Bundled migrations support SQLite, PostgreSQL and MySQL".into(),
             ));
         }
-    };
+    })
+}
+async fn apply(manager: &SchemaManager<'_>, sql: &str) -> Result<(), DbErr> {
     for statement in sql
         .split(';')
         .filter(|statement| !statement.trim().is_empty())
@@ -71,7 +79,7 @@ async fn apply(manager: &SchemaManager<'_>, sqlite: &str, postgres: &str) -> Res
     Ok(())
 }
 macro_rules! migration {
-    ($migration:ty, $sqlite:path, $postgres:path) => {
+    ($migration:ty, $sqlite:path, $postgres:path, $mysql:path) => {
         #[async_trait::async_trait]
         impl MigrationTrait for $migration {
             fn use_transaction(&self) -> Option<bool> {
@@ -82,14 +90,14 @@ macro_rules! migration {
                 reason = "MigrationTrait requires a late-bound manager lifetime"
             )]
             async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-                apply(manager, $sqlite, $postgres).await
+                apply(manager, dialect_sql(manager, $sqlite, $postgres, $mysql)?).await
             }
             #[expect(
                 elided_lifetimes_in_paths,
                 reason = "MigrationTrait requires a late-bound manager lifetime"
             )]
             async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-                let sql = $sqlite;
+                let sql = dialect_sql(manager, $sqlite, $postgres, $mysql)?;
                 for statement in sql.split(';').rev() {
                     if let Some(create) = statement.split("create table ").nth(1) {
                         let name = create
@@ -110,18 +118,21 @@ macro_rules! migration {
 migration!(
     AuthSchemaMigration,
     alibi_schema_registry::SQLITE_AUTH_SCHEMA,
-    alibi_schema_registry::POSTGRES_AUTH_SCHEMA
+    alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
+    alibi_schema_registry::MYSQL_AUTH_SCHEMA
 );
 migration!(
     OAuthClientsMigration,
     alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
-    alibi_schema_registry::POSTGRES_OAUTH_SCHEMA
+    alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
+    alibi_schema_registry::MYSQL_OAUTH_SCHEMA
 );
 
 migration!(
     SsoMigration,
     alibi_schema_registry::SQLITE_SSO_SCHEMA,
-    alibi_schema_registry::POSTGRES_SSO_SCHEMA
+    alibi_schema_registry::POSTGRES_SSO_SCHEMA,
+    alibi_schema_registry::MYSQL_SSO_SCHEMA
 );
 // LCOV_EXCL_START
 #[cfg(test)]
@@ -211,7 +222,8 @@ mod tests {
 migration!(
     ScimManagedMigration,
     alibi_schema_registry::SQLITE_SCIM_MANAGED_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA
+    alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA,
+    alibi_schema_registry::MYSQL_SCIM_MANAGED_SCHEMA
 );
 
 struct ScimBindingMigration;
@@ -223,7 +235,8 @@ impl MigrationName for ScimBindingMigration {
 migration!(
     ScimBindingMigration,
     alibi_schema_registry::SQLITE_SCIM_BINDING_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA
+    alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA,
+    alibi_schema_registry::MYSQL_SCIM_BINDING_SCHEMA
 );
 
 struct ScimCanonicalMigration;
@@ -235,5 +248,6 @@ impl MigrationName for ScimCanonicalMigration {
 migration!(
     ScimCanonicalMigration,
     alibi_schema_registry::SQLITE_SCIM_CANONICAL_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_CANONICAL_SCHEMA
+    alibi_schema_registry::POSTGRES_SCIM_CANONICAL_SCHEMA,
+    alibi_schema_registry::MYSQL_SCIM_CANONICAL_SCHEMA
 );

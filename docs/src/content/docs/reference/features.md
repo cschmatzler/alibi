@@ -17,7 +17,7 @@ alibi = { version = "0.12.1", default-features = false, features = ["axum", "sql
 | `sqlx-sqlite` | via `sqlx` | SQLx with SQLite only |
 | `sqlx-postgres` | via `sqlx` | SQLx with PostgreSQL only |
 | `seaorm` | no | [SeaORM](/databases/seaorm/) store |
-| `seaorm-mysql` | no | MySQL driver for SeaORM; requires application-owned tables. Bundled migrations still support SQLite and PostgreSQL only. |
+| `seaorm-mysql` | no | MySQL driver and bundled MySQL migrations for SeaORM. MySQL does not yet have full store parity. |
 | `redis-cache` | no | `RedisAdapter` for [secondary storage](/concepts/secondary-storage/) and shared [rate limits](/concepts/rate-limit/) |
 | `native-tls` | **yes** | OpenSSL for outbound HTTP (OAuth, email verification, CAPTCHA, …) and the SQLx/SeaORM PostgreSQL drivers |
 | `rustls` | no | Rustls instead of OpenSSL |

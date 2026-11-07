@@ -1,0 +1,4357 @@
+{
+  "columns": [
+    {
+      "tableName": "account",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "accountId",
+      "position": 2,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "providerId",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "userId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "accessToken",
+      "position": 5,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "refreshToken",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "idToken",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "accessTokenExpiresAt",
+      "position": 8,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "refreshTokenExpiresAt",
+      "position": 9,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "scope",
+      "position": 10,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "password",
+      "position": 11,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "account",
+      "columnName": "createdAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "account",
+      "columnName": "updatedAt",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "configId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "name",
+      "position": 3,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "start",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "referenceId",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "prefix",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "key",
+      "position": 7,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "refillInterval",
+      "position": 8,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "refillAmount",
+      "position": 9,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "lastRefillAt",
+      "position": 10,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "enabled",
+      "position": 11,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "rateLimitEnabled",
+      "position": 12,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "rateLimitTimeWindow",
+      "position": 13,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "rateLimitMax",
+      "position": 14,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "requestCount",
+      "position": 15,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "remaining",
+      "position": 16,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "lastRequest",
+      "position": 17,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "expiresAt",
+      "position": 18,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "createdAt",
+      "position": 19,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "updatedAt",
+      "position": 20,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "permissions",
+      "position": 21,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "apikey",
+      "columnName": "metadata",
+      "position": 22,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "deviceCode",
+      "position": 2,
+      "type": "varchar(191)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "userCode",
+      "position": 3,
+      "type": "varchar(191)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "userId",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "expiresAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "status",
+      "position": 6,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "lastPolledAt",
+      "position": 7,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "pollingInterval",
+      "position": 8,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "clientId",
+      "position": 9,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "deviceCode",
+      "columnName": "scope",
+      "position": 10,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "organizationId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "email",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "role",
+      "position": 4,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "teamId",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "status",
+      "position": 6,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "expiresAt",
+      "position": 7,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "createdAt",
+      "position": 8,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "invitation",
+      "columnName": "inviterId",
+      "position": 9,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "publicKey",
+      "position": 2,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "privateKey",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "createdAt",
+      "position": 4,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "expiresAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "alg",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "jwks",
+      "columnName": "crv",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "member",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "member",
+      "columnName": "organizationId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "member",
+      "columnName": "userId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "member",
+      "columnName": "role",
+      "position": 4,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "member",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "token",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "clientId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "sessionId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "userId",
+      "position": 5,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "referenceId",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "authorizationCodeId",
+      "position": 7,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "resources",
+      "position": 8,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "requestedUserInfoClaims",
+      "position": 9,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "refreshId",
+      "position": 10,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "expiresAt",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "createdAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "revoked",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "confirmation",
+      "position": 14,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "columnName": "scopes",
+      "position": 15,
+      "type": "json",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "clientId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "clientSecret",
+      "position": 3,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "clientDiscoveryId",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "disabled",
+      "position": 5,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "skipConsent",
+      "position": 6,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "enableEndSession",
+      "position": 7,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "subjectType",
+      "position": 8,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "scopes",
+      "position": 9,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "clientCredentialsScopes",
+      "position": 10,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "userId",
+      "position": 11,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "createdAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "updatedAt",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "name",
+      "position": 14,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "uri",
+      "position": 15,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "icon",
+      "position": 16,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "contacts",
+      "position": 17,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "tos",
+      "position": 18,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "policy",
+      "position": 19,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "softwareId",
+      "position": 20,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "softwareVersion",
+      "position": 21,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "softwareStatement",
+      "position": 22,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "redirectUris",
+      "position": 23,
+      "type": "json",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "postLogoutRedirectUris",
+      "position": 24,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "backchannelLogoutUri",
+      "position": 25,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "backchannelLogoutSessionRequired",
+      "position": 26,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "tokenEndpointAuthMethod",
+      "position": 27,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "applicationType",
+      "position": 28,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "jwks",
+      "position": 29,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "jwksUri",
+      "position": 30,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "grantTypes",
+      "position": 31,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "responseTypes",
+      "position": 32,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "requirePKCE",
+      "position": 33,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "dpopBoundAccessTokens",
+      "position": 34,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "referenceId",
+      "position": 35,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClient",
+      "columnName": "metadata",
+      "position": 36,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientAssertion",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientAssertion",
+      "columnName": "expiresAt",
+      "position": 2,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientResource",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientResource",
+      "columnName": "clientId",
+      "position": 2,
+      "type": "varchar(191)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientResource",
+      "columnName": "resourceId",
+      "position": 3,
+      "type": "varchar(191)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientResource",
+      "columnName": "metadata",
+      "position": 4,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthClientResource",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "clientId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "userId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "referenceId",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "resources",
+      "position": 5,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "requestedUserInfoClaims",
+      "position": 6,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "scopes",
+      "position": 7,
+      "type": "json",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "createdAt",
+      "position": 8,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthConsent",
+      "columnName": "updatedAt",
+      "position": 9,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "token",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "clientId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "sessionId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "userId",
+      "position": 5,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "referenceId",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "authorizationCodeId",
+      "position": 7,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "resources",
+      "position": 8,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "requestedUserInfoClaims",
+      "position": 9,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "expiresAt",
+      "position": 10,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "createdAt",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "revoked",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "rotatedAt",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "rotationReplayResponse",
+      "position": 14,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "rotationReplayExpiresAt",
+      "position": 15,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "authTime",
+      "position": 16,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "confirmation",
+      "position": 17,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "columnName": "scopes",
+      "position": 18,
+      "type": "json",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "identifier",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "name",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "accessTokenTtl",
+      "position": 4,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "refreshTokenTtl",
+      "position": 5,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "signingAlgorithm",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "signingKeyId",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "allowedScopes",
+      "position": 8,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "customClaims",
+      "position": 9,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "dpopBoundAccessTokensRequired",
+      "position": 10,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "disabled",
+      "position": 11,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "createdAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "updatedAt",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "policyVersion",
+      "position": 14,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "oauthResource",
+      "columnName": "metadata",
+      "position": 15,
+      "type": "json",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "name",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "slug",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "logo",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organization",
+      "columnName": "metadata",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "organizationId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "role",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "permission",
+      "position": 4,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "organizationRole",
+      "columnName": "updatedAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "name",
+      "position": 2,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "publicKey",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "userId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "credentialID",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "counter",
+      "position": 6,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "deviceType",
+      "position": 7,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "backedUp",
+      "position": 8,
+      "type": "tinyint(1)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "transports",
+      "position": 9,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "createdAt",
+      "position": 10,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "passkey",
+      "columnName": "aaguid",
+      "position": 11,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "rateLimit",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "rateLimit",
+      "columnName": "key",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "rateLimit",
+      "columnName": "count",
+      "position": 3,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "rateLimit",
+      "columnName": "lastRequest",
+      "position": 4,
+      "type": "bigint",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "connectionKey",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "provisioningDomainId",
+      "position": 4,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionedAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionStatus",
+      "position": 7,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionCursorUserId",
+      "position": 8,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionReconciledUserCount",
+      "position": 9,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionBatchCount",
+      "position": 10,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionRevision",
+      "position": 11,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionCompletedAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionLeaseId",
+      "position": 13,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "columnName": "decommissionLeaseExpiresAt",
+      "position": 14,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "provisioningDomainId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "revision",
+      "position": 4,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "displayName",
+      "position": 5,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "displayNameKey",
+      "position": 6,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "externalId",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "externalIdKey",
+      "position": 8,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "orderKey",
+      "position": 9,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "createdAt",
+      "position": 10,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroup",
+      "columnName": "updatedAt",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "groupId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "scimUserId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "membershipKey",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimGroupMember",
+      "columnName": "createdAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "provisioningDomainId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "externalId",
+      "position": 4,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "externalIdKey",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "userId",
+      "position": 6,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "profile",
+      "position": 7,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "columnName": "deletedAt",
+      "position": 8,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "creationRequestId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "connectionId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "provisioningDomainId",
+      "position": 4,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "status",
+      "position": 5,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "revision",
+      "position": 6,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "createdAt",
+      "position": 7,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "createdBy",
+      "position": 8,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "decommissionStartedAt",
+      "position": 9,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "decommissionStartedBy",
+      "position": 10,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "decommissionedAt",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "columnName": "decommissionedBy",
+      "position": 12,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "connectionRecordId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "eventKey",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "sequence",
+      "position": 4,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "type",
+      "position": 5,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "actorId",
+      "position": 6,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "credentialId",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "columnName": "createdAt",
+      "position": 8,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "connectionRecordId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "credentialId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "tokenDigest",
+      "position": 4,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "hashVersion",
+      "position": 5,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "activeSlotKey",
+      "position": 6,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "status",
+      "position": 7,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "serializedScopes",
+      "position": 8,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "expiresAt",
+      "position": 9,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "createdAt",
+      "position": 10,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "createdBy",
+      "position": 11,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "lastUsedAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "revokedAt",
+      "position": 13,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "revokedBy",
+      "position": 14,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "columnName": "decommissionedAt",
+      "position": 15,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "provisioningDomainId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "scimUserId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "userId",
+      "position": 5,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "sourceKind",
+      "position": 6,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "sourceId",
+      "position": 7,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "sourceValue",
+      "position": 8,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "role",
+      "position": 9,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "grantKey",
+      "position": 10,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "createdAt",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "columnName": "updatedAt",
+      "position": 12,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "userId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "profileSourceId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "revision",
+      "position": 4,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimSubject",
+      "columnName": "updatedAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "connectionId",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "provisioningDomainId",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "userId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "connectionUserKey",
+      "position": 5,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "userName",
+      "position": 6,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "userNameKey",
+      "position": 7,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "primaryEmail",
+      "position": 8,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "workEmailValueIndex",
+      "position": 9,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "emailValueIndex",
+      "position": 10,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "displayName",
+      "position": 11,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "formattedName",
+      "position": 12,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "givenName",
+      "position": 13,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "familyName",
+      "position": 14,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "serializedEmails",
+      "position": 15,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "serializedAttributes",
+      "position": 16,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "externalId",
+      "position": 17,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "externalIdKey",
+      "position": 18,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "active",
+      "position": 19,
+      "type": "tinyint(1)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "orderKey",
+      "position": 20,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "createdAt",
+      "position": 21,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "scimUser",
+      "columnName": "updatedAt",
+      "position": 22,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "expiresAt",
+      "position": 2,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "token",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "createdAt",
+      "position": 4,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "session",
+      "columnName": "updatedAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "ipAddress",
+      "position": 6,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "userAgent",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "userId",
+      "position": 8,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "impersonatedBy",
+      "position": 9,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "activeOrganizationId",
+      "position": 10,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "session",
+      "columnName": "activeTeamId",
+      "position": 11,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "issuer",
+      "position": 2,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "oidcConfig",
+      "position": 3,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "samlConfig",
+      "position": 4,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "userId",
+      "position": 5,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "providerId",
+      "position": 6,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "organizationId",
+      "position": 7,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "domain",
+      "position": 8,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "ssoProvider",
+      "columnName": "domainVerified",
+      "position": 9,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "name",
+      "position": 2,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "memberCount",
+      "position": 3,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "organizationId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "team",
+      "columnName": "updatedAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "teamMember",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "teamMember",
+      "columnName": "teamId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "teamMember",
+      "columnName": "userId",
+      "position": 3,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "teamMember",
+      "columnName": "membershipKey",
+      "position": 4,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "teamMember",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "secret",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "backupCodes",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "userId",
+      "position": 4,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "verified",
+      "position": 5,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "failedVerificationCount",
+      "position": 6,
+      "type": "int",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "twoFactor",
+      "columnName": "lockedUntil",
+      "position": 7,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "name",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "email",
+      "position": 3,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "emailVerified",
+      "position": 4,
+      "type": "tinyint(1)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "image",
+      "position": 5,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "createdAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "user",
+      "columnName": "updatedAt",
+      "position": 7,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "user",
+      "columnName": "role",
+      "position": 8,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "banned",
+      "position": 9,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "banReason",
+      "position": 10,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "banExpires",
+      "position": 11,
+      "type": "timestamp(3)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "isAnonymous",
+      "position": 12,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "phoneNumber",
+      "position": 13,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "phoneNumberVerified",
+      "position": 14,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "lastLoginMethod",
+      "position": 15,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "username",
+      "position": 16,
+      "type": "varchar(255)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "displayUsername",
+      "position": 17,
+      "type": "text",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "user",
+      "columnName": "twoFactorEnabled",
+      "position": 18,
+      "type": "tinyint(1)",
+      "nullable": "YES",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "verification",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "verification",
+      "columnName": "identifier",
+      "position": 2,
+      "type": "varchar(255)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "verification",
+      "columnName": "value",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "verification",
+      "columnName": "expiresAt",
+      "position": 4,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "verification",
+      "columnName": "createdAt",
+      "position": 5,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "verification",
+      "columnName": "updatedAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": "CURRENT_TIMESTAMP(3)",
+      "extra": "DEFAULT_GENERATED"
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "id",
+      "position": 1,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "userId",
+      "position": 2,
+      "type": "varchar(36)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "address",
+      "position": 3,
+      "type": "text",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "chainId",
+      "position": 4,
+      "type": "int",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "isPrimary",
+      "position": 5,
+      "type": "tinyint(1)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    },
+    {
+      "tableName": "walletAddress",
+      "columnName": "createdAt",
+      "position": 6,
+      "type": "timestamp(3)",
+      "nullable": "NO",
+      "defaultValue": null,
+      "extra": ""
+    }
+  ],
+  "indexes": [
+    {
+      "tableName": "account",
+      "indexName": "account_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "account",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "apikey",
+      "indexName": "apikey_configId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "configId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "apikey",
+      "indexName": "apikey_key_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "key",
+      "prefixLength": null
+    },
+    {
+      "tableName": "apikey",
+      "indexName": "apikey_referenceId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "referenceId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "apikey",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "deviceCode",
+      "indexName": "deviceCode_deviceCode_uidx",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "deviceCode",
+      "prefixLength": null
+    },
+    {
+      "tableName": "deviceCode",
+      "indexName": "deviceCode_userCode_uidx",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "userCode",
+      "prefixLength": null
+    },
+    {
+      "tableName": "deviceCode",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "invitation",
+      "indexName": "invitation_email_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "email",
+      "prefixLength": null
+    },
+    {
+      "tableName": "invitation",
+      "indexName": "invitation_organizationId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "organizationId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "invitation",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "jwks",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "member",
+      "indexName": "member_organizationId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "organizationId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "member",
+      "indexName": "member_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "member",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "oauthAccessToken_authorizationCodeId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "authorizationCodeId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "oauthAccessToken_clientId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "oauthAccessToken_refreshId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "refreshId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "oauthAccessToken_sessionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "sessionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "oauthAccessToken_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthAccessToken",
+      "indexName": "token",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "token",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClient",
+      "indexName": "clientId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClient",
+      "indexName": "oauthClient_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClient",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientAssertion",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientResource",
+      "indexName": "oauthClientResource_clientId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientResource",
+      "indexName": "oauthClientResource_clientId_resourceId_uidx",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientResource",
+      "indexName": "oauthClientResource_clientId_resourceId_uidx",
+      "nonUnique": 0,
+      "position": 2,
+      "columnName": "resourceId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientResource",
+      "indexName": "oauthClientResource_resourceId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "resourceId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthClientResource",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthConsent",
+      "indexName": "oauthConsent_clientId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthConsent",
+      "indexName": "oauthConsent_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthConsent",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "oauthRefreshToken_authorizationCodeId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "authorizationCodeId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "oauthRefreshToken_clientId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "clientId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "oauthRefreshToken_sessionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "sessionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "oauthRefreshToken_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthRefreshToken",
+      "indexName": "token",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "token",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthResource",
+      "indexName": "identifier",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "identifier",
+      "prefixLength": null
+    },
+    {
+      "tableName": "oauthResource",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "organization",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "organization",
+      "indexName": "slug",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "slug",
+      "prefixLength": null
+    },
+    {
+      "tableName": "organizationRole",
+      "indexName": "organizationRole_organizationId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "organizationId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "organizationRole",
+      "indexName": "organizationRole_role_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "role",
+      "prefixLength": null
+    },
+    {
+      "tableName": "organizationRole",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "passkey",
+      "indexName": "passkey_credentialID_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "credentialID",
+      "prefixLength": null
+    },
+    {
+      "tableName": "passkey",
+      "indexName": "passkey_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "passkey",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "rateLimit",
+      "indexName": "key",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "key",
+      "prefixLength": null
+    },
+    {
+      "tableName": "rateLimit",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "indexName": "connectionKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "connectionKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimConnectionBinding",
+      "indexName": "scimConnectionBinding_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "displayNameKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "displayNameKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "externalIdKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "externalIdKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "orderKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "orderKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "scimGroup_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroup",
+      "indexName": "scimGroup_provisioningDomainId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "provisioningDomainId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroupMember",
+      "indexName": "membershipKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "membershipKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroupMember",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroupMember",
+      "indexName": "scimGroupMember_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroupMember",
+      "indexName": "scimGroupMember_groupId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "groupId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimGroupMember",
+      "indexName": "scimGroupMember_scimUserId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "scimUserId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "indexName": "externalIdKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "externalIdKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "indexName": "scimIdentityTombstone_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "indexName": "scimIdentityTombstone_provisioningDomainId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "provisioningDomainId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimIdentityTombstone",
+      "indexName": "scimIdentityTombstone_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "indexName": "connectionId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "indexName": "creationRequestId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "creationRequestId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnection",
+      "indexName": "scimManagedConnection_provisioningDomainId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "provisioningDomainId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "indexName": "eventKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "eventKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedConnectionEvent",
+      "indexName": "scimManagedConnectionEvent_connectionRecordId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionRecordId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "indexName": "activeSlotKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "activeSlotKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "indexName": "credentialId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "credentialId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimManagedCredential",
+      "indexName": "scimManagedCredential_connectionRecordId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionRecordId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "grantKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "grantKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "scimProjectionGrant_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "scimProjectionGrant_provisioningDomainId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "provisioningDomainId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "scimProjectionGrant_scimUserId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "scimUserId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimProjectionGrant",
+      "indexName": "scimProjectionGrant_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimSubject",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimSubject",
+      "indexName": "scimSubject_profileSourceId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "profileSourceId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimSubject",
+      "indexName": "userId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "connectionUserKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "connectionUserKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "externalIdKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "externalIdKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "orderKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "orderKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "scimUser_connectionId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "connectionId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "scimUser_provisioningDomainId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "provisioningDomainId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "scimUser_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "scimUser",
+      "indexName": "userNameKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "userNameKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "session",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "session",
+      "indexName": "session_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "session",
+      "indexName": "token",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "token",
+      "prefixLength": null
+    },
+    {
+      "tableName": "ssoProvider",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "ssoProvider",
+      "indexName": "providerId",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "providerId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "team",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "team",
+      "indexName": "team_organizationId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "organizationId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "teamMember",
+      "indexName": "membershipKey",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "membershipKey",
+      "prefixLength": null
+    },
+    {
+      "tableName": "teamMember",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "teamMember",
+      "indexName": "teamMember_teamId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "teamId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "teamMember",
+      "indexName": "teamMember_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "twoFactor",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "twoFactor",
+      "indexName": "twoFactor_secret_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "secret",
+      "prefixLength": null
+    },
+    {
+      "tableName": "twoFactor",
+      "indexName": "twoFactor_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    },
+    {
+      "tableName": "user",
+      "indexName": "email",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "email",
+      "prefixLength": null
+    },
+    {
+      "tableName": "user",
+      "indexName": "phoneNumber",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "phoneNumber",
+      "prefixLength": null
+    },
+    {
+      "tableName": "user",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "user",
+      "indexName": "username",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "username",
+      "prefixLength": null
+    },
+    {
+      "tableName": "verification",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "verification",
+      "indexName": "verification_identifier_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "identifier",
+      "prefixLength": null
+    },
+    {
+      "tableName": "walletAddress",
+      "indexName": "PRIMARY",
+      "nonUnique": 0,
+      "position": 1,
+      "columnName": "id",
+      "prefixLength": null
+    },
+    {
+      "tableName": "walletAddress",
+      "indexName": "walletAddress_userId_idx",
+      "nonUnique": 1,
+      "position": 1,
+      "columnName": "userId",
+      "prefixLength": null
+    }
+  ]
+}

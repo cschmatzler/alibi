@@ -3,7 +3,7 @@ title: "SeaORM"
 description: "Use SeaORM entities for users, sessions, accounts and plugin data."
 ---
 
-`SeaOrmStore` implements the same `AuthStore` contract as the SQLx store, with full feature parity: every plugin that works on SQLx works on SeaORM. Choose it when your application already uses SeaORM entities, migrations and connections.
+`SeaOrmStore` implements `AuthStore` with SeaORM entities, migrations and connections. Choose it when your application already uses SeaORM.
 
 ## Dependencies
 
@@ -75,7 +75,9 @@ async fn build_auth(
 }
 ```
 
-`Database::connect` takes a SQLite (`sqlite:`) or PostgreSQL (`postgres:`) URL. To tune the pool, build `ConnectOptions` and call `Database::connect(options)` — SeaORM's `DatabaseConnection` is a cheap handle that you can share between your application and authentication.
+`Database::connect` takes a SQLite (`sqlite:`) or PostgreSQL (`postgres:`) URL. Enable `seaorm-mysql` to connect with a `mysql:` URL. Bundled MySQL migrations include the pinned upstream schema and managed SCIM tables. MySQL does not yet have full store parity; some advanced operations still require SQLite or PostgreSQL.
+
+To tune the pool, build `ConnectOptions` and call `Database::connect(options)`. Share the resulting `DatabaseConnection` between your application and authentication.
 
 ## Use your own entities
 
