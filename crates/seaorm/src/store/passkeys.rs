@@ -24,6 +24,11 @@ async fn optional_text<C: ConnectionTrait>(
                 alibi_core::store::adapter::RawFieldValue::Null,
                 alibi_core::store::adapter::RawFieldValue::Text,
             )
+        } else if db.get_database_backend() == sea_orm::DbBackend::MySql {
+            alibi_core::store::mysql_parameter::text_parameter(&value)?.map_or(
+                alibi_core::store::adapter::RawFieldValue::Null,
+                alibi_core::store::adapter::RawFieldValue::Text,
+            )
         } else if db.get_database_backend() == sea_orm::DbBackend::Sqlite {
             match &value {
                 alibi_core::utils::json::JsValue::Date(_) => {

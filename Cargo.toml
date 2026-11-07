@@ -117,6 +117,7 @@ axum = [
 ]
 poem = ["dep:poem", "dep:http"]
 seaorm = ["dep:alibi-seaorm"]
+seaorm-mysql = ["seaorm", "alibi-seaorm/mysql"]
 sqlx = ["sqlx-sqlite", "sqlx-postgres"]
 sqlx-sqlite = ["dep:alibi-sqlx", "alibi-sqlx/sqlite"]
 sqlx-postgres = ["dep:alibi-sqlx", "alibi-sqlx/postgres"]

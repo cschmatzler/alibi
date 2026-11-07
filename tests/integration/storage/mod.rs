@@ -37,6 +37,8 @@ mod jwks;
 mod lifecycle_errors;
 mod members;
 mod migrations;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql;
 mod native_api_keys;
 mod native_device_codes;
 mod native_jwks;

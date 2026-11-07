@@ -4,6 +4,7 @@ mod database_hooks;
 mod decorated;
 mod jwks;
 pub(crate) mod memory_transaction;
+pub mod mysql_parameter;
 pub mod postgres_parameter;
 #[cfg(test)]
 mod memory_transaction_tests {
