@@ -25,14 +25,21 @@ fn credential_descriptor(
     passkey: &impl alibi_core::AuthPasskey,
 ) -> AuthResult<alibi_core::utils::json::JsValue> {
     use alibi_core::utils::json::JsValue;
+    let transports = super::webauthn::stored_transports(passkey.transports())?;
+    let credential_id = passkey.credential_id().replace('=', "");
+    if !credential_id
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        return Err(AuthError::internal(
+            "Stored passkey credential ID is not valid base64url",
+        ));
+    }
     Ok(JsValue::Object(
         [
-            ("id".into(), JsValue::String(passkey.credential_id().into())),
+            ("id".into(), JsValue::String(credential_id.into())),
+            ("transports".into(), transports),
             ("type".into(), JsValue::String("public-key".into())),
-            (
-                "transports".into(),
-                super::webauthn::stored_transports(passkey.transports())?,
-            ),
         ]
         .into(),
     ))

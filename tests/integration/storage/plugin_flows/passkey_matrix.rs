@@ -677,7 +677,8 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
         )
         .await?;
         let options = output.decode()?;
-        assert_eq!(options.get("allowCredentials").is_some(), hints);
+        assert!(options.get("allowCredentials").is_some());
+        assert_eq!(!options["allowCredentials"].is_undefined(), hints);
         if hints {
             assert!(
                 options["allowCredentials"]
@@ -699,6 +700,8 @@ async fn passkey_ceremony_matrix<B: Backend>(db: Db) -> TestResult {
                 .any(|(name, value)| name.eq_ignore_ascii_case("set-cookie")
                     && value.contains("better-auth-passkey="))
         );
+        let wire = output.into_response()?;
+        assert_eq!(body(&wire).get("allowCredentials").is_some(), hints);
     }
     let authenticate = async |authenticator: &Authenticator,
                               origin: &str,
