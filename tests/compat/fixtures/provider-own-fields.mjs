@@ -4,13 +4,14 @@ import { socialProviders } from "../reference-server/node_modules/@better-auth/c
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/core/package.json", import.meta.url)));
 assert.equal(pkg.version, "1.7.18");
-const names = ["roblox", "salesforce", "slack", "spotify", "twitch", "twitter", "vercel", "vk", "zoom"];
+const names = ["roblox", "salesforce", "slack", "spotify", "twitch", "twitter", "vercel", "vk", "zoom", "facebook-graph", "facebook-limited", "microsoft", "discord", "tiktok"];
 const modes = ["missing", "null", "false", "empty", "utf16", "mapped"];
 const cases = [];
 const fetch = globalThis.fetch;
 try {
   for (const name of names) {
     for (const mode of modes) {
+      if (name === "tiktok" && mode === "mapped") continue;
       const profile = {
         roblox: { sub: "subject" },
         salesforce: { user_id: "subject" },
@@ -21,6 +22,11 @@ try {
         vercel: { sub: "subject" },
         vk: { user: { user_id: "subject", email: "vk@fixture.test" } },
         zoom: { id: "subject" },
+        "facebook-graph": { id: "1", picture: { data: {} } },
+        "facebook-limited": { sub: "subject" },
+        microsoft: { oid: "subject" },
+        discord: { id: "subject", avatar: "avatar" },
+        tiktok: { data: { user: { open_id: "subject" } } },
       }[name];
       if (mode !== "missing" && mode !== "mapped") {
         const value = { null: null, false: false, empty: "", utf16: "\ud800" }[mode];
@@ -34,37 +40,52 @@ try {
           vercel: ["name", "preferred_username", "email", "picture", "email_verified"],
           vk: ["first_name", "last_name", "birthday", "sex", "avatar"],
           zoom: ["display_name", "email", "pic_url", "verified"],
+          "facebook-graph": ["name", "email", "email_verified"],
+          "facebook-limited": ["name", "email", "picture"],
+          microsoft: ["name", "email", "picture", "email_verified"],
+          discord: ["global_name", "username", "email", "verified"],
+          tiktok: ["display_name", "username", "email", "avatar_large_url"],
         }[name];
-        const receiver = name === "vk" ? profile.user : name === "twitter" ? profile.data : profile;
+        const receiver = name === "vk" ? profile.user : name === "twitter" ? profile.data : name === "tiktok" ? profile.data.user : profile;
         for (const field of fields) receiver[field] = value;
         if (name === "salesforce") profile.photos = { picture: value, thumbnail: value };
         if (name === "spotify") profile.images = [{ url: value }];
+        if (name === "facebook-graph") profile.picture.data.url = value;
       }
       const mapping = mode === "mapped"
         ? { id: "mapped", name: "\udfff", email: "mapped@fixture.test", extra: { text: "\ud800" } }
         : null;
       const mappingUndefined = mode === "mapped" ? ["image", "extraUndefined"] : [];
       let mapCalls = 0;
+      const observedProfiles = [];
       globalThis.fetch = async input => {
         const url = String(input instanceof Request ? input.url : input);
-        const body = url.includes("user.fields=confirmed_email") ? { data: {} } : profile;
+        const body = url.includes("user.fields=confirmed_email") ? { data: {} }
+          : url.includes("/debug_token") ? { data: { is_valid: true, app_id: "client", user_id: "1" } }
+          : profile;
         return new Response(JSON.stringify(body), { headers: { "content-type": "application/json" } });
       };
-      const provider = socialProviders[name]({
-        clientId: "client", clientSecret: "secret",
+      const factory = name.startsWith("facebook-") ? "facebook" : name;
+      const provider = socialProviders[factory]({
+        clientId: "client", clientSecret: "secret", disableProfilePhoto: true,
         ...(mapping ? { mapProfileToUser: async observed => {
           ++mapCalls;
-          assert.deepEqual(observed, profile);
+          observedProfiles.push(structuredClone(observed));
           return { ...mapping, ...Object.fromEntries(mappingUndefined.map(key => [key, undefined])) };
         } } : {}),
       });
       const idToken = `h.${Buffer.from(JSON.stringify(profile)).toString("base64url")}.s`;
-      const response = await provider.getUserInfo({ accessToken: "access", idToken });
+      const response = await provider.getUserInfo({ accessToken: "access", ...(name === "facebook-graph" ? {} : { idToken }) });
       assert.ok(response, `${name}/${mode}`);
       assert.equal(mapCalls, mapping ? 1 : 0);
-      assert.deepEqual(response.data, profile);
+      assert.deepEqual(observedProfiles, mapping ? [response.data] : []);
+      assert.deepEqual(response.data, name === "discord"
+        ? { ...profile, image_url: "https://cdn.discordapp.com/avatars/subject/avatar.png" }
+        : profile);
       cases.push({
         provider: name, mode, profile, mapping, mapping_undefined: mappingUndefined,
+        expected_data: response.data,
+        subject: await provider.accountSubject({ profile: response.data }),
         expected: response.user,
         keys: Object.keys(response.user),
         undefined: Object.keys(response.user).filter(key => response.user[key] === undefined),
@@ -74,7 +95,7 @@ try {
 } finally {
   globalThis.fetch = fetch;
 }
-assert.equal(cases.length, 54);
+assert.equal(cases.length, 83);
 await writeFile(new URL("../../../crates/plugins/src/oauth/providers/remaining_profile_own_fields_cases.json", import.meta.url),
   JSON.stringify({ better_auth: pkg.version, cases }).replaceAll('},{"provider":', '},\n{"provider":') + "\n");
 console.log(`${cases.length} provider own-field cases from Better Auth ${pkg.version}`);

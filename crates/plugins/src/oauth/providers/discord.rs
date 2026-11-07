@@ -107,9 +107,10 @@ impl OAuthUserInfoHandler for DiscordUserInfo {
             ("verified", "emailVerified"),
             ("image_url", "image"),
         ] {
-            if let Some(value) = profile.get(source) {
-                _ = output.insert(target.into(), value.clone());
-            }
+            _ = output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         if let Some(mapper) = &self.mapper {
             output.extend(
@@ -209,6 +210,22 @@ pub(in crate::oauth::providers) fn discord_user_info(profile: Value) -> Result<M
 mod tests {
     use super::*;
     use crate::oauth::providers::js as json;
+
+    #[tokio::test]
+    async fn remaining_literal_own_fields_match_upstream_for_discord() {
+        super::super::remaining_profile::own_fields_tests::assert_own_fields(
+            &["discord"],
+            |_, endpoint| {
+                let mut provider = OAuthProvider::discord("client", "secret");
+                provider.get_user_info = Some(Arc::new(DiscordUserInfo {
+                    endpoint: endpoint.into(),
+                    mapper: None,
+                }));
+                provider
+            },
+        )
+        .await;
+    }
 
     struct AvatarMapper;
     #[async_trait]

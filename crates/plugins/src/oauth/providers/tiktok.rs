@@ -157,12 +157,15 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .cloned()
             .unwrap_or_else(|| Value::String(String::new().into()));
         let mut output = Map::new();
-        _ = output.insert("name".into(), name.clone());
         _ = output.insert("email".into(), email.clone());
+        _ = output.insert("name".into(), name.clone());
+        _ = output.insert(
+            "image".into(),
+            data.get("avatar_large_url")
+                .cloned()
+                .unwrap_or(Value::Undefined),
+        );
         _ = output.insert("emailVerified".into(), Value::Bool(false));
-        if let Some(image) = data.get("avatar_large_url") {
-            _ = output.insert("image".into(), image.clone());
-        }
         Ok(OAuthUserInfoResponse {
             user: output,
             data: profile,

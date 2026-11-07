@@ -30,6 +30,22 @@ fn provider(name: &str, endpoint: &str) -> OAuthProvider {
         "vercel" => with_endpoint!(VercelOptions, vercel_with_options),
         "vk" => with_endpoint!(VkOptions, vk_with_options),
         "zoom" => with_endpoint!(ZoomOptions, zoom_with_options),
+        "facebook-graph" | "facebook-limited" => {
+            let mut options = FacebookOptions::new("client", Some("secret".into()));
+            options.user_info_endpoint = Some(endpoint.into());
+            options.token_inspection_endpoint = Some(format!("{endpoint}/inspect"));
+            OAuthProvider::facebook_with_options(options)
+        }
+        "microsoft" => {
+            let mut options = MicrosoftOptions::new("client", Some("secret".into()));
+            options.disable_profile_photo = true;
+            OAuthProvider::microsoft(options).unwrap()
+        }
+        "tiktok" => {
+            let mut options = TikTokOptions::new("client", "secret");
+            options.user_info_endpoint = Some(endpoint.into());
+            OAuthProvider::tiktok_with_options(options)
+        }
         _ => panic!("unknown fixture provider {name}"),
     }
 }
@@ -49,12 +65,15 @@ impl OAuthProfileMapper for Mapper {
     }
 }
 
-async fn assert_own_fields(provider_names: &[&str]) {
+pub(in crate::oauth::providers) async fn assert_own_fields(
+    provider_names: &[&str],
+    factory: fn(&str, &str) -> OAuthProvider,
+) {
     let fixture =
         json::parse_value(include_str!("remaining_profile_own_fields_cases.json")).unwrap();
     assert_eq!(fixture["better_auth"].as_str(), Some("1.7.18"));
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 54);
+    assert_eq!(cases.len(), 83);
     let mut matched = 0;
     for case in cases {
         let name = case["provider"].as_str().unwrap();
@@ -64,7 +83,7 @@ async fn assert_own_fields(provider_names: &[&str]) {
         matched += 1;
         let profile = case["profile"].clone();
         let server = HttpFixture::new(200, profile.clone()).await;
-        let mut provider = provider(name, &server.url);
+        let mut provider = factory(name, &server.url);
         let calls = Arc::new(AtomicUsize::new(0));
         let mapped = !case["mapping"].is_null();
         if mapped {
@@ -73,7 +92,7 @@ async fn assert_own_fields(provider_names: &[&str]) {
                 _ = patch.insert(key.as_js_string().unwrap().clone(), JsValue::Undefined);
             }
             provider = provider.with_profile_mapper(Arc::new(Mapper {
-                profile: profile.clone(),
+                profile: case["expected_data"].clone(),
                 patch,
                 calls: calls.clone(),
             }));
@@ -89,7 +108,7 @@ async fn assert_own_fields(provider_names: &[&str]) {
             .unwrap()
             .get_user_info(OAuthUserInfoRequest {
                 access_token: Some("access".into()),
-                id_token: Some(token),
+                id_token: (name != "facebook-graph").then_some(token),
                 ..Default::default()
             })
             .await
@@ -109,10 +128,14 @@ async fn assert_own_fields(provider_names: &[&str]) {
         assert_eq!(response.user, expected, "{name}/{}", case["mode"]);
         let keys = JsValue::Array(response.user.keys().cloned().map(JsValue::String).collect());
         assert_eq!(keys, case["keys"], "{name}/{}", case["mode"]);
-        assert_eq!(response.data, profile, "{name}/{}", case["mode"]);
+        assert_eq!(
+            response.data, case["expected_data"],
+            "{name}/{}",
+            case["mode"]
+        );
         assert_eq!(
             provider.account_subject.unwrap()(&response.data).unwrap(),
-            "subject"
+            case["subject"].as_js_string().unwrap().clone()
         );
         if mapped {
             assert_eq!(response.user["id"], JsValue::String("mapped".into()));
@@ -121,20 +144,39 @@ async fn assert_own_fields(provider_names: &[&str]) {
             json::parse_value(&json::to_string(&JsValue::Object(response.user)).unwrap()).unwrap();
         assert_eq!(wire, case["expected"], "{name}/{}", case["mode"]);
     }
-    assert_eq!(matched, provider_names.len() * 6);
+    let expected_count: usize = provider_names
+        .iter()
+        .map(|name| if *name == "tiktok" { 5 } else { 6 })
+        .sum();
+    assert_eq!(matched, expected_count);
 }
 
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_roblox_salesforce_slack() {
-    assert_own_fields(&["roblox", "salesforce", "slack"]).await;
+    assert_own_fields(&["roblox", "salesforce", "slack"], provider).await;
 }
 
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_spotify_twitch_twitter() {
-    assert_own_fields(&["spotify", "twitch", "twitter"]).await;
+    assert_own_fields(&["spotify", "twitch", "twitter"], provider).await;
 }
 
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_vercel_vk_zoom() {
-    assert_own_fields(&["vercel", "vk", "zoom"]).await;
+    assert_own_fields(&["vercel", "vk", "zoom"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_facebook_graph_and_limited_login() {
+    assert_own_fields(&["facebook-graph", "facebook-limited"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_microsoft() {
+    assert_own_fields(&["microsoft"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_tiktok() {
+    assert_own_fields(&["tiktok"], provider).await;
 }

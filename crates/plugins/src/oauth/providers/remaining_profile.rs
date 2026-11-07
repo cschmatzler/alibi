@@ -4,7 +4,7 @@
 
 #[cfg(test)]
 #[path = "remaining_profile_own_fields_tests.rs"]
-mod own_fields_tests;
+pub(super) mod own_fields_tests;
 
 use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
 use alibi_core::utils::json::{JsObject as Map, JsString, JsValue as Value};

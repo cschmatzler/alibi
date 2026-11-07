@@ -243,9 +243,10 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         }
         let mut output = Map::new();
         for key in ["name", "email"] {
-            if let Some(value) = profile.get(key) {
-                output.insert(key.into(), value.clone());
-            }
+            output.insert(
+                key.into(),
+                profile.get(key).cloned().unwrap_or(Value::Undefined),
+            );
         }
         let image = if limited_login {
             profile.get("picture")
@@ -264,9 +265,7 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
                 })?;
             data.get("url")
         };
-        if let Some(image) = image {
-            output.insert("image".into(), image.clone());
-        }
+        output.insert("image".into(), image.cloned().unwrap_or(Value::Undefined));
         output.insert(
             "emailVerified".into(),
             if limited_login {
