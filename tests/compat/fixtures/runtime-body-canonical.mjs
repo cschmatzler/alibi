@@ -57,9 +57,40 @@ for (const [mode, type] of [
     "\r\nhello\r\n--canonical--\r\n"
   )]);
 }
+for (const [mode, disposition] of [
+  ["multipart-disposition-case", 'FORM-DATA; NAME="value"; FILENAME="file.txt"'],
+  ["multipart-disposition-quoted-escapes", 'form-data; name="line%0a%0D%22"; filename="quote%22.txt"'],
+  ["multipart-disposition-token-escapes", 'form-data; name=line%0A; filename=quote%22.txt'],
+  ["multipart-disposition-extended-file", "form-data; name=value; filename*=UTF-8''caf%C3%A9.txt"],
+  ["multipart-disposition-extended-name", "form-data; name*=utf-8'en'caf%C3%A9"],
+  ["multipart-disposition-extended-file-first", "form-data; name=value; filename*=UTF-8''extended; filename=plain"],
+  ["multipart-disposition-extended-file-last", "form-data; name=value; filename=plain; filename*=UTF-8''extended"],
+  ["multipart-disposition-duplicate-name", 'form-data; name=first; name=last'],
+  ["multipart-disposition-empty-file", 'form-data; name=value; filename=""'],
+  ["multipart-disposition-bom-name", 'form-data; name="\ufeffvalue"'],
+  ["multipart-disposition-missing-name", 'form-data; filename=file.txt'],
+  ["multipart-disposition-attachment", 'attachment; name=value'],
+  ["multipart-disposition-spaced-equals", 'form-data; name =value'],
+  ["multipart-disposition-unknown-charset", "form-data; name=value; filename*=ISO-8859-1''caf%E9"],
+  ["multipart-disposition-invalid-percent", "form-data; name=value; filename*=UTF-8''bad%Q0"],
+  ["multipart-disposition-invalid-utf8", "form-data; name=value; filename*=UTF-8''bad%FF"],
+  ["multipart-disposition-last-header", 'form-data; name=first\r\nContent-Disposition: form-data; name=last'],
+  ["multipart-disposition-last-header-clears-file", 'form-data; name=value; filename=first\r\nContent-Disposition: form-data; name=value'],
+  ["multipart-disposition-invalid-earlier-header", 'attachment; name=first\r\nContent-Disposition: form-data; name=last'],
+]) {
+  inputs.push([mode, "multipart/form-data; boundary=canonical", Buffer.from(
+    "--canonical\r\nContent-Disposition: " + disposition + "\r\n\r\nhello\r\n--canonical--\r\n"
+  )]);
+}
 for (const [mode, content_type, bytes] of inputs) {
   const request = new Request("https://body.test", { method: "POST", headers: { "content-type": content_type }, body: bytes });
-  const expected = await getBody(request);
+  let expected;
+  try {
+    expected = await getBody(request);
+  } catch (error) {
+    cases.push({ mode, content_type, bytes: [...bytes], error: error.message });
+    continue;
+  }
   const files = {};
   for (const [name, value] of Object.entries(expected)) {
     if (value instanceof File) {
@@ -68,7 +99,7 @@ for (const [mode, content_type, bytes] of inputs) {
   }
   cases.push({ mode, content_type, bytes: [...bytes], expected, wire: JSON.stringify(expected), files });
 }
-assert.equal(cases.length, 31);
+assert.equal(cases.length, 50);
 await writeFile(new URL("../../../src/runtime/body_canonical_cases.json", import.meta.url),
   JSON.stringify({ better_auth: auth.version, better_call: pkg.version, cases }) + "\n");
 console.log(cases.length + " actual Better Call" + pkg.version + " body cases under Better Auth" + auth.version);

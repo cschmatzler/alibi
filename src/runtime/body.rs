@@ -1,5 +1,7 @@
 use super::{AuthError, AuthRequest, AuthResult};
 
+mod multipart;
+
 pub(in crate::runtime) async fn parse_dispatch_body(
     req: &AuthRequest,
     allowed: &[&str],
@@ -78,16 +80,18 @@ pub(in crate::runtime) async fn parse_dispatch_body(
         let boundary = multer::parse_boundary(content_type).map_err(|error| {
             AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
         })?;
+        multipart::validate_dispositions(body, &boundary)?;
         let mut multipart = multer::Multipart::with_reader(body.as_slice(), boundary);
         let mut fields = empty_object();
         let mut files = alibi_core::types::MultipartFiles::default();
         while let Some(field) = multipart.next_field().await.map_err(|error| {
             AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
         })? {
-            let Some(name) = field.name().map(str::to_owned) else {
-                continue;
-            };
-            let filename = field.file_name().map(str::to_owned);
+            let mut disposition = None;
+            for header in field.headers().get_all("content-disposition") {
+                disposition = Some(multipart::disposition(header.as_bytes())?);
+            }
+            let (name, filename) = disposition.ok_or_else(multipart::invalid_disposition)?;
             // File.type normalizes the raw header, not a parsed MIME value.
             let content_type = field.headers().get("content-type").map_or_else(
                 || "text/plain".to_owned(),
@@ -214,7 +218,7 @@ mod canonical_tests {
         assert_eq!(fixture["better_auth"], "1.7.18");
         assert_eq!(fixture["better_call"], "1.4.5");
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 31);
+        assert_eq!(cases.len(), 50);
         for case in cases {
             let mode = case["mode"].as_str().unwrap();
             let content_type = case["content_type"].as_str().unwrap();
@@ -229,9 +233,19 @@ mod canonical_tests {
                 .headers
                 .insert("content-type".into(), content_type.into());
             request.body = Some(bytes.clone());
-            parse_dispatch_body(&request, &[])
-                .await
-                .unwrap_or_else(|error| panic!("{mode}: {error}"));
+            let result = parse_dispatch_body(&request, &[]).await;
+            if let Some(expected) = case.get("error") {
+                let error = result.expect_err(mode);
+                let alibi_core::AuthError::CallbackFailure(cause) = error else {
+                    panic!("{mode}: expected an ordinary parsing failure");
+                };
+                let alibi_core::AuthError::Internal(message) = *cause else {
+                    panic!("{mode}: expected the parsing message");
+                };
+                assert_eq!(message, expected.as_str().unwrap(), "{mode}");
+                continue;
+            }
+            result.unwrap_or_else(|error| panic!("{mode}: {error}"));
             let parsed = request
                 .extensions()
                 .get::<alibi_core::types::ParsedRequestBody>()
