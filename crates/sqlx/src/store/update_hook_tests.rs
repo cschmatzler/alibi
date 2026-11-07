@@ -1,6 +1,22 @@
 #[path = "../../../../tests/integration/storage/plugin_flows/user_update_patch_cases.rs"]
 mod cases;
 
+#[path = "../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs"]
+mod falsy_id_cases;
+
+#[tokio::test]
+async fn falsy_update_ids_bind_on_real_sqlite() {
+    let config = std::sync::Arc::new(alibi_core::AuthConfig::default());
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect("sqlite::memory:")
+        .await
+        .unwrap();
+    let store = super::SqlxStore::<super::bundled_schema::BundledSchema>::new(config, pool);
+    super::migrator::run_migrations(&store.pool).await.unwrap();
+    falsy_id_cases::exercise(&store).await;
+}
+
 #[derive(crate::AuthEntity, Clone, Debug, PartialEq, serde::Serialize, sqlx::FromRow)]
 #[auth(role = "user", table = "renamed_user", secondary_storage)]
 struct RenamedUser {

@@ -11,6 +11,21 @@ mod duplicate_rows {
     include!("memory_user_duplicate_tests.rs");
 }
 
+mod falsy_id_cases {
+    use crate as alibi_core;
+    include!("../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs");
+}
+
+#[tokio::test]
+async fn falsy_update_ids_memory_follow_adapter_omission() {
+    falsy_id_cases::exercise::<BundledSchema>(&MemoryStore::default()).await;
+}
+
+#[tokio::test]
+async fn falsy_update_ids_stateless_follow_adapter_omission() {
+    falsy_id_cases::exercise::<StatelessSchema>(&StatelessStore::default()).await;
+}
+
 async fn physical_primitives<S: AuthSchema<User = UserView>>(
     store: &impl UserStore<S>,
     supports_page: bool,

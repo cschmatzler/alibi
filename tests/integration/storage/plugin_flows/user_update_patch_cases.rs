@@ -469,25 +469,43 @@ pub(super) async fn exercise<S: AuthSchema>(
 
     let mut zero = alibi_core::store::PreparedUserUpdate::default();
     zero.data = [("id".into(), JsValue::Number(0.0))].into();
-    let zero = db.update_user_prepared("renamed-user", zero).await.unwrap();
-    assert_eq!(zero.id(), "0");
+    let unchanged = db.update_user_prepared("renamed-user", zero).await.unwrap();
+    assert_eq!(unchanged.id(), "renamed-user");
+    assert_eq!(
+        effects.native_before.lock().unwrap().last().unwrap()["id"],
+        JsValue::Number(0.0)
+    );
     assert!(
         physical
             .get_user_by_id("renamed-user")
             .await
             .unwrap()
-            .is_none()
+            .is_some()
     );
+    assert!(physical.get_user_by_id("0").await.unwrap().is_none());
     let mut collision = CreateUser::new().with_email("collision@test");
     collision.id = Some("collision".into());
     let _collision = physical.create_user(collision).await.unwrap();
     let mut duplicate = alibi_core::store::PreparedUserUpdate::default();
     duplicate.data = [("id".into(), text("collision"))].into();
-    assert!(db.update_user_prepared("0", duplicate).await.is_err());
-    assert!(physical.get_user_by_id("0").await.unwrap().is_some());
+    assert!(
+        db.update_user_prepared("renamed-user", duplicate)
+            .await
+            .is_err()
+    );
+    assert!(
+        physical
+            .get_user_by_id("renamed-user")
+            .await
+            .unwrap()
+            .is_some()
+    );
     let mut nonfinite = alibi_core::store::PreparedUserUpdate::default();
     nonfinite.data = [("name".into(), JsValue::Number(f64::INFINITY))].into();
-    let infinity = db.update_user_prepared("0", nonfinite).await.unwrap();
+    let infinity = db
+        .update_user_prepared("renamed-user", nonfinite)
+        .await
+        .unwrap();
     assert_eq!(
         effects.native_before.lock().unwrap().last().unwrap()["name"],
         JsValue::Number(f64::INFINITY)

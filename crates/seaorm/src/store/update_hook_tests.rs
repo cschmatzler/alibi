@@ -1,6 +1,18 @@
 #[path = "../../../../tests/integration/storage/plugin_flows/user_update_patch_cases.rs"]
 mod cases;
 
+#[path = "../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs"]
+mod falsy_id_cases;
+
+#[tokio::test]
+async fn falsy_update_ids_bind_on_real_sqlite() {
+    let config = std::sync::Arc::new(alibi_core::AuthConfig::default());
+    let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+    super::migrator::run_migrations(&db).await.unwrap();
+    let store = super::SeaOrmStore::<super::bundled_schema::BundledSchema>::new(config, db);
+    falsy_id_cases::exercise(&store).await;
+}
+
 mod renamed {
     use sea_orm::entity::prelude::*;
     #[derive(crate::AuthEntity, Clone, Debug, PartialEq, DeriveEntityModel, serde::Serialize)]

@@ -175,6 +175,53 @@ async fn cancellation_stops_binding_and_later_hooks() {
     );
 }
 
+struct NullIdentity(Arc<Mutex<Vec<JsValue>>>);
+
+#[async_trait]
+impl UserUpdateHook<BundledSchema> for NullIdentity {
+    async fn before_update(
+        &self,
+        _: &str,
+        original: &JsObject,
+        _: &AuthContext<BundledSchema>,
+        _: Option<&dyn AuthTransaction<BundledSchema>>,
+    ) -> AuthResult<UserUpdateHookResult> {
+        self.0
+            .lock()
+            .unwrap()
+            .push(original.get("id").unwrap().clone());
+        Ok(UserUpdateHookResult::Continue)
+    }
+}
+
+#[tokio::test]
+async fn falsy_update_ids_remain_original_hook_input_until_binding() {
+    let config = Arc::new(AuthConfig::default());
+    let inner = Arc::new(MemoryStore::default());
+    let user = inner
+        .create_user(CreateUser::new().with_email("null-id@test"))
+        .await
+        .unwrap();
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut init = AuthInitContext::<BundledSchema>::new(config, inner);
+    init.register_user_update_hook(Arc::new(NullIdentity(seen.clone())));
+    let updated = init
+        .database_with_registered_transforms()
+        .update_user(
+            &user.id,
+            UpdateUser {
+                name: Some("changed".into()),
+                adapter_native_fields: [("id".into(), JsValue::Null)].into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(*seen.lock().unwrap(), [JsValue::Null]);
+    assert_eq!(updated.id, user.id);
+    assert_eq!(updated.name.as_deref(), Some("changed"));
+}
+
 struct Empty(bool);
 #[async_trait]
 impl<S: crate::AuthSchema> UserUpdateHook<S> for Empty {

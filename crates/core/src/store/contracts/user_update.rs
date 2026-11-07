@@ -78,6 +78,9 @@ impl PreparedUserUpdate {
         let mut fields = FieldValues::from_user_update(data, self.metadata.clone())?;
         fields.apply_adapter_transforms_async().await?;
         self.data = fields.update_own_properties();
+        // The source ID input transform omits falsy values, including null/NaN.
+        self.data
+            .retain(|key, value| key != "id" || value.is_truthy());
         Ok(())
     }
 }
