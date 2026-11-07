@@ -19,6 +19,7 @@ AGENTS.md
 .direnv/
 /rustfmt.toml
 /clippy.toml
+/.pre-commit-config.yaml
 
 # Test artifacts
 /coverage/

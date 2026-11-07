@@ -7,6 +7,17 @@
 {
   imports = [ inputs.rust-style.devenvModules.default ];
 
+  git-hooks = {
+    enable = true;
+    hooks.test-layout = {
+      enable = true;
+      name = "Test layout";
+      entry = "${pkgs.nodejs_24}/bin/node scripts/check-test-layout.mjs";
+      pass_filenames = false;
+      always_run = true;
+    };
+  };
+
   packages = [
     inputs.nub.packages.${pkgs.stdenv.hostPlatform.system}.default
     pkgs.nodejs_24

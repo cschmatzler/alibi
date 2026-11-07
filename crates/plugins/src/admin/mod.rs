@@ -707,15 +707,1740 @@ mod tests {
     use std::sync::Arc;
 
     mod native_creation {
-        include!("native_creation_tests.rs");
+        use super::*;
+        use alibi_core::UpdateUser;
+        use chrono::Datelike;
+
+        #[tokio::test]
+        async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction() {
+            let (ctx, _, _, _, _) = create_admin_context().await;
+            let mut input = alibi_core::CreateUser::new().with_email("raw-username@fixture.test");
+            input
+                .adapter_native_fields
+                .insert("username".into(), serde_json::json!(42).into());
+            let user = ctx.database.create_user(input).await.unwrap();
+            let found = ctx
+                .database
+                .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(42.0))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(
+                alibi_core::AuthUser::id(&found),
+                alibi_core::AuthUser::id(&user)
+            );
+            for raw in [serde_json::json!([]), serde_json::json!({})] {
+                assert!(
+                    ctx.database
+                        .get_user_by_username_value(&raw.into())
+                        .await
+                        .is_err()
+                );
+            }
+            alibi_core::store::transaction(ctx.database.as_ref(), |tx| {
+                Box::pin(async move {
+                    let mut input = alibi_core::CreateUser::new()
+                        .with_email("transaction-username@fixture.test");
+                    input
+                        .adapter_native_fields
+                        .insert("username".into(), serde_json::json!(73).into());
+                    let created = tx.create_user(input).await?;
+                    let found = tx
+                        .get_user_by_username_value(&alibi_core::utils::json::JsValue::Number(73.0))
+                        .await?
+                        .unwrap();
+                    assert_eq!(
+                        alibi_core::AuthUser::id(&found),
+                        alibi_core::AuthUser::id(&created)
+                    );
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+        }
+
+        #[tokio::test]
+        async fn false_ban_patch_preserves_omissions_and_honors_explicit_values() {
+            let (ctx, admin, _, user, _) = create_admin_context().await;
+            let expiry = chrono::DateTime::from_timestamp_millis(4_102_444_800_123).unwrap();
+            ctx.database
+                .update_user_record(
+                    &user.id,
+                    UpdateUser {
+                        banned: Some(true),
+                        ban_reason: Some("preserved".into()),
+                        ban_expires: Some(Some(expiry)),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            for (data, reason, expected_expiry) in [
+                (
+                    serde_json::json!({"banned": false}),
+                    Some("preserved"),
+                    Some(expiry),
+                ),
+                (
+                    serde_json::json!({"banned": false, "banReason": "replacement", "banExpires": "2099-01-01T00:00:00Z"}),
+                    Some("replacement"),
+                    Some(
+                        chrono::DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z")
+                            .unwrap()
+                            .with_timezone(&Utc),
+                    ),
+                ),
+                (
+                    serde_json::json!({"banned": false, "banReason": null, "banExpires": null}),
+                    None,
+                    None,
+                ),
+            ] {
+                handlers::update_user_core(
+                    &types::AdminUpdateUserRequest::new(
+                        &user.id,
+                        data.as_object().unwrap().clone(),
+                    ),
+                    &admin,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                let stored = ctx
+                    .database
+                    .get_user_by_id_record(&user.id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(!stored.banned());
+                assert_eq!(stored.ban_reason(), reason);
+                assert_eq!(stored.ban_expires(), expected_expiry);
+            }
+        }
+
+        #[tokio::test]
+        async fn admin_creation_native_scalar_affinity_and_nulls_are_persisted() {
+            let (mut ctx, _, _, _, _) = create_admin_context().await;
+            let init = alibi_core::plugin::AuthInitContext::new(
+                Arc::clone(&ctx.config),
+                Arc::clone(&ctx.database),
+            );
+            ctx.database = init.database_with_registered_transforms();
+            let mut input = types::CreateUserRequest::new("raw-native@fixture.test", "Outer name");
+            input.data = Some(
+                serde_json::json!({
+                    "id": "native-affinity-user",
+                    "image": 42, "emailVerified": "not-a-boolean",
+                    "displayUsername": false, "phoneNumber": 12345,
+                    "lastLoginMethod": null, "banned": 2,
+                    "twoFactorEnabled": "false", "isAnonymous": null,
+                    "phoneNumberVerified": 1, "banReason": 7,
+                    "banExpires": "2099-01-01", "createdAt": "2020-01-01"
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let response = serde_json::to_value(&created).unwrap();
+            assert_eq!(response["user"]["id"], "native-affinity-user");
+            assert_eq!(response["user"]["twoFactorEnabled"], "false");
+            assert_eq!(response["user"]["banned"], false);
+            assert_eq!(response["user"]["isAnonymous"], serde_json::Value::Null);
+            let stored = ctx
+                .database
+                .get_user_by_id_record(&created.user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            use alibi_core::entity::AuthUser as _;
+            assert_eq!(stored.image(), Some("42"));
+            assert_eq!(stored.display_username(), Some("0"));
+            assert_eq!(stored.phone_number(), Some("12345"));
+            assert_eq!(stored.ban_reason(), Some("7"));
+            assert!(!stored.banned());
+            assert_eq!(stored.created_at().year(), 2020);
+            assert_eq!(stored.ban_expires().unwrap().year(), 2099);
+            let values = stored.raw_snapshot().values();
+            assert_eq!(values["emailVerified"], "not-a-boolean");
+            assert_eq!(values["banned"], false);
+            assert_eq!(values["twoFactorEnabled"], "false");
+            assert_eq!(values["isAnonymous"], serde_json::Value::Null);
+            assert_eq!(values["phoneNumberVerified"], true);
+
+            let mut defaults =
+                types::CreateUserRequest::new("raw-defaults@fixture.test", "Defaults");
+            defaults.data = Some(
+                serde_json::json!({
+                    "emailVerified": null, "createdAt": null, "updatedAt": null,
+                    "image": null, "banned": null, "twoFactorEnabled": null
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            let created = handlers::create_user_core(&defaults, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let stored = ctx
+                .database
+                .get_user_by_id_record(&created.user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert!(!stored.email_verified());
+            assert_eq!(stored.image(), None);
+            assert_eq!(
+                stored.raw_snapshot().values()["banned"],
+                serde_json::Value::Null
+            );
+        }
+
+        #[tokio::test]
+        async fn admin_creation_numeric_dates_keep_sqlite_date_affinity_and_raw_wire_values() {
+            use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+            let database = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+                .await
+                .unwrap();
+            let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+                test_helpers::create_test_config(),
+                database.clone(),
+            ));
+            let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            for (index, value) in [
+                serde_json::json!(0),
+                serde_json::json!(-1),
+                serde_json::json!(1.9),
+                serde_json::json!(true),
+                serde_json::json!(1e20),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut input = types::CreateUserRequest::new(
+                    format!("numeric-date-{index}@fixture.test"),
+                    "Date",
+                );
+                input.data = Some(
+                    serde_json::json!({
+                        "createdAt": value, "updatedAt": value, "banExpires": value
+                    })
+                    .as_object()
+                    .unwrap()
+                    .clone(),
+                );
+                let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap();
+                let expected = if value.is_boolean() {
+                    serde_json::json!(1)
+                } else {
+                    value
+                };
+                let response = serde_json::to_value(&created).unwrap();
+                for field in ["createdAt", "updatedAt", "banExpires"] {
+                    assert_eq!(response["user"][field], expected, "{field}");
+                }
+                let retained = ctx
+                    .database
+                    .get_user_by_id_record(&created.user.id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(retained.raw_snapshot().values()["createdAt"], expected);
+                let row = database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "SELECT typeof(\"createdAt\") AS storage_type, CAST(\"createdAt\" AS REAL) AS stored FROM user WHERE id = ?",
+            [created.user.id.into()]
+        )).await.unwrap().unwrap();
+                let kind: String = row.try_get("", "storage_type").unwrap();
+                assert!(matches!(kind.as_str(), "integer" | "real"), "{kind}");
+                let stored: f64 = row.try_get("", "stored").unwrap();
+                assert_eq!(stored, expected.as_f64().unwrap());
+            }
+        }
+
+        #[tokio::test]
+        async fn numeric_native_ban_expiry_uses_truthiness_and_date_timeclip() {
+            use alibi_core::store::SessionCreatedHook;
+            let (ctx, _, _, _, _) = create_admin_context().await;
+            for (index, (expiry, expired)) in [
+                (serde_json::json!(0), false),
+                (serde_json::json!(-1), true),
+                (serde_json::json!(1.9), true),
+                (serde_json::json!(-0.5), true),
+                (serde_json::json!(1e20), false),
+                (serde_json::json!(-1e20), false),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut input = types::CreateUserRequest::new(
+                    format!("numeric-ban-{index}@fixture.test"),
+                    "Ban",
+                );
+                input.data = Some(
+            serde_json::json!({"banned": true, "banExpires": expiry, "banReason": "expired reason"})
+                .as_object()
+                .unwrap()
+                .clone(),
+        );
+                let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap();
+                let result = AdminSessionGuard
+                    .before_create(
+                        &CreateSession {
+                            user_id: created.user.id.clone(),
+                            expires_at: Utc::now() + Duration::hours(1),
+                            token: None,
+                            ip_address: None,
+                            user_agent: None,
+                            impersonated_by: None,
+                            active_organization_id: None,
+                            active_team_id: None,
+                            additional_fields: Default::default(),
+                        },
+                        &ctx,
+                        None,
+                    )
+                    .await;
+                assert_eq!(result.is_ok(), expired, "{expiry}: {result:?}");
+                let stored = ctx
+                    .database
+                    .get_user_by_id_record(&created.user.id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(stored.banned(), !expired);
+                assert_eq!(
+                    stored.ban_reason(),
+                    if expired {
+                        None
+                    } else {
+                        Some("expired reason")
+                    }
+                );
+                assert_eq!(stored.ban_expires().is_none(), expired);
+            }
+        }
+
+        #[tokio::test]
+        async fn admin_creation_malformed_native_fields_reach_storage_failure() {
+            let (ctx, _, _, _, _) = create_admin_context().await;
+            for (index, data) in [
+                serde_json::json!({"image": {"not": "a scalar"}}),
+                serde_json::json!({"banned": []}),
+                serde_json::json!({"createdAt": "definitely not a date"}),
+                serde_json::json!({"banExpires": "invalid"}),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let email = format!("raw-malformed-{index}@fixture.test");
+                let mut input = types::CreateUserRequest::new(&email, "Malformed");
+                input.data = Some(data.as_object().unwrap().clone());
+                let error = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap_err();
+                assert_eq!(error.status_code(), 500, "{error:?}");
+                assert!(
+                    ctx.database
+                        .get_user_by_email(&alibi_core::utils::json::JsString::from(&email))
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn native_secondary_user_roundtrip_retains_raw_dates_and_boolean_presence() {
+            use alibi_core::{AuthSchema, AuthUser, CacheAdapter};
+            let (ctx, _, _, user, _) = create_admin_context().await;
+            let user = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            let cache = alibi_core::MemoryCacheAdapter::new();
+            type User = <TestSchema as AuthSchema>::User;
+            for (index, created_at) in [
+                serde_json::json!(1e20),
+                serde_json::json!(-1),
+                serde_json::json!(1.9),
+                serde_json::json!("2099-01-01T00:00:00.000Z"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut snapshot = user.secondary_snapshot().unwrap();
+                snapshot["created_at"] = created_at.clone().into();
+                snapshot["updated_at"] = serde_json::json!(-1e20).into();
+                snapshot["ban_expires"] = serde_json::json!(-0.5).into();
+                snapshot["email_verified"] = serde_json::json!("false").into();
+                snapshot["two_factor_enabled"] = serde_json::json!("false").into();
+                snapshot["banned"] = serde_json::json!(false).into();
+                snapshot["is_anonymous"] = serde_json::Value::Null.into();
+                snapshot
+                    .as_object_mut()
+                    .unwrap()
+                    .shift_remove("phone_number_verified");
+                snapshot.as_object_mut().unwrap().shift_remove("image");
+                snapshot["username"] = serde_json::Value::Null.into();
+                snapshot["name"] = serde_json::Value::Null.into();
+                snapshot["unknownNative"] = serde_json::json!("must not retain").into();
+                cache
+                    .set(
+                        &format!("native-user-{index}"),
+                        &snapshot.to_string(),
+                        Duration::seconds(60),
+                    )
+                    .await
+                    .unwrap();
+            }
+            ctx.database.delete_user(&user.id()).await.unwrap();
+            for index in 0..4 {
+                let source: serde_json::Value = serde_json::from_str(
+                    &cache
+                        .get(&format!("native-user-{index}"))
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                )
+                .unwrap();
+                let decoded = User::from_secondary_snapshot_record(source.clone().into()).unwrap();
+                let wire = serde_json::to_value(alibi_core::UserView::from(&decoded)).unwrap();
+                assert_eq!(wire["createdAt"], source["created_at"]);
+                assert_eq!(wire["updatedAt"], source["updated_at"]);
+                assert_eq!(wire["banExpires"], source["ban_expires"]);
+                assert_eq!(wire["emailVerified"], "false");
+                assert_eq!(wire["twoFactorEnabled"], "false");
+                assert_eq!(wire["isAnonymous"], serde_json::Value::Null);
+                assert!(wire.get("phoneNumberVerified").is_none());
+                assert!(wire.get("image").is_none());
+                assert_eq!(wire.get("username"), Some(&serde_json::Value::Null));
+                assert_eq!(wire.get("name"), Some(&serde_json::Value::Null));
+                assert_eq!(decoded.name(), Some(""));
+                assert!(decoded.email_verified());
+                assert!(decoded.two_factor_enabled());
+                assert!(!decoded.banned());
+                assert!(
+                    decoded
+                        .raw_snapshot()
+                        .field_is_undefined("phoneNumberVerified")
+                );
+                assert!(!decoded.raw_snapshot().contains_field("unknownNative"));
+                let encoded = decoded.secondary_snapshot().unwrap();
+                for field in [
+                    "created_at",
+                    "updated_at",
+                    "ban_expires",
+                    "email_verified",
+                    "two_factor_enabled",
+                    "is_anonymous",
+                ] {
+                    assert_eq!(encoded[field], source[field], "{field}");
+                }
+                assert!(encoded.get("phone_number_verified").is_none());
+                assert!(encoded.get("image").is_none());
+                assert_eq!(
+                    encoded.get("username"),
+                    Some(&alibi_core::utils::json::JsValue::Null)
+                );
+                assert_eq!(
+                    encoded.get("name"),
+                    Some(&alibi_core::utils::json::JsValue::Null)
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn unrelated_user_update_retains_native_sqlite_scalars() {
+            use alibi_core::AuthUser;
+            use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+            let database = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+                .await
+                .unwrap();
+            let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+                test_helpers::create_test_config(),
+                database.clone(),
+            ));
+            let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            let mut input = types::CreateUserRequest::new("update-native@fixture.test", "Native");
+            input.data = Some(
+                serde_json::json!({
+                    "emailVerified": 2, "banned": 0.5, "twoFactorEnabled": -1,
+                    "isAnonymous": "pending", "phoneNumberVerified": -2,
+                    "createdAt": 1e20, "banExpires": -0.5
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let updated = ctx
+                .database
+                .update_user_record(
+                    &created.user.id,
+                    alibi_core::UpdateUser {
+                        name: Some("Changed".into()),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            assert_eq!(updated.name(), Some("Changed"));
+            let wire = serde_json::to_value(alibi_core::UserView::from(&updated)).unwrap();
+            assert_eq!(wire["banned"], false);
+            assert_eq!(wire["emailVerified"], false);
+            assert_eq!(wire["twoFactorEnabled"], false);
+            assert_eq!(wire["isAnonymous"], "pending");
+            assert_eq!(wire["phoneNumberVerified"], false);
+            assert_eq!(wire["createdAt"], serde_json::json!(1e20));
+            assert_eq!(wire["banExpires"], serde_json::json!(-0.5));
+            let row = database
+        .query_one_raw(Statement::from_sql_and_values(
+            DbBackend::Sqlite,
+            "SELECT typeof(banned) AS kind, banned, createdAt, banExpires FROM user WHERE id = ?",
+            [created.user.id.into()],
+        ))
+        .await
+        .unwrap()
+        .unwrap();
+            assert_eq!(row.try_get::<String>("", "kind").unwrap(), "real");
+            assert_eq!(row.try_get::<f64>("", "banned").unwrap(), 0.5);
+            assert_eq!(row.try_get::<f64>("", "createdAt").unwrap(), 1e20);
+            assert_eq!(row.try_get::<f64>("", "banExpires").unwrap(), -0.5);
+        }
+
+        #[tokio::test]
+        async fn admin_update_ban_expiry_accepts_javascript_dates_and_invalid_date_fails_before_write()
+         {
+            use alibi_core::AuthUser;
+            let (ctx, admin, _, user, _) = create_admin_context().await;
+            for (input, expected) in [
+                ("2099-01-01", "2099-01-01T00:00:00.000Z"),
+                ("January 2, 2099", "2099-01-02T00:00:00.000Z"),
+            ] {
+                let data = serde_json::json!({"banExpires": input});
+                let response = handlers::update_user_core(
+                    &types::AdminUpdateUserRequest::new(
+                        &user.id,
+                        data.as_object().unwrap().clone(),
+                    ),
+                    &admin,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    serde_json::to_value(&response).unwrap()["banExpires"],
+                    expected
+                );
+                let stored = ctx
+                    .database
+                    .get_user_by_id_record(&user.id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(
+                    stored.ban_expires().unwrap().timestamp_millis(),
+                    alibi_core::utils::datetime::parse_date_millis(expected).unwrap()
+                );
+            }
+            let before = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            let data = serde_json::json!({"name": "Must not write", "banExpires": "not a date"});
+            let error = handlers::update_user_core(
+                &types::AdminUpdateUserRequest::new(&user.id, data.as_object().unwrap().clone()),
+                &admin,
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.status_code(), 500);
+            assert!(error.to_string().contains("Invalid time value"));
+            let after = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(before.name(), after.name());
+            assert_eq!(before.ban_expires(), after.ban_expires());
+        }
+
+        #[tokio::test]
+        async fn native_secondary_nonidentity_texts_keep_raw_cache_values() {
+            use alibi_core::{AuthSchema, AuthUser, CacheAdapter};
+            let (ctx, _, _, user, _) = create_admin_context().await;
+            let user = ctx
+                .database
+                .get_user_by_id_record(&user.id)
+                .await
+                .unwrap()
+                .unwrap();
+            let cache = alibi_core::MemoryCacheAdapter::new();
+            type User = <TestSchema as AuthSchema>::User;
+            let mut source = user.secondary_snapshot().unwrap();
+            source["name"] = serde_json::json!(42).into();
+            source["email"] = serde_json::Value::Null.into();
+            source["image"] = serde_json::json!({"cached": true}).into();
+            source["display_username"] = serde_json::json!(false).into();
+            source["unknownText"] = serde_json::json!("not declared").into();
+            cache
+                .set(
+                    "native-text-user",
+                    &source.to_string(),
+                    Duration::seconds(60),
+                )
+                .await
+                .unwrap();
+            ctx.database.delete_user(&user.id()).await.unwrap();
+            let cached =
+                serde_json::from_str(&cache.get("native-text-user").await.unwrap().unwrap())
+                    .unwrap();
+            let record = User::from_secondary_snapshot_record(cached).unwrap();
+            assert_eq!(record.name(), Some(""));
+            assert_eq!(record.email(), Some(""));
+            assert_eq!(record.image(), None);
+            assert_eq!(record.display_username(), None);
+            let wire = serde_json::to_value(alibi_core::UserView::from(&record)).unwrap();
+            assert_eq!(wire["name"], 42);
+            assert_eq!(wire["email"], serde_json::Value::Null);
+            assert_eq!(wire["image"], source["image"]);
+            assert_eq!(wire["displayUsername"], false);
+            assert!(wire.get("unknownText").is_none());
+            let encoded = record.secondary_snapshot().unwrap();
+            for field in ["name", "email", "image", "display_username"] {
+                assert_eq!(encoded[field], source[field]);
+            }
+            assert!(encoded.get("unknownText").is_none());
+        }
+
+        #[tokio::test]
+        async fn native_ban_expiry_updates_preserve_scalars_and_expanded_dates() {
+            use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DbBackend, Statement};
+            let database = Database::connect("sqlite::memory:").await.unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+                .await
+                .unwrap();
+            let (_, acting_admin, _, _, _) = create_admin_context().await;
+            let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+                test_helpers::create_test_config(),
+                database.clone(),
+            ));
+            let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            let expanded = "+275760-09-13T00:00:00.000Z";
+            let mut input = types::CreateUserRequest::new("expanded-date@fixture.test", "Date");
+            input.data = Some(
+                serde_json::json!({
+                    "createdAt": expanded, "updatedAt": expanded, "banExpires": expanded
+                })
+                .as_object()
+                .unwrap()
+                .clone(),
+            );
+            let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                .await
+                .unwrap();
+            let wire = serde_json::to_value(&created).unwrap();
+            for field in ["createdAt", "updatedAt", "banExpires"] {
+                assert_eq!(wire["user"][field], expanded);
+            }
+            let row = database
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "SELECT createdAt AS value, typeof(createdAt) AS kind FROM user WHERE id = ?",
+                    [created.user.id.clone().into()],
+                ))
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(row.try_get::<String>("", "value").unwrap(), expanded);
+            assert_eq!(row.try_get::<String>("", "kind").unwrap(), "text");
+            for value in [
+                serde_json::json!(0),
+                serde_json::json!(-0.5),
+                serde_json::json!(1.9),
+                serde_json::json!(true),
+                serde_json::json!(1e20),
+                serde_json::json!(-1e20),
+                serde_json::json!(expanded),
+                serde_json::Value::Null,
+            ] {
+                let response = handlers::update_user_core(
+                    &types::AdminUpdateUserRequest::new(
+                        &created.user.id,
+                        serde_json::json!({"banExpires": value})
+                            .as_object()
+                            .unwrap()
+                            .clone(),
+                    ),
+                    &acting_admin,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                let expected = if value.is_boolean() {
+                    serde_json::json!(1)
+                } else {
+                    value.clone()
+                };
+                let wire = serde_json::to_value(response).unwrap();
+                assert_eq!(wire["banExpires"], expected);
+                let retained = ctx
+                    .database
+                    .get_user_by_id_record(&created.user.id)
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(retained.raw_snapshot().values()["banExpires"], expected);
+                let row = database.query_one_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
+            "SELECT json_quote(banExpires) AS value, typeof(banExpires) AS kind FROM user WHERE id = ?",
+            [created.user.id.clone().into()])).await.unwrap().unwrap();
+                let physical: serde_json::Value =
+                    serde_json::from_str(&row.try_get::<String>("", "value").unwrap()).unwrap();
+                assert_eq!(physical, expected);
+                let expected_kind = if expected.is_null() {
+                    "null"
+                } else if expected.is_string() {
+                    "text"
+                } else if expected.as_f64().unwrap().fract() == 0.0
+                    && expected.as_f64().unwrap().abs() < i64::MAX as f64
+                {
+                    "integer"
+                } else {
+                    "real"
+                };
+                assert_eq!(row.try_get::<String>("", "kind").unwrap(), expected_kind);
+            }
+        }
+
+        #[tokio::test]
+        async fn stateless_ban_expiry_comparisons_keep_native_truthiness_and_timeclip() {
+            use alibi_core::store::UserStore;
+            let store = alibi_core::store::stateless::StatelessStore::default();
+            for (index, (expiry, expired)) in [
+                (serde_json::json!(0), false),
+                (serde_json::json!(-0.5), true),
+                (serde_json::json!(1.9), true),
+                (serde_json::json!(1e20), false),
+                (serde_json::json!(-1e20), false),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let user = store
+                    .create_user(alibi_core::CreateUser {
+                        email: Some(format!("stateless-ban-{index}@fixture.test")),
+                        banned: Some(true),
+                        adapter_native_fields: [("banExpires".into(), expiry.clone().into())]
+                            .into(),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    super::super::ban_expired_at(&user, Utc::now()).unwrap(),
+                    expired,
+                    "{expiry}"
+                );
+                let stored = store.get_user_by_id(&user.id).await.unwrap().unwrap();
+                assert_eq!(serde_json::to_value(stored).unwrap()["banExpires"], expiry);
+            }
+        }
+
+        #[tokio::test]
+        async fn stateless_structured_ban_expiry_uses_date_primitive_conversion_and_errors() {
+            use alibi_core::store::SessionCreatedHook;
+            let ctx = AuthContext::new(
+                Arc::new(crate::test_helpers::create_test_config()),
+                Arc::new(alibi_core::store::stateless::StatelessStore::default()),
+            );
+            for (index, (expiry, expired)) in [
+                (serde_json::json!(["2000-01-01"]), Some(true)),
+                (serde_json::json!([0]), Some(true)),
+                (serde_json::json!([["2000-01-01"]]), Some(true)),
+                (serde_json::json!([]), Some(false)),
+                (serde_json::json!({}), Some(false)),
+                (serde_json::json!({"toString": null}), None),
+                (serde_json::json!({"toString": 1}), None),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let user = ctx
+                    .database
+                    .create_user_record(alibi_core::CreateUser {
+                        email: Some(format!("structured-expiry-{index}@fixture.test")),
+                        banned: Some(true),
+                        adapter_native_fields: [
+                            ("banExpires".into(), expiry.clone().into()),
+                            ("banReason".into(), serde_json::json!("retained").into()),
+                        ]
+                        .into(),
+                        ..Default::default()
+                    })
+                    .await
+                    .unwrap();
+                let result = AdminSessionGuard
+                    .before_create(
+                        &CreateSession {
+                            user_id: user.id().to_string(),
+                            expires_at: Utc::now() + Duration::hours(1),
+                            token: None,
+                            ip_address: None,
+                            user_agent: None,
+                            impersonated_by: None,
+                            active_organization_id: None,
+                            active_team_id: None,
+                            additional_fields: Default::default(),
+                        },
+                        &ctx,
+                        None,
+                    )
+                    .await;
+                if let Some(expired) = expired {
+                    assert_eq!(result.is_ok(), expired, "{expiry}: {result:?}");
+                } else {
+                    let error = result.unwrap_err();
+                    assert_eq!(error.status_code(), 500);
+                    assert!(
+                        error
+                            .to_string()
+                            .contains("Cannot convert object to primitive value")
+                    );
+                }
+                let stored = ctx
+                    .database
+                    .get_user_by_id_record(user.id().as_ref())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let wire = serde_json::to_value(UserView::from(&stored)).unwrap();
+                assert_eq!(stored.banned(), expired != Some(true));
+                assert_eq!(
+                    wire["banExpires"],
+                    if expired == Some(true) {
+                        serde_json::Value::Null
+                    } else {
+                        expiry
+                    }
+                );
+                assert_eq!(
+                    wire["banReason"],
+                    if expired == Some(true) {
+                        serde_json::Value::Null
+                    } else {
+                        serde_json::json!("retained")
+                    }
+                );
+            }
+        }
     }
 
     mod username_creation {
-        include!("username_creation_tests.rs");
+        use super::*;
+        use crate::email_password::{EmailPasswordPlugin, UsernameConfig, UsernameNormalization};
+        use alibi_core::field_policy::{SessionFields, UserFields};
+        use alibi_core::{AuthInitContext, AuthPlugin, AuthUser};
+        use std::sync::Mutex;
+
+        async fn username_context(
+            policy: UsernameConfig,
+            events: Option<Arc<Mutex<Vec<String>>>>,
+        ) -> AuthContext<TestSchema> {
+            let (mut ctx, _, _, _, _) = create_admin_context().await;
+            let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+            if let Some(events) = events.clone() {
+                init.register_user_create_transform(move |mut data| {
+                    events.lock().unwrap().push("before".into());
+                    data.username = Some("ORDERED".into());
+                    Ok(data)
+                });
+            }
+            let plugin = EmailPasswordPlugin::new()
+                .enable_username(true)
+                .username_config(policy.clone());
+            <EmailPasswordPlugin as AuthPlugin<TestSchema>>::on_init(&plugin, &mut init)
+                .await
+                .unwrap();
+            init.extensions
+                .insert(UserFields(SessionFields(policy.fields())));
+            let mut adapter_fields = policy.fields();
+            adapter_fields.extend(init.config.user.additional_fields.clone());
+            init.extensions
+                .insert(alibi_core::field_policy::AdapterFieldPolicies {
+                    user: alibi_core::field_policy::SessionAdapterFields(Arc::new(adapter_fields)),
+                    ..Default::default()
+                });
+            if let Some(events) = events {
+                init.register_user_create_transform(move |data| {
+                    events
+                        .lock()
+                        .unwrap()
+                        .push(format!("after:{}", data.username.as_deref().unwrap()));
+                    Ok(data)
+                });
+            }
+            ctx.metadata = init.metadata.clone();
+            ctx.extensions = init.extensions.clone();
+            ctx.database = init.database_with_registered_transforms();
+            ctx
+        }
+
+        mod username_update {
+            use super::*;
+
+            fn update_request(id: &str, data: serde_json::Value) -> types::AdminUpdateUserRequest {
+                types::AdminUpdateUserRequest::new(id, data.as_object().unwrap().clone())
+            }
+
+            fn update_call(
+                user: UserView,
+                session: SessionView,
+                path: &str,
+            ) -> alibi_core::endpoint::EndpointCall {
+                let definition = alibi_core::endpoint::EndpointDefinition {
+                    name: "update-user",
+                    operation_id: "updateUser",
+                    path: Some(path.into()),
+                    method: HttpMethod::Post,
+                };
+                let call = alibi_core::endpoint::EndpointCall::new(
+                    &definition,
+                    None,
+                    None,
+                    Default::default(),
+                );
+                call.record_authenticated_session(user, session);
+                call
+            }
+
+            #[tokio::test]
+            async fn admin_username_updates_use_actual_actor_and_keep_falsy_display_without_create_fallback()
+             {
+                let ctx = username_context(UsernameConfig::default(), None).await;
+                let admin = ctx
+                    .database
+                    .get_user_by_email_record(&"admin@example.com".into())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                let acting = UserView::from(&admin);
+                let created = handlers::create_user_core(
+                    &provision(
+                        "updated-username@fixture.test",
+                        serde_json::json!({"username":"EXISTING"}),
+                    ),
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap()
+                .user;
+                let input = update_request(&created.id, serde_json::json!({"username":"existing"}));
+                let error =
+                    handlers::update_user_core(&input, &acting, &AdminConfig::default(), &ctx)
+                        .await
+                        .unwrap_err();
+                assert!(matches!(
+                    error,
+                    AuthError::Upstream {
+                        code: "USERNAME_IS_ALREADY_TAKEN",
+                        ..
+                    }
+                ));
+                let session =
+                    test_helpers::create_session(&ctx, created.id.clone(), Duration::hours(1))
+                        .await;
+                let self_call = update_call(created.clone(), session.clone(), "/admin/update-user");
+                let result = alibi_core::endpoint::with_endpoint_call_context(
+                    self_call,
+                    handlers::update_user_core(&input, &acting, &AdminConfig::default(), &ctx),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    result
+                        .values()
+                        .get("username")
+                        .and_then(alibi_core::utils::json::JsValue::as_str),
+                    Some("existing")
+                );
+                let other_call = update_call(acting.clone(), session.clone(), "/admin/update-user");
+                assert!(
+                    alibi_core::endpoint::with_endpoint_call_context(
+                        other_call,
+                        handlers::update_user_core(&input, &acting, &AdminConfig::default(), &ctx)
+                    )
+                    .await
+                    .is_err()
+                );
+                let changed = handlers::update_user_core(
+                    &update_request(
+                        &created.id,
+                        serde_json::json!({"username":"NEW_NAME","displayUsername":false}),
+                    ),
+                    &acting,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    changed
+                        .values()
+                        .get("username")
+                        .and_then(alibi_core::utils::json::JsValue::as_str),
+                    Some("new_name")
+                );
+                assert_eq!(
+                    changed
+                        .values()
+                        .get("displayUsername")
+                        .and_then(alibi_core::utils::json::JsValue::as_str),
+                    Some("0")
+                );
+                let nulled = handlers::update_user_core(
+                    &update_request(
+                        &created.id,
+                        serde_json::json!({"username":null,"displayUsername":null}),
+                    ),
+                    &acting,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                assert!(nulled.values()["username"].is_null());
+                assert!(nulled.values()["displayUsername"].is_null());
+                let default_numeric = handlers::update_user_core(
+                    &update_request(&created.id, serde_json::json!({"username":42})),
+                    &acting,
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(default_numeric.status_code(), 500);
+                assert!(
+                    ctx.database
+                        .get_user_by_id(&created.id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .username()
+                        .is_none()
+                );
+                let skip = update_call(acting.clone(), session, "/update-user");
+                let skipped = alibi_core::endpoint::with_endpoint_call_context(
+                    skip,
+                    handlers::update_user_core(
+                        &update_request(&created.id, serde_json::json!({"username":"X"})),
+                        &acting,
+                        &AdminConfig::default(),
+                        &ctx,
+                    ),
+                )
+                .await
+                .unwrap();
+                assert_eq!(
+                    skipped
+                        .values()
+                        .get("username")
+                        .and_then(alibi_core::utils::json::JsValue::as_str),
+                    Some("x")
+                );
+            }
+
+            #[tokio::test]
+            async fn admin_username_updates_await_ordered_validation_and_stop_later_hooks() {
+                for admit in [true, false] {
+                    let (mut ctx, _, _, target, _) = create_admin_context().await;
+                    let events = Arc::new(Mutex::new(Vec::new()));
+                    let mut init = AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+                    let log = events.clone();
+                    init.register_user_update_transform(move |_, input| {
+                        log.lock().unwrap().push("before".to_owned());
+                        Ok(input)
+                    });
+                    let log = events.clone();
+                    let policy = UsernameConfig {
+                        validator: Some(Arc::new(move |username: String| {
+                            let log = log.clone();
+                            async move {
+                                tokio::task::yield_now().await;
+                                log.lock().unwrap().push(format!("validator:{username}"));
+                                Ok(admit)
+                            }
+                        })),
+                        ..Default::default()
+                    };
+                    let plugin = EmailPasswordPlugin::new()
+                        .enable_username(true)
+                        .username_config(policy.clone());
+                    <EmailPasswordPlugin as AuthPlugin<TestSchema>>::on_init(&plugin, &mut init)
+                        .await
+                        .unwrap();
+                    init.extensions
+                        .insert(UserFields(SessionFields(policy.fields())));
+                    init.extensions
+                        .insert(alibi_core::field_policy::AdapterFieldPolicies {
+                            user: alibi_core::field_policy::SessionAdapterFields(Arc::new(
+                                policy.fields(),
+                            )),
+                            ..Default::default()
+                        });
+                    let log = events.clone();
+                    init.register_user_update_transform(move |_, input| {
+                        log.lock().unwrap().push("after".to_owned());
+                        assert_eq!(input.username.as_deref(), Some("ORDERED"));
+                        Ok(input)
+                    });
+                    ctx.metadata = init.metadata.clone();
+                    ctx.extensions = init.extensions.clone();
+                    ctx.database = init.database_with_registered_transforms();
+                    let result = ctx
+                        .database
+                        .update_user(
+                            &target.id,
+                            alibi_core::UpdateUser {
+                                username: Some("ORDERED".into()),
+                                name: Some("Changed".into()),
+                                ..Default::default()
+                            },
+                        )
+                        .await;
+                    let stored = ctx
+                        .database
+                        .get_user_by_id(&target.id)
+                        .await
+                        .unwrap()
+                        .unwrap();
+                    if admit {
+                        result.unwrap();
+                        assert_eq!(
+                            *events.lock().unwrap(),
+                            ["before", "validator:ORDERED", "after"]
+                        );
+                        assert_eq!(stored.username(), Some("ordered"));
+                        assert_eq!(stored.name(), Some("Changed"));
+                    } else {
+                        assert_eq!(result.unwrap_err().status_code(), 400);
+                        assert_eq!(*events.lock().unwrap(), ["before", "validator:ORDERED"]);
+                        assert_eq!(stored.username(), None);
+                        assert_eq!(stored.name(), target.name.as_deref());
+                    }
+                }
+            }
+
+            #[tokio::test]
+            async fn admin_username_updates_preserve_scalars_and_observe_current_transaction() {
+                let policy = UsernameConfig {
+                    normalization: UsernameNormalization::Preserve,
+                    ..Default::default()
+                };
+                let ctx = username_context(policy, None).await;
+                let acting = UserView::from(
+                    &ctx.database
+                        .get_user_by_email_record(&"admin@example.com".into())
+                        .await
+                        .unwrap()
+                        .unwrap(),
+                );
+                let target = handlers::create_user_core(
+                    &provision("preserved-update@fixture.test", serde_json::json!({})),
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap()
+                .user;
+                for raw in [
+                    serde_json::json!("KeEpCaSe"),
+                    serde_json::json!(42),
+                    serde_json::json!(false),
+                    serde_json::json!(""),
+                ] {
+                    let changed = handlers::update_user_core(
+                        &update_request(
+                            &target.id,
+                            serde_json::json!({"username":raw,"displayUsername":false}),
+                        ),
+                        &acting,
+                        &AdminConfig::default(),
+                        &ctx,
+                    )
+                    .await
+                    .unwrap();
+                    let expected = match raw {
+                        serde_json::Value::String(text) => text,
+                        serde_json::Value::Bool(_) => "0".into(),
+                        _ => "42".into(),
+                    };
+                    assert_eq!(
+                        changed
+                            .values()
+                            .get("username")
+                            .and_then(alibi_core::utils::json::JsValue::as_str),
+                        Some(expected.as_str())
+                    );
+                    assert_eq!(
+                        changed
+                            .values()
+                            .get("displayUsername")
+                            .and_then(alibi_core::utils::json::JsValue::as_str),
+                        Some("0")
+                    );
+                }
+                alibi_core::store::transaction(ctx.database.as_ref(), |tx| {
+                    Box::pin(async move {
+                        let first = tx
+                            .create_user(CreateUser::new().with_email("update-tx-a@fixture.test"))
+                            .await?;
+                        let second = tx
+                            .create_user(CreateUser::new().with_email("update-tx-b@fixture.test"))
+                            .await?;
+                        let updated = tx
+                            .update_user(
+                                first.id().as_ref(),
+                                alibi_core::UpdateUser {
+                                    username: Some("InTransaction".into()),
+                                    ..Default::default()
+                                },
+                            )
+                            .await?;
+                        assert_eq!(updated.username(), Some("InTransaction"));
+                        let error = tx
+                            .update_user(
+                                second.id().as_ref(),
+                                alibi_core::UpdateUser {
+                                    username: Some("InTransaction".into()),
+                                    name: Some("Never".into()),
+                                    ..Default::default()
+                                },
+                            )
+                            .await
+                            .unwrap_err();
+                        assert!(matches!(
+                            error,
+                            AuthError::Upstream {
+                                code: "USERNAME_IS_ALREADY_TAKEN",
+                                ..
+                            }
+                        ));
+                        assert_ne!(
+                            tx.get_user_by_id(second.id().as_ref())
+                                .await?
+                                .unwrap()
+                                .name(),
+                            Some("Never")
+                        );
+                        Ok(())
+                    })
+                })
+                .await
+                .unwrap();
+            }
+        }
+
+        fn provision(email: &str, data: serde_json::Value) -> types::CreateUserRequest {
+            let mut input = types::CreateUserRequest::new(email, "Username");
+            input.data = Some(data.as_object().unwrap().clone());
+            input
+        }
+
+        #[tokio::test]
+        async fn admin_username_creation_validates_raw_fields_and_preserves_display_fallback() {
+            let ctx = username_context(UsernameConfig::default(), None).await;
+            for (index, username, status) in [
+                (0, serde_json::json!(42), 500),
+                (1, serde_json::json!("ab"), 400),
+                (2, serde_json::json!("not allowed"), 400),
+            ] {
+                let email = format!("invalid-username-{index}@fixture.test");
+                let error = handlers::create_user_core(
+                    &provision(&email, serde_json::json!({"username": username})),
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap_err();
+                assert_eq!(error.status_code(), status, "{error:?}");
+                assert!(
+                    ctx.database
+                        .get_user_by_email(&(email).into())
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+            let user = handlers::create_user_core(
+                &provision(
+                    "mixed-username@fixture.test",
+                    serde_json::json!({"username":"MiXeD","displayUsername":false}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert_eq!(user.user.username.as_deref(), Some("mixed"));
+            assert_eq!(user.user.display_username.as_deref(), Some("MiXeD"));
+            let error = handlers::create_user_core(
+                &provision(
+                    "duplicate-username@fixture.test",
+                    serde_json::json!({"username":"MIXED"}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                alibi_core::AuthError::Upstream {
+                    code: "USERNAME_IS_ALREADY_TAKEN",
+                    ..
+                }
+            ));
+
+            let policy = UsernameConfig {
+                normalization: UsernameNormalization::Preserve,
+                ..UsernameConfig::default()
+            };
+            let ctx = username_context(policy, None).await;
+            let preserved = handlers::create_user_core(
+                &provision(
+                    "preserve-username@fixture.test",
+                    serde_json::json!({"username":"KeEpCaSe"}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert_eq!(preserved.user.username.as_deref(), Some("KeEpCaSe"));
+            let numeric = handlers::create_user_core(
+                &provision(
+                    "number-username@fixture.test",
+                    serde_json::json!({"username":42,"displayUsername":false}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert_eq!(numeric.user.username.as_deref(), Some("42"));
+            assert_eq!(numeric.user.display_username.as_deref(), Some("42"));
+            let duplicate = handlers::create_user_core(
+                &provision(
+                    "number-duplicate@fixture.test",
+                    serde_json::json!({"username":42}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                duplicate,
+                alibi_core::AuthError::Upstream {
+                    code: "USERNAME_IS_ALREADY_TAKEN",
+                    ..
+                }
+            ));
+        }
+
+        #[tokio::test]
+        async fn admin_username_async_validator_runs_between_application_hooks_and_stops_on_error()
+        {
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let log = events.clone();
+            let policy = UsernameConfig {
+                validator: Some(Arc::new(move |value: String| {
+                    let log = log.clone();
+                    async move {
+                        tokio::task::yield_now().await;
+                        log.lock().unwrap().push(format!("validator:{value}"));
+                        Ok(true)
+                    }
+                })),
+                ..UsernameConfig::default()
+            };
+            let ctx = username_context(policy, Some(events.clone())).await;
+            let user = handlers::create_user_core(
+                &provision(
+                    "ordered-username@fixture.test",
+                    serde_json::json!({"username":"bad value"}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            assert_eq!(user.user.username.as_deref(), Some("ordered"));
+            assert_eq!(
+                *events.lock().unwrap(),
+                ["before", "validator:ORDERED", "after:ordered"]
+            );
+
+            let events = Arc::new(Mutex::new(Vec::new()));
+            let log = events.clone();
+            let policy = UsernameConfig {
+                validator: Some(Arc::new(move |_: String| {
+                    let log = log.clone();
+                    async move {
+                        log.lock().unwrap().push("validator".into());
+                        Err(alibi_core::AuthError::internal("validator rejected"))
+                    }
+                })),
+                ..UsernameConfig::default()
+            };
+            let ctx = username_context(policy, Some(events.clone())).await;
+            let error = handlers::create_user_core(
+                &provision(
+                    "validator-error@fixture.test",
+                    serde_json::json!({"username":"initial"}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(error.status_code(), 500);
+            assert_eq!(*events.lock().unwrap(), ["before", "validator"]);
+            assert!(
+                ctx.database
+                    .get_user_by_email(&("validator-error@fixture.test").into())
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        #[tokio::test]
+        async fn admin_username_duplicate_hook_uses_current_transaction_and_endpoint_skip() {
+            let ctx = username_context(UsernameConfig::default(), None).await;
+            alibi_core::store::transaction(ctx.database.as_ref(), |tx| {
+                Box::pin(async move {
+                    let mut input = CreateUser::new().with_email("username-tx-first@fixture.test");
+                    input.username = Some("IN_TRANSACTION".into());
+                    let created = tx.create_user(input).await?;
+                    assert_eq!(created.username(), Some("in_transaction"));
+                    let mut input = CreateUser::new().with_email("username-tx-second@fixture.test");
+                    input.username = Some("in_transaction".into());
+                    let error = tx.create_user(input).await.unwrap_err();
+                    assert!(matches!(
+                        error,
+                        alibi_core::AuthError::Upstream {
+                            code: "USERNAME_IS_ALREADY_TAKEN",
+                            ..
+                        }
+                    ));
+                    assert!(
+                        tx.get_user_by_email(&("username-tx-second@fixture.test").into())
+                            .await?
+                            .is_none()
+                    );
+                    Ok(())
+                })
+            })
+            .await
+            .unwrap();
+
+            let request =
+                alibi_core::AuthRequest::new(alibi_core::HttpMethod::Post, "/sign-up/email");
+            let mut input = CreateUser::new().with_email("username-skip@fixture.test");
+            input.username = Some("X".into());
+            let created = alibi_core::hooks::with_request_hook_context(
+                &request,
+                ctx.database.create_user(input),
+            )
+            .await
+            .unwrap();
+            assert_eq!(created.username(), Some("x"));
+        }
+
+        #[tokio::test]
+        async fn admin_username_memory_scalars_keep_strict_lookup_and_preserved_case() {
+            use alibi_core::store::stateless::{StatelessSchema, StatelessStore};
+            let config = Arc::new(alibi_core::AuthConfig::default());
+            let physical = Arc::new(StatelessStore::default());
+            let mut init = AuthInitContext::new(config.clone(), physical);
+            let policy = UsernameConfig {
+                normalization: UsernameNormalization::Preserve,
+                ..UsernameConfig::default()
+            };
+            let plugin = EmailPasswordPlugin::new()
+                .enable_username(true)
+                .username_config(policy.clone());
+            <EmailPasswordPlugin as AuthPlugin<StatelessSchema>>::on_init(&plugin, &mut init)
+                .await
+                .unwrap();
+            init.extensions
+                .insert(UserFields(SessionFields(policy.fields())));
+            let ctx = AuthContext::with_metadata(
+                config,
+                init.database_with_registered_transforms(),
+                init.metadata.clone(),
+            )
+            .with_extensions(init.extensions.clone());
+            for (email, value) in [
+                ("memory-numeric@fixture.test", serde_json::json!(4242)),
+                ("memory-text@fixture.test", serde_json::json!("4242")),
+                ("memory-case@fixture.test", serde_json::json!("KeEpCaSe")),
+            ] {
+                let response = handlers::create_user_core(
+                    &provision(
+                        email,
+                        serde_json::json!({"username":value,"displayUsername":false}),
+                    ),
+                    &AdminConfig::default(),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+                let wire = serde_json::to_value(response.user).unwrap();
+                assert_eq!(wire["username"], value);
+                assert_eq!(wire["displayUsername"], value);
+                let stored = ctx
+                    .database
+                    .get_user_by_email(&(email).into())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert_eq!(serde_json::to_value(stored).unwrap()["username"], value);
+            }
+            let error = handlers::create_user_core(
+                &provision(
+                    "memory-duplicate@fixture.test",
+                    serde_json::json!({"username":4242}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                alibi_core::AuthError::Upstream {
+                    code: "USERNAME_IS_ALREADY_TAKEN",
+                    ..
+                }
+            ));
+        }
+
+        #[tokio::test]
+        async fn admin_username_hidden_display_is_not_persisted_and_without_plugin_case_is_unchanged()
+         {
+            let policy = UsernameConfig {
+                include_display_username: false,
+                ..UsernameConfig::default()
+            };
+            let ctx = username_context(policy, None).await;
+            let response = handlers::create_user_core(
+                &provision(
+                    "hidden-display@fixture.test",
+                    serde_json::json!({"username":"MIXED","displayUsername":"Ignored"}),
+                ),
+                &AdminConfig::default(),
+                &ctx,
+            )
+            .await
+            .unwrap();
+            let wire = serde_json::to_value(response.user).unwrap();
+            assert_eq!(wire["username"], "mixed");
+            assert!(wire.get("displayUsername").is_none());
+            let stored = ctx
+                .database
+                .get_user_by_email(&("hidden-display@fixture.test").into())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.display_username(), None);
+
+            let (ctx, _, _, _, _) = create_admin_context().await;
+            let mut input = CreateUser::new().with_email("no-username-plugin@fixture.test");
+            input.username = Some("UnChanged".into());
+            let stored = ctx.database.create_user(input).await.unwrap();
+            assert_eq!(stored.username(), Some("UnChanged"));
+        }
     }
 
     mod supplied_ids {
-        include!("supplied_id_tests.rs");
+        use super::*;
+
+        #[tokio::test]
+        async fn admin_supplied_ids_use_string_defaults_and_actual_sqlite_parameters() {
+            use alibi_core::AuthUser;
+            let (ctx, _, _, _, _) = create_admin_context().await;
+            for (index, (raw, expected)) in [
+                (serde_json::json!("admin-provided-id"), "admin-provided-id"),
+                (serde_json::json!(2), "2"),
+                (serde_json::json!(1.9), "1.9"),
+                (serde_json::json!(true), "1"),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let email = format!("supplied-id-{index}@fixture.test");
+                let mut input = types::CreateUserRequest::new(&email, "Supplied identifier");
+                input.data = Some(serde_json::json!({"id":raw}).as_object().unwrap().clone());
+                let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap();
+                assert_eq!(created.user.id, expected);
+                assert_eq!(
+                    ctx.database
+                        .get_user_by_id(expected)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .email(),
+                    Some(email.as_str())
+                );
+                assert_eq!(
+                    ctx.database
+                        .get_user_by_email(&email.into())
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .id(),
+                    expected
+                );
+            }
+            for (index, data) in [serde_json::json!({}), serde_json::json!({"id":null})]
+                .into_iter()
+                .enumerate()
+            {
+                let email = format!("default-id-{index}@fixture.test");
+                let mut input = types::CreateUserRequest::new(&email, "Generated identifier");
+                input.data = Some(data.as_object().unwrap().clone());
+                let created = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap();
+                assert!(!created.user.id.is_empty());
+                assert_eq!(
+                    ctx.database
+                        .get_user_by_id(&created.user.id)
+                        .await
+                        .unwrap()
+                        .unwrap()
+                        .email(),
+                    Some(email.as_str())
+                );
+            }
+            for (index, raw) in [
+                serde_json::json!(false),
+                serde_json::json!(0),
+                serde_json::json!(""),
+                serde_json::json!({}),
+                serde_json::json!([]),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let email = format!("invalid-id-{index}@fixture.test");
+                let mut input = types::CreateUserRequest::new(&email, "Must not persist");
+                input.data = Some(serde_json::json!({"id":raw}).as_object().unwrap().clone());
+                let error = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap_err();
+                assert_eq!(error.status_code(), 500, "{raw:?}: {error:?}");
+                assert!(
+                    ctx.database
+                        .get_user_by_email(&email.into())
+                        .await
+                        .unwrap()
+                        .is_none()
+                );
+            }
+        }
+
+        #[tokio::test]
+        async fn supplied_native_ids_do_not_invoke_the_application_generator() {
+            use std::sync::atomic::{AtomicUsize, Ordering};
+            let calls = Arc::new(AtomicUsize::new(0));
+            let observed = calls.clone();
+            let mut config = test_helpers::create_test_config();
+            config.advanced.database.generate_id =
+                Some(alibi_core::config::DatabaseIdStrategy::Custom(Arc::new(
+                    move |model: &str, _: Option<usize>| {
+                        assert_eq!(model, "user");
+                        Ok(Some(format!(
+                            "generated-{}",
+                            observed.fetch_add(1, Ordering::SeqCst)
+                        )))
+                    },
+                )));
+            let config = Arc::new(config);
+            let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:")
+                .await
+                .unwrap();
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+                .await
+                .unwrap();
+            let store = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
+                config.clone(),
+                database,
+            ));
+            let ctx = AuthContext::new(config, store);
+            for (index, raw) in [
+                serde_json::json!("provided"),
+                serde_json::json!(71),
+                serde_json::json!(true),
+                serde_json::json!(false),
+                serde_json::json!(0),
+                serde_json::json!(""),
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let mut input = types::CreateUserRequest::new(
+                    format!("counter-id-{index}@fixture.test"),
+                    "Counter",
+                );
+                input.data = Some(serde_json::json!({"id":raw}).as_object().unwrap().clone());
+                let result =
+                    handlers::create_user_core(&input, &AdminConfig::default(), &ctx).await;
+                assert_eq!(result.is_ok(), index < 3);
+                assert_eq!(calls.load(Ordering::SeqCst), 0);
+            }
+            for (index, data) in [serde_json::json!({"id":null}), serde_json::json!({})]
+                .into_iter()
+                .enumerate()
+            {
+                let mut input = types::CreateUserRequest::new(
+                    format!("counter-default-{index}@fixture.test"),
+                    "Counter",
+                );
+                input.data = Some(data.as_object().unwrap().clone());
+                let user = handlers::create_user_core(&input, &AdminConfig::default(), &ctx)
+                    .await
+                    .unwrap();
+                assert_eq!(user.user.id, format!("generated-{index}"));
+                assert_eq!(calls.load(Ordering::SeqCst), index + 1);
+            }
+        }
     }
 
     type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
