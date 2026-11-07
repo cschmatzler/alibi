@@ -794,7 +794,7 @@ mod tests {
             async fn before_update_user(
                 &self,
                 id: &str,
-                update: &mut UpdateUser,
+                update: &mut alibi_core::utils::json::JsObject,
                 context: &SeaOrmHookContext<'_>,
             ) -> AuthResult<HookControl> {
                 if context
@@ -806,7 +806,12 @@ mod tests {
                         .lock()
                         .unwrap()
                         .push(("user".into(), id.into()));
-                    assert_eq!(update.two_factor_enabled, Some(true));
+                    assert_eq!(
+                        update
+                            .get("twoFactorEnabled")
+                            .and_then(|value| value.as_bool()),
+                        Some(true)
+                    );
                     if !self.cancel_session {
                         return Err(AuthError::Upstream {
                             status: 400,
@@ -2576,10 +2581,14 @@ mod tests {
             async fn before_update_user(
                 &self,
                 _id: &str,
-                update: &mut UpdateUser,
+                update: &mut alibi_core::utils::json::JsObject,
                 _context: &SeaOrmHookContext<'_>,
             ) -> AuthResult<HookControl> {
-                if update.two_factor_enabled == Some(true) {
+                if update
+                    .get("twoFactorEnabled")
+                    .and_then(|value| value.as_bool())
+                    == Some(true)
+                {
                     self.observed.lock().unwrap().push("user".into());
                     if self.mode == 3 {
                         return Err(AuthError::SessionCreationCancelled);

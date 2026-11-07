@@ -181,10 +181,20 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         if raw.is_undefined() {
             continue;
         }
-        let Some(column) = M::list_users_column(&field) else {
+        let column = if insert {
+            M::list_users_column(&field)
+        } else {
+            M::Column::iter()
+                .find(|column| column.to_string() == field)
+                .or_else(|| M::list_users_column(&field))
+        };
+        let Some(column) = column else {
             continue;
         };
-        if field == "id" && !alibi_core::utils::json::JsValue::from(raw.clone()).is_truthy() {
+        if insert
+            && field == "id"
+            && !alibi_core::utils::json::JsValue::from(raw.clone()).is_truthy()
+        {
             continue;
         }
         if (raw.is_object() || raw.is_array())
@@ -257,6 +267,16 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         } else if db.get_database_backend() == sea_orm::DbBackend::Sqlite && matches!(physical.def().get_column_type(), sea_orm::sea_query::ColumnType::TimestampWithTimeZone | sea_orm::sea_query::ColumnType::Timestamp | sea_orm::sea_query::ColumnType::DateTime) {
             Expr::cust_with_exprs("? AS ?", [sqlite_date_column(physical), Expr::col(physical)])
         } else { Expr::col(physical) });
+    }
+    if columns.is_empty()
+        && let Some(id) = id
+    {
+        return user_query::<M>(db.get_database_backend())
+            .filter(M::id_column().eq(M::parse_id(id)?))
+            .one(db)
+            .await
+            .map_err(map_db_err)?
+            .ok_or(AuthError::UserNotFound);
     }
     let statement = if let Some(id) = id {
         let query = Query::update()
@@ -720,6 +740,15 @@ where
             .await
     }
 
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: alibi_core::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
+        self.update_user_prepared_with_connection(self.scoped_connection(), None, id, update)
+            .await
+    }
+
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
         let user_id = S::User::parse_id(id)?;
         let Some(user) = self.get_user_by_id(id).await? else {
@@ -883,14 +912,29 @@ where
         connection: &C,
         tx: Option<&ScopedTransaction>,
         id: &str,
-        mut update: UpdateUser,
+        update: UpdateUser,
     ) -> AuthResult<S::User> {
-        update.email = update.email.map(|email| normalize_user_email(&email));
+        self.update_user_prepared_with_connection(
+            connection,
+            tx,
+            id,
+            alibi_core::store::PreparedUserUpdate::from_typed(&update),
+        )
+        .await
+    }
+
+    pub(super) async fn update_user_prepared_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        tx: Option<&ScopedTransaction>,
+        id: &str,
+        mut update: alibi_core::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
         let user_id = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
-                .before_update_user(id, &mut update, &hook_context)
+                .before_update_user(id, &mut update.data, &hook_context)
                 .await
                 .map_err(alibi_core::store::adapter::callback_error)?
                 .is_cancelled()
@@ -906,45 +950,38 @@ where
         else {
             return Err(AuthError::UserNotFound);
         };
-
-        let mut active = model.into_active_model();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        let provider_name = update.provider_name.take();
-        let provider_image = update.provider_image.take();
-        let provider_email = update.provider_email.take();
-        let verification = update.provider_email_verified.take();
-        let native_fields = std::mem::take(&mut update.adapter_native_fields);
-        if native_fields.keys().any(|field| {
-            !matches!(
-                field.as_str(),
-                "banExpires" | "username" | "displayUsername"
-            )
-        }) {
-            return Err(AuthError::internal("Unsupported native user update field"));
+        update.apply_adapter_transforms().await?;
+        let mut native = std::collections::BTreeMap::new();
+        for (field, raw) in &update.data {
+            let Some(field) = field.as_str() else {
+                continue;
+            };
+            if !update.declares(field) {
+                continue;
+            }
+            use sea_orm::{Iden, Iterable};
+            let column = if let Some(physical) = update.physical_binding(field) {
+                <S::User as SeaOrmUserModel>::Column::iter()
+                    .find(|column| column.to_string() == physical)
+            } else {
+                S::User::list_users_column(field)
+            };
+            let Some(column) = column else {
+                if update.requires_binding(field) {
+                    return Err(AuthError::config(format!(
+                        "Declared user field {field} has no model column"
+                    )));
+                }
+                continue;
+            };
+            _ = native.insert(column.to_string(), raw.clone());
         }
-        S::User::apply_update(&mut active, update, Utc::now());
-        stage_provider_text::<S::User, _>(
-            connection,
-            &mut active,
-            provider_name,
-            provider_image,
-            provider_email,
-        )
-        .await?;
-        let backend = connection.get_database_backend();
-        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(connection, &column, value).await?;
-            S::User::set_additional_field(&mut active, column, value, backend)?;
-        }
-        S::User::prepare_json_metadata(&mut active, connection.get_database_backend())?;
-
         let user = save_provider_user::<S::User, _>(
-            active,
+            model.into_active_model(),
             connection,
-            verification,
+            None,
             Some(id),
-            native_fields,
+            native,
         )
         .await?;
         if tx.is_none() {

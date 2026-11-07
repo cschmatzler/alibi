@@ -2,6 +2,8 @@
 
 #[cfg(test)]
 mod json_metadata_tests;
+#[cfg(test)]
+mod update_hook_tests;
 
 mod accounts;
 mod api_key_usage_phases;
@@ -610,9 +612,20 @@ where
             .await
     }
     async fn update_user(&self, id: &str, update: alibi_core::UpdateUser) -> AuthResult<S::User> {
+        self.update_user_prepared(
+            id,
+            alibi_core::store::PreparedUserUpdate::from_typed(&update),
+        )
+        .await
+    }
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: alibi_core::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
         let user = self
             .store
-            .update_user_with_connection(self.tx, Some(self.tx), id, update)
+            .update_user_prepared_with_connection(self.tx, Some(self.tx), id, update)
             .await?;
         self.pending_after
             .push(AfterHook::UserUpdated(user.clone()))

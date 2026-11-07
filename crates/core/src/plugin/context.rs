@@ -594,7 +594,7 @@ impl<S: AuthSchema> AuthContext<S> {
         view
     }
 
-    pub(in crate::plugin) fn feature_enabled(&self, key: &str) -> bool {
+    pub(crate) fn feature_enabled(&self, key: &str) -> bool {
         self.metadata
             .get(key)
             .and_then(serde_json::Value::as_bool)

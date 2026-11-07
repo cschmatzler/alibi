@@ -942,7 +942,7 @@ impl<S: AuthSchema, B: alibi::store::HookBackend> alibi::store::DatabaseHooks<S,
     async fn before_update_user(
         &self,
         _: &str,
-        _: &mut UpdateUser,
+        _: &mut alibi::utils::json::JsObject,
         _: &alibi::store::DatabaseHookContext<'_, B>,
     ) -> AuthResult<alibi::store::HookControl> {
         self.event("user-before", 3).await?;

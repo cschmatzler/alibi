@@ -120,6 +120,7 @@ forward!(UserStore<TestSchema> {
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<<TestSchema as AuthSchema>::User>;
+    async fn update_user_prepared(&self, id: &str, update: alibi::store::PreparedUserUpdate) -> AuthResult<<TestSchema as AuthSchema>::User>;
     async fn delete_user(&self, id: &str) -> AuthResult<()>;
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<<TestSchema as AuthSchema>::User>, usize)>;
 });

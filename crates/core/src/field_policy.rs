@@ -21,6 +21,65 @@ pub struct FieldValues {
 }
 
 impl FieldValues {
+    pub(crate) fn update_own_properties(&self) -> crate::utils::json::JsObject {
+        let mut data: crate::utils::json::JsObject = self
+            .values
+            .iter()
+            .map(|(key, value)| (key.clone().into(), value.clone()))
+            .collect();
+        for key in &self.undefined_input_keys {
+            _ = data.entry(key.clone().into()).or_insert(JsValue::Undefined);
+        }
+        data
+    }
+
+    pub(crate) fn update_metadata(&self) -> crate::store::UserUpdateFieldMetadata {
+        crate::store::UserUpdateFieldMetadata {
+            adapter_fields: self.adapter_fields.clone(),
+            binding_names: self.binding_names.clone(),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn from_user_update(
+        data: crate::utils::json::JsObject,
+        metadata: crate::store::UserUpdateFieldMetadata,
+    ) -> AuthResult<Self> {
+        let mut pending = metadata
+            .adapter_fields
+            .as_deref()
+            .cloned()
+            .unwrap_or_default();
+        let mut fields = FieldConfigs::new();
+        for core in alibi_schema_registry::core_fields(alibi_schema_registry::EntityRole::User) {
+            let name = core.column_name.unwrap_or(core.name);
+            if let Some(field) = pending.shift_remove(name) {
+                _ = fields.insert(name.to_owned(), field);
+            } else if name == "updatedAt" {
+                _ = fields.insert(
+                    name.to_owned(),
+                    FieldConfig::new(serde_json::json!({"type":"date"}))
+                        .on_update(|| JsValue::Date(chrono::Utc::now())),
+                );
+            }
+        }
+        fields.extend(pending);
+        let values = data
+            .into_iter()
+            .map(|(key, value)| {
+                key.to_utf8()
+                    .map(|key| (key, value))
+                    .map_err(|error| AuthError::config(error.to_string()))
+            })
+            .collect::<AuthResult<IndexMap<_, _>>>()?;
+        Ok(Self {
+            values,
+            adapter_fields: Some(Arc::new(fields)),
+            binding_names: metadata.binding_names,
+            ..Self::default()
+        })
+    }
+
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -579,6 +638,14 @@ pub struct AdapterFieldPolicies {
 pub struct SessionAdapterFields(pub Arc<FieldConfigs>);
 
 impl SessionAdapterFields {
+    pub(crate) fn attach_user_update(&self, update: &mut crate::store::PreparedUserUpdate) {
+        if update.metadata.adapter_fields.is_none() {
+            let mut fields = FieldValues::new();
+            self.attach(&mut fields, false);
+            update.metadata = fields.update_metadata();
+        }
+    }
+
     pub(crate) fn attach(&self, values: &mut FieldValues, creation: bool) {
         values.transform_omitted = creation;
         values.adapter_fields = Some(Arc::clone(&self.0));

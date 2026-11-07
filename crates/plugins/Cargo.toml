@@ -102,6 +102,7 @@ subtle = "2.6.1"
 # versioned dev-dependency here would constrain publish order. Cargo drops
 # dev-dependencies without a version from the published manifest.
 alibi-seaorm = { path = "../seaorm" }
+alibi-sqlx = { path = "../sqlx" }
 
 [features]
 default = ["native-tls"]

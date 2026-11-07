@@ -184,9 +184,15 @@ async fn admin_username_updates_await_ordered_validation_and_stop_later_hooks() 
             .unwrap();
         init.extensions
             .insert(UserFields(SessionFields(policy.fields())));
+        init.extensions
+            .insert(alibi_core::field_policy::AdapterFieldPolicies {
+                user: alibi_core::field_policy::SessionAdapterFields(Arc::new(policy.fields())),
+                ..Default::default()
+            });
         let log = events.clone();
         init.register_user_update_transform(move |_, input| {
             log.lock().unwrap().push("after".to_owned());
+            assert_eq!(input.username.as_deref(), Some("ORDERED"));
             Ok(input)
         });
         ctx.metadata = init.metadata.clone();

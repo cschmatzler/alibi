@@ -186,6 +186,18 @@ struct MemoryTransaction<'a> {
 
 #[async_trait]
 impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: crate::store::PreparedUserUpdate,
+    ) -> AuthResult<UserView> {
+        self.store.update_user_prepared(id, update).await
+    }
+    async fn update_user(&self, id: &str, update: crate::UpdateUser) -> AuthResult<UserView> {
+        self.update_user_prepared(id, crate::store::PreparedUserUpdate::from_typed(&update))
+            .await
+    }
+
     async fn native_user_output_for(
         &self,
         user: &crate::UserView,
@@ -414,75 +426,37 @@ impl UserStore<BundledSchema> for MemoryStore {
             .cloned())
     }
 
-    async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<UserView> {
-        update
-            .additional_fields
-            .apply_adapter_transforms_async()
-            .await?;
+    async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<UserView> {
+        self.update_user_prepared(id, crate::store::PreparedUserUpdate::from_typed(&update))
+            .await
+    }
+
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        mut update: crate::store::PreparedUserUpdate,
+    ) -> AuthResult<UserView> {
+        update.apply_adapter_transforms().await?;
         let mut state = self.lock();
-        let user = state
+        let locator = crate::store::memory_user_id::MemoryUserId::string(id);
+        let mut user = state
             .users
-            .get_mut(&crate::store::memory_user_id::MemoryUserId::string(id))
+            .get(&locator)
+            .cloned()
             .ok_or(AuthError::UserNotFound)?;
-        user.clear_native_user_update(&update)?;
-        if let Some(email) = update.email {
-            user.email = Some(email.to_lowercase());
-        }
-        if let Some(name) = update.name {
-            user.name = Some(name);
-        }
-        if let Some(image) = update.image {
-            user.image = Some(image);
-        }
-        if let Some(email_verified) = update.email_verified {
-            user.email_verified = email_verified;
-        }
-        if let Some(username) = update.username {
-            user.username = Some(username);
-        }
-        if let Some(display_username) = update.display_username {
-            user.display_username = Some(display_username);
-        }
-        if let Some(role) = update.role {
-            user.role = Some(role);
-        }
-        if let Some(banned) = update.banned {
-            user.banned = Some(banned);
-        }
-        if update.clear_ban_reason {
-            user.ban_reason = None;
-        } else if let Some(ban_reason) = update.ban_reason {
-            user.ban_reason = Some(ban_reason);
-        }
-        if let Some(ban_expires) = update.ban_expires {
-            user.ban_expires = ban_expires;
-        }
-        if let Some(two_factor_enabled) = update.two_factor_enabled {
-            user.two_factor_enabled = Some(two_factor_enabled);
-        }
-        if let Some(metadata) = update.metadata {
-            user.metadata = metadata.into();
-        }
-        if let Some(is_anonymous) = update.is_anonymous {
-            user.is_anonymous = Some(is_anonymous);
-        }
-        if let Some(phone_number) = update.phone_number {
-            user.phone_number = phone_number;
-        }
-        if let Some(phone_number_verified) = update.phone_number_verified {
-            user.phone_number_verified = Some(phone_number_verified);
-        }
-        if let Some(last_login_method) = update.last_login_method {
-            user.last_login_method = last_login_method;
-        }
-        for (name, value) in update.additional_fields {
-            _ = user.extension_fields.insert(name.into(), value);
-        }
-        user.updated_at = Utc::now();
-        user.retain_native_user_fields(update.adapter_native_fields);
-        let locked_result = Ok(user.clone());
-        drop(state);
-        locked_result
+        let data = update
+            .data
+            .iter()
+            .filter(|(key, _)| key.as_str().is_some_and(|key| update.declares(key)))
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect();
+        user.apply_user_update(data)?;
+        _ = state.users.shift_remove(&locator);
+        _ = state.users.insert(
+            crate::store::memory_user_id::MemoryUserId::string(&user.id),
+            user.clone(),
+        );
+        Ok(user)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {

@@ -25,6 +25,13 @@ async fn username_context(
         .unwrap();
     init.extensions
         .insert(UserFields(SessionFields(policy.fields())));
+    let mut adapter_fields = policy.fields();
+    adapter_fields.extend(init.config.user.additional_fields.clone());
+    init.extensions
+        .insert(alibi_core::field_policy::AdapterFieldPolicies {
+            user: alibi_core::field_policy::SessionAdapterFields(Arc::new(adapter_fields)),
+            ..Default::default()
+        });
     if let Some(events) = events {
         init.register_user_create_transform(move |data| {
             events

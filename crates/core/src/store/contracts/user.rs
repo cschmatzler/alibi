@@ -252,6 +252,13 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
         ))
     }
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User>;
+
+    /// Post-application-hook canonical binding boundary; no DTO lowering.
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: super::PreparedUserUpdate,
+    ) -> AuthResult<S::User>;
     async fn delete_user(&self, id: &str) -> AuthResult<()>;
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)>;
 }

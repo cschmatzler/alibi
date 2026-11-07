@@ -54,11 +54,17 @@ impl alibi::seaorm::DatabaseHooks<Schema, alibi::seaorm::SeaOrmBackend> for Meta
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut UpdateUser,
+        update: &mut alibi::utils::json::JsObject,
         _ctx: &alibi::seaorm::SeaOrmHookContext<'_>,
     ) -> alibi::AuthResult<alibi::seaorm::HookControl> {
-        if let Some(metadata) = &mut update.metadata {
-            metadata["hookRounded"] = serde_json::Value::from(9_007_199_254_740_993_u64);
+        if let Some(metadata) = update
+            .get_mut("metadata")
+            .and_then(|value| value.as_object_mut())
+        {
+            _ = metadata.insert(
+                "hookRounded".into(),
+                alibi::utils::json::JsValue::from(9_007_199_254_740_993_u64),
+            );
         }
         Ok(alibi::seaorm::HookControl::Continue)
     }

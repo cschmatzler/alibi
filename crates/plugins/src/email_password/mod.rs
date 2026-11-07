@@ -5,6 +5,8 @@ mod signin;
 mod signup;
 mod types;
 mod username_hooks;
+#[cfg(test)]
+mod username_update_patch_tests;
 
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::helpers::{SessionIssueError, apply_default_role};

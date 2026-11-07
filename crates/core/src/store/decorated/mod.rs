@@ -16,6 +16,8 @@ mod session;
 #[cfg(test)]
 mod session_native_tests;
 mod transaction;
+#[cfg(test)]
+mod update_hook_tests;
 mod user;
 #[cfg(test)]
 mod user_native_tests;

@@ -637,6 +637,15 @@ where
             .await
     }
 
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: alibi_core::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
+        self.update_user_prepared_with_connection(self.exec(), None, id, update)
+            .await
+    }
+
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
         _ = S::User::parse_id(id)?;
         let Some(user) = self.get_user_by_id(id).await? else {
@@ -797,14 +806,29 @@ where
         exec: Exec<'_>,
         tx: Option<&SqlxTransaction>,
         id: &str,
-        mut update: UpdateUser,
+        update: UpdateUser,
     ) -> AuthResult<S::User> {
-        update.email = update.email.map(|email| normalize_user_email(&email));
-        _ = S::User::parse_id(id)?;
+        self.update_user_prepared_with_connection(
+            exec,
+            tx,
+            id,
+            alibi_core::store::PreparedUserUpdate::from_typed(&update),
+        )
+        .await
+    }
+
+    pub(super) async fn update_user_prepared_with_connection(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        id: &str,
+        mut update: alibi_core::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
+        let locator = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
-                .before_update_user(id, &mut update, &hook_context)
+                .before_update_user(id, &mut update.data, &hook_context)
                 .await
                 .map_err(alibi_core::store::adapter::callback_error)?
                 .is_cancelled()
@@ -812,77 +836,41 @@ where
                 return Err(cancelled_by_hook("user update"));
             }
         }
-        let Some(model) = find_user_by_id::<S::User>(exec, id, Lock::None).await? else {
-            return Err(AuthError::UserNotFound);
-        };
-
-        let mut active = model.into_active();
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.apply_adapter_transforms_async().await?;
-        let provider_name = update.provider_name.take();
-        let provider_image = update.provider_image.take();
-        let provider_email = update.provider_email.take();
-        let provider_verification = update.provider_email_verified.take();
-        let native_fields = std::mem::take(&mut update.adapter_native_fields);
-        S::User::apply_update(&mut active, update, Utc::now());
-        stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
-        stage_provider_text::<S::User>(
-            exec,
-            &mut active,
-            provider_name,
-            provider_image,
-            provider_email,
-        )
-        .await?;
-        let backend = exec.engine();
-        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+        update.apply_adapter_transforms().await?;
+        let mut active = crate::model::ActiveRow::new();
+        for (field, raw) in &update.data {
+            let Some(field) = field.as_str() else {
+                continue;
+            };
+            if !update.declares(field) {
+                continue;
+            }
+            let column = if let Some(physical) = update.physical_binding(field) {
+                <S::User as SqlxModel>::COLUMNS
+                    .iter()
+                    .find(|column| column.name == physical)
+                    .map(|column| column.name)
+            } else {
+                S::User::list_users_column(field)
+            };
+            let Some(column) = column else {
+                if update.requires_binding(field) {
+                    return Err(AuthError::config(format!(
+                        "Declared user field {field} has no model column"
+                    )));
+                }
+                continue;
+            };
+            let raw = crate::additional_fields::raw_value(raw)?;
             let value = crate::additional_fields::prepare_value(
                 exec,
                 <S::User as SqlxModel>::column_kind(column),
-                value,
+                raw,
             )
             .await?;
-            S::User::set_additional_field(&mut active, column, value, backend)?;
-        }
-        S::User::prepare_json_metadata(&mut active, backend)?;
-
-        for (field, raw) in native_fields {
-            if raw.is_undefined() {
-                continue;
-            }
-            if !matches!(
-                field.as_str(),
-                "banExpires" | "username" | "displayUsername"
-            ) {
-                return Err(AuthError::internal("Unsupported native user update field"));
-            }
-            let Some(column) = S::User::list_users_column(&field) else {
-                continue;
-            };
-            if raw.is_object() || raw.is_array() {
-                return Err(AuthError::internal("Unsupported native user SQL parameter"));
-            }
-            let value =
-                crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
-            let value = if field == "banExpires" && backend != Engine::Sqlite {
-                match crate::additional_fields::bind_scalar(value)? {
-                    SqlValue::Text(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
-                        .map(|date| S::User::timestamp_value(column, date.with_timezone(&Utc)))
-                        .map_err(|error| AuthError::internal(error.to_string()))?,
-                    SqlValue::Text(None) => SqlValue::Timestamp(None),
-                    value => value,
-                }
-            } else {
-                crate::additional_fields::prepare_value(
-                    exec,
-                    <S::User as SqlxModel>::column_kind(column),
-                    value,
-                )
-                .await?
-            };
             active.set(column, value);
         }
-        let user = model::update::<S::User>(exec, &active)
+        let user = model::update_where::<S::User>(exec, &active, locator)
             .await?
             .ok_or_else(record_not_updated)?;
         if tx.is_none() {

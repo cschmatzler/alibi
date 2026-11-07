@@ -288,6 +288,12 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
             "Transactional user updates are unsupported".into(),
         ))
     }
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: super::PreparedUserUpdate,
+    ) -> AuthResult<S::User>;
+
     async fn update_account(
         &self,
         _id: &str,

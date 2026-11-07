@@ -1,9 +1,8 @@
 use super::{UsernameConfig, UsernameValidationOrder};
-use alibi_core::store::{UserCreateHook, UserUpdateHook};
+use alibi_core::store::{UserCreateHook, UserUpdateHook, UserUpdateHookResult, UserUpdatePatch};
 use alibi_core::utils::json::JsValue;
 use alibi_core::{
     AuthContext, AuthError, AuthResult, AuthSchema, AuthTransaction, AuthUser, CreateUser,
-    UpdateUser,
 };
 use async_trait::async_trait;
 
@@ -158,45 +157,25 @@ impl<S: AuthSchema> UserCreateHook<S> for UsernameCreateHook {
 
 pub(super) struct UsernameUpdateHook(pub UsernameConfig);
 
-fn update_candidate(data: &UpdateUser, name: &str) -> Option<JsValue> {
-    data.adapter_native_fields
-        .get(name)
-        .cloned()
-        .map(JsValue::from)
-        .or_else(|| {
-            match name {
-                "username" => data.username.clone(),
-                "displayUsername" => data.display_username.clone(),
-                _ => None,
-            }
-            .map(|value| JsValue::String(value.into()))
-        })
-        .or_else(|| data.additional_fields.get(name).cloned())
-}
-
-fn stage_update(data: &mut UpdateUser, name: &str, value: JsValue) {
-    data.adapter_native_fields.remove(name);
-    let text = value.as_str().map(str::to_owned);
-    match name {
-        "username" => data.username = text,
-        "displayUsername" => data.display_username = text,
-        _ => unreachable!(),
-    }
-    _ = data.additional_fields.insert(name.into(), value);
-}
-
 #[async_trait]
 impl<S: AuthSchema> UserUpdateHook<S> for UsernameUpdateHook {
     async fn before_update(
         &self,
         _id: &str,
-        mut data: UpdateUser,
+        original: &alibi_core::utils::json::JsObject,
         context: &AuthContext<S>,
         transaction: Option<&dyn AuthTransaction<S>>,
-    ) -> AuthResult<UpdateUser> {
+    ) -> AuthResult<UserUpdateHookResult> {
         let policy = &self.0;
-        let username = update_candidate(&data, "username").filter(JsValue::is_truthy);
-        let display = update_candidate(&data, "displayUsername").filter(JsValue::is_truthy);
+        let mut data = original.clone();
+        let username = original
+            .get("username")
+            .filter(|value| value.is_truthy())
+            .cloned();
+        let display = original
+            .get("displayUsername")
+            .filter(|value| value.is_truthy())
+            .cloned();
         let call = alibi_core::endpoint::current_endpoint_call_context();
         let path = call
             .as_ref()
@@ -220,9 +199,13 @@ impl<S: AuthSchema> UserUpdateHook<S> for UsernameUpdateHook {
                 let current_id = call
                     .and_then(|call| call.session())
                     .map(|(user, _)| user.id)
-                    .filter(|id| !id.is_empty());
+                    .filter(|id| !id.is_empty())
+                    .map(|id| JsValue::String(id.into()))
+                    .or_else(|| original.get("id").cloned())
+                    .unwrap_or(JsValue::Null);
                 if let Some(existing) = existing
-                    && current_id.as_deref() != Some(existing.id().as_ref())
+                    && (!current_id.is_truthy()
+                        || current_id != JsValue::String(existing.id().as_ref().into()))
                 {
                     return Err(AuthError::Upstream {
                         status: 400,
@@ -234,25 +217,19 @@ impl<S: AuthSchema> UserUpdateHook<S> for UsernameUpdateHook {
                     validate_display(policy, display).await?;
                 }
             }
-            stage_update(
-                &mut data,
-                "username",
+            _ = data.insert(
+                "username".into(),
                 policy.normalize_raw_hook_value(&username)?,
             );
         }
-        if policy.include_display_username {
-            if let Some(display) = display {
-                stage_update(
-                    &mut data,
-                    "displayUsername",
-                    normalize_display(policy, &display)?,
-                );
-            }
-        } else {
-            data.display_username = None;
-            data.adapter_native_fields.remove("displayUsername");
-            data.additional_fields.shift_remove("displayUsername");
+        if policy.include_display_username
+            && let Some(display) = display
+        {
+            _ = data.insert(
+                "displayUsername".into(),
+                normalize_display(policy, &display)?,
+            );
         }
-        Ok(data)
+        Ok(UserUpdateHookResult::Data(UserUpdatePatch(data)))
     }
 }

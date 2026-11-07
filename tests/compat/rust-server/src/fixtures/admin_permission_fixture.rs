@@ -27,10 +27,10 @@ impl alibi::seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for Appli
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut alibi::UpdateUser,
+        update: &mut alibi::utils::json::JsObject,
         _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<alibi::seaorm::HookControl> {
-        if update.banned == Some(true) {
+        if update.get("banned").and_then(|value| value.as_bool()) == Some(true) {
             return Err(alibi::AuthError::Upstream {
                 status: 403,
                 code: "APPLICATION_BAN_REFUSED",

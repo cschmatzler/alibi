@@ -2098,10 +2098,10 @@ async fn admin_date_callback_error_identity<B: Backend>(db: Db) -> TestResult {
         async fn before_update_user(
             &self,
             _: &str,
-            u: &mut UpdateUser,
+            u: &mut alibi::utils::json::JsObject,
             _: &DatabaseHookContext<'_, H>,
         ) -> AuthResult<HookControl> {
-            if u.banned == Some(true) {
+            if u.get("banned").and_then(|value| value.as_bool()) == Some(true) {
                 return Err(AuthError::Api {
                     status: 403,
                     code: Some("APPLICATION_BAN_REFUSED".into()),

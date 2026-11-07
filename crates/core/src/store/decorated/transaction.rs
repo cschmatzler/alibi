@@ -455,15 +455,30 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        update = crate::store::contracts::update_user_data(
+        let mut prepared = crate::store::PreparedUserUpdate::from_typed(&update);
+        prepared.data = crate::store::contracts::update_user_data(
             id,
-            update,
+            &prepared.data,
+            &update,
             &self.record_store.transforms.updates,
             &self.record_store.projection_context,
             Some(self.inner),
         )
-        .await?;
-        self.inner.update_user(id, update).await
+        .await?
+        .ok_or_else(|| crate::store::adapter::cancelled_by_hook("user update"))?;
+        self.update_user_prepared(id, prepared).await
+    }
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        mut update: crate::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
+        self.record_store
+            .field_policies()
+            .user
+            .attach_user_update(&mut update);
+        update.include_installed_fields(&self.record_store.projection_context);
+        self.inner.update_user_prepared(id, update).await
     }
     async fn update_account(
         &self,

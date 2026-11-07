@@ -85,6 +85,18 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
 
 #[async_trait]
 impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: crate::store::PreparedUserUpdate,
+    ) -> AuthResult<UserView> {
+        UserStore::<StatelessSchema>::update_user_prepared(self.live, id, update).await
+    }
+    async fn update_user(&self, id: &str, update: crate::UpdateUser) -> AuthResult<UserView> {
+        self.update_user_prepared(id, crate::store::PreparedUserUpdate::from_typed(&update))
+            .await
+    }
+
     async fn native_user_output_for(
         &self,
         user: &crate::UserView,

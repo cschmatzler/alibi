@@ -336,6 +336,15 @@ pub(crate) async fn update<M: SqlxModel>(
         .and_then(ActiveValue::value)
         .cloned()
         .ok_or_else(|| AuthError::internal("model update requires its primary key"))?;
+    update_where::<M>(exec, active, key).await
+}
+
+/// Keep the WHERE locator distinct from a staged primary-key assignment.
+pub(crate) async fn update_where<M: SqlxModel>(
+    exec: Exec<'_>,
+    active: &ActiveRow,
+    key: SqlValue,
+) -> AuthResult<Option<M>> {
     if active.changed().next().is_none() {
         // Nothing to write: return the stored row, as an unchanged model update does.
         let mut sql = by_id::<M>(exec, key);

@@ -221,6 +221,7 @@ dependencies = [
  "alibi-core",
  "alibi-schema-registry",
  "alibi-seaorm",
+ "alibi-sqlx",
  "async-trait",
  "base64 0.23.1",
  "base64urlsafedata",

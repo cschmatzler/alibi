@@ -342,7 +342,7 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for StorageObserver {
     async fn before_update_user(
         &self,
         id: &str,
-        _: &mut UpdateUser,
+        _: &mut alibi::utils::json::JsObject,
         c: &DatabaseHookContext<'_, B>,
     ) -> AuthResult<HookControl> {
         record(

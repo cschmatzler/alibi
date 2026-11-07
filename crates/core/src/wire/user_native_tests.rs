@@ -60,29 +60,20 @@ async fn native_state_roundtrip<S: AuthSchema<User = UserView>>(store: &impl Use
         wire
     );
 
-    assert!(
-        store
-            .update_user(
-                &id,
-                UpdateUser {
-                    name: Some("Must not persist".into()),
-                    adapter_native_fields: [("image".into(), json!(42).into())].into(),
-                    ..Default::default()
-                }
-            )
-            .await
-            .is_err()
-    );
-    assert_eq!(
-        store
-            .get_user_by_id(&id)
-            .await
-            .unwrap()
-            .unwrap()
-            .name
-            .as_deref(),
-        Some("Original")
-    );
+    // factory.ts projects declared image scalars, not a three-field native allowlist.
+    let admitted = store
+        .update_user(
+            &id,
+            UpdateUser {
+                name: Some("Now persists".into()),
+                adapter_native_fields: [("image".into(), json!(42).into())].into(),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(admitted.name.as_deref(), Some("Now persists"));
+    assert_eq!(serde_json::to_value(&admitted).unwrap()["image"], 42);
     store
         .update_user(
             &id,

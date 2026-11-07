@@ -1,6 +1,6 @@
 use super::UserView;
+use crate::AuthResult;
 use crate::utils::json::JsValue as Value;
-use crate::{AuthResult, UpdateUser};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
 
@@ -197,53 +197,44 @@ impl UserView {
         }
     }
 
-    pub(crate) fn clear_native_user_update(&mut self, update: &UpdateUser) -> AuthResult<()> {
-        if update
-            .adapter_native_fields
-            .keys()
-            .any(|name| !matches!(name.as_str(), "banExpires" | "username" | "displayUsername"))
-        {
-            return Err(crate::AuthError::internal(
-                "Unsupported native user update field",
-            ));
+    pub(crate) fn apply_user_update(
+        &mut self,
+        data: crate::utils::json::JsObject,
+    ) -> AuthResult<()> {
+        if let Some(id) = data.get("id") {
+            let Value::String(id) = id else {
+                return Err(crate::AuthError::not_implemented(
+                    "Non-string UPDATE identity requires a canonical USER identity API",
+                ));
+            };
+            self.id = id
+                .to_utf8()
+                .map_err(|error| crate::AuthError::not_implemented(error.to_string()))?;
         }
-        for (name, present) in [
-            (
-                "name",
-                update.name.is_some() || update.provider_name.is_some(),
-            ),
-            ("email", update.email.is_some()),
-            (
-                "image",
-                update.image.is_some() || update.provider_image.is_some(),
-            ),
-            (
-                "emailVerified",
-                update.email_verified.is_some() || update.provider_email_verified.is_some(),
-            ),
-            ("username", update.username.is_some()),
-            ("displayUsername", update.display_username.is_some()),
-            ("role", update.role.is_some()),
-            ("banned", update.banned.is_some()),
-            (
-                "banReason",
-                update.clear_ban_reason || update.ban_reason.is_some(),
-            ),
-            ("banExpires", update.ban_expires.is_some()),
-            ("twoFactorEnabled", update.two_factor_enabled.is_some()),
-            ("isAnonymous", update.is_anonymous.is_some()),
-            ("phoneNumber", update.phone_number.is_some()),
-            (
-                "phoneNumberVerified",
-                update.phone_number_verified.is_some(),
-            ),
-            ("lastLoginMethod", update.last_login_method.is_some()),
-            ("updatedAt", true),
-        ] {
-            if present {
-                _ = self.extension_fields.shift_remove(name);
+        self.retain_native_user_fields(
+            data.iter()
+                .filter_map(|(name, value)| {
+                    name.as_str()
+                        .filter(|name| NATIVE_FIELDS.contains(name))
+                        .map(|name| (name.to_owned(), value.clone()))
+                })
+                .collect(),
+        );
+        for (name, value) in data {
+            if name == "id"
+                || name
+                    .as_str()
+                    .is_some_and(|name| NATIVE_FIELDS.contains(&name))
+            {
+                continue;
+            }
+            if name == "metadata" {
+                self.metadata = value.clone();
+            }
+            if let Some(name) = name.as_str() {
                 _ = self.omitted_fields.remove(name);
             }
+            _ = self.extension_fields.insert(name, value);
         }
         Ok(())
     }

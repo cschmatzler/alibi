@@ -16,8 +16,8 @@ struct PreservedSessions {
 }
 #[async_trait::async_trait]
 impl alibi::store::DatabaseHooks<TestSchema, crate::backend::Backend> for PreservedSessions {
-    async fn before_update_user(&self, _: &str, update: &mut alibi::UpdateUser, ctx: &crate::backend::HookContext<'_>) -> AuthResult<alibi::store::HookControl> {
-        if let Some(token) = update.name.as_deref().and_then(|name| name.strip_prefix("transaction-probe:")) {
+    async fn before_update_user(&self, _: &str, update: &mut alibi::utils::json::JsObject, ctx: &crate::backend::HookContext<'_>) -> AuthResult<alibi::store::HookControl> {
+        if let Some(token) = update.get("name").and_then(|value| value.as_str()).and_then(|name| name.strip_prefix("transaction-probe:")) {
             assert!(ctx.tx.is_some());
             #[cfg(feature = "seaorm")]
             use alibi::seaorm::sea_orm;

@@ -2,6 +2,8 @@ mod account;
 mod api_key;
 mod device;
 mod hooks;
+mod user_update;
+pub use user_update::{PreparedUserUpdate, UserUpdateFieldMetadata};
 mod organization;
 mod passkey;
 mod session;
@@ -15,7 +17,7 @@ pub use api_key::{ApiKeyStore, ConsumeApiKeyResult};
 pub use device::DeviceCodeStore;
 pub use hooks::{
     AdapterAfterHook, AdapterEvent, SessionCreatedHook, UserCreateHook, UserCreationDefaults,
-    UserUpdateHook,
+    UserUpdateHook, UserUpdateHookResult, UserUpdatePatch,
 };
 pub(crate) use hooks::{UserCreateStep, UserUpdateStep};
 pub(in crate::store) use hooks::{create_user_data, update_user_data};

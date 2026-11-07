@@ -8,8 +8,7 @@ use crate::error::AuthResult;
 use crate::hooks::RequestHookContext;
 use crate::schema::AuthSchema;
 use crate::types::{
-    CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
-    UpdateVerification,
+    CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateVerification,
 };
 use async_trait::async_trait;
 
@@ -75,10 +74,12 @@ pub trait DatabaseHooks<S: AuthSchema, B: HookBackend>: Send + Sync {
         Ok(())
     }
 
+    /// Canonical final own properties, before adapter codecs. Mutations are direct,
+    /// not inferred from a lossy typed projection.
     async fn before_update_user(
         &self,
         _id: &str,
-        _update: &mut UpdateUser,
+        _update: &mut crate::utils::json::JsObject,
         _ctx: &DatabaseHookContext<'_, B>,
     ) -> AuthResult<HookControl> {
         Ok(HookControl::Continue)

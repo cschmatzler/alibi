@@ -30,11 +30,12 @@ pub use contracts::{
     AccountStore, AdapterAfterHook, AdapterEvent, AfterCommitErrorPolicy, ApiKeyStore,
     AuthTransaction, BoxedTransactionValue, ConsumeApiKeyResult, DeviceCodeStore,
     InvitationCreateOptions, InvitationStore, ListOrganizationMembersParams, MemberPageQuery,
-    MemberStore, NumericTextInput, OrganizationStore, PasskeyStore, SessionCreatedHook,
-    SessionRevocation, SessionStore, TransactionFuture, TransactionStore, TransactionWork,
-    TwoFactorStore, TypedTransactionFuture, UserCreateHook, UserCreationDefaults, UserStore,
-    UserUpdateHook, VerificationStore, transaction, transaction_with_policy,
-    verification_reservation_id, verification_reservation_key, write_transaction,
+    MemberStore, NumericTextInput, OrganizationStore, PasskeyStore, PreparedUserUpdate,
+    SessionCreatedHook, SessionRevocation, SessionStore, TransactionFuture, TransactionStore,
+    TransactionWork, TwoFactorStore, TypedTransactionFuture, UserCreateHook, UserCreationDefaults,
+    UserStore, UserUpdateFieldMetadata, UserUpdateHook, UserUpdateHookResult, UserUpdatePatch,
+    VerificationStore, transaction, transaction_with_policy, verification_reservation_id,
+    verification_reservation_key, write_transaction,
 };
 pub(crate) use contracts::{UserCreateStep, UserUpdateStep};
 pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};

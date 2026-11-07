@@ -30,6 +30,7 @@ delegate_store!(UserStore<S>, {
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>>;
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User>;
+    async fn update_user_prepared(&self, id: &str, update: alibi::store::PreparedUserUpdate) -> AuthResult<S::User>;
     async fn delete_user(&self, id: &str) -> AuthResult<()>;
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)>;
 });

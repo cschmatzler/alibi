@@ -65,10 +65,19 @@ pub trait UserUpdateHook<S: AuthSchema>: Send + Sync {
     async fn before_update(
         &self,
         id: &str,
-        input: crate::UpdateUser,
+        original: &crate::utils::json::JsObject,
         context: &crate::AuthContext<S>,
         transaction: Option<&dyn crate::AuthTransaction<S>>,
-    ) -> AuthResult<crate::UpdateUser>;
+    ) -> AuthResult<UserUpdateHookResult>;
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct UserUpdatePatch(pub crate::utils::json::JsObject);
+
+pub enum UserUpdateHookResult {
+    Continue,
+    Data(UserUpdatePatch),
+    Cancel,
 }
 
 pub(crate) enum UserUpdateStep<S: AuthSchema> {
@@ -87,25 +96,34 @@ impl<S: AuthSchema> Clone for UserUpdateStep<S> {
 
 pub(in crate::store) async fn update_user_data<S: AuthSchema>(
     id: &str,
-    mut data: crate::UpdateUser,
+    original: &crate::utils::json::JsObject,
+    legacy_original: &crate::UpdateUser,
     steps: &[UserUpdateStep<S>],
     context: &crate::AuthContext<S>,
     transaction: Option<&dyn crate::AuthTransaction<S>>,
-) -> AuthResult<crate::UpdateUser> {
+) -> AuthResult<Option<crate::utils::json::JsObject>> {
+    let mut actual = original.clone();
     for step in steps {
-        data = match step {
+        let result = match step {
             UserUpdateStep::Transform(transform) => {
-                let before = data.clone();
-                let mut transformed = transform(id, data)?;
-                transformed.reconcile_native_shadows(&before);
-                transformed
+                let mut transformed = transform(id, legacy_original.clone())?;
+                transformed.reconcile_native_shadows(legacy_original);
+                UserUpdateHookResult::Data(UserUpdatePatch(super::user_update::reify_user_update(
+                    &transformed,
+                )))
             }
             UserUpdateStep::Hook(hook) => {
-                hook.before_update(id, data, context, transaction).await?
+                hook.before_update(id, original, context, transaction)
+                    .await?
             }
         };
+        match result {
+            UserUpdateHookResult::Continue => {}
+            UserUpdateHookResult::Cancel => return Ok(None),
+            UserUpdateHookResult::Data(UserUpdatePatch(patch)) => actual.extend(patch),
+        }
     }
-    Ok(data)
+    Ok(Some(actual))
 }
 
 /// Guard creation and observe successfully persisted sessions.

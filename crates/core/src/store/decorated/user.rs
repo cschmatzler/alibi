@@ -225,15 +225,27 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        update = crate::store::contracts::update_user_data(
+        let mut prepared = crate::store::PreparedUserUpdate::from_typed(&update);
+        prepared.data = crate::store::contracts::update_user_data(
             id,
-            update,
+            &prepared.data,
+            &update,
             &self.transforms.updates,
             &self.projection_context,
             None,
         )
-        .await?;
-        let user = self.inner.update_user(id, update).await?;
+        .await?
+        .ok_or_else(|| crate::store::adapter::cancelled_by_hook("user update"))?;
+        self.update_user_prepared(id, prepared).await
+    }
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        mut update: crate::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User> {
+        self.field_policies().user.attach_user_update(&mut update);
+        update.include_installed_fields(&self.projection_context);
+        let user = self.inner.update_user_prepared(id, update).await?;
         if self.refresh_cached_user(&user).await.is_err() {
             tracing::error!("Failed to refresh committed user sessions in secondary storage");
         }
