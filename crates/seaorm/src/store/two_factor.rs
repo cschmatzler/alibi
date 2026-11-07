@@ -9,7 +9,7 @@ use chrono::{DateTime, Utc};
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 use sea_orm::{
     ColumnTrait, EntityTrait, Iterable, QueryFilter, QuerySelect, QueryTrait, Select, Set,
-    UpdateMany,
+    TransactionTrait, UpdateMany,
 };
 use uuid::Uuid;
 
@@ -19,11 +19,12 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
+        let id = self
+            .generated_id(&self.db, "twoFactor", "twoFactor", "id")
+            .await?
+            .unwrap_or_else(|| Uuid::new_v4().to_string());
         let active = ActiveModel {
-            id: Set(self
-                .generated_id(&self.db, "twoFactor", "twoFactor", "id")
-                .await?
-                .unwrap_or_else(|| Uuid::new_v4().to_string())),
+            id: Set(id.clone()),
             secret: Set(two_factor.secret),
             backup_codes: Set(two_factor.backup_codes),
             user_id: Set(two_factor.user_id),
@@ -34,6 +35,23 @@ where
             locked_until: Set(two_factor.locked_until),
         };
         let backend = self.scoped_connection().get_database_backend();
+        if backend == sea_orm::DbBackend::MySql {
+            let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+            _ = Entity::insert(active)
+                .exec_without_returning(&tx)
+                .await
+                .map_err(map_db_err)?;
+            let model = factor_select()
+                .filter(Column::Id.eq(id))
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?
+                .ok_or_else(|| {
+                    alibi_core::AuthError::internal("Factor insertion returned no row")
+                })?;
+            tx.commit().await.map_err(map_db_err)?;
+            return Ok(TwoFactor::from(&model));
+        }
         if !matches!(
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
@@ -89,14 +107,17 @@ where
                 .map(|row| row.map(|row| TwoFactor::from(&row)))
                 .map_err(map_db_err);
         }
-        self.apply_factor_update(query).await
+        self.apply_factor_update(id, query).await
     }
 
     async fn increment_two_factor_failure(&self, id: &str) -> AuthResult<Option<TwoFactor>> {
-        self.apply_factor_update(Entity::update_many().filter(Column::Id.eq(id)).col_expr(
-            Column::FailedVerificationCount,
-            Expr::cust("\"failedVerificationCount\" + 1"),
-        ))
+        self.apply_factor_update(
+            id,
+            Entity::update_many().filter(Column::Id.eq(id)).col_expr(
+                Column::FailedVerificationCount,
+                Expr::col(Column::FailedVerificationCount).add(1),
+            ),
+        )
         .await
     }
 
@@ -107,6 +128,7 @@ where
         until: DateTime<Utc>,
     ) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(
+            id,
             Entity::update_many()
                 .filter(Column::Id.eq(id))
                 .filter(Column::FailedVerificationCount.gte(threshold))
@@ -121,6 +143,7 @@ where
         now: DateTime<Utc>,
     ) -> AuthResult<Option<TwoFactor>> {
         self.apply_factor_update(
+            id,
             Entity::update_many()
                 .filter(Column::Id.eq(id))
                 .filter(Column::LockedUntil.lte(now))
@@ -133,6 +156,7 @@ where
     async fn reset_two_factor_failures(&self, id: &str) -> AuthResult<()> {
         _ = self
             .apply_factor_update(
+                id,
                 Entity::update_many()
                     .filter(Column::Id.eq(id))
                     .col_expr(Column::FailedVerificationCount, Expr::value(0.0))
@@ -149,6 +173,7 @@ where
         replacement: &str,
     ) -> AuthResult<bool> {
         self.apply_factor_update(
+            id,
             Entity::update_many()
                 .filter(Column::Id.eq(id))
                 .filter(Column::BackupCodes.eq(expected))
@@ -175,8 +200,9 @@ where
         };
 
         self.apply_factor_update(
+            &model.id,
             Entity::update_many()
-                .filter(Column::Id.eq(model.id))
+                .filter(Column::Id.eq(model.id.clone()))
                 .col_expr(Column::BackupCodes, Expr::value(backup_codes)),
         )
         .await?
@@ -196,9 +222,32 @@ where
 impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
     async fn apply_factor_update(
         &self,
+        id: &str,
         mut query: UpdateMany<Entity>,
     ) -> AuthResult<Option<TwoFactor>> {
         let backend = self.scoped_connection().get_database_backend();
+        if backend == sea_orm::DbBackend::MySql {
+            let tx = self.scoped_connection().begin().await.map_err(map_db_err)?;
+            let locked = factor_select()
+                .filter(Column::Id.eq(id))
+                .lock_exclusive()
+                .one(&tx)
+                .await
+                .map_err(map_db_err)?;
+            let model = if locked.is_some()
+                && query.exec(&tx).await.map_err(map_db_err)?.rows_affected > 0
+            {
+                factor_select()
+                    .filter(Column::Id.eq(id))
+                    .one(&tx)
+                    .await
+                    .map_err(map_db_err)?
+            } else {
+                None
+            };
+            tx.commit().await.map_err(map_db_err)?;
+            return Ok(model.map(|model| TwoFactor::from(&model)));
+        }
         if !matches!(
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres

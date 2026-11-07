@@ -233,6 +233,30 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     model = ActiveModelBehavior::before_save(model, db, insert)
         .await
         .map_err(map_db_err)?;
+    let mysql_lookup = if db.get_database_backend() == sea_orm::DbBackend::MySql {
+        Some(
+            if let Some((_, value)) = native_values
+                .iter()
+                .find(|(column, _)| column.to_string() == M::id_column().to_string())
+            {
+                M::id_column().eq(value.clone())
+            } else if let Some(id) = id {
+                M::id_column().eq(M::parse_id(id)?)
+            } else {
+                let column = <M::Entity as EntityTrait>::Column::iter()
+                    .find(|column| column.to_string() == M::id_column().to_string())
+                    .ok_or_else(|| {
+                        AuthError::config("User entity does not expose its primary key column")
+                    })?;
+                let primary = model.get(column).into_value().ok_or_else(|| {
+                    AuthError::internal("Provider user insert requires a primary key")
+                })?;
+                M::id_column().eq(primary)
+            },
+        )
+    } else {
+        None
+    };
     let mut columns = Vec::new();
     let mut values = Vec::new();
     let mut returning = Vec::new();
@@ -296,12 +320,22 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
             .to_owned();
         db.get_database_backend().build(&query)
     };
-    let row = db
-        .query_one_raw(statement)
-        .await
-        .map_err(map_db_err)?
-        .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
-    let user = M::from_query_result(&row, "").map_err(map_db_err)?;
+    let user = if let Some(predicate) = mysql_lookup {
+        _ = db.execute_raw(statement).await.map_err(map_db_err)?;
+        user_query::<M>(db.get_database_backend())
+            .filter(predicate)
+            .one(db)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?
+    } else {
+        let row = db
+            .query_one_raw(statement)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
+        M::from_query_result(&row, "").map_err(map_db_err)?
+    };
     <M::ActiveModel as ActiveModelBehavior>::after_save(user, db, insert)
         .await
         .map_err(map_db_err)

@@ -46,6 +46,8 @@ mod passkey_error_order;
 mod passkey_extensions;
 mod passkey_hooks;
 mod passkey_matrix;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql_workflow;
 mod passkey_presence;
 mod passkey_query;
 mod passkey_raw_optional;
