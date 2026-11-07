@@ -89,9 +89,19 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             };
             let filename = field.file_name().map(str::to_owned);
             let content_type = field.content_type().map(ToString::to_string);
+            let base64 = field
+                .headers()
+                .get("content-transfer-encoding")
+                .and_then(|value| value.to_str().ok())
+                .is_some_and(|value| value.trim_matches([' ', '\t']) == "base64");
             let bytes = field.bytes().await.map_err(|error| {
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
+            let bytes = if base64 {
+                decode_multipart_base64(&bytes)
+            } else {
+                bytes.to_vec()
+            };
             let value = if string_form_values && filename.is_some() {
                 alibi_core::utils::json::JsValue::String("[object File]".into())
             } else if let Some(filename) = filename {
@@ -100,7 +110,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                     alibi_core::types::MultipartFile {
                         filename,
                         content_type,
-                        bytes: bytes.to_vec(),
+                        bytes,
                     },
                 );
                 empty_object()
@@ -145,6 +155,34 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     Ok(())
 }
 
+/// Fetch's multipart parser uses Buffer.from(body.toString(), "base64"),
+/// including its forgiving alphabet, padding and low-byte UTF-16 behavior.
+fn decode_multipart_base64(bytes: &[u8]) -> Vec<u8> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut decoded = Vec::new();
+    let mut buffer = 0_u16;
+    let mut bits = 0;
+    for unit in text.encode_utf16() {
+        let byte = (unit & 0xff) as u8;
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            b'=' => break,
+            _ => continue,
+        };
+        buffer = (buffer << 6) | u16::from(value);
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            decoded.push(((buffer >> bits) & 0xff) as u8);
+        }
+    }
+    decoded
+}
+
 #[expect(
     clippy::default_trait_access,
     reason = "the `IndexMap` type is not a direct dependency of this crate"
@@ -165,7 +203,7 @@ mod canonical_tests {
         assert_eq!(fixture["better_auth"], "1.7.18");
         assert_eq!(fixture["better_call"], "1.4.5");
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 13);
+        assert_eq!(cases.len(), 25);
         for case in cases {
             let mode = case["mode"].as_str().unwrap();
             let content_type = case["content_type"].as_str().unwrap();
@@ -197,6 +235,38 @@ mod canonical_tests {
                 "{mode}"
             );
             assert_eq!(request.body, Some(bytes), "{mode}: mutated source bytes");
+            let files = request
+                .extensions()
+                .get::<alibi_core::types::MultipartFiles>();
+            let expected_files = case["files"].as_object().unwrap();
+            assert_eq!(
+                files.as_ref().map_or(0, |files| files.0.len()),
+                expected_files.len(),
+                "{mode}"
+            );
+            for (name, expected) in expected_files {
+                let actual = &files.as_ref().unwrap().0[name.require_str().unwrap()];
+                assert_eq!(
+                    actual.filename,
+                    expected["filename"].as_str().unwrap(),
+                    "{mode}"
+                );
+                assert_eq!(
+                    actual.content_type.as_deref(),
+                    expected["content_type"].as_str(),
+                    "{mode}"
+                );
+                assert_eq!(
+                    actual.bytes,
+                    expected["bytes"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|value| u8::try_from(value.as_u64().unwrap()).unwrap())
+                        .collect::<Vec<_>>(),
+                    "{mode}"
+                );
+            }
         }
     }
 }

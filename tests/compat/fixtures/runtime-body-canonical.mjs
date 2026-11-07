@@ -21,13 +21,40 @@ const inputs = [
   ["multipart-text", "multipart/form-data; boundary=canonical", Buffer.from("--canonical\r\nContent-Disposition: form-data; name=\"name\"\r\n\r\nAda\r\n--canonical--\r\n")],
   ["multipart-prototype-key", "multipart/form-data; boundary=canonical", Buffer.from("--canonical\r\nContent-Disposition: form-data; name=\"__proto__\"\r\n\r\nignored\r\n--canonical\r\nContent-Disposition: form-data; name=\"constructor\"\r\n\r\nkept\r\n--canonical--\r\n")],
 ];
+for (const [mode, encoding, value, filename] of [
+  ["multipart-base64-text", "base64", "aGVsbG8="],
+  ["multipart-base64-unpadded", "base64", "aGVsbG8"],
+  ["multipart-base64-forgiving", "base64", "aG V\ts\nbG8$!===ignored"],
+  ["multipart-base64-one-sextet", "base64", "a"],
+  ["multipart-base64-two-sextets", "base64", "ab"],
+  ["multipart-base64-three-sextets", "base64", "abc"],
+  ["multipart-base64-url-alphabet", "base64", "_w"],
+  ["multipart-base64-early-padding", "base64", "a=b"],
+  ["multipart-base64-unicode", "base64", "ŁŇŖųŬŇŸĽ"],
+  ["multipart-base64-case-sensitive", "BASE64", "aGVsbG8="],
+  ["multipart-base64-header-whitespace", " base64\t ", "aGVsbG8="],
+  ["multipart-base64-file", "base64", "AAH+/w==", "binary.dat"],
+]) {
+  inputs.push([mode, "multipart/form-data; boundary=canonical", Buffer.from(
+    '--canonical\r\nContent-Disposition: form-data; name="value"' +
+    (filename === undefined ? "" : `; filename="${filename}"`) +
+    "\r\nContent-Type: application/octet-stream\r\nContent-Transfer-Encoding: " + encoding +
+    "\r\n\r\n" + value + "\r\n--canonical--\r\n"
+  )]);
+}
 const cases = [];
 for (const [mode, content_type, bytes] of inputs) {
   const request = new Request("https://body.test", { method: "POST", headers: { "content-type": content_type }, body: bytes });
   const expected = await getBody(request);
-  cases.push({ mode, content_type, bytes: [...bytes], expected, wire: JSON.stringify(expected) });
+  const files = {};
+  for (const [name, value] of Object.entries(expected)) {
+    if (value instanceof File) {
+      files[name] = { filename: value.name, content_type: value.type, bytes: [...new Uint8Array(await value.arrayBuffer())] };
+    }
+  }
+  cases.push({ mode, content_type, bytes: [...bytes], expected, wire: JSON.stringify(expected), files });
 }
-assert.equal(cases.length, 13);
+assert.equal(cases.length, 25);
 await writeFile(new URL("../../../src/runtime/body_canonical_cases.json", import.meta.url),
   JSON.stringify({ better_auth: auth.version, better_call: pkg.version, cases }) + "\n");
 console.log(cases.length + " actual Better Call" + pkg.version + " body cases under Better Auth" + auth.version);
