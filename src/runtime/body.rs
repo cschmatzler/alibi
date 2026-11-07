@@ -65,10 +65,11 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     } else if base == "application/x-www-form-urlencoded" {
         Some(alibi_core::utils::json::JsValue::Object(
             url::form_urlencoded::parse(body)
+                .filter(|(key, _)| key != "__proto__")
                 .map(|(key, value)| {
                     (
-                        key.into_owned(),
-                        alibi_core::utils::json::JsValue::String(value.into_owned()),
+                        key.into_owned().into(),
+                        alibi_core::utils::json::JsValue::String(value.into_owned().into()),
                     )
                 })
                 .collect(),
@@ -92,7 +93,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
             let value = if string_form_values && filename.is_some() {
-                alibi_core::utils::json::JsValue::String("[object File]".to_owned())
+                alibi_core::utils::json::JsValue::String("[object File]".into())
             } else if let Some(filename) = filename {
                 _ = files.0.insert(
                     name.clone(),
@@ -106,11 +107,13 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             } else {
                 _ = files.0.remove(&name);
                 alibi_core::utils::json::JsValue::String(
-                    String::from_utf8_lossy(&bytes).into_owned(),
+                    String::from_utf8_lossy(&bytes).into_owned().into(),
                 )
             };
-            if let alibi_core::utils::json::JsValue::Object(object) = &mut fields {
-                _ = object.insert(name, value);
+            if name != "__proto__"
+                && let alibi_core::utils::json::JsValue::Object(object) = &mut fields
+            {
+                _ = object.insert(name.into(), value);
             }
         }
         req.extensions().insert(files);
@@ -123,7 +126,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     } else if lower.contains("text/plain") {
         let text = String::from_utf8_lossy(body);
         alibi_core::types::ParsedRequestBody::Value(alibi_core::utils::json::JsValue::String(
-            text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned(),
+            text.strip_prefix('\u{feff}').unwrap_or(&text).into(),
         ))
     } else {
         let kind = if lower.contains("application/octet-stream") {
@@ -148,4 +151,52 @@ pub(in crate::runtime) async fn parse_dispatch_body(
 )]
 fn empty_object() -> alibi_core::utils::json::JsValue {
     alibi_core::utils::json::JsValue::Object(Default::default())
+}
+
+#[cfg(test)]
+mod canonical_tests {
+    use super::parse_dispatch_body;
+    use alibi_core::utils::json;
+    use alibi_core::{AuthRequest, HttpMethod};
+
+    #[tokio::test]
+    async fn canonical_body_decoding_matches_actual_better_call() {
+        let fixture = json::parse_value(include_str!("body_canonical_cases.json")).unwrap();
+        assert_eq!(fixture["better_auth"], "1.7.18");
+        assert_eq!(fixture["better_call"], "1.4.5");
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 13);
+        for case in cases {
+            let mode = case["mode"].as_str().unwrap();
+            let content_type = case["content_type"].as_str().unwrap();
+            let bytes: Vec<u8> = case["bytes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| u8::try_from(value.as_u64().unwrap()).unwrap())
+                .collect();
+            let mut request = AuthRequest::new(HttpMethod::Post, "/body");
+            request
+                .headers
+                .insert("content-type".into(), content_type.into());
+            request.body = Some(bytes.clone());
+            parse_dispatch_body(&request, &[])
+                .await
+                .unwrap_or_else(|error| panic!("{mode}: {error}"));
+            let parsed = request
+                .extensions()
+                .get::<alibi_core::types::ParsedRequestBody>()
+                .unwrap();
+            let alibi_core::types::ParsedRequestBody::Value(value) = parsed.as_ref() else {
+                panic!("{mode}: expected a parsed canonical value");
+            };
+            assert_eq!(value, &case["expected"], "{mode}");
+            assert_eq!(
+                json::to_string(value).unwrap(),
+                case["wire"].as_str().unwrap(),
+                "{mode}"
+            );
+            assert_eq!(request.body, Some(bytes), "{mode}: mutated source bytes");
+        }
+    }
 }

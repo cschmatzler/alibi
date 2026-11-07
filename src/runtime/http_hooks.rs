@@ -245,24 +245,123 @@ pub(super) fn apply_http_endpoint_input(
             .insert(alibi_core::types::ParsedRequestBody::Value(body.clone()));
     }
     if let Some(alibi_core::utils::json::JsValue::Object(query)) = call.query() {
-        request.set_query_pairs(query.iter().flat_map(|(name, value)| {
+        let mut pairs = Vec::new();
+        for (name, value) in query {
             let values = match value {
-                alibi_core::utils::json::JsValue::Array(values) => values.clone(),
-                value => vec![value.clone()],
+                alibi_core::utils::json::JsValue::Array(values) => values.as_slice(),
+                value => std::slice::from_ref(value),
             };
-            values.into_iter().map(|value| {
-                (
-                    name.clone(),
-                    match value {
-                        alibi_core::utils::json::JsValue::String(value) => value,
-                        value => alibi_core::utils::json::to_string(&value).unwrap_or_default(),
-                    },
-                )
-            })
-        }));
+            for value in values {
+                let value = match value {
+                    alibi_core::utils::json::JsValue::String(value) => {
+                        value.require_str()?.to_owned()
+                    }
+                    value => alibi_core::utils::json::to_string(value)?,
+                };
+                pairs.push((name.require_str()?.to_owned(), value));
+            }
+        }
+        request.set_query_pairs(pairs);
     }
     request.extensions().insert(frame);
     Ok(())
+}
+
+#[cfg(test)]
+mod canonical_tests {
+    use super::{HttpEndpointFrame, apply_http_endpoint_input};
+    use alibi_core::endpoint::{EndpointCall, EndpointDefinition, EndpointOptions};
+    use alibi_core::utils::json::{JsObject, JsString, JsValue};
+    use alibi_core::{AuthRequest, HttpMethod};
+    use std::sync::{Arc, Mutex};
+
+    fn request(query: JsObject) -> AuthRequest {
+        let definition = EndpointDefinition {
+            name: "canonical-query",
+            operation_id: "canonicalQuery",
+            path: Some("/query".into()),
+            method: HttpMethod::Get,
+        };
+        let call = EndpointCall::new(
+            &definition,
+            None,
+            Some(JsValue::Object(query)),
+            EndpointOptions::default(),
+        );
+        let mut request = AuthRequest::new(HttpMethod::Get, "/query");
+        request.set_query_pairs([("original", "retained")]);
+        request.extensions().insert(HttpEndpointFrame {
+            outer: call.clone(),
+            call,
+            path_patch: None,
+            header_patch: None,
+            legacy_headers: None,
+            error: Arc::new(Mutex::new(None)),
+            returned_response: Arc::new(Mutex::new(None)),
+        });
+        request
+    }
+
+    #[test]
+    fn canonical_query_mirror_retains_repeats_and_existing_json_projection() {
+        let query = [
+            (
+                "tag".into(),
+                JsValue::Array(vec![
+                    JsValue::String("a".into()),
+                    JsValue::String("b".into()),
+                ]),
+            ),
+            ("unicode".into(), JsValue::String("é".into())),
+            ("number".into(), JsValue::Number(42.0)),
+            (
+                "object".into(),
+                JsValue::Object([("value".into(), JsValue::Bool(false))].into()),
+            ),
+        ]
+        .into();
+        let mut request = request(query);
+        apply_http_endpoint_input(&mut request).unwrap();
+        assert_eq!(request.query_values("tag").unwrap(), ["a", "b"]);
+        assert_eq!(request.query.get("unicode").map(String::as_str), Some("é"));
+        assert_eq!(request.query.get("number").map(String::as_str), Some("42"));
+        assert_eq!(
+            request.query.get("object").map(String::as_str),
+            Some(r#"{"value":false}"#)
+        );
+        assert!(!request.query.contains_key("original"));
+    }
+
+    #[test]
+    fn unsupported_query_projection_errors_without_empty_or_replacement_values() {
+        for (name, value) in [
+            (
+                JsString::from_code_units(vec![0xd800]),
+                JsValue::String("value".into()),
+            ),
+            (
+                "name".into(),
+                JsValue::String(JsString::from_code_units(vec![0xdfff])),
+            ),
+            ("name".into(), JsValue::Undefined),
+        ] {
+            let mut request = request(
+                [
+                    (
+                        "preceding".into(),
+                        JsValue::String("not partially written".into()),
+                    ),
+                    (name, value),
+                ]
+                .into(),
+            );
+            assert!(apply_http_endpoint_input(&mut request).is_err());
+            assert_eq!(
+                request.query,
+                [("original".into(), "retained".into())].into()
+            );
+        }
+    }
 }
 
 fn ordinary_http_hook_error(error: AuthError) -> AuthError {
