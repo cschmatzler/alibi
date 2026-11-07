@@ -233,6 +233,7 @@ impl<S: AuthSchema> AuthContext<S> {
                         .is_none_or(|field| field.returned)
                 });
             }
+            self.filter_disabled_user_fields(&mut view);
             return Ok(view);
         }
         let mut view = if include_metadata {
@@ -387,7 +388,38 @@ impl<S: AuthSchema> AuthContext<S> {
                 }
             }
         }
+        self.filter_disabled_user_fields(&mut view);
         Ok(view)
+    }
+
+    fn filter_disabled_user_fields(&self, view: &mut UserView) {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        for (feature, names) in [
+            ("username.enabled", &["username", "displayUsername"][..]),
+            ("two_factor.enabled", &["twoFactorEnabled"][..]),
+            (
+                "admin.enabled",
+                &["role", "banned", "banReason", "banExpires"][..],
+            ),
+            ("anonymous.enabled", &["isAnonymous"][..]),
+            (
+                "phone-number.enabled",
+                &["phoneNumber", "phoneNumberVerified"][..],
+            ),
+            ("last-login-method.enabled", &["lastLoginMethod"][..]),
+        ] {
+            if !self.feature_enabled(feature) {
+                for name in names {
+                    if !fields.contains_key(*name) {
+                        _ = view.extension_fields.shift_remove(*name);
+                        _ = view.omitted_fields.insert((*name).into());
+                    }
+                }
+            }
+        }
     }
 
     /// Retain configured output for an already authenticated physical user.

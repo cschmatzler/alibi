@@ -177,6 +177,7 @@ impl<S: AuthSchema> PluginStore<S> {
         source.retain_native_output(scalars.clone());
         let projected = self.projection_context.user_adapter_record(source).await?;
         let mut output = projected.raw_snapshot().clone();
+        let fields = self.field_policies();
         for field in [
             "emailVerified",
             "banned",
@@ -187,7 +188,11 @@ impl<S: AuthSchema> PluginStore<S> {
             "updatedAt",
             "banExpires",
         ] {
-            if scalars.field_is_undefined(field) && !output.contains_field(field) {
+            if scalars.field_is_undefined(field)
+                && !output.contains_field(field)
+                && (matches!(field, "emailVerified" | "createdAt" | "updatedAt")
+                    || fields.user.0.contains_key(field))
+            {
                 output.insert(field.into(), None);
             }
         }
