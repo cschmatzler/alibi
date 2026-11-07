@@ -56,6 +56,15 @@ impl JsonMetadata {
         }
     }
 
+    pub(crate) fn to_plain_value(&self) -> Result<JsValue, serde_json::Error> {
+        match (&self.0, &self.1) {
+            (JsValue::String(text), JsonBinding::Read | JsonBinding::Prepared) => {
+                json::parse_js_value(text)
+            }
+            _ => Ok(self.0.clone()),
+        }
+    }
+
     fn prepared(self, backend: Engine) -> Result<Self, serde_json::Error> {
         if backend == Engine::Sqlite && !matches!(self.1, JsonBinding::Native) {
             return Ok(self);

@@ -90,10 +90,11 @@ mod tests {
     #[tokio::test]
     async fn prepared_metadata_replacement_persists_the_edited_value() {
         use alibi::seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
-        use alibi::seaorm::store::entities::organization;
         use alibi::seaorm::{JsonMetadata, json_metadata::MetadataBinding};
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        alibi::seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        let schema = alibi::seaorm::sea_orm::Schema::new(DbBackend::Sqlite);
+        _ = db
+            .execute(&schema.create_table_from_entity(custom_user::Entity))
             .await
             .unwrap();
         let prepared = JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20}))
@@ -113,22 +114,22 @@ mod tests {
             .unwrap()
             .prepare(DbBackend::Sqlite)
             .unwrap();
-        let inserted = organization::ActiveModel {
+        let inserted = custom_user::ActiveModel {
             id: Set("prepared-metadata".into()),
-            name: Set("Prepared".into()),
-            slug: Set("prepared-metadata".into()),
-            logo: Set(None),
-            metadata: Set(Some(prepared_2)),
+            name: Set(Some("Prepared".into())),
+            email: Set(None),
+            email_verified: Set(false),
+            image: Set(None),
+            metadata: Set(prepared_2),
             created_at: Set(chrono::Utc::now()),
+            updated_at: Set(chrono::Utc::now()),
+            tenant: Set(None),
         }
         .insert(&db)
         .await
         .unwrap();
-        assert_eq!(
-            inserted.metadata.as_ref().unwrap().to_js_value()["version"],
-            "edited"
-        );
-        let mut value_2 = inserted.metadata.as_ref().unwrap().to_js_value();
+        assert_eq!(inserted.metadata.to_js_value()["version"], "edited");
+        let mut value_2 = inserted.metadata.to_js_value();
         drop(
             value_2
                 .as_object_mut()
@@ -139,21 +140,16 @@ mod tests {
                 ),
         );
         let mut active = inserted.into_active_model();
-        active.metadata = Set(Some(
-            JsonMetadata::try_from(value_2)
-                .unwrap()
-                .prepare(DbBackend::Sqlite)
-                .unwrap(),
-        ));
+        active.metadata = Set(JsonMetadata::try_from(value_2)
+            .unwrap()
+            .prepare(DbBackend::Sqlite)
+            .unwrap());
         let updated = active.update(&db).await.unwrap();
-        assert_eq!(
-            updated.metadata.as_ref().unwrap().to_js_value()["version"],
-            "updated"
-        );
+        assert_eq!(updated.metadata.to_js_value()["version"], "updated");
         let row = db
             .query_one_raw(Statement::from_sql_and_values(
                 DbBackend::Sqlite,
-                "SELECT \"metadata\" FROM \"organization\" WHERE id = ?",
+                "SELECT \"metadata\" FROM \"custom_metadata_users\" WHERE id = ?",
                 ["prepared-metadata".into()],
             ))
             .await

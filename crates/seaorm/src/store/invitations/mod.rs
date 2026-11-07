@@ -255,8 +255,23 @@ where
         expected: InvitationStatus,
         status: InvitationStatus,
     ) -> AuthResult<Option<Invitation>> {
-        // Returning the actual changed row is part of this atomic public contract.
-        // Fail before mutation on a backend without supported RETURNING semantics.
+        let query = Entity::update_many()
+            .filter(Column::Id.eq(id))
+            .filter(Column::Status.eq(expected.to_string()))
+            .col_expr(
+                Column::Status,
+                sea_orm::sea_query::Expr::value(status.to_string()),
+            );
+        if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::MySql {
+            return super::mysql_snapshot::update(
+                self.scoped_connection(),
+                Entity::find_by_id(id).filter(Column::Status.eq(expected.to_string())),
+                Entity::find_by_id(id),
+                query,
+            )
+            .await
+            .map(|row| row.as_ref().map(Invitation::from));
+        }
         if !matches!(
             self.scoped_connection().get_database_backend(),
             sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
@@ -265,13 +280,7 @@ where
                 "Conditional invitation updates require RETURNING support".into(),
             ));
         }
-        Entity::update_many()
-            .filter(Column::Id.eq(id))
-            .filter(Column::Status.eq(expected.to_string()))
-            .col_expr(
-                Column::Status,
-                sea_orm::sea_query::Expr::value(status.to_string()),
-            )
+        query
             .exec_with_returning(self.scoped_connection())
             .await
             .map(|rows| rows.first().map(Invitation::from))

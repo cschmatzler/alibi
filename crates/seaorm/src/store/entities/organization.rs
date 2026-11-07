@@ -1,4 +1,3 @@
-pub use crate::json_metadata::JsonMetadata;
 use sea_orm::entity::prelude::*;
 
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
@@ -9,8 +8,8 @@ pub struct Model {
     pub name: String,
     pub slug: String,
     pub logo: Option<String>,
-    #[sea_orm(column_type = "Text", save_as = "text")]
-    pub metadata: Option<JsonMetadata>,
+    #[sea_orm(column_type = "Text")]
+    pub metadata: Option<String>,
     #[sea_orm(column_name = "createdAt")]
     pub created_at: DateTimeUtc,
 }

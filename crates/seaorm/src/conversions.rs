@@ -15,7 +15,7 @@ impl From<&entities::organization::Model> for Organization {
             metadata: model
                 .metadata
                 .as_ref()
-                .map(alibi_core::utils::json::JsValue::from),
+                .map(|text| alibi_core::utils::json::parse_adapter_string(&text.clone().into())),
             created_at: model.created_at,
         }
     }

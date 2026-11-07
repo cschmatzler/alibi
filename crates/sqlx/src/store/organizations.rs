@@ -61,11 +61,18 @@ where
             .organization
             .set_fields(self.exec(), &mut active, &mut org.additional_fields)
             .await?;
-        self.organization_models
+        let model = self
+            .organization_models
             .organization
             .insert(self.exec(), &active)
-            .await
-            .map(|model| Organization::from(&model))
+            .await?;
+        let mut organization = Organization::from(&model);
+        organization.metadata = model
+            .metadata
+            .as_ref()
+            .map(JsonMetadata::to_plain_value)
+            .transpose()?;
+        Ok(organization)
     }
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {

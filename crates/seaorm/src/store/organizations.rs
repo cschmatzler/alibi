@@ -1,4 +1,4 @@
-use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
+use super::entities::organization::{ActiveModel, Column, Entity, Model};
 use super::{SeaOrmStore, entities, map_db_err};
 use crate::schema::AuthSchema;
 use alibi_core::error::AuthResult;
@@ -7,7 +7,7 @@ use alibi_core::{CreateOrganization, Organization, UpdateOrganization};
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, FromQueryResult,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DbErr, EntityTrait, FromQueryResult,
     IntoActiveModel, Iterable, QueryFilter, QuerySelect, Set, StatementBuilder, TransactionTrait,
 };
 use std::collections::HashMap;
@@ -22,14 +22,9 @@ where
         let now = Utc::now();
         let metadata = org
             .metadata
-            .map(|metadata| {
-                JsonMetadata::for_backend(
-                    alibi_core::utils::json::to_js_value(&metadata)?,
-                    self.scoped_connection().get_database_backend(),
-                )
-            })
+            .map(|metadata| alibi_core::utils::json::to_string(&metadata))
             .transpose()?;
-        ActiveModel {
+        let model = ActiveModel {
             id: Set(match org.id {
                 Some(id) => id,
                 None => self
@@ -45,8 +40,14 @@ where
         }
         .insert(self.scoped_connection())
         .await
-        .map(|model| Organization::from(&model))
-        .map_err(map_db_err)
+        .map_err(map_db_err)?;
+        let mut organization = Organization::from(&model);
+        organization.metadata = model
+            .metadata
+            .as_deref()
+            .map(alibi_core::utils::json::parse_value)
+            .transpose()?;
+        Ok(organization)
     }
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
@@ -94,11 +95,7 @@ where
             ));
         };
 
-        let active = apply_organization_update(
-            model,
-            update,
-            self.scoped_connection().get_database_backend(),
-        )?;
+        let active = apply_organization_update(model, update)?;
 
         active
             .update(self.scoped_connection())
@@ -126,10 +123,7 @@ where
             _ = query.value(Column::Logo, logo);
         }
         if let Some(metadata) = update.metadata {
-            let metadata = JsonMetadata::for_backend(
-                alibi_core::utils::json::to_js_value(&metadata)?,
-                backend,
-            )?;
+            let metadata = alibi_core::utils::json::to_string(&metadata)?;
             _ = query.value(Column::Metadata, metadata);
         }
         if self.scoped_connection().support_returning() {
@@ -163,11 +157,7 @@ where
         else {
             return Ok(None);
         };
-        let active = apply_organization_update(
-            model,
-            update,
-            self.scoped_connection().get_database_backend(),
-        )?;
+        let active = apply_organization_update(model, update)?;
         match active.update(self.scoped_connection()).await {
             Ok(model) => Ok(Some(Organization::from(&model))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
@@ -228,11 +218,7 @@ where
     }
 }
 
-fn apply_organization_update(
-    model: Model,
-    update: UpdateOrganization,
-    backend: DbBackend,
-) -> AuthResult<ActiveModel> {
+fn apply_organization_update(model: Model, update: UpdateOrganization) -> AuthResult<ActiveModel> {
     let mut active = model.into_active_model();
     if let Some(name) = update.name {
         active.name = Set(name);
@@ -244,10 +230,7 @@ fn apply_organization_update(
         active.logo = Set(logo);
     }
     if let Some(metadata) = update.metadata {
-        active.metadata = Set(Some(JsonMetadata::for_backend(
-            alibi_core::utils::json::to_js_value(&metadata)?,
-            backend,
-        )?));
+        active.metadata = Set(Some(alibi_core::utils::json::to_string(&metadata)?));
     }
 
     Ok(active)
