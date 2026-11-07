@@ -577,7 +577,7 @@ fn legacy_user() -> OAuthUserInfo {
         name: Some("Legacy mapped".into()),
         image: None,
         email_verified: false,
-        additional_fields: Default::default(),
+        additional_fields: [("image".into(), alibi::utils::json::JsValue::Undefined)].into(),
     }
 }
 fn legacy_atlassian(
