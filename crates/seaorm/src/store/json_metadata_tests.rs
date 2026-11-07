@@ -40,6 +40,120 @@ use std::sync::{
 };
 
 #[tokio::test]
+async fn adapter_input_undefined_defaults_and_updates_reach_actual_sqlite_cells() {
+    use alibi_core::UpdateUser;
+    use alibi_core::store::UserStore;
+    use sea_orm::ConnectionTrait;
+    let db = sea_orm::Database::connect("sqlite::memory:").await.unwrap();
+    super::migrator::run_migrations(&db).await.unwrap();
+    _ = db
+        .execute_unprepared("ALTER TABLE user ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
+        .await
+        .unwrap();
+
+    for (label, on_update) in [("enabled", true), ("disabled", false)] {
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let inputs = Arc::new(Mutex::new(Vec::new()));
+        let mut config = AuthConfig::default();
+        let default_events = events.clone();
+        let mut field =
+            alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                .default_callback(move || {
+                    default_events.lock().unwrap().push("default");
+                    JsValue::String("default".into())
+                });
+        if on_update {
+            let update_events = events.clone();
+            field = field.on_update(move || {
+                update_events.lock().unwrap().push("update");
+                JsValue::String("updated".into())
+            });
+        }
+        let transform_events = events.clone();
+        let transform_inputs = inputs.clone();
+        field = field.transform_adapter_input(move |value| {
+            transform_events.lock().unwrap().push("input");
+            transform_inputs.lock().unwrap().push(value.clone());
+            async move { Ok(value) }
+        });
+        _ = config.user.additional_fields.insert("image".into(), field);
+        let config = Arc::new(config);
+        let inner = Arc::new(super::SeaOrmStore::<Schema>::new(
+            (*config).clone(),
+            db.clone(),
+        ));
+        let store = alibi_core::AuthInitContext::new(config, inner.clone())
+            .database_with_registered_transforms();
+        let mut input = CreateUser::new()
+            .with_email(format!("{label}@fixture.test"))
+            .with_name("fixture");
+        _ = input
+            .additional_fields
+            .insert("image".into(), JsValue::Undefined);
+        let user = store.create_user(input).await.unwrap();
+        let id = user.id().into_owned();
+        assert_eq!(user.image(), Some("default"));
+        assert_eq!(*events.lock().unwrap(), ["default", "input"]);
+        assert_eq!(
+            *inputs.lock().unwrap(),
+            [Some(JsValue::String("default".into()))]
+        );
+
+        for (value, expected) in [
+            (
+                None,
+                if on_update {
+                    Some("updated")
+                } else {
+                    Some("default")
+                },
+            ),
+            (
+                Some(JsValue::Undefined),
+                if on_update {
+                    Some("updated")
+                } else {
+                    Some("default")
+                },
+            ),
+            (Some(JsValue::Null), None),
+            (Some(JsValue::String("".into())), Some("")),
+            (Some(JsValue::String("supplied".into())), Some("supplied")),
+        ] {
+            events.lock().unwrap().clear();
+            inputs.lock().unwrap().clear();
+            let mut update = UpdateUser::default();
+            if let Some(value) = value.clone() {
+                _ = update.additional_fields.insert("image".into(), value);
+            }
+            let user = store.update_user(&id, update).await.unwrap();
+            assert_eq!(user.image(), expected);
+            assert_eq!(
+                inner.get_user_by_id(&id).await.unwrap().unwrap().image(),
+                expected,
+            );
+            let missing = value.as_ref().is_none_or(JsValue::is_undefined);
+            let expected_events: &[&str] = if missing {
+                if on_update { &["update", "input"] } else { &[] }
+            } else {
+                &["input"]
+            };
+            assert_eq!(*events.lock().unwrap(), expected_events);
+            let expected_inputs: Vec<_> = if missing {
+                if on_update {
+                    vec![Some(JsValue::String("updated".into()))]
+                } else {
+                    vec![]
+                }
+            } else {
+                vec![value]
+            };
+            assert_eq!(*inputs.lock().unwrap(), expected_inputs);
+        }
+    }
+}
+
+#[tokio::test]
 async fn initialized_json_output_observes_physical_cell_before_read_codec() {
     let original = {
         let mut value = json::parse_value(r#"{"\ud800":"\udfff","null":null,"$serde_json::private::Number":"literal","alibi::JsValue/v1":"literal"}"#).unwrap();

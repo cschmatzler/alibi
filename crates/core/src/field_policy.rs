@@ -1,4 +1,8 @@
 //! Application and plugin field policies at the session input boundary.
+#[cfg(test)]
+#[path = "field_policy_undefined_tests.rs"]
+mod undefined_tests;
+
 use crate::AdapterOutput;
 use crate::utils::json::JsValue;
 use crate::{AuthError, AuthResult};
@@ -53,7 +57,8 @@ impl FieldValues {
                 if self.prepare_adapter_value(name, field)
                     && let Some(transform) = &field.transform
                 {
-                    let value = transform(self.values.get(name))?;
+                    let value =
+                        transform(self.values.get(name).filter(|value| !value.is_undefined()))?;
                     self.set_adapter_value(name, value);
                 }
             }
@@ -74,11 +79,16 @@ impl FieldValues {
                     continue;
                 }
                 let value = if let Some(transform) = &field.adapter_input_transform {
-                    transform(self.values.get(name).cloned())
-                        .await
-                        .map_err(crate::store::adapter::callback_error)?
+                    transform(
+                        self.values
+                            .get(name)
+                            .filter(|value| !value.is_undefined())
+                            .cloned(),
+                    )
+                    .await
+                    .map_err(crate::store::adapter::callback_error)?
                 } else if let Some(transform) = &field.transform {
-                    transform(self.values.get(name))?
+                    transform(self.values.get(name).filter(|value| !value.is_undefined()))?
                 } else {
                     continue;
                 };
@@ -90,18 +100,27 @@ impl FieldValues {
     }
 
     fn prepare_adapter_value(&mut self, name: &str, field: &FieldConfig) -> bool {
-        if !self.transform_omitted && !self.values.contains_key(name) && field.on_update.is_none() {
+        let undefined = self.values.get(name).is_none_or(JsValue::is_undefined);
+        if undefined
+            && if self.transform_omitted {
+                field.default.is_none()
+                    && field.transform.is_none()
+                    && field.adapter_input_transform.is_none()
+            } else {
+                field.on_update.is_none()
+            }
+        {
             return false;
         }
         if self.transform_omitted
-            && (!self.values.contains_key(name)
+            && (undefined
                 || (field.required && self.values.get(name).is_some_and(JsValue::is_null)))
             && let Some(default) = &field.default
         {
             _ = self.values.insert(name.to_owned(), default.value());
         }
         if !self.transform_omitted
-            && !self.values.contains_key(name)
+            && undefined
             && let Some(update) = &field.on_update
         {
             _ = self.values.insert(name.to_owned(), update());
@@ -119,6 +138,7 @@ impl FieldValues {
         }
     }
     fn finish_adapter_transforms(&mut self) {
+        self.values.retain(|_, value| !value.is_undefined());
         self.undefined_input_keys.clear();
         self.transform_omitted = false;
     }
