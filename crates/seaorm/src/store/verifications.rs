@@ -549,24 +549,42 @@ where
             );
         }
         let backend = self.scoped_connection().get_database_backend();
-        if !matches!(
-            backend,
-            sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
-        ) {
-            return Err(AuthError::NotImplemented(
-                "Verification update snapshots require SQLite or PostgreSQL".into(),
-            ));
-        }
-        let returning = sea_orm::sea_query::Query::returning().exprs(
-            <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
-                .map(|column| column.select_as(column.into_returning_expr(backend))),
-        );
-        _ = QueryTrait::query(&mut query).returning(returning);
-        let model = <S::Verification as SeaOrmVerificationModel>::Entity::find()
-            .from_raw_sql(query.build(backend))
-            .one(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
+        let model = if backend == sea_orm::DbBackend::MySql {
+            if query
+                .exec(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+                .rows_affected
+                == 0
+            {
+                None
+            } else {
+                <S::Verification as SeaOrmVerificationModel>::Entity::find()
+                    .filter(S::Verification::identifier_column().eq(identifier))
+                    .one(self.scoped_connection())
+                    .await
+                    .map_err(map_db_err)?
+            }
+        } else {
+            if !matches!(
+                backend,
+                sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
+            ) {
+                return Err(AuthError::NotImplemented(
+                    "Verification update snapshots do not support this database backend".into(),
+                ));
+            }
+            let returning = sea_orm::sea_query::Query::returning().exprs(
+                <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
+                    .map(|column| column.select_as(column.into_returning_expr(backend))),
+            );
+            _ = QueryTrait::query(&mut query).returning(returning);
+            <S::Verification as SeaOrmVerificationModel>::Entity::find()
+                .from_raw_sql(query.build(backend))
+                .one(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+        };
         let snapshot = model.as_ref().map(VerificationSnapshot::from_model);
         for hook in self.hooks() {
             hook.after_update_verification_record(snapshot.as_ref(), &hook_context)

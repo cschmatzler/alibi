@@ -43,6 +43,8 @@ mod mysql;
 mod mysql_migrations;
 #[cfg(feature = "seaorm-mysql")]
 mod mysql_user_readback;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql_verification_updates;
 mod native_api_keys;
 mod native_device_codes;
 mod native_jwks;

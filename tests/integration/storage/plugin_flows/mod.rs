@@ -52,6 +52,8 @@ mod mysql_workflow;
 mod mysql_mapped_factor;
 #[cfg(feature = "seaorm-mysql")]
 mod mysql_api_key;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql_email_otp;
 mod passkey_presence;
 mod passkey_query;
 mod passkey_raw_optional;
