@@ -2,6 +2,10 @@
 //! Public JSON and typed persistence are kept separate; account identity always
 //! comes from the original provider profile, before application mapping.
 
+#[cfg(test)]
+#[path = "remaining_profile_own_fields_tests.rs"]
+mod own_fields_tests;
+
 use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
 use alibi_core::utils::json::{JsObject as Map, JsString, JsValue as Value};
 use base64::Engine;
@@ -261,9 +265,7 @@ pub(super) fn subject(kind: ProfileKind, profile: &Value) -> Result<JsString, St
 }
 
 fn copy(output: &mut Map, key: &str, value: Option<&Value>) {
-    if let Some(value) = value {
-        _ = output.insert(key.into(), value.clone());
-    }
+    _ = output.insert(key.into(), value.cloned().unwrap_or(Value::Undefined));
 }
 fn or_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Value {
     values
@@ -499,7 +501,6 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     .filter(|value| !value.is_null())
                     .ok_or_else(|| profile_exception("Missing Twitter data"))?;
                 copy(&mut output, "name", data.get("name"));
-                copy(&mut output, "image", data.get("profile_image_url"));
                 _ = output.insert(
                     "email".into(),
                     match data.get("email").filter(|value| truthy(value)) {
@@ -507,6 +508,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                         None => placeholder(data.get("id"), "twitter")?,
                     },
                 );
+                copy(&mut output, "image", data.get("profile_image_url"));
                 _ = output.insert("emailVerified".into(), Value::Bool(twitter_verified));
             }
             ProfileKind::Vercel => {
@@ -541,7 +543,13 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 {
                     return Err("Missing VK email".into());
                 }
-                for field in ["first_name", "last_name", "birthday", "sex"] {
+                for field in ["first_name", "last_name"] {
+                    copy(&mut output, field, user.get(field));
+                }
+                copy(&mut output, "email", user.get("email"));
+                copy(&mut output, "image", user.get("avatar"));
+                _ = output.insert("emailVerified".into(), Value::Bool(false));
+                for field in ["birthday", "sex"] {
                     copy(&mut output, field, user.get(field));
                 }
                 let template =
@@ -560,14 +568,11 @@ impl OAuthUserInfoHandler for PublishedProfile {
                             .concat(&template(user.get("last_name"))?),
                     ),
                 );
-                copy(&mut output, "email", user.get("email"));
-                copy(&mut output, "image", user.get("avatar"));
-                _ = output.insert("emailVerified".into(), Value::Bool(false));
             }
             ProfileKind::Zoom => {
                 copy(&mut output, "name", profile.get("display_name"));
-                copy(&mut output, "email", profile.get("email"));
                 copy(&mut output, "image", profile.get("pic_url"));
+                copy(&mut output, "email", profile.get("email"));
                 _ = output.insert(
                     "emailVerified".into(),
                     Value::Bool(profile.get("verified").is_some_and(truthy)),
