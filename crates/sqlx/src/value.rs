@@ -134,7 +134,7 @@ pub enum ColumnKind {
     BigInt,
     /// `bool` columns.
     Boolean,
-    /// Timestamps, bytes, UUIDs and custom values: bound unchanged.
+    /// Bytes, UUIDs and custom values: bound unchanged.
     Other,
     /// Timezone-aware timestamps, bound as PostgreSQL `TIMESTAMPTZ`.
     Timestamp,

@@ -119,6 +119,7 @@ mod user_defaults;
 mod user_lifecycle;
 mod user_management_matrix;
 mod user_output_schema;
+mod user_output_precedence;
 mod user_update_hook_patches;
 mod verification_cache;
 
