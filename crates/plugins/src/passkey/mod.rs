@@ -519,11 +519,489 @@ impl std::fmt::Debug for PasskeyPlugin {
 
 // LCOV_EXCL_START
 #[cfg(test)]
-mod canonical_input_tests;
+mod canonical_input_tests {
+    use super::endpoint::{definitions, validate};
+    use alibi_core::endpoint::{EndpointCall, EndpointOptions};
+    use alibi_core::utils::json::{self, JsValue};
+    use validator::Validate;
+
+    fn assert_source_inputs(operation: &str, expected_cases: usize) {
+        let fixture = json::parse_value(include_str!("canonical_input_cases.json")).unwrap();
+        assert_eq!(fixture["better_auth"], "1.7.18");
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 36);
+        let operation_id = if operation == "registration" {
+            "passkeyVerifyRegistration"
+        } else {
+            "updatePasskey"
+        };
+        let definition = definitions()
+            .into_iter()
+            .find(|definition| definition.operation_id == operation_id)
+            .unwrap();
+        let mut matched = 0;
+        for case in cases
+            .iter()
+            .filter(|case| case["operation"].as_str() == Some(operation))
+        {
+            matched += 1;
+            let mode = case["mode"].as_str().unwrap();
+            let mut input = case["input"].as_object().unwrap().clone();
+            for key in case["input_undefined"].as_array().unwrap() {
+                _ = input.insert(key.as_js_string().unwrap().clone(), JsValue::Undefined);
+            }
+            let call = EndpointCall::new(
+                &definition,
+                Some(JsValue::Object(input)),
+                None,
+                EndpointOptions::default(),
+            );
+            let result = validate(&call);
+            if !case["success"].as_bool().unwrap() {
+                let alibi_core::AuthError::Api {
+                    status, message, ..
+                } = result.unwrap_err()
+                else {
+                    panic!("{operation}/{mode}: expected a validation error");
+                };
+                assert_eq!(status, 400);
+                assert_eq!(
+                    message,
+                    case["error"].as_str().unwrap(),
+                    "{operation}/{mode}"
+                );
+                continue;
+            }
+            let body = result
+                .unwrap_or_else(|error| panic!("{operation}/{mode}: {error}"))
+                .body
+                .unwrap();
+            let mut expected = case["expected"].as_object().unwrap().clone();
+            for key in case["undefined"].as_array().unwrap() {
+                _ = expected.insert(key.as_js_string().unwrap().clone(), JsValue::Undefined);
+            }
+            assert_eq!(body, JsValue::Object(expected), "{operation}/{mode}");
+            let keys = JsValue::Array(
+                body.as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .map(JsValue::String)
+                    .collect(),
+            );
+            assert_eq!(keys, case["keys"], "{operation}/{mode}");
+            assert_eq!(
+                json::to_string(&body).unwrap(),
+                case["wire"].as_str().unwrap(),
+                "{operation}/{mode}"
+            );
+            if operation == "registration" {
+                let request: super::types::VerifyRegistrationRequest =
+                    json::from_value(body).unwrap();
+                request
+                    .validate()
+                    .unwrap_or_else(|error| panic!("{operation}/{mode}: {error}"));
+            } else {
+                let request: super::types::UpdatePasskeyRequest = json::from_value(body)
+                    .unwrap_or_else(|error| panic!("{operation}/{mode}: {error}"));
+                request.validate().unwrap();
+            }
+        }
+        assert_eq!(matched, expected_cases);
+    }
+
+    #[test]
+    fn canonical_registration_input_matches_actual_source_schema() {
+        assert_source_inputs("registration", 25);
+    }
+
+    #[test]
+    fn canonical_update_input_matches_actual_source_schema() {
+        assert_source_inputs("update", 11);
+    }
+
+    #[test]
+    fn canonical_public_rename_output_keeps_utf16() {
+        let value = json::parse_value(r#"{"passkey":{"name":"\ud800"}}"#).unwrap();
+        let output: super::endpoint::PasskeyUpdated = json::from_value(value.clone()).unwrap();
+        assert_eq!(
+            json::to_js_value(&output.passkey).unwrap(),
+            value["passkey"]
+        );
+    }
+
+    #[tokio::test]
+    async fn canonical_passkey_optional_fields_keep_memory_undefined() {
+        let fixture = json::parse_value(include_str!(
+            "../../../core/src/store/passkey_field_presence_cases.json"
+        ))
+        .unwrap();
+        let source = fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|case| case["mode"] == "absent" && case["backend"] == "memory")
+            .unwrap();
+        let store = alibi_core::store::stateless::StatelessStore::default();
+        use alibi_core::store::PasskeyStore;
+        let row = store
+            .create_passkey(alibi_core::CreatePasskey {
+                user_id: "owner".into(),
+                name: JsValue::Undefined,
+                credential_id: "credential".into(),
+                public_key: "public".into(),
+                counter: 0,
+                device_type: "singleDevice".into(),
+                backed_up: false,
+                transports: JsValue::Undefined,
+                created_at: JsValue::Undefined,
+                aaguid: JsValue::Undefined,
+            })
+            .await
+            .unwrap();
+        let output = json::to_js_value(&alibi_core::wire::PasskeyView::from(&row)).unwrap();
+        for field in source["undefined"].as_array().unwrap() {
+            assert_eq!(
+                output.get(field.as_str().unwrap()),
+                Some(&JsValue::Undefined),
+                "{}",
+                field.as_str().unwrap()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn canonical_passkey_names_survive_memory_rename_and_list() {
+        use super::handlers::{
+            PasskeyHandlerOutcome, list_user_passkeys_core, update_passkey_core,
+        };
+        let fixture = json::parse_value(include_str!(
+            "../../../core/src/store/passkey_name_cases.json"
+        ))
+        .unwrap();
+        let ctx = alibi_core::AuthContext::<alibi_core::store::stateless::StatelessSchema>::new(
+            std::sync::Arc::new(crate::test_helpers::create_test_config()),
+            std::sync::Arc::new(alibi_core::store::stateless::StatelessStore::default()),
+        );
+        let user = ctx
+            .database
+            .create_user(alibi_core::CreateUser::new().with_email("passkey-names@test"))
+            .await
+            .unwrap();
+        let mut count = 0;
+        for case in fixture["cases"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|case| case["backend"] == "memory")
+        {
+            count += 1;
+            let created = ctx
+                .database
+                .create_passkey(alibi_core::CreatePasskey {
+                    user_id: user.id.clone(),
+                    name: case["registration"].clone(),
+                    credential_id: case["mode"].as_str().unwrap().into(),
+                    public_key: "public".into(),
+                    counter: 0,
+                    device_type: "singleDevice".into(),
+                    backed_up: false,
+                    transports: JsValue::Undefined,
+                    created_at: JsValue::Date(chrono::DateTime::from_timestamp_millis(0).unwrap()),
+                    aaguid: JsValue::Undefined,
+                })
+                .await
+                .unwrap();
+            assert_eq!(
+                json::to_js_value(&alibi_core::wire::PasskeyView::from(&created)).unwrap()["name"],
+                case["create"]
+            );
+            let request: super::types::UpdatePasskeyRequest = json::from_value(JsValue::Object(
+                [
+                    ("id".into(), JsValue::String(created.id.clone().into())),
+                    ("name".into(), case["update_input"].clone()),
+                ]
+                .into(),
+            ))
+            .unwrap();
+            let PasskeyHandlerOutcome::Success(renamed) =
+                update_passkey_core(&request, &user, &ctx).await.unwrap()
+            else {
+                panic!("rename rejected")
+            };
+            assert_eq!(
+                json::to_js_value(&renamed).unwrap()["passkey"]["name"],
+                case["rename"]
+            );
+            let listed = list_user_passkeys_core(&user, &ctx).await.unwrap();
+            assert_eq!(
+                listed
+                    .iter()
+                    .find(|row| row["id"] == created.id.as_str())
+                    .unwrap()["name"],
+                case["list"]
+            );
+            let wire = json::to_string(&listed).unwrap();
+            let expected_wire = JsValue::Array(
+                listed
+                    .into_iter()
+                    .map(|mut row| {
+                        let fields = row.as_object_mut().unwrap();
+                        assert_eq!(fields.shift_remove("transports"), Some(JsValue::Undefined));
+                        assert_eq!(fields.shift_remove("aaguid"), Some(JsValue::Undefined));
+                        assert_eq!(
+                            fields["createdAt"],
+                            JsValue::Date(chrono::DateTime::from_timestamp_millis(0).unwrap())
+                        );
+                        _ = fields.insert(
+                            "createdAt".into(),
+                            JsValue::String("1970-01-01T00:00:00.000Z".into()),
+                        );
+                        row
+                    })
+                    .collect(),
+            );
+            assert_eq!(json::parse_value(&wire).unwrap(), expected_wire);
+            let stored = ctx
+                .database
+                .get_passkey_by_id(&created.id)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(stored.name, case["list"]);
+        }
+        assert_eq!(count, 6);
+    }
+}
 
 #[cfg(test)]
 mod tests {
-    mod revocation;
+    mod revocation {
+        //! Real CRL delivery must affect enrollment before any credential is committed.
+        #![allow(
+            clippy::indexing_slicing,
+            reason = "Independent ceremony fixtures have asserted JSON and byte shapes"
+        )]
+        use super::*;
+        use openssl::{
+            asn1::Asn1Time,
+            bn::BigNum,
+            ec::{EcGroup, EcKey},
+            hash::MessageDigest,
+            nid::Nid,
+            pkey::PKey,
+            sign::Signer,
+            x509::{X509, X509Extension, X509NameBuilder, extension::BasicConstraints},
+        };
+        use serde_cbor_2::Value as Cbor;
+        use sha2::{Digest, Sha256};
+        use std::{
+            collections::BTreeMap,
+            sync::{
+                Arc,
+                atomic::{AtomicUsize, Ordering},
+            },
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        #[tokio::test]
+        #[expect(
+            clippy::panic_in_result_fn,
+            reason = "Assert ceremony and persistence contracts while propagating fixture setup errors"
+        )]
+        async fn delivered_crl_rejects_revoked_attestation_without_persisting_credentials()
+        -> Result<(), Box<dyn std::error::Error>> {
+            let root_pem =
+                include_str!("../../../../tests/compat/fixtures/passkey-attestation/ca.pem");
+            let root = X509::from_pem(root_pem.as_bytes())?;
+            let root_key = PKey::private_key_from_pem(include_bytes!(
+                "../../../../tests/compat/fixtures/passkey-attestation/ca-key.pem"
+            ))?;
+            let crl =
+                include_bytes!("../../../../tests/compat/fixtures/passkey-attestation/revoked.der");
+            for (mode, serial, expected) in [
+                ("revoked", 42, 400),
+                ("allowed", 43, 200),
+                ("malformed", 42, 200),
+                ("http-error-valid-crl", 42, 400),
+                ("unavailable", 42, 200),
+            ] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+                let uri = format!("http://{}/revocation.der", listener.local_addr()?);
+                let delivered = Arc::new(AtomicUsize::new(0));
+                let count = delivered.clone();
+                let server = tokio::spawn(async move {
+                    loop {
+                        let (mut socket, _) = listener.accept().await.unwrap();
+                        let mut request = [0_u8; 4096];
+                        let size = socket.read(&mut request).await.unwrap();
+                        assert!(request[..size].starts_with(b"GET /revocation.der HTTP/1.1"));
+                        count.fetch_add(1, Ordering::SeqCst);
+                        if mode == "unavailable" {
+                            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 999\r\nConnection: close\r\n\r\ntruncated").await.unwrap();
+                            continue;
+                        }
+                        let bytes = if mode == "malformed" {
+                            b"not a DER CRL".as_slice()
+                        } else {
+                            crl.as_slice()
+                        };
+                        let status = if mode == "http-error-valid-crl" {
+                            "503 Unavailable"
+                        } else {
+                            "200 OK"
+                        };
+                        let header = format!(
+                            "HTTP/1.1 {status}\r\nContent-Type: application/pkix-crl\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            bytes.len()
+                        );
+                        socket.write_all(header.as_bytes()).await.unwrap();
+                        socket.write_all(bytes).await.unwrap();
+                    }
+                });
+                let key = PKey::from_ec_key(EcKey::generate(
+                    EcGroup::from_curve_name(Nid::X9_62_PRIME256V1)?.as_ref(),
+                )?)?;
+                let mut name = X509NameBuilder::new()?;
+                for (field, value) in [
+                    ("C", "US"),
+                    ("O", "Native test authenticator"),
+                    ("OU", "Authenticator Attestation"),
+                    ("CN", "Native CRL leaf"),
+                ] {
+                    name.append_entry_by_text(field, value)?;
+                }
+                let name = name.build();
+                let mut leaf = X509::builder()?;
+                leaf.set_version(2)?;
+                leaf.set_serial_number(BigNum::from_u32(serial)?.to_asn1_integer()?.as_ref())?;
+                leaf.set_subject_name(&name)?;
+                leaf.set_issuer_name(root.subject_name())?;
+                leaf.set_pubkey(&key)?;
+                leaf.set_not_before(Asn1Time::days_from_now(0)?.as_ref())?;
+                leaf.set_not_after(Asn1Time::days_from_now(1)?.as_ref())?;
+                leaf.append_extension(BasicConstraints::new().critical().build()?)?;
+                // No AKI/SKI: each ceremony must actually fetch its own local CRL, and
+                // cannot inherit a process-global cached verdict from another case.
+                #[expect(
+                    deprecated,
+                    reason = "OpenSSL exposes distribution-point configuration through this extension builder"
+                )]
+                let distribution = X509Extension::new_nid(
+                    None,
+                    None,
+                    Nid::CRL_DISTRIBUTION_POINTS,
+                    &format!("URI:{uri}"),
+                )?;
+                leaf.append_extension(distribution)?;
+                leaf.sign(&root_key, MessageDigest::sha256())?;
+                let leaf = leaf.build();
+                let plugin = passkey_plugin().attestation_root_certificates(BTreeMap::from([(
+                    "packed".into(),
+                    vec![root_pem.into()],
+                )]));
+                let (ctx, user, session) = test_helpers::create_test_context_with_user(
+                    CreateUser::new()
+                        .with_email("revocation@fixture.test")
+                        .with_name("CRL owner"),
+                    Duration::hours(1),
+                )
+                .await;
+                let options = plugin
+                    .handle_generate_register_options(
+                        &test_helpers::create_auth_request(
+                            HttpMethod::Get,
+                            "/passkey/generate-register-options",
+                            Some(&session.token),
+                            None,
+                            HashMap::new(),
+                        ),
+                        &ctx,
+                    )
+                    .await?;
+                let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
+                let client = serde_json::to_vec(
+                    &serde_json::json!({"type":"webauthn.create","challenge":issued["challenge"],"origin":"http://localhost:3000"}),
+                )?;
+                let credential_key = ed25519_dalek::SigningKey::from_bytes(&[7; 32]);
+                let cose = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
+                    (Cbor::Integer(1), Cbor::Integer(1)),
+                    (Cbor::Integer(3), Cbor::Integer(-8)),
+                    (Cbor::Integer(-1), Cbor::Integer(6)),
+                    (
+                        Cbor::Integer(-2),
+                        Cbor::Bytes(credential_key.verifying_key().as_bytes().to_vec()),
+                    ),
+                ])))?;
+                let id = b"crl-enrollment";
+                let mut data = Sha256::digest(b"localhost").to_vec();
+                data.push(0x45);
+                data.extend_from_slice(&1_u32.to_be_bytes());
+                data.extend_from_slice(&[0; 16]);
+                data.extend_from_slice(&u16::try_from(id.len())?.to_be_bytes());
+                data.extend_from_slice(id);
+                data.extend_from_slice(&cose);
+                let mut signed = data.clone();
+                signed.extend_from_slice(&Sha256::digest(&client));
+                let mut signer = Signer::new(MessageDigest::sha256(), &key)?;
+                signer.update(&signed)?;
+                let statement = Cbor::Map(BTreeMap::from([
+                    (Cbor::Text("alg".into()), Cbor::Integer(-7)),
+                    (
+                        Cbor::Text("x5c".into()),
+                        Cbor::Array(vec![Cbor::Bytes(leaf.to_der()?)]),
+                    ),
+                    (Cbor::Text("sig".into()), Cbor::Bytes(signer.sign_to_vec()?)),
+                ]));
+                let attestation = serde_cbor_2::to_vec(&Cbor::Map(BTreeMap::from([
+                    (Cbor::Text("fmt".into()), Cbor::Text("packed".into())),
+                    (Cbor::Text("authData".into()), Cbor::Bytes(data)),
+                    (Cbor::Text("attStmt".into()), statement),
+                ])))?;
+                let response = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{"clientDataJSON":URL_SAFE_NO_PAD.encode(client),"attestationObject":URL_SAFE_NO_PAD.encode(attestation),"transports":["internal"]}});
+                let mut request = test_helpers::create_auth_request(
+                    HttpMethod::Post,
+                    "/passkey/verify-registration",
+                    Some(&session.token),
+                    Some(serde_json::to_vec(
+                        &serde_json::json!({"response":response}),
+                    )?),
+                    HashMap::new(),
+                );
+                write!(
+                    request.headers.get_mut("cookie").unwrap(),
+                    "; {}",
+                    cookie_header(&options).split(';').next().unwrap()
+                )?;
+                let result = plugin.handle_verify_registration(&request, &ctx).await?;
+                server.abort();
+                assert_eq!(delivered.load(Ordering::SeqCst), 1, "{mode}");
+                assert_eq!(
+                    result.status,
+                    expected,
+                    "{mode}: {}",
+                    String::from_utf8_lossy(&result.body)
+                );
+                let stored = ctx
+                    .database
+                    .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
+                    .await?;
+                if expected == 200 {
+                    assert_eq!(stored.unwrap().user_id, user.id);
+                } else {
+                    assert!(stored.is_none());
+                    assert!(
+                        result
+                            .headers
+                            .get_all("set-cookie")
+                            .all(|cookie| !cookie.contains("session_token="))
+                    );
+                }
+                assert_eq!(ctx.database.get_user_sessions(&user.id).await?.len(), 1);
+            }
+            Ok(())
+        }
+    }
     use super::*;
     use crate::test_helpers;
     use alibi_core::utils::json::JsValue;
