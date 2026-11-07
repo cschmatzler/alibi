@@ -53,7 +53,7 @@ pub struct StatelessStore {
 
 #[derive(Default)]
 struct IdentityState {
-    users: IndexMap<crate::store::memory_user_id::MemoryUserId, UserView>,
+    users: Vec<(crate::store::memory_user_id::MemoryUserId, UserView)>,
     accounts: IndexMap<String, AccountView>,
     verifications: IndexMap<String, VerificationView>,
     two_factors: IndexMap<String, TwoFactor>,

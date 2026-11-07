@@ -12,6 +12,7 @@ for (const [id, update] of [
   ["first", { id: "renamed-first" }],
   ["middle", { image: false }],
   ["renamed-first", { id: "renamed-first" }],
+  ["renamed-first", { id: "middle" }],
 ]) {
   await adapter.update({ model: "user", where: [{ field: "id", value: id }], update });
   const ids = (await adapter.findMany({ model: "user" })).map(row => row.id);

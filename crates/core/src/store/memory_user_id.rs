@@ -43,6 +43,30 @@ impl MemoryUserId {
         }
     }
 
+    pub(crate) fn update_rows(
+        users: &mut [(Self, crate::UserView)],
+        id: &str,
+        data: crate::utils::json::JsObject,
+    ) -> crate::AuthResult<crate::UserView> {
+        let locator = Self::string(id);
+        let mut updates = Vec::new();
+        for (index, (key, existing)) in users.iter().enumerate() {
+            if *key == locator {
+                let mut user = existing.clone();
+                user.apply_user_update(data.clone())?;
+                updates.push((index, user));
+            }
+        }
+        let output = updates
+            .first()
+            .map(|(_, user)| user.clone())
+            .ok_or(crate::AuthError::UserNotFound)?;
+        for (index, user) in updates {
+            users[index] = (Self::string(&user.id), user);
+        }
+        Ok(output)
+    }
+
     pub(crate) fn apply_list<'a>(
         users: impl Iterator<Item = (&'a Self, &'a crate::UserView)>,
         params: &crate::ListUsersParams,

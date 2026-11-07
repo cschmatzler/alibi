@@ -149,7 +149,7 @@ impl AuthSchema for BundledSchema {
 
 #[derive(Default)]
 struct State {
-    users: indexmap::IndexMap<crate::store::memory_user_id::MemoryUserId, UserView>,
+    users: Vec<(crate::store::memory_user_id::MemoryUserId, UserView)>,
     sessions: HashMap<String, SessionView>,
     accounts: HashMap<String, AccountView>,
     verifications: HashMap<String, VerificationView>,
@@ -325,7 +325,7 @@ impl UserStore<BundledSchema> for MemoryStore {
                 .collect(),
         };
         user.retain_native_user_fields(native_fields);
-        self.lock().users.insert(physical_id, user.clone());
+        self.lock().users.push((physical_id, user.clone()));
         Ok(user)
     }
 
@@ -350,20 +350,21 @@ impl UserStore<BundledSchema> for MemoryStore {
         Ok(self
             .lock()
             .users
-            .get(&crate::store::memory_user_id::MemoryUserId::string(id))
-            .cloned())
+            .iter()
+            .find(|(key, _)| *key == crate::store::memory_user_id::MemoryUserId::string(id))
+            .map(|(_, user)| user.clone()))
     }
 
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<UserView>> {
         let state = self.lock();
-        Ok(ids
+        Ok(state
+            .users
             .iter()
-            .filter_map(|id| {
-                state
-                    .users
-                    .get(&crate::store::memory_user_id::MemoryUserId::string(id))
-                    .cloned()
+            .filter(|(key, _)| {
+                ids.iter()
+                    .any(|id| *key == crate::store::memory_user_id::MemoryUserId::string(id))
             })
+            .map(|(_, user)| user.clone())
             .collect())
     }
 
@@ -378,7 +379,8 @@ impl UserStore<BundledSchema> for MemoryStore {
         Ok(self
             .lock()
             .users
-            .values()
+            .iter()
+            .map(|(_, user)| user)
             .find(|user| user.email.as_deref() == Some(normalized))
             .cloned())
     }
@@ -388,7 +390,8 @@ impl UserStore<BundledSchema> for MemoryStore {
         Ok(self
             .lock()
             .users
-            .values()
+            .iter()
+            .map(|(_, user)| user)
             .find(|user| user.username.as_deref() == Some(&normalized))
             .cloned())
     }
@@ -400,7 +403,8 @@ impl UserStore<BundledSchema> for MemoryStore {
         Ok(self
             .lock()
             .users
-            .values()
+            .iter()
+            .map(|(_, user)| user)
             .find(|user| {
                 user.extension_fields
                     .get("username")
@@ -421,7 +425,8 @@ impl UserStore<BundledSchema> for MemoryStore {
         Ok(self
             .lock()
             .users
-            .values()
+            .iter()
+            .map(|(_, user)| user)
             .find(|user| user.phone_number.as_deref() == Some(phone_number))
             .cloned())
     }
@@ -438,40 +443,28 @@ impl UserStore<BundledSchema> for MemoryStore {
     ) -> AuthResult<UserView> {
         update.apply_adapter_transforms().await?;
         let mut state = self.lock();
-        let locator = crate::store::memory_user_id::MemoryUserId::string(id);
-        let (index, mut user) = state
-            .users
-            .get_full(&locator)
-            .map(|(index, _, user)| (index, user.clone()))
-            .ok_or(AuthError::UserNotFound)?;
         let data = update
             .data
             .iter()
             .filter(|(key, _)| key.as_str().is_some_and(|key| update.declares(key)))
             .map(|(key, value)| (key.clone(), value.clone()))
             .collect();
-        user.apply_user_update(data)?;
-        let identity = crate::store::memory_user_id::MemoryUserId::string(&user.id);
-        if identity != locator && state.users.contains_key(&identity) {
-            return Err(AuthError::not_implemented(
-                "Duplicate UPDATE identity requires a canonical USER row identity API",
-            ));
-        }
-        _ = state.users.shift_remove(&locator);
-        _ = state.users.shift_insert(index, identity, user.clone());
-        Ok(user)
+        crate::store::memory_user_id::MemoryUserId::update_rows(&mut state.users, id, data)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
         self.lock()
             .users
-            .shift_remove(&crate::store::memory_user_id::MemoryUserId::string(id));
+            .retain(|(key, _)| *key != crate::store::memory_user_id::MemoryUserId::string(id));
         Ok(())
     }
 
     async fn list_users(&self, _params: ListUsersParams) -> AuthResult<(Vec<UserView>, usize)> {
         let state = self.lock();
-        crate::store::memory_user_id::MemoryUserId::apply_list(state.users.iter(), &_params)
+        crate::store::memory_user_id::MemoryUserId::apply_list(
+            state.users.iter().map(|(id, user)| (id, user)),
+            &_params,
+        )
     }
 }
 

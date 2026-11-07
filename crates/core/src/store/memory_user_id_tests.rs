@@ -7,6 +7,10 @@ use crate::test_store::{BundledSchema, MemoryStore};
 use crate::{AuthSchema, CreateUser, ListUsersParams, UpdateUser, UserView};
 use serde_json::json;
 
+mod duplicate_rows {
+    include!("memory_user_duplicate_tests.rs");
+}
+
 async fn physical_primitives<S: AuthSchema<User = UserView>>(
     store: &impl UserStore<S>,
     supports_page: bool,
@@ -1159,7 +1163,7 @@ async fn update_preserves_row_order<S: AuthSchema<User = UserView>>(store: &impl
             .unwrap();
     }
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 4);
+    assert_eq!(cases.len(), 5);
     for (index, case) in cases.iter().enumerate() {
         let id = case["id"].as_str().unwrap();
         if index == 0 {
@@ -1221,19 +1225,13 @@ async fn update_preserves_row_order<S: AuthSchema<User = UserView>>(store: &impl
             .unwrap();
         assert_eq!(first.email.as_deref(), Some("CASE@TEST"));
     }
-    let collision = store
-        .update_user_prepared(
-            "renamed-first",
-            crate::store::PreparedUserUpdate {
-                data: [("id".into(), JsValue::String("middle".into()))].into(),
-                ..Default::default()
-            },
-        )
-        .await;
-    assert!(matches!(
-        collision,
-        Err(crate::AuthError::NotImplemented(_))
-    ));
+    assert!(
+        store
+            .get_user_by_id("renamed-first")
+            .await
+            .unwrap()
+            .is_none()
+    );
     let (users, count) = store.list_users(ListUsersParams::default()).await.unwrap();
     assert_eq!(count, 3);
     assert_eq!(
@@ -1241,7 +1239,7 @@ async fn update_preserves_row_order<S: AuthSchema<User = UserView>>(store: &impl
             .iter()
             .map(|user| user.id.as_str())
             .collect::<Vec<_>>(),
-        ["renamed-first", "middle", "last"]
+        ["middle", "middle", "last"]
     );
 }
 
