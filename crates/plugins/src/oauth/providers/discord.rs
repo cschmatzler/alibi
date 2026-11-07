@@ -4,6 +4,9 @@ use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use async_trait::async_trait;
 use std::sync::Arc;
+
+#[path = "discord_image.rs"]
+mod image;
 impl OAuthProvider {
     #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
@@ -100,12 +103,9 @@ impl OAuthUserInfoHandler for DiscordUserInfo {
             .profile_json()
             .await
             .map_err(|error| error.to_string())?;
-        if !super::remaining_profile::truthy(&profile) {
-            return Err("Missing discord profile".into());
-        }
-        let user = discord_user_info(profile.clone())
-            .map_err(super::remaining_profile::profile_exception)?;
-        profile["image_url"] = user.get("image").cloned().unwrap_or(Value::Undefined);
+        let image =
+            image::image_url(&profile).map_err(super::remaining_profile::profile_exception)?;
+        profile["image_url"] = Value::String(image);
         let mut output = Map::new();
         _ = output.insert(
             "name".into(),
@@ -163,44 +163,7 @@ pub(in crate::oauth::providers) fn discord_user_info(profile: Value) -> Result<M
         .get("email")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let image = if profile.get("avatar").is_some_and(Value::is_null) {
-        let discriminator = profile
-            .get("discriminator")
-            .and_then(Value::as_str)
-            .ok_or("missing discriminator")?;
-        let index = if discriminator == "0" {
-            // Source converts the shifted BigInt to Number before remainder.
-            // This must retain f64 rounding and overflow, rather than exact mod.
-            if id.is_empty() || !id.bytes().all(|byte| byte.is_ascii_digit()) {
-                return Err("invalid Discord decimal snowflake".to_owned());
-            }
-            let snowflake =
-                rsa::BigUint::parse_bytes(id.as_bytes(), 10).ok_or("invalid Discord snowflake")?;
-            let shifted = (snowflake >> 22usize)
-                .to_str_radix(10)
-                .parse::<f64>()
-                .map_err(|_error| "invalid Discord snowflake number")?;
-            shifted % 6.0
-        } else {
-            // Discord's declared discriminator consists of decimal digits.
-            discriminator
-                .parse::<f64>()
-                .map_err(|_error| "invalid Discord discriminator")?
-                % 5.0
-        };
-        format!("https://cdn.discordapp.com/embed/avatars/{index}.png")
-    } else {
-        let avatar = profile
-            .get("avatar")
-            .and_then(Value::as_str)
-            .ok_or("missing avatar")?;
-        let format = if avatar.starts_with("a_") {
-            "gif"
-        } else {
-            "png"
-        };
-        format!("https://cdn.discordapp.com/avatars/{id}/{avatar}.{format}")
-    };
+    let image = image::image_url(&profile)?;
     Ok(OAuthUserInfo {
         additional_fields: Map::default(),
         id: id.to_owned().into(),
@@ -215,7 +178,7 @@ pub(in crate::oauth::providers) fn discord_user_info(profile: Value) -> Result<M
                 .to_owned()
                 .into(),
         ),
-        image: Some(image.into()),
+        image: Some(image),
         email_verified: profile
             .get("verified")
             .and_then(Value::as_bool)
@@ -228,6 +191,52 @@ pub(in crate::oauth::providers) fn discord_user_info(profile: Value) -> Result<M
 mod tests {
     use super::*;
     use crate::oauth::providers::js as json;
+
+    #[tokio::test]
+    async fn discord_images_follow_actual_javascript_coercion() {
+        use super::super::admission_tests::HttpFixture;
+        use alibi_core::utils::json;
+        let fixture = json::parse_value(include_str!("discord_image_cases.json")).unwrap();
+        assert_eq!(fixture["better_auth"], "1.7.18");
+        let cases = fixture["cases"].as_array().unwrap();
+        assert_eq!(cases.len(), 56);
+        for case in cases {
+            let mode = case["mode"].as_str().unwrap();
+            let remote = HttpFixture::new(200, case["profile"].clone()).await;
+            let provider = OAuthProvider::discord_with_endpoints(
+                "client",
+                "secret",
+                "https://auth.test",
+                "https://token.test",
+                &remote.url,
+            );
+            let result = provider
+                .get_user_info
+                .as_ref()
+                .unwrap()
+                .get_user_info(OAuthUserInfoRequest {
+                    access_token: Some("access".into()),
+                    ..Default::default()
+                })
+                .await;
+            if case.get("error").is_some() {
+                let error = result.unwrap_err();
+                assert!(
+                    error.starts_with(super::super::remaining_profile::PROFILE_EXCEPTION_PREFIX),
+                    "{mode}: {error}"
+                );
+            } else {
+                let response = result.unwrap_or_else(|error| panic!("{mode}: {error}"));
+                assert_eq!(response.user["image"], case["image"], "{mode}");
+                assert_eq!(response.data["image_url"], case["image"], "{mode}");
+                assert_eq!(
+                    json::to_string(&response.user["image"]).unwrap(),
+                    case["wire"].as_str().unwrap(),
+                    "{mode}"
+                );
+            }
+        }
+    }
 
     #[tokio::test]
     async fn remaining_literal_own_fields_match_upstream_for_discord() {
@@ -326,7 +335,7 @@ mod tests {
             HttpFixture, RejectHandler, RejectMapper, assert_outcome, request,
         };
         for (status, profile, throws) in [
-            (200, Value::Null, false),
+            (200, Value::Null, true),
             (500, Value::Null, false),
             (
                 200,
