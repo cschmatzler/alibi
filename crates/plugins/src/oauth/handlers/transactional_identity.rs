@@ -164,7 +164,7 @@ pub(crate) async fn authenticate<S: AuthSchema>(
         if *disable_signup {
             return Err(error("signup_disabled", ""));
         }
-        let mut data = provider_candidate(user, "");
+        let mut data = provider_candidate(user, None);
         crate::authentication_helpers::apply_creation_input_defaults(ctx, &mut data);
         crate::helpers::apply_default_role(ctx, &mut data);
         data.image = user

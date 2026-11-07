@@ -90,7 +90,7 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     }
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
-    let mut candidate = provider_candidate(user_info, &link.user_id);
+    let mut candidate = provider_candidate(user_info, Some(&link.user_id));
     candidate.email = user_info
         .email
         .as_str()

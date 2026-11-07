@@ -147,10 +147,10 @@ pub(in crate::oauth::handlers) fn provider_fields(
 
 pub(in crate::oauth::handlers) fn provider_candidate(
     user_info: &OAuthUserInfo,
-    user_id: &str,
+    user_id: Option<&str>,
 ) -> CreateUser {
     let mut candidate = CreateUser::new();
-    candidate.id = Some(user_id.to_owned());
+    candidate.id = user_id.map(str::to_owned);
     candidate.email = user_info.email.to_lowercase().as_str().map(str::to_owned);
     candidate.provider_email = Some(alibi_core::utils::json::JsValue::String(
         user_info.email.to_lowercase(),
@@ -207,7 +207,7 @@ pub(in crate::oauth::handlers) async fn validate_provider_identity(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
     let mut data = UserValidationData {
-        user: provider_candidate(user, user_id),
+        user: provider_candidate(user, Some(user_id)),
         source: identity_source(provider, profile, action, policy),
     };
     // Sign-in completion supplies an empty name before the shared policy.
@@ -644,7 +644,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             return Err(OAuthSignInError::Generic("signup disabled".to_owned()));
         }
 
-        let mut create_user = provider_candidate(user_info, "");
+        let mut create_user = provider_candidate(user_info, None);
         crate::authentication_helpers::apply_creation_input_defaults(ctx, &mut create_user);
         apply_default_role(ctx, &mut create_user);
         create_user.provider_email_verified =
