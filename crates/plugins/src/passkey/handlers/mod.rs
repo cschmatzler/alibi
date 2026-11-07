@@ -79,12 +79,15 @@ fn passkey_not_found<T>() -> PasskeyHandlerResult<T> {
 
 // The pinned adapter returns the database's nullable name in passkey rows.
 // Keep this serialization local to passkey endpoints.
-fn registration_value(passkey: &alibi_core::Passkey) -> AuthResult<Value> {
-    let mut value = serde_json::to_value(PasskeyView::from(passkey))?;
+pub(super) fn registration_value(
+    passkey: &alibi_core::Passkey,
+) -> AuthResult<alibi_core::utils::json::JsValue> {
+    use alibi_core::utils::json::{self, JsValue};
+    let mut value = json::to_js_value(&PasskeyView::from(passkey))?;
     if passkey.name.is_none()
         && let Some(object) = value.as_object_mut()
     {
-        _ = object.insert("name".into(), Value::Null);
+        _ = object.insert("name".into(), JsValue::Null);
     }
     Ok(value)
 }

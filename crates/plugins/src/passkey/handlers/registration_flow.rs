@@ -34,6 +34,7 @@ use alibi_core::AuthUser;
 use alibi_core::CreatePasskey;
 use alibi_core::CreateVerification;
 use alibi_core::error::codes;
+use alibi_core::utils::json::{self as native_json, JsValue};
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
@@ -219,10 +220,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     authenticated_owner: Option<&str>,
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
-) -> PasskeyHandlerResult<Value> {
-    use crate::passkey::registration::{
-        PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name,
-    };
+) -> PasskeyHandlerResult<JsValue> {
+    use crate::passkey::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration};
 
     let Some(response) = body.response.as_ref() else {
         return response_null(400);
@@ -460,11 +459,8 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             .name
             .as_ref()
             .and_then(alibi_core::utils::json::JsValue::as_js_string)
-            .map(alibi_core::utils::json::JsString::require_str)
-            .transpose()?
-            .map(trim_name)
-            .filter(|name| !name.is_empty())
-            .map(str::to_owned),
+            .map(|name| name.trim_matches(crate::passkey::registration::is_name_whitespace))
+            .filter(|name| !name.is_empty()),
         credential_id,
         public_key: metadata.public_key,
         counter: snapshot.counter,
@@ -516,10 +512,10 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 if input_2.name.is_none() {
                     input_2.name = result
                         .name
-                        .as_deref()
-                        .map(trim_name)
-                        .filter(|name| !name.is_empty())
-                        .map(str::to_owned);
+                        .map(|name| {
+                            name.trim_matches(crate::passkey::registration::is_name_whitespace)
+                        })
+                        .filter(|name| !name.is_empty());
                 }
             }
         }
@@ -539,7 +535,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         }
         Ok(input_2)
     };
-    let outcome: AuthResult<Value> = if body.create_session.as_bool() == Some(true) {
+    let outcome: AuthResult<JsValue> = if body.create_session.as_bool() == Some(true) {
         let meta = if req.endpoint_call().is_some() {
             alibi_core::RequestMeta {
                 ip_address: Some(
@@ -647,10 +643,13 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     })?;
                 let mut result = registration_value(&passkey)?;
                 if let Some(object) = result.as_object_mut() {
-                    _ = object.insert("user".into(), serde_json::to_value(ctx.user_view(&user)?)?);
+                    _ = object.insert(
+                        "user".into(),
+                    native_json::to_js_value(&ctx.user_view(&user)?)?,
+                    );
                     _ = object.insert(
                         "session".into(),
-                        serde_json::to_value(ctx.session_view(&session)?)?,
+                    native_json::to_js_value(&ctx.session_view(&session)?)?,
                     );
                 }
                 Ok(result)

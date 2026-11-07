@@ -13,10 +13,184 @@ use sha2::{Digest as _, Sha256};
 use std::collections::BTreeMap;
 
 backend_tests!(
+    passkey_names_bind_only_at_sql_boundaries,
     passkey_ceremony_matrix,
     passkey_signed_backup_changes_preserve_registration_snapshots,
     passkey_concurrent_real_ceremonies_single_owner
 );
+
+struct NameOverride(Arc<Mutex<alibi::utils::json::JsString>>);
+
+#[async_trait::async_trait]
+impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for NameOverride {
+    async fn after_verification(
+        &self,
+        _: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
+        _: &alibi::plugins::passkey::VerifiedPasskeyRegistration,
+        _: &alibi::plugins::passkey::PasskeyRegistrationUser,
+        _: &alibi::utils::json::JsValue,
+        _: Option<&str>,
+    ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
+        Ok(Some(alibi::plugins::passkey::PasskeyRegistrationOverride {
+            user_id: None,
+            name: Some(self.0.lock().unwrap().clone()),
+        }))
+    }
+}
+
+fn name_plugin(name: Arc<Mutex<alibi::utils::json::JsString>>) -> PasskeyPlugin {
+    PasskeyPlugin::new()
+        .rp_id("localhost")
+        .rp_name("Names")
+        .origin(ORIGIN)
+        .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
+            after_verification: Some(Arc::new(NameOverride(name))),
+            ..Default::default()
+        })
+}
+
+async fn check_passkey_names<S: AuthSchema>(
+    auth: &Alibi<S>,
+    backend: &str,
+    callback: Arc<Mutex<alibi::utils::json::JsString>>,
+) {
+    use alibi::utils::json::{self as native, JsValue};
+    let fixture = native::parse_value(include_str!(
+        "../../../../crates/core/src/store/passkey_name_cases.json"
+    ))
+    .unwrap();
+    let owner = cookies(&signup(auth, "passkey-name-owner@example.com").await);
+    let mut count = 0;
+    for case in fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["backend"] == backend)
+    {
+        for explicit in [false, true] {
+            count += 1;
+            *callback.lock().unwrap() = if explicit {
+                "wrong callback label".into()
+            } else {
+                case["input"].as_js_string().unwrap().clone()
+            };
+            let options = Box::pin(auth.dispatch_endpoint(
+                PasskeyPlugin::generate_passkey_registration_options_endpoint(),
+                alibi::endpoint::EndpointOptions {
+                    headers: Some([("cookie".into(), owner.clone())].into()),
+                    ..Default::default()
+                },
+            ))
+            .await
+            .unwrap()
+            .into_response()
+            .unwrap();
+            let authenticator = Authenticator::new(37, &format!("name-{count}"));
+            let proof = authenticator.registration(
+                &json!({"type":"webauthn.create","challenge":body(&options)["challenge"],"origin":ORIGIN}),
+                &authenticator.attestation("localhost", USER_PRESENT | USER_VERIFIED, 6), false,
+            );
+            let headers = || alibi::endpoint::EndpointOptions {
+                headers: Some(
+                    [
+                        ("cookie".into(), format!("{owner}; {}", cookies(&options))),
+                        ("origin".into(), ORIGIN.into()),
+                    ]
+                    .into(),
+                ),
+                ..Default::default()
+            };
+            let result = Box::pin(auth.dispatch_endpoint(
+                PasskeyPlugin::verify_passkey_registration_endpoint(
+                    alibi::plugins::passkey::PasskeyRegistrationInput {
+                        response: native::parse_value(&proof.to_string()).unwrap(),
+                        name: explicit.then(|| case["input"].as_js_string().unwrap().clone()),
+                        create_session: Some(true),
+                    },
+                ),
+                headers(),
+            ))
+            .await
+            .unwrap();
+            let registered = result.decode().unwrap();
+            assert_eq!(
+                registered["name"],
+                case["create"],
+                "{backend}/{}/{explicit}",
+                case["mode"].as_str().unwrap()
+            );
+            assert!(registered["user"].is_object());
+            assert!(registered["session"].is_object());
+            let id = registered["id"].as_str().unwrap();
+            let wire = native::to_string(&registered).unwrap();
+            assert_eq!(native::parse_value(&wire).unwrap(), registered);
+            let renamed = Box::pin(
+                auth.dispatch_endpoint(
+                    alibi::endpoint::ServerEndpoint::<JsValue>::new("passkey", "updatePasskey")
+                        .with_body_value(JsValue::Object(
+                            [
+                                ("id".into(), JsValue::String(id.into())),
+                                ("name".into(), case["update_input"].clone()),
+                            ]
+                            .into(),
+                        )),
+                    headers(),
+                ),
+            )
+            .await
+            .unwrap()
+            .decode()
+            .unwrap();
+            assert_eq!(renamed["passkey"]["name"], case["rename"]);
+            let listed = Box::pin(
+                auth.dispatch_endpoint(PasskeyPlugin::list_passkeys_endpoint(), headers()),
+            )
+            .await
+            .unwrap()
+            .decode()
+            .unwrap();
+            assert_eq!(
+                listed.iter().find(|row| row["id"] == id).unwrap()["name"],
+                case["list"]
+            );
+            assert_eq!(
+                auth.store()
+                    .get_passkey_by_id(id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .name
+                    .as_ref(),
+                case["list"].as_js_string()
+            );
+        }
+    }
+    assert_eq!(count, 12);
+}
+
+async fn passkey_names_bind_only_at_sql_boundaries<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let callback = Arc::new(Mutex::new("initial".into()));
+    let auth = builder::<B>(&connection)
+        .plugin(name_plugin(callback.clone()))
+        .build()
+        .await?;
+    check_passkey_names(&auth, "sqlite", callback).await;
+    B::close(connection).await
+}
+
+#[tokio::test]
+async fn passkey_names_preserve_utf16_through_memory_ceremonies() {
+    let callback = Arc::new(Mutex::new("initial".into()));
+    let auth = AuthBuilder::without_database(AuthConfig::new(SECRET).base_url(ORIGIN))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(name_plugin(callback.clone()))
+        .build()
+        .await
+        .unwrap();
+    check_passkey_names(&auth, "memory", callback).await;
+}
 
 pub(super) const USER_PRESENT: u8 = 0x01;
 pub(super) const USER_VERIFIED: u8 = 0x04;

@@ -17,6 +17,10 @@ pub trait PasskeyStore: Send + Sync {
         id: &str,
         update: UpdatePasskeyAuthentication,
     ) -> AuthResult<Option<Passkey>>;
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey>;
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &crate::utils::json::JsString,
+    ) -> AuthResult<Passkey>;
     async fn delete_passkey(&self, id: &str) -> AuthResult<()>;
 }

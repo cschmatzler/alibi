@@ -1276,7 +1276,11 @@ impl PasskeyStore for MemoryStore {
     ) -> AuthResult<Option<Passkey>> {
         Err(AuthError::internal("unsupported test-store operation"))
     }
-    async fn update_passkey_name(&self, _id: &str, _name: &str) -> AuthResult<Passkey> {
+    async fn update_passkey_name(
+        &self,
+        _id: &str,
+        _name: &crate::utils::json::JsString,
+    ) -> AuthResult<Passkey> {
         Err(AuthError::internal("unsupported test-store operation"))
     }
     async fn delete_passkey(&self, _id: &str) -> AuthResult<()> {

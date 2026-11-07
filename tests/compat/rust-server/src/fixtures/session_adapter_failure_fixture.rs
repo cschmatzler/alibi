@@ -109,7 +109,7 @@ forward!(PasskeyStore {
     async fn get_passkey_by_credential_id( &self, credential_id: &str ) -> AuthResult<Option<Passkey>>;
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>>;
     async fn update_passkey_authentication( &self, id: &str, update: UpdatePasskeyAuthentication ) -> AuthResult<Option<Passkey>>;
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey>;
+    async fn update_passkey_name(&self, id: &str, name: &alibi::utils::json::JsString) -> AuthResult<Passkey>;
     async fn delete_passkey(&self, id: &str) -> AuthResult<()>;
 });
 

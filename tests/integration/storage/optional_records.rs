@@ -405,8 +405,8 @@ async fn workflow<S: AuthSchema>(
             .await?
             .unwrap()
             .name
-            .as_deref(),
-        expected_name.as_deref()
+            .as_ref(),
+        expected_name.as_ref()
     );
     let rename = Box::pin(auth.handle_request(request(
         "/passkey/update-passkey",
@@ -422,7 +422,8 @@ async fn workflow<S: AuthSchema>(
             .await?
             .unwrap()
             .name
-            .as_deref(),
+            .as_ref()
+            .and_then(|name| name.as_str()),
         Some("Renamed")
     );
     let remove = Box::pin(auth.handle_request(request(

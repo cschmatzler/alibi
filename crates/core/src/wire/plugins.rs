@@ -84,7 +84,7 @@ impl<T: AuthInvitation> From<&T> for InvitationView {
 pub struct PasskeyView {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub name: Option<crate::utils::json::JsString>,
     #[serde(rename = "credentialID")]
     pub credential_id: String,
     #[serde(rename = "userId")]
@@ -108,7 +108,7 @@ impl<T: AuthPasskey> From<&T> for PasskeyView {
     fn from(pk: &T) -> Self {
         Self {
             id: pk.id().into_owned(),
-            name: pk.name().map(str::to_owned),
+            name: pk.name().cloned(),
             credential_id: pk.credential_id().to_owned(),
             user_id: pk.user_id().into_owned(),
             public_key: pk.public_key().to_owned(),

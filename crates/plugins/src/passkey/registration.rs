@@ -57,7 +57,7 @@ pub struct VerifiedPasskeyRegistration {
 pub struct PasskeyRegistrationOverride {
     /// Empty values are absent, as with upstream's truthiness check.
     pub user_id: Option<String>,
-    pub name: Option<String>,
+    pub name: Option<alibi_core::utils::json::JsString>,
 }
 
 #[async_trait]
@@ -98,10 +98,6 @@ impl std::fmt::Debug for PasskeyRegistrationConfig {
             .field("after_verification", &self.after_verification.is_some())
             .finish()
     }
-}
-
-pub(super) fn trim_name(value: &str) -> &str {
-    value.trim_matches(is_name_whitespace)
 }
 
 pub(super) fn is_name_whitespace(character: char) -> bool {

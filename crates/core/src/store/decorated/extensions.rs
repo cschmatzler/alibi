@@ -365,7 +365,11 @@ impl<S: AuthSchema> PasskeyStore for PluginStore<S> {
     ) -> AuthResult<Option<Passkey>> {
         self.inner.update_passkey_authentication(id, update).await
     }
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &crate::utils::json::JsString,
+    ) -> AuthResult<Passkey> {
         self.inner.update_passkey_name(id, name).await
     }
     async fn delete_passkey(&self, id: &str) -> AuthResult<()> {

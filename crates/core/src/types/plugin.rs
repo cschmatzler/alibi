@@ -113,7 +113,7 @@ pub struct UpdateTwoFactor {
 pub struct Passkey {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub name: Option<crate::utils::json::JsString>,
     #[serde(rename = "publicKey")]
     pub public_key: String,
     #[serde(rename = "userId")]
@@ -137,7 +137,7 @@ pub struct Passkey {
 #[derive(Debug, Clone)]
 pub struct CreatePasskey {
     pub user_id: String,
-    pub name: Option<String>,
+    pub name: Option<crate::utils::json::JsString>,
     pub credential_id: String,
     pub public_key: String,
     pub counter: u64,
@@ -150,7 +150,7 @@ pub struct CreatePasskey {
 /// Input for updating a passkey.
 #[derive(Debug, Clone)]
 pub struct UpdatePasskey {
-    pub name: Option<String>,
+    pub name: Option<crate::utils::json::JsString>,
 }
 
 /// Input for updating stored passkey credential state after authentication.
@@ -507,8 +507,8 @@ impl AuthPasskey for Passkey {
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
-    fn name(&self) -> Option<&str> {
-        self.name.as_deref()
+    fn name(&self) -> Option<&crate::utils::json::JsString> {
+        self.name.as_ref()
     }
     fn public_key(&self) -> &str {
         &self.public_key
@@ -543,7 +543,7 @@ impl<T: AuthPasskey> From<&T> for Passkey {
     fn from(passkey: &T) -> Self {
         Self {
             id: passkey.id().into_owned(),
-            name: passkey.name().map(str::to_owned),
+            name: passkey.name().cloned(),
             public_key: passkey.public_key().to_owned(),
             user_id: passkey.user_id().into_owned(),
             credential_id: passkey.credential_id().to_owned(),

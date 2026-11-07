@@ -11,8 +11,8 @@ use alibi_core::AuthPasskey;
 use alibi_core::AuthResult;
 use alibi_core::entity::AuthUser;
 use alibi_core::error::codes;
+use alibi_core::utils::json::JsValue as Value;
 use alibi_core::wire::PasskeyView;
-use serde_json::Value;
 use serde_json::json;
 pub(in crate::passkey) async fn list_user_passkeys_core(
     user: &impl AuthUser,
@@ -103,7 +103,9 @@ pub(in crate::passkey) async fn update_passkey_core(
         .database
         .update_passkey_name(
             &body.id,
-            crate::passkey::registration::trim_name(&body.name),
+            &body
+                .name
+                .trim_matches(crate::passkey::registration::is_name_whitespace),
         )
         .await?;
 

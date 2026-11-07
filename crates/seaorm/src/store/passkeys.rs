@@ -28,7 +28,7 @@ where
                 .generated_id(&self.db, "passkey", "passkey", "id")
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string())),
-            name: Set(input.name),
+            name: Set(input.name.map(|name| name.to_utf8_binding())),
             public_key: Set(input.public_key),
             user_id: Set(input.user_id),
             credential_id: Set(input.credential_id),
@@ -110,7 +110,11 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
             .map_err(map_db_err)
     }
 
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &alibi_core::utils::json::JsString,
+    ) -> AuthResult<Passkey> {
         let Some(model) = Entity::find_by_id(id.to_owned())
             .one(self.scoped_connection())
             .await
@@ -120,7 +124,7 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
         };
 
         let mut active = model.into_active_model();
-        active.name = Set(Some(name.to_owned()));
+        active.name = Set(Some(name.to_utf8_binding()));
 
         active
             .update(self.scoped_connection())

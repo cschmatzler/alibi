@@ -74,7 +74,7 @@ pub struct PasskeyUpdated {
 pub struct PasskeyRegistrationInput {
     pub response: alibi_core::utils::json::JsValue,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub name: Option<alibi_core::utils::json::JsString>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub create_session: Option<bool>,
 }
@@ -262,7 +262,7 @@ impl PasskeyPlugin {
     #[must_use]
     pub fn verify_passkey_registration_endpoint(
         input: PasskeyRegistrationInput,
-    ) -> ServerEndpoint<Value> {
+    ) -> ServerEndpoint<alibi_core::utils::json::JsValue> {
         use alibi_core::utils::json::JsValue;
         let mut body = [("response".into(), input.response)]
             .into_iter()
@@ -358,7 +358,7 @@ impl PasskeyPlugin {
     #[must_use]
     pub fn update_passkey_endpoint(
         id: impl Into<String>,
-        name: impl Into<String>,
+        name: impl Into<alibi_core::utils::json::JsString>,
     ) -> ServerEndpoint<PasskeyUpdated> {
         ServerEndpoint::new("passkey", "updatePasskey").with_body_value(
             alibi_core::utils::json::JsValue::Object(
@@ -369,7 +369,7 @@ impl PasskeyPlugin {
                     ),
                     (
                         "name".into(),
-                        alibi_core::utils::json::JsValue::String(name.into().into()),
+                        alibi_core::utils::json::JsValue::String(name.into()),
                     ),
                 ]
                 .into_iter()
@@ -433,7 +433,7 @@ impl PasskeyPlugin {
 
     /// List the caller's registered credentials under its signed session.
     #[must_use]
-    pub fn list_passkeys_endpoint() -> ServerEndpoint<Vec<Value>> {
+    pub fn list_passkeys_endpoint() -> ServerEndpoint<Vec<alibi_core::utils::json::JsValue>> {
         ServerEndpoint::new("passkey", "listPasskeys")
     }
 

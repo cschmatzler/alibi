@@ -217,7 +217,7 @@ impl PasskeyPlugin {
                 let token = result
                     .get("session")
                     .and_then(|session_2| session_2.get("token"))
-                    .and_then(serde_json::Value::as_str);
+                    .and_then(alibi_core::utils::json::JsValue::as_str);
                 let response = AuthResponse::json(200, &result)?;
                 if let Some(token) = token {
                     use alibi_core::utils::cookie_utils::{
@@ -568,7 +568,7 @@ mod tests {
         ctx.database
             .create_passkey(CreatePasskey {
                 user_id: user.id.clone(),
-                name: Some("Existing Key".to_owned()),
+                name: Some("Existing Key".into()),
                 credential_id: credential_id("cred-existing"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
@@ -679,7 +679,7 @@ mod tests {
         ctx.database
             .create_passkey(CreatePasskey {
                 user_id: user.id.clone(),
-                name: Some("Authenticator".to_owned()),
+                name: Some("Authenticator".into()),
                 credential_id: credential_id("cred-auth"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
@@ -886,7 +886,7 @@ mod tests {
             .database
             .create_passkey(CreatePasskey {
                 user_id: other.id.clone(),
-                name: Some("Other Key".to_owned()),
+                name: Some("Other Key".into()),
                 credential_id: credential_id("cred-other-delete"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
@@ -915,7 +915,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(preserved.name.as_deref(), Some("Other Key"));
+        assert_eq!(
+            preserved.name.as_ref().and_then(|name| name.as_str()),
+            Some("Other Key")
+        );
     }
 
     #[tokio::test]
@@ -940,7 +943,7 @@ mod tests {
             .database
             .create_passkey(CreatePasskey {
                 user_id: other.id.clone(),
-                name: Some("Other Key".to_owned()),
+                name: Some("Other Key".into()),
                 credential_id: credential_id("cred-other-update"),
                 public_key: "public-key".to_owned(),
                 counter: 0,
@@ -976,7 +979,10 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        assert_eq!(preserved.name.as_deref(), Some("Other Key"));
+        assert_eq!(
+            preserved.name.as_ref().and_then(|name| name.as_str()),
+            Some("Other Key")
+        );
     }
 
     /// Previously persisted ceremonies keep both their codec and original Required policy.

@@ -213,7 +213,11 @@ impl PasskeyStore for StatelessStore {
             true
         }))
     }
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &crate::utils::json::JsString,
+    ) -> AuthResult<Passkey> {
         mutate_record(&mut self.lock()?.passkeys, id, |record| {
             record.name = Some(name.to_owned());
 

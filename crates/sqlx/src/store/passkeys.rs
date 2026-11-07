@@ -30,7 +30,7 @@ where
                 .await?
                 .unwrap_or_else(|| Uuid::new_v4().to_string()),
         );
-        active.set("name", input.name);
+        active.set("name", input.name.map(|name| name.to_utf8_binding()));
         active.set("publicKey", input.public_key);
         active.set("userId", input.user_id);
         active.set("credentialID", input.credential_id);
@@ -120,13 +120,17 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
             .ok_or_else(record_not_updated)
     }
 
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey> {
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &alibi_core::utils::json::JsString,
+    ) -> AuthResult<Passkey> {
         let Some(model) = self.find_passkey(id).await? else {
             return Err(AuthError::not_found("Passkey not found"));
         };
 
         let mut active = model.into_active();
-        active.set("name", Some(name.to_owned()));
+        active.set("name", Some(name.to_utf8_binding()));
 
         model::update::<Model>(self.exec(), &active)
             .await?

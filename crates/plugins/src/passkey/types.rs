@@ -102,7 +102,7 @@ pub(crate) struct DeletePasskeyRequest {
 pub(crate) struct UpdatePasskeyRequest {
     pub(super) id: String,
     #[validate(custom(function = "validate_trimmed_name"))]
-    pub(super) name: String,
+    pub(super) name: alibi_core::utils::json::JsString,
 }
 
 #[derive(Debug, Serialize)]
@@ -139,8 +139,13 @@ fn received_type(value: &alibi_core::utils::json::JsValue) -> &'static str {
     }
 }
 
-fn validate_trimmed_name(value: &str) -> Result<(), validator::ValidationError> {
-    if super::registration::trim_name(value).is_empty() {
+fn validate_trimmed_name(
+    value: &alibi_core::utils::json::JsString,
+) -> Result<(), validator::ValidationError> {
+    if value
+        .trim_matches(super::registration::is_name_whitespace)
+        .is_empty()
+    {
         return Err(validator::ValidationError::new("length")
             .with_message("Too small: expected string to have >=1 characters".into()));
     }

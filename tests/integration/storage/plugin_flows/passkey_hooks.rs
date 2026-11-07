@@ -77,7 +77,7 @@ impl PasskeyRegistrationAfterVerification for Policy {
             })),
             "empty" => Ok(Some(PasskeyRegistrationOverride {
                 user_id: Some(String::new()),
-                name: Some(String::new()),
+                name: Some("".into()),
             })),
             "api" => Err(AuthError::forbidden("registration denied")),
             "internal" => Err(AuthError::internal("registration unavailable")),

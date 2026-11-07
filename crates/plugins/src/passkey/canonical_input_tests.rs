@@ -78,6 +78,10 @@ fn assert_source_inputs(operation: &str, expected_cases: usize) {
             request
                 .validate()
                 .unwrap_or_else(|error| panic!("{operation}/{mode}: {error}"));
+        } else {
+            let request: super::types::UpdatePasskeyRequest = json::from_value(body)
+                .unwrap_or_else(|error| panic!("{operation}/{mode}: {error}"));
+            request.validate().unwrap();
         }
     }
     assert_eq!(matched, expected_cases);
@@ -91,4 +95,87 @@ fn canonical_registration_input_matches_actual_source_schema() {
 #[test]
 fn canonical_update_input_matches_actual_source_schema() {
     assert_source_inputs("update", 11);
+}
+
+#[tokio::test]
+async fn canonical_passkey_names_survive_memory_rename_and_list() {
+    use super::handlers::{
+        PasskeyHandlerOutcome, list_user_passkeys_core, registration_value, update_passkey_core,
+    };
+    let fixture = json::parse_value(include_str!(
+        "../../../core/src/store/passkey_name_cases.json"
+    ))
+    .unwrap();
+    let ctx = alibi_core::AuthContext::<alibi_core::store::stateless::StatelessSchema>::new(
+        std::sync::Arc::new(crate::test_helpers::create_test_config()),
+        std::sync::Arc::new(alibi_core::store::stateless::StatelessStore::default()),
+    );
+    let user = ctx
+        .database
+        .create_user(alibi_core::CreateUser::new().with_email("passkey-names@test"))
+        .await
+        .unwrap();
+    let mut count = 0;
+    for case in fixture["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|case| case["backend"] == "memory")
+    {
+        count += 1;
+        let created = ctx
+            .database
+            .create_passkey(alibi_core::CreatePasskey {
+                user_id: user.id.clone(),
+                name: Some(case["registration"].as_js_string().unwrap().clone()),
+                credential_id: case["mode"].as_str().unwrap().into(),
+                public_key: "public".into(),
+                counter: 0,
+                device_type: "singleDevice".into(),
+                backed_up: false,
+                transports: None,
+                aaguid: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(
+            registration_value(&created).unwrap()["name"],
+            case["create"]
+        );
+        let request: super::types::UpdatePasskeyRequest = json::from_value(JsValue::Object(
+            [
+                ("id".into(), JsValue::String(created.id.clone().into())),
+                ("name".into(), case["update_input"].clone()),
+            ]
+            .into(),
+        ))
+        .unwrap();
+        let PasskeyHandlerOutcome::Success(renamed) =
+            update_passkey_core(&request, &user, &ctx).await.unwrap()
+        else {
+            panic!("rename rejected")
+        };
+        assert_eq!(
+            json::to_js_value(&renamed).unwrap()["passkey"]["name"],
+            case["rename"]
+        );
+        let listed = list_user_passkeys_core(&user, &ctx).await.unwrap();
+        assert_eq!(
+            listed
+                .iter()
+                .find(|row| row["id"] == created.id.as_str())
+                .unwrap()["name"],
+            case["list"]
+        );
+        let wire = json::to_string(&listed).unwrap();
+        assert_eq!(json::parse_value(&wire).unwrap(), JsValue::Array(listed));
+        let stored = ctx
+            .database
+            .get_passkey_by_id(&created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.name.as_ref(), case["list"].as_js_string());
+    }
+    assert_eq!(count, 6);
 }

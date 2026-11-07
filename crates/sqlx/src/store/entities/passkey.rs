@@ -28,7 +28,7 @@ impl From<&Model> for Passkey {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),
-            name: model.name.clone(),
+            name: model.name.clone().map(Into::into),
             public_key: model.public_key.clone(),
             user_id: model.user_id.clone(),
             credential_id: model.credential_id.clone(),

@@ -30,7 +30,11 @@ delegate_store!(UserStore<S>, {
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>>;
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User>;
-    async fn update_user_prepared(&self, id: &str, update: alibi::store::PreparedUserUpdate) -> AuthResult<S::User>;
+    async fn update_user_prepared(
+        &self,
+        id: &str,
+        update: alibi::store::PreparedUserUpdate,
+    ) -> AuthResult<S::User>;
     async fn delete_user(&self, id: &str) -> AuthResult<()>;
     async fn list_users(&self, params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)>;
 });
@@ -242,7 +246,11 @@ delegate_store!(PasskeyStore, {
         id: &str,
         update: UpdatePasskeyAuthentication,
     ) -> AuthResult<Option<Passkey>>;
-    async fn update_passkey_name(&self, id: &str, name: &str) -> AuthResult<Passkey>;
+    async fn update_passkey_name(
+        &self,
+        id: &str,
+        name: &alibi::utils::json::JsString,
+    ) -> AuthResult<Passkey>;
     async fn delete_passkey(&self, id: &str) -> AuthResult<()>;
 });
 delegate_store!(DeviceCodeStore, {
@@ -436,13 +444,118 @@ delegate_store!(OAuthClientStore, {
 });
 
 delegate_store!(SsoProviderStore, {
- async fn mark_sso_domain_verified(&self,id:&str,domain:&str)->AuthResult<bool>;
- async fn update_sso_provider(&self,id:&str,provider_id:&str,prepare:&SsoProviderUpdateWork)->AuthResult<Option<SsoProvider>>;
- async fn delete_sso_provider_and_accounts(&self,id:&str,provider_id:&str)->AuthResult<bool>;
- async fn list_sso_providers(&self)->AuthResult<Vec<SsoProvider>>;
- async fn create_sso_provider(&self, provider:SsoProvider)->AuthResult<SsoProvider>;
- async fn get_sso_provider(&self, provider_id:&str)->AuthResult<Option<SsoProvider>>;
- async fn list_sso_providers_by_user(&self, user_id:&str)->AuthResult<Vec<SsoProvider>>;
+    async fn mark_sso_domain_verified(&self, id: &str, domain: &str) -> AuthResult<bool>;
+    async fn update_sso_provider(
+        &self,
+        id: &str,
+        provider_id: &str,
+        prepare: &SsoProviderUpdateWork,
+    ) -> AuthResult<Option<SsoProvider>>;
+    async fn delete_sso_provider_and_accounts(
+        &self,
+        id: &str,
+        provider_id: &str,
+    ) -> AuthResult<bool>;
+    async fn list_sso_providers(&self) -> AuthResult<Vec<SsoProvider>>;
+    async fn create_sso_provider(&self, provider: SsoProvider) -> AuthResult<SsoProvider>;
+    async fn get_sso_provider(&self, provider_id: &str) -> AuthResult<Option<SsoProvider>>;
+    async fn list_sso_providers_by_user(&self, user_id: &str) -> AuthResult<Vec<SsoProvider>>;
 });
 
-delegate_store!(ScimManagedStore, { async fn scim_user_domain_stable(&self,connection:&str,domain:&str)->AuthResult<bool>; async fn list_scim_users(&self,connection:&str,filters:&[(String,String)],offset:i64,count:i64)->AuthResult<ScimUserPage>; async fn scim_group_domain_stable(&self,connection:&str,domain:&str)->AuthResult<bool>; async fn list_scim_groups(&self,connection:&str,filters:&[(String,String)],offset:i64,count:i64)->AuthResult<ScimGroupPage>; async fn get_scim_user(&self,id:&str,connection:&str)->AuthResult<Option<ScimUserRecord>>; async fn find_scim_managed_credential(&self,id:&str)->AuthResult<Option<ScimManagedCredential>>; async fn find_scim_active_managed_connection(&self,id:&str)->AuthResult<Option<ScimManagedConnection>>; async fn record_scim_credential_use(&self,id:&str,previous:Option<chrono::DateTime<chrono::Utc>>,at:chrono::DateTime<chrono::Utc>)->AuthResult<()>; async fn active_scim_connection_binding(&self,id:&str,domain:&str,key:&str)->AuthResult<ScimConnectionBinding>; async fn get_scim_group(&self,id:&str,connection:&str)->AuthResult<Option<ScimGroupRecord>>; async fn scim_group_members(&self,id:&str,connection:&str)->AuthResult<ScimGroupMemberships>; async fn acquire_scim_decommission_lease(&self,binding:ScimConnectionBinding)->AuthResult<Option<ScimConnectionBinding>>; async fn release_scim_decommission_lease(&self,id:&str,lease:&str)->AuthResult<()>; async fn scim_projection_candidates(&self,domain:&str,cursor:Option<&str>)->AuthResult<Vec<ScimProjectionCandidate>>; async fn decommission_scim_managed_connection(&self,data:DecommissionScimManagedConnection,complete:bool)->AuthResult<Option<ScimManagedConnection>>; async fn terminal_scim_connection_binding(&self,id:&str,domain:Option<&str>,key:&str)->AuthResult<ScimConnectionBinding>; async fn list_scim_managed_connection_events(&self,id:&str,domain:&str)->AuthResult<Option<Vec<ScimManagedConnectionEvent>>>; async fn revoke_scim_managed_credential(&self,data:RevokeScimManagedCredential)->AuthResult<Option<ScimManagedConnection>>; async fn rotate_scim_managed_credential(&self,data:RotateScimManagedCredential)->AuthResult<Option<ScimManagedCreation>>; async fn get_scim_managed_connection(&self,id:&str,domain:&str)->AuthResult<Option<ScimManagedConnectionState>>; async fn list_scim_managed_connections(&self,domain:&str)->AuthResult<Vec<ScimManagedConnection>>; async fn create_scim_managed_connection(&self,data:CreateScimManagedConnection)->AuthResult<ScimManagedCreation>; });
+delegate_store!(ScimManagedStore, {
+    async fn scim_user_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool>;
+    async fn list_scim_users(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<ScimUserPage>;
+    async fn scim_group_domain_stable(&self, connection: &str, domain: &str) -> AuthResult<bool>;
+    async fn list_scim_groups(
+        &self,
+        connection: &str,
+        filters: &[(String, String)],
+        offset: i64,
+        count: i64,
+    ) -> AuthResult<ScimGroupPage>;
+    async fn get_scim_user(&self, id: &str, connection: &str)
+    -> AuthResult<Option<ScimUserRecord>>;
+    async fn find_scim_managed_credential(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<ScimManagedCredential>>;
+    async fn find_scim_active_managed_connection(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<ScimManagedConnection>>;
+    async fn record_scim_credential_use(
+        &self,
+        id: &str,
+        previous: Option<chrono::DateTime<chrono::Utc>>,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<()>;
+    async fn active_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: &str,
+        key: &str,
+    ) -> AuthResult<ScimConnectionBinding>;
+    async fn get_scim_group(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<Option<ScimGroupRecord>>;
+    async fn scim_group_members(
+        &self,
+        id: &str,
+        connection: &str,
+    ) -> AuthResult<ScimGroupMemberships>;
+    async fn acquire_scim_decommission_lease(
+        &self,
+        binding: ScimConnectionBinding,
+    ) -> AuthResult<Option<ScimConnectionBinding>>;
+    async fn release_scim_decommission_lease(&self, id: &str, lease: &str) -> AuthResult<()>;
+    async fn scim_projection_candidates(
+        &self,
+        domain: &str,
+        cursor: Option<&str>,
+    ) -> AuthResult<Vec<ScimProjectionCandidate>>;
+    async fn decommission_scim_managed_connection(
+        &self,
+        data: DecommissionScimManagedConnection,
+        complete: bool,
+    ) -> AuthResult<Option<ScimManagedConnection>>;
+    async fn terminal_scim_connection_binding(
+        &self,
+        id: &str,
+        domain: Option<&str>,
+        key: &str,
+    ) -> AuthResult<ScimConnectionBinding>;
+    async fn list_scim_managed_connection_events(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<Vec<ScimManagedConnectionEvent>>>;
+    async fn revoke_scim_managed_credential(
+        &self,
+        data: RevokeScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedConnection>>;
+    async fn rotate_scim_managed_credential(
+        &self,
+        data: RotateScimManagedCredential,
+    ) -> AuthResult<Option<ScimManagedCreation>>;
+    async fn get_scim_managed_connection(
+        &self,
+        id: &str,
+        domain: &str,
+    ) -> AuthResult<Option<ScimManagedConnectionState>>;
+    async fn list_scim_managed_connections(
+        &self,
+        domain: &str,
+    ) -> AuthResult<Vec<ScimManagedConnection>>;
+    async fn create_scim_managed_connection(
+        &self,
+        data: CreateScimManagedConnection,
+    ) -> AuthResult<ScimManagedCreation>;
+});
