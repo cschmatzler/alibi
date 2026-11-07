@@ -136,7 +136,7 @@ fn map_model(
                 self.columns.get(&identifier.value).map(String::as_str)
             };
             if let Some(physical) = physical {
-                *identifier = Ident::with_quote('"', physical);
+                *identifier = Ident::with_quote(identifier.quote_style.unwrap_or('"'), physical);
             }
         }
         fn name(&self, name: &mut ObjectName) {
@@ -239,4 +239,29 @@ fn map_model(
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join("; "))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn mapped_names_preserve_identifier_quoting_aliases_and_literals() {
+        let mapping = crate::config::TwoFactorDatabaseConfig {
+            table_name: "factor_records".into(),
+            columns: [
+                ("backup_codes".into(), "backup_values".into()),
+                ("user_id".into(), "owner_id".into()),
+                ("secret".into(), "shared_secret".into()),
+            ]
+            .into(),
+        };
+        for q in ['"', '`'] {
+            let sql = format!(
+                "SELECT {q}twoFactor{q}.{q}backupCodes{q} AS {q}backupCodes{q} FROM {q}twoFactor{q} WHERE {q}userId{q} = ? AND {q}secret{q} = 'twoFactor' FOR UPDATE"
+            );
+            let expected = format!(
+                "SELECT {q}factor_records{q}.{q}backup_values{q} AS {q}backupCodes{q} FROM {q}factor_records{q} WHERE {q}owner_id{q} = ? AND {q}shared_secret{q} = 'twoFactor' FOR UPDATE"
+            );
+            assert_eq!(super::map_two_factor(&sql, &mapping).unwrap(), expected);
+        }
+    }
 }

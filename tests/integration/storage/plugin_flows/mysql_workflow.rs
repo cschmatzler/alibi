@@ -21,7 +21,7 @@ fn passkey_output(mut row: Value, owner: &str, identity: &mut Option<Value>) -> 
     row
 }
 
-async fn exchange<S: AuthSchema>(
+pub(super) async fn exchange<S: AuthSchema>(
     auth: &Alibi<S>,
     jar: &mut BTreeMap<String, String>,
     path: &str,
