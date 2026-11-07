@@ -117,6 +117,10 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             } else {
                 bytes.to_vec()
             };
+            // Assignment to __proto__ does not create an own form property.
+            if name == "__proto__" {
+                continue;
+            }
             let value = if string_form_values && filename.is_some() {
                 alibi_core::utils::json::JsValue::String("[object File]".into())
             } else if let Some(filename) = filename {
@@ -135,9 +139,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                     String::from_utf8_lossy(&bytes).into_owned().into(),
                 )
             };
-            if name != "__proto__"
-                && let alibi_core::utils::json::JsValue::Object(object) = &mut fields
-            {
+            if let alibi_core::utils::json::JsValue::Object(object) = &mut fields {
                 _ = object.insert(name.into(), value);
             }
         }
@@ -218,7 +220,7 @@ mod canonical_tests {
         assert_eq!(fixture["better_auth"], "1.7.18");
         assert_eq!(fixture["better_call"], "1.4.5");
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 50);
+        assert_eq!(cases.len(), 54);
         for case in cases {
             let mode = case["mode"].as_str().unwrap();
             let content_type = case["content_type"].as_str().unwrap();
