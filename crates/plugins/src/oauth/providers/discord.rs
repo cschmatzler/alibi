@@ -7,15 +7,33 @@ use std::sync::Arc;
 impl OAuthProvider {
     #[must_use]
     pub fn discord(client_id: &str, client_secret: &str) -> Self {
+        Self::discord_with_endpoints(
+            client_id,
+            client_secret,
+            "https://discord.com/api/oauth2/authorize",
+            "https://discord.com/api/oauth2/token",
+            "https://discord.com/api/users/@me",
+        )
+    }
+
+    /// Override transport URLs while retaining the built-in Discord handler.
+    #[must_use]
+    pub fn discord_with_endpoints(
+        client_id: &str,
+        client_secret: &str,
+        auth_url: &str,
+        token_url: &str,
+        user_info_url: &str,
+    ) -> Self {
         Self {
             client_id: client_id.to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
             require_email_verification: false,
             client_secret: client_secret.to_owned(),
-            auth_url: "https://discord.com/api/oauth2/authorize".to_owned(),
-            token_url: "https://discord.com/api/oauth2/token".to_owned(),
-            user_info_url: Some("https://discord.com/api/users/@me".to_owned()),
+            auth_url: auth_url.to_owned(),
+            token_url: token_url.to_owned(),
+            user_info_url: Some(user_info_url.to_owned()),
             scopes: vec!["identify".to_owned(), "email".to_owned()],
             authorization: Some(OAuthAuthorizationPolicy {
                 source_profile_exceptions: true,
@@ -31,7 +49,7 @@ impl OAuthProvider {
             }),
             map_user_info: Some(discord_user_info),
             get_user_info: Some(Arc::new(DiscordUserInfo {
-                endpoint: "https://discord.com/api/users/@me".into(),
+                endpoint: user_info_url.to_owned(),
                 mapper: None,
             })),
             refresh_access_token: None,
@@ -216,12 +234,13 @@ mod tests {
         super::super::remaining_profile::own_fields_tests::assert_own_fields(
             &["discord"],
             |_, endpoint, _| {
-                let mut provider = OAuthProvider::discord("client", "secret");
-                provider.get_user_info = Some(Arc::new(DiscordUserInfo {
-                    endpoint: endpoint.into(),
-                    mapper: None,
-                }));
-                provider
+                OAuthProvider::discord_with_endpoints(
+                    "client",
+                    "secret",
+                    "https://auth.test",
+                    "https://token.test",
+                    endpoint,
+                )
             },
         )
         .await;
@@ -262,11 +281,14 @@ mod tests {
             stream.write_all(response.as_bytes()).await.unwrap();
         });
 
-        let mut provider = OAuthProvider::discord("client", "secret");
-        provider.get_user_info = Some(Arc::new(DiscordUserInfo {
-            endpoint,
-            mapper: None,
-        }));
+        let provider = OAuthProvider::discord_with_endpoints(
+            "client",
+            "secret",
+            "https://auth.test",
+            "https://token.test",
+            &endpoint,
+        );
+        assert_eq!(provider.user_info_url.as_deref(), Some(endpoint.as_str()));
         let provider = provider.with_profile_mapper(Arc::new(AvatarMapper));
         let response = provider
             .get_user_info

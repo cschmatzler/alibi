@@ -52,9 +52,13 @@ pub(super) fn profiles() -> Vec<ProfileCase> {
             authorization_pkce: false,
             grant_pkce: false,
             factory: |endpoint| {
-                let mut provider = OAuthProvider::discord("native-client", "native-secret");
-                provider.user_info_url = Some(endpoint.into());
-                provider
+                OAuthProvider::discord_with_endpoints(
+                    "native-client",
+                    "native-secret",
+                    "https://discord.com/api/oauth2/authorize",
+                    "https://discord.com/api/oauth2/token",
+                    endpoint,
+                )
             },
             profile: json!({"id":"123","email":"discord@example.test","global_name":"Discord User","username":"Other Name","avatar":"a_animated","discriminator":"0","verified":true}),
             subject_pointer: "/id",
