@@ -192,7 +192,24 @@ pub(in crate::passkey) async fn generate_register_options_core(
     response["excludeCredentials"] = JsValue::Array(exclude_credentials_json);
     response["user"]["name"] = JsValue::String(user_name);
     response["user"]["displayName"] = JsValue::String(user_display_name);
-    Ok((response, cookie))
+    Ok((
+        super::ordered_options(
+            response,
+            &[
+                "challenge",
+                "rp",
+                "user",
+                "pubKeyCredParams",
+                "timeout",
+                "attestation",
+                "excludeCredentials",
+                "authenticatorSelection",
+                "extensions",
+                "hints",
+            ],
+        )?,
+        cookie,
+    ))
 }
 
 #[expect(

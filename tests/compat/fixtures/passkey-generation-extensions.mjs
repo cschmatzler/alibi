@@ -26,7 +26,7 @@ for (const operation of ["registration", "authentication"]) {
       const options = structuredClone(output);
       delete options.challenge;
       if (options.user) delete options.user.id;
-      cases.push({ operation, resolver, mode, input: value, input_undefined: value === undefined, events, extensions: output.extensions, undefined: output.extensions === undefined, own: Object.hasOwn(output, "extensions"), undefined_keys: Object.keys(output).filter(key => output[key] === undefined), options });
+      cases.push({ operation, resolver, mode, input: value, input_undefined: value === undefined, events, extensions: output.extensions, undefined: output.extensions === undefined, own: Object.hasOwn(output, "extensions"), undefined_keys: Object.keys(output).filter(key => output[key] === undefined), option_keys: Object.keys(output), wire_keys: Object.keys(JSON.parse(JSON.stringify(output))), options });
     }
   }
 }

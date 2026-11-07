@@ -11,16 +11,16 @@
         ]
       },
       "body": {
+        "challenge": "<v1>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v1>",
+          "id": "<v2>",
           "name": "options-0@example.com",
           "displayName": "options-0@example.com"
         },
-        "challenge": "<v2>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -36,6 +36,7 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "required",
@@ -43,7 +44,6 @@
           "userVerification": "required",
           "authenticatorAttachment": "platform"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -63,9 +63,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v3>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "required"
       }
     }
@@ -96,9 +96,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v4>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "required"
       }
     }
@@ -115,16 +115,16 @@
         ]
       },
       "body": {
+        "challenge": "<v5>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v5>",
+          "id": "<v6>",
           "name": "options-1@example.com",
           "displayName": "options-1@example.com"
         },
-        "challenge": "<v6>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -140,13 +140,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "discouraged",
           "requireResidentKey": false,
           "userVerification": "discouraged"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -166,9 +166,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v7>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "discouraged"
       }
     }
@@ -199,9 +199,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v8>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "discouraged"
       }
     }
@@ -218,16 +218,16 @@
         ]
       },
       "body": {
+        "challenge": "<v9>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v9>",
+          "id": "<v10>",
           "name": "options-2@example.com",
           "displayName": "options-2@example.com"
         },
-        "challenge": "<v10>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -243,13 +243,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "appid": "x",
           "credProps": true
@@ -270,9 +270,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v11>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": {
           "appid": "y"
@@ -306,9 +306,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v12>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": {
           "appid": "y"
@@ -328,16 +328,16 @@
         ]
       },
       "body": {
+        "challenge": "<v13>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v13>",
+          "id": "<v14>",
           "name": "options-3@example.com",
           "displayName": "options-3@example.com"
         },
-        "challenge": "<v14>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -353,13 +353,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "user": "options-3@example.com",
           "credProps": true
@@ -380,9 +380,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v15>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": {
           "user": "options-3@example.com"
@@ -416,9 +416,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v16>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": {
           "user": null
@@ -438,16 +438,16 @@
         ]
       },
       "body": {
+        "challenge": "<v17>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v17>",
+          "id": "<v18>",
           "name": "options-4@example.com",
           "displayName": "options-4@example.com"
         },
-        "challenge": "<v18>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -463,13 +463,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -489,9 +489,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v19>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": 5
       }
@@ -523,9 +523,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v20>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": 5
       }
@@ -631,16 +631,16 @@
         ]
       },
       "body": {
+        "challenge": "<v21>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v21>",
+          "id": "<v22>",
           "name": "options-7@example.com",
           "displayName": "options-7@example.com"
         },
-        "challenge": "<v22>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -656,13 +656,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -682,9 +682,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v23>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": "x"
       }
@@ -716,9 +716,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v24>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred",
         "extensions": "x"
       }
@@ -736,16 +736,16 @@
         ]
       },
       "body": {
+        "challenge": "<v25>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v25>",
+          "id": "<v26>",
           "name": "options-8@example.com",
           "displayName": "options-8@example.com"
         },
-        "challenge": "<v26>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -761,13 +761,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -787,9 +787,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v27>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -820,9 +820,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v28>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -839,16 +839,16 @@
         ]
       },
       "body": {
+        "challenge": "<v29>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v29>",
+          "id": "<v30>",
           "name": "options-9@example.com",
           "displayName": "options-9@example.com"
         },
-        "challenge": "<v30>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -864,13 +864,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -890,9 +890,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v31>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -909,16 +909,16 @@
         ]
       },
       "body": {
+        "challenge": "<v32>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v32>",
+          "id": "<v33>",
           "name": "external",
           "displayName": "external"
         },
-        "challenge": "<v33>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -934,13 +934,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -960,9 +960,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v34>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -979,16 +979,16 @@
         ]
       },
       "body": {
+        "challenge": "<v35>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v35>",
+          "id": "<v36>",
           "name": "options-10@example.com",
           "displayName": "options-10@example.com"
         },
-        "challenge": "<v36>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -1004,13 +1004,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -1030,9 +1030,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v37>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -1063,9 +1063,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v38>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -1082,16 +1082,16 @@
         ]
       },
       "body": {
+        "challenge": "<v39>",
         "rp": {
           "name": "Better Auth",
           "id": "localhost"
         },
         "user": {
-          "id": "<v39>",
+          "id": "<v40>",
           "name": "options-11@example.com",
           "displayName": "options-11@example.com"
         },
-        "challenge": "<v40>",
         "pubKeyCredParams": [
           {
             "alg": -8,
@@ -1107,13 +1107,13 @@
           }
         ],
         "timeout": 60000,
+        "attestation": "none",
         "excludeCredentials": [],
         "authenticatorSelection": {
           "residentKey": "preferred",
           "requireResidentKey": false,
           "userVerification": "preferred"
         },
-        "attestation": "none",
         "extensions": {
           "credProps": true
         },
@@ -1133,9 +1133,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v41>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }
@@ -1159,9 +1159,9 @@
         ]
       },
       "body": {
+        "rpId": "localhost",
         "challenge": "<v42>",
         "timeout": 60000,
-        "rpId": "localhost",
         "userVerification": "preferred"
       }
     }

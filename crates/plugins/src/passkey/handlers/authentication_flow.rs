@@ -100,7 +100,20 @@ pub(in crate::passkey) async fn generate_authenticate_options_core(
         alibi_core::utils::json::JsValue::Array(allow_credentials_json)
     };
     response["extensions"] = extensions;
-    Ok((response, cookie))
+    Ok((
+        super::ordered_options(
+            response,
+            &[
+                "rpId",
+                "challenge",
+                "allowCredentials",
+                "timeout",
+                "userVerification",
+                "extensions",
+            ],
+        )?,
+        cookie,
+    ))
 }
 
 #[expect(

@@ -45,6 +45,25 @@ fn credential_descriptor(
     ))
 }
 
+fn ordered_options(
+    options: alibi_core::utils::json::JsValue,
+    order: &[&str],
+) -> AuthResult<alibi_core::utils::json::JsValue> {
+    use alibi_core::utils::json::{JsObject, JsValue};
+    let JsValue::Object(mut fields) = options else {
+        return Err(AuthError::internal("Passkey options must be an object"));
+    };
+    let mut ordered = JsObject::new();
+    for name in order {
+        let value = fields
+            .shift_remove(*name)
+            .ok_or_else(|| AuthError::internal(format!("Missing passkey option: {name}")))?;
+        _ = ordered.insert((*name).into(), value);
+    }
+    ordered.extend(fields);
+    Ok(JsValue::Object(ordered))
+}
+
 fn response_message<T>(status: u16, message: &str) -> PasskeyHandlerResult<T> {
     Ok(PasskeyHandlerOutcome::Response(
         alibi_core::AuthResponse::json(status, &json!({ "message": message }))

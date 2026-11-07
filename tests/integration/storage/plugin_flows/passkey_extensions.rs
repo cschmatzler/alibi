@@ -74,6 +74,21 @@ async fn passkey_extension_values_match_actual_generation() {
         .await
         .unwrap_or_else(|error| panic!("{}: {}", case["mode"].as_str().unwrap(), error.error));
         let result = output.decode().unwrap();
+        let keys = JsValue::Array(
+            result
+                .as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .map(JsValue::String)
+                .collect(),
+        );
+        assert_eq!(
+            keys,
+            case["option_keys"],
+            "{}",
+            case["operation"].as_str().unwrap()
+        );
         assert_eq!(
             result["extensions"],
             case["extensions"],
@@ -100,6 +115,15 @@ async fn passkey_extension_values_match_actual_generation() {
         );
         assert_eq!(undefined, case["undefined_keys"]);
         let wire = native::from_slice::<JsValue>(&output.into_response().unwrap().body).unwrap();
+        let wire_keys = JsValue::Array(
+            wire.as_object()
+                .unwrap()
+                .keys()
+                .cloned()
+                .map(JsValue::String)
+                .collect(),
+        );
+        assert_eq!(wire_keys, case["wire_keys"]);
         let mut stable = wire.clone();
         _ = stable.as_object_mut().unwrap().shift_remove("challenge");
         let mut expected = case["options"].clone();
