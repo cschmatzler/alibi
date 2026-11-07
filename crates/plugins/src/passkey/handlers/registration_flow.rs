@@ -507,13 +507,6 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 }
             }
         }
-        // Source joins transport metadata after the verification callback.
-        let transports = transports?;
-        input_2.transports = if source_transports {
-            JsValue::String(transports.unwrap_or_default())
-        } else {
-            transports.map_or(JsValue::Undefined, JsValue::String)
-        };
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,
@@ -522,6 +515,15 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             });
         }
         Ok(input_2)
+    };
+    let apply_transports = move |input: &mut CreatePasskey| -> AuthResult<()> {
+        let transports = transports?;
+        input.transports = if source_transports {
+            JsValue::String(transports.unwrap_or_default())
+        } else {
+            transports.map_or(JsValue::Undefined, JsValue::String)
+        };
+        Ok(())
     };
     let outcome: AuthResult<JsValue> = if body.create_session.as_bool() == Some(true) {
         let meta = if req.endpoint_call().is_some() {
@@ -561,6 +563,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                             message: "User not found",
                         })?;
                     let user_id = input.user_id.clone();
+                    apply_transports(&mut input)?;
                     input.created_at = JsValue::Date(Utc::now());
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
@@ -649,14 +652,18 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
     } else {
         match apply_policy(input).await {
             Ok(mut input) => {
-                input.created_at = JsValue::Date(Utc::now());
-                ctx.database
-                    .create_passkey(input)
-                    .await
-                    .and_then(|passkey| {
-                        native_json::to_js_value(&alibi_core::wire::PasskeyView::from(&passkey))
-                            .map_err(Into::into)
-                    })
+                async {
+                    apply_transports(&mut input)?;
+                    input.created_at = JsValue::Date(Utc::now());
+                    ctx.database
+                        .create_passkey(input)
+                        .await
+                        .and_then(|passkey| {
+                            native_json::to_js_value(&alibi_core::wire::PasskeyView::from(&passkey))
+                                .map_err(Into::into)
+                        })
+                }
+                .await
             }
             Err(error) => Err(error),
         }

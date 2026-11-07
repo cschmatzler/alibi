@@ -41,6 +41,7 @@ mod organization_matrix;
 mod organization_members;
 mod otp_callbacks;
 mod passkey_attestation;
+mod passkey_error_order;
 mod passkey_hooks;
 mod passkey_matrix;
 mod passkey_presence;
