@@ -52,12 +52,12 @@ impl OAuthProvider {
             account_subject: Some(|profile| raw_subject(profile.get("sub"))),
             map_user_info: Some(|v| {
                 let mut output = Map::new();
-                output.insert("id".into(), v.property("sub")?);
+                _ = output.insert("id".into(), v.property("sub")?);
                 for (source, target) in [("email", "email"), ("name", "name"), ("picture", "image")]
                 {
-                    output.insert(target.into(), v.property(source)?);
+                    _ = output.insert(target.into(), v.property(source)?);
                 }
-                output.insert(
+                _ = output.insert(
                     "emailVerified".into(),
                     Value::Bool(super::email_verified_claim(v.get("email_verified"))),
                 );
@@ -129,7 +129,7 @@ impl OAuthUserInfoHandler for GoogleUserInfo {
             ("picture", "image"),
             ("email_verified", "emailVerified"),
         ] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );

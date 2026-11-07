@@ -473,14 +473,14 @@ impl OAuthUserInfoHandler for GenericUserInfo {
             }
             let mut object = super::remaining_profile::object_spread(profile.clone());
             for (source, target) in [("email", "email"), ("picture", "image"), ("name", "name")] {
-                object.insert(
+                _ = object.insert(
                     target.into(),
                     profile
                         .property(source)
                         .map_err(super::remaining_profile::profile_exception)?,
                 );
             }
-            object.insert(
+            _ = object.insert(
                 "emailVerified".into(),
                 Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
             );
@@ -507,7 +507,7 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 )
             })
             .collect();
-        output.insert(
+        _ = output.insert(
             "emailVerified".into(),
             Value::Bool(super::email_verified_claim(raw.get("emailVerified"))),
         );

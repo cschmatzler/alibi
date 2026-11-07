@@ -180,14 +180,14 @@ impl OAuthUserInfoHandler for KickUserInfo {
             ("email", "email"),
             ("profile_picture", "image"),
         ] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile
                     .property(source)
                     .map_err(super::remaining_profile::profile_exception)?,
             );
         }
-        output.insert("emailVerified".into(), Value::Bool(false));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapped) = mapped {
             output.extend(mapped);
         }

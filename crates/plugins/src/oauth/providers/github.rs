@@ -191,7 +191,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             .unwrap_or(Value::Bool(false));
 
         let mut output = Map::new();
-        output.insert(
+        _ = output.insert(
             "name".into(),
             ["name", "login"]
                 .into_iter()
@@ -201,12 +201,12 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 .unwrap_or_else(|| Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("avatar_url", "image")] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
-        output.insert("emailVerified".into(), email_verified);
+        _ = output.insert("emailVerified".into(), email_verified);
         if let Some(mapper) = &self.mapper {
             output.extend(
                 mapper

@@ -247,15 +247,15 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
 impl CognitoUserInfo {
     async fn map_profile(&self, profile: &Value, id_token: bool) -> Result<Map, String> {
         let mut output = Map::new();
-        output.insert("name".into(), profile_name(profile));
+        _ = output.insert("name".into(), profile_name(profile));
         for (source, target) in [("email", "email"), ("picture", "image")] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
         if id_token {
-            output.insert(
+            _ = output.insert(
                 "emailVerified".into(),
                 profile
                     .get("email_verified")
@@ -263,7 +263,7 @@ impl CognitoUserInfo {
                     .unwrap_or(Value::Undefined),
             );
         } else {
-            output.insert(
+            _ = output.insert(
                 "emailVerified".into(),
                 Value::Bool(super::email_verified_claim(profile.get("email_verified"))),
             );

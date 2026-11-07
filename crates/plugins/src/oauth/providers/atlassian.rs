@@ -180,12 +180,12 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
         }
         let mut output = Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
-        output.insert("emailVerified".into(), Value::Bool(false));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
             output.extend(mapper(profile.clone())?);
         }

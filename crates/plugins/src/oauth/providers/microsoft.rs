@@ -339,12 +339,12 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
         };
         let mut output = Map::new();
         for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
-        output.insert("emailVerified".into(), Value::Bool(verified));
+        _ = output.insert("emailVerified".into(), Value::Bool(verified));
         output.extend(mapped);
         let mut response = OAuthUserInfoResponse {
             user: output.clone(),

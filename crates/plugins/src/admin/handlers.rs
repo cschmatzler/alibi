@@ -267,7 +267,7 @@ pub(crate) async fn create_user_core(
                 serde_json::json!({field: value.clone()}),
             );
             if typed.is_ok() {
-                data.insert(field.to_owned(), value.clone());
+                _ = data.insert(field.to_owned(), value.clone());
             }
             if value.is_null()
                 || typed.is_err()
@@ -278,12 +278,12 @@ pub(crate) async fn create_user_core(
             }
         }
     }
-    data.insert("email".to_owned(), serde_json::Value::String(email));
-    data.insert(
+    _ = data.insert("email".to_owned(), serde_json::Value::String(email));
+    _ = data.insert(
         "name".to_owned(),
         serde_json::Value::String(body.name.clone()),
     );
-    data.insert("role".to_owned(), serde_json::Value::String(role));
+    _ = data.insert("role".to_owned(), serde_json::Value::String(role));
     let mut create_user =
         serde_json::from_value::<alibi_core::CreateUser>(serde_json::Value::Object(data))
             .map_err(|error| AuthError::bad_request(error.to_string()))?;
@@ -588,7 +588,7 @@ pub(crate) async fn update_user_core(
         .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
     for name in fields.keys() {
         if let Some(value) = body.data.get(name) {
-            update
+            _ = update
                 .additional_fields
                 .insert(name.clone(), value.clone().into());
         }

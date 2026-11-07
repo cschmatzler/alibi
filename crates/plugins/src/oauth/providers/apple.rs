@@ -179,9 +179,9 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         _ = object.insert("name".into(), name_value);
         let data = profile;
         let mut output = Map::new();
-        output.insert("name".into(), data["name"].clone().into());
-        output.insert("emailVerified".into(), Value::Bool(email_verified));
-        output.insert(
+        _ = output.insert("name".into(), data["name"].clone().into());
+        _ = output.insert("emailVerified".into(), Value::Bool(email_verified));
+        _ = output.insert(
             "email".into(),
             data.get("email").cloned().unwrap_or(Value::Undefined),
         );

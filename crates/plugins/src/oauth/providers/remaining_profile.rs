@@ -198,7 +198,7 @@ pub(in crate::oauth) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
     if encoded.len() % 4 == 0 {
         for _ in 0..2 {
             if encoded.last() == Some(&b'=') {
-                encoded.pop();
+                _ = encoded.pop();
             }
         }
     }

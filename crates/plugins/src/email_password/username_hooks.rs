@@ -25,7 +25,7 @@ fn candidate(data: &CreateUser, name: &str) -> Option<JsValue> {
 }
 
 fn stage(data: &mut CreateUser, name: &str, value: JsValue) {
-    data.adapter_native_fields.remove(name);
+    _ = data.adapter_native_fields.remove(name);
     let text = value.as_str().map(str::to_owned);
     match name {
         "username" => data.username = text,
@@ -148,8 +148,8 @@ impl<S: AuthSchema> UserCreateHook<S> for UsernameCreateHook {
         }
         if !policy.include_display_username {
             data.display_username = None;
-            data.adapter_native_fields.remove("displayUsername");
-            data.additional_fields.shift_remove("displayUsername");
+            _ = data.adapter_native_fields.remove("displayUsername");
+            _ = data.additional_fields.shift_remove("displayUsername");
         }
         Ok(data)
     }

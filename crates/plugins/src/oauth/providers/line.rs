@@ -180,7 +180,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
             return Err("Missing line profile".into());
         }
         let mut output = Map::new();
-        output.insert(
+        _ = output.insert(
             "name".into(),
             profile
                 .get("name")
@@ -189,12 +189,12 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .unwrap_or_else(|| Value::String(String::new().into())),
         );
         for (source, target) in [("email", "email"), ("picture", "image")] {
-            output.insert(
+            _ = output.insert(
                 target.into(),
                 profile.get(source).cloned().unwrap_or(Value::Undefined),
             );
         }
-        output.insert("emailVerified".into(), Value::Bool(false));
+        _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(mapper) = self.mapper {
             output.extend(
                 mapper(profile.clone()).map_err(super::remaining_profile::profile_exception)?,

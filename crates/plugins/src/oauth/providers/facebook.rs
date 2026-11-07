@@ -243,7 +243,7 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
         }
         let mut output = Map::new();
         for key in ["name", "email"] {
-            output.insert(
+            _ = output.insert(
                 key.into(),
                 profile.get(key).cloned().unwrap_or(Value::Undefined),
             );
@@ -265,8 +265,8 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
                 })?;
             data.get("url")
         };
-        output.insert("image".into(), image.cloned().unwrap_or(Value::Undefined));
-        output.insert(
+        _ = output.insert("image".into(), image.cloned().unwrap_or(Value::Undefined));
+        _ = output.insert(
             "emailVerified".into(),
             if limited_login {
                 Value::Bool(false)
