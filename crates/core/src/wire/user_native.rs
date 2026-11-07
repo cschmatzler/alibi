@@ -197,20 +197,7 @@ impl UserView {
         }
     }
 
-    pub(crate) fn apply_user_update(
-        &mut self,
-        data: crate::utils::json::JsObject,
-    ) -> AuthResult<()> {
-        if let Some(id) = data.get("id") {
-            let Value::String(id) = id else {
-                return Err(crate::AuthError::not_implemented(
-                    "Non-string UPDATE identity requires a canonical USER identity API",
-                ));
-            };
-            self.id = id
-                .to_utf8()
-                .map_err(|error| crate::AuthError::not_implemented(error.to_string()))?;
-        }
+    pub(crate) fn apply_user_update(&mut self, data: crate::utils::json::JsObject) {
         self.retain_native_user_fields(
             data.iter()
                 .filter_map(|(name, value)| {
@@ -221,10 +208,9 @@ impl UserView {
                 .collect(),
         );
         for (name, value) in data {
-            if name == "id"
-                || name
-                    .as_str()
-                    .is_some_and(|name| NATIVE_FIELDS.contains(&name))
+            if name
+                .as_str()
+                .is_some_and(|name| NATIVE_FIELDS.contains(&name))
             {
                 continue;
             }
@@ -236,6 +222,5 @@ impl UserView {
             }
             _ = self.extension_fields.insert(name, value);
         }
-        Ok(())
     }
 }

@@ -11,6 +11,10 @@ mod duplicate_rows {
     include!("memory_user_duplicate_tests.rs");
 }
 
+mod primitive_updates {
+    include!("memory_user_update_primitive_id_tests.rs");
+}
+
 mod falsy_id_cases {
     use crate as alibi_core;
     include!("../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs");

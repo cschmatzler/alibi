@@ -46,25 +46,31 @@ impl MemoryUserId {
     pub(crate) fn update_rows(
         users: &mut [(Self, crate::UserView)],
         id: &str,
-        data: crate::utils::json::JsObject,
+        mut data: crate::utils::json::JsObject,
     ) -> crate::AuthResult<crate::UserView> {
         let locator = Self::string(id);
-        let mut updates = Vec::new();
-        for (index, (key, existing)) in users.iter().enumerate() {
+        let replacement = data
+            .shift_remove("id")
+            .map(|value| {
+                Self::supplied(Some(&value))?.ok_or_else(|| {
+                    crate::AuthError::not_implemented(
+                        "Non-primitive UPDATE identity requires a canonical USER identity API",
+                    )
+                })
+            })
+            .transpose()?;
+        let mut output = None;
+        for (key, user) in users.iter_mut() {
             if *key == locator {
-                let mut user = existing.clone();
-                user.apply_user_update(data.clone())?;
-                updates.push((index, user));
+                user.apply_user_update(data.clone());
+                if let Some((identity, id)) = &replacement {
+                    *key = identity.clone();
+                    user.id.clone_from(id);
+                }
+                _ = output.get_or_insert_with(|| user.clone());
             }
         }
-        let output = updates
-            .first()
-            .map(|(_, user)| user.clone())
-            .ok_or(crate::AuthError::UserNotFound)?;
-        for (index, user) in updates {
-            users[index] = (Self::string(&user.id), user);
-        }
-        Ok(output)
+        output.ok_or(crate::AuthError::UserNotFound)
     }
 
     pub(crate) fn apply_list<'a>(
