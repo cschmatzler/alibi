@@ -74,39 +74,43 @@ impl MemoryUserId {
         params.filter_value = None;
         params.search_value = None;
         let mut users = filtered;
-        let numeric = users.iter().all(|(id, _)| matches!(id, Self::Number(_)));
-        let strings = users.iter().all(|(id, _)| matches!(id, Self::String(_)));
-        // The mixed-type source comparator can be non-transitive; it cannot be
-        // passed to Rust's total-order sort without a separate runtime-order policy.
-        if users.len() > 1
-            && matches!(params.sort_by.as_deref(), Some("id" | "_id"))
-            && (numeric || strings)
-        {
-            let collator = if strings {
-                Some(
-                    icu_collator::Collator::try_new(
-                        icu_collator::CollatorPreferences::default(),
-                        icu_collator::options::CollatorOptions::default(),
-                    )
-                    .map_err(|error| crate::AuthError::internal(error.to_string()))?,
-                )
-            } else {
+        if users.len() > 1 && matches!(params.sort_by.as_deref(), Some("id" | "_id")) {
+            let numeric = users.iter().all(|(id, _)| matches!(id, Self::Number(_)));
+            let collation = if numeric {
                 None
+            } else {
+                let collator = icu_collator::Collator::try_new(
+                    icu_collator::CollatorPreferences::default(),
+                    icu_collator::options::CollatorOptions::default(),
+                )
+                .map_err(|error| crate::AuthError::internal(error.to_string()))?;
+                let text = users
+                    .iter()
+                    .map(|(id, _)| {
+                        id.native()
+                            .coerce_string()
+                            .expect("primitive ID conversion")
+                    })
+                    .collect::<Vec<_>>();
+                Some((collator, text))
             };
             let ascending = params.sort_direction.as_deref().unwrap_or("asc") == "asc";
-            users.sort_by(|(lhs, _), (rhs, _)| {
-                let order = match (lhs, rhs) {
+            let indices = super::memory_user_sort::indices(users.len(), |lhs, rhs| {
+                let order = match (users[lhs].0, users[rhs].0) {
                     (Self::Number(lhs), Self::Number(rhs)) => f64::from_bits(*lhs)
                         .partial_cmp(&f64::from_bits(*rhs))
                         .expect("supplied numeric IDs are not NaN"),
-                    (Self::String(lhs), Self::String(rhs)) => collator
-                        .as_ref()
-                        .expect("string IDs load a collator")
-                        .compare(lhs, rhs),
-                    _ => unreachable!("homogeneous physical IDs"),
+                    (Self::Bool(lhs), Self::Bool(rhs)) => lhs.cmp(rhs),
+                    _ => {
+                        let (collator, text) = collation
+                            .as_ref()
+                            .expect("non-numeric IDs prepare collation");
+                        collator.compare(&text[lhs], &text[rhs])
+                    }
                 };
                 if ascending { order } else { order.reverse() }
             });
+            users = indices.into_iter().map(|index| users[index]).collect();
             params.sort_by = None;
         }
         crate::user_query::apply_list_users(

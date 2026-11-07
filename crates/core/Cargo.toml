@@ -3,7 +3,7 @@ name = "alibi-core"
 version = { workspace = true }
 edition = { workspace = true }
 rust-version = { workspace = true }
-license = { workspace = true }
+license = "MIT AND Python-2.0"
 description = "Shared authentication contracts and backend-independent services for Alibi"
 repository = { workspace = true }
 homepage = { workspace = true }

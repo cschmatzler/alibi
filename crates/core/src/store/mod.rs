@@ -6,6 +6,9 @@ mod jwks;
 pub(crate) mod memory_user_id;
 #[cfg(test)]
 mod memory_user_id_tests;
+mod memory_user_sort;
+#[cfg(test)]
+mod memory_user_sort_tests;
 mod migrations;
 pub mod oauth_clients;
 mod org_extensions;
