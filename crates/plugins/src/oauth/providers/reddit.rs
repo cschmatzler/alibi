@@ -211,12 +211,11 @@ impl OAuthUserInfoHandler for RedditUserInfo {
             }
         };
         let mut output = Map::new();
-        if let Some(name) = profile.get("name") {
-            _ = output.insert("name".into(), name.clone());
-        }
-        if let Some(image) = image {
-            _ = output.insert("image".into(), image);
-        }
+        _ = output.insert(
+            "name".into(),
+            profile.get("name").cloned().unwrap_or(Value::Undefined),
+        );
+        _ = output.insert("image".into(), image.unwrap_or(Value::Undefined));
         output.extend(mapped.clone());
         _ = output.insert("email".into(), email);
         _ = output.insert(

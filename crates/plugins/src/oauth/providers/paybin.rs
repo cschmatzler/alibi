@@ -176,11 +176,6 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
         let mut output = Map::new();
-        for (source, target) in [("email", "email"), ("picture", "image")] {
-            if let Some(value) = profile.get(source) {
-                _ = output.insert(target.into(), value.clone());
-            }
-        }
         let name = profile
             .get("name")
             .filter(|v| truthy(v))
@@ -188,6 +183,12 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
             .cloned()
             .unwrap_or_else(|| Value::String(String::new().into()));
         _ = output.insert("name".into(), name.clone());
+        for (source, target) in [("email", "email"), ("picture", "image")] {
+            _ = output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
+        }
         _ = output.insert(
             "emailVerified".into(),
             profile

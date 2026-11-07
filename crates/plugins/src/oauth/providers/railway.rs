@@ -177,15 +177,11 @@ impl OAuthUserInfoHandler for RailwayUserInfo {
             .map_err(super::remaining_profile::profile_exception)?;
         // Keep the published raw JSON independently from typed persistence.
         let mut output = Map::new();
-        if let Some(name) = profile.get("name") {
-            _ = output.insert("name".into(), name.clone());
-        }
-        let email = profile.get("email");
-        if let Some(email) = email {
-            _ = output.insert("email".into(), email.clone());
-        }
-        if let Some(image) = profile.get("picture") {
-            _ = output.insert("image".into(), image.clone());
+        for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
+            _ = output.insert(
+                target.into(),
+                profile.get(source).cloned().unwrap_or(Value::Undefined),
+            );
         }
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {

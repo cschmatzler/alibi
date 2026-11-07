@@ -41,6 +41,11 @@ fn provider(name: &str, endpoint: &str) -> OAuthProvider {
             options.disable_profile_photo = true;
             OAuthProvider::microsoft(options).unwrap()
         }
+        "paybin" => OAuthProvider::paybin("client", Some("secret")),
+        "polar" => with_endpoint!(PolarOptions, polar_with_options),
+        "railway" => with_endpoint!(RailwayOptions, railway_with_options),
+        "reddit" => with_endpoint!(RedditOptions, reddit_with_options),
+        "notion" => with_endpoint!(NotionOptions, notion_with_options),
         "tiktok" => {
             let mut options = TikTokOptions::new("client", "secret");
             options.user_info_endpoint = Some(endpoint.into());
@@ -73,7 +78,7 @@ pub(in crate::oauth::providers) async fn assert_own_fields(
         json::parse_value(include_str!("remaining_profile_own_fields_cases.json")).unwrap();
     assert_eq!(fixture["better_auth"].as_str(), Some("1.7.18"));
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 83);
+    assert_eq!(cases.len(), 113);
     let mut matched = 0;
     for case in cases {
         let name = case["provider"].as_str().unwrap();
@@ -174,6 +179,16 @@ async fn remaining_literal_own_fields_match_upstream_for_facebook_graph_and_limi
 #[tokio::test]
 async fn remaining_literal_own_fields_match_upstream_for_microsoft() {
     assert_own_fields(&["microsoft"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_paybin_polar_railway() {
+    assert_own_fields(&["paybin", "polar", "railway"], provider).await;
+}
+
+#[tokio::test]
+async fn remaining_literal_own_fields_match_upstream_for_reddit_notion() {
+    assert_own_fields(&["reddit", "notion"], provider).await;
 }
 
 #[tokio::test]

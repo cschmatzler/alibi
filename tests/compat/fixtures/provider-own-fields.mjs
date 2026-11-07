@@ -4,7 +4,7 @@ import { socialProviders } from "../reference-server/node_modules/@better-auth/c
 
 const pkg = JSON.parse(await readFile(new URL("../reference-server/node_modules/@better-auth/core/package.json", import.meta.url)));
 assert.equal(pkg.version, "1.7.18");
-const names = ["roblox", "salesforce", "slack", "spotify", "twitch", "twitter", "vercel", "vk", "zoom", "facebook-graph", "facebook-limited", "microsoft", "discord", "tiktok"];
+const names = ["roblox", "salesforce", "slack", "spotify", "twitch", "twitter", "vercel", "vk", "zoom", "facebook-graph", "facebook-limited", "microsoft", "discord", "tiktok", "paybin", "polar", "railway", "reddit", "notion"];
 const modes = ["missing", "null", "false", "empty", "utf16", "mapped"];
 const cases = [];
 const fetch = globalThis.fetch;
@@ -27,6 +27,11 @@ try {
         microsoft: { oid: "subject" },
         discord: { id: "subject", avatar: "avatar" },
         tiktok: { data: { user: { open_id: "subject" } } },
+        paybin: { sub: "subject" },
+        polar: { id: "subject" },
+        railway: { sub: "subject" },
+        reddit: { id: "subject" },
+        notion: { bot: { owner: { user: { id: "subject" } } } },
       }[name];
       if (mode !== "missing" && mode !== "mapped") {
         const value = { null: null, false: false, empty: "", utf16: "\ud800" }[mode];
@@ -45,12 +50,19 @@ try {
           microsoft: ["name", "email", "picture", "email_verified"],
           discord: ["global_name", "username", "email", "verified"],
           tiktok: ["display_name", "username", "email", "avatar_large_url"],
+          paybin: ["name", "preferred_username", "email", "picture", "email_verified"],
+          polar: ["public_name", "username", "email", "avatar_url", "email_verified"],
+          railway: ["name", "email", "picture"],
+          reddit: ["name", "icon_img"],
+          notion: ["name", "avatar_url"],
         }[name];
-        const receiver = name === "vk" ? profile.user : name === "twitter" ? profile.data : name === "tiktok" ? profile.data.user : profile;
+        const receiver = name === "vk" ? profile.user : name === "twitter" ? profile.data : name === "tiktok" ? profile.data.user : name === "notion" ? profile.bot.owner.user : profile;
         for (const field of fields) receiver[field] = value;
         if (name === "salesforce") profile.photos = { picture: value, thumbnail: value };
         if (name === "spotify") profile.images = [{ url: value }];
         if (name === "facebook-graph") profile.picture.data.url = value;
+        if (name === "notion") receiver.person = { email: value };
+        if (name === "reddit" && mode === "false") profile.icon_img = "";
       }
       const mapping = mode === "mapped"
         ? { id: "mapped", name: "\udfff", email: "mapped@fixture.test", extra: { text: "\ud800" } }
@@ -81,11 +93,13 @@ try {
       assert.deepEqual(observedProfiles, mapping ? [response.data] : []);
       assert.deepEqual(response.data, name === "discord"
         ? { ...profile, image_url: "https://cdn.discordapp.com/avatars/subject/avatar.png" }
-        : profile);
+        : name === "notion" ? profile.bot.owner.user : profile);
+      const subject = await provider.accountSubject({ profile: response.data });
+      assert.equal(typeof subject, "string");
       cases.push({
         provider: name, mode, profile, mapping, mapping_undefined: mappingUndefined,
         expected_data: response.data,
-        subject: await provider.accountSubject({ profile: response.data }),
+        subject,
         expected: response.user,
         keys: Object.keys(response.user),
         undefined: Object.keys(response.user).filter(key => response.user[key] === undefined),
@@ -95,7 +109,7 @@ try {
 } finally {
   globalThis.fetch = fetch;
 }
-assert.equal(cases.length, 83);
+assert.equal(cases.length, 113);
 await writeFile(new URL("../../../crates/plugins/src/oauth/providers/remaining_profile_own_fields_cases.json", import.meta.url),
   JSON.stringify({ better_auth: pkg.version, cases }).replaceAll('},{"provider":', '},\n{"provider":') + "\n");
 console.log(`${cases.length} provider own-field cases from Better Auth ${pkg.version}`);

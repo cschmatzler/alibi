@@ -198,9 +198,13 @@ impl OAuthUserInfoHandler for NotionUserInfo {
             .and_then(|person| person.get("email"))
             .filter(|v| truthy(v));
         _ = output.insert("email".into(), email.cloned().unwrap_or(Value::Null));
-        if let Some(image) = profile.get("avatar_url") {
-            _ = output.insert("image".into(), image.clone());
-        }
+        _ = output.insert(
+            "image".into(),
+            profile
+                .get("avatar_url")
+                .cloned()
+                .unwrap_or(Value::Undefined),
+        );
         _ = output.insert("emailVerified".into(), Value::Bool(false));
         if let Some(user) = &mapped {
             output.extend(user.clone());
