@@ -147,7 +147,7 @@ impl AuthSchema for BundledSchema {
     type Verification = VerificationView;
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct State {
     users: Vec<(crate::store::memory_user_id::MemoryUserId, UserView)>,
     sessions: HashMap<String, SessionView>,
@@ -180,12 +180,27 @@ impl MemoryStore {
     }
 }
 
-struct MemoryTransaction<'a> {
-    store: &'a MemoryStore,
+struct MemoryTransaction {
+    store: MemoryStore,
 }
 
 #[async_trait]
-impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
+impl AuthTransaction<BundledSchema> for MemoryTransaction {
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<UserView>> {
+        self.store.get_user_by_email(email).await
+    }
+
+    async fn get_account(
+        &self,
+        provider: &str,
+        id: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<AccountView>> {
+        self.store.get_account(provider, id).await
+    }
+
     async fn update_user_prepared(
         &self,
         id: &str,
@@ -1413,8 +1428,56 @@ impl TransactionStore<BundledSchema> for MemoryStore {
         &self,
         work: Box<crate::store::TransactionWork<BundledSchema>>,
     ) -> AuthResult<crate::store::BoxedTransactionValue> {
-        let tx = MemoryTransaction { store: self };
-        work(&tx).await
+        let base = self.lock().clone();
+        let tx = MemoryTransaction {
+            store: MemoryStore {
+                state: Mutex::new(base.clone()),
+            },
+        };
+        let result = work(&tx).await?;
+        let changed = tx
+            .store
+            .state
+            .into_inner()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut live = self.lock();
+        let mut merged = live.clone();
+        use crate::store::memory_transaction::merge_rows;
+        merged.users = merge_rows(
+            live.users.iter().map(|(id, row)| (id, row)),
+            base.users.iter().map(|(id, row)| (id, row)),
+            changed.users.iter().map(|(id, row)| (id, row)),
+        )?;
+        merged.sessions = merge_rows(
+            live.sessions.iter(),
+            base.sessions.iter(),
+            changed.sessions.iter(),
+        )?
+        .into_iter()
+        .collect();
+        merged.accounts = merge_rows(
+            live.accounts.iter(),
+            base.accounts.iter(),
+            changed.accounts.iter(),
+        )?
+        .into_iter()
+        .collect();
+        merged.verifications = merge_rows(
+            live.verifications.iter(),
+            base.verifications.iter(),
+            changed.verifications.iter(),
+        )?
+        .into_iter()
+        .collect();
+        merged.device_codes = merge_rows(
+            live.device_codes.iter(),
+            base.device_codes.iter(),
+            changed.device_codes.iter(),
+        )?
+        .into_iter()
+        .collect();
+        *live = merged;
+        Ok(result)
     }
 }
 

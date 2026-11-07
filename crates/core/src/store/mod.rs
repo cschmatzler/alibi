@@ -3,6 +3,9 @@ mod contracts;
 mod database_hooks;
 mod decorated;
 mod jwks;
+pub(crate) mod memory_transaction;
+#[cfg(test)]
+mod memory_transaction_tests;
 pub(crate) mod memory_user_id;
 #[cfg(test)]
 mod memory_user_id_tests;

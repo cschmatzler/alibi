@@ -51,7 +51,7 @@ pub struct StatelessStore {
     find_many_limit: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct IdentityState {
     users: Vec<(crate::store::memory_user_id::MemoryUserId, UserView)>,
     accounts: IndexMap<String, AccountView>,

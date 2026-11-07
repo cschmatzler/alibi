@@ -1,42 +1,21 @@
 use crate::field_policy::FieldValues;
+use crate::store::memory_transaction::{merge_indexed, merge_rows};
 use crate::store::stateless::{StatelessSchema, StatelessStore};
 use crate::store::{
-    AccountStore, BoxedTransactionValue, MemberStore, SessionStore, TeamStore, TransactionStore,
-    TransactionWork, UserStore, VerificationStore,
+    AccountStore, BoxedTransactionValue, MemberStore, PasskeyStore, SessionStore, TeamStore,
+    TransactionStore, TransactionWork, UserStore, VerificationStore,
 };
 use crate::types::AddTeamMemberResult;
 use crate::user_validation::PreparedUserCreation;
 use crate::{
     AccountView, AuthError, AuthResult, AuthTransaction, CreateAccount, CreateMember,
-    CreateSession, CreateUser, Member, SessionView, Team, UpdateAccount, UserView,
-    VerificationView,
+    CreatePasskey, CreateSession, CreateUser, CreateVerification, Member, Passkey, SessionView,
+    Team, UpdateAccount, UserView, VerificationView,
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
-/// Reconcile only transaction-owned changes. Concurrent untouched rows survive;
-/// a changed row wins last, as in the published memory adapter. This is not
-/// serializable isolation across workflow awaits.
-fn merge<T: Clone + PartialEq>(
-    live: &mut indexmap::IndexMap<String, T>,
-    base: &indexmap::IndexMap<String, T>,
-    changed: indexmap::IndexMap<String, T>,
-) {
-    live.retain(|id, _| !base.contains_key(id) || changed.contains_key(id));
-    for (id, row) in changed {
-        if base.get(&id) == Some(&row) {
-            continue;
-        }
-        // Published merge walks live rows first, then appends only new IDs.
-        // A base row concurrently deleted from live must stay deleted.
-        if live.contains_key(&id) || !base.contains_key(&id) {
-            _ = live.insert(id, row);
-        }
-    }
-}
-
-struct OrganizationTransaction<'a> {
-    live: &'a StatelessStore,
+struct StatelessTransaction {
     snapshot: StatelessStore,
 }
 
@@ -46,51 +25,133 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
         &self,
         work: Box<TransactionWork<StatelessSchema>>,
     ) -> AuthResult<BoxedTransactionValue> {
-        let base = self.organization_state()?.clone();
-        let tx = OrganizationTransaction {
-            live: self,
+        let (base, organizations) = {
+            let state = self.lock()?;
+            let organizations = self.organization_state()?;
+            (state.clone(), organizations.clone())
+        };
+        let tx = StatelessTransaction {
             snapshot: Self {
-                organizations: std::sync::Mutex::new(base.clone()),
-                ..Self::with_find_many_limit(self.find_many_limit)
+                state: std::sync::Mutex::new(base.clone()),
+                organizations: std::sync::Mutex::new(organizations.clone()),
+                find_many_limit: self.find_many_limit,
             },
         };
         let result = work(&tx).await?;
         let changed = tx
             .snapshot
+            .state
+            .into_inner()
+            .map_err(|_| AuthError::internal("No-database identity state poisoned"))?;
+        let changed_organizations = tx
+            .snapshot
             .organizations
             .into_inner()
             .map_err(|_| AuthError::internal("No-database organization state poisoned"))?;
-        let mut live = self.organization_state()?;
-        merge(
-            &mut live.organizations,
-            &base.organizations,
-            changed.organizations,
-        );
-        merge(&mut live.members, &base.members, changed.members);
-        merge(
-            &mut live.invitations,
-            &base.invitations,
-            changed.invitations,
-        );
-        merge(&mut live.teams, &base.teams, changed.teams);
-        merge(
-            &mut live.team_members,
-            &base.team_members,
-            changed.team_members,
-        );
-        merge(&mut live.roles, &base.roles, changed.roles);
+        let mut live = self.lock()?;
+        let mut live_organizations = self.organization_state()?;
+        let mut merged = live.clone();
+        let mut merged_organizations = live_organizations.clone();
+        merged.users = merge_rows(
+            live.users.iter().map(|(id, row)| (id, row)),
+            base.users.iter().map(|(id, row)| (id, row)),
+            changed.users.iter().map(|(id, row)| (id, row)),
+        )?;
+        merge_indexed(&mut merged.accounts, &base.accounts, &changed.accounts)?;
+        merge_indexed(
+            &mut merged.verifications,
+            &base.verifications,
+            &changed.verifications,
+        )?;
+        merge_indexed(
+            &mut merged.two_factors,
+            &base.two_factors,
+            &changed.two_factors,
+        )?;
+        merge_indexed(&mut merged.passkeys, &base.passkeys, &changed.passkeys)?;
+        merge_indexed(&mut merged.api_keys, &base.api_keys, &changed.api_keys)?;
+        merge_indexed(
+            &mut merged.device_codes,
+            &base.device_codes,
+            &changed.device_codes,
+        )?;
+        merge_indexed(
+            &mut merged.device_code_fields,
+            &base.device_code_fields,
+            &changed.device_code_fields,
+        )?;
+        // No transactional JWK write API exists; preserve the live private keyring.
+        merge_indexed(
+            &mut merged_organizations.organizations,
+            &organizations.organizations,
+            &changed_organizations.organizations,
+        )?;
+        merge_indexed(
+            &mut merged_organizations.members,
+            &organizations.members,
+            &changed_organizations.members,
+        )?;
+        merge_indexed(
+            &mut merged_organizations.invitations,
+            &organizations.invitations,
+            &changed_organizations.invitations,
+        )?;
+        merge_indexed(
+            &mut merged_organizations.teams,
+            &organizations.teams,
+            &changed_organizations.teams,
+        )?;
+        merge_indexed(
+            &mut merged_organizations.team_members,
+            &organizations.team_members,
+            &changed_organizations.team_members,
+        )?;
+        merge_indexed(
+            &mut merged_organizations.roles,
+            &organizations.roles,
+            &changed_organizations.roles,
+        )?;
+        *live = merged;
+        *live_organizations = merged_organizations;
         Ok(result)
     }
 }
 
 #[async_trait]
-impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
+impl AuthTransaction<StatelessSchema> for StatelessTransaction {
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
+        UserStore::<StatelessSchema>::get_user_by_id(&self.snapshot, id).await
+    }
+
+    async fn get_user_by_email(
+        &self,
+        email: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<UserView>> {
+        UserStore::<StatelessSchema>::get_user_by_email(&self.snapshot, email).await
+    }
+
+    async fn get_account(
+        &self,
+        provider: &str,
+        id: &crate::utils::json::JsString,
+    ) -> AuthResult<Option<AccountView>> {
+        AccountStore::<StatelessSchema>::get_account(&self.snapshot, provider, id).await
+    }
+
+    async fn create_verification(&self, data: CreateVerification) -> AuthResult<VerificationView> {
+        VerificationStore::<StatelessSchema>::create_verification(&self.snapshot, data).await
+    }
+
+    async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
+        PasskeyStore::create_passkey(&self.snapshot, data).await
+    }
+
     async fn update_user_prepared(
         &self,
         id: &str,
         update: crate::store::PreparedUserUpdate,
     ) -> AuthResult<UserView> {
-        UserStore::<StatelessSchema>::update_user_prepared(self.live, id, update).await
+        UserStore::<StatelessSchema>::update_user_prepared(&self.snapshot, id, update).await
     }
     async fn update_user(&self, id: &str, update: crate::UpdateUser) -> AuthResult<UserView> {
         self.update_user_prepared(id, crate::store::PreparedUserUpdate::from_typed(&update))
@@ -124,7 +185,9 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         persist: bool,
     ) -> AuthResult<SessionView> {
         SessionStore::<StatelessSchema>::prepare_secondary_session_creation(
-            self.live, input, persist,
+            &self.snapshot,
+            input,
+            persist,
         )
         .await
     }
@@ -135,7 +198,10 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         fields: FieldValues,
     ) -> AuthResult<Option<(SessionView, FieldValues)>> {
         SessionStore::<StatelessSchema>::prepare_secondary_session_update(
-            self.live, session, expires_at, fields,
+            &self.snapshot,
+            session,
+            expires_at,
+            fields,
         )
         .await
     }
@@ -148,41 +214,47 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         persist: bool,
     ) -> AuthResult<Option<SessionView>> {
         SessionStore::<StatelessSchema>::complete_secondary_session_update(
-            self.live, token, session, expires_at, fields, persist,
+            &self.snapshot,
+            token,
+            session,
+            expires_at,
+            fields,
+            persist,
         )
         .await
     }
-    // Preserve existing identity provisioning behavior. This scoped transaction
-    // stages organization rows only; cookie/secondary sessions belong to the wrapper.
     async fn create_user(&self, data: CreateUser) -> AuthResult<UserView> {
-        UserStore::<StatelessSchema>::create_user(self.live, data).await
+        UserStore::<StatelessSchema>::create_user(&self.snapshot, data).await
     }
     async fn get_user_by_username_value(
         &self,
         username: &crate::utils::json::JsValue,
     ) -> AuthResult<Option<UserView>> {
-        UserStore::<StatelessSchema>::get_user_by_username_value(self.live, username).await
+        UserStore::<StatelessSchema>::get_user_by_username_value(&self.snapshot, username).await
     }
     async fn create_user_prepared(&self, data: PreparedUserCreation) -> AuthResult<UserView> {
-        UserStore::<StatelessSchema>::create_user_prepared(self.live, data).await
+        UserStore::<StatelessSchema>::create_user_prepared(&self.snapshot, data).await
     }
     async fn create_account(&self, data: CreateAccount) -> AuthResult<AccountView> {
-        AccountStore::<StatelessSchema>::create_account(self.live, data).await
+        AccountStore::<StatelessSchema>::create_account(&self.snapshot, data).await
     }
     async fn create_session(&self, data: CreateSession) -> AuthResult<SessionView> {
-        SessionStore::<StatelessSchema>::create_session(self.live, data).await
+        SessionStore::<StatelessSchema>::create_session(&self.snapshot, data).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
-        SessionStore::<StatelessSchema>::delete_user_sessions(self.live, user_id).await
+        SessionStore::<StatelessSchema>::delete_user_sessions(&self.snapshot, user_id).await
     }
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<AccountView> {
-        AccountStore::<StatelessSchema>::update_account(self.live, id, update).await
+        AccountStore::<StatelessSchema>::update_account(&self.snapshot, id, update).await
     }
     async fn consume_verification_snapshot(
         &self,
         identifier: &str,
     ) -> AuthResult<Option<VerificationView>> {
-        VerificationStore::<StatelessSchema>::consume_verification_snapshot(self.live, identifier)
-            .await
+        VerificationStore::<StatelessSchema>::consume_verification_snapshot(
+            &self.snapshot,
+            identifier,
+        )
+        .await
     }
 }
