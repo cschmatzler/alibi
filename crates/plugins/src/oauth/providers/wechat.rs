@@ -146,13 +146,16 @@ async fn token_request(
     operation: &str,
 ) -> Result<OAuthTokenSet, String> {
     let failure = |message: String| format!("Failed to {operation}: {message}");
-    let appid = client_ids.join(",");
+    let appids = client_ids
+        .iter()
+        .map(|id| ("appid", id))
+        .collect::<Vec<_>>();
     let response = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| failure(error.to_string()))?
         .get(endpoint)
-        .query(&[("appid", appid.as_str())])
+        .query(&appids)
         .query(query)
         .send()
         .await
@@ -524,8 +527,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn wechat_grants_stringify_client_arrays_as_one_appid() {
-        for ids in [vec!["first".into(), "second".into()], Vec::new()] {
+    async fn wechat_grants_preserve_repeated_client_id_query_values() {
+        for ids in [
+            vec!["first".into(), "second".into()],
+            Vec::new(),
+            vec!["single".into()],
+            vec!["client: +".into(), "second/&".into()],
+        ] {
             for refresh in [false, true] {
                 let (endpoint, captured) = profile_server(
                     json!({"scope": "snsapi_login", "access_token": "access", "expires_in": 3600}),
@@ -564,7 +572,7 @@ mod tests {
                     .filter(|(key, _)| key == "appid")
                     .map(|(_, value)| value.into_owned())
                     .collect();
-                assert_eq!(appids, vec![ids.join(",")]);
+                assert_eq!(appids, ids);
             }
         }
     }
