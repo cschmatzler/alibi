@@ -29,7 +29,7 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for NameOverr
         _: &alibi::plugins::passkey::VerifiedPasskeyRegistration,
         _: &alibi::plugins::passkey::PasskeyRegistrationUser,
         _: &alibi::utils::json::JsValue,
-        _: Option<&str>,
+        _: Option<&alibi::utils::json::JsString>,
     ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
         Ok(Some(alibi::plugins::passkey::PasskeyRegistrationOverride {
             user_id: None,
@@ -54,7 +54,7 @@ async fn check_passkey_names<S: AuthSchema>(
     backend: &str,
     callback: Arc<Mutex<alibi::utils::json::JsString>>,
 ) {
-    use alibi::utils::json::{self as native, JsValue};
+    use alibi::utils::json as native;
     let fixture = native::parse_value(include_str!(
         "../../../../crates/core/src/store/passkey_name_cases.json"
     ))
@@ -124,24 +124,21 @@ async fn check_passkey_names<S: AuthSchema>(
             let id = registered["id"].as_str().unwrap();
             let wire = native::to_string(&registered).unwrap();
             assert_eq!(native::parse_value(&wire).unwrap(), registered);
-            let renamed = Box::pin(
-                auth.dispatch_endpoint(
-                    alibi::endpoint::ServerEndpoint::<JsValue>::new("passkey", "updatePasskey")
-                        .with_body_value(JsValue::Object(
-                            [
-                                ("id".into(), JsValue::String(id.into())),
-                                ("name".into(), case["update_input"].clone()),
-                            ]
-                            .into(),
-                        )),
-                    headers(),
+            let renamed = Box::pin(auth.dispatch_endpoint(
+                PasskeyPlugin::update_passkey_endpoint(
+                    id,
+                    case["update_input"].as_js_string().unwrap().clone(),
                 ),
-            )
+                headers(),
+            ))
             .await
             .unwrap()
             .decode()
             .unwrap();
-            assert_eq!(renamed["passkey"]["name"], case["rename"]);
+            assert_eq!(
+                native::to_js_value(&renamed.passkey).unwrap()["name"],
+                case["rename"]
+            );
             let listed = Box::pin(
                 auth.dispatch_endpoint(PasskeyPlugin::list_passkeys_endpoint(), headers()),
             )
@@ -224,7 +221,7 @@ impl Authenticator {
         .unwrap()
     }
 
-    fn attestation(&self, rp_id: &str, flags: u8, curve: i128) -> Vec<u8> {
+    pub(super) fn attestation(&self, rp_id: &str, flags: u8, curve: i128) -> Vec<u8> {
         let mut data = Sha256::digest(rp_id.as_bytes()).to_vec();
         data.push(flags | ATTESTED);
         data.extend_from_slice(&1_u32.to_be_bytes());

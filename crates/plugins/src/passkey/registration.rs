@@ -8,9 +8,9 @@ use std::sync::Arc;
 #[serde(rename_all = "camelCase")]
 pub struct PasskeyRegistrationUser {
     pub id: String,
-    pub name: String,
+    pub name: alibi_core::utils::json::JsString,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub display_name: Option<String>,
+    pub display_name: Option<alibi_core::utils::json::JsString>,
 }
 
 /// Immutable request and application settings; captures may hold typed services.
@@ -37,7 +37,7 @@ pub trait PasskeyUserResolver: Send + Sync {
     async fn resolve_user(
         &self,
         context: &PasskeyRegistrationContext<'_>,
-        requested_context: Option<&str>,
+        requested_context: Option<&alibi_core::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationUser>>;
 }
 
@@ -68,7 +68,7 @@ pub trait PasskeyRegistrationAfterVerification: Send + Sync {
         verification: &VerifiedPasskeyRegistration,
         user: &PasskeyRegistrationUser,
         client_data: &JsValue,
-        stored_context: Option<&str>,
+        stored_context: Option<&alibi_core::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationOverride>>;
 }
 

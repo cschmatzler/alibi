@@ -375,7 +375,7 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
         verification: &alibi::plugins::passkey::VerifiedPasskeyRegistration,
         user: &alibi::plugins::passkey::PasskeyRegistrationUser,
         client: &alibi::utils::json::JsValue,
-        stored_context: Option<&str>,
+        stored_context: Option<&alibi::utils::json::JsString>,
     ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
         assert!(
             context
@@ -390,7 +390,7 @@ impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPo
         );
         assert_eq!(verification.counter, 1);
         assert_eq!(
-            stored_context,
+            stored_context.and_then(alibi::utils::json::JsString::as_str),
             if self.registration.load(std::sync::atomic::Ordering::SeqCst) == 3 {
                 Some("application-enrollment")
             } else {
@@ -453,7 +453,7 @@ impl alibi::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
     async fn resolve_user(
         &self,
         context: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
-        requested: Option<&str>,
+        requested: Option<&alibi::utils::json::JsString>,
     ) -> alibi::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationUser>> {
         assert!(
             context
@@ -462,13 +462,13 @@ impl alibi::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
                 .path
                 .ends_with("/passkey/generate-register-options")
         );
-        Ok((requested == Some("application-enrollment")).then(|| {
-            alibi::plugins::passkey::PasskeyRegistrationUser {
+        Ok(requested
+            .is_some_and(|requested| requested == "application-enrollment")
+            .then(|| alibi::plugins::passkey::PasskeyRegistrationUser {
                 id: self.0.clone(),
                 name: "Resolved owner".into(),
                 display_name: Some("Application registration".into()),
-            }
-        }))
+            }))
     }
 }
 

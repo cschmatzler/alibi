@@ -61,7 +61,7 @@ pub(crate) struct StoredRegistrationState {
     #[serde(default)]
     pub user: Option<super::PasskeyRegistrationUser>,
     #[serde(default)]
-    pub context: Option<String>,
+    pub context: Option<alibi_core::utils::json::JsString>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub registration_source: Option<RegistrationSource>,
     pub state: StoredRegistrationVerifier,

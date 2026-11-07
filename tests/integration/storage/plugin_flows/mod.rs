@@ -43,6 +43,7 @@ mod otp_callbacks;
 mod passkey_attestation;
 mod passkey_hooks;
 mod passkey_matrix;
+mod passkey_query;
 mod password_management_matrix;
 mod passwordless;
 mod passwordless_fields_matrix;

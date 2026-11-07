@@ -459,7 +459,7 @@ impl PasskeyUserResolver for Resolver {
     async fn resolve_user(
         &self,
         _: &PasskeyRegistrationContext<'_>,
-        _: Option<&str>,
+        _: Option<&alibi::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationUser>> {
         match self.0 {
             "fail" => Err(AuthError::internal("resolver unavailable")),

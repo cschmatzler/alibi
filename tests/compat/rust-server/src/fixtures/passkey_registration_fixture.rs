@@ -107,10 +107,10 @@ impl PasskeyUserResolver for Enrollment {
     async fn resolve_user(
         &self,
         ctx: &PasskeyRegistrationContext<'_>,
-        requested: Option<&str>,
+        requested: Option<&alibi::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationUser>> {
         let proof = read_proof(ctx)?;
-        if requested != Some(proof.context.as_str()) {
+        if requested.is_none_or(|requested| requested != proof.context.as_str()) {
             return Err(denied());
         }
         self.record(json!({"stage":"resolved","context":requested,"userId":proof.user_id}));
@@ -125,7 +125,7 @@ impl PasskeyUserResolver for Enrollment {
             "resolver-invalid-name" => {
                 return Ok(Some(PasskeyRegistrationUser {
                     id: format!("pending:{}", proof.user_id),
-                    name: String::new(),
+                    name: "".into(),
                     display_name: None,
                 }));
             }
@@ -154,10 +154,10 @@ impl PasskeyRegistrationAfterVerification for Enrollment {
         verified: &VerifiedPasskeyRegistration,
         user: &PasskeyRegistrationUser,
         client_data: &JsValue,
-        context: Option<&str>,
+        context: Option<&alibi::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationOverride>> {
         let proof = read_proof(ctx)?;
-        if context != Some(proof.context.as_str())
+        if context.is_none_or(|context| context != proof.context.as_str())
             || (user.id.starts_with("pending:") && user.id != format!("pending:{}", proof.user_id))
         {
             return Err(denied());
@@ -168,10 +168,7 @@ impl PasskeyRegistrationAfterVerification for Enrollment {
                 return Err(AuthError::Api {
                     status: 500,
                     code: Some("APPLICATION_POLICY_DENIED".to_owned()),
-                    message: format!(
-                        "Application enrollment denied: {}",
-                        context.unwrap_or_default()
-                    ),
+                    message: format!("Application enrollment denied: {}", proof.context),
                 });
             }
             "after-forbidden" => {

@@ -86,13 +86,23 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        self.generate_register_options(req, &req.query, ctx).await
+        let query = req
+            .query
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.clone().into(),
+                    alibi_core::utils::json::JsValue::String(value.clone().into()),
+                )
+            })
+            .collect();
+        self.generate_register_options(req, &query, ctx).await
     }
 
     async fn generate_register_options<S: alibi_core::AuthSchema>(
         &self,
         req: &impl alibi_core::session::SessionRequest,
-        query: &std::collections::HashMap<String, String>,
+        query: &alibi_core::utils::json::JsObject,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
         use alibi_core::AuthUser;
@@ -123,8 +133,8 @@ impl PasskeyPlugin {
                 .to_owned();
             PasskeyRegistrationUser {
                 id,
-                name: name.clone(),
-                display_name: Some(name),
+                name: name.clone().into(),
+                display_name: Some(name.into()),
             }
         } else {
             let Some(resolver) = &self.config.registration.resolve_user else {
@@ -140,7 +150,12 @@ impl PasskeyPlugin {
                 extensions: &ctx.extensions,
             };
             match resolver
-                .resolve_user(&context, query.get("context").map(String::as_str))
+                .resolve_user(
+                    &context,
+                    query
+                        .get("context")
+                        .and_then(alibi_core::utils::json::JsValue::as_js_string),
+                )
                 .await
             {
                 Ok(Some(user)) if !user.id.is_empty() && !user.name.is_empty() => user,
@@ -169,11 +184,17 @@ impl PasskeyPlugin {
         } else {
             None
         };
-        let passkey_name = query.get("name").map(String::as_str);
-        let authenticator_attachment = query.get("authenticatorAttachment").map(String::as_str);
+        let passkey_name = query
+            .get("name")
+            .and_then(alibi_core::utils::json::JsValue::as_js_string);
+        let authenticator_attachment = query
+            .get("authenticatorAttachment")
+            .and_then(alibi_core::utils::json::JsValue::as_str);
         let (result, cookie_header) = generate_register_options_core(
             &user,
-            query.get("context").map(String::as_str),
+            query
+                .get("context")
+                .and_then(alibi_core::utils::json::JsValue::as_js_string),
             passkey_name,
             authenticator_attachment,
             extensions,

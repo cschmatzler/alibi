@@ -34,7 +34,7 @@ use alibi_core::AuthUser;
 use alibi_core::CreatePasskey;
 use alibi_core::CreateVerification;
 use alibi_core::error::codes;
-use alibi_core::utils::json::{self as native_json, JsValue};
+use alibi_core::utils::json::{self as native_json, JsString, JsValue};
 use base64::Engine;
 use chrono::Duration;
 use chrono::Utc;
@@ -53,14 +53,14 @@ use webauthn_rs_core::proto::UserVerificationPolicy;
 )]
 pub(in crate::passkey) async fn generate_register_options_core(
     user: &PasskeyRegistrationUser,
-    requested_context: Option<&str>,
-    passkey_name: Option<&str>,
+    requested_context: Option<&JsString>,
+    passkey_name: Option<&JsString>,
     authenticator_attachment: Option<&str>,
     extensions: Option<Value>,
     registration_source: Option<crate::passkey::webauthn::RegistrationSource>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<(Value, String)> {
+) -> AuthResult<(JsValue, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
     let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
     let exclude_credentials = existing_passkeys
@@ -83,19 +83,26 @@ pub(in crate::passkey) async fn generate_register_options_core(
         })
         .collect::<Vec<_>>();
 
+    let default_name = if user.name.is_empty() {
+        JsString::from(&user.id)
+    } else {
+        user.name.clone()
+    };
     let user_name = passkey_name
         .filter(|name| !name.is_empty())
-        .unwrap_or(&user.name)
+        .unwrap_or(&default_name)
         .to_owned();
     let user_display_name = user
         .display_name
-        .as_deref()
+        .as_ref()
         .filter(|name| !name.is_empty())
-        .unwrap_or(&user.name)
+        .unwrap_or(&default_name)
         .to_owned();
     let user_uuid = Uuid::new_v4();
     let builder = core
-        .new_challenge_register_builder(user_uuid.as_bytes(), &user_name, &user_display_name)
+        // Labels are response-only; the verifier retains challenge and policy.
+        // Install canonical labels below without routing them through UTF-8.
+        .new_challenge_register_builder(user_uuid.as_bytes(), &user.id, &user.id)
         .map_err(|error| {
             AuthError::internal(format!("Failed to generate register options: {error}"))
         })?
@@ -134,10 +141,10 @@ pub(in crate::passkey) async fn generate_register_options_core(
 
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
-    let serialized_state = serde_json::to_string(&StoredRegistrationState {
+    let serialized_state = native_json::to_string(&StoredRegistrationState {
         user_id: user.id.clone(),
         user: Some(user.clone()),
-        context: requested_context.map(str::to_owned),
+        context: requested_context.cloned(),
         registration_source,
         state: StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
             policy: crate::passkey::raw_none::RawNonePolicy {
@@ -207,6 +214,9 @@ pub(in crate::passkey) async fn generate_register_options_core(
             Value::Array(exclude_credentials_json),
         );
     }
+    let mut response = native_json::to_js_value(&response)?;
+    response["user"]["name"] = JsValue::String(user_name);
+    response["user"]["displayName"] = JsValue::String(user_display_name);
     Ok((response, cookie))
 }
 
@@ -249,7 +259,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         return challenge_not_found();
     };
 
-    let stored_state: StoredRegistrationState = match serde_json::from_str(verification.value()?) {
+    let stored_state: StoredRegistrationState = match native_json::from_str(verification.value()?) {
         Ok(state) => state,
         Err(_)
             if serde_json::from_str::<StoredAuthenticationState>(verification.value()?).is_ok() =>
@@ -450,7 +460,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         .user
         .unwrap_or_else(|| PasskeyRegistrationUser {
             id: stored_state.user_id.clone(),
-            name: stored_state.user_id.clone(),
+            name: stored_state.user_id.clone().into(),
             display_name: None,
         });
     let mut input = CreatePasskey {
@@ -492,7 +502,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                     &verified,
                     &resolved_user,
                     &client_data,
-                    stored_context.as_deref(),
+                    stored_context.as_ref(),
                 )
                 .await?
             {
@@ -645,11 +655,11 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                 if let Some(object) = result.as_object_mut() {
                     _ = object.insert(
                         "user".into(),
-                    native_json::to_js_value(&ctx.user_view(&user)?)?,
+                        native_json::to_js_value(&ctx.user_view(&user)?)?,
                     );
                     _ = object.insert(
                         "session".into(),
-                    native_json::to_js_value(&ctx.session_view(&session)?)?,
+                        native_json::to_js_value(&ctx.session_view(&session)?)?,
                     );
                 }
                 Ok(result)

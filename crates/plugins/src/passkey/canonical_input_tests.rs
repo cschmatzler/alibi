@@ -97,6 +97,16 @@ fn canonical_update_input_matches_actual_source_schema() {
     assert_source_inputs("update", 11);
 }
 
+#[test]
+fn canonical_public_rename_output_keeps_utf16() {
+    let value = json::parse_value(r#"{"passkey":{"name":"\ud800"}}"#).unwrap();
+    let output: super::endpoint::PasskeyUpdated = json::from_value(value.clone()).unwrap();
+    assert_eq!(
+        json::to_js_value(&output.passkey).unwrap(),
+        value["passkey"]
+    );
+}
+
 #[tokio::test]
 async fn canonical_passkey_names_survive_memory_rename_and_list() {
     use super::handlers::{

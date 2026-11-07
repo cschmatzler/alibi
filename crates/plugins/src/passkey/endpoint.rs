@@ -65,7 +65,7 @@ pub struct PasskeyDeleted {
 /// A credential after its owner changed its display name.
 #[derive(Debug, serde::Deserialize)]
 pub struct PasskeyUpdated {
-    pub passkey: Value,
+    pub passkey: alibi_core::utils::json::JsValue,
 }
 
 /// Authenticator response and optional registration preferences.
@@ -310,7 +310,8 @@ impl PasskeyPlugin {
 
     /// Generate a challenge for registering a credential under the current owner.
     #[must_use]
-    pub fn generate_passkey_registration_options_endpoint() -> ServerEndpoint<Value> {
+    pub fn generate_passkey_registration_options_endpoint()
+    -> ServerEndpoint<alibi_core::utils::json::JsValue> {
         ServerEndpoint::new("passkey", "generatePasskeyRegistrationOptions")
     }
 
@@ -322,19 +323,7 @@ impl PasskeyPlugin {
         let query = call
             .query()
             .and_then(alibi_core::utils::json::JsValue::as_object)
-            .map(|object| {
-                object
-                    .iter()
-                    .filter_map(|(name, value)| value.as_js_string().map(|value| (name, value)))
-                    .map(|(name, value)| {
-                        Ok((
-                            name.require_str()?.to_owned(),
-                            value.require_str()?.to_owned(),
-                        ))
-                    })
-                    .collect::<AuthResult<std::collections::HashMap<_, _>>>()
-            })
-            .transpose()?
+            .cloned()
             .unwrap_or_default();
         let output = self
             .generate_register_options(call, &query, ctx)

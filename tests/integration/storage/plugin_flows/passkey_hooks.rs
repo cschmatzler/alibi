@@ -43,9 +43,9 @@ impl PasskeyUserResolver for Policy {
     async fn resolve_user(
         &self,
         _: &PasskeyRegistrationContext<'_>,
-        context: Option<&str>,
+        context: Option<&alibi::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationUser>> {
-        assert_eq!(context, Some("signup"));
+        assert_eq!(context, Some(&"signup".into()));
         Ok(Some(PasskeyRegistrationUser {
             id: self.resolved.lock().unwrap().clone(),
             name: "resolved".into(),
@@ -62,14 +62,14 @@ impl PasskeyRegistrationAfterVerification for Policy {
         verification: &VerifiedPasskeyRegistration,
         _: &PasskeyRegistrationUser,
         _: &JsValue,
-        stored_context: Option<&str>,
+        stored_context: Option<&alibi::utils::json::JsString>,
     ) -> AuthResult<Option<PasskeyRegistrationOverride>> {
         self.registered.lock().unwrap().push((
             verification.credential_id.clone(),
             verification.counter,
             verification.backed_up,
         ));
-        assert_eq!(stored_context, Some("signup"));
+        assert_eq!(stored_context, Some(&"signup".into()));
         match *self.mode.lock().unwrap() {
             "other" => Ok(Some(PasskeyRegistrationOverride {
                 user_id: Some(self.other.lock().unwrap().clone()),
