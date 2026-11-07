@@ -47,6 +47,7 @@ fn cookies(response: &AuthResponse) -> String {
 }
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
             skip_verification_on_enable: true,
