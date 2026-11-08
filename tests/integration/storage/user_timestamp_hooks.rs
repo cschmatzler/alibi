@@ -8,11 +8,15 @@ use std::sync::{Arc, Mutex};
 
 backend_tests!(
     user_date_strings_precede_sync_adapter_input,
-    user_date_strings_precede_async_adapter_input
+    user_date_strings_precede_async_adapter_input,
+    user_date_transform_strings_preserve_sync_driver_values,
+    user_date_transform_strings_preserve_async_driver_values
 );
 postgres_tests!(
     user_date_strings_precede_sync_adapter_input,
-    user_date_strings_precede_async_adapter_input
+    user_date_strings_precede_async_adapter_input,
+    user_date_transform_strings_preserve_sync_driver_values,
+    user_date_transform_strings_preserve_async_driver_values
 );
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -37,8 +41,19 @@ fn event(events: &Events, phase: &str, value: Option<&JsValue>) -> alibi::AuthRe
     Ok(())
 }
 
-fn transform(events: &Events, value: Option<JsValue>) -> alibi::AuthResult<Option<JsValue>> {
+fn transform(
+    events: &Events,
+    value: Option<JsValue>,
+    string_result: bool,
+) -> alibi::AuthResult<Option<JsValue>> {
     event(events, "input", value.as_ref())?;
+    if string_result
+        && value
+            .as_ref()
+            .is_some_and(|value| !value.is_null() && !value.is_undefined())
+    {
+        return Ok(Some(JsValue::String("2035-02-03T04:05:06.123987Z".into())));
+    }
     Ok(match value {
         None | Some(JsValue::Undefined) => None,
         Some(JsValue::Null) => Some(JsValue::Null),
@@ -79,11 +94,14 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for DateHooks {
     }
 }
 
-async fn check<B: Backend>(db: Db, asynchronous: bool) -> TestResult {
+async fn check<B: Backend>(db: Db, asynchronous: bool, string_result: bool) -> TestResult {
     let secret = "user-timestamp-parameters-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value =
-        serde_json::from_str(include_str!("../../fixtures/user-timestamp-hooks.json"))?;
+    let fixture: Value = serde_json::from_str(if string_result {
+        include_str!("../../fixtures/user-timestamp-hooks-string.json")
+    } else {
+        include_str!("../../fixtures/user-timestamp-hooks.json")
+    })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     let backend = if db.is_postgres() {
         "postgres"
@@ -105,10 +123,10 @@ async fn check<B: Backend>(db: Db, asynchronous: bool) -> TestResult {
     let field = if asynchronous {
         field.transform_adapter_input(move |value| {
             let observed = observed.clone();
-            async move { transform(&observed, value) }
+            async move { transform(&observed, value, string_result) }
         })
     } else {
-        field.transform(move |value| transform(&observed, value.cloned()))
+        field.transform(move |value| transform(&observed, value.cloned(), string_result))
     };
     let mut config = AuthConfig::new(secret);
     _ = config
@@ -158,7 +176,26 @@ async fn check<B: Backend>(db: Db, asynchronous: bool) -> TestResult {
         );
         let expected: Option<chrono::DateTime<chrono::Utc>> =
             case["output"].as_str().map(str::parse).transpose()?;
-        assert_eq!(updated.ban_expires(), expected, "{backend}/{action}");
+        if string_result {
+            assert_eq!(
+                native::to_value(&updated.ban_expires().map_or(JsValue::Null, JsValue::Date))?,
+                case["output"],
+                "{backend}/{action}"
+            );
+            assert_eq!(
+                json!(
+                    db.text(
+                        "SELECT CAST(\"banExpires\" AS TEXT) FROM \"user\" WHERE id = $1",
+                        &[user.id().as_ref()]
+                    )
+                    .await?
+                ),
+                case["stored"],
+                "{backend}/{action} physical parameter"
+            );
+        } else {
+            assert_eq!(updated.ban_expires(), expected, "{backend}/{action}");
+        }
         assert_eq!(
             json!(updated.banned()),
             case["banned"],
@@ -169,20 +206,43 @@ async fn check<B: Backend>(db: Db, asynchronous: bool) -> TestResult {
             .get_user_by_id(user.id().as_ref())
             .await?
             .ok_or("date hook user missing")?;
-        assert_eq!(
-            readback.ban_expires(),
-            expected,
-            "{backend}/{action} readback"
-        );
+        if string_result {
+            assert_eq!(
+                readback.ban_expires(),
+                updated.ban_expires(),
+                "{backend}/{action} exact native readback"
+            );
+            assert_eq!(
+                native::to_value(&readback.ban_expires().map_or(JsValue::Null, JsValue::Date))?,
+                case["output"],
+                "{backend}/{action} public date readback"
+            );
+        } else {
+            assert_eq!(
+                readback.ban_expires(),
+                expected,
+                "{backend}/{action} readback"
+            );
+        }
     }
     drop(auth);
     B::close(connection).await
 }
 
 async fn user_date_strings_precede_sync_adapter_input<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false).await
+    check::<B>(db, false, false).await
 }
 
 async fn user_date_strings_precede_async_adapter_input<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true).await
+    check::<B>(db, true, false).await
+}
+
+async fn user_date_transform_strings_preserve_sync_driver_values<B: Backend>(db: Db) -> TestResult {
+    check::<B>(db, false, true).await
+}
+
+async fn user_date_transform_strings_preserve_async_driver_values<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, true, true).await
 }

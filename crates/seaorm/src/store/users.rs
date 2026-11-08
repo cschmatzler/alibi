@@ -17,14 +17,14 @@ use sea_orm::{
 
 // Only the typed Rust view is bounded to SQLite's printable date range.
 // The retained adapter output always reads the original numeric DATE value.
-const SQLITE_TYPED_DATE: &str = "CASE WHEN typeof(?) IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ? < -8640000000000000 OR ? > 253402300799999 THEN 253402300799999 WHEN ? < -62135596800000 THEN -62135596800000 ELSE CAST(? AS INTEGER) END / 1000.0, 'unixepoch') ELSE CASE WHEN ? IS NULL THEN NULL ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ?), '1970-01-01T00:00:00.000Z') END END";
+const SQLITE_TYPED_DATE: &str = "CASE WHEN typeof(?) IN ('integer', 'real') THEN strftime('%Y-%m-%dT%H:%M:%fZ', CASE WHEN ? < -8640000000000000 OR ? > 253402300799999 THEN 253402300799999 WHEN ? < -62135596800000 THEN -62135596800000 ELSE CAST(? AS INTEGER) END / 1000.0, 'unixepoch') ELSE CASE WHEN ? IS NULL THEN NULL WHEN ? GLOB '????-??-??T??:??:??.*Z' AND strftime('%Y-%m-%dT%H:%M:%S', substr(?, 1, 19)) = substr(?, 1, 19) AND julianday(?) IS NOT NULL THEN ? ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ?), '1970-01-01T00:00:00.000Z') END END";
 
 fn sqlite_date_column<C: sea_orm::Iden + Copy + 'static>(
     column: C,
 ) -> sea_orm::sea_query::SimpleExpr {
     Expr::cust_with_exprs(
         SQLITE_TYPED_DATE,
-        std::iter::repeat_with(|| Expr::col(column)).take(7),
+        std::iter::repeat_with(|| Expr::col(column)).take(12),
     )
 }
 
@@ -156,6 +156,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     verification: Option<alibi_core::utils::json::JsValue>,
     id: Option<&str>,
     native_fields: std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>,
+    prepared_fields: std::collections::BTreeSet<String>,
 ) -> AuthResult<M> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
@@ -233,14 +234,19 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 | sea_orm::sea_query::ColumnType::Timestamp
                 | sea_orm::sea_query::ColumnType::DateTime
         ) {
-            let raw = raw.revive_date_string();
+            let raw = if prepared_fields.contains(&field) {
+                raw
+            } else {
+                raw.revive_date_string()
+            };
             match raw {
                 alibi_core::store::adapter::RawFieldValue::Date(_) => {
                     crate::additional_fields::prepare_value(db, &column, raw).await?
                 }
                 raw => match crate::additional_fields::bind_scalar(raw)? {
                     sea_orm::Value::String(Some(value))
-                        if db.get_database_backend() == sea_orm::DbBackend::Sqlite =>
+                        if db.get_database_backend() == sea_orm::DbBackend::Sqlite
+                            || prepared_fields.contains(&field) =>
                     {
                         sea_orm::Value::String(Some(value))
                     }
@@ -305,6 +311,14 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         };
         if let Some(original) = native.map(|(_, value)| value.clone()).or(staged) {
             columns.push(physical);
+            let timestamp_text = db.get_database_backend() == sea_orm::DbBackend::Postgres
+                && matches!(&original, sea_orm::Value::String(Some(_)))
+                && matches!(
+                    physical.def().get_column_type(),
+                    sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                        | sea_orm::sea_query::ColumnType::Timestamp
+                        | sea_orm::sea_query::ColumnType::DateTime
+                );
             let expression = Expr::val(original);
             let expression = if db.get_database_backend() == sea_orm::DbBackend::Postgres
                 && native.is_some()
@@ -314,6 +328,17 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                         | sea_orm::sea_query::ColumnType::JsonBinary
                 ) {
                 expression.cast_as(sea_orm::sea_query::Alias::new("jsonb"))
+            } else if timestamp_text {
+                expression.cast_as(sea_orm::sea_query::Alias::new(
+                    if matches!(
+                        physical.def().get_column_type(),
+                        sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                    ) {
+                        "timestamptz"
+                    } else {
+                        "timestamp"
+                    },
+                ))
             } else if boolean_column
                 && native.is_some()
                 && db.get_database_backend() == sea_orm::DbBackend::Postgres
@@ -554,8 +579,15 @@ where
         }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
-        let user =
-            save_provider_user::<S::User, _>(model, db, verification, None, native_fields).await?;
+        let user = save_provider_user::<S::User, _>(
+            model,
+            db,
+            verification,
+            None,
+            native_fields,
+            Default::default(),
+        )
+        .await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_user(&user, &hook_context).await?;
@@ -1083,6 +1115,7 @@ where
         };
         update.apply_adapter_transforms().await?;
         let mut native = std::collections::BTreeMap::new();
+        let mut prepared_fields = std::collections::BTreeSet::new();
         for (field, raw) in &update.data {
             let Some(field) = field.as_str() else {
                 continue;
@@ -1105,6 +1138,9 @@ where
                 }
                 continue;
             };
+            if update.has_input_policy(field) {
+                _ = prepared_fields.insert(column.to_string());
+            }
             _ = native.insert(column.to_string(), raw.clone());
         }
         let user = save_provider_user::<S::User, _>(
@@ -1113,6 +1149,7 @@ where
             None,
             Some(id),
             native,
+            prepared_fields,
         )
         .await?;
         if tx.is_none() {

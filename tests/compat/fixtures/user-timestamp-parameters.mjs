@@ -8,7 +8,8 @@ import { betterAuth } from "../reference-server/node_modules/better-auth/dist/in
 import { getMigrations } from "../reference-server/node_modules/better-auth/dist/db/get-migration.mjs";
 import { admin as adminPlugin } from "../reference-server/node_modules/better-auth/dist/plugins/index.mjs";
 
-const hooks = process.argv[2] === "--hooks";
+const stringResult = process.argv[2] === "--hooks-string";
+const hooks = process.argv[2] === "--hooks" || stringResult;
 assert.ok(process.argv[2] === undefined || hooks, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
 assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
@@ -43,6 +44,7 @@ try {
       options.user = { additionalFields: { banExpires: { type: "date", required: false, onUpdate: () => "2031-02-03T04:05:06.123987Z", transform: { input: async value => {
         event("input", value);
         if (value == null) return value;
+        if (stringResult) return "2035-02-03T04:05:06.123987Z";
         return new Date(new Date(value).getTime() + 1000);
       } } } } };
       options.databaseHooks = { user: { update: {
@@ -73,7 +75,7 @@ try {
     }
     profiles.push({ backend, schema_sql: schemaSql, cases });
   }
-  const filename = hooks ? "user-timestamp-hooks" : "user-timestamp-parameters";
+  const filename = stringResult ? "user-timestamp-hooks-string" : hooks ? "user-timestamp-hooks" : "user-timestamp-parameters";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
   console.log("Eight actual SQLite/PostgreSQL user timestamp parameter and direct unban cases");
 } finally {

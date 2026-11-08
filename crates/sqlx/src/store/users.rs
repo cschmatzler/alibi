@@ -906,12 +906,16 @@ where
                 }
                 continue;
             };
-            let value = prepare_user_value(
-                exec,
-                S::User::column_kind(column),
-                crate::additional_fields::raw_value(raw)?,
-            )
-            .await?;
+            let kind = S::User::column_kind(column);
+            let raw = crate::additional_fields::raw_value(raw)?;
+            let value = if update.has_input_policy(field)
+                && matches!(kind, ColumnKind::Timestamp | ColumnKind::NaiveTimestamp)
+                && matches!(&raw, RawFieldValue::Text(_))
+            {
+                crate::additional_fields::bind_scalar(raw)?
+            } else {
+                prepare_user_value(exec, kind, raw).await?
+            };
             active.set(column, value);
         }
         let user = model::update_where::<S::User>(exec, &active, locator)

@@ -246,7 +246,18 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
             emit_column(sql);
             sql.push(" AS INTEGER) END / 1000.0, 'unixepoch') ELSE CASE WHEN ");
             emit_column(sql);
-            sql.push(" IS NULL THEN NULL ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ");
+            // A retained ISO fraction must not pass through strftime's rounding.
+            sql.push(" IS NULL THEN NULL WHEN ");
+            emit_column(sql);
+            sql.push(" GLOB '????-??-??T??:??:??.*Z' AND strftime('%Y-%m-%dT%H:%M:%S', substr(");
+            emit_column(sql);
+            sql.push(", 1, 19)) = substr(");
+            emit_column(sql);
+            sql.push(", 1, 19) AND julianday(");
+            emit_column(sql);
+            sql.push(") IS NOT NULL THEN ");
+            emit_column(sql);
+            sql.push(" ELSE COALESCE(strftime('%Y-%m-%dT%H:%M:%fZ', ");
             emit_column(sql);
             sql.push("), '1970-01-01T00:00:00.000Z') END END AS ");
             sql.ident(column);
@@ -279,6 +290,22 @@ pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
 }
 
 pub(crate) fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+    if sql.engine() == Engine::Postgres
+        && matches!(
+            M::column_kind(column),
+            ColumnKind::Timestamp | ColumnKind::NaiveTimestamp
+        )
+        && matches!(&value, SqlValue::Text(_))
+    {
+        sql.push("CAST(");
+        sql.bind(value);
+        sql.push(if M::column_kind(column) == ColumnKind::Timestamp {
+            " AS TIMESTAMPTZ)"
+        } else {
+            " AS TIMESTAMP)"
+        });
+        return;
+    }
     if sql.engine() == Engine::Postgres
         && M::column_kind(column) == ColumnKind::Json
         && matches!(&value, SqlValue::Text(_))

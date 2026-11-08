@@ -71,6 +71,18 @@ impl PreparedUserUpdate {
         self.metadata.binding_names.get(name).map(String::as_str)
     }
 
+    /// Input policies already revived original strings; callback results must
+    /// reach the driver without another date conversion.
+    #[must_use]
+    pub fn has_input_policy(&self, name: &str) -> bool {
+        name == "updatedAt"
+            || self
+                .metadata
+                .adapter_fields
+                .as_ref()
+                .is_some_and(|fields| fields.contains_key(name))
+    }
+
     /// Runs once, after both application and physical before hooks.
     pub async fn apply_adapter_transforms(&mut self) -> AuthResult<()> {
         let mut data = std::mem::take(&mut self.data);
