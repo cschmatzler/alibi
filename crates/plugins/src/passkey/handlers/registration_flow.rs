@@ -34,6 +34,7 @@ use alibi_core::error::codes;
 use alibi_core::utils::json::{self as native_json, JsString, JsValue};
 use base64::Engine;
 use chrono::Duration;
+use chrono::SubsecRound;
 use chrono::Utc;
 use serde_json::Value;
 use serde_json::json;
@@ -575,7 +576,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                         })?;
                     let user_id = input.user_id.clone();
                     apply_transports(&mut input)?;
-                    input.created_at = JsValue::Date(Utc::now());
+                    input.created_at = JsValue::Date(Utc::now().trunc_subsecs(3));
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
                         .create_session_record(alibi_core::CreateSession {
@@ -665,7 +666,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
             Ok(mut input) => {
                 async {
                     apply_transports(&mut input)?;
-                    input.created_at = JsValue::Date(Utc::now());
+                    input.created_at = JsValue::Date(Utc::now().trunc_subsecs(3));
                     ctx.database
                         .create_passkey(input)
                         .await

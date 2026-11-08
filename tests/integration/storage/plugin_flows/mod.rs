@@ -65,6 +65,7 @@ mod passkey_presence;
 mod passkey_query;
 mod passkey_raw_optional;
 mod passkey_transports;
+mod passkey_registration_clock;
 mod password_management_matrix;
 mod passwordless;
 mod passwordless_fields_matrix;
