@@ -296,6 +296,7 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
+        S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
         let native = if !fields.is_empty() {
             native::stage::<S::Session, _>(self.scoped_connection(), &mut active, &fields).await?
         } else {
@@ -304,7 +305,6 @@ where
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
         }
-        S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
         let session = match native::save::<S::Session, _>(
             active,
             self.scoped_connection(),

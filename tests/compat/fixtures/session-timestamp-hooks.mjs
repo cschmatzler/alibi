@@ -9,6 +9,8 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { getCurrentAdapter, runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
 
 const requiredExpiry = process.argv[2] === "--omit-required";
+const updatedAt = process.argv[2] === "--updated-at";
+const timestampField = updatedAt ? "updatedAt" : "expiresAt";
 const compatibleStringResult = process.argv[2] === "--string-result-compatible";
 const stringResult = process.argv[2] === "--string-result" || compatibleStringResult;
 const resultText = compatibleStringResult ? "2035-02-03 04:05:06.123987" : "2035-02-03T04:05:06.123987Z";
@@ -21,7 +23,7 @@ const wireOwner = process.argv[2] === "--secondary-wire-owner";
 const wireFields = process.argv[2] === "--secondary-wire-fields" || wireUnknown || wireOwner;
 const wire = process.argv[2] === "--secondary-wire" || wireFields;
 const secondary = process.argv[2] === "--secondary" || secondaryString || transactions || wire;
-assert.ok(process.argv[2] === undefined || omitResult || secondary || stringResult, "unknown fixture output mode");
+assert.ok(process.argv[2] === undefined || omitResult || secondary || stringResult || updatedAt, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
 assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
 assert.equal(pin.version, "1.7.18");
@@ -66,7 +68,7 @@ try {
         async delete(key) { cache.delete(key); },
       } } : {}),
       ...(wireFields ? { user: { additionalFields: extraFields } } : {}),
-      session: { storeSessionInDatabase: secondary, additionalFields: { ...extraFields, expiresAt: {
+      session: { storeSessionInDatabase: secondary, additionalFields: { ...extraFields, [timestampField]: {
         type: "date", required: requiredExpiry,
         onUpdate: () => "2031-02-03T04:05:06.123987Z",
         transform: { input: async value => {
@@ -77,8 +79,8 @@ try {
         } },
       } } },
       databaseHooks: { session: {
-        create: { before: async data => { event("create.before", data.expiresAt); }, after: async data => { event("create.after", data.expiresAt); } },
-        update: { before: async data => { event("update.before", data.expiresAt); }, after: async data => { event("update.after", data?.expiresAt); } },
+        create: { before: async data => { event("create.before", data[timestampField]); }, after: async data => { event("create.after", data[timestampField]); } },
+        update: { before: async data => { event("update.before", data[timestampField]); }, after: async data => { event("update.after", data?.[timestampField]); } },
       } },
     };
     const migrations = await getMigrations(options);
@@ -129,7 +131,7 @@ try {
         if (secondary && kind !== (secondaryString ? "string" : "date")) continue;
         const token = `timestamp-${operation}-${kind}`;
         applyingInput = false;
-        const original = operation === "update" ? await internalAdapter.createSession(user.id, false, { token, expiresAt: new Date("2030-01-01T00:00:00.123Z") }, true) : null;
+        const original = operation === "update" ? await internalAdapter.createSession(user.id, false, { token, [timestampField]: new Date("2030-01-01T00:00:00.123Z") }, true) : null;
         if (wireUnknown && operation === "update") {
           const payload = JSON.parse(cache.get(token));
           payload.session.trustedUnknown = { exact: true };
@@ -138,7 +140,7 @@ try {
         }
         events = [];
         applyingInput = true;
-        const fields = { ...(kind === "omitted" ? {} : { expiresAt: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}) };
+        const fields = { ...(kind === "omitted" ? {} : { [timestampField]: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}) };
         let session;
         let outcome;
         try {
@@ -146,7 +148,7 @@ try {
             ? await internalAdapter.createSession(user.id, false, { token, ...fields }, true)
             : await internalAdapter.updateSession(original.token, fields);
           assert.ok(session);
-          outcome = { output: session.expiresAt };
+          outcome = { output: session[timestampField] };
         } catch (error) {
           if (secondaryString && operation === "create") {
             assert.equal(error.name, "TypeError");
@@ -185,8 +187,8 @@ try {
           cases.push({ operation, kind, input, events: [...events], outcome, exists: readback !== null, readback: readback?.session.expiresAt ?? null });
         } else {
           assert.equal(readback.session.id, session.id);
-          assert.equal(session.expiresAt.toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : "2031-02-03T04:05:07.123Z");
-          assert.equal(readback.session.expiresAt.toISOString(), secondary && operation === "update" ? input.toISOString() : session.expiresAt.toISOString());
+          assert.equal(session[timestampField].toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : "2031-02-03T04:05:07.123Z");
+          assert.equal(readback.session[timestampField].toISOString(), secondary && operation === "update" ? input.toISOString() : session[timestampField].toISOString());
           const retained = secondary ? {
             cached: JSON.parse(cache.get(token)).session.expiresAt,
             referenced: JSON.parse(cache.get(`active-sessions-${user.id}`)).find(reference => reference.token === token).expiresAt,
@@ -208,7 +210,7 @@ try {
             }
             retained.wire = JSON.stringify(payload);
           }
-          cases.push({ operation, kind, input, events: [...events], output: session.expiresAt, readback: readback.session.expiresAt, ...retained });
+          cases.push({ operation, kind, input, events: [...events], output: session[timestampField], readback: readback.session[timestampField], ...retained });
         }
       }
     }
@@ -216,8 +218,8 @@ try {
     profiles.push({ backend, ...(requiredExpiry ? { schema_sql: schemaSql } : {}), cases });
   }
   if (!omitResult && !stringResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
+  const filename = updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {
   await sqliteDb.destroy();
