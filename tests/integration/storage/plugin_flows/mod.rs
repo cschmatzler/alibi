@@ -58,6 +58,8 @@ mod mysql_email_otp;
 mod mysql_invitations;
 #[cfg(feature = "seaorm-mysql")]
 mod mysql_oauth_document;
+#[cfg(feature = "seaorm-mysql")]
+mod mysql_admin_pages;
 mod organization_metadata_phases;
 mod passkey_presence;
 mod passkey_query;

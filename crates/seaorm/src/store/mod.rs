@@ -1576,7 +1576,7 @@ pub(crate) fn map_db_err(err: DbErr) -> AuthError {
     }
 }
 
-/// Bind raw numeric `LIMIT`/`OFFSET` values; the database validates them.
+/// Preserve backend validation of raw numeric `LIMIT`/`OFFSET` values.
 pub(crate) fn bind_page(
     mut statement: sea_orm::Statement,
     limit: Option<f64>,
@@ -1586,10 +1586,20 @@ pub(crate) fn bind_page(
     use std::fmt::Write;
     for (clause, number) in [("LIMIT", limit), ("OFFSET", offset)] {
         if let Some(number) = number {
+            if statement.db_backend == DbBackend::MySql {
+                // mysql2 interpolates Number parameters; prepared doubles are
+                // rejected even for integral pages. Fractional literals must fail.
+                _ = write!(
+                    statement.sql,
+                    " {clause} {}",
+                    ryu_js::Buffer::new().format(number)
+                );
+                continue;
+            }
             let values = statement.values.get_or_insert_with(|| Values(Vec::new()));
             let placeholder = match statement.db_backend {
                 DbBackend::Postgres => format!("${}", values.0.len() + 1),
-                DbBackend::Sqlite | DbBackend::MySql => "?".into(),
+                DbBackend::Sqlite => "?".into(),
                 _ => {
                     return Err(AuthError::not_implemented(
                         "Raw numeric pages are not supported by this database backend",
