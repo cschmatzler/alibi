@@ -61,6 +61,10 @@ where
             .take()
             .unwrap_or_else(alibi_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
+        let mut expiry = Some(create_session.expires_at);
+        if persist {
+            fields.take_timestamp_input("expiresAt", &mut expiry);
+        }
         let mut typed_fields = [
             (
                 "activeOrganizationId",
@@ -106,6 +110,9 @@ where
             .map(S::Session::parse_id)
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
+        if expiry.is_none() {
+            active.not_set(S::Session::expires_at_column());
+        }
         if !fields.is_empty() {
             stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
         }
@@ -129,10 +136,11 @@ where
         exec: Exec<'_>,
         tx: Option<&SqlxTransaction>,
         session: S::Session,
-        expires_at: Option<DateTime<Utc>>,
+        mut expires_at: Option<DateTime<Utc>>,
         mut fields: FieldValues,
     ) -> AuthResult<Option<(S::Session, FieldValues)>> {
         use alibi_core::AuthSession;
+        fields.take_timestamp_input("expiresAt", &mut expires_at);
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -159,12 +167,13 @@ where
         tx: Option<&SqlxTransaction>,
         token: &str,
         session: S::Session,
-        expires_at: Option<DateTime<Utc>>,
+        mut expires_at: Option<DateTime<Utc>>,
         mut fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         let context = self.hook_context(tx);
         let session = if persist {
+            fields.take_timestamp_input("expiresAt", &mut expires_at);
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = exec
                 .fetch_optional::<S::Session>(Self::active_session_by_token(exec, token))
@@ -246,9 +255,10 @@ where
     async fn update_session_with_fields(
         &self,
         token: &str,
-        expires_at: Option<DateTime<Utc>>,
+        mut expires_at: Option<DateTime<Utc>>,
         mut fields: FieldValues,
     ) -> AuthResult<Option<S::Session>> {
+        fields.take_timestamp_input("expiresAt", &mut expires_at);
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
             if hook
