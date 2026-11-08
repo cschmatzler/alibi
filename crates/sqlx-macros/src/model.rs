@@ -103,9 +103,15 @@ pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStrea
             #name => {
                 let value = <#field_ty as #sqlx_root::value::SqlxValue>::from_sql_value(value)
                     .map_err(|_error| #core_root::AuthError::internal("field value cannot be represented by its model column"))?;
-                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(
+                let value = if backend == #sqlx_root::pool::Engine::Postgres
+                    && <Self as #sqlx_root::model::SqlxModel>::column_kind(#name) == #sqlx_root::value::ColumnKind::Text
+                    && <#field_ty as #sqlx_root::value::SqlxValue>::KIND == #sqlx_root::value::ColumnKind::Json
+                {
+                    value
+                } else {
                     #sqlx_root::value::SqlxValue::prepare(value, backend)?
-                ));
+                };
+                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(value));
             }
         });
         bindings.push(quote! {

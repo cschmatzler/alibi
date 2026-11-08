@@ -264,7 +264,31 @@ where
                 .adapter_native_fields
                 .insert("id".into(), raw_id.clone());
         }
+        let metadata_text = if exec.engine() == Engine::Postgres {
+            match (
+                S::User::list_users_column("metadata"),
+                create_user.metadata.as_ref(),
+            ) {
+                (Some(column), Some(value)) if S::User::column_kind(column) == ColumnKind::Text => {
+                    Some((
+                        column,
+                        SqlValue::Text(
+                            alibi_core::store::postgres_parameter::text_parameter(
+                                &alibi_core::utils::json::JsValue::from(value.clone()),
+                            )?
+                            .map(|text| text.to_utf8_binding()),
+                        ),
+                    ))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let mut active = S::User::new_active(user_id, create_user, now);
+        if let Some((column, value)) = metadata_text {
+            active.set(column, value);
+        }
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
         stage_provider_text::<S::User>(
             exec,

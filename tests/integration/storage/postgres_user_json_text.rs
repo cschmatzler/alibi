@@ -50,17 +50,22 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
         .build()
         .await?;
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 18);
+    assert_eq!(cases.len(), 28);
     let mut id = String::new();
     for case in cases {
         let action = case["action"].as_str().unwrap();
         let row = match action {
-            "create" => {
+            "create" | "create-array" | "create-string" | "create-boolean" | "create-number"
+            | "create-null" => {
                 auth.store()
                     .create_user(
                         CreateUser::new()
                             .with_name("Text JSON")
-                            .with_email("text-json@example.com")
+                            .with_email(if action == "create" {
+                                "text-json@example.com".to_owned()
+                            } else {
+                                format!("{action}@text-json.example.com")
+                            })
                             .with_metadata(case["input"].clone()),
                     )
                     .await?
@@ -88,15 +93,27 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
                     .await?
                     .ok_or("source user must exist")?
             }
-            "read" | "updated-read" | "array-read" | "string-read" | "boolean-read"
-            | "number-read" | "operator-read" | "invalid-read" | "cleared-read" => auth
+            "read"
+            | "updated-read"
+            | "array-read"
+            | "string-read"
+            | "boolean-read"
+            | "number-read"
+            | "operator-read"
+            | "invalid-read"
+            | "cleared-read"
+            | "created-array-read"
+            | "created-string-read"
+            | "created-boolean-read"
+            | "created-number-read"
+            | "created-null-read" => auth
                 .store()
                 .get_user_by_id(&id)
                 .await?
                 .ok_or("source user must exist")?,
             _ => panic!("unexpected source user action: {action}"),
         };
-        if action == "create" {
+        if action == "create" || action.starts_with("create-") {
             id = row.id().into_owned();
         }
         assert_eq!(row.id().as_ref(), id, "{action}");

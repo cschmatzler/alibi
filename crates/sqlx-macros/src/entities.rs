@@ -94,6 +94,12 @@ pub(crate) fn user_impl(
         let field_ty = &column_of(columns, "metadata")?.ty;
         quote! {
             fn prepare_json_metadata(active: &mut #sqlx_root::model::ActiveRow, backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<()> {
+                if backend == #sqlx_root::pool::Engine::Postgres
+                    && <Self as #sqlx_root::model::SqlxModel>::column_kind(#metadata) == #sqlx_root::value::ColumnKind::Text
+                    && <#field_ty as #sqlx_root::value::SqlxValue>::KIND == #sqlx_root::value::ColumnKind::Json
+                {
+                    return Ok(());
+                }
                 if let ::std::option::Option::Some(#sqlx_root::model::ActiveValue::Set(value)) = active.get(#metadata).cloned() {
                     let value = <#field_ty as #sqlx_root::value::SqlxValue>::from_sql_value(value)
                         .map_err(|_error| #core_root::AuthError::internal("Invalid JSON metadata value"))?;

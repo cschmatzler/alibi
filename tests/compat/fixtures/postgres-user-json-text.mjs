@@ -32,21 +32,23 @@ try {
   const auth = betterAuth(options);
   const { internalAdapter } = await auth.$context;
   let id;
-  for (const action of ["create", "read", "update", "updated-read", "array", "array-read", "string", "string-read", "boolean", "boolean-read", "number", "number-read", "operator-text", "operator-read", "invalid-text", "invalid-read", "clear", "cleared-read"]) {
-    const input = action === "clear" ? null : action === "array" ? ["a", { nested: "object" }, null, ["nested"]]
-      : action === "string" ? "literal-text" : action === "boolean" ? true : action === "number" ? 1e20
+  for (const action of ["create", "read", "update", "updated-read", "array", "array-read", "string", "string-read", "boolean", "boolean-read", "number", "number-read", "operator-text", "operator-read", "invalid-text", "invalid-read", "clear", "cleared-read", "create-array", "created-array-read", "create-string", "created-string-read", "create-boolean", "created-boolean-read", "create-number", "created-number-read", "create-null", "created-null-read"]) {
+    const creating = action === "create" || action.startsWith("create-");
+    const kind = action.replace(/^create-/, "");
+    const input = action === "clear" || kind === "null" ? null : kind === "array" ? ["a", { nested: "object" }, null, ["nested"]]
+      : kind === "string" ? "literal-text" : kind === "boolean" ? true : kind === "number" ? 1e20
       : { numbers: [1e20, 1e21, 1e-6, 1e-7, -0], version: action === "create" ? "original" : "updated" };
-    const writes = ["create", "update", "array", "string", "boolean", "number", "clear"].includes(action);
+    const writes = creating || ["update", "array", "string", "boolean", "number", "clear"].includes(action);
     const rawInput = action === "operator-text" ? ' { "numbers" : [1e+20, 1e21], "version" : "operator" } ' : action === "invalid-text" ? "not-json" : undefined;
     let row;
-    if (action === "create") row = await internalAdapter.createUser({ name: "Text JSON", email: "text-json@example.com", emailVerified: false, metadata: input });
+    if (creating) row = await internalAdapter.createUser({ name: "Text JSON", email: action === "create" ? "text-json@example.com" : `${action}@text-json.example.com`, emailVerified: false, metadata: input });
     else if (writes) row = await internalAdapter.updateUser(id, { metadata: input });
     else if (rawInput !== undefined) {
       await pool.query('UPDATE "applicationUser" SET metadata = $1 WHERE id = $2', [rawInput, id]);
       row = await internalAdapter.findUserById(id);
     }
     else row = await internalAdapter.findUserById(id);
-    if (action === "create") id = row.id;
+    if (creating) id = row.id;
     assert.equal(row.id, id);
     const { rows } = await pool.query('SELECT metadata FROM "applicationUser" WHERE id = $1', [id]);
     assert.equal(rows.length, 1);
@@ -55,7 +57,7 @@ try {
     if (rawInput !== undefined) assert.equal(rows[0].metadata, rawInput);
     cases.push({ action, ...(writes ? { input } : {}), ...(rawInput === undefined ? {} : { raw_input: rawInput }), output: row.metadata, stored: rows[0].metadata });
   }
-  assert.equal(cases.length, 18);
+  assert.equal(cases.length, 28);
   await writeFile(new URL("../../fixtures/postgres-user-json-text.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", physical_type: "text", table_sql: tableSql, cases }) + "\n");
   console.log(`${cases.length} actual PostgreSQL application-owned TEXT JSON creation/read/update/null cases`);
 } finally {
