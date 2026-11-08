@@ -12,6 +12,164 @@ use sea_orm::{
     QuerySelect,
 };
 
+async fn stage_account_fields<M: SeaOrmAccountModel, C: ConnectionTrait>(
+    db: &C,
+    active: &mut M::ActiveModel,
+    fields: &alibi_core::field_policy::FieldValues,
+) -> AuthResult<Vec<(M::Column, sea_orm::Value)>> {
+    use sea_orm::Iden;
+    let backend = db.get_database_backend();
+    let prepared = M::additional_field_bindings(&fields.prepared_text_inputs(), backend)?
+        .into_iter()
+        .map(|(column, _)| column.to_string())
+        .collect::<std::collections::BTreeSet<_>>();
+    let mut native = Vec::new();
+    for (column, value) in M::additional_field_bindings(fields, backend)? {
+        if prepared.contains(&column.to_string())
+            && matches!(
+                column.def().get_column_type(),
+                sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                    | sea_orm::sea_query::ColumnType::Timestamp
+                    | sea_orm::sea_query::ColumnType::DateTime
+            )
+            && matches!(&value, alibi_core::store::adapter::RawFieldValue::Text(_))
+        {
+            native.push((column, crate::additional_fields::bind_scalar(value)?));
+        } else {
+            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+            M::set_additional_field(active, column, value, backend)?;
+        }
+    }
+    Ok(native)
+}
+
+async fn save_account<M: SeaOrmAccountModel, C: ConnectionTrait>(
+    mut active: M::ActiveModel,
+    db: &C,
+    id: Option<&str>,
+    native: Vec<(M::Column, sea_orm::Value)>,
+) -> AuthResult<M> {
+    use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
+    use sea_orm::{ActiveModelBehavior, ActiveValue, DbBackend, EntityName, Iden, Iterable};
+    let insert = id.is_none();
+    if native.is_empty() {
+        return if insert {
+            active.insert(db).await.map_err(map_db_err)
+        } else {
+            active.update(db).await.map_err(map_db_err)
+        };
+    }
+    active = ActiveModelBehavior::before_save(active, db, insert)
+        .await
+        .map_err(map_db_err)?;
+    let backend = db.get_database_backend();
+    let mysql_id = if backend == DbBackend::MySql {
+        let column = <M::Entity as EntityTrait>::Column::iter()
+            .find(|column| column.to_string() == M::id_column().to_string())
+            .ok_or_else(|| {
+                AuthError::config("Account entity does not expose its primary key column")
+            })?;
+        active.get(column).into_value()
+    } else {
+        None
+    };
+    let mut columns = Vec::new();
+    let mut values = Vec::new();
+    for column in <M::Entity as EntityTrait>::Column::iter() {
+        let override_value = native
+            .iter()
+            .find(|(physical, _)| physical.to_string() == column.to_string())
+            .map(|(_, value)| value.clone());
+        let staged = match active.take(column) {
+            ActiveValue::Set(value) => Some(value),
+            ActiveValue::Unchanged(value) if insert => Some(value),
+            _ => None,
+        };
+        if let Some(value) = override_value.or(staged) {
+            let expression = if backend == DbBackend::Postgres {
+                match &value {
+                    sea_orm::Value::String(Some(value))
+                        if matches!(
+                            column.def().get_column_type(),
+                            sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                                | sea_orm::sea_query::ColumnType::Timestamp
+                                | sea_orm::sea_query::ColumnType::DateTime
+                        ) =>
+                    {
+                        Expr::cust(alibi_core::store::postgres_parameter::quoted_literal(value))
+                            .cast_as(Alias::new(
+                                if matches!(
+                                    column.def().get_column_type(),
+                                    sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                                ) {
+                                    "timestamptz"
+                                } else {
+                                    "timestamp"
+                                },
+                            ))
+                    }
+                    _ => Expr::val(value).into(),
+                }
+            } else {
+                Expr::val(value).into()
+            };
+            columns.push(column);
+            values.push(column.save_as(expression));
+        }
+    }
+    let statement = if let Some(id) = id {
+        let mut query = Query::update()
+            .table(M::Entity::default().table_ref())
+            .values(columns.into_iter().zip(values))
+            .and_where(M::id_column().eq(M::parse_id(id)?))
+            .to_owned();
+        if backend != DbBackend::MySql {
+            _ = query
+                .returning(Query::returning().columns(<M::Entity as EntityTrait>::Column::iter()));
+        }
+        backend.build(&query)
+    } else {
+        let mut query = Query::insert()
+            .into_table(M::Entity::default().table_ref())
+            .columns(columns)
+            .values(values)
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .to_owned();
+        if backend != DbBackend::MySql {
+            _ = query
+                .returning(Query::returning().columns(<M::Entity as EntityTrait>::Column::iter()));
+        }
+        backend.build(&query)
+    };
+    let missing = || {
+        map_db_err(if insert {
+            sea_orm::DbErr::RecordNotInserted
+        } else {
+            sea_orm::DbErr::RecordNotUpdated
+        })
+    };
+    let account = if backend == DbBackend::MySql {
+        let result = db.execute_raw(statement).await.map_err(map_db_err)?;
+        let lookup = mysql_id.unwrap_or_else(|| result.last_insert_id().into());
+        M::Entity::find()
+            .filter(M::id_column().eq(lookup))
+            .one(db)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(missing)?
+    } else {
+        let row = db
+            .query_one_raw(statement)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(missing)?;
+        M::from_query_result(&row, "").map_err(map_db_err)?
+    };
+    <M::ActiveModel as ActiveModelBehavior>::after_save(account, db, insert)
+        .await
+        .map_err(map_db_err)
+}
+
 impl<S> SeaOrmStore<S>
 where
     S: AuthSchema,
@@ -59,12 +217,8 @@ where
             .map(S::Account::parse_id)
             .transpose()?;
         let mut active = S::Account::new_active(id, create_account, now);
-        let backend = db.get_database_backend();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
-        let account = active.insert(db).await.map_err(map_db_err)?;
+        let native = stage_account_fields::<S::Account, _>(db, &mut active, &fields).await?;
+        let account = save_account::<S::Account, _>(active, db, None, native).await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_account(&account, &hook_context).await?;
@@ -203,13 +357,9 @@ where
         );
         fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
-        let backend = connection.get_database_backend();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(connection, &column, value).await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
-
-        let account = active.update(connection).await.map_err(map_db_err)?;
+        let native =
+            stage_account_fields::<S::Account, _>(connection, &mut active, &fields).await?;
+        let account = save_account::<S::Account, _>(active, connection, Some(id), native).await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_update_account(&account, &hook_context).await?;

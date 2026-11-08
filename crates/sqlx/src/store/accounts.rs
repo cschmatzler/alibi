@@ -12,6 +12,34 @@ use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 
+async fn stage_account_fields<M: SqlxAccountModel>(
+    exec: Exec<'_>,
+    active: &mut crate::model::ActiveRow,
+    fields: &alibi_core::field_policy::FieldValues,
+) -> AuthResult<()> {
+    let backend = exec.engine();
+    let prepared = M::additional_field_bindings(&fields.prepared_text_inputs(), backend)?
+        .into_iter()
+        .map(|(column, _)| column)
+        .collect::<std::collections::BTreeSet<_>>();
+    for (column, value) in M::additional_field_bindings(fields, backend)? {
+        let kind = M::column_kind(column);
+        if prepared.contains(column)
+            && matches!(
+                kind,
+                crate::value::ColumnKind::Timestamp | crate::value::ColumnKind::NaiveTimestamp
+            )
+            && matches!(&value, alibi_core::store::adapter::RawFieldValue::Text(_))
+        {
+            active.set(column, crate::additional_fields::bind_scalar(value)?);
+        } else {
+            let value = crate::additional_fields::prepare_value(exec, kind, value).await?;
+            M::set_additional_field(active, column, value, backend)?;
+        }
+    }
+    Ok(())
+}
+
 impl<S> SqlxStore<S>
 where
     S: AuthSchema,
@@ -57,16 +85,7 @@ where
             .map(S::Account::parse_id)
             .transpose()?;
         let mut active = S::Account::new_active(id, create_account, now);
-        let backend = exec.engine();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::Account as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
+        stage_account_fields::<S::Account>(exec, &mut active, &fields).await?;
         let account = model::insert::<S::Account>(exec, &active).await?;
         if tx.is_none() {
             for hook in self.hooks() {
@@ -219,16 +238,7 @@ where
         );
         fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
-        let backend = exec.engine();
-        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::Account as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
-            S::Account::set_additional_field(&mut active, column, value, backend)?;
-        }
+        stage_account_fields::<S::Account>(exec, &mut active, &fields).await?;
 
         let account = model::update::<S::Account>(exec, &active)
             .await?

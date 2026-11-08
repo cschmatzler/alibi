@@ -8,7 +8,8 @@ import { betterAuth } from "../reference-server/node_modules/better-auth/dist/in
 import { getMigrations } from "../reference-server/node_modules/better-auth/dist/db/get-migration.mjs";
 
 const omitResult = process.argv[2] === "--hooks-omit";
-const hooks = process.argv[2] === "--hooks" || omitResult;
+const stringResult = process.argv[2] === "--hooks-string";
+const hooks = process.argv[2] === "--hooks" || omitResult || stringResult;
 assert.ok(process.argv[2] === undefined || hooks, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
 assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
@@ -45,6 +46,7 @@ try {
         event("input", value);
         if (value == null) return value;
         if (omitResult && applyingInput) return undefined;
+        if (stringResult && applyingInput) return "2035-02-03T04:05:06.123987Z";
         return new Date(new Date(value).getTime() + 1000);
       } } } } };
       options.databaseHooks = { account: {
@@ -83,7 +85,7 @@ try {
     assert.equal(cases.length, hooks ? 8 : 6);
     profiles.push({ backend, cases });
   }
-  const filename = omitResult ? "account-timestamp-hooks-omit" : hooks ? "account-timestamp-hooks" : "account-timestamp-parameters";
+  const filename = stringResult ? "account-timestamp-hooks-string" : omitResult ? "account-timestamp-hooks-omit" : hooks ? "account-timestamp-hooks" : "account-timestamp-parameters";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL account timestamp parameter cases`);
 } finally {

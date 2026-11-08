@@ -9,20 +9,34 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "seaorm-mysql")]
+mod mysql;
+
 backend_tests!(
     account_date_inputs_precede_sync_adapter_callbacks,
     account_date_inputs_precede_async_adapter_callbacks,
     account_date_omission_overrides_sync_native_input,
-    account_date_omission_overrides_async_native_input
+    account_date_omission_overrides_async_native_input,
+    account_date_transform_strings_preserve_sync_driver_values,
+    account_date_transform_strings_preserve_async_driver_values
 );
 postgres_tests!(
     account_date_inputs_precede_sync_adapter_callbacks,
     account_date_inputs_precede_async_adapter_callbacks,
     account_date_omission_overrides_sync_native_input,
-    account_date_omission_overrides_async_native_input
+    account_date_omission_overrides_async_native_input,
+    account_date_transform_strings_preserve_sync_driver_values,
+    account_date_transform_strings_preserve_async_driver_values
 );
 
 type Events = Arc<Mutex<Vec<Value>>>;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ResultMode {
+    Date,
+    Omitted,
+    String,
+}
 
 fn event(events: &Events, phase: &str, value: Option<&JsValue>) -> alibi::AuthResult<()> {
     let kind = match value {
@@ -51,15 +65,22 @@ fn event(events: &Events, phase: &str, value: Option<&JsValue>) -> alibi::AuthRe
 fn transform(
     events: &Events,
     value: Option<JsValue>,
-    omit_result: bool,
+    mode: ResultMode,
+    applying_input: bool,
 ) -> alibi::AuthResult<Option<JsValue>> {
     event(events, "input", value.as_ref())?;
-    if omit_result
+    if applying_input
         && value
             .as_ref()
             .is_some_and(|value| !value.is_null() && !value.is_undefined())
     {
-        return Ok(None);
+        match mode {
+            ResultMode::Omitted => return Ok(None),
+            ResultMode::String => {
+                return Ok(Some(JsValue::String("2035-02-03T04:05:06.123987Z".into())));
+            }
+            ResultMode::Date => {}
+        }
     }
     Ok(match value {
         None | Some(JsValue::Undefined) => None,
@@ -144,13 +165,13 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for AccountHooks {
     }
 }
 
-async fn check<B: Backend>(db: Db, asynchronous: bool, omit_result: bool) -> TestResult {
+async fn check<B: Backend>(db: Db, asynchronous: bool, mode: ResultMode) -> TestResult {
     let secret = "account-timestamp-parameters-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value = serde_json::from_str(if omit_result {
-        include_str!("../../fixtures/account-timestamp-hooks-omit.json")
-    } else {
-        include_str!("../../fixtures/account-timestamp-hooks.json")
+    let fixture: Value = serde_json::from_str(match mode {
+        ResultMode::Date => include_str!("../../fixtures/account-timestamp-hooks.json"),
+        ResultMode::Omitted => include_str!("../../fixtures/account-timestamp-hooks-omit.json"),
+        ResultMode::String => include_str!("../../fixtures/account-timestamp-hooks-string.json"),
     })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     let backend = if db.is_postgres() {
@@ -177,20 +198,15 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, omit_result: bool) -> Tes
         field.transform_adapter_input(move |value| {
             let observed = observed.clone();
             let applying = applying.clone();
-            async move {
-                transform(
-                    &observed,
-                    value,
-                    omit_result && applying.load(Ordering::SeqCst),
-                )
-            }
+            async move { transform(&observed, value, mode, applying.load(Ordering::SeqCst)) }
         })
     } else {
         field.transform(move |value| {
             transform(
                 &observed,
                 value.cloned(),
-                omit_result && applying.load(Ordering::SeqCst),
+                mode,
+                applying.load(Ordering::SeqCst),
             )
         })
     };
@@ -269,37 +285,88 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, omit_result: bool) -> Tes
         );
         let expected: Option<chrono::DateTime<chrono::Utc>> =
             case["output"].as_str().map(str::parse).transpose()?;
-        assert_eq!(
-            account.access_token_expires_at(),
-            expected,
-            "{backend}/{operation}/{kind}"
-        );
+        if mode == ResultMode::String {
+            assert_eq!(
+                native::to_value(
+                    &account
+                        .access_token_expires_at()
+                        .map_or(JsValue::Null, JsValue::Date)
+                )?,
+                case["output"],
+                "{backend}/{operation}/{kind}"
+            );
+            assert_eq!(
+                json!(
+                    db.text(
+                        "SELECT CAST(\"accessTokenExpiresAt\" AS TEXT) FROM account WHERE id = $1",
+                        &[account.id().as_ref()]
+                    )
+                    .await?
+                ),
+                case["stored"],
+                "{backend}/{operation}/{kind} physical parameter"
+            );
+        } else {
+            assert_eq!(
+                account.access_token_expires_at(),
+                expected,
+                "{backend}/{operation}/{kind}"
+            );
+        }
         let readback = auth
             .store()
             .get_account("timestamp-provider", &key.as_str().into())
             .await?
             .ok_or("account callback readback missing")?;
         assert_eq!(readback.id(), account.id());
-        assert_eq!(
-            readback.access_token_expires_at(),
-            expected,
-            "{backend}/{operation}/{kind} readback"
-        );
+        if mode == ResultMode::String {
+            assert_eq!(
+                readback.access_token_expires_at(),
+                account.access_token_expires_at(),
+                "{backend}/{operation}/{kind} exact native readback"
+            );
+            assert_eq!(
+                native::to_value(
+                    &readback
+                        .access_token_expires_at()
+                        .map_or(JsValue::Null, JsValue::Date)
+                )?,
+                case["output"],
+                "{backend}/{operation}/{kind} public readback"
+            );
+        } else {
+            assert_eq!(
+                readback.access_token_expires_at(),
+                expected,
+                "{backend}/{operation}/{kind} readback"
+            );
+        }
     }
     drop(auth);
     B::close(connection).await
 }
 
 async fn account_date_inputs_precede_sync_adapter_callbacks<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, false).await
+    check::<B>(db, false, ResultMode::Date).await
 }
 async fn account_date_inputs_precede_async_adapter_callbacks<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, false).await
+    check::<B>(db, true, ResultMode::Date).await
 }
 
 async fn account_date_omission_overrides_sync_native_input<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, true).await
+    check::<B>(db, false, ResultMode::Omitted).await
 }
 async fn account_date_omission_overrides_async_native_input<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, true).await
+    check::<B>(db, true, ResultMode::Omitted).await
+}
+
+async fn account_date_transform_strings_preserve_sync_driver_values<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, false, ResultMode::String).await
+}
+async fn account_date_transform_strings_preserve_async_driver_values<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, true, ResultMode::String).await
 }

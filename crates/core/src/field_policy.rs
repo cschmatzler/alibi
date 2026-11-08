@@ -239,6 +239,7 @@ use std::{fmt, future::Future, pin::Pin, sync::Arc};
 pub struct FieldValues {
     values: IndexMap<String, JsValue>,
     adapter_fields: Option<Arc<FieldConfigs>>,
+    prepared_input_fields: IndexSet<String>,
     undefined_input_keys: IndexSet<String>,
     transform_omitted: bool,
     binding_names: IndexMap<String, String>,
@@ -318,6 +319,25 @@ impl FieldValues {
     #[must_use]
     pub fn binding_name<'a>(&'a self, name: &'a str) -> &'a str {
         self.binding_names.get(name).map_or(name, String::as_str)
+    }
+
+    /// Retain policy-produced text with its original logical-to-physical bindings.
+    /// These values must not repeat the original input's date conversion.
+    #[must_use]
+    pub fn prepared_text_inputs(&self) -> Self {
+        Self {
+            values: self
+                .values
+                .iter()
+                .filter(|(name, value)| {
+                    self.prepared_input_fields.contains(*name)
+                        && matches!(value, JsValue::String(_))
+                })
+                .map(|(name, value)| (name.clone(), value.clone()))
+                .collect(),
+            binding_names: self.binding_names.clone(),
+            ..Self::default()
+        }
     }
 
     /// Move a typed timestamp through its declared input policy. Taking ownership
@@ -415,6 +435,7 @@ impl FieldValues {
         {
             return false;
         }
+        _ = self.prepared_input_fields.insert(name.to_owned());
         if field.schema.get("type").and_then(Value::as_str) == Some("date")
             && let Some(JsValue::String(value)) = self.values.get(name)
             && let Some(date) = value
@@ -900,6 +921,7 @@ impl SessionAdapterFields {
     }
 
     pub(crate) fn attach(&self, values: &mut FieldValues, creation: bool) {
+        values.prepared_input_fields.clear();
         values.transform_omitted = creation;
         values.adapter_fields = Some(Arc::clone(&self.0));
         values.binding_names = self
@@ -1075,5 +1097,69 @@ mod timestamp_input_tests {
             assert_eq!(typed, None);
             assert_eq!(fields.get("expiresAt"), Some(&value));
         }
+    }
+}
+
+#[cfg(test)]
+mod prepared_input_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn prepared_text_keeps_bindings_without_repeating_callbacks() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let observed = calls.clone();
+        let mut field =
+            FieldConfig::new(serde_json::json!({"type":"date"})).transform(move |value| {
+                assert!(matches!(value, Some(JsValue::Date(_))));
+                observed.fetch_add(1, Ordering::SeqCst);
+                Ok(Some(JsValue::String("2035-02-03T04:05:06.123987Z".into())))
+            });
+        field.field_name = Some("physicalExpiry".to_owned());
+        let policies =
+            SessionAdapterFields(Arc::new(FieldConfigs::from([("expiry".to_owned(), field)])));
+        let mut values = FieldValues::new();
+        _ = values.insert(
+            "expiry".to_owned(),
+            JsValue::String("2031-02-03T04:05:06.123987Z".into()),
+        );
+        policies.attach(&mut values, false);
+        values.apply_adapter_transforms().unwrap();
+        let mut prepared = values.prepared_text_inputs();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared.binding_name("expiry"), "physicalExpiry");
+        assert_eq!(
+            prepared.get("expiry"),
+            Some(&JsValue::String("2035-02-03T04:05:06.123987Z".into()))
+        );
+        prepared.apply_adapter_transforms().unwrap();
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        policies.attach(&mut values, false);
+        assert!(values.prepared_text_inputs().is_empty());
+    }
+
+    #[test]
+    fn original_date_strings_and_unconfigured_text_are_not_prepared_text() {
+        let policies = SessionAdapterFields(Arc::new(FieldConfigs::from([(
+            "expiry".to_owned(),
+            FieldConfig::new(serde_json::json!({"type":"date"})),
+        )])));
+        let mut values = FieldValues::new();
+        _ = values.insert(
+            "expiry".to_owned(),
+            JsValue::String("2031-02-03T04:05:06.123987Z".into()),
+        );
+        _ = values.insert("native".to_owned(), JsValue::String("unchanged".into()));
+        policies.attach(&mut values, false);
+        values.apply_adapter_transforms().unwrap();
+        assert!(values.prepared_text_inputs().is_empty());
+        assert_eq!(
+            values.get("expiry"),
+            Some(&JsValue::Date("2031-02-03T04:05:06.123Z".parse().unwrap()))
+        );
+        assert_eq!(
+            values.get("native"),
+            Some(&JsValue::String("unchanged".into()))
+        );
     }
 }
