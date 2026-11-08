@@ -200,26 +200,21 @@ where
             fields.take_timestamp_input("expiresAt", &mut expires_at);
             let owns_updated_at = fields.has_adapter_field("updatedAt");
             fields.apply_adapter_transforms_async().await?;
-            let Some(current) = <S::Session as SeaOrmSessionModel>::Entity::find()
+            let current = <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::token_column().eq(token))
                 .one(db)
                 .await
-                .map_err(map_db_err)?
-            else {
-                for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                    hook.after_update_session_missing(token, &context).await?;
-                }
-                return Ok(None);
-            };
-            let mut active = current.into_active_model();
-            if !owns_updated_at {
-                S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-            }
-            let native = native::stage::<S::Session, _>(db, &mut active, &fields).await?;
-            if let Some(expiry) = expires_at {
-                S::Session::set_expires_at(&mut active, expiry);
-            }
-            match native::save::<S::Session, _>(active, db, Some(token), native).await? {
+                .map_err(map_db_err)?;
+            match native::update::<S::Session, _>(
+                db,
+                current,
+                token,
+                expires_at,
+                &fields,
+                owns_updated_at,
+            )
+            .await?
+            {
                 Some(model) => model,
                 None => {
                     for hook in self.hooks().iter().filter(|_| tx.is_none()) {
@@ -302,34 +297,17 @@ where
         fields.apply_adapter_transforms_async().await?;
         let query = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(S::Session::token_column().eq(token));
-        let Some(model) = query
+        let current = query
             .one(self.scoped_connection())
             .await
-            .map_err(map_db_err)?
-        else {
-            for hook in self.hooks() {
-                hook.after_update_session_missing(token, &hook_context)
-                    .await?;
-            }
-            return Ok(None);
-        };
-        let mut active = model.into_active_model();
-        if !owns_updated_at {
-            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-        }
-        let native = if !fields.is_empty() {
-            native::stage::<S::Session, _>(self.scoped_connection(), &mut active, &fields).await?
-        } else {
-            Vec::new()
-        };
-        if let Some(expires_at) = expires_at {
-            S::Session::set_expires_at(&mut active, expires_at);
-        }
-        let session = match native::save::<S::Session, _>(
-            active,
+            .map_err(map_db_err)?;
+        let session = match native::update::<S::Session, _>(
             self.scoped_connection(),
-            Some(token),
-            native,
+            current,
+            token,
+            expires_at,
+            &fields,
+            owns_updated_at,
         )
         .await?
         {

@@ -394,13 +394,14 @@ pub(crate) async fn update_where<M: SqlxModel>(
         limit_one(&mut sql);
         return exec.fetch_optional::<M>(sql).await;
     }
-    update_where_strict::<M>(exec, active, key).await
+    update_by_column::<M>(exec, active, M::PRIMARY_KEY, key).await
 }
 
 /// Execute an update even when its SET list is empty; the driver owns that failure.
-pub(crate) async fn update_where_strict<M: SqlxModel>(
+pub(crate) async fn update_by_column<M: SqlxModel>(
     exec: Exec<'_>,
     active: &ActiveRow,
+    locator: &str,
     key: SqlValue,
 ) -> AuthResult<Option<M>> {
     let mut sql = Sql::new(exec.engine());
@@ -416,7 +417,7 @@ pub(crate) async fn update_where_strict<M: SqlxModel>(
         bind_model_value::<M>(&mut sql, column, value.clone());
     }
     sql.push(" WHERE ");
-    sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);
+    sql.compare_model::<M>(M::TABLE, locator, " = ", key);
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql).await
 }

@@ -21,9 +21,10 @@ const secondaryString = process.argv[2] === "--secondary-string";
 const deferred = process.argv[2] === "--secondary-deferred";
 const transactions = process.argv[2] === "--secondary-transactions" || deferred;
 const wireUnknown = process.argv[2] === "--secondary-wire-unknown";
+const wireZero = process.argv[2] === "--secondary-wire-zero-ms";
 const wireOwner = process.argv[2] === "--secondary-wire-owner";
 const wireFields = process.argv[2] === "--secondary-wire-fields" || wireUnknown || wireOwner;
-const wire = process.argv[2] === "--secondary-wire" || wireFields;
+const wire = process.argv[2] === "--secondary-wire" || wireFields || wireZero;
 const secondary = process.argv[2] === "--secondary" || secondaryString || transactions || wire;
 assert.ok(process.argv[2] === undefined || omitResult || secondary || stringResult || updatedAt, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
@@ -129,7 +130,7 @@ try {
       cases.push({ kind, action, input, events: [...events], inside, outcome, cached, referenced, stored: stored ? new Date(stored.expiresAt) : null });
     }
     if (!transactions) for (const operation of ["create", "update"]) {
-      for (const [kind, input] of [["date", new Date("2031-02-03T04:05:06.123987Z")], ["string", "2031-02-03T04:05:06.123987Z"], ...(operation === "update" ? [["omitted", undefined]] : [])]) {
+      for (const [kind, input] of [["date", new Date(wireZero ? "2031-02-03T04:05:06.000Z" : "2031-02-03T04:05:06.123987Z")], ["string", "2031-02-03T04:05:06.123987Z"], ...(operation === "update" ? [["omitted", undefined]] : [])]) {
         if (secondary && kind !== (secondaryString ? "string" : "date")) continue;
         const token = `timestamp-${operation}-${kind}`;
         applyingInput = false;
@@ -142,7 +143,7 @@ try {
         }
         events = [];
         applyingInput = true;
-        const fields = { ...(kind === "omitted" ? {} : { [timestampField]: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}) };
+        const fields = { ...(kind === "omitted" ? {} : { [timestampField]: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}), ...(wireZero && operation === "update" ? { updatedAt: new Date("2030-01-01T00:00:00.000Z") } : {}) };
         const emptyUpdate = noUpdateFactory && operation === "update" && kind === "omitted";
         let session;
         let outcome;
@@ -195,7 +196,7 @@ try {
           cases.push({ operation, kind, input, events: [...events], outcome, exists: readback !== null, readback: readback?.session[timestampField] ?? null });
         } else {
           assert.equal(readback.session.id, session.id);
-          assert.equal(session[timestampField].toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : "2031-02-03T04:05:07.123Z");
+          assert.equal(session[timestampField].toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : wireZero ? "2031-02-03T04:05:07.000Z" : "2031-02-03T04:05:07.123Z");
           assert.equal(readback.session[timestampField].toISOString(), secondary && operation === "update" ? input.toISOString() : session[timestampField].toISOString());
           const retained = secondary ? {
             cached: JSON.parse(cache.get(token)).session.expiresAt,
@@ -209,6 +210,10 @@ try {
           }
           if (wire) {
             const payload = JSON.parse(cache.get(token));
+            if (wireZero && operation === "update") {
+              assert.equal(payload.session.updatedAt, fields.updatedAt.toISOString());
+              retained.updated_at_input = fields.updatedAt;
+            }
             payload.session.id = "$session";
             payload.session.userId = "$user";
             payload.user.id = "$user";
@@ -226,7 +231,7 @@ try {
     profiles.push({ backend, ...(requiredTimestamp ? { schema_sql: schemaSql } : {}), cases });
   }
   if (!omitResult && !stringResult && !noUpdateFactory) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  const filename = wireZero ? "session-timestamp-hooks-secondary-wire-zero-ms" : noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {

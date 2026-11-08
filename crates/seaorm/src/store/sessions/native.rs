@@ -3,6 +3,37 @@ use alibi_core::store::adapter::RawFieldValue;
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 use sea_orm::{ActiveModelBehavior, ActiveValue, DbBackend, EntityName, Iden, Iterable};
 
+pub(super) async fn update<M: SeaOrmSessionModel, C: ConnectionTrait>(
+    db: &C,
+    current: Option<M>,
+    token: &str,
+    expires_at: Option<DateTime<Utc>>,
+    fields: &FieldValues,
+    owns_updated_at: bool,
+) -> AuthResult<Option<M>> {
+    let missing = current.is_none();
+    let mut active = current.map_or_else(
+        <M::ActiveModel as ActiveModelTrait>::default,
+        IntoActiveModel::into_active_model,
+    );
+    if !owns_updated_at {
+        M::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+    }
+    let native = if fields.is_empty() {
+        Vec::new()
+    } else {
+        stage::<M, _>(db, &mut active, fields).await?
+    };
+    if let Some(expiry) = expires_at {
+        M::set_expires_at(&mut active, expiry);
+    }
+    if missing {
+        save_raw::<M, _>(active, db, Some(token), native).await
+    } else {
+        save::<M, _>(active, db, Some(token), native).await
+    }
+}
+
 pub(super) async fn stage<M: SeaOrmSessionModel, C: ConnectionTrait>(
     db: &C,
     active: &mut M::ActiveModel,
@@ -13,20 +44,15 @@ pub(super) async fn stage<M: SeaOrmSessionModel, C: ConnectionTrait>(
         .into_iter()
         .map(|(column, _)| column.to_string())
         .collect::<std::collections::BTreeSet<_>>();
-    if prepared.is_empty() {
-        stage_additional_fields::<M, _>(db, active, fields).await?;
-        return Ok(Vec::new());
-    }
     let mut native = Vec::new();
     for (column, value) in M::additional_field_bindings(fields, backend)? {
-        if prepared.contains(&column.to_string())
-            && matches!(
-                column.def().get_column_type(),
-                sea_orm::sea_query::ColumnType::TimestampWithTimeZone
-                    | sea_orm::sea_query::ColumnType::Timestamp
-                    | sea_orm::sea_query::ColumnType::DateTime
-            )
-            && matches!(&value, RawFieldValue::Text(_))
+        if matches!(
+            column.def().get_column_type(),
+            sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                | sea_orm::sea_query::ColumnType::Timestamp
+                | sea_orm::sea_query::ColumnType::DateTime
+        ) && (matches!(&value, RawFieldValue::Null)
+            || (prepared.contains(&column.to_string()) && matches!(&value, RawFieldValue::Text(_))))
         {
             native.push((column, crate::additional_fields::bind_scalar(value)?));
         } else {
@@ -38,7 +64,7 @@ pub(super) async fn stage<M: SeaOrmSessionModel, C: ConnectionTrait>(
 }
 
 pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
-    mut active: M::ActiveModel,
+    active: M::ActiveModel,
     db: &C,
     token: Option<&str>,
     native: Vec<(M::Column, sea_orm::Value)>,
@@ -57,6 +83,16 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
             }
         };
     }
+    save_raw::<M, _>(active, db, token, native).await
+}
+
+async fn save_raw<M: SeaOrmSessionModel, C: ConnectionTrait>(
+    mut active: M::ActiveModel,
+    db: &C,
+    token: Option<&str>,
+    native: Vec<(M::Column, sea_orm::Value)>,
+) -> AuthResult<Option<M>> {
+    let insert = token.is_none();
     active = ActiveModelBehavior::before_save(active, db, insert)
         .await
         .map_err(map_db_err)?;
@@ -88,7 +124,7 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
         if let Some(value) = override_value.or(staged) {
             let expression = if backend == DbBackend::Postgres {
                 match &value {
-                    sea_orm::Value::String(Some(value))
+                    sea_orm::Value::String(value)
                         if matches!(
                             column.def().get_column_type(),
                             sea_orm::sea_query::ColumnType::TimestampWithTimeZone
@@ -96,17 +132,20 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
                                 | sea_orm::sea_query::ColumnType::DateTime
                         ) =>
                     {
-                        Expr::cust(alibi_core::store::postgres_parameter::quoted_literal(value))
-                            .cast_as(Alias::new(
-                                if matches!(
-                                    column.def().get_column_type(),
-                                    sea_orm::sea_query::ColumnType::TimestampWithTimeZone
-                                ) {
-                                    "timestamptz"
-                                } else {
-                                    "timestamp"
-                                },
-                            ))
+                        Expr::cust(value.as_ref().map_or_else(
+                            || "NULL".to_owned(),
+                            |value| alibi_core::store::postgres_parameter::quoted_literal(value),
+                        ))
+                        .cast_as(Alias::new(
+                            if matches!(
+                                column.def().get_column_type(),
+                                sea_orm::sea_query::ColumnType::TimestampWithTimeZone
+                            ) {
+                                "timestamptz"
+                            } else {
+                                "timestamp"
+                            },
+                        ))
                     }
                     _ => Expr::val(value).into(),
                 }

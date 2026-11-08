@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod missing;
 mod secondary;
 mod secondary_transactions;
 mod string_result;

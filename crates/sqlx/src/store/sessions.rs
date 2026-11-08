@@ -189,24 +189,19 @@ where
             fields.take_timestamp_input("expiresAt", &mut expires_at);
             let owns_updated_at = fields.has_adapter_field("updatedAt");
             fields.apply_adapter_transforms_async().await?;
-            let Some(current) = exec
+            let current = exec
                 .fetch_optional::<S::Session>(Self::active_session_by_token(exec, token))
-                .await?
-            else {
-                for hook in self.hooks().iter().filter(|_| tx.is_none()) {
-                    hook.after_update_session_missing(token, &context).await?;
-                }
-                return Ok(None);
-            };
-            let mut active = current.into_active();
-            if !owns_updated_at {
-                S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-            }
-            native::stage::<S::Session>(exec, &mut active, &fields).await?;
-            if let Some(expiry) = expires_at {
-                S::Session::set_expires_at(&mut active, expiry);
-            }
-            if let Some(model) = native::save::<S::Session>(exec, &active).await? {
+                .await?;
+            if let Some(model) = native::update::<S::Session>(
+                exec,
+                current,
+                token,
+                expires_at,
+                &fields,
+                owns_updated_at,
+            )
+            .await?
+            {
                 model
             } else {
                 for hook in self.hooks().iter().filter(|_| tx.is_none()) {
@@ -292,24 +287,17 @@ where
         query.push(" WHERE ");
         query.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
         query.push(" LIMIT 1");
-        let Some(model) = self.exec().fetch_optional::<S::Session>(query).await? else {
-            for hook in self.hooks() {
-                hook.after_update_session_missing(token, &hook_context)
-                    .await?;
-            }
-            return Ok(None);
-        };
-        let mut active = model.into_active();
-        if !owns_updated_at {
-            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-        }
-        if !fields.is_empty() {
-            native::stage::<S::Session>(self.exec(), &mut active, &fields).await?;
-        }
-        if let Some(expires_at) = expires_at {
-            S::Session::set_expires_at(&mut active, expires_at);
-        }
-        let Some(session) = native::save::<S::Session>(self.exec(), &active).await? else {
+        let current = self.exec().fetch_optional::<S::Session>(query).await?;
+        let Some(session) = native::update::<S::Session>(
+            self.exec(),
+            current,
+            token,
+            expires_at,
+            &fields,
+            owns_updated_at,
+        )
+        .await?
+        else {
             for hook in self.hooks() {
                 hook.after_update_session_missing(token, &hook_context)
                     .await?;

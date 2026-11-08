@@ -404,10 +404,11 @@ impl<S: AuthSchema> PluginStore<S> {
             }
             // The mirror revives expiry and update clocks before SQL policies;
             // its creation clock remains the one already stored in the cache.
-            for name in ["expiresAt", "updatedAt"] {
-                if let Some(value) = model.get(name) {
-                    _ = values.insert(name.into(), value.clone());
-                }
+            for (name, value) in [
+                ("expiresAt", session.expires_at()),
+                ("updatedAt", session.updated_at()),
+            ] {
+                _ = values.insert(name.into(), crate::utils::json::JsValue::Date(value));
             }
             let registered = self
                 .projection_context

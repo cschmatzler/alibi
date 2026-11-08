@@ -3,19 +3,25 @@ use alibi::store::{CacheAdapter, MemoryCacheAdapter};
 
 backend_tests!(
     session_creation_cache_wire_matches_source,
-    session_refresh_cache_wire_matches_source
+    session_refresh_cache_wire_matches_source,
+    session_creation_zero_millisecond_cache_wire_matches_source,
+    session_refresh_zero_millisecond_cache_wire_matches_source
 );
 postgres_tests!(
     session_creation_cache_wire_matches_source,
-    session_refresh_cache_wire_matches_source
+    session_refresh_cache_wire_matches_source,
+    session_creation_zero_millisecond_cache_wire_matches_source,
+    session_refresh_zero_millisecond_cache_wire_matches_source
 );
 
-async fn check<B: Backend>(db: Db, operation: &str) -> TestResult {
+async fn check<B: Backend>(db: Db, operation: &str, zero_millis: bool) -> TestResult {
     let secret = "session-timestamp-hooks-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../fixtures/session-timestamp-hooks-secondary-wire.json"
-    ))?;
+    let fixture: Value = serde_json::from_str(if zero_millis {
+        include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire-zero-ms.json")
+    } else {
+        include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire.json")
+    })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     let backend = if db.is_postgres() {
         "postgres"
@@ -89,11 +95,23 @@ async fn check<B: Backend>(db: Db, operation: &str) -> TestResult {
     } else {
         assert_eq!(operation, "update");
         let original = auth.store().create_session(create).await?;
-        let session = auth
-            .store()
-            .refresh_session(&token, case["input"].as_str().unwrap().parse()?)
-            .await?
-            .ok_or("wire refresh unexpectedly missing")?;
+        let result = if zero_millis {
+            let mut fields = alibi::field_policy::FieldValues::new();
+            _ = fields.insert(
+                "expiresAt".into(),
+                JsValue::Date(case["input"].as_str().unwrap().parse()?),
+            );
+            _ = fields.insert(
+                "updatedAt".into(),
+                JsValue::Date(case["updated_at_input"].as_str().unwrap().parse()?),
+            );
+            auth.store().update_session_fields(&token, fields).await
+        } else {
+            auth.store()
+                .refresh_session(&token, case["input"].as_str().unwrap().parse()?)
+                .await
+        };
+        let session = result?.ok_or("wire refresh unexpectedly missing")?;
         assert_eq!(session.id(), original.id());
         assert_eq!(
             native::to_value(&JsValue::Date(session.expires_at()))?,
@@ -104,6 +122,12 @@ async fn check<B: Backend>(db: Db, operation: &str) -> TestResult {
         .get(&token)
         .await?
         .ok_or("source cache token missing")?;
+    if let Some(updated_at) = case.get("updated_at_input") {
+        assert_eq!(
+            native::to_value(&native::parse_value(&raw)?["session"]["updatedAt"])?,
+            *updated_at
+        );
+    }
     assert_payload(&raw, case["wire"].as_str().unwrap(), backend, operation)?;
     drop(auth);
     B::close(connection).await
@@ -170,8 +194,20 @@ pub(super) fn assert_payload(
 }
 
 async fn session_creation_cache_wire_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, "create").await
+    check::<B>(db, "create", false).await
 }
 async fn session_refresh_cache_wire_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, "update").await
+    check::<B>(db, "update", false).await
+}
+
+async fn session_creation_zero_millisecond_cache_wire_matches_source<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, "create", true).await
+}
+
+async fn session_refresh_zero_millisecond_cache_wire_matches_source<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, "update", true).await
 }
