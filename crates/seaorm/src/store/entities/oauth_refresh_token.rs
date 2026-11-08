@@ -92,6 +92,7 @@ impl TryFrom<Model> for alibi_core::store::OAuthToken {
 impl Model {
     pub(crate) fn columns_from_metadata(
         mut fields: serde_json::Value,
+        backend: sea_orm::DbBackend,
     ) -> alibi_core::AuthResult<Self> {
         let object = fields.as_object_mut().ok_or_else(|| {
             alibi_core::AuthError::bad_request("OAuth token metadata must be an object")
@@ -105,7 +106,15 @@ impl Model {
                 serde_json::Value::String("1970-01-01T00:00:00Z".into()),
             );
         }
-        Ok(serde_json::from_value(fields)?)
+        let mut model: Self = serde_json::from_value(fields)?;
+        if backend == sea_orm::DbBackend::Postgres {
+            use crate::json_metadata::MetadataBinding;
+            model.resources = model.resources.prepare(backend)?;
+            model.requested_user_info_claims = model.requested_user_info_claims.prepare(backend)?;
+            model.confirmation = model.confirmation.prepare(backend)?;
+            model.scopes = model.scopes.prepare(backend)?;
+        }
+        Ok(model)
     }
 }
 impl Model {

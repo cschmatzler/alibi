@@ -420,6 +420,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             alibi_core::store::OAuthTokenKind::Access => {
                 let fields = super::entities::oauth_access_token::Model::columns_from_metadata(
                     data.metadata,
+                    self.scoped_connection().get_database_backend(),
                 )?;
                 let mut active = super::entities::oauth_access_token::ActiveModel {
                     id: Set(self
@@ -445,6 +446,7 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             alibi_core::store::OAuthTokenKind::Refresh => {
                 let fields = super::entities::oauth_refresh_token::Model::columns_from_metadata(
                     data.metadata,
+                    self.scoped_connection().get_database_backend(),
                 )?;
                 let mut active = super::entities::oauth_refresh_token::ActiveModel {
                     id: Set(self

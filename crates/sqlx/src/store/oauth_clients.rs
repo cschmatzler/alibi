@@ -413,6 +413,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 active.set("expiresAt", data.expires_at);
                 let fields = super::entities::oauth_access_token::Model::columns_from_metadata(
                     data.metadata,
+                    self.exec().engine(),
                 )?
                 .into_active();
                 for (column, value) in fields.present() {
@@ -452,6 +453,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 active.set("expiresAt", data.expires_at);
                 let fields = super::entities::oauth_refresh_token::Model::columns_from_metadata(
                     data.metadata,
+                    self.exec().engine(),
                 )?
                 .into_active();
                 for (column, value) in fields.present() {

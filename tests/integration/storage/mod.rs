@@ -49,6 +49,7 @@ mod mysql_verification_updates;
 mod mysql_verification_claims;
 mod postgres_oauth_json;
 mod postgres_oauth_resource_json;
+mod postgres_oauth_token_json;
 mod user_clock;
 mod native_api_keys;
 mod native_device_codes;
