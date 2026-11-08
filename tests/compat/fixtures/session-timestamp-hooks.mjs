@@ -13,7 +13,10 @@ const omitResult = process.argv[2] === "--omit" || requiredExpiry;
 const secondaryString = process.argv[2] === "--secondary-string";
 const deferred = process.argv[2] === "--secondary-deferred";
 const transactions = process.argv[2] === "--secondary-transactions" || deferred;
-const wire = process.argv[2] === "--secondary-wire";
+const wireUnknown = process.argv[2] === "--secondary-wire-unknown";
+const wireOwner = process.argv[2] === "--secondary-wire-owner";
+const wireFields = process.argv[2] === "--secondary-wire-fields" || wireUnknown || wireOwner;
+const wire = process.argv[2] === "--secondary-wire" || wireFields;
 const secondary = process.argv[2] === "--secondary" || secondaryString || transactions || wire;
 assert.ok(process.argv[2] === undefined || omitResult || secondary, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
@@ -46,6 +49,12 @@ try {
     function event(phase, value) {
       events.push({ phase, kind: value instanceof Date ? "date" : value === null ? "null" : typeof value, value: value === undefined ? null : value });
     }
+    const extraFields = wireFields ? {
+      wireLabel: { type: "string", required: true, fieldName: "wire_label", defaultValue: "original" },
+      wireNull: { type: "string", required: false, fieldName: "wire_null", defaultValue: null },
+      wireOmitted: { type: "string", required: false, fieldName: "wire_omitted", transform: { output: () => undefined } },
+      wireHidden: { type: "string", required: false, fieldName: "wire_hidden", defaultValue: "secret", returned: false },
+    } : {};
     const options = {
       baseURL: "http://localhost", secret: "session-timestamp-hooks-secret-at-least-32", database: { type: backend, db, transaction: transactions },
       ...(secondary ? { secondaryStorage: {
@@ -53,7 +62,8 @@ try {
         async set(key, value) { cache.set(key, value); },
         async delete(key) { cache.delete(key); },
       } } : {}),
-      session: { storeSessionInDatabase: secondary, additionalFields: { expiresAt: {
+      ...(wireFields ? { user: { additionalFields: extraFields } } : {}),
+      session: { storeSessionInDatabase: secondary, additionalFields: { ...extraFields, expiresAt: {
         type: "date", required: requiredExpiry,
         onUpdate: () => "2031-02-03T04:05:06.123987Z",
         transform: { input: async value => {
@@ -116,9 +126,15 @@ try {
         const token = `timestamp-${operation}-${kind}`;
         applyingInput = false;
         const original = operation === "update" ? await internalAdapter.createSession(user.id, false, { token, expiresAt: new Date("2030-01-01T00:00:00.123Z") }, true) : null;
+        if (wireUnknown && operation === "update") {
+          const payload = JSON.parse(cache.get(token));
+          payload.session.trustedUnknown = { exact: true };
+          payload.user.trustedUnknown = { owner: true };
+          cache.set(token, JSON.stringify(payload));
+        }
         events = [];
         applyingInput = true;
-        const fields = kind === "omitted" ? {} : { expiresAt: input };
+        const fields = { ...(kind === "omitted" ? {} : { expiresAt: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}) };
         let session;
         let outcome;
         try {
@@ -137,6 +153,7 @@ try {
             outcome = { error: { code: error.code, message: error.message } };
           }
         }
+        if (wireOwner) await internalAdapter.updateUser(user.id, { name: "Changed Owner", wireLabel: "owner-changed" });
         const readback = await internalAdapter.findSession(token);
         if (secondaryString) {
           const stored = new Date((await db.selectFrom("session").select("expiresAt").where("token", "=", token).executeTakeFirst()).expiresAt);
@@ -190,7 +207,7 @@ try {
     profiles.push({ backend, ...(requiredExpiry ? { schema_sql: schemaSql } : {}), cases });
   }
   if (!omitResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  const filename = wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {

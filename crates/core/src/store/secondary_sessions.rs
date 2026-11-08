@@ -13,8 +13,6 @@ struct CachedSession {
     session: crate::utils::json::JsValue,
     #[serde(default)]
     user: crate::utils::json::JsValue,
-    #[serde(default)]
-    absent_fields: BTreeSet<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -66,15 +64,74 @@ impl<S: AuthSchema> crate::session::SessionPublication for DeferredSessionPublic
     }
 }
 
-impl CachedSession {
-    fn absent_fields(raw: &str) -> BTreeSet<String> {
-        crate::utils::json::from_storage_str::<Self>(raw)
-            .map(|cached| cached.absent_fields)
-            .unwrap_or_default()
+const SESSION_FIELDS: &[&str] = &[
+    "expiresAt",
+    "token",
+    "createdAt",
+    "updatedAt",
+    "ipAddress",
+    "userAgent",
+    "userId",
+];
+const USER_FIELDS: &[&str] = &[
+    "name",
+    "email",
+    "emailVerified",
+    "image",
+    "createdAt",
+    "updatedAt",
+];
+
+fn ordered_snapshot(
+    mut values: crate::utils::json::JsObject,
+    core: &[&str],
+    declared: &crate::field_policy::FieldConfigs,
+    retain_unknown: bool,
+) -> crate::utils::json::JsValue {
+    let mut output = crate::utils::json::JsObject::new();
+    for name in core
+        .iter()
+        .copied()
+        .chain(declared.keys().map(String::as_str))
+        .filter(|name| *name != "id")
+    {
+        if let Some(value) = values.shift_remove(name) {
+            _ = output.insert(name.into(), value);
+        }
     }
+    let id = values.shift_remove("id");
+    if retain_unknown {
+        output.extend(values);
+    }
+    if let Some(id) = id {
+        _ = output.insert("id".into(), id);
+    }
+    crate::utils::json::JsValue::Object(output)
 }
 
 impl<S: AuthSchema> PluginStore<S> {
+    fn snapshot_absent_fields(
+        &self,
+        snapshot: crate::utils::json::JsValue,
+    ) -> AuthResult<BTreeSet<String>> {
+        let output = S::Session::output_from_secondary_snapshot(snapshot.clone())?;
+        let mut absent = output
+            .values()
+            .iter()
+            .filter_map(|(name, value)| {
+                value
+                    .is_undefined()
+                    .then(|| name.as_str().map(str::to_owned))
+                    .flatten()
+            })
+            .collect::<BTreeSet<_>>();
+        for name in self.adapter_fields.0.keys() {
+            if snapshot.get(name.as_str()).is_none() {
+                _ = absent.insert(name.clone());
+            }
+        }
+        Ok(absent)
+    }
     pub(super) fn secondary(&self) -> Option<&std::sync::Arc<dyn super::CacheAdapter>> {
         self.config.session.secondary_storage.as_ref()
     }
@@ -203,19 +260,17 @@ impl<S: AuthSchema> PluginStore<S> {
         let Ok(snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw) else {
             return Ok(None);
         };
-        let Ok(session) = S::Session::from_secondary_snapshot(snapshot.session) else {
+        let Ok(session) = S::Session::from_secondary_snapshot_with_fields(
+            snapshot.session,
+            &self.adapter_fields.0,
+        ) else {
             return Ok(None);
         };
         let user = if snapshot.user.is_null() {
             None
         } else {
-            let registered = self
-                .projection_context
-                .extensions
-                .get::<crate::field_policy::UserFields>();
-            let fields = registered
-                .as_ref()
-                .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+            let policies = self.field_policies();
+            let fields = &policies.user.0;
             let Ok(user) =
                 S::User::from_secondary_snapshot_record_with_fields(snapshot.user, fields)
             else {
@@ -273,7 +328,10 @@ impl<S: AuthSchema> PluginStore<S> {
         let Ok(snapshot) = crate::utils::json::from_storage_str::<CachedSession>(&raw) else {
             return Ok(None);
         };
-        let session = S::Session::from_secondary_snapshot(snapshot.session)?;
+        let session = S::Session::from_secondary_snapshot_with_fields(
+            snapshot.session,
+            &self.adapter_fields.0,
+        )?;
         Ok(Some((session, snapshot.user)))
     }
 
@@ -317,8 +375,64 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(cache) = self.secondary() else {
             return Ok(());
         };
+        let Some(created_at) = created_at else {
+            let crate::utils::json::JsValue::Object(model) = session.secondary_snapshot()? else {
+                return Err(AuthError::internal("Invalid secondary session snapshot"));
+            };
+            let mut values = if let Some(raw) = cache.get(token).await? {
+                crate::utils::json::from_storage_str::<CachedSession>(&raw)?.session
+            } else {
+                ordered_snapshot(
+                    model.clone(),
+                    SESSION_FIELDS,
+                    &self.adapter_fields.0,
+                    !self.session_uses_database(),
+                )
+            };
+            let Some(values) = values.as_object_mut() else {
+                return Err(AuthError::internal("Invalid secondary session snapshot"));
+            };
+            if let Some(fields) = updated_fields {
+                values.extend(
+                    fields
+                        .iter()
+                        .filter(|(name, _)| {
+                            !matches!(name.as_str(), "expiresAt" | "createdAt" | "updatedAt")
+                        })
+                        .map(|(name, value)| (name.clone().into(), value.clone())),
+                );
+            }
+            // The mirror revives expiry and update clocks before SQL policies;
+            // its creation clock remains the one already stored in the cache.
+            for name in ["expiresAt", "updatedAt"] {
+                if let Some(value) = model.get(name) {
+                    _ = values.insert(name.into(), value.clone());
+                }
+            }
+            let registered = self
+                .projection_context
+                .extensions
+                .get::<crate::field_policy::SessionFields>();
+            let fields = registered
+                .as_ref()
+                .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+            for (name, field) in fields {
+                if !field.returned {
+                    _ = values.shift_remove(name.as_str());
+                }
+            }
+            let snapshot = CachedSession {
+                session: crate::utils::json::JsValue::Object(values.clone()),
+                user,
+            };
+            cache
+                .set(token, &crate::utils::json::to_string(&snapshot)?, ttl)
+                .await?;
+            return Ok(());
+        };
         let mut absent_fields = if let Some(raw) = cache.get(token).await? {
-            CachedSession::absent_fields(&raw)
+            let cached: CachedSession = crate::utils::json::from_storage_str(&raw)?;
+            self.snapshot_absent_fields(cached.session)?
         } else if !self.config.session.store_in_database {
             let mut absent = BTreeSet::new();
             for (name, value) in [
@@ -362,53 +476,26 @@ impl<S: AuthSchema> PluginStore<S> {
             }
             _ = absent_fields.remove("createdAt");
         }
-        let session_snapshot = match created_at {
-            Some(created_at) => match native {
-                Some(native) => session
-                    .secondary_snapshot_for_creation_with_native_output(created_at, native)?,
-                None => session.secondary_snapshot_for_creation(created_at)?,
-            },
-            None => session.secondary_snapshot()?,
-        };
-        let session_snapshot = if created_at.is_none() {
-            let mut merged = if let Some(raw) = cache.get(token).await? {
-                crate::utils::json::from_storage_str::<CachedSession>(&raw)?.session
-            } else {
-                crate::utils::json::JsValue::Object(crate::utils::json::JsObject::new())
-            };
-            let (Some(merged), crate::utils::json::JsValue::Object(updated)) =
-                (merged.as_object_mut(), &session_snapshot)
-            else {
-                return Err(AuthError::internal("Invalid secondary session snapshot"));
-            };
-            merged.extend(updated.clone());
-            let mut output = S::Session::output_from_secondary_snapshot(
-                crate::utils::json::JsValue::Object(merged.clone()),
-            )?;
-            for name in &absent_fields {
-                output.insert(name.clone(), None);
+        let session_snapshot = match native {
+            Some(native) => {
+                session.secondary_snapshot_for_creation_with_native_output(created_at, native)?
             }
-            let registered = self
-                .projection_context
-                .extensions
-                .get::<crate::field_policy::SessionFields>();
-            let fields = registered
-                .as_ref()
-                .map_or(&self.config.session.additional_fields, |fields| &fields.0);
-            for (name, field) in fields {
-                if !field.returned {
-                    output.insert(name.clone(), None);
-                    _ = absent_fields.insert(name.clone());
-                }
-            }
-            session.secondary_snapshot_with_native_output(&output)?
-        } else {
-            session_snapshot
+            None => session.secondary_snapshot_for_creation(created_at)?,
         };
+        let crate::utils::json::JsValue::Object(mut values) = session_snapshot else {
+            return Err(AuthError::internal("Invalid secondary session snapshot"));
+        };
+        for name in absent_fields {
+            _ = values.shift_remove(name.as_str());
+        }
         let snapshot = CachedSession {
-            session: session_snapshot,
+            session: ordered_snapshot(
+                values,
+                SESSION_FIELDS,
+                &self.adapter_fields.0,
+                !self.session_uses_database(),
+            ),
             user,
-            absent_fields,
         };
         cache
             .set(token, &crate::utils::json::to_string(&snapshot)?, ttl)
@@ -422,8 +509,9 @@ impl<S: AuthSchema> PluginStore<S> {
             .ok_or_else(|| AuthError::internal("No secondary session storage"))?;
         let raw = cache.get(token).await?.ok_or(AuthError::SessionNotFound)?;
         let snapshot: CachedSession = crate::utils::json::from_storage_str(&raw)?;
+        let absent = self.snapshot_absent_fields(snapshot.session.clone())?;
         let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
-        for name in snapshot.absent_fields {
+        for name in absent {
             output.insert(name, None);
         }
         Ok(output)
@@ -439,7 +527,8 @@ impl<S: AuthSchema> PluginStore<S> {
         let Some(raw) = cache.get(token).await? else {
             return Ok(BTreeSet::new());
         };
-        Ok(CachedSession::absent_fields(&raw))
+        let cached: CachedSession = crate::utils::json::from_storage_str(&raw)?;
+        self.snapshot_absent_fields(cached.session)
     }
 
     pub(super) fn deferred_session_publication(
@@ -523,13 +612,20 @@ impl<S: AuthSchema> PluginStore<S> {
         );
         if ttl > Duration::zero() {
             let user = match user {
-                Some(user) => self
-                    .user_record_with_native_output(
-                        user.stored().clone(),
-                        user.raw_snapshot().clone(),
+                Some(user) => {
+                    let record = self
+                        .user_record_with_native_output(
+                            user.stored().clone(),
+                            user.raw_snapshot().clone(),
+                        )
+                        .await?;
+                    ordered_snapshot(
+                        record.raw_snapshot().values().clone(),
+                        USER_FIELDS,
+                        &self.field_policies().user.0,
+                        false,
                     )
-                    .await?
-                    .secondary_snapshot()?,
+                }
                 None => crate::utils::json::JsValue::Null,
             };
             self.write_session_snapshot(
@@ -565,7 +661,10 @@ impl<S: AuthSchema> PluginStore<S> {
         if require_owner && snapshot.user.is_null() {
             return Ok(None);
         }
-        let Ok(session) = S::Session::from_secondary_snapshot(snapshot.session.clone()) else {
+        let Ok(session) = S::Session::from_secondary_snapshot_with_fields(
+            snapshot.session.clone(),
+            &self.adapter_fields.0,
+        ) else {
             return Ok(None);
         };
         let cutoff = cache
@@ -576,6 +675,7 @@ impl<S: AuthSchema> PluginStore<S> {
         if session.created_at().timestamp_millis() < cutoff {
             return Ok(None);
         }
+        let absent = self.snapshot_absent_fields(snapshot.session.clone())?;
         let mut output = S::Session::output_from_secondary_snapshot(snapshot.session)?;
         output.insert(
             "expiresAt".into(),
@@ -584,7 +684,7 @@ impl<S: AuthSchema> PluginStore<S> {
                     .into(),
             )),
         );
-        for name in snapshot.absent_fields {
+        for name in absent {
             output.insert(name, None);
         }
         if public {
@@ -750,10 +850,15 @@ impl<S: AuthSchema> PluginStore<S> {
                                 .map(|(name, value)| (name.into(), value))
                                 .collect(),
                         );
-                        let snapshot = self
+                        let record = self
                             .user_record_with_native_output(user.clone(), native)
-                            .await?
-                            .secondary_snapshot()?;
+                            .await?;
+                        let snapshot = ordered_snapshot(
+                            record.raw_snapshot().values().clone(),
+                            USER_FIELDS,
+                            &self.field_policies().user.0,
+                            false,
+                        );
                         user_snapshot = Some(snapshot.clone());
                         snapshot
                     }

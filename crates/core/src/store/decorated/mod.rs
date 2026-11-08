@@ -429,13 +429,8 @@ mod session_native_tests {
                 if explicit_null {
                     assert_eq!(record.raw_snapshot().values()[name], Value::Null);
                     assert!(!record.raw_snapshot().field_is_undefined(name));
-                    assert!(
-                        !raw["absent_fields"]
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .any(|field| field == name)
-                    );
+                    assert!(raw.get("absent_fields").is_none());
+                    assert!(raw["session"].get(name).is_some());
                 } else {
                     assert!(record.raw_snapshot().field_is_undefined(name));
                 }

@@ -10,6 +10,8 @@ use std::sync::{Arc, Mutex};
 
 mod secondary;
 mod secondary_transactions;
+mod wire;
+mod wire_fields;
 
 backend_tests!(
     session_creation_dates_precede_sync_input_callbacks,

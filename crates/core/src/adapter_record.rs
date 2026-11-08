@@ -131,7 +131,9 @@ impl<M: Serialize> AdapterRecord<M> {
 }
 
 impl<M> AdapterRecord<M> {
-    pub(crate) fn with_output(stored: M, output: AdapterOutput) -> Self {
+    /// Retain complete adapter output without adding serialized storage fields.
+    /// Generated cache codecs use this after restoring their typed authority.
+    pub fn with_output(stored: M, output: AdapterOutput) -> Self {
         Self { stored, output }
     }
 

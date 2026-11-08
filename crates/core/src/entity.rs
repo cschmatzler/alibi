@@ -183,6 +183,13 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// Restore logical cache fields using the initialized adapter bindings.
+    fn from_secondary_snapshot_with_fields(
+        snapshot: crate::utils::json::JsValue,
+        _fields: &crate::field_policy::FieldConfigs,
+    ) -> AuthResult<Self> {
+        Self::from_secondary_snapshot(snapshot)
+    }
     /// Encode a new session using its original creation clock, before database rounding.
     ///
     /// Manual codecs must override this when their model needs a timestamp correction.

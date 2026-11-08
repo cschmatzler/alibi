@@ -64,6 +64,19 @@ pub(crate) fn session_secondary_codec(
         let wire = &field.camel;
         quote! { if !fields.contains_key(#wire) { output.insert(#wire.to_owned(), None); } }
     });
+    let bindings = entity_fields.iter().map(|field| {
+        let wire = &field.camel;
+        let physical = field.physical.as_ref().unwrap_or(&field.camel);
+        quote! {
+            for (logical, config) in declared {
+                if config.field_name.as_deref().is_some_and(|column| column == #physical || column == #wire)
+                    && let Some(value) = source.get(logical.as_str())
+                {
+                    _ = fields.insert(#wire.into(), value.clone());
+                }
+            }
+        }
+    });
     quote! {
         fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
             let mut snapshot = #core_root::utils::json::JsObject::new();
@@ -75,6 +88,17 @@ pub(crate) fn session_secondary_codec(
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
             Ok(Self { #(#decode)* })
+        }
+        fn from_secondary_snapshot_with_fields(
+            snapshot: #core_root::utils::json::JsValue,
+            declared: &#core_root::field_policy::FieldConfigs,
+        ) -> #core_root::AuthResult<Self> {
+            let #core_root::utils::json::JsValue::Object(source) = snapshot else {
+                return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
+            };
+            let mut fields = source.clone();
+            #(#bindings)*
+            Self::from_secondary_snapshot(#core_root::utils::json::JsValue::Object(fields))
         }
         fn output_from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<#core_root::AdapterOutput> {
             let #core_root::utils::json::JsValue::Object(fields) = snapshot else {
@@ -254,6 +278,23 @@ pub fn user_secondary_codec(
         .filter_map(|field| field.ident.as_ref())
         .collect();
     let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
+    let bindings = entity_fields.iter().map(|field| {
+        let key = field.ident.to_string();
+        let wire = &field.camel;
+        let physical = field.physical.as_ref().unwrap_or(&field.camel);
+        quote! {
+            if let Some(value) = source.get(#wire) {
+                _ = fields.insert(#key.into(), value.clone());
+            }
+            for (logical, config) in declared {
+                if config.field_name.as_deref().is_some_and(|column| column == #physical || column == #wire)
+                    && let Some(value) = source.get(logical.as_str())
+                {
+                    _ = fields.insert(#key.into(), value.clone());
+                }
+            }
+        }
+    });
     quote! {
         fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
             let mut snapshot = #core_root::utils::json::JsObject::new();
@@ -287,6 +328,18 @@ pub fn user_secondary_codec(
             let mut native = #core_root::AdapterOutput::default();
             #(#capture)*
             #core_root::AdapterRecord::with_native_output(Self::from_secondary_snapshot(snapshot)?, native)
+        }
+        fn from_secondary_snapshot_record_with_fields(
+            snapshot: #core_root::utils::json::JsValue,
+            declared: &#core_root::field_policy::FieldConfigs,
+        ) -> #core_root::AuthResult<#core_root::AdapterRecord<Self>> {
+            let #core_root::utils::json::JsValue::Object(source) = snapshot else {
+                return Err(#core_root::AuthError::internal("Invalid secondary user snapshot"));
+            };
+            let mut fields = #core_root::utils::json::JsObject::new();
+            #(#bindings)*
+            let model = Self::from_secondary_snapshot(#core_root::utils::json::JsValue::Object(fields))?;
+            Ok(#core_root::AdapterRecord::with_output(model, #core_root::AdapterOutput::from_js_values(source)))
         }
     }
 }
