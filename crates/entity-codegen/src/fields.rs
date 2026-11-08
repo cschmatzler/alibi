@@ -57,6 +57,8 @@ pub struct EntityField {
     pub camel: String,
     /// The physical column when it is explicitly renamed.
     pub physical: Option<String>,
+    /// Backend-specific projection of an explicitly typed physical column.
+    pub output: Option<TokenStream>,
 }
 
 /// Generate `fn additional_fields(&self)`: undeclared fields and nullable
@@ -72,6 +74,11 @@ pub fn additional_output(
     for field in fields {
         let name = &field.ident;
         let camel = &field.camel;
+        let value = field.output.clone().unwrap_or_else(|| {
+            quote! {
+                #core_root::utils::json::to_js_value(&self.#name)?
+            }
+        });
         // Nullable username columns must reach configured output transforms as
         // actual stored values, even though canonical wire DTOs omit None.
         // Only declared model fields qualify; missing plugin columns stay absent.
@@ -80,7 +87,7 @@ pub fn additional_output(
                 && (name == "username" || name == "display_username");
         if physical_output {
             output.push(quote! {
-                _ = fields.insert(#camel.into(), #core_root::utils::json::to_js_value(&self.#name)?);
+                _ = fields.insert(#camel.into(), #value);
             });
         }
         if let Some(physical) = field
@@ -90,7 +97,7 @@ pub fn additional_output(
             && physical_output
         {
             output.push(quote! {
-                _ = fields.insert(#physical.into(), #core_root::utils::json::to_js_value(&self.#name)?);
+                _ = fields.insert(#physical.into(), #value);
             });
         }
     }

@@ -72,6 +72,12 @@ pub(crate) async fn prepare_value(
     if kind == ColumnKind::Json {
         return Ok(JsonMetadata::for_backend(JsValue::from(value), backend)?.into_sql_value());
     }
+    if backend == crate::pool::Engine::Postgres && kind == ColumnKind::Text {
+        return Ok(SqlValue::Text(
+            alibi_core::store::postgres_parameter::text_parameter(&JsValue::from(value))?
+                .map(|text| text.to_utf8_binding()),
+        ));
+    }
     if backend == crate::pool::Engine::Postgres {
         match (kind, &value) {
             (ColumnKind::Timestamp, RawFieldValue::Date(value)) => {
@@ -122,7 +128,7 @@ pub fn physical_json_value(value: SqlValue, exact: bool) -> AuthResult<JsValue> 
         SqlValue::Json(Some(value)) => {
             if exact {
                 return Err(AuthError::not_implemented(
-                    "Exact SQLite JSON output transforms require a JsonMetadata model field",
+                    "Exact JSON text output requires a JsonMetadata model field",
                 ));
             }
             JsValue::String(alibi_core::utils::json::to_string(&JsValue::from(*value))?.into())

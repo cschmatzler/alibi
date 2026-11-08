@@ -25,6 +25,7 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             ident: field.ident.clone(),
             camel: field.camel.clone(),
             physical: field.physical.clone(),
+            output: None,
         })
         .collect();
     let ident = &input.ident;

@@ -35,6 +35,21 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
             ident: column.ident.clone(),
             camel: column.camel.clone(),
             physical: column.renamed.then(|| column.physical.clone()),
+            output: column.kind.as_ref().filter(|kind| *kind == "Text").map(|_| {
+                let name = &column.ident;
+                let ty = &column.ty;
+                let adapter = &roots.sqlx;
+                let core = &roots.core;
+                quote! {
+                    if <#ty as #adapter::value::SqlxValue>::KIND == #adapter::value::ColumnKind::Json {
+                        #adapter::additional_fields::physical_json_value(
+                            #adapter::value::SqlxValue::into_sql_value(self.#name.clone()), true,
+                        )?
+                    } else {
+                        #core::utils::json::to_js_value(&self.#name)?
+                    }
+                }
+            }),
         })
         .collect();
     let ident = &input.ident;

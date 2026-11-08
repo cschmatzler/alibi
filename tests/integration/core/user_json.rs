@@ -25,6 +25,30 @@ mod custom_user {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
+#[cfg(feature = "seaorm")]
+#[expect(unreachable_pub, reason = "SeaORM derive requires public model fields")]
+mod nullable_user {
+    use alibi::seaorm::sea_orm::entity::prelude::*;
+    use alibi::seaorm::{AuthEntity, sea_orm};
+    #[derive(Clone, Debug, PartialEq, serde::Serialize, DeriveEntityModel, AuthEntity)]
+    #[auth(role = "user")]
+    #[sea_orm(table_name = "nullable_metadata_users")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub name: Option<String>,
+        pub email: Option<String>,
+        pub email_verified: bool,
+        pub image: Option<String>,
+        pub metadata: Option<alibi::seaorm::JsonMetadata>,
+        pub created_at: DateTimeUtc,
+        pub updated_at: DateTimeUtc,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
 use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
 use alibi::seaorm::{Database, SeaOrmStore};
 use alibi::{AuthBuilder, AuthConfig};
@@ -86,6 +110,45 @@ impl alibi::AuthSchema for CustomSchema {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_metadata_derives_preserve_absence_values_and_updates() {
+        use alibi::seaorm::schema::SeaOrmUserModel;
+        use alibi::seaorm::sea_orm::ActiveValue;
+        let now = "2026-01-01T00:00:00.123Z".parse().unwrap();
+        let mut active =
+            nullable_user::Model::new_active(Some("nullable-user".into()), CreateUser::new(), now);
+        assert!(matches!(active.metadata, ActiveValue::Set(None)));
+        let mut model = nullable_user::Model {
+            id: "nullable-user".into(),
+            name: None,
+            email: None,
+            email_verified: false,
+            image: None,
+            metadata: None,
+            created_at: now,
+            updated_at: now,
+        };
+        assert!(model.metadata().is_null());
+        let value = serde_json::json!({"version":"original"});
+        let created = nullable_user::Model::new_active(
+            Some("nullable-user".into()),
+            CreateUser::new().with_metadata(value.clone()),
+            now,
+        );
+        model.metadata = created.metadata.unwrap();
+        assert_eq!(model.metadata(), alibi::utils::json::JsValue::from(value));
+        nullable_user::Model::apply_update(
+            &mut active,
+            UpdateUser {
+                metadata: Some(serde_json::json!({"version":"updated"})),
+                ..Default::default()
+            },
+            now,
+        );
+        model.metadata = active.metadata.unwrap();
+        assert_eq!(model.metadata()["version"], "updated");
+    }
 
     #[test]
     fn native_json_metadata_survives_sql_value_roundtrips() {

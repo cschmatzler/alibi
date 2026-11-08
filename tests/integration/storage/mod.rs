@@ -51,6 +51,7 @@ mod postgres_oauth_json;
 mod postgres_oauth_resource_json;
 mod postgres_oauth_token_json;
 mod postgres_oauth_consent_json;
+mod postgres_user_json_text;
 mod user_clock;
 mod native_api_keys;
 mod native_device_codes;

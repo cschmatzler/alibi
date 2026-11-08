@@ -75,7 +75,13 @@ pub fn auth_user_impl(
         quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { None } }
     };
     let metadata_impl = if has("metadata") {
-        quote! { fn metadata(&self) -> #core_root::utils::json::JsValue { (&self.metadata).into() } }
+        if optional("metadata") {
+            quote! { fn metadata(&self) -> #core_root::utils::json::JsValue {
+                self.metadata.as_ref().map_or(#core_root::utils::json::JsValue::Null, ::std::convert::Into::into)
+            } }
+        } else {
+            quote! { fn metadata(&self) -> #core_root::utils::json::JsValue { (&self.metadata).into() } }
+        }
     } else {
         quote! { fn metadata(&self) -> #core_root::utils::json::JsValue {
             #core_root::utils::json::JsValue::Object(Default::default())

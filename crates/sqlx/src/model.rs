@@ -168,9 +168,10 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     fn column_value(column: &str, value: SqlValue) -> SqlValue {
         match (Self::column_kind(column), value) {
             (ColumnKind::BpChar, SqlValue::Text(value)) => SqlValue::BpChar(value),
-            (ColumnKind::Text, SqlValue::Json(value)) => {
-                SqlValue::Text(value.map(|value| value.to_string()))
-            }
+            (ColumnKind::Text, SqlValue::Json(value)) => SqlValue::Text(value.map(|value| {
+                alibi_core::utils::json::to_string(&*value)
+                    .expect("ordinary JSON values are serializable")
+            })),
             (_, value) => value,
         }
     }

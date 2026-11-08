@@ -70,10 +70,17 @@ pub fn insert_values(role: EntityRole, fields: &FieldsNamed) -> Vec<(Ident, Inse
                     value(name, quote! { create_user.#field.unwrap_or(false) });
                 }
             }
-            value(
-                "metadata",
-                quote! { create_user.metadata.unwrap_or(::serde_json::json!({})) },
-            );
+            if optional("metadata") {
+                value(
+                    "metadata",
+                    quote! { create_user.metadata.map(::std::convert::Into::into) },
+                );
+            } else {
+                value(
+                    "metadata",
+                    quote! { create_user.metadata.unwrap_or(::serde_json::json!({})) },
+                );
+            }
             values.push(("ban_reason", Insert::Null));
             values.push(("ban_expires", Insert::Null));
         }
@@ -177,10 +184,15 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
                     statements.push(some(name, wrapped));
                 }
             }
-            for name in ["two_factor_enabled", "metadata"] {
-                if has(name) {
-                    statements.push(some(name, direct));
-                }
+            if has("two_factor_enabled") {
+                statements.push(some("two_factor_enabled", direct));
+            }
+            if has("metadata") {
+                statements.push(if optional_field(fields, "metadata") {
+                    some("metadata", |field| quote! { ::std::option::Option::Some(::std::convert::Into::into(#field)) })
+                } else {
+                    some("metadata", direct)
+                });
             }
             if has("banned") && has("ban_reason") && has("ban_expires") {
                 let banned = set(&ident("banned"), &Insert::Value(quote! { banned }));
