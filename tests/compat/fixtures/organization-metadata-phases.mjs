@@ -9,6 +9,9 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { organization } from "../reference-server/node_modules/better-auth/dist/plugins/index.mjs";
 import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
+const outputModes = new Map([["--user-update-clock", "user-update-clock"], ["--session-clock", "session-creation-clock"], ["--account-clock", "account-clock"]]);
+assert.ok(process.argv[2] === undefined || outputModes.has(process.argv[2]), "unknown fixture output mode");
+const onlyOutput = outputModes.get(process.argv[2]);
 const mysql = await createMysqlDatabase();
 const sqlite = new DatabaseSync(":memory:");
 const sqliteDb = new Kysely({ dialect: new SqliteDialect({ database: {
@@ -29,6 +32,7 @@ const profiles = [];
 const userClocks = [];
 const updateClocks = [];
 const sessionClocks = [];
+const accountClocks = [];
 try {
   for (const [backend, db] of [["sqlite", sqliteDb], ["postgres", postgresDb], ["mysql", mysql.db]]) {
     const options = { baseURL: "http://localhost", secret: "organization-metadata-source-secret-at-least-32", database: { type: backend, db }, emailAndPassword: { enabled: true }, rateLimit: { enabled: false }, plugins: [organization()] };
@@ -81,6 +85,26 @@ try {
     };
     assert.deepEqual(sessionClock, { created_at_millisecond_aligned: true, updated_at_millisecond_aligned: true, expires_at_preserved: true, readback_matches: true });
     sessionClocks.push(sessionClock);
+    const account = await internalAdapter.createAccount({ userId: generated.id, providerId: "clock-provider", accountId: "generated-account-clock", password: "opaque-hash" });
+    const accountReadback = await internalAdapter.findAccountByKey({ providerId: "clock-provider", accountId: "generated-account-clock" });
+    assert.equal(accountReadback.id, account.id);
+    const accountClock = {
+      created_at_millisecond_aligned: /\.\d{3}Z$/.test(account.createdAt.toISOString()),
+      updated_at_millisecond_aligned: /\.\d{3}Z$/.test(account.updatedAt.toISOString()),
+      readback_matches: account.createdAt.getTime() === accountReadback.createdAt.getTime() && account.updatedAt.getTime() === accountReadback.updatedAt.getTime(),
+    };
+    assert.deepEqual(accountClock, { created_at_millisecond_aligned: true, updated_at_millisecond_aligned: true, readback_matches: true });
+    const updatedAccount = await internalAdapter.updateAccount(account.id, { scope: "email" });
+    const updatedAccountReadback = await internalAdapter.findAccountByKey({ providerId: "clock-provider", accountId: "generated-account-clock" });
+    assert.equal(updatedAccount.id, account.id);
+    assert.equal(updatedAccountReadback.scope, "email");
+    const accountUpdateClock = {
+      created_at_preserved: account.createdAt.getTime() === updatedAccount.createdAt.getTime(),
+      updated_at_millisecond_aligned: /\.\d{3}Z$/.test(updatedAccount.updatedAt.toISOString()),
+      readback_matches: updatedAccount.createdAt.getTime() === updatedAccountReadback.createdAt.getTime() && updatedAccount.updatedAt.getTime() === updatedAccountReadback.updatedAt.getTime(),
+    };
+    assert.deepEqual(accountUpdateClock, { created_at_preserved: true, updated_at_millisecond_aligned: true, readback_matches: true });
+    accountClocks.push([{ action: "create", clock: accountClock }, { action: "update", clock: accountUpdateClock }]);
     const cases = [];
     let organizationId;
     for (const action of ["omitted", "create", "update"]) {
@@ -98,20 +122,26 @@ try {
   }
   for (const profile of profiles) assert.deepEqual(profile.cases, profiles[0].cases);
   for (const clock of userClocks) assert.deepEqual(clock, userClocks[0]);
-  if (!process.argv.includes("--user-update-clock") && !process.argv.includes("--session-clock")) {
-    await writeFile(new URL("../../fixtures/organization-metadata-phases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
-    await writeFile(new URL("../../fixtures/user-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: userClocks[0] }) + "\n");
-  }
   for (const clock of updateClocks) assert.deepEqual(clock, updateClocks[0]);
-  if (!process.argv.includes("--session-clock")) {
-    await writeFile(new URL("../../fixtures/user-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: updateClocks[0] }) + "\n");
-  }
   for (const clock of sessionClocks) assert.deepEqual(clock, sessionClocks[0]);
-  await writeFile(new URL("../../fixtures/session-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: sessionClocks[0] }) + "\n");
+  for (const cases of accountClocks) assert.deepEqual(cases, accountClocks[0]);
+  const common = { better_auth: "1.7.18", backends: profiles.map(profile => profile.backend) };
+  const outputs = [
+    ["organization-metadata-phases", { ...common, cases: profiles[0].cases }],
+    ["user-creation-clock", { ...common, clock: userClocks[0] }],
+    ["user-update-clock", { ...common, clock: updateClocks[0] }],
+    ["session-creation-clock", { ...common, clock: sessionClocks[0] }],
+    ["account-clock", { ...common, cases: accountClocks[0] }],
+  ];
+  for (const [name, output] of outputs) {
+    if (onlyOutput && name !== onlyOutput) continue;
+    await writeFile(new URL(`../../fixtures/${name}.json`, import.meta.url), JSON.stringify(output) + "\n");
+  }
   console.log("Nine actual SQLite/PostgreSQL/MySQL organization metadata creation/update cases");
   console.log("Three actual user creation/readback millisecond clock cases");
   console.log("Three actual user update/readback millisecond clock cases");
   console.log("Three actual session creation/readback millisecond clock cases");
+  console.log("Six actual account creation/update millisecond clock cases");
 } finally {
   await sqliteDb.destroy();
   await postgresDb.destroy();

@@ -10,7 +10,7 @@ use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::{CreateAccount, UpdateAccount};
 use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{SubsecRound, Utc};
 
 impl<S> SqlxStore<S>
 where
@@ -33,7 +33,7 @@ where
                 return Err(cancelled_by_hook("account creation"));
             }
         }
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(3);
         let mut fields = std::mem::take(&mut create_account.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         let generated_id = self
@@ -205,7 +205,7 @@ where
         let mut active = model.into_active();
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
-        S::Account::apply_update(&mut active, update, Utc::now());
+        S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
         let backend = exec.engine();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(

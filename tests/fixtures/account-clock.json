@@ -1,0 +1,1 @@
+{"better_auth":"1.7.18","backends":["sqlite","postgres","mysql"],"cases":[{"action":"create","clock":{"created_at_millisecond_aligned":true,"updated_at_millisecond_aligned":true,"readback_matches":true}},{"action":"update","clock":{"created_at_preserved":true,"updated_at_millisecond_aligned":true,"readback_matches":true}}]}
