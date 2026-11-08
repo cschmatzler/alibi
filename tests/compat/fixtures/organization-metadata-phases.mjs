@@ -26,6 +26,7 @@ await admin.query(`CREATE SCHEMA ${schema}`);
 const pool = new pg.Pool({ connectionString: process.env.BETTER_AUTH_TEST_POSTGRES_URL, options: `-csearch_path=${schema}`, max: 1 });
 const postgresDb = new Kysely({ dialect: new PostgresDialect({ pool }) });
 const profiles = [];
+const userClocks = [];
 try {
   for (const [backend, db] of [["sqlite", sqliteDb], ["postgres", postgresDb], ["mysql", mysql.db]]) {
     const options = { baseURL: "http://localhost", secret: "organization-metadata-source-secret-at-least-32", database: { type: backend, db }, emailAndPassword: { enabled: true }, rateLimit: { enabled: false }, plugins: [organization()] };
@@ -45,6 +46,17 @@ try {
       return output;
     }
     await call("/sign-up/email", { name: "Owner", email: "org-metadata@example.com", password: "Password123!" });
+    const { internalAdapter } = await auth.$context;
+    const generated = await internalAdapter.createUser({ name: "Clock", email: "user-clock@example.com", emailVerified: false });
+    const readback = await internalAdapter.findUserById(generated.id);
+    for (const value of [generated.createdAt, generated.updatedAt, readback.createdAt, readback.updatedAt]) assert.ok(value instanceof Date);
+    const clock = {
+      created_at_millisecond_aligned: /\.\d{3}Z$/.test(generated.createdAt.toISOString()),
+      updated_at_millisecond_aligned: /\.\d{3}Z$/.test(generated.updatedAt.toISOString()),
+      readback_matches: generated.createdAt.getTime() === readback.createdAt.getTime() && generated.updatedAt.getTime() === readback.updatedAt.getTime(),
+    };
+    assert.deepEqual(clock, { created_at_millisecond_aligned: true, updated_at_millisecond_aligned: true, readback_matches: true });
+    userClocks.push(clock);
     const cases = [];
     let organizationId;
     for (const action of ["omitted", "create", "update"]) {
@@ -62,7 +74,10 @@ try {
   }
   for (const profile of profiles) assert.deepEqual(profile.cases, profiles[0].cases);
   await writeFile(new URL("../../fixtures/organization-metadata-phases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
+  for (const clock of userClocks) assert.deepEqual(clock, userClocks[0]);
+  await writeFile(new URL("../../fixtures/user-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: userClocks[0] }) + "\n");
   console.log("Nine actual SQLite/PostgreSQL/MySQL organization metadata creation/update cases");
+  console.log("Three actual user creation/readback millisecond clock cases");
 } finally {
   await sqliteDb.destroy();
   await postgresDb.destroy();

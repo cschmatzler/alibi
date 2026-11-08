@@ -8,7 +8,7 @@ use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{SubsecRound, Utc};
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait,
@@ -401,7 +401,7 @@ where
             }
         }
         let mut create_user = defaults.apply(create_user)?;
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(3);
         if create_user.id.as_deref() == Some("") {
             _ = create_user
                 .adapter_native_fields

@@ -12,7 +12,7 @@ use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
 use alibi_core::{AuthUser, UserFilterValue};
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{SubsecRound, Utc};
 
 /// Row lock applied to a user lookup inside a transaction.
 #[derive(Clone, Copy)]
@@ -223,7 +223,7 @@ where
             }
         }
         let mut create_user = defaults.apply(create_user)?;
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(3);
         if create_user.id.as_deref() == Some("") {
             _ = create_user
                 .adapter_native_fields
