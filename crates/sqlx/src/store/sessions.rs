@@ -281,7 +281,7 @@ where
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
         }
-        S::Session::set_updated_at(&mut active, Utc::now());
+        S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
         let Some(session) = model::update::<S::Session>(self.exec(), &active).await? else {
             for hook in self.hooks() {
                 hook.after_update_session_missing(token, &hook_context)
