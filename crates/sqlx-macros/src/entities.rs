@@ -95,7 +95,7 @@ pub(crate) fn user_impl(
         quote! {
             fn prepare_json_metadata(active: &mut #sqlx_root::model::ActiveRow, backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<()> {
                 if backend == #sqlx_root::pool::Engine::Postgres
-                    && <Self as #sqlx_root::model::SqlxModel>::column_kind(#metadata) == #sqlx_root::value::ColumnKind::Text
+                    && matches!(<Self as #sqlx_root::model::SqlxModel>::column_kind(#metadata), #sqlx_root::value::ColumnKind::Text | #sqlx_root::value::ColumnKind::Json)
                     && <#field_ty as #sqlx_root::value::SqlxValue>::KIND == #sqlx_root::value::ColumnKind::Json
                 {
                     return Ok(());

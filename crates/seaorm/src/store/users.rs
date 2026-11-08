@@ -210,9 +210,23 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         {
             return Err(AuthError::internal("Unsupported native user SQL parameter"));
         }
-        let raw =
-            crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
-        let value = if matches!(
+        let json_parameter = db.get_database_backend() == sea_orm::DbBackend::Postgres
+            && matches!(
+                column.def().get_column_type(),
+                sea_orm::sea_query::ColumnType::Json | sea_orm::sea_query::ColumnType::JsonBinary
+            );
+        let parameter = if json_parameter {
+            Some(sea_orm::Value::String(
+                alibi_core::store::postgres_parameter::text_parameter(&raw)?
+                    .map(|text| text.to_utf8_binding()),
+            ))
+        } else {
+            None
+        };
+        let raw = crate::additional_fields::raw_value(&raw)?;
+        let value = if let Some(parameter) = parameter {
+            parameter
+        } else if matches!(
             column.def().get_column_type(),
             sea_orm::sea_query::ColumnType::TimestampWithTimeZone
                 | sea_orm::sea_query::ColumnType::Timestamp
@@ -281,7 +295,15 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         if let Some(original) = native.map(|(_, value)| value.clone()).or(staged) {
             columns.push(physical);
             let expression = Expr::val(original);
-            let expression = if boolean_column
+            let expression = if db.get_database_backend() == sea_orm::DbBackend::Postgres
+                && native.is_some()
+                && matches!(
+                    physical.def().get_column_type(),
+                    sea_orm::sea_query::ColumnType::Json
+                        | sea_orm::sea_query::ColumnType::JsonBinary
+                ) {
+                expression.cast_as(sea_orm::sea_query::Alias::new("jsonb"))
+            } else if boolean_column
                 && native.is_some()
                 && db.get_database_backend() == sea_orm::DbBackend::Postgres
             {
@@ -440,11 +462,23 @@ where
         let provider_image = create_user.provider_image.take();
         let provider_email = create_user.provider_email.take();
         let verification = create_user.provider_email_verified.take();
-        let native_fields = std::mem::take(&mut create_user.adapter_native_fields);
+        let mut native_fields = std::mem::take(&mut create_user.adapter_native_fields);
         if let Some(raw_id) = native_fields.get("id") {
             _ = create_user
                 .adapter_native_fields
                 .insert("id".into(), raw_id.clone());
+        }
+        if db.get_database_backend() == sea_orm::DbBackend::Postgres
+            && let Some(column) = S::User::list_users_column("metadata")
+            && matches!(
+                column.def().get_column_type(),
+                sea_orm::sea_query::ColumnType::Json | sea_orm::sea_query::ColumnType::JsonBinary
+            )
+            && let Some(value) = create_user.metadata.as_ref()
+        {
+            _ = native_fields
+                .entry("metadata".into())
+                .or_insert_with(|| value.clone().into());
         }
         let metadata_text = if db.get_database_backend() == sea_orm::DbBackend::Postgres {
             match (

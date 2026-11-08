@@ -264,12 +264,17 @@ where
                 .adapter_native_fields
                 .insert("id".into(), raw_id.clone());
         }
-        let metadata_text = if exec.engine() == Engine::Postgres {
+        let metadata_parameter = if exec.engine() == Engine::Postgres {
             match (
                 S::User::list_users_column("metadata"),
                 create_user.metadata.as_ref(),
             ) {
-                (Some(column), Some(value)) if S::User::column_kind(column) == ColumnKind::Text => {
+                (Some(column), Some(value))
+                    if matches!(
+                        S::User::column_kind(column),
+                        ColumnKind::Text | ColumnKind::Json
+                    ) =>
+                {
                     Some((
                         column,
                         SqlValue::Text(
@@ -286,7 +291,7 @@ where
             None
         };
         let mut active = S::User::new_active(user_id, create_user, now);
-        if let Some((column, value)) = metadata_text {
+        if let Some((column, value)) = metadata_parameter {
             active.set(column, value);
         }
         stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
@@ -885,13 +890,21 @@ where
                 }
                 continue;
             };
-            let raw = crate::additional_fields::raw_value(raw)?;
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::User as SqlxModel>::column_kind(column),
-                raw,
-            )
-            .await?;
+            let value = if exec.engine() == Engine::Postgres
+                && S::User::column_kind(column) == ColumnKind::Json
+            {
+                SqlValue::Text(
+                    alibi_core::store::postgres_parameter::text_parameter(raw)?
+                        .map(|text| text.to_utf8_binding()),
+                )
+            } else {
+                crate::additional_fields::prepare_value(
+                    exec,
+                    S::User::column_kind(column),
+                    crate::additional_fields::raw_value(raw)?,
+                )
+                .await?
+            };
             active.set(column, value);
         }
         let user = model::update_where::<S::User>(exec, &active, locator)

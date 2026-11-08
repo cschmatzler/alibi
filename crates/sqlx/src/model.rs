@@ -279,6 +279,15 @@ pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
 }
 
 pub(crate) fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+    if sql.engine() == Engine::Postgres
+        && M::column_kind(column) == ColumnKind::Json
+        && matches!(&value, SqlValue::Text(_))
+    {
+        sql.push("CAST(");
+        sql.bind(value);
+        sql.push(" AS JSONB)");
+        return;
+    }
     if sql.engine() == Engine::Postgres && M::column_kind(column) == ColumnKind::Number {
         let text = match value {
             SqlValue::Double(value) => SqlValue::Text(value.map(|value| value.to_string())),
