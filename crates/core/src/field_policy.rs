@@ -852,9 +852,8 @@ impl SessionFields {
     pub fn defaults(&self, values: &mut FieldValues) {
         for (name, field) in &self.0 {
             if let Some(default) = &field.default {
-                _ = values
-                    .entry(name.clone())
-                    .or_insert_with(|| default.value());
+                let value = default.value();
+                _ = values.entry(name.clone()).or_insert(value);
             }
         }
     }
