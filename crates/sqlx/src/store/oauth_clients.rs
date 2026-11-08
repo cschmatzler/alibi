@@ -94,7 +94,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
             active.set("userId", data.client.user_id);
             active.set("clientSecret", data.client.client_secret);
         }
-        let fields = Model::columns_from_metadata(metadata)?.into_active();
+        let fields = Model::columns_from_metadata(metadata, self.exec().engine())?.into_active();
         for (column, value) in fields.present() {
             if ![
                 "id",
@@ -792,7 +792,8 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         active.set("clientId", data.client_id);
         active.set("userId", data.user_id);
         active.set("clientSecret", data.client_secret);
-        let fields = Model::columns_from_metadata(data.metadata)?.into_active();
+        let fields =
+            Model::columns_from_metadata(data.metadata, self.exec().engine())?.into_active();
         for (column, value) in fields.present() {
             if ![
                 "id",
@@ -918,7 +919,7 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", client.id);
-        let fields = Model::columns_from_metadata(metadata)?.into_active();
+        let fields = Model::columns_from_metadata(metadata, self.exec().engine())?.into_active();
         for (column, value) in fields.present() {
             if ![
                 "id",

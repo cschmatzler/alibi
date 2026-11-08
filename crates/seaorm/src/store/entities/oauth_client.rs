@@ -126,6 +126,7 @@ impl TryFrom<Model> for alibi_core::store::OAuthClient {
 impl Model {
     pub(crate) fn columns_from_metadata(
         metadata: serde_json::Value,
+        backend: sea_orm::DbBackend,
     ) -> alibi_core::AuthResult<Self> {
         let mut fields = alibi_core::store::oauth_clients::metadata_to_columns(metadata)?;
         let object = fields.as_object_mut().ok_or_else(|| {
@@ -133,7 +134,19 @@ impl Model {
         })?;
         _ = object.insert("id".into(), serde_json::Value::String(String::new()));
         _ = object.insert("clientId".into(), serde_json::Value::String(String::new()));
-        Ok(serde_json::from_value(fields)?)
+        let mut model: Self = serde_json::from_value(fields)?;
+        if backend == sea_orm::DbBackend::Postgres {
+            use crate::json_metadata::MetadataBinding;
+            model.scopes = model.scopes.prepare(backend)?;
+            model.client_credentials_scopes = model.client_credentials_scopes.prepare(backend)?;
+            model.contacts = model.contacts.prepare(backend)?;
+            model.redirect_uris = model.redirect_uris.prepare(backend)?;
+            model.post_logout_redirect_uris = model.post_logout_redirect_uris.prepare(backend)?;
+            model.grant_types = model.grant_types.prepare(backend)?;
+            model.response_types = model.response_types.prepare(backend)?;
+            model.metadata = model.metadata.prepare(backend)?;
+        }
+        Ok(model)
     }
 }
 impl Model {

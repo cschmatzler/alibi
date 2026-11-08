@@ -104,7 +104,8 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             }
         };
         let mut fields = <oauth_client::ActiveModel as Default>::default();
-        oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut fields);
+        oauth_client::Model::columns_from_metadata(metadata, tx.get_database_backend())?
+            .stage_metadata(&mut fields);
         for column in Column::iter() {
             if (data.replacement.is_none()
                 || patch
@@ -126,14 +127,28 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         }
         active.updated_at = Set(Some(data.updated_at));
         let client = if let Some(replacement) = &data.replacement {
-            let mut clients = Entity::update_many()
+            let query = Entity::update_many()
                 .set(active)
                 .filter(Column::ClientId.eq(&data.client.client_id))
-                .filter(Column::ClientDiscoveryId.eq(&replacement.discovery_id))
-                .exec_with_returning(&tx)
-                .await
-                .map_err(map_db_err)?;
-            let Some(client) = clients.pop() else {
+                .filter(Column::ClientDiscoveryId.eq(&replacement.discovery_id));
+            let client = if tx.get_database_backend() == sea_orm::DbBackend::MySql {
+                if query.exec(&tx).await.map_err(map_db_err)?.rows_affected == 0 {
+                    None
+                } else {
+                    Entity::find()
+                        .filter(Column::ClientId.eq(&data.client.client_id))
+                        .one(&tx)
+                        .await
+                        .map_err(map_db_err)?
+                }
+            } else {
+                query
+                    .exec_with_returning(&tx)
+                    .await
+                    .map_err(map_db_err)?
+                    .pop()
+            };
+            let Some(client) = client else {
                 return Ok(None);
             };
             client
@@ -694,7 +709,10 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             .map(Some)
     }
     async fn create_oauth_client(&self, data: CreateOAuthClient) -> AuthResult<OAuthClient> {
-        let fields = oauth_client::Model::columns_from_metadata(data.metadata)?;
+        let fields = oauth_client::Model::columns_from_metadata(
+            data.metadata,
+            self.scoped_connection().get_database_backend(),
+        )?;
         let mut active = oauth_client::ActiveModel {
             id: Set(self
                 .generated_id(&self.db, "oauthClient", "oauthClient", "id")
@@ -822,7 +840,11 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        oauth_client::Model::columns_from_metadata(metadata)?.stage_metadata(&mut active);
+        oauth_client::Model::columns_from_metadata(
+            metadata,
+            self.scoped_connection().get_database_backend(),
+        )?
+        .stage_metadata(&mut active);
         active.updated_at = Set(Some(updated_at));
         active
             .update(self.scoped_connection())

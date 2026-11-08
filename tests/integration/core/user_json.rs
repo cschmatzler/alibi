@@ -87,6 +87,46 @@ impl alibi::AuthSchema for CustomSchema {
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_json_metadata_survives_sql_value_roundtrips() {
+        use alibi::seaorm::json_metadata::MetadataBinding;
+        use alibi::seaorm::sea_orm::{Value, sea_query::ValueType};
+        use alibi::sqlx::pool::Engine;
+        use alibi::sqlx::value::{SqlValue, SqlxValue};
+
+        for value in [
+            serde_json::json!(["openid", "profile"]),
+            serde_json::json!({"clock":"2025-02-03T04:05:06Z","nested":[null,true,1e20]}),
+            serde_json::json!("literal"),
+            serde_json::json!(false),
+            serde_json::json!(42),
+        ] {
+            let seaorm = alibi::seaorm::JsonMetadata::from(value.clone())
+                .prepare(DbBackend::Postgres)
+                .unwrap();
+            let seaorm =
+                <alibi::seaorm::JsonMetadata as ValueType>::try_from(Value::from(seaorm)).unwrap();
+            assert_eq!(
+                seaorm.to_js_value(),
+                alibi::utils::json::JsValue::from(value.clone())
+            );
+            assert_eq!(
+                Value::from(seaorm),
+                Value::Json(Some(Box::new(value.clone())))
+            );
+
+            let sqlx = alibi::sqlx::JsonMetadata::from(value.clone())
+                .prepare(Engine::Postgres)
+                .unwrap();
+            let sqlx = alibi::sqlx::JsonMetadata::from_sql_value(sqlx.into_sql_value()).unwrap();
+            assert_eq!(
+                sqlx.to_js_value(),
+                alibi::utils::json::JsValue::from(value.clone())
+            );
+            assert_eq!(sqlx.into_sql_value(), SqlValue::Json(Some(Box::new(value))));
+        }
+    }
+
     #[tokio::test]
     async fn prepared_metadata_replacement_persists_the_edited_value() {
         use alibi::seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};

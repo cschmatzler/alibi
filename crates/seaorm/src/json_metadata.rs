@@ -167,7 +167,9 @@ impl From<JsonMetadata> for sea_orm::Value {
 impl sea_orm::sea_query::ValueType for JsonMetadata {
     fn try_from(value: sea_orm::Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
         match value {
-            sea_orm::Value::Json(Some(value)) => Ok(Self::from(*value)),
+            sea_orm::Value::Json(Some(value)) => {
+                Ok(Self(JsValue::from(*value), JsonBinding::Native))
+            }
             sea_orm::Value::String(Some(text)) => {
                 Ok(Self(JsValue::String(text.into()), JsonBinding::Prepared))
             }

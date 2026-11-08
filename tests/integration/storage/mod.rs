@@ -47,6 +47,7 @@ mod mysql_user_readback;
 mod mysql_verification_updates;
 #[cfg(feature = "seaorm-mysql")]
 mod mysql_verification_claims;
+mod postgres_oauth_json;
 mod native_api_keys;
 mod native_device_codes;
 mod native_jwks;

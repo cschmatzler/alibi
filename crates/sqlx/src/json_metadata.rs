@@ -151,7 +151,7 @@ impl SqlxValue for JsonMetadata {
     }
     fn from_sql_value(value: SqlValue) -> Result<Self, ValueTypeError> {
         match value {
-            SqlValue::Json(Some(value)) => Ok(Self::from(*value)),
+            SqlValue::Json(Some(value)) => Ok(Self(JsValue::from(*value), JsonBinding::Native)),
             SqlValue::Text(Some(text)) => {
                 Ok(Self(JsValue::String(text.into()), JsonBinding::Prepared))
             }
