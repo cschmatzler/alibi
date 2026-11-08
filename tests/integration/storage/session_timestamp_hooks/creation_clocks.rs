@@ -4,6 +4,7 @@ mod builtin_defaults;
 mod default_evaluation;
 mod omission;
 mod order;
+mod transactions;
 
 backend_tests!(
     builtin_creation_clocks_precede_database_hooks,

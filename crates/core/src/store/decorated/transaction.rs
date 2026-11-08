@@ -14,6 +14,7 @@ use crate::{
     Passkey, Team,
 };
 use async_trait::async_trait;
+use chrono::SubsecRound;
 use std::sync::Arc;
 pub(in crate::store) struct PluginTransaction<'a, S: AuthSchema> {
     pub(in crate::store) inner: &'a dyn AuthTransaction<S>,
@@ -850,7 +851,6 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         mut create_session: CreateSession,
         policy: crate::session::SessionCreationPolicy,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let created_at = chrono::Utc::now();
         for hook in &self.record_store.session_callbacks.callbacks {
             hook.before_create(
                 &create_session,
@@ -861,6 +861,17 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
+        let created_at = chrono::Utc::now().trunc_subsecs(3);
+        for name in ["createdAt", "updatedAt"] {
+            _ = create_session
+                .additional_fields
+                .entry(name.to_owned())
+                .or_insert(JsValue::Date(created_at));
+        }
+        let created_at = match create_session.additional_fields.get("createdAt") {
+            Some(JsValue::Date(date)) => *date,
+            _ => created_at,
+        };
         if self.record_store.session_uses_database() {
             self.adapter_fields
                 .attach(&mut create_session.additional_fields, true);
