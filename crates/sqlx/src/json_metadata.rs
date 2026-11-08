@@ -229,9 +229,10 @@ impl Type<Postgres> for JsonMetadata {
 impl<'r> Decode<'r, Postgres> for JsonMetadata {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         if <String as Type<Postgres>>::compatible(&value.type_info()) {
-            Ok(json::from_str(<&str as Decode<'r, Postgres>>::decode(
-                value,
-            )?)?)
+            Ok(Self(
+                JsValue::String(<&str as Decode<'r, Postgres>>::decode(value)?.into()),
+                JsonBinding::Read,
+            ))
         } else {
             <sqlx::types::Json<serde_json::Value> as Decode<'r, Postgres>>::decode(value)
                 .map(|json| Self::from(json.0))

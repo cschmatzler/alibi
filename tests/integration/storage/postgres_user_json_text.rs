@@ -50,7 +50,7 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
         .build()
         .await?;
     let cases = fixture["cases"].as_array().unwrap();
-    assert_eq!(cases.len(), 6);
+    assert_eq!(cases.len(), 18);
     let mut id = String::new();
     for case in cases {
         let action = case["action"].as_str().unwrap();
@@ -65,7 +65,7 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
                     )
                     .await?
             }
-            "update" | "clear" => {
+            "update" | "array" | "string" | "boolean" | "number" | "clear" => {
                 auth.store()
                     .update_user(
                         &id,
@@ -76,7 +76,20 @@ async fn postgres_owned_user_json_text_matches_actual_driver_values() -> TestRes
                     )
                     .await?
             }
-            "read" | "updated-read" | "cleared-read" => auth
+            "operator-text" | "invalid-text" => {
+                _ = db
+                    .execute(
+                        "UPDATE \"applicationUser\" SET metadata = $1 WHERE id = $2",
+                        &[case["raw_input"].as_str().unwrap(), &id],
+                    )
+                    .await?;
+                auth.store()
+                    .get_user_by_id(&id)
+                    .await?
+                    .ok_or("source user must exist")?
+            }
+            "read" | "updated-read" | "array-read" | "string-read" | "boolean-read"
+            | "number-read" | "operator-read" | "invalid-read" | "cleared-read" => auth
                 .store()
                 .get_user_by_id(&id)
                 .await?
