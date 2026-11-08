@@ -2,9 +2,11 @@
     unreachable_pub,
     reason = "SeaORM derives public associated entities inside private test fixtures"
 )]
-use crate::storage::SeaOrm;
 use super::*;
+use crate::storage::SeaOrm;
 use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+
+mod token;
 
 mod session {
     use alibi::seaorm::sea_orm::{self, entity::prelude::*};

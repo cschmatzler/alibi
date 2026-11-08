@@ -61,11 +61,15 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
         .await
         .map_err(map_db_err)?;
     let backend = db.get_database_backend();
-    let inserted_token = if backend == DbBackend::MySql && insert {
+    let reselect_token = if backend == DbBackend::MySql {
         let column = <M::Entity as EntityTrait>::Column::iter()
             .find(|column| column.to_string() == M::token_column().to_string())
             .ok_or_else(|| AuthError::config("Session entity does not expose its token column"))?;
-        active.get(column).into_value()
+        match active.get(column) {
+            ActiveValue::Set(value) if value.is_some() => Some(value),
+            ActiveValue::Unchanged(value) if insert => Some(value),
+            _ => token.map(Into::into),
+        }
     } else {
         None
     };
@@ -142,12 +146,8 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
         if !insert && result.rows_affected() == 0 {
             return Ok(None);
         }
-        let lookup = if let Some(token) = token {
-            M::token_column().eq(token)
-        } else {
-            M::token_column().eq(inserted_token
-                .ok_or_else(|| AuthError::internal("Inserted session has no token locator"))?)
-        };
+        let lookup = M::token_column().eq(reselect_token
+            .ok_or_else(|| AuthError::internal("Written session has no token locator"))?);
         let Some(session) = M::Entity::find()
             .filter(lookup)
             .one(db)
