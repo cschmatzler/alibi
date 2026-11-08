@@ -33,7 +33,7 @@ mod application_user {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-struct Schema;
+pub(super) struct Schema;
 impl AuthSchema for Schema {
     type User = application_user::Model;
     type Session = alibi::seaorm::store::entities::session::Model;

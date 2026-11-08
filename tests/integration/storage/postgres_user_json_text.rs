@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 
 #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "user", table = "applicationUser")]
-struct ApplicationUser {
+pub(super) struct ApplicationUser {
     id: String,
     name: String,
     email: String,
@@ -20,7 +20,7 @@ struct ApplicationUser {
     metadata: Option<JsonMetadata>,
 }
 
-struct Schema;
+pub(super) struct Schema;
 impl AuthSchema for Schema {
     type User = ApplicationUser;
     type Session = alibi::sqlx::store::entities::session::Model;
