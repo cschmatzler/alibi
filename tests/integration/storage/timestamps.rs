@@ -15,6 +15,7 @@ use alibi::{
 };
 use alibi::{AuthConfig, AuthSchema};
 use chrono::{DateTime, Duration, NaiveDateTime, SubsecRound, Utc};
+mod user_parameters;
 
 // One application schema contract, derived independently by each adapter.
 macro_rules! auth_model {
@@ -107,7 +108,7 @@ macro_rules! sqlx_case {
         mod $module {
             use super::*;
             auth_models!(sqlx, $date);
-            async fn run(db: Db, timezone: &str) -> TestResult {
+            async fn run(db: Db, timezone: &str, source_parameters: bool) -> TestResult {
                 install(&db, $naive).await?;
                 let connection = super::super::Sqlx::connect(&db.url, Some(1)).await?;
                 if let Some(pool) = connection.as_postgres() {
@@ -124,7 +125,11 @@ macro_rules! sqlx_case {
                     AuthConfig::new("timestamp-regression-local-secret-32-chars"),
                     connection,
                 );
-                exercise(&db.raw, &store, $naive).await
+                if source_parameters {
+                    user_parameters::exercise(&db.raw, &store, $naive).await
+                } else {
+                    exercise(&db.raw, &store, $naive).await
+                }
             }
             timestamp_tests!();
         }
@@ -135,7 +140,7 @@ macro_rules! seaorm_case {
         mod $module {
             use super::*;
             auth_models!(seaorm, $date);
-            async fn run(db: Db, timezone: &str) -> TestResult {
+            async fn run(db: Db, timezone: &str, source_parameters: bool) -> TestResult {
                 install(&db, $naive).await?;
                 let connection = super::super::SeaOrm::connect(&db.url, Some(1)).await?;
                 if db.is_postgres() {
@@ -161,7 +166,11 @@ macro_rules! seaorm_case {
                     AuthConfig::new("timestamp-regression-local-secret-32-chars"),
                     connection,
                 );
-                exercise(&db.raw, &store, $naive).await
+                if source_parameters {
+                    user_parameters::exercise(&db.raw, &store, $naive).await
+                } else {
+                    exercise(&db.raw, &store, $naive).await
+                }
             }
             timestamp_tests!();
         }
@@ -171,14 +180,26 @@ macro_rules! timestamp_tests {
     () => {
         #[tokio::test]
         async fn sqlite_timestamp_lifecycle() -> TestResult {
-            run(Db::sqlite().await?, "UTC").await
+            run(Db::sqlite().await?, "UTC", false).await
         }
         #[tokio::test]
         #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
         async fn postgres_timestamp_lifecycle() -> TestResult {
             for timezone in ["UTC", "Europe/Berlin"] {
-                run(Db::postgres().await?, timezone).await?;
+                run(Db::postgres().await?, timezone, false).await?;
                 eprintln!("{}: {timezone} timestamp lifecycle passed", module_path!());
+            }
+            Ok(())
+        }
+        #[tokio::test]
+        async fn sqlite_source_timestamp_parameters() -> TestResult {
+            run(Db::sqlite().await?, "UTC", true).await
+        }
+        #[tokio::test]
+        #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+        async fn postgres_source_timestamp_parameters() -> TestResult {
+            for timezone in ["UTC", "Europe/Berlin"] {
+                run(Db::postgres().await?, timezone, true).await?;
             }
             Ok(())
         }

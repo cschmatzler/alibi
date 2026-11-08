@@ -254,6 +254,20 @@ pub enum RawFieldValue {
 }
 
 impl RawFieldValue {
+    /// Revive representable strings only when binding a declared date field.
+    #[must_use]
+    pub fn revive_date_string(self) -> Self {
+        if let Self::Text(value) = &self
+            && let Some(date) = value
+                .as_str()
+                .and_then(crate::utils::datetime::parse_date_millis)
+                .and_then(DateTime::from_timestamp_millis)
+        {
+            return Self::Date(date);
+        }
+        self
+    }
+
     /// # Errors
     ///
     /// Returns an error if an object or array cannot be serialized as JSON.

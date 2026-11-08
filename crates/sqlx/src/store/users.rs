@@ -205,6 +205,11 @@ async fn prepare_user_value(
     kind: ColumnKind,
     value: RawFieldValue,
 ) -> AuthResult<SqlValue> {
+    let value = if matches!(kind, ColumnKind::Timestamp | ColumnKind::NaiveTimestamp) {
+        value.revive_date_string()
+    } else {
+        value
+    };
     if exec.engine() == Engine::Postgres && kind == ColumnKind::Json {
         return Ok(SqlValue::Text(
             alibi_core::store::postgres_parameter::text_parameter(&value.into())?

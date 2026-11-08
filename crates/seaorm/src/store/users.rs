@@ -233,17 +233,27 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 | sea_orm::sea_query::ColumnType::Timestamp
                 | sea_orm::sea_query::ColumnType::DateTime
         ) {
-            match crate::additional_fields::bind_scalar(raw)? {
-                sea_orm::Value::String(Some(value))
-                    if db.get_database_backend() == sea_orm::DbBackend::Sqlite =>
-                {
-                    sea_orm::Value::String(Some(value))
+            let raw = raw.revive_date_string();
+            match raw {
+                alibi_core::store::adapter::RawFieldValue::Date(_) => {
+                    crate::additional_fields::prepare_value(db, &column, raw).await?
                 }
-                sea_orm::Value::String(Some(value)) => chrono::DateTime::parse_from_rfc3339(&value)
-                    .map(|date| sea_orm::Value::ChronoDateTimeUtc(Some(date.with_timezone(&Utc))))
-                    .map_err(|error| AuthError::internal(error.to_string()))?,
-                sea_orm::Value::String(None) => sea_orm::Value::ChronoDateTimeUtc(None),
-                raw => raw,
+                raw => match crate::additional_fields::bind_scalar(raw)? {
+                    sea_orm::Value::String(Some(value))
+                        if db.get_database_backend() == sea_orm::DbBackend::Sqlite =>
+                    {
+                        sea_orm::Value::String(Some(value))
+                    }
+                    sea_orm::Value::String(Some(value)) => {
+                        chrono::DateTime::parse_from_rfc3339(&value)
+                            .map(|date| {
+                                sea_orm::Value::ChronoDateTimeUtc(Some(date.with_timezone(&Utc)))
+                            })
+                            .map_err(|error| AuthError::internal(error.to_string()))?
+                    }
+                    sea_orm::Value::String(None) => sea_orm::Value::ChronoDateTimeUtc(None),
+                    raw => raw,
+                },
             }
         } else {
             crate::additional_fields::prepare_value(db, &column, raw).await?
