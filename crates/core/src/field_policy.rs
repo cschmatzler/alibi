@@ -340,6 +340,14 @@ impl FieldValues {
         }
     }
 
+    /// Whether the declared adapter schema owns this field before input transforms run.
+    #[must_use]
+    pub fn has_adapter_field(&self, name: &str) -> bool {
+        self.adapter_fields
+            .as_ref()
+            .is_some_and(|fields| fields.contains_key(name))
+    }
+
     /// Move a typed timestamp through its declared input policy. Taking ownership
     /// lets a callback omit the field without leaving the original write behind.
     pub fn take_timestamp_input(
@@ -347,10 +355,7 @@ impl FieldValues {
         name: &str,
         value: &mut Option<chrono::DateTime<chrono::Utc>>,
     ) {
-        if self
-            .adapter_fields
-            .as_ref()
-            .is_some_and(|fields| fields.contains_key(name))
+        if self.has_adapter_field(name)
             && let Some(value) = value.take()
         {
             _ = self
@@ -1064,10 +1069,13 @@ mod timestamp_input_tests {
             ..FieldValues::new()
         };
         let mut typed = Some(date);
+        assert!(fields.has_adapter_field("expiresAt"));
+        assert!(!fields.has_adapter_field("updatedAt"));
         fields.take_timestamp_input("expiresAt", &mut typed);
         assert_eq!(typed, None);
         assert_eq!(fields.get("expiresAt"), Some(&JsValue::Date(date)));
         fields.apply_adapter_transforms().unwrap();
+        assert!(!fields.has_adapter_field("expiresAt"));
         assert!(!fields.contains_key("expiresAt"));
     }
 
@@ -1075,6 +1083,7 @@ mod timestamp_input_tests {
     fn native_timestamps_and_explicit_field_values_keep_their_precedence() {
         let date = "2031-02-03T04:05:06.123987Z".parse().unwrap();
         let mut fields = FieldValues::new();
+        assert!(!fields.has_adapter_field("expiresAt"));
         let mut typed = Some(date);
         fields.take_timestamp_input("expiresAt", &mut typed);
         assert_eq!(typed, Some(date));

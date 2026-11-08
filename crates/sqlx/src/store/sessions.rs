@@ -63,6 +63,7 @@ where
             .take()
             .unwrap_or_else(alibi_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
+        let owns_updated_at = persist && fields.has_adapter_field("updatedAt");
         let mut expiry = Some(create_session.expires_at);
         if persist {
             fields.take_timestamp_input("expiresAt", &mut expiry);
@@ -112,6 +113,12 @@ where
             .map(S::Session::parse_id)
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
+        if owns_updated_at {
+            let column = S::Session::updated_at_column().ok_or_else(|| {
+                AuthError::config("Session model does not expose its update-clock column")
+            })?;
+            active.not_set(column);
+        }
         if expiry.is_none() {
             active.not_set(S::Session::expires_at_column());
         }
@@ -180,6 +187,7 @@ where
         let context = self.hook_context(tx);
         let session = if persist {
             fields.take_timestamp_input("expiresAt", &mut expires_at);
+            let owns_updated_at = fields.has_adapter_field("updatedAt");
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = exec
                 .fetch_optional::<S::Session>(Self::active_session_by_token(exec, token))
@@ -191,12 +199,14 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active();
-            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+            if !owns_updated_at {
+                S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+            }
             native::stage::<S::Session>(exec, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
-            if let Some(model) = model::update::<S::Session>(exec, &active).await? {
+            if let Some(model) = native::save::<S::Session>(exec, &active).await? {
                 model
             } else {
                 for hook in self.hooks().iter().filter(|_| tx.is_none()) {
@@ -275,6 +285,7 @@ where
                 return Ok(None);
             }
         }
+        let owns_updated_at = fields.has_adapter_field("updatedAt");
         fields.apply_adapter_transforms_async().await?;
         let table = <S::Session as SqlxModel>::TABLE;
         let mut query = model::select_model::<S::Session>(self.exec());
@@ -289,14 +300,16 @@ where
             return Ok(None);
         };
         let mut active = model.into_active();
-        S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+        if !owns_updated_at {
+            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+        }
         if !fields.is_empty() {
             native::stage::<S::Session>(self.exec(), &mut active, &fields).await?;
         }
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
         }
-        let Some(session) = model::update::<S::Session>(self.exec(), &active).await? else {
+        let Some(session) = native::save::<S::Session>(self.exec(), &active).await? else {
             for hook in self.hooks() {
                 hook.after_update_session_missing(token, &hook_context)
                     .await?;

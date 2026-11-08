@@ -179,6 +179,11 @@ pub trait SeaOrmSessionModel:
 
     fn created_at_column() -> Self::Column;
 
+    /// Physical update-clock column, when exposed by the model's metadata.
+    fn updated_at_column() -> Option<Self::Column> {
+        None
+    }
+
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this entity's ID type.

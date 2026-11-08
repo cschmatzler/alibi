@@ -8,13 +8,14 @@ import { betterAuth } from "../reference-server/node_modules/better-auth/dist/in
 import { getMigrations } from "../reference-server/node_modules/better-auth/dist/db/get-migration.mjs";
 import { getCurrentAdapter, runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
 
-const requiredExpiry = process.argv[2] === "--omit-required";
-const updatedAt = process.argv[2] === "--updated-at";
+const updatedAtOmit = process.argv[2] === "--updated-at-omit-required";
+const requiredTimestamp = process.argv[2] === "--omit-required" || updatedAtOmit;
+const updatedAt = process.argv[2] === "--updated-at" || updatedAtOmit;
 const timestampField = updatedAt ? "updatedAt" : "expiresAt";
 const compatibleStringResult = process.argv[2] === "--string-result-compatible";
 const stringResult = process.argv[2] === "--string-result" || compatibleStringResult;
 const resultText = compatibleStringResult ? "2035-02-03 04:05:06.123987" : "2035-02-03T04:05:06.123987Z";
-const omitResult = process.argv[2] === "--omit" || requiredExpiry;
+const omitResult = process.argv[2] === "--omit" || requiredTimestamp;
 const secondaryString = process.argv[2] === "--secondary-string";
 const deferred = process.argv[2] === "--secondary-deferred";
 const transactions = process.argv[2] === "--secondary-transactions" || deferred;
@@ -69,7 +70,7 @@ try {
       } } : {}),
       ...(wireFields ? { user: { additionalFields: extraFields } } : {}),
       session: { storeSessionInDatabase: secondary, additionalFields: { ...extraFields, [timestampField]: {
-        type: "date", required: requiredExpiry,
+        type: "date", required: requiredTimestamp,
         onUpdate: () => "2031-02-03T04:05:06.123987Z",
         transform: { input: async value => {
           event("input", value);
@@ -84,7 +85,7 @@ try {
       } },
     };
     const migrations = await getMigrations(options);
-    const schemaSql = requiredExpiry ? await migrations.compileMigrations() : undefined;
+    const schemaSql = requiredTimestamp ? await migrations.compileMigrations() : undefined;
     await migrations.runMigrations();
     const { internalAdapter, adapter } = await betterAuth(options).$context;
     const user = await internalAdapter.createUser({ name: "Timestamp", email: "session-timestamp@example.com", emailVerified: false });
@@ -155,7 +156,7 @@ try {
             assert.equal(error.message, "data.expiresAt.getTime is not a function");
             outcome = { error: { name: error.name, message: error.message } };
           } else {
-            assert.ok(omitResult && operation === "create");
+            assert.ok(omitResult && (operation === "create" || updatedAt));
             outcome = { error: { code: error.code, message: error.message } };
           }
         }
@@ -169,7 +170,7 @@ try {
           cases.push({ operation, kind, input, events: [...events], outcome, cached, referenced, stored, readback: readback.session.expiresAt });
         } else if (omitResult) {
           if (operation === "create") {
-            if (requiredExpiry) {
+            if (requiredTimestamp) {
               assert.equal(session, undefined);
               assert.equal(readback, null);
               assert.equal(outcome.error.code, backend === "postgres" ? "23502" : "ERR_SQLITE_ERROR");
@@ -181,10 +182,15 @@ try {
             }
           }
           else {
-            assert.equal(session.expiresAt.toISOString(), "2030-01-01T00:00:01.123Z");
+            if (updatedAt) {
+              assert.equal(session, undefined);
+              assert.equal(outcome.error.code, backend === "postgres" ? "42601" : "ERR_SQLITE_ERROR");
+              assert.match(outcome.error.message, /syntax error/);
+            } else assert.equal(session[timestampField].toISOString(), "2030-01-01T00:00:01.123Z");
             assert.equal(readback.session.id, original.id);
+            assert.equal(readback.session[timestampField].toISOString(), "2030-01-01T00:00:01.123Z");
           }
-          cases.push({ operation, kind, input, events: [...events], outcome, exists: readback !== null, readback: readback?.session.expiresAt ?? null });
+          cases.push({ operation, kind, input, events: [...events], outcome, exists: readback !== null, readback: readback?.session[timestampField] ?? null });
         } else {
           assert.equal(readback.session.id, session.id);
           assert.equal(session[timestampField].toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : "2031-02-03T04:05:07.123Z");
@@ -215,10 +221,10 @@ try {
       }
     }
     assert.equal(cases.length, transactions ? 4 : secondary ? 2 : 5);
-    profiles.push({ backend, ...(requiredExpiry ? { schema_sql: schemaSql } : {}), cases });
+    profiles.push({ backend, ...(requiredTimestamp ? { schema_sql: schemaSql } : {}), cases });
   }
   if (!omitResult && !stringResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  const filename = updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {

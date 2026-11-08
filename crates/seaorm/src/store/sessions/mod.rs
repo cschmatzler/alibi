@@ -56,6 +56,7 @@ where
             .take()
             .unwrap_or_else(alibi_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
+        let owns_updated_at = persist && fields.has_adapter_field("updatedAt");
         let mut expiry = Some(create_session.expires_at);
         if persist {
             fields.take_timestamp_input("expiresAt", &mut expiry);
@@ -104,6 +105,19 @@ where
             .map(S::Session::parse_id)
             .transpose()?;
         let mut active = S::Session::new_active(id, token, create_session, now);
+        if owns_updated_at {
+            use sea_orm::{Iden, Iterable};
+            let physical = S::Session::updated_at_column().ok_or_else(|| {
+                AuthError::config("Session model does not expose its update-clock column")
+            })?;
+            let column =
+                <<S::Session as SeaOrmSessionModel>::Entity as EntityTrait>::Column::iter()
+                    .find(|column| column.to_string() == physical.to_string())
+                    .ok_or_else(|| {
+                        AuthError::config("Session entity does not expose its update-clock column")
+                    })?;
+            _ = active.take(column);
+        }
         if expiry.is_none() {
             use sea_orm::{Iden, Iterable};
             let column =
@@ -184,6 +198,7 @@ where
         let context = self.hook_context(tx);
         let session = if persist {
             fields.take_timestamp_input("expiresAt", &mut expires_at);
+            let owns_updated_at = fields.has_adapter_field("updatedAt");
             fields.apply_adapter_transforms_async().await?;
             let Some(current) = <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::token_column().eq(token))
@@ -197,7 +212,9 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active_model();
-            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+            if !owns_updated_at {
+                S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+            }
             let native = native::stage::<S::Session, _>(db, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
@@ -281,6 +298,7 @@ where
                 return Ok(None);
             }
         }
+        let owns_updated_at = fields.has_adapter_field("updatedAt");
         fields.apply_adapter_transforms_async().await?;
         let query = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(S::Session::token_column().eq(token));
@@ -296,7 +314,9 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+        if !owns_updated_at {
+            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
+        }
         let native = if !fields.is_empty() {
             native::stage::<S::Session, _>(self.scoped_connection(), &mut active, &fields).await?
         } else {

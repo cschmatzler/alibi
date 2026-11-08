@@ -1,5 +1,17 @@
 use super::*;
 
+pub(super) async fn save<M: SqlxSessionModel>(
+    exec: Exec<'_>,
+    active: &ActiveRow,
+) -> AuthResult<Option<M>> {
+    let key = active
+        .get(M::PRIMARY_KEY)
+        .and_then(crate::model::ActiveValue::value)
+        .cloned()
+        .ok_or_else(|| AuthError::internal("model update requires its primary key"))?;
+    model::update_where_strict::<M>(exec, active, key).await
+}
+
 pub(super) async fn stage<M: SqlxSessionModel>(
     exec: Exec<'_>,
     active: &mut ActiveRow,

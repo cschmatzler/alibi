@@ -1,5 +1,7 @@
 use super::*;
 
+mod omission;
+
 backend_tests!(
     creation_sync_updated_at_matches_source,
     creation_async_updated_at_matches_source,
@@ -61,12 +63,14 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for Hooks {
     }
 }
 
-async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str) -> TestResult {
+async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str, omit: bool) -> TestResult {
     let secret = "session-timestamp-hooks-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value = serde_json::from_str(include_str!(
-        "../../../fixtures/session-updated-at-hooks.json"
-    ))?;
+    let fixture: Value = serde_json::from_str(if omit {
+        include_str!("../../../fixtures/session-updated-at-hooks-omit-required.json")
+    } else {
+        include_str!("../../../fixtures/session-updated-at-hooks.json")
+    })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     assert_eq!(fixture["field"], "updatedAt");
     let backend = if db.is_postgres() {
@@ -85,15 +89,25 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str) -> TestR
     assert_eq!(cases.len(), 5);
     let events = Events::default();
     let inputs = events.clone();
-    let field = alibi::field_policy::FieldConfig::new(json!({"type":"date"}))
+    let applying_input = Arc::new(AtomicBool::new(false));
+    let applying = applying_input.clone();
+    let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"date"}))
         .on_update(|| JsValue::String("2031-02-03T04:05:06.123987Z".into()));
+    field.required = omit;
     let field = if asynchronous {
         field.transform_adapter_input(move |value| {
             let inputs = inputs.clone();
-            async move { transform(&inputs, value, false) }
+            let applying = applying.clone();
+            async move { transform(&inputs, value, omit && applying.load(Ordering::SeqCst)) }
         })
     } else {
-        field.transform(move |value| transform(&inputs, value.cloned(), false))
+        field.transform(move |value| {
+            transform(
+                &inputs,
+                value.cloned(),
+                omit && applying.load(Ordering::SeqCst),
+            )
+        })
     };
     let mut config = AuthConfig::new(secret);
     _ = config
@@ -140,31 +154,101 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str) -> TestR
         } else {
             assert_eq!(kind, "omitted");
         }
-        let session = if operation == "create" {
+        let mut original_id = None;
+        let result = if operation == "create" {
             create.additional_fields = fields;
             events.lock().unwrap().clear();
-            auth.store().create_session(create).await?
+            applying_input.store(true, Ordering::SeqCst);
+            auth.store().create_session(create).await
         } else {
             assert_eq!(operation, "update");
             _ = create.additional_fields.insert(
                 "updatedAt".into(),
                 JsValue::Date("2030-01-01T00:00:00.123Z".parse()?),
             );
+            applying_input.store(false, Ordering::SeqCst);
             let original = auth.store().create_session(create).await?;
+            original_id = Some(original.id().into_owned());
             events.lock().unwrap().clear();
-            let updated = auth
-                .store()
+            applying_input.store(true, Ordering::SeqCst);
+            auth.store()
                 .update_session_fields(&token, fields)
-                .await?
-                .ok_or("updated-at policy row missing")?;
-            assert_eq!(updated.id(), original.id());
-            updated
+                .await
+                .and_then(|session| {
+                    session
+                        .ok_or_else(|| alibi::AuthError::internal("updated-at policy row missing"))
+                })
         };
         assert_eq!(
             json!(*events.lock().unwrap()),
             case["events"],
             "{backend}/{operation}/{kind} updated-at callback phases"
         );
+        if let Some(expected) = case["outcome"].get("error") {
+            let error = result
+                .err()
+                .ok_or("source updated-at driver failure became a successful write")?;
+            assert!(
+                matches!(&error, alibi::AuthError::Database(_)),
+                "{backend}/{operation}/{kind}: {error}"
+            );
+            if operation == "create" {
+                assert_eq!(
+                    expected["code"],
+                    if db.is_postgres() {
+                        "23502"
+                    } else {
+                        "ERR_SQLITE_ERROR"
+                    }
+                );
+                assert!(
+                    error
+                        .to_string()
+                        .contains(expected["message"].as_str().unwrap()),
+                    "{backend}/{operation}/{kind}: {error}"
+                );
+            } else {
+                assert_eq!(
+                    expected["code"],
+                    if db.is_postgres() {
+                        "42601"
+                    } else {
+                        "ERR_SQLITE_ERROR"
+                    }
+                );
+                // Backend SQL builders differ in keyword casing, not failure class.
+                assert!(
+                    error
+                        .to_string()
+                        .to_lowercase()
+                        .contains(&expected["message"].as_str().unwrap().to_lowercase()),
+                    "{backend}/{operation}/{kind}: {error}"
+                );
+            }
+            let readback = auth.store().get_session(&token).await?;
+            assert_eq!(json!(readback.is_some()), case["exists"]);
+            assert_eq!(
+                db.count_where("SELECT COUNT(*) FROM session WHERE token = $1", &[&token])
+                    .await?,
+                i64::from(case["exists"].as_bool().unwrap())
+            );
+            assert_eq!(
+                native::to_value(
+                    &readback
+                        .as_ref()
+                        .map(|session| JsValue::Date(session.updated_at()))
+                )?,
+                case["readback"]
+            );
+            if let Some(session) = readback {
+                assert_eq!(Some(session.id().into_owned()), original_id);
+            }
+            continue;
+        }
+        let session = result?;
+        if let Some(id) = original_id {
+            assert_eq!(session.id().as_ref(), id);
+        }
         assert_eq!(
             native::to_value(&JsValue::Date(session.updated_at()))?,
             case["output"]
@@ -200,14 +284,14 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str) -> TestR
 }
 
 async fn creation_sync_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, "create").await
+    check::<B>(db, false, "create", false).await
 }
 async fn creation_async_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, "create").await
+    check::<B>(db, true, "create", false).await
 }
 async fn refresh_sync_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, "update").await
+    check::<B>(db, false, "update", false).await
 }
 async fn refresh_async_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, "update").await
+    check::<B>(db, true, "update", false).await
 }

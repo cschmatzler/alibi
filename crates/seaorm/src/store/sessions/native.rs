@@ -44,7 +44,9 @@ pub(super) async fn save<M: SeaOrmSessionModel, C: ConnectionTrait>(
     native: Vec<(M::Column, sea_orm::Value)>,
 ) -> AuthResult<Option<M>> {
     let insert = token.is_none();
-    if native.is_empty() {
+    let changed =
+        <M::Entity as EntityTrait>::Column::iter().any(|column| active.get(column).is_set());
+    if native.is_empty() && (insert || changed) {
         return if insert {
             active.insert(db).await.map(Some).map_err(map_db_err)
         } else {

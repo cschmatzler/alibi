@@ -191,6 +191,7 @@ pub(crate) fn session_impl(
     let user_id_column = column("user_id")?;
     let expires_at_column = column("expires_at")?;
     let created_at_column = column("created_at")?;
+    let updated_at_column = column("updated_at")?;
     let set_expires_at = set(
         &Ident::new("expires_at", Span::call_site()),
         &Insert::Value(quote! { expires_at }),
@@ -251,6 +252,7 @@ pub(crate) fn session_impl(
             fn user_id_column() -> &'static str { #user_id_column }
             fn expires_at_column() -> &'static str { #expires_at_column }
             fn created_at_column() -> &'static str { #created_at_column }
+            fn updated_at_column() -> Option<&'static str> { Some(#updated_at_column) }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
                 Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
                     <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,

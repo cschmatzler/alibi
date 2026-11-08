@@ -153,6 +153,11 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
 
     fn created_at_column() -> &'static str;
 
+    /// Physical update-clock column, when exposed by the model's metadata.
+    fn updated_at_column() -> Option<&'static str> {
+        None
+    }
+
     /// # Errors
     ///
     /// Returns an error if the identifier is invalid for this model's ID type.

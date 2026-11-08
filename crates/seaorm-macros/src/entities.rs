@@ -326,6 +326,7 @@ pub(crate) fn session_impl(
             fn user_id_column() -> Self::Column { Column::UserId }
             fn expires_at_column() -> Self::Column { Column::ExpiresAt }
             fn created_at_column() -> Self::Column { Column::CreatedAt }
+            fn updated_at_column() -> Option<Self::Column> { Some(Column::UpdatedAt) }
             fn parse_id(id: &str) -> #core_root::AuthResult<Self::Id> {
                 Ok(id.to_string())
             }
