@@ -61,6 +61,7 @@ mod user_update_clock;
 mod session_creation_clock;
 mod account_clock;
 mod session_update_clock;
+mod user_timestamp_hooks;
 mod session_secondary_clock;
 mod native_api_keys;
 mod native_device_codes;

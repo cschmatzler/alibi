@@ -395,6 +395,15 @@ impl FieldValues {
         {
             return false;
         }
+        if field.schema.get("type").and_then(Value::as_str) == Some("date")
+            && let Some(JsValue::String(value)) = self.values.get(name)
+            && let Some(date) = value
+                .as_str()
+                .and_then(crate::utils::datetime::parse_date_millis)
+                .and_then(chrono::DateTime::from_timestamp_millis)
+        {
+            _ = self.values.insert(name.to_owned(), JsValue::Date(date));
+        }
         if self.transform_omitted
             && (undefined
                 || (field.required && self.values.get(name).is_some_and(JsValue::is_null)))
