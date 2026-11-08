@@ -55,6 +55,7 @@ pub fn parse_optional_rfc3339(
 pub enum AfterHook<S: AuthSchema> {
     UserCreated(S::User),
     UserUpdated(S::User),
+    UserUpdateMissing(String),
     AccountCreated(S::Account),
     AccountUpdated(S::Account),
     SessionCreated(S::Session),
@@ -87,6 +88,10 @@ impl<S: AuthSchema> AfterHook<S> {
             Self::UserCreated(user) => hook.after_create_user(user, ctx).await,
             Self::UserUpdated(user) => hook
                 .after_update_user(user, ctx)
+                .await
+                .map_err(callback_error),
+            Self::UserUpdateMissing(id) => hook
+                .after_update_user_missing(id, ctx)
                 .await
                 .map_err(callback_error),
             Self::AccountCreated(account) => hook.after_create_account(account, ctx).await,

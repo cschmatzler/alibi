@@ -298,7 +298,13 @@ pub(crate) fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value:
         && matches!(&value, SqlValue::Text(_))
     {
         sql.push("CAST(");
-        sql.bind(value);
+        if let SqlValue::Text(Some(value)) = value {
+            sql.push(&alibi_core::store::postgres_parameter::quoted_literal(
+                &value,
+            ));
+        } else {
+            sql.push("NULL");
+        }
         sql.push(if M::column_kind(column) == ColumnKind::Timestamp {
             " AS TIMESTAMPTZ)"
         } else {

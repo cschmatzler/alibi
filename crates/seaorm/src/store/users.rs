@@ -157,7 +157,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     id: Option<&str>,
     native_fields: std::collections::BTreeMap<String, alibi_core::utils::json::JsValue>,
     prepared_fields: std::collections::BTreeSet<String>,
-) -> AuthResult<M> {
+) -> AuthResult<Option<M>> {
     use sea_orm::sea_query::Query;
     use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
     let insert = id.is_none();
@@ -169,9 +169,9 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         && (insert || db.get_database_backend() != sea_orm::DbBackend::Sqlite)
     {
         return if insert {
-            model.insert(db).await.map_err(map_db_err)
+            model.insert(db).await.map(Some).map_err(map_db_err)
         } else {
-            model.update(db).await.map_err(map_db_err)
+            model.update(db).await.map(Some).map_err(map_db_err)
         };
     };
     let mut native_values = Vec::new();
@@ -311,14 +311,22 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         };
         if let Some(original) = native.map(|(_, value)| value.clone()).or(staged) {
             columns.push(physical);
-            let timestamp_text = db.get_database_backend() == sea_orm::DbBackend::Postgres
-                && matches!(&original, sea_orm::Value::String(Some(_)))
+            let timestamp_literal = if db.get_database_backend() == sea_orm::DbBackend::Postgres
                 && matches!(
                     physical.def().get_column_type(),
                     sea_orm::sea_query::ColumnType::TimestampWithTimeZone
                         | sea_orm::sea_query::ColumnType::Timestamp
                         | sea_orm::sea_query::ColumnType::DateTime
-                );
+                ) {
+                match &original {
+                    sea_orm::Value::String(Some(value)) => {
+                        Some(alibi_core::store::postgres_parameter::quoted_literal(value))
+                    }
+                    _ => None,
+                }
+            } else {
+                None
+            };
             let expression = Expr::val(original);
             let expression = if db.get_database_backend() == sea_orm::DbBackend::Postgres
                 && native.is_some()
@@ -328,8 +336,8 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                         | sea_orm::sea_query::ColumnType::JsonBinary
                 ) {
                 expression.cast_as(sea_orm::sea_query::Alias::new("jsonb"))
-            } else if timestamp_text {
-                expression.cast_as(sea_orm::sea_query::Alias::new(
+            } else if let Some(literal) = timestamp_literal {
+                Expr::cust(literal).cast_as(sea_orm::sea_query::Alias::new(
                     if matches!(
                         physical.def().get_column_type(),
                         sea_orm::sea_query::ColumnType::TimestampWithTimeZone
@@ -362,8 +370,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
             .filter(M::id_column().eq(M::parse_id(id)?))
             .one(db)
             .await
-            .map_err(map_db_err)?
-            .ok_or(AuthError::UserNotFound);
+            .map_err(map_db_err);
     }
     let statement = if let Some(id) = id {
         let query = Query::update()
@@ -385,22 +392,24 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
     };
     let user = if let Some(predicate) = mysql_lookup {
         _ = db.execute_raw(statement).await.map_err(map_db_err)?;
-        user_query::<M>(db.get_database_backend())
+        let Some(user) = user_query::<M>(db.get_database_backend())
             .filter(predicate)
             .one(db)
             .await
             .map_err(map_db_err)?
-            .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?
+        else {
+            return Ok(None);
+        };
+        user
     } else {
-        let row = db
-            .query_one_raw(statement)
-            .await
-            .map_err(map_db_err)?
-            .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
+        let Some(row) = db.query_one_raw(statement).await.map_err(map_db_err)? else {
+            return Ok(None);
+        };
         M::from_query_result(&row, "").map_err(map_db_err)?
     };
     <M::ActiveModel as ActiveModelBehavior>::after_save(user, db, insert)
         .await
+        .map(Some)
         .map_err(map_db_err)
 }
 
@@ -587,7 +596,8 @@ where
             native_fields,
             Default::default(),
         )
-        .await?;
+        .await?
+        .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_user(&user, &hook_context).await?;
@@ -909,7 +919,8 @@ where
         update: alibi_core::store::PreparedUserUpdate,
     ) -> AuthResult<S::User> {
         self.update_user_prepared_with_connection(self.scoped_connection(), None, id, update)
-            .await
+            .await?
+            .ok_or(AuthError::UserNotFound)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -1083,7 +1094,8 @@ where
             id,
             alibi_core::store::PreparedUserUpdate::from_typed(&update),
         )
-        .await
+        .await?
+        .ok_or(AuthError::UserNotFound)
     }
 
     pub(super) async fn update_user_prepared_with_connection<C: ConnectionTrait>(
@@ -1092,7 +1104,7 @@ where
         tx: Option<&ScopedTransaction>,
         id: &str,
         mut update: alibi_core::store::PreparedUserUpdate,
-    ) -> AuthResult<S::User> {
+    ) -> AuthResult<Option<S::User>> {
         let user_id = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -1105,15 +1117,16 @@ where
                 return Err(cancelled_by_hook("user update"));
             }
         }
-        let Some(model) = user_query::<S::User>(connection.get_database_backend())
+        update.apply_adapter_transforms().await?;
+        // A missing row still reaches UPDATE so driver parameter errors remain
+        // observable; an empty active model never becomes an inserted user.
+        let model = user_query::<S::User>(connection.get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .one(connection)
             .await
             .map_err(map_db_err)?
-        else {
-            return Err(AuthError::UserNotFound);
-        };
-        update.apply_adapter_transforms().await?;
+            .map(IntoActiveModel::into_active_model)
+            .unwrap_or_else(ActiveModelTrait::default);
         let mut native = std::collections::BTreeMap::new();
         let mut prepared_fields = std::collections::BTreeSet::new();
         for (field, raw) in &update.data {
@@ -1144,7 +1157,7 @@ where
             _ = native.insert(column.to_string(), raw.clone());
         }
         let user = save_provider_user::<S::User, _>(
-            model.into_active_model(),
+            model,
             connection,
             None,
             Some(id),
@@ -1154,9 +1167,15 @@ where
         .await?;
         if tx.is_none() {
             for hook in self.hooks() {
-                hook.after_update_user(&user, &hook_context)
-                    .await
-                    .map_err(alibi_core::store::adapter::callback_error)?;
+                if let Some(user) = &user {
+                    hook.after_update_user(user, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                } else {
+                    hook.after_update_user_missing(id, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                }
             }
         }
         Ok(user)

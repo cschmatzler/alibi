@@ -93,6 +93,16 @@ pub trait DatabaseHooks<S: AuthSchema, B: HookBackend>: Send + Sync {
         Ok(())
     }
 
+    /// Observe the null result of an executed update. Before-hook cancellation
+    /// and input conversion failures do not invoke this callback.
+    async fn after_update_user_missing(
+        &self,
+        _id: &str,
+        _ctx: &DatabaseHookContext<'_, B>,
+    ) -> AuthResult<()> {
+        Ok(())
+    }
+
     async fn before_delete_user(
         &self,
         _user: &S::User,

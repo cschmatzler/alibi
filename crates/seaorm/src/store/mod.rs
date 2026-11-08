@@ -1194,10 +1194,12 @@ where
             .store
             .update_user_prepared_with_connection(self.tx, Some(self.tx), id, update)
             .await?;
-        self.pending_after
-            .push(AfterHook::UserUpdated(user.clone()))
-            .await;
-        Ok(user)
+        let event = user.as_ref().map_or_else(
+            || AfterHook::UserUpdateMissing(id.to_owned()),
+            |user| AfterHook::UserUpdated(user.clone()),
+        );
+        self.pending_after.push(event).await;
+        user.ok_or(AuthError::UserNotFound)
     }
     async fn update_account(
         &self,

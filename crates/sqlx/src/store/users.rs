@@ -688,7 +688,8 @@ where
         update: alibi_core::store::PreparedUserUpdate,
     ) -> AuthResult<S::User> {
         self.update_user_prepared_with_connection(self.exec(), None, id, update)
-            .await
+            .await?
+            .ok_or_else(record_not_updated)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -859,7 +860,8 @@ where
             id,
             alibi_core::store::PreparedUserUpdate::from_typed(&update),
         )
-        .await
+        .await?
+        .ok_or_else(record_not_updated)
     }
 
     pub(super) async fn update_user_prepared_with_connection(
@@ -868,7 +870,7 @@ where
         tx: Option<&SqlxTransaction>,
         id: &str,
         mut update: alibi_core::store::PreparedUserUpdate,
-    ) -> AuthResult<S::User> {
+    ) -> AuthResult<Option<S::User>> {
         let locator = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -918,14 +920,18 @@ where
             };
             active.set(column, value);
         }
-        let user = model::update_where::<S::User>(exec, &active, locator)
-            .await?
-            .ok_or_else(record_not_updated)?;
+        let user = model::update_where::<S::User>(exec, &active, locator).await?;
         if tx.is_none() {
             for hook in self.hooks() {
-                hook.after_update_user(&user, &hook_context)
-                    .await
-                    .map_err(alibi_core::store::adapter::callback_error)?;
+                if let Some(user) = &user {
+                    hook.after_update_user(user, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                } else {
+                    hook.after_update_user_missing(id, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                }
             }
         }
         Ok(user)

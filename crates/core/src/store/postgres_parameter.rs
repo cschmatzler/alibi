@@ -3,6 +3,24 @@ use crate::AuthResult;
 use crate::utils::json::{self, JsString, JsValue};
 use chrono::Datelike;
 
+/// Quote an unknown PostgreSQL literal for parse-time column conversion.
+/// Binary drivers cannot send raw text in a timestamp-typed bind parameter;
+/// casting a TEXT parameter instead can skip conversion on zero-row writes.
+#[must_use]
+pub fn quoted_literal(value: &str) -> String {
+    let mut literal = String::from("E'");
+    for character in value.chars() {
+        match character {
+            '\\' => literal.push_str("\\\\"),
+            '\'' => literal.push_str("\\'"),
+            '\0' => literal.push_str("\\000"),
+            character => literal.push(character),
+        }
+    }
+    literal.push('\'');
+    literal
+}
+
 pub fn text_parameter(value: &JsValue) -> AuthResult<Option<JsString>> {
     Ok(Some(match value {
         JsValue::Undefined | JsValue::Null => return Ok(None),
@@ -60,4 +78,25 @@ fn array_parameter(units: &mut Vec<u16>, values: &[JsValue]) -> AuthResult<()> {
     }
     units.push(u16::from(b'}'));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::quoted_literal;
+
+    #[test]
+    fn literals_escape_sql_delimiters_and_backslashes() {
+        assert_eq!(quoted_literal(""), "E''");
+        assert_eq!(quoted_literal("O'Reilly"), r"E'O\'Reilly'");
+        assert_eq!(quoted_literal(r"\path"), r"E'\\path'");
+        assert_eq!(
+            quoted_literal("'; DROP TABLE users; --"),
+            r"E'\'; DROP TABLE users; --'"
+        );
+    }
+
+    #[test]
+    fn literals_preserve_unicode_without_protocol_nul_bytes() {
+        assert_eq!(quoted_literal("雪\0date\n"), "E'雪\\000date\n'");
+    }
 }
