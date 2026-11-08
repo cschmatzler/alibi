@@ -83,13 +83,34 @@ mod session_native_tests {
     fn session_secondary_creation_clock_correction_does_not_mutate_model() {
         let physical = snapshot();
         let session = SessionView::from_secondary_snapshot(physical.clone().into()).unwrap();
-        let corrected = session
-            .secondary_snapshot_for_creation(Utc.timestamp_millis_opt(1_767_323_045_999).unwrap())
-            .unwrap();
-        let mut expected = physical.clone();
-        expected["createdAt"] = json!("2026-01-02T03:04:05.999Z");
-        assert_eq!(corrected, expected);
-        assert_eq!(session.secondary_snapshot().unwrap(), physical);
+        for (clock, literal) in [
+            (
+                Utc.timestamp_millis_opt(1_767_323_045_999).unwrap(),
+                "2026-01-02T03:04:05.999Z",
+            ),
+            (
+                Utc.timestamp_millis_opt(1_767_323_045_000).unwrap(),
+                "2026-01-02T03:04:05.000Z",
+            ),
+            (
+                Utc.timestamp_millis_opt(1_767_323_045_000).unwrap()
+                    + chrono::Duration::microseconds(987),
+                "2026-01-02T03:04:05.000Z",
+            ),
+        ] {
+            let corrected = session.secondary_snapshot_for_creation(clock).unwrap();
+            let mut expected = physical.clone();
+            expected["createdAt"] = json!(literal);
+            assert_eq!(corrected, expected);
+            let native = session
+                .secondary_snapshot_for_creation_with_native_output(
+                    clock,
+                    &crate::AdapterOutput::default(),
+                )
+                .unwrap();
+            assert_eq!(native, expected);
+            assert_eq!(session.secondary_snapshot().unwrap(), physical);
+        }
     }
 
     #[test]

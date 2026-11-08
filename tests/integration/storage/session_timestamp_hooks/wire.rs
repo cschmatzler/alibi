@@ -5,22 +5,39 @@ backend_tests!(
     session_creation_cache_wire_matches_source,
     session_refresh_cache_wire_matches_source,
     session_creation_zero_millisecond_cache_wire_matches_source,
-    session_refresh_zero_millisecond_cache_wire_matches_source
+    session_refresh_zero_millisecond_cache_wire_matches_source,
+    session_creation_zero_creation_clock_cache_wire_matches_source,
+    session_refresh_zero_creation_clock_cache_wire_matches_source
 );
 postgres_tests!(
     session_creation_cache_wire_matches_source,
     session_refresh_cache_wire_matches_source,
     session_creation_zero_millisecond_cache_wire_matches_source,
-    session_refresh_zero_millisecond_cache_wire_matches_source
+    session_refresh_zero_millisecond_cache_wire_matches_source,
+    session_creation_zero_creation_clock_cache_wire_matches_source,
+    session_refresh_zero_creation_clock_cache_wire_matches_source
 );
 
-async fn check<B: Backend>(db: Db, operation: &str, zero_millis: bool) -> TestResult {
+enum ClockFixture {
+    Normal,
+    ZeroMillis,
+    ZeroCreatedAt,
+}
+
+async fn check<B: Backend>(db: Db, operation: &str, clocks: ClockFixture) -> TestResult {
+    let zero_millis = !matches!(clocks, ClockFixture::Normal);
     let secret = "session-timestamp-hooks-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value = serde_json::from_str(if zero_millis {
-        include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire-zero-ms.json")
-    } else {
-        include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire.json")
+    let fixture: Value = serde_json::from_str(match clocks {
+        ClockFixture::Normal => {
+            include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire.json")
+        }
+        ClockFixture::ZeroMillis => {
+            include_str!("../../../fixtures/session-timestamp-hooks-secondary-wire-zero-ms.json")
+        }
+        ClockFixture::ZeroCreatedAt => include_str!(
+            "../../../fixtures/session-timestamp-hooks-secondary-wire-zero-created-at.json"
+        ),
     })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     let backend = if db.is_postgres() {
@@ -85,9 +102,16 @@ async fn check<B: Backend>(db: Db, operation: &str, zero_millis: bool) -> TestRe
         active_organization_id: None,
         active_team_id: None,
     };
+    if let Some(created_at) = case.get("created_at_input") {
+        _ = create.additional_fields.insert(
+            "createdAt".into(),
+            JsValue::Date(created_at.as_str().unwrap().parse()?),
+        );
+    }
     if operation == "create" {
         create.expires_at = case["input"].as_str().unwrap().parse()?;
         let session = auth.store().create_session(create).await?;
+        assert_creation_clock(&session, case)?;
         assert_eq!(
             native::to_value(&JsValue::Date(session.expires_at()))?,
             case["output"]
@@ -95,6 +119,7 @@ async fn check<B: Backend>(db: Db, operation: &str, zero_millis: bool) -> TestRe
     } else {
         assert_eq!(operation, "update");
         let original = auth.store().create_session(create).await?;
+        assert_creation_clock(&original, case)?;
         let result = if zero_millis {
             let mut fields = alibi::field_policy::FieldValues::new();
             _ = fields.insert(
@@ -122,15 +147,34 @@ async fn check<B: Backend>(db: Db, operation: &str, zero_millis: bool) -> TestRe
         .get(&token)
         .await?
         .ok_or("source cache token missing")?;
-    if let Some(updated_at) = case.get("updated_at_input") {
-        assert_eq!(
-            native::to_value(&native::parse_value(&raw)?["session"]["updatedAt"])?,
-            *updated_at
-        );
+    for (input, name) in [
+        ("updated_at_input", "updatedAt"),
+        ("created_at_input", "createdAt"),
+    ] {
+        if let Some(value) = case.get(input) {
+            assert_eq!(
+                native::to_value(&native::parse_value(&raw)?["session"][name])?,
+                *value
+            );
+        }
     }
     assert_payload(&raw, case["wire"].as_str().unwrap(), backend, operation)?;
     drop(auth);
     B::close(connection).await
+}
+
+fn assert_creation_clock<S: AuthSession>(session: &S, case: &Value) -> TestResult {
+    if let Some(expected) = case.get("created_at_input") {
+        let clock = expected.as_str().unwrap().parse()?;
+        let plain = session.secondary_snapshot_for_creation(clock)?;
+        assert_eq!(native::to_value(&plain["createdAt"])?, *expected);
+        let native_output = session.secondary_snapshot_for_creation_with_native_output(
+            clock,
+            &alibi::AdapterOutput::default(),
+        )?;
+        assert_eq!(native::to_value(&native_output["createdAt"])?, *expected);
+    }
+    Ok(())
 }
 
 pub(super) fn assert_payload(
@@ -194,20 +238,32 @@ pub(super) fn assert_payload(
 }
 
 async fn session_creation_cache_wire_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, "create", false).await
+    check::<B>(db, "create", ClockFixture::Normal).await
 }
 async fn session_refresh_cache_wire_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, "update", false).await
+    check::<B>(db, "update", ClockFixture::Normal).await
 }
 
 async fn session_creation_zero_millisecond_cache_wire_matches_source<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, "create", true).await
+    check::<B>(db, "create", ClockFixture::ZeroMillis).await
 }
 
 async fn session_refresh_zero_millisecond_cache_wire_matches_source<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, "update", true).await
+    check::<B>(db, "update", ClockFixture::ZeroMillis).await
+}
+
+async fn session_creation_zero_creation_clock_cache_wire_matches_source<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, "create", ClockFixture::ZeroCreatedAt).await
+}
+
+async fn session_refresh_zero_creation_clock_cache_wire_matches_source<B: Backend>(
+    db: Db,
+) -> TestResult {
+    check::<B>(db, "update", ClockFixture::ZeroCreatedAt).await
 }

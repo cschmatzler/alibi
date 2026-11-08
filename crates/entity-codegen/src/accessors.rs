@@ -139,17 +139,6 @@ pub fn auth_session_impl(
     let has = |name: &str| has_field(fields, name);
     let secondary_codec = if secondary {
         let codec = crate::secondary::session_secondary_codec(fields, entity_fields, core_root);
-        let created_at_field = fields
-            .named
-            .iter()
-            .find(|field| {
-                field
-                    .ident
-                    .as_ref()
-                    .is_some_and(|name| name == "created_at")
-            })
-            .expect("validated session created_at field");
-        let created_at_type = &created_at_field.ty;
         let created_at_key = &entity_fields
             .iter()
             .find(|field| field.ident == "created_at")
@@ -161,9 +150,9 @@ pub fn auth_session_impl(
                 &self,
                 created_at: ::chrono::DateTime<::chrono::Utc>,
             ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
-                let mut model = self.clone();
-                model.created_at = <#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at);
-                model.secondary_snapshot()
+                let mut snapshot = self.secondary_snapshot()?;
+                snapshot[#created_at_key] = #core_root::utils::json::JsValue::Date(created_at);
+                Ok(snapshot)
             }
             fn secondary_snapshot_for_creation_with_native_output(
                 &self,
@@ -171,9 +160,7 @@ pub fn auth_session_impl(
                 native: &#core_root::AdapterOutput,
             ) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
                 let mut snapshot = self.secondary_snapshot_with_native_output(native)?;
-                snapshot[#created_at_key] = #core_root::utils::json::to_js_value(
-                    &<#created_at_type as #core_root::entity::AuthTimestamp>::from_utc(created_at),
-                )?;
+                snapshot[#created_at_key] = #core_root::utils::json::JsValue::Date(created_at);
                 Ok(snapshot)
             }
         }
