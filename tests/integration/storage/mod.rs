@@ -64,6 +64,7 @@ mod session_update_clock;
 mod user_timestamp_hooks;
 mod user_update_missing_phases;
 mod account_timestamp_hooks;
+mod account_update_missing_phases;
 mod session_secondary_clock;
 mod native_api_keys;
 mod native_device_codes;

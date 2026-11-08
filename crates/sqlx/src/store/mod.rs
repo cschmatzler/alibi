@@ -1833,10 +1833,12 @@ where
             .store
             .update_account_with_connection(Exec::tx(self.tx), Some(self.tx), id, update)
             .await?;
-        self.pending_after
-            .push(AfterHook::AccountUpdated(account.clone()))
-            .await;
-        Ok(account)
+        let event = account.as_ref().map_or_else(
+            || AfterHook::AccountUpdateMissing(id.to_owned()),
+            |account| AfterHook::AccountUpdated(account.clone()),
+        );
+        self.pending_after.push(event).await;
+        account.ok_or_else(|| alibi_core::AuthError::not_found("Account not found"))
     }
     async fn lock_sso_provider(
         &self,

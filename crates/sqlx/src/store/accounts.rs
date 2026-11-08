@@ -1,5 +1,4 @@
 use super::SqlxStore;
-use crate::error::record_not_updated;
 use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxAccountModel};
@@ -170,7 +169,8 @@ where
 
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account> {
         self.update_account_with_connection(self.exec(), None, id, update)
-            .await
+            .await?
+            .ok_or_else(|| AuthError::not_found("Account not found"))
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
@@ -213,8 +213,8 @@ where
         tx: Option<&SqlxTransaction>,
         id: &str,
         mut update: UpdateAccount,
-    ) -> AuthResult<S::Account> {
-        _ = <S::Account as SqlxAccountModel>::parse_id(id)?;
+    ) -> AuthResult<Option<S::Account>> {
+        let locator = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -225,11 +225,6 @@ where
                 return Err(cancelled_by_hook("account update"));
             }
         }
-        let Some(model) = self.find_account_by_id_with(exec, id).await? else {
-            return Err(alibi_core::error::AuthError::not_found("Account not found"));
-        };
-
-        let mut active = model.into_active();
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.take_timestamp_input("accessTokenExpiresAt", &mut update.access_token_expires_at);
         fields.take_timestamp_input(
@@ -237,15 +232,24 @@ where
             &mut update.refresh_token_expires_at,
         );
         fields.apply_adapter_transforms_async().await?;
+        let mut active = self
+            .find_account_by_id_with(exec, id)
+            .await?
+            .map(SqlxModel::into_active)
+            .unwrap_or_default();
         S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
         stage_account_fields::<S::Account>(exec, &mut active, &fields).await?;
 
-        let account = model::update::<S::Account>(exec, &active)
-            .await?
-            .ok_or_else(record_not_updated)?;
+        let account = model::update_where::<S::Account>(exec, &active, locator).await?;
         if tx.is_none() {
             for hook in self.hooks() {
-                hook.after_update_account(&account, &hook_context).await?;
+                if let Some(account) = &account {
+                    hook.after_update_account(account, &hook_context).await?;
+                } else {
+                    hook.after_update_account_missing(id, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                }
             }
         }
         Ok(account)

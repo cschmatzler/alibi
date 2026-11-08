@@ -8,10 +8,15 @@ import { betterAuth } from "../reference-server/node_modules/better-auth/dist/in
 import { getMigrations } from "../reference-server/node_modules/better-auth/dist/db/get-migration.mjs";
 import { admin as adminPlugin } from "../reference-server/node_modules/better-auth/dist/plugins/index.mjs";
 import { runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
+import { createMysqlDatabase } from "./support/mysql-database.mjs";
 
-const transactions = process.argv[2] === "--transactions";
-const failures = process.argv[2] === "--failures";
-assert.ok(process.argv[2] === undefined || transactions || failures, "unknown fixture output mode");
+const mysqlOnly = ["--account-mysql", "--account-mysql-transactions", "--account-mysql-failures"].includes(process.argv[2]);
+const account = mysqlOnly || ["--account", "--account-transactions", "--account-failures"].includes(process.argv[2]);
+const transactions = ["--transactions", "--account-transactions", "--account-mysql-transactions"].includes(process.argv[2]);
+const failures = ["--failures", "--account-failures", "--account-mysql-failures"].includes(process.argv[2]);
+assert.ok(process.argv[2] === undefined || transactions || failures || account, "unknown fixture output mode");
+const model = account ? "account" : "user";
+const dateField = account ? "accessTokenExpiresAt" : "banExpires";
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
 assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
 assert.equal(pin.version, "1.7.18");
@@ -34,8 +39,20 @@ await admin.query(`CREATE SCHEMA ${schema}`);
 const pool = new pg.Pool({ connectionString: process.env.BETTER_AUTH_TEST_POSTGRES_URL, options: `-csearch_path=${schema}`, max: 1 });
 const postgresDb = new Kysely({ dialect: new PostgresDialect({ pool }) });
 const profiles = [];
+let mysql;
 try {
-  for (const [backend, db] of [["sqlite", sqliteDb], ["postgres", postgresDb]]) {
+  if (mysqlOnly) mysql = await createMysqlDatabase();
+  for (const [backend, db] of mysqlOnly ? [["mysql", mysql.db]] : [["sqlite", sqliteDb], ["postgres", postgresDb]]) {
+    let driverFoundRows;
+    if (mysqlOnly) {
+      await db.schema.createTable("matched_rows_probe").addColumn("id", "integer", column => column.primaryKey()).addColumn("value", "integer").execute();
+      await db.insertInto("matched_rows_probe").values({ id: 1, value: 1 }).execute();
+      const unchanged = await db.updateTable("matched_rows_probe").set({ value: 1 }).where("id", "=", 1).executeTakeFirst();
+      const missing = await db.updateTable("matched_rows_probe").set({ value: 1 }).where("id", "=", 2).executeTakeFirst();
+      assert.equal(unchanged.numUpdatedRows, 1n);
+      assert.equal(missing.numUpdatedRows, 0n);
+      driverFoundRows = { unchanged: Number(unchanged.numUpdatedRows), missing: Number(missing.numUpdatedRows) };
+    }
     let action;
     let events = [];
     function event(phase, value) {
@@ -43,7 +60,7 @@ try {
     }
     const options = {
       baseURL: "http://localhost", secret: "user-update-missing-phases-secret-at-least-32", database: { type: backend, db, transaction: transactions || failures }, plugins: [adminPlugin()],
-      user: { additionalFields: { banExpires: { type: "date", required: false,
+      [model]: { additionalFields: { [dateField]: { type: "date", required: false,
         onUpdate: () => { events.push({ phase: "onUpdate" }); return "2031-02-03T04:05:06.123987Z"; },
         transform: { input: async value => {
           event("input", value);
@@ -53,20 +70,22 @@ try {
           return value;
         } },
       } } },
-      databaseHooks: { user: { update: {
-        before: async data => { event("before", data.banExpires); if (action === "before-cancel") return false; },
+      databaseHooks: { [model]: { update: {
+        before: async data => { event("before", data[dateField]); if (action === "before-cancel") return false; },
         after: async data => { event("after", data); if (action.endsWith("after-error")) throw new Error("missing after veto"); },
       } } },
     };
-    await (await getMigrations(options)).runMigrations();
+    const migrations = await getMigrations(options);
+    const schemaSql = mysqlOnly ? await migrations.compileMigrations() : undefined;
+    await migrations.runMigrations();
     const { internalAdapter, adapter } = await betterAuth(options).$context;
     const cases = [];
     for (action of failures ? ["driver-error", "driver-quote", "after-error", "commit-after-error", "rollback-after-error"] : transactions ? ["commit", "rollback"] : ["string", "omitted", "null", "before-cancel", "input-error"]) {
       events = [];
-      const input = action === "omitted" ? { banned: false } : { banExpires: action === "null" ? null : "2031-02-03T04:05:06.123987Z" };
+      const input = action === "omitted" ? account ? {} : { banned: false } : { [dateField]: action === "null" ? null : "2031-02-03T04:05:06.123987Z" };
       let outcome;
       try {
-        const update = () => internalAdapter.updateUser("missing-timestamp-user", input);
+        const update = () => account ? internalAdapter.updateAccount("missing-timestamp-account", input) : internalAdapter.updateUser("missing-timestamp-user", input);
         const result = transactions || action.startsWith("commit") || action.startsWith("rollback") ? await runWithTransaction(adapter, async () => {
           const result = await update();
           assert.equal(result, null);
@@ -78,26 +97,27 @@ try {
         outcome = { result };
       } catch (error) {
         if (action.startsWith("driver-")) {
-          assert.equal(backend, "postgres");
-          assert.equal(error.code, "22007");
+          assert.ok(backend === "postgres" || backend === "mysql");
+          assert.equal(error.sqlState ?? error.code, "22007");
           assert.match(error.message, action === "driver-quote" ? /DROP TABLE user/ : /not-a-timestamp/);
         } else {
           assert.ok(action === "input-error" || action.startsWith("rollback") || action.endsWith("after-error"));
           assert.equal(error.message, action.startsWith("rollback") ? "missing update rollback" : action.endsWith("after-error") ? "missing after veto" : "date input veto");
         }
-        outcome = { error: error.message, ...(failures ? { code: error.code ?? null } : {}) };
+        outcome = { error: error.message, ...(failures ? { code: mysqlOnly ? error.sqlState ?? null : error.code ?? null } : {}) };
       }
-      const rows = await db.selectFrom("user").select("id").execute();
+      const rows = await db.selectFrom(model).select("id").execute();
       assert.deepEqual(rows, []);
       cases.push({ action, input, events, outcome, rows: rows.length });
     }
-    profiles.push({ backend, cases });
+    profiles.push({ backend, ...(mysqlOnly ? { schema_sql: schemaSql, driver_found_rows: driverFoundRows } : {}), cases });
   }
-  if (!failures) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = failures ? "user-update-missing-failures" : transactions ? "user-update-missing-transactions" : "user-update-missing-phases";
+  if (!failures && !mysqlOnly) assert.deepEqual(profiles[0].cases, profiles[1].cases);
+  const filename = `${model}-update-missing-${mysqlOnly ? "mysql-" : ""}${failures ? "failures" : transactions ? "transactions" : "phases"}`;
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
-  console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL missing-user update callback cases`);
+  console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual ${profiles.map(profile => profile.backend).join("/")} missing-${model} update callback cases`);
 } finally {
+  await mysql?.close();
   await sqliteDb.destroy();
   await postgresDb.destroy();
   await admin.query(`DROP SCHEMA ${schema} CASCADE`);

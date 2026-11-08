@@ -48,16 +48,12 @@ async fn save_account<M: SeaOrmAccountModel, C: ConnectionTrait>(
     db: &C,
     id: Option<&str>,
     native: Vec<(M::Column, sea_orm::Value)>,
-) -> AuthResult<M> {
+) -> AuthResult<Option<M>> {
     use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
     use sea_orm::{ActiveModelBehavior, ActiveValue, DbBackend, EntityName, Iden, Iterable};
     let insert = id.is_none();
-    if native.is_empty() {
-        return if insert {
-            active.insert(db).await.map_err(map_db_err)
-        } else {
-            active.update(db).await.map_err(map_db_err)
-        };
+    if native.is_empty() && insert {
+        return active.insert(db).await.map(Some).map_err(map_db_err);
     }
     active = ActiveModelBehavior::before_save(active, db, insert)
         .await
@@ -141,32 +137,36 @@ async fn save_account<M: SeaOrmAccountModel, C: ConnectionTrait>(
         }
         backend.build(&query)
     };
-    let missing = || {
-        map_db_err(if insert {
-            sea_orm::DbErr::RecordNotInserted
-        } else {
-            sea_orm::DbErr::RecordNotUpdated
-        })
-    };
     let account = if backend == DbBackend::MySql {
         let result = db.execute_raw(statement).await.map_err(map_db_err)?;
-        let lookup = mysql_id.unwrap_or_else(|| result.last_insert_id().into());
-        M::Entity::find()
-            .filter(M::id_column().eq(lookup))
+        // SQLx enables FOUND_ROWS: zero means no matched account, not an
+        // unchanged value. UPDATE must never fall back to an insert identifier.
+        if !insert && result.rows_affected() == 0 {
+            return Ok(None);
+        }
+        let lookup = if let Some(id) = id {
+            M::id_column().eq(M::parse_id(id)?)
+        } else {
+            M::id_column().eq(mysql_id.unwrap_or_else(|| result.last_insert_id().into()))
+        };
+        let Some(account) = M::Entity::find()
+            .filter(lookup)
             .one(db)
             .await
             .map_err(map_db_err)?
-            .ok_or_else(missing)?
+        else {
+            return Ok(None);
+        };
+        account
     } else {
-        let row = db
-            .query_one_raw(statement)
-            .await
-            .map_err(map_db_err)?
-            .ok_or_else(missing)?;
+        let Some(row) = db.query_one_raw(statement).await.map_err(map_db_err)? else {
+            return Ok(None);
+        };
         M::from_query_result(&row, "").map_err(map_db_err)?
     };
     <M::ActiveModel as ActiveModelBehavior>::after_save(account, db, insert)
         .await
+        .map(Some)
         .map_err(map_db_err)
 }
 
@@ -218,7 +218,9 @@ where
             .transpose()?;
         let mut active = S::Account::new_active(id, create_account, now);
         let native = stage_account_fields::<S::Account, _>(db, &mut active, &fields).await?;
-        let account = save_account::<S::Account, _>(active, db, None, native).await?;
+        let account = save_account::<S::Account, _>(active, db, None, native)
+            .await?
+            .ok_or_else(|| map_db_err(sea_orm::DbErr::RecordNotInserted))?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_account(&account, &hook_context).await?;
@@ -280,7 +282,8 @@ where
 
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account> {
         self.update_account_with_connection(self.scoped_connection(), None, id, update)
-            .await
+            .await?
+            .ok_or_else(|| AuthError::not_found("Account not found"))
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
@@ -327,7 +330,7 @@ where
         tx: Option<&ScopedTransaction>,
         id: &str,
         mut update: UpdateAccount,
-    ) -> AuthResult<S::Account> {
+    ) -> AuthResult<Option<S::Account>> {
         let account_id = <S::Account as SeaOrmAccountModel>::parse_id(id)?;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -339,16 +342,6 @@ where
                 return Err(cancelled_by_hook("account update"));
             }
         }
-        let Some(model) = <S::Account as SeaOrmAccountModel>::Entity::find()
-            .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
-            .one(connection)
-            .await
-            .map_err(map_db_err)?
-        else {
-            return Err(alibi_core::error::AuthError::not_found("Account not found"));
-        };
-
-        let mut active = model.into_active_model();
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.take_timestamp_input("accessTokenExpiresAt", &mut update.access_token_expires_at);
         fields.take_timestamp_input(
@@ -356,13 +349,26 @@ where
             &mut update.refresh_token_expires_at,
         );
         fields.apply_adapter_transforms_async().await?;
+        let mut active = <S::Account as SeaOrmAccountModel>::Entity::find()
+            .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .map(IntoActiveModel::into_active_model)
+            .unwrap_or_else(ActiveModelTrait::default);
         S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
         let native =
             stage_account_fields::<S::Account, _>(connection, &mut active, &fields).await?;
         let account = save_account::<S::Account, _>(active, connection, Some(id), native).await?;
         if tx.is_none() {
             for hook in self.hooks() {
-                hook.after_update_account(&account, &hook_context).await?;
+                if let Some(account) = &account {
+                    hook.after_update_account(account, &hook_context).await?;
+                } else {
+                    hook.after_update_account_missing(id, &hook_context)
+                        .await
+                        .map_err(alibi_core::store::adapter::callback_error)?;
+                }
             }
         }
         Ok(account)

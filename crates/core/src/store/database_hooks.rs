@@ -211,6 +211,16 @@ pub trait DatabaseHooks<S: AuthSchema, B: HookBackend>: Send + Sync {
         Ok(())
     }
 
+    /// Observe the null result of an executed account update. Vetoes and
+    /// parameter conversion failures do not invoke this callback.
+    async fn after_update_account_missing(
+        &self,
+        _id: &str,
+        _ctx: &DatabaseHookContext<'_, B>,
+    ) -> AuthResult<()> {
+        Ok(())
+    }
+
     async fn before_delete_account(
         &self,
         _account: &S::Account,

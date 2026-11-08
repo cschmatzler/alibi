@@ -24,14 +24,18 @@ postgres_tests!(
 );
 
 #[derive(Default)]
-struct Trace {
-    action: String,
-    events: Vec<Value>,
+pub(super) struct Trace {
+    pub(super) action: String,
+    pub(super) events: Vec<Value>,
 }
 
-type SharedTrace = Arc<Mutex<Trace>>;
+pub(super) type SharedTrace = Arc<Mutex<Trace>>;
 
-fn event(trace: &SharedTrace, phase: &str, value: Option<&JsValue>) -> alibi::AuthResult<()> {
+pub(super) fn event(
+    trace: &SharedTrace,
+    phase: &str,
+    value: Option<&JsValue>,
+) -> alibi::AuthResult<()> {
     let kind = match value {
         None | Some(JsValue::Undefined) => "undefined",
         Some(JsValue::Null) => "null",
@@ -56,7 +60,10 @@ fn event(trace: &SharedTrace, phase: &str, value: Option<&JsValue>) -> alibi::Au
     Ok(())
 }
 
-fn transform(trace: &SharedTrace, value: Option<JsValue>) -> alibi::AuthResult<Option<JsValue>> {
+pub(super) fn transform(
+    trace: &SharedTrace,
+    value: Option<JsValue>,
+) -> alibi::AuthResult<Option<JsValue>> {
     event(trace, "input", value.as_ref())?;
     if trace.lock().unwrap().action == "input-error" {
         return Err(AuthError::internal("date input veto"));

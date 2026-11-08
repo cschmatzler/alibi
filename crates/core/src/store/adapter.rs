@@ -58,6 +58,7 @@ pub enum AfterHook<S: AuthSchema> {
     UserUpdateMissing(String),
     AccountCreated(S::Account),
     AccountUpdated(S::Account),
+    AccountUpdateMissing(String),
     SessionCreated(S::Session),
     SessionPublication(Arc<dyn crate::session::SessionPublication>),
     SessionUpdated(S::Session),
@@ -96,6 +97,10 @@ impl<S: AuthSchema> AfterHook<S> {
                 .map_err(callback_error),
             Self::AccountCreated(account) => hook.after_create_account(account, ctx).await,
             Self::AccountUpdated(account) => hook.after_update_account(account, ctx).await,
+            Self::AccountUpdateMissing(id) => hook
+                .after_update_account_missing(id, ctx)
+                .await
+                .map_err(callback_error),
             Self::SessionCreated(session) => hook
                 .after_create_session(session, ctx)
                 .await
