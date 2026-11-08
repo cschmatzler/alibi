@@ -265,7 +265,32 @@ async fn stored_date(
 
 async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: bool) -> TestResult {
     let now = Utc::now().trunc_subsecs(6);
+    let clock_floor = now.trunc_subsecs(3);
     let expires = now + Duration::minutes(30);
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../../fixtures/user-timestamp-parameters.json"
+    ))?;
+    assert_eq!(fixture["better_auth"], "1.7.18");
+    let backend = if raw.is_postgres() {
+        "postgres"
+    } else {
+        "sqlite"
+    };
+    let profile = fixture["profiles"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|profile| profile["backend"] == backend)
+        .unwrap();
+    let date = profile["cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|case| case["action"] == "date")
+        .unwrap();
+    // User dates follow the source Date carrier; account/session expiries below
+    // retain the native sub-millisecond timestamp coverage.
+    let ban_expiry: DateTime<Utc> = date["input"].as_str().unwrap().parse()?;
     let historical: DateTime<Utc> = "2026-10-04T12:00:00Z".parse()?;
     let mut input = CreateUser::new().with_email("synthetic@timestamps.test");
     input.created_at = Some(historical);
@@ -287,22 +312,37 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
             &user_id,
             UpdateUser {
                 banned: Some(true),
-                ban_expires: Some(Some(expires)),
+                ban_expires: Some(Some(ban_expiry)),
                 ..Default::default()
             },
         )
         .await?;
-    assert_eq!(user.ban_expires(), Some(expires));
+    assert_eq!(user.ban_expires(), Some(ban_expiry));
     assert_eq!(
         stored_date(raw, "user", "banExpires", &user_id, naive).await?,
-        Some(expires)
+        Some(ban_expiry)
     );
-    assert!(user.updated_at() >= now);
+    assert!(user.updated_at() >= clock_floor);
+    assert_eq!(user.updated_at().timestamp_subsec_nanos() % 1_000_000, 0);
     let user = store
         .update_user(
             &user_id,
             UpdateUser {
                 banned: Some(false),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(user.ban_expires(), Some(ban_expiry));
+    assert_eq!(
+        stored_date(raw, "user", "banExpires", &user_id, naive).await?,
+        Some(ban_expiry)
+    );
+    let user = store
+        .update_user(
+            &user_id,
+            UpdateUser {
+                ban_expires: Some(None),
                 ..Default::default()
             },
         )
@@ -354,7 +394,9 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         stored_date(raw, "account", "refreshTokenExpiresAt", &account_id, naive).await?,
         account.refresh_token_expires_at()
     );
-    assert!(account.created_at() >= now && account.updated_at() >= now);
+    assert!(account.created_at() >= clock_floor && account.updated_at() >= clock_floor);
+    assert_eq!(account.created_at().timestamp_subsec_nanos() % 1_000_000, 0);
+    assert_eq!(account.updated_at().timestamp_subsec_nanos() % 1_000_000, 0);
 
     let session = store
         .create_session(CreateSession {
@@ -380,7 +422,9 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
         1
     );
     assert_eq!(session.expires_at(), expires);
-    assert!(session.created_at() >= now && session.updated_at() >= now);
+    assert!(session.created_at() >= clock_floor && session.updated_at() >= clock_floor);
+    assert_eq!(session.created_at().timestamp_subsec_nanos() % 1_000_000, 0);
+    assert_eq!(session.updated_at().timestamp_subsec_nanos() % 1_000_000, 0);
     assert_eq!(
         stored_date(raw, "session", "expiresAt", &session_id, naive).await?,
         Some(expires)
