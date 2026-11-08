@@ -3,6 +3,7 @@ use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 backend_tests!(oauth_consent_read_preserves_owned_grant_and_rejects_foreign_owner);
+postgres_tests!(oauth_consent_read_preserves_owned_grant_and_rejects_foreign_owner);
 async fn oauth_consent_read_preserves_owned_grant_and_rejects_foreign_owner<B: Backend>(
     db: Db,
 ) -> TestResult {

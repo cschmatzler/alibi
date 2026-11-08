@@ -656,7 +656,10 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
         &self,
         data: alibi_core::store::CreateOAuthConsent,
     ) -> AuthResult<alibi_core::store::OAuthConsent> {
-        let fields = super::entities::oauth_consent::Model::columns_from_metadata(data.metadata)?;
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(
+            data.metadata,
+            self.scoped_connection().get_database_backend(),
+        )?;
         let mut active = super::entities::oauth_consent::ActiveModel {
             id: Set(self
                 .generated_id(&self.db, "oauthConsent", "oauthConsent", "id")
@@ -706,8 +709,11 @@ impl<S: AuthSchema> OAuthClientStore for SeaOrmStore<S> {
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        super::entities::oauth_consent::Model::columns_from_metadata(metadata)?
-            .stage_metadata(&mut active);
+        super::entities::oauth_consent::Model::columns_from_metadata(
+            metadata,
+            self.scoped_connection().get_database_backend(),
+        )?
+        .stage_metadata(&mut active);
         active.updated_at = Set(updated_at);
         active
             .update(self.scoped_connection())

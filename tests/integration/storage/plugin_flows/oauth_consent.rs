@@ -8,6 +8,7 @@ use sha2::Digest as _;
 #[path = "../../../fixtures/oauth/consent-reference.rs"]
 mod consent_reference;
 backend_tests!(oauth_consent_persists_grant_and_issues_bound_code);
+postgres_tests!(oauth_consent_persists_grant_and_issues_bound_code);
 async fn oauth_consent_persists_grant_and_issues_bound_code<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let references = Arc::new(consent_reference::ConsentReferencePolicy::default());

@@ -3,6 +3,7 @@ use super::*;
 use alibi::endpoint::{EndpointOptions, ServerEndpoint};
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 backend_tests!(oauth_consent_update_persists_allowed_scopes_without_changing_grant_identity);
+postgres_tests!(oauth_consent_update_persists_allowed_scopes_without_changing_grant_identity);
 async fn oauth_consent_update_persists_allowed_scopes_without_changing_grant_identity<
     B: Backend,
 >(

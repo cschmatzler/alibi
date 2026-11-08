@@ -734,8 +734,11 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         );
         active.set("clientId", data.client_id);
         active.set("userId", data.user_id);
-        let fields = super::entities::oauth_consent::Model::columns_from_metadata(data.metadata)?
-            .into_active();
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(
+            data.metadata,
+            self.exec().engine(),
+        )?
+        .into_active();
         for (column, value) in fields.present() {
             if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
                 active.set(column, value.clone());
@@ -776,8 +779,11 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
     ) -> AuthResult<Option<alibi_core::store::OAuthConsent>> {
         let mut active = ActiveRow::new();
         active.set("id", id.to_owned());
-        let fields =
-            super::entities::oauth_consent::Model::columns_from_metadata(metadata)?.into_active();
+        let fields = super::entities::oauth_consent::Model::columns_from_metadata(
+            metadata,
+            self.exec().engine(),
+        )?
+        .into_active();
         for (column, value) in fields.present() {
             if !["id", "clientId", "userId", "createdAt", "updatedAt"].contains(&column) {
                 active.set(column, value.clone());
