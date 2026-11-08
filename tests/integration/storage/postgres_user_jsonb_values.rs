@@ -22,7 +22,7 @@ mod sqlx_user {
     }
 }
 
-struct SqlxSchema;
+pub(super) struct SqlxSchema;
 impl AuthSchema for SqlxSchema {
     type User = sqlx_user::Model;
     type Session = alibi::sqlx::store::entities::session::Model;
@@ -56,7 +56,7 @@ mod seaorm_user {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-struct SeaOrmSchema;
+pub(super) struct SeaOrmSchema;
 impl AuthSchema for SeaOrmSchema {
     type User = seaorm_user::Model;
     type Session = alibi::seaorm::store::entities::session::Model;

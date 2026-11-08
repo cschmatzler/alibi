@@ -21,18 +21,23 @@ const pool = new pg.Pool({ connectionString: process.env.BETTER_AUTH_TEST_POSTGR
 const db = new Kysely({ dialect: new PostgresDialect({ pool }) });
 const cases = [];
 const operation = process.argv[2] ?? "create";
-assert.ok(["create", "update"].includes(operation));
+assert.ok(["create", "update", "signup"].includes(operation));
 try {
   const options = {
     baseURL: "http://localhost", secret: "postgres-user-jsonb-values-secret-at-least-32", database: { type: "postgres", db },
     user: { modelName: "applicationUser", additionalFields: { metadata: { type: "json", required: false } } },
   };
+  if (operation === "signup") {
+    options.emailAndPassword = { enabled: true };
+    options.rateLimit = { enabled: false };
+  }
   const migrations = await getMigrations(options);
   const schemaSql = await migrations.compileMigrations();
   await migrations.runMigrations();
   const type = await pool.query("SELECT data_type FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'applicationUser' AND column_name = 'metadata'", [schema]);
   assert.equal(type.rows[0].data_type, "jsonb");
-  const { internalAdapter } = await betterAuth(options).$context;
+  const auth = betterAuth(options);
+  const { internalAdapter } = await auth.$context;
   for (const [name, input] of [
     ["object", { nested: [true, null, 1e20] }], ["array", ["a", { nested: true }, null]], ["empty-array", []],
     ["literal-string", "literal-text"], ["quoted-string", '"quoted"'], ["object-string", '{"nested":true}'],
@@ -40,6 +45,24 @@ try {
     ["boolean", true], ["number", 1e20], ["null", null],
   ]) {
     const email = `${name}@jsonb-values.example.com`;
+    if (operation === "signup") {
+      const response = await auth.handler(new Request("http://localhost/api/auth/sign-up/email", {
+        method: "POST", headers: { origin: "http://localhost", "content-type": "application/json" },
+        body: JSON.stringify({ name: "JSONB values", email, password: "Password123!", metadata: input }),
+      }));
+      const body = await response.json();
+      const readback = await internalAdapter.findUserByEmail(email);
+      const { rows } = await pool.query('SELECT metadata, metadata IS NULL AS sql_null FROM "applicationUser" WHERE email = $1', [email]);
+      const counts = await pool.query('SELECT (SELECT count(*)::int FROM "applicationUser") AS users, (SELECT count(*)::int FROM account) AS accounts, (SELECT count(*)::int FROM session) AS sessions');
+      assert.equal(rows.length, response.status === 200 ? 1 : 0);
+      assert.equal(counts.rows[0].users, counts.rows[0].accounts);
+      assert.equal(counts.rows[0].users, counts.rows[0].sessions);
+      cases.push({ name, input, status: response.status,
+        output: response.status === 200 ? { metadata: body.user.metadata, has_token: typeof body.token === "string" } : body,
+        readback: readback ? { metadata: readback.user.metadata } : null,
+        row_count: rows.length, stored: rows[0] ?? null, counts: counts.rows[0] });
+      continue;
+    }
     const original = operation === "update"
       ? await internalAdapter.createUser({ name: "JSONB values", email, emailVerified: false, metadata: { original: true } })
       : null;
@@ -63,7 +86,7 @@ try {
       row_count: rows.length, stored: rows[0] ?? null });
   }
   assert.equal(cases.length, 12);
-  const filename = operation === "create" ? "postgres-user-jsonb-values.json" : "postgres-user-jsonb-updates.json";
+  const filename = operation === "create" ? "postgres-user-jsonb-values.json" : operation === "update" ? "postgres-user-jsonb-updates.json" : "postgres-user-jsonb-signup.json";
   await writeFile(new URL(`../../fixtures/${filename}`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", physical_type: "jsonb", schema_sql: schemaSql, cases }) + "\n");
   console.log(`${cases.length} actual PostgreSQL JSONB user metadata ${operation} parameter and rejection cases`);
 } finally {
