@@ -27,6 +27,7 @@ const pool = new pg.Pool({ connectionString: process.env.BETTER_AUTH_TEST_POSTGR
 const postgresDb = new Kysely({ dialect: new PostgresDialect({ pool }) });
 const profiles = [];
 const userClocks = [];
+const updateClocks = [];
 try {
   for (const [backend, db] of [["sqlite", sqliteDb], ["postgres", postgresDb], ["mysql", mysql.db]]) {
     const options = { baseURL: "http://localhost", secret: "organization-metadata-source-secret-at-least-32", database: { type: backend, db }, emailAndPassword: { enabled: true }, rateLimit: { enabled: false }, plugins: [organization()] };
@@ -57,6 +58,16 @@ try {
     };
     assert.deepEqual(clock, { created_at_millisecond_aligned: true, updated_at_millisecond_aligned: true, readback_matches: true });
     userClocks.push(clock);
+    const updated = await internalAdapter.updateUser(generated.id, { name: "Updated clock" });
+    const updatedReadback = await internalAdapter.findUserById(generated.id);
+    for (const value of [updated.createdAt, updated.updatedAt, updatedReadback.createdAt, updatedReadback.updatedAt]) assert.ok(value instanceof Date);
+    const updateClock = {
+      created_at_preserved: generated.createdAt.getTime() === updated.createdAt.getTime(),
+      updated_at_millisecond_aligned: /\.\d{3}Z$/.test(updated.updatedAt.toISOString()),
+      readback_matches: updated.createdAt.getTime() === updatedReadback.createdAt.getTime() && updated.updatedAt.getTime() === updatedReadback.updatedAt.getTime(),
+    };
+    assert.deepEqual(updateClock, { created_at_preserved: true, updated_at_millisecond_aligned: true, readback_matches: true });
+    updateClocks.push(updateClock);
     const cases = [];
     let organizationId;
     for (const action of ["omitted", "create", "update"]) {
@@ -73,11 +84,16 @@ try {
     profiles.push({ backend, cases });
   }
   for (const profile of profiles) assert.deepEqual(profile.cases, profiles[0].cases);
-  await writeFile(new URL("../../fixtures/organization-metadata-phases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
   for (const clock of userClocks) assert.deepEqual(clock, userClocks[0]);
-  await writeFile(new URL("../../fixtures/user-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: userClocks[0] }) + "\n");
+  if (!process.argv.includes("--user-update-clock")) {
+    await writeFile(new URL("../../fixtures/organization-metadata-phases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
+    await writeFile(new URL("../../fixtures/user-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: userClocks[0] }) + "\n");
+  }
+  for (const clock of updateClocks) assert.deepEqual(clock, updateClocks[0]);
+  await writeFile(new URL("../../fixtures/user-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: updateClocks[0] }) + "\n");
   console.log("Nine actual SQLite/PostgreSQL/MySQL organization metadata creation/update cases");
   console.log("Three actual user creation/readback millisecond clock cases");
+  console.log("Three actual user update/readback millisecond clock cases");
 } finally {
   await sqliteDb.destroy();
   await postgresDb.destroy();

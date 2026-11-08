@@ -229,6 +229,7 @@ mod undefined_tests {
 use crate::AdapterOutput;
 use crate::utils::json::JsValue;
 use crate::{AuthError, AuthResult};
+use chrono::SubsecRound;
 use indexmap::{IndexMap, IndexSet};
 use serde_json::Value;
 use std::{fmt, future::Future, pin::Pin, sync::Arc};
@@ -282,7 +283,7 @@ impl FieldValues {
                 _ = fields.insert(
                     name.to_owned(),
                     FieldConfig::new(serde_json::json!({"type":"date"}))
-                        .on_update(|| JsValue::Date(chrono::Utc::now())),
+                        .on_update(|| JsValue::Date(chrono::Utc::now().trunc_subsecs(3))),
                 );
             }
         }
