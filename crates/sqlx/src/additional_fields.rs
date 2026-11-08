@@ -78,15 +78,18 @@ pub(crate) async fn prepare_value(
                 .map(|text| text.to_utf8_binding()),
         ));
     }
+    match (kind, &value) {
+        (ColumnKind::Timestamp, RawFieldValue::Date(value)) => {
+            return Ok(SqlValue::Timestamp(Some(*value)));
+        }
+        (ColumnKind::NaiveTimestamp, RawFieldValue::Date(value)) => {
+            return Ok(SqlValue::NaiveTimestamp(Some(value.naive_utc())));
+        }
+        _ => {}
+    }
     if backend == crate::pool::Engine::Postgres {
         match (kind, &value) {
-            (ColumnKind::Timestamp, RawFieldValue::Date(value)) => {
-                return Ok(SqlValue::Timestamp(Some(*value)));
-            }
             (ColumnKind::Timestamp, RawFieldValue::Null) => return Ok(SqlValue::Timestamp(None)),
-            (ColumnKind::NaiveTimestamp, RawFieldValue::Date(value)) => {
-                return Ok(SqlValue::NaiveTimestamp(Some(value.naive_utc())));
-            }
             (ColumnKind::NaiveTimestamp, RawFieldValue::Null) => {
                 return Ok(SqlValue::NaiveTimestamp(None));
             }

@@ -3,6 +3,7 @@ use crate::store::{AdapterEvent, PluginStore, SessionRevocation, SessionStore};
 use crate::{AdapterOutput, AdapterRecord};
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
 use async_trait::async_trait;
+use chrono::SubsecRound;
 
 struct CacheRevocation<'a, S: AuthSchema> {
     store: &'a PluginStore<S>,
@@ -525,7 +526,7 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         mut create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let created_at = chrono::Utc::now();
+        let created_at = chrono::Utc::now().trunc_subsecs(3);
         for callback in &self.session_callbacks.callbacks {
             callback
                 .before_create(&create_session, &self.projection_context, None)
@@ -533,6 +534,10 @@ impl<S: AuthSchema> PluginStore<S> {
         }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
+        let created_at = match create_session.additional_fields.get("createdAt") {
+            Some(crate::utils::json::JsValue::Date(date)) => *date,
+            _ => created_at,
+        };
         if self.session_uses_database() {
             self.adapter_fields
                 .attach(&mut create_session.additional_fields, true);

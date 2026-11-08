@@ -92,6 +92,15 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
                 .map(|text| text.to_utf8_binding()),
         ));
     }
+    if let RawFieldValue::Date(date) = &value {
+        match column.def().get_column_type() {
+            ColumnType::TimestampWithTimeZone => return Ok(Value::ChronoDateTimeUtc(Some(*date))),
+            ColumnType::Timestamp | ColumnType::DateTime => {
+                return Ok(Value::ChronoDateTime(Some(date.naive_utc())));
+            }
+            _ => {}
+        }
+    }
     let value = bind_scalar(value)?;
     match column.def().get_column_type() {
         ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => {

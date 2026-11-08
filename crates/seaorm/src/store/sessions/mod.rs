@@ -141,7 +141,6 @@ where
         if let Some(expiry) = expires_at {
             S::Session::set_expires_at(&mut active, expiry);
         }
-        S::Session::set_updated_at(&mut active, Utc::now());
         let session = S::Session::materialize_secondary(active)?;
         Ok(Some((session, fields)))
     }
@@ -156,7 +155,6 @@ where
         mut fields: FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
-        use alibi_core::AuthSession;
         let context = self.hook_context(tx);
         let session = if persist {
             fields.apply_adapter_transforms_async().await?;
@@ -172,11 +170,11 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active_model();
+            S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
             stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
-            S::Session::set_updated_at(&mut active, session.updated_at());
             match active.update(db).await {
                 Ok(model) => model,
                 Err(sea_orm::DbErr::RecordNotUpdated) => {
