@@ -319,6 +319,26 @@ impl FieldValues {
     pub fn binding_name<'a>(&'a self, name: &'a str) -> &'a str {
         self.binding_names.get(name).map_or(name, String::as_str)
     }
+
+    /// Move a typed timestamp through its declared input policy. Taking ownership
+    /// lets a callback omit the field without leaving the original write behind.
+    pub fn take_timestamp_input(
+        &mut self,
+        name: &str,
+        value: &mut Option<chrono::DateTime<chrono::Utc>>,
+    ) {
+        if self
+            .adapter_fields
+            .as_ref()
+            .is_some_and(|fields| fields.contains_key(name))
+            && let Some(value) = value.take()
+        {
+            _ = self
+                .values
+                .entry(name.to_owned())
+                .or_insert(JsValue::Date(value));
+        }
+    }
     /// Consume pending adapter callbacks once using current values after database hooks.
     /// Custom stores must call this immediately before binding configured session fields.
     ///
@@ -1000,5 +1020,60 @@ impl SessionAdapterFields {
             output.insert(name.clone(), value);
         }
         Ok(output)
+    }
+}
+
+#[cfg(test)]
+mod timestamp_input_tests {
+    use super::*;
+
+    #[test]
+    fn configured_timestamp_input_transfers_ownership_before_omission() {
+        let date = "2031-02-03T04:05:06.123987Z".parse().unwrap();
+        let field = FieldConfig::new(serde_json::json!({"type":"date"})).transform(move |value| {
+            assert_eq!(value, Some(&JsValue::Date(date)));
+            Ok(None)
+        });
+        let mut fields = FieldValues {
+            adapter_fields: Some(Arc::new(FieldConfigs::from([(
+                "expiresAt".to_owned(),
+                field,
+            )]))),
+            ..FieldValues::new()
+        };
+        let mut typed = Some(date);
+        fields.take_timestamp_input("expiresAt", &mut typed);
+        assert_eq!(typed, None);
+        assert_eq!(fields.get("expiresAt"), Some(&JsValue::Date(date)));
+        fields.apply_adapter_transforms().unwrap();
+        assert!(!fields.contains_key("expiresAt"));
+    }
+
+    #[test]
+    fn native_timestamps_and_explicit_field_values_keep_their_precedence() {
+        let date = "2031-02-03T04:05:06.123987Z".parse().unwrap();
+        let mut fields = FieldValues::new();
+        let mut typed = Some(date);
+        fields.take_timestamp_input("expiresAt", &mut typed);
+        assert_eq!(typed, Some(date));
+        assert!(fields.is_empty());
+        for value in [
+            JsValue::Undefined,
+            JsValue::Null,
+            JsValue::String("explicit".into()),
+        ] {
+            let mut fields = FieldValues {
+                adapter_fields: Some(Arc::new(FieldConfigs::from([(
+                    "expiresAt".to_owned(),
+                    FieldConfig::new(serde_json::json!({"type":"date"})),
+                )]))),
+                ..FieldValues::new()
+            };
+            _ = fields.insert("expiresAt".to_owned(), value.clone());
+            let mut typed = Some(date);
+            fields.take_timestamp_input("expiresAt", &mut typed);
+            assert_eq!(typed, None);
+            assert_eq!(fields.get("expiresAt"), Some(&value));
+        }
     }
 }

@@ -38,6 +38,14 @@ where
         }
         let now = Utc::now().trunc_subsecs(3);
         let mut fields = std::mem::take(&mut create_account.additional_fields);
+        fields.take_timestamp_input(
+            "accessTokenExpiresAt",
+            &mut create_account.access_token_expires_at,
+        );
+        fields.take_timestamp_input(
+            "refreshTokenExpiresAt",
+            &mut create_account.refresh_token_expires_at,
+        );
         fields.apply_adapter_transforms_async().await?;
         let generated_id = self
             .generated_entity_id::<<S::Account as SeaOrmAccountModel>::Entity, _>(
@@ -188,6 +196,11 @@ where
 
         let mut active = model.into_active_model();
         let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.take_timestamp_input("accessTokenExpiresAt", &mut update.access_token_expires_at);
+        fields.take_timestamp_input(
+            "refreshTokenExpiresAt",
+            &mut update.refresh_token_expires_at,
+        );
         fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now().trunc_subsecs(3));
         let backend = connection.get_database_backend();
