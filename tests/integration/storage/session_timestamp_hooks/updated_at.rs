@@ -1,6 +1,13 @@
 use super::*;
 
+mod no_factory;
 mod omission;
+
+enum Policy {
+    Date,
+    Undefined,
+    NoUpdateFactory,
+}
 
 backend_tests!(
     creation_sync_updated_at_matches_source,
@@ -63,13 +70,23 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for Hooks {
     }
 }
 
-async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str, omit: bool) -> TestResult {
+async fn check<B: Backend>(
+    db: Db,
+    asynchronous: bool,
+    operation: &str,
+    policy: Policy,
+) -> TestResult {
+    let omit = matches!(policy, Policy::Undefined);
     let secret = "session-timestamp-hooks-secret-at-least-32";
     let (connection, _) = db.migrated::<B>(secret).await?;
-    let fixture: Value = serde_json::from_str(if omit {
-        include_str!("../../../fixtures/session-updated-at-hooks-omit-required.json")
-    } else {
-        include_str!("../../../fixtures/session-updated-at-hooks.json")
+    let fixture: Value = serde_json::from_str(match policy {
+        Policy::Undefined => {
+            include_str!("../../../fixtures/session-updated-at-hooks-omit-required.json")
+        }
+        Policy::Date => include_str!("../../../fixtures/session-updated-at-hooks.json"),
+        Policy::NoUpdateFactory => {
+            include_str!("../../../fixtures/session-updated-at-hooks-no-factory.json")
+        }
     })?;
     assert_eq!(fixture["better_auth"], "1.7.18");
     assert_eq!(fixture["field"], "updatedAt");
@@ -91,8 +108,10 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str, omit: bo
     let inputs = events.clone();
     let applying_input = Arc::new(AtomicBool::new(false));
     let applying = applying_input.clone();
-    let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"date"}))
-        .on_update(|| JsValue::String("2031-02-03T04:05:06.123987Z".into()));
+    let mut field = alibi::field_policy::FieldConfig::new(json!({"type":"date"}));
+    if !matches!(policy, Policy::NoUpdateFactory) {
+        field = field.on_update(|| JsValue::String("2031-02-03T04:05:06.123987Z".into()));
+    }
     field.required = omit;
     let field = if asynchronous {
         field.transform_adapter_input(move |value| {
@@ -284,14 +303,14 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, operation: &str, omit: bo
 }
 
 async fn creation_sync_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, "create", false).await
+    check::<B>(db, false, "create", Policy::Date).await
 }
 async fn creation_async_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, "create", false).await
+    check::<B>(db, true, "create", Policy::Date).await
 }
 async fn refresh_sync_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, false, "update", false).await
+    check::<B>(db, false, "update", Policy::Date).await
 }
 async fn refresh_async_updated_at_matches_source<B: Backend>(db: Db) -> TestResult {
-    check::<B>(db, true, "update", false).await
+    check::<B>(db, true, "update", Policy::Date).await
 }

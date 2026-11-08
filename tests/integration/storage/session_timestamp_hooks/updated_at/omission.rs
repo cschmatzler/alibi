@@ -16,20 +16,20 @@ postgres_tests!(
 async fn creation_sync_undefined_updated_at_matches_driver_failure<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, false, "create", true).await
+    check::<B>(db, false, "create", Policy::Undefined).await
 }
 async fn creation_async_undefined_updated_at_matches_driver_failure<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, true, "create", true).await
+    check::<B>(db, true, "create", Policy::Undefined).await
 }
 async fn refresh_sync_undefined_updated_at_matches_driver_failure<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, false, "update", true).await
+    check::<B>(db, false, "update", Policy::Undefined).await
 }
 async fn refresh_async_undefined_updated_at_matches_driver_failure<B: Backend>(
     db: Db,
 ) -> TestResult {
-    check::<B>(db, true, "update", true).await
+    check::<B>(db, true, "update", Policy::Undefined).await
 }

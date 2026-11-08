@@ -9,8 +9,9 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { getCurrentAdapter, runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
 
 const updatedAtOmit = process.argv[2] === "--updated-at-omit-required";
+const noUpdateFactory = process.argv[2] === "--updated-at-no-factory";
 const requiredTimestamp = process.argv[2] === "--omit-required" || updatedAtOmit;
-const updatedAt = process.argv[2] === "--updated-at" || updatedAtOmit;
+const updatedAt = process.argv[2] === "--updated-at" || updatedAtOmit || noUpdateFactory;
 const timestampField = updatedAt ? "updatedAt" : "expiresAt";
 const compatibleStringResult = process.argv[2] === "--string-result-compatible";
 const stringResult = process.argv[2] === "--string-result" || compatibleStringResult;
@@ -71,7 +72,7 @@ try {
       ...(wireFields ? { user: { additionalFields: extraFields } } : {}),
       session: { storeSessionInDatabase: secondary, additionalFields: { ...extraFields, [timestampField]: {
         type: "date", required: requiredTimestamp,
-        onUpdate: () => "2031-02-03T04:05:06.123987Z",
+        ...(!noUpdateFactory ? { onUpdate: () => "2031-02-03T04:05:06.123987Z" } : {}),
         transform: { input: async value => {
           event("input", value);
           if (omitResult && applyingInput && value != null) return undefined;
@@ -142,6 +143,7 @@ try {
         events = [];
         applyingInput = true;
         const fields = { ...(kind === "omitted" ? {} : { [timestampField]: input }), ...(wireFields && operation === "update" ? { wireLabel: "changed", wireNull: null } : {}) };
+        const emptyUpdate = noUpdateFactory && operation === "update" && kind === "omitted";
         let session;
         let outcome;
         try {
@@ -156,7 +158,7 @@ try {
             assert.equal(error.message, "data.expiresAt.getTime is not a function");
             outcome = { error: { name: error.name, message: error.message } };
           } else {
-            assert.ok(omitResult && (operation === "create" || updatedAt));
+            assert.ok((omitResult || emptyUpdate) && (operation === "create" || updatedAt));
             outcome = { error: { code: error.code, message: error.message } };
           }
         }
@@ -168,7 +170,7 @@ try {
           const cached = cache.has(token) ? JSON.parse(cache.get(token)).session.expiresAt : null;
           const referenced = cache.has(`active-sessions-${user.id}`) ? JSON.parse(cache.get(`active-sessions-${user.id}`)).find(reference => reference.token === token)?.expiresAt ?? null : null;
           cases.push({ operation, kind, input, events: [...events], outcome, cached, referenced, stored, readback: readback.session.expiresAt });
-        } else if (omitResult) {
+        } else if (omitResult || emptyUpdate) {
           if (operation === "create") {
             if (requiredTimestamp) {
               assert.equal(session, undefined);
@@ -223,8 +225,8 @@ try {
     assert.equal(cases.length, transactions ? 4 : secondary ? 2 : 5);
     profiles.push({ backend, ...(requiredTimestamp ? { schema_sql: schemaSql } : {}), cases });
   }
-  if (!omitResult && !stringResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  if (!omitResult && !stringResult && !noUpdateFactory) assert.deepEqual(profiles[0].cases, profiles[1].cases);
+  const filename = noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {
