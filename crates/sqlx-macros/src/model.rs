@@ -101,10 +101,19 @@ pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStrea
         }
         stages.push(quote! {
             #name => {
+                let value = if backend == #sqlx_root::pool::Engine::Postgres
+                    && matches!(<Self as #sqlx_root::model::SqlxModel>::column_kind(#name), #sqlx_root::value::ColumnKind::Text | #sqlx_root::value::ColumnKind::Json)
+                    && <#field_ty as #sqlx_root::value::SqlxValue>::KIND == #sqlx_root::value::ColumnKind::Json
+                    && matches!(value, #sqlx_root::value::SqlValue::Text(None))
+                {
+                    <#field_ty as #sqlx_root::value::SqlxValue>::null()
+                } else {
+                    value
+                };
                 let value = <#field_ty as #sqlx_root::value::SqlxValue>::from_sql_value(value)
                     .map_err(|_error| #core_root::AuthError::internal("field value cannot be represented by its model column"))?;
                 let value = if backend == #sqlx_root::pool::Engine::Postgres
-                    && <Self as #sqlx_root::model::SqlxModel>::column_kind(#name) == #sqlx_root::value::ColumnKind::Text
+                    && matches!(<Self as #sqlx_root::model::SqlxModel>::column_kind(#name), #sqlx_root::value::ColumnKind::Text | #sqlx_root::value::ColumnKind::Json)
                     && <#field_ty as #sqlx_root::value::SqlxValue>::KIND == #sqlx_root::value::ColumnKind::Json
                 {
                     value

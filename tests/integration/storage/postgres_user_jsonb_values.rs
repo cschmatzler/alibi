@@ -85,7 +85,39 @@ async fn setup(db: &Db) -> TestResult<AuthConfig> {
     Ok(config)
 }
 
-async fn check<S: AuthSchema>(db: &Db, auth: &Alibi<S>, update: bool) -> TestResult {
+#[derive(Clone, Copy)]
+enum MetadataInput {
+    Typed,
+    Configured,
+    Native,
+}
+
+fn create_input(email: &str, metadata: Value, input: MetadataInput) -> CreateUser {
+    let mut user = CreateUser::new()
+        .with_name("JSONB values")
+        .with_email(email);
+    match input {
+        MetadataInput::Typed => user.metadata = Some(metadata),
+        MetadataInput::Configured => {
+            _ = user
+                .additional_fields
+                .insert("metadata".into(), metadata.into());
+        }
+        MetadataInput::Native => {
+            _ = user
+                .adapter_native_fields
+                .insert("metadata".into(), metadata.into());
+        }
+    }
+    user
+}
+
+async fn check<S: AuthSchema>(
+    db: &Db,
+    auth: &Alibi<S>,
+    update: bool,
+    input: MetadataInput,
+) -> TestResult {
     let fixture: Value = serde_json::from_str(if update {
         include_str!("../../fixtures/postgres-user-jsonb-updates.json")
     } else {
@@ -123,12 +155,7 @@ async fn check<S: AuthSchema>(db: &Db, auth: &Alibi<S>, update: bool) -> TestRes
                 .await
         } else {
             auth.store()
-                .create_user(
-                    CreateUser::new()
-                        .with_name("JSONB values")
-                        .with_email(&email)
-                        .with_metadata(case["input"].clone()),
-                )
+                .create_user(create_input(&email, case["input"].clone(), input))
                 .await
         };
         assert_eq!(
@@ -167,7 +194,7 @@ async fn check<S: AuthSchema>(db: &Db, auth: &Alibi<S>, update: bool) -> TestRes
     Ok(())
 }
 
-async fn sqlx_case(update: bool) -> TestResult {
+async fn sqlx_case(update: bool, input: MetadataInput) -> TestResult {
     let db = Db::postgres().await?;
     let config = setup(&db).await?;
     let connection = Sqlx::connect(&db.url, None).await?;
@@ -178,12 +205,12 @@ async fn sqlx_case(update: bool) -> TestResult {
         ))
         .build()
         .await?;
-    check(&db, &auth, update).await?;
+    check(&db, &auth, update, input).await?;
     drop(auth);
     Sqlx::close(connection).await
 }
 
-async fn seaorm_case(update: bool) -> TestResult {
+async fn seaorm_case(update: bool, input: MetadataInput) -> TestResult {
     let db = Db::postgres().await?;
     let config = setup(&db).await?;
     let connection = SeaOrm::connect(&db.url, None).await?;
@@ -194,7 +221,7 @@ async fn seaorm_case(update: bool) -> TestResult {
         ))
         .build()
         .await?;
-    check(&db, &auth, update).await?;
+    check(&db, &auth, update, input).await?;
     drop(auth);
     SeaOrm::close(connection).await
 }
@@ -202,23 +229,47 @@ async fn seaorm_case(update: bool) -> TestResult {
 #[tokio::test]
 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
 async fn sqlx_user_jsonb_values_match_actual_postgres_parameters() -> TestResult {
-    sqlx_case(false).await
+    sqlx_case(false, MetadataInput::Typed).await
 }
 
 #[tokio::test]
 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
 async fn seaorm_user_jsonb_values_match_actual_postgres_parameters() -> TestResult {
-    seaorm_case(false).await
+    seaorm_case(false, MetadataInput::Typed).await
 }
 
 #[tokio::test]
 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
 async fn sqlx_user_jsonb_updates_match_actual_postgres_parameters() -> TestResult {
-    sqlx_case(true).await
+    sqlx_case(true, MetadataInput::Typed).await
 }
 
 #[tokio::test]
 #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
 async fn seaorm_user_jsonb_updates_match_actual_postgres_parameters() -> TestResult {
-    seaorm_case(true).await
+    seaorm_case(true, MetadataInput::Typed).await
+}
+
+#[tokio::test]
+#[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+async fn sqlx_user_jsonb_configured_values_match_actual_postgres_parameters() -> TestResult {
+    sqlx_case(false, MetadataInput::Configured).await
+}
+
+#[tokio::test]
+#[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+async fn seaorm_user_jsonb_configured_values_match_actual_postgres_parameters() -> TestResult {
+    seaorm_case(false, MetadataInput::Configured).await
+}
+
+#[tokio::test]
+#[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+async fn sqlx_user_jsonb_native_values_match_actual_postgres_parameters() -> TestResult {
+    sqlx_case(false, MetadataInput::Native).await
+}
+
+#[tokio::test]
+#[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+async fn seaorm_user_jsonb_native_values_match_actual_postgres_parameters() -> TestResult {
+    seaorm_case(false, MetadataInput::Native).await
 }

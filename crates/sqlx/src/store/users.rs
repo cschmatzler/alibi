@@ -6,7 +6,7 @@ use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::adapter::{RawFieldValue, cancelled_by_hook};
 use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
@@ -200,6 +200,20 @@ async fn stage_provider_text<M: SqlxUserModel>(
     Ok(())
 }
 
+async fn prepare_user_value(
+    exec: Exec<'_>,
+    kind: ColumnKind,
+    value: RawFieldValue,
+) -> AuthResult<SqlValue> {
+    if exec.engine() == Engine::Postgres && kind == ColumnKind::Json {
+        return Ok(SqlValue::Text(
+            alibi_core::store::postgres_parameter::text_parameter(&value.into())?
+                .map(|text| text.to_utf8_binding()),
+        ));
+    }
+    crate::additional_fields::prepare_value(exec, kind, value).await
+}
+
 impl<S> SqlxStore<S>
 where
     S: AuthSchema,
@@ -305,12 +319,9 @@ where
         .await?;
         let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::additional_fields::prepare_value(
-                exec,
-                <S::User as SqlxModel>::column_kind(column),
-                value,
-            )
-            .await?;
+            let value =
+                prepare_user_value(exec, <S::User as SqlxModel>::column_kind(column), value)
+                    .await?;
             S::User::set_additional_field(&mut active, column, value, backend)?;
         }
         for (field, raw) in native_fields {
@@ -341,7 +352,7 @@ where
                     value => value,
                 }
             } else {
-                crate::additional_fields::prepare_value(exec, kind, value).await?
+                prepare_user_value(exec, kind, value).await?
             };
             active.set(column, value);
         }
@@ -890,21 +901,12 @@ where
                 }
                 continue;
             };
-            let value = if exec.engine() == Engine::Postgres
-                && S::User::column_kind(column) == ColumnKind::Json
-            {
-                SqlValue::Text(
-                    alibi_core::store::postgres_parameter::text_parameter(raw)?
-                        .map(|text| text.to_utf8_binding()),
-                )
-            } else {
-                crate::additional_fields::prepare_value(
-                    exec,
-                    S::User::column_kind(column),
-                    crate::additional_fields::raw_value(raw)?,
-                )
-                .await?
-            };
+            let value = prepare_user_value(
+                exec,
+                S::User::column_kind(column),
+                crate::additional_fields::raw_value(raw)?,
+            )
+            .await?;
             active.set(column, value);
         }
         let user = model::update_where::<S::User>(exec, &active, locator)

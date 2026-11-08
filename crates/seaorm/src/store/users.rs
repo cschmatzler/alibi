@@ -183,6 +183,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
         }
         let column = if insert {
             M::list_users_column(&field)
+                .or_else(|| M::Column::iter().find(|column| column.to_string() == field))
         } else {
             M::Column::iter()
                 .find(|column| column.to_string() == field)
@@ -417,6 +418,7 @@ where
     where
         C: ConnectionTrait,
     {
+        use sea_orm::Iden;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -468,7 +470,7 @@ where
                 .adapter_native_fields
                 .insert("id".into(), raw_id.clone());
         }
-        if db.get_database_backend() == sea_orm::DbBackend::Postgres
+        let metadata_json = if db.get_database_backend() == sea_orm::DbBackend::Postgres
             && let Some(column) = S::User::list_users_column("metadata")
             && matches!(
                 column.def().get_column_type(),
@@ -476,10 +478,10 @@ where
             )
             && let Some(value) = create_user.metadata.as_ref()
         {
-            _ = native_fields
-                .entry("metadata".into())
-                .or_insert_with(|| value.clone().into());
-        }
+            Some((column.to_string(), value.clone().into()))
+        } else {
+            None
+        };
         let metadata_text = if db.get_database_backend() == sea_orm::DbBackend::Postgres {
             match (
                 S::User::list_users_column("metadata"),
@@ -520,8 +522,25 @@ where
         .await?;
         let backend = db.get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+            if backend == sea_orm::DbBackend::Postgres
+                && matches!(
+                    column.def().get_column_type(),
+                    sea_orm::sea_query::ColumnType::Json
+                        | sea_orm::sea_query::ColumnType::JsonBinary
+                )
+            {
+                let physical = column.to_string();
+                let parameter = value.clone().into();
+                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+                S::User::set_additional_field(&mut model, column, value, backend)?;
+                _ = native_fields.entry(physical).or_insert(parameter);
+                continue;
+            }
             let value = crate::additional_fields::prepare_value(db, &column, value).await?;
             S::User::set_additional_field(&mut model, column, value, backend)?;
+        }
+        if let Some((column, value)) = metadata_json {
+            _ = native_fields.entry(column).or_insert(value);
         }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
