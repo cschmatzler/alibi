@@ -5,6 +5,7 @@ use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
 #[path = "../../../fixtures/oauth/resource-privileges.rs"]
 mod resource_privileges;
 backend_tests!(oauth_resource_creation_persists_policy_and_admits_resource_authorization);
+postgres_tests!(oauth_resource_creation_persists_policy_and_admits_resource_authorization);
 async fn oauth_resource_creation_persists_policy_and_admits_resource_authorization<B: Backend>(
     db: Db,
 ) -> TestResult {

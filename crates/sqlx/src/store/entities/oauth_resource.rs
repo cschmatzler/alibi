@@ -68,6 +68,7 @@ impl TryFrom<Model> for alibi_core::store::OAuthResource {
 impl Model {
     pub(crate) fn columns_from_metadata(
         mut fields: serde_json::Value,
+        backend: crate::pool::Engine,
     ) -> alibi_core::AuthResult<Self> {
         let object = fields
             .as_object_mut()
@@ -75,6 +76,13 @@ impl Model {
         for (key, value) in [("id", ""), ("identifier", "")] {
             _ = object.insert(key.into(), serde_json::Value::String(value.into()));
         }
-        Ok(serde_json::from_value(fields)?)
+        let mut model: Self = serde_json::from_value(fields)?;
+        if backend == crate::pool::Engine::Postgres {
+            use crate::value::SqlxValue;
+            model.allowed_scopes = model.allowed_scopes.prepare(backend)?;
+            model.custom_claims = model.custom_claims.prepare(backend)?;
+            model.metadata = model.metadata.prepare(backend)?;
+        }
+        Ok(model)
     }
 }

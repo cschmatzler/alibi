@@ -3,6 +3,7 @@ use super::*;
 use alibi::endpoint::EndpointOptions;
 use alibi::plugins::{OAuthProviderPlugin, jwt::JwtPlugin};
 backend_tests!(oauth_resource_read_decodes_identifier_and_preserves_catalog_policy);
+postgres_tests!(oauth_resource_read_decodes_identifier_and_preserves_catalog_policy);
 async fn oauth_resource_read_decodes_identifier_and_preserves_catalog_policy<B: Backend>(
     db: Db,
 ) -> TestResult {

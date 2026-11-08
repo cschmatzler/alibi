@@ -5,6 +5,7 @@ use alibi::plugins::{OAuthProviderConfig, OAuthProviderPlugin, jwt::JwtPlugin};
 #[path = "../../../fixtures/oauth/resource-privileges.rs"]
 mod resource_privileges;
 backend_tests!(oauth_resource_update_persists_partial_policy_and_changes_authorization_admission);
+postgres_tests!(oauth_resource_update_persists_partial_policy_and_changes_authorization_admission);
 async fn oauth_resource_update_persists_partial_policy_and_changes_authorization_admission<
     B: Backend,
 >(

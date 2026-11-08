@@ -623,8 +623,11 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
         };
         let mut active = ActiveRow::new();
         active.set("id", row.id);
-        let fields =
-            super::entities::oauth_resource::Model::columns_from_metadata(metadata)?.into_active();
+        let fields = super::entities::oauth_resource::Model::columns_from_metadata(
+            metadata,
+            self.exec().engine(),
+        )?
+        .into_active();
         for (column, value) in fields.present() {
             if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
                 active.set(column, value.clone());
@@ -681,8 +684,11 @@ impl<S: AuthSchema> OAuthClientStore for SqlxStore<S> {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
         );
         active.set("identifier", data.identifier);
-        let fields = super::entities::oauth_resource::Model::columns_from_metadata(data.metadata)?
-            .into_active();
+        let fields = super::entities::oauth_resource::Model::columns_from_metadata(
+            data.metadata,
+            self.exec().engine(),
+        )?
+        .into_active();
         for (column, value) in fields.present() {
             if !["id", "identifier", "createdAt", "updatedAt"].contains(&column) {
                 active.set(column, value.clone());
