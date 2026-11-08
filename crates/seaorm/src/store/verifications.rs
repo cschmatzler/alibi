@@ -405,7 +405,7 @@ where
             }
         }
         let mut query = <S::Verification as SeaOrmVerificationModel>::Entity::update_many()
-            .filter(S::Verification::id_column().eq(parsed_id))
+            .filter(S::Verification::id_column().eq(parsed_id.clone()))
             .filter(S::Verification::value_column().eq(expected_value))
             .col_expr(
                 updated_at_column,
@@ -430,27 +430,40 @@ where
             );
         }
         let backend = self.scoped_connection().get_database_backend();
-        if !matches!(
-            backend,
-            sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
-        ) {
-            return Err(AuthError::NotImplemented(
-                "Atomic verification update snapshots require SQLite or PostgreSQL".to_owned(),
-            ));
-        }
-        // RETURNING captures the winning snapshot; a second SELECT could lose
-        // the row to consumption or observe a later mutation.
-        let returning = sea_orm::sea_query::Query::returning().exprs(
-            <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
-                .map(|column| column.select_as(column.into_returning_expr(backend))),
-        );
-        _ = QueryTrait::query(&mut query).returning(returning);
-        let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
-            .from_raw_sql(query.build(backend))
-            .one(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?
-        else {
+        let model = if backend == sea_orm::DbBackend::MySql {
+            let select = <S::Verification as SeaOrmVerificationModel>::Entity::find()
+                .filter(S::Verification::id_column().eq(parsed_id));
+            super::mysql_snapshot::update(
+                self.scoped_connection(),
+                select
+                    .clone()
+                    .filter(S::Verification::value_column().eq(expected_value)),
+                select,
+                query,
+            )
+            .await?
+        } else {
+            if !matches!(
+                backend,
+                sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
+            ) {
+                return Err(AuthError::NotImplemented(
+                    "Atomic verification updates do not support this database backend".into(),
+                ));
+            }
+            // RETURNING captures the winning snapshot before another mutation.
+            let returning = sea_orm::sea_query::Query::returning().exprs(
+                <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
+                    .map(|column| column.select_as(column.into_returning_expr(backend))),
+            );
+            _ = QueryTrait::query(&mut query).returning(returning);
+            <S::Verification as SeaOrmVerificationModel>::Entity::find()
+                .from_raw_sql(query.build(backend))
+                .one(self.scoped_connection())
+                .await
+                .map_err(map_db_err)?
+        };
+        let Some(model) = model else {
             return Ok(false);
         };
         for hook in self.hooks() {

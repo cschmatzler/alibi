@@ -10,7 +10,9 @@ export async function createMysqlDatabase({ connectionLimit = 1 } = {}) {
   const driver = JSON.parse(await readFile(new URL("package.json", process.env.MYSQL2_MODULE_URL)));
   const pin = JSON.parse(await readFile(new URL("../../upstream-source.json", import.meta.url)));
   assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
-  for (const name of ["passkey", "kysely-adapter"]) {
+  assert.equal(pin.version, "1.7.18");
+  assert.equal(JSON.parse(await readFile(new URL("../../reference-server/node_modules/better-auth/package.json", import.meta.url))).version, "1.7.18");
+  for (const name of ["core", "passkey", "kysely-adapter"]) {
     assert.equal(JSON.parse(await readFile(new URL(`../../reference-server/node_modules/@better-auth/${name}/package.json`, import.meta.url))).version, "1.7.18");
   }
   const database = `alibi_oracle_${randomBytes(8).toString("hex")}`;
