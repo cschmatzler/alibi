@@ -12,6 +12,8 @@ use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use chrono::{DateTime, SubsecRound, Utc};
 
+mod native;
+
 impl<S> SqlxStore<S>
 where
     S: AuthSchema,
@@ -114,7 +116,11 @@ where
             active.not_set(S::Session::expires_at_column());
         }
         if !fields.is_empty() {
-            stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
+            if persist {
+                native::stage::<S::Session>(exec, &mut active, &fields).await?;
+            } else {
+                stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
+            }
         }
         let session = if persist {
             model::insert::<S::Session>(exec, &active).await?
@@ -186,7 +192,7 @@ where
             };
             let mut active = current.into_active();
             S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-            stage_additional_fields::<S::Session>(exec, &mut active, &fields).await?;
+            native::stage::<S::Session>(exec, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
@@ -284,7 +290,7 @@ where
         };
         let mut active = model.into_active();
         if !fields.is_empty() {
-            stage_additional_fields::<S::Session>(self.exec(), &mut active, &fields).await?;
+            native::stage::<S::Session>(self.exec(), &mut active, &fields).await?;
         }
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);

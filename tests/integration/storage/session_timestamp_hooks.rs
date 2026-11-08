@@ -10,6 +10,7 @@ use std::sync::{Arc, Mutex};
 
 mod secondary;
 mod secondary_transactions;
+mod string_result;
 mod wire;
 mod wire_fields;
 

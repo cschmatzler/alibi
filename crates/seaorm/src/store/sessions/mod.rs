@@ -12,6 +12,8 @@ use sea_orm::{
     QueryOrder, QuerySelect,
 };
 
+mod native;
+
 impl<S> SeaOrmStore<S>
 where
     S: AuthSchema,
@@ -114,11 +116,18 @@ where
                     })?;
             _ = active.take(column);
         }
-        if !fields.is_empty() {
+        let native = if fields.is_empty() {
+            Vec::new()
+        } else if persist {
+            native::stage::<S::Session, _>(db, &mut active, &fields).await?
+        } else {
             stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
-        }
+            Vec::new()
+        };
         let session = if persist {
-            active.insert(db).await.map_err(map_db_err)?
+            native::save::<S::Session, _>(active, db, None, native)
+                .await?
+                .ok_or_else(|| map_db_err(sea_orm::DbErr::RecordNotInserted))?
         } else {
             S::Session::materialize_secondary(active)?
         };
@@ -189,19 +198,18 @@ where
             };
             let mut active = current.into_active_model();
             S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-            stage_additional_fields::<S::Session, _>(db, &mut active, &fields).await?;
+            let native = native::stage::<S::Session, _>(db, &mut active, &fields).await?;
             if let Some(expiry) = expires_at {
                 S::Session::set_expires_at(&mut active, expiry);
             }
-            match active.update(db).await {
-                Ok(model) => model,
-                Err(sea_orm::DbErr::RecordNotUpdated) => {
+            match native::save::<S::Session, _>(active, db, Some(token), native).await? {
+                Some(model) => model,
+                None => {
                     for hook in self.hooks().iter().filter(|_| tx.is_none()) {
                         hook.after_update_session_missing(token, &context).await?;
                     }
                     return Ok(None);
                 }
-                Err(error) => return Err(map_db_err(error)),
             }
         } else {
             session
@@ -288,28 +296,31 @@ where
             return Ok(None);
         };
         let mut active = model.into_active_model();
-        if !fields.is_empty() {
-            stage_additional_fields::<S::Session, _>(
-                self.scoped_connection(),
-                &mut active,
-                &fields,
-            )
-            .await?;
-        }
+        let native = if !fields.is_empty() {
+            native::stage::<S::Session, _>(self.scoped_connection(), &mut active, &fields).await?
+        } else {
+            Vec::new()
+        };
         if let Some(expires_at) = expires_at {
             S::Session::set_expires_at(&mut active, expires_at);
         }
         S::Session::set_updated_at(&mut active, Utc::now().trunc_subsecs(3));
-        let session = match active.update(self.scoped_connection()).await {
-            Ok(session) => session,
-            Err(sea_orm::DbErr::RecordNotUpdated) => {
+        let session = match native::save::<S::Session, _>(
+            active,
+            self.scoped_connection(),
+            Some(token),
+            native,
+        )
+        .await?
+        {
+            Some(session) => session,
+            None => {
                 for hook in self.hooks() {
                     hook.after_update_session_missing(token, &hook_context)
                         .await?;
                 }
                 return Ok(None);
             }
-            Err(error) => return Err(map_db_err(error)),
         };
         for hook in self.hooks() {
             hook.after_update_session(&session, &hook_context).await?;

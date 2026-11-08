@@ -9,6 +9,9 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { getCurrentAdapter, runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
 
 const requiredExpiry = process.argv[2] === "--omit-required";
+const compatibleStringResult = process.argv[2] === "--string-result-compatible";
+const stringResult = process.argv[2] === "--string-result" || compatibleStringResult;
+const resultText = compatibleStringResult ? "2035-02-03 04:05:06.123987" : "2035-02-03T04:05:06.123987Z";
 const omitResult = process.argv[2] === "--omit" || requiredExpiry;
 const secondaryString = process.argv[2] === "--secondary-string";
 const deferred = process.argv[2] === "--secondary-deferred";
@@ -18,7 +21,7 @@ const wireOwner = process.argv[2] === "--secondary-wire-owner";
 const wireFields = process.argv[2] === "--secondary-wire-fields" || wireUnknown || wireOwner;
 const wire = process.argv[2] === "--secondary-wire" || wireFields;
 const secondary = process.argv[2] === "--secondary" || secondaryString || transactions || wire;
-assert.ok(process.argv[2] === undefined || omitResult || secondary, "unknown fixture output mode");
+assert.ok(process.argv[2] === undefined || omitResult || secondary || stringResult, "unknown fixture output mode");
 const pin = JSON.parse(await readFile(new URL("../upstream-source.json", import.meta.url)));
 assert.equal(pin.commit, "38f43e390920faa400d51ff0bd18570a424d05ce");
 assert.equal(pin.version, "1.7.18");
@@ -69,6 +72,7 @@ try {
         transform: { input: async value => {
           event("input", value);
           if (omitResult && applyingInput && value != null) return undefined;
+          if (stringResult && applyingInput && value != null) return resultText;
           return value == null ? value : new Date(new Date(value).getTime() + 1000);
         } },
       } } },
@@ -181,13 +185,18 @@ try {
           cases.push({ operation, kind, input, events: [...events], outcome, exists: readback !== null, readback: readback?.session.expiresAt ?? null });
         } else {
           assert.equal(readback.session.id, session.id);
-          assert.equal(session.expiresAt.toISOString(), "2031-02-03T04:05:07.123Z");
+          assert.equal(session.expiresAt.toISOString(), stringResult ? "2035-02-03T04:05:06.123Z" : "2031-02-03T04:05:07.123Z");
           assert.equal(readback.session.expiresAt.toISOString(), secondary && operation === "update" ? input.toISOString() : session.expiresAt.toISOString());
           const retained = secondary ? {
             cached: JSON.parse(cache.get(token)).session.expiresAt,
             referenced: JSON.parse(cache.get(`active-sessions-${user.id}`)).find(reference => reference.token === token).expiresAt,
             stored: new Date((await db.selectFrom("session").select("expiresAt").where("token", "=", token).executeTakeFirst()).expiresAt),
           } : {};
+          if (stringResult) {
+            retained.callback_result = resultText;
+            retained.physical = backend === "sqlite" ? sqlite.prepare('SELECT "expiresAt" AS value FROM session WHERE token = ?').get(token).value
+              : (await pool.query('SELECT to_char("expiresAt" AT TIME ZONE \'UTC\',\'YYYY-MM-DD"T"HH24:MI:SS.US"Z"\') AS value FROM session WHERE token = $1', [token])).rows[0].value;
+          }
           if (wire) {
             const payload = JSON.parse(cache.get(token));
             payload.session.id = "$session";
@@ -206,8 +215,8 @@ try {
     assert.equal(cases.length, transactions ? 4 : secondary ? 2 : 5);
     profiles.push({ backend, ...(requiredExpiry ? { schema_sql: schemaSql } : {}), cases });
   }
-  if (!omitResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  if (!omitResult && !stringResult) assert.deepEqual(profiles[0].cases, profiles[1].cases);
+  const filename = stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredExpiry ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
   await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {
