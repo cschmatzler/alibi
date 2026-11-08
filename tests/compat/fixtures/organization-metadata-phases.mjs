@@ -28,6 +28,7 @@ const postgresDb = new Kysely({ dialect: new PostgresDialect({ pool }) });
 const profiles = [];
 const userClocks = [];
 const updateClocks = [];
+const sessionClocks = [];
 try {
   for (const [backend, db] of [["sqlite", sqliteDb], ["postgres", postgresDb], ["mysql", mysql.db]]) {
     const options = { baseURL: "http://localhost", secret: "organization-metadata-source-secret-at-least-32", database: { type: backend, db }, emailAndPassword: { enabled: true }, rateLimit: { enabled: false }, plugins: [organization()] };
@@ -68,6 +69,18 @@ try {
     };
     assert.deepEqual(updateClock, { created_at_preserved: true, updated_at_millisecond_aligned: true, readback_matches: true });
     updateClocks.push(updateClock);
+    const expiresAt = new Date("2031-01-01T00:00:00.123Z");
+    const session = await internalAdapter.createSession(generated.id, false, { token: "generated-session-clock", expiresAt }, true);
+    const sessionReadback = await internalAdapter.findSession(session.token);
+    assert.equal(sessionReadback.user.id, generated.id);
+    const sessionClock = {
+      created_at_millisecond_aligned: /\.\d{3}Z$/.test(session.createdAt.toISOString()),
+      updated_at_millisecond_aligned: /\.\d{3}Z$/.test(session.updatedAt.toISOString()),
+      expires_at_preserved: session.expiresAt.getTime() === expiresAt.getTime(),
+      readback_matches: session.createdAt.getTime() === sessionReadback.session.createdAt.getTime() && session.updatedAt.getTime() === sessionReadback.session.updatedAt.getTime() && session.expiresAt.getTime() === sessionReadback.session.expiresAt.getTime(),
+    };
+    assert.deepEqual(sessionClock, { created_at_millisecond_aligned: true, updated_at_millisecond_aligned: true, expires_at_preserved: true, readback_matches: true });
+    sessionClocks.push(sessionClock);
     const cases = [];
     let organizationId;
     for (const action of ["omitted", "create", "update"]) {
@@ -85,15 +98,20 @@ try {
   }
   for (const profile of profiles) assert.deepEqual(profile.cases, profiles[0].cases);
   for (const clock of userClocks) assert.deepEqual(clock, userClocks[0]);
-  if (!process.argv.includes("--user-update-clock")) {
+  if (!process.argv.includes("--user-update-clock") && !process.argv.includes("--session-clock")) {
     await writeFile(new URL("../../fixtures/organization-metadata-phases.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), cases: profiles[0].cases }) + "\n");
     await writeFile(new URL("../../fixtures/user-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: userClocks[0] }) + "\n");
   }
   for (const clock of updateClocks) assert.deepEqual(clock, updateClocks[0]);
-  await writeFile(new URL("../../fixtures/user-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: updateClocks[0] }) + "\n");
+  if (!process.argv.includes("--session-clock")) {
+    await writeFile(new URL("../../fixtures/user-update-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: updateClocks[0] }) + "\n");
+  }
+  for (const clock of sessionClocks) assert.deepEqual(clock, sessionClocks[0]);
+  await writeFile(new URL("../../fixtures/session-creation-clock.json", import.meta.url), JSON.stringify({ better_auth: "1.7.18", backends: profiles.map(profile => profile.backend), clock: sessionClocks[0] }) + "\n");
   console.log("Nine actual SQLite/PostgreSQL/MySQL organization metadata creation/update cases");
   console.log("Three actual user creation/readback millisecond clock cases");
   console.log("Three actual user update/readback millisecond clock cases");
+  console.log("Three actual session creation/readback millisecond clock cases");
 } finally {
   await sqliteDb.destroy();
   await postgresDb.destroy();

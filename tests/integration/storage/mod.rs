@@ -58,6 +58,7 @@ mod postgres_user_jsonb_values;
 mod postgres_user_jsonb_signup;
 mod user_clock;
 mod user_update_clock;
+mod session_creation_clock;
 mod native_api_keys;
 mod native_device_codes;
 mod native_jwks;

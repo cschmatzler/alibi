@@ -6,7 +6,7 @@ use alibi_core::store::SessionStore;
 use alibi_core::types::CreateSession;
 use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, SubsecRound, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
     QueryOrder, QuerySelect,
@@ -46,7 +46,7 @@ where
                 return Err(AuthError::SessionCreationCancelled);
             }
         }
-        let now = Utc::now();
+        let now = Utc::now().trunc_subsecs(3);
         create_session.ip_address = Self::normalize_session_client_field(create_session.ip_address);
         create_session.user_agent = Self::normalize_session_client_field(create_session.user_agent);
         let token = create_session
