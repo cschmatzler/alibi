@@ -85,6 +85,14 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
     ) {
         return Ok(crate::JsonMetadata::for_backend(JsValue::from(value), backend)?.into());
     }
+    let value = if matches!(
+        column.def().get_column_type(),
+        ColumnType::TimestampWithTimeZone | ColumnType::Timestamp | ColumnType::DateTime
+    ) {
+        value.revive_date_string()
+    } else {
+        value
+    };
     if backend == DbBackend::Postgres && matches!(column.def().get_column_type(), ColumnType::Text)
     {
         return Ok(Value::String(
@@ -92,14 +100,20 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
                 .map(|text| text.to_utf8_binding()),
         ));
     }
-    if let RawFieldValue::Date(date) = &value {
-        match column.def().get_column_type() {
-            ColumnType::TimestampWithTimeZone => return Ok(Value::ChronoDateTimeUtc(Some(*date))),
-            ColumnType::Timestamp | ColumnType::DateTime => {
-                return Ok(Value::ChronoDateTime(Some(date.naive_utc())));
-            }
-            _ => {}
+    match (column.def().get_column_type(), &value) {
+        (ColumnType::TimestampWithTimeZone, RawFieldValue::Date(date)) => {
+            return Ok(Value::ChronoDateTimeUtc(Some(*date)));
         }
+        (ColumnType::TimestampWithTimeZone, RawFieldValue::Null) => {
+            return Ok(Value::ChronoDateTimeUtc(None));
+        }
+        (ColumnType::Timestamp | ColumnType::DateTime, RawFieldValue::Date(date)) => {
+            return Ok(Value::ChronoDateTime(Some(date.naive_utc())));
+        }
+        (ColumnType::Timestamp | ColumnType::DateTime, RawFieldValue::Null) => {
+            return Ok(Value::ChronoDateTime(None));
+        }
+        _ => {}
     }
     let value = bind_scalar(value)?;
     match column.def().get_column_type() {

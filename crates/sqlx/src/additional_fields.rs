@@ -72,6 +72,11 @@ pub(crate) async fn prepare_value(
     if kind == ColumnKind::Json {
         return Ok(JsonMetadata::for_backend(JsValue::from(value), backend)?.into_sql_value());
     }
+    let value = if matches!(kind, ColumnKind::Timestamp | ColumnKind::NaiveTimestamp) {
+        value.revive_date_string()
+    } else {
+        value
+    };
     if backend == crate::pool::Engine::Postgres && kind == ColumnKind::Text {
         return Ok(SqlValue::Text(
             alibi_core::store::postgres_parameter::text_parameter(&JsValue::from(value))?
@@ -82,19 +87,14 @@ pub(crate) async fn prepare_value(
         (ColumnKind::Timestamp, RawFieldValue::Date(value)) => {
             return Ok(SqlValue::Timestamp(Some(*value)));
         }
+        (ColumnKind::Timestamp, RawFieldValue::Null) => return Ok(SqlValue::Timestamp(None)),
         (ColumnKind::NaiveTimestamp, RawFieldValue::Date(value)) => {
             return Ok(SqlValue::NaiveTimestamp(Some(value.naive_utc())));
         }
-        _ => {}
-    }
-    if backend == crate::pool::Engine::Postgres {
-        match (kind, &value) {
-            (ColumnKind::Timestamp, RawFieldValue::Null) => return Ok(SqlValue::Timestamp(None)),
-            (ColumnKind::NaiveTimestamp, RawFieldValue::Null) => {
-                return Ok(SqlValue::NaiveTimestamp(None));
-            }
-            _ => {}
+        (ColumnKind::NaiveTimestamp, RawFieldValue::Null) => {
+            return Ok(SqlValue::NaiveTimestamp(None));
         }
+        _ => {}
     }
     let value = bind_scalar(value)?;
     match kind {
