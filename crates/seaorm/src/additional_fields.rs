@@ -85,6 +85,13 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
     ) {
         return Ok(crate::JsonMetadata::for_backend(JsValue::from(value), backend)?.into());
     }
+    if backend == DbBackend::Postgres && matches!(column.def().get_column_type(), ColumnType::Text)
+    {
+        return Ok(Value::String(
+            alibi_core::store::postgres_parameter::text_parameter(&JsValue::from(value))?
+                .map(|text| text.to_utf8_binding()),
+        ));
+    }
     let value = bind_scalar(value)?;
     match column.def().get_column_type() {
         ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => {
@@ -115,7 +122,7 @@ pub fn physical_json_value(value: Value, exact: bool) -> AuthResult<JsValue> {
         Value::Json(Some(value)) => {
             if exact {
                 return Err(AuthError::not_implemented(
-                    "Exact SQLite JSON output transforms require a JsonMetadata model field",
+                    "Exact JSON text output requires a JsonMetadata model field",
                 ));
             }
             JsValue::String(alibi_core::utils::json::to_string(&JsValue::from(*value))?.into())

@@ -114,6 +114,18 @@ impl sea_orm::TryGetable for JsonMetadata {
         result: &sea_orm::QueryResult,
         index: I,
     ) -> Result<Self, sea_orm::TryGetError> {
+        if let Some(row) = result.try_as_pg_row() {
+            use sea_orm::sqlx::{Row, Type, ValueRef};
+            let raw = row
+                .try_get_raw(index.as_sqlx_postgres_index())
+                .map_err(|error| {
+                    sea_orm::TryGetError::DbErr(sea_orm::DbErr::Custom(error.to_string()))
+                })?;
+            if <String as Type<sea_orm::sqlx::Postgres>>::compatible(&raw.type_info()) {
+                let text = String::try_get_by(result, index)?;
+                return Ok(Self(JsValue::String(text.into()), JsonBinding::Read));
+            }
+        }
         if let Some(row) = result.try_as_sqlite_row() {
             use sea_orm::sqlx::{Row, TypeInfo, ValueRef};
             let raw = row

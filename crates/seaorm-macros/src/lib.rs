@@ -25,7 +25,22 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
             ident: field.ident.clone(),
             camel: field.camel.clone(),
             physical: field.physical.clone(),
-            output: None,
+            output: {
+                let ty = &field.ty;
+                quote!(#ty).to_string().contains("JsonMetadata").then(|| {
+                    let name = &field.ident;
+                    let column = &field.column;
+                    let adapter = &roots.seaorm;
+                    let core = &roots.core;
+                    quote! {
+                        if matches!(#adapter::sea_orm::ColumnTrait::def(&Column::#column).get_column_type(), #adapter::sea_orm::sea_query::ColumnType::Text) {
+                            #adapter::additional_fields::physical_json_value(self.#name.clone().into(), true)?
+                        } else {
+                            #core::utils::json::to_js_value(&self.#name)?
+                        }
+                    }
+                })
+            },
         })
         .collect();
     let ident = &input.ident;

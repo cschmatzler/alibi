@@ -84,13 +84,37 @@ pub(crate) fn additional_fields(fields: &[Field], roots: &Roots) -> TokenStream 
         // Only metadata documents have a backend-specific binding; other
         // `sea_orm` value types bind as themselves.
         let ty = &field.ty;
-        let prepared = if quote!(#ty).to_string().contains("JsonMetadata") {
-            quote! { #seaorm_root::json_metadata::MetadataBinding::prepare(value, backend)? }
+        let json_metadata = quote!(#ty).to_string().contains("JsonMetadata");
+        let binding = if json_metadata {
+            quote! {
+                if backend == #seaorm_root::sea_orm::DbBackend::Postgres
+                    && matches!(#seaorm_root::sea_orm::ColumnTrait::def(&Column::#column).get_column_type(), #seaorm_root::sea_orm::sea_query::ColumnType::Text)
+                    && matches!(value, #seaorm_root::sea_orm::Value::String(None))
+                {
+                    #seaorm_root::sea_orm::Value::Json(None)
+                } else {
+                    value
+                }
+            }
+        } else {
+            quote! { value }
+        };
+        let prepared = if json_metadata {
+            quote! {
+                if backend == #seaorm_root::sea_orm::DbBackend::Postgres
+                    && matches!(#seaorm_root::sea_orm::ColumnTrait::def(&Column::#column).get_column_type(), #seaorm_root::sea_orm::sea_query::ColumnType::Text)
+                {
+                    value
+                } else {
+                    #seaorm_root::json_metadata::MetadataBinding::prepare(value, backend)?
+                }
+            }
         } else {
             quote! { value }
         };
         stages.push(quote! {
             Column::#column => {
+                let value = #binding;
                 let value = <#ty as #seaorm_root::sea_orm::sea_query::ValueType>::try_from(value)
                     .map_err(|_error| #core_root::AuthError::internal("field value cannot be represented by its model column"))?;
                 active.#name = #seaorm_root::sea_orm::ActiveValue::Set(#prepared);
@@ -133,8 +157,22 @@ pub(crate) fn user_impl(
         quote! { #camel => Some(Column::#column), }
     });
     let prepare_json_metadata = if has("metadata") {
+        let metadata_column = &model_fields
+            .iter()
+            .find(|field| field.ident == "metadata")
+            .expect("metadata field exists")
+            .column;
+        let text_metadata = model_fields.iter().any(|field| {
+            let ty = &field.ty;
+            field.ident == "metadata" && quote!(#ty).to_string().contains("JsonMetadata")
+        });
         quote! {
             fn prepare_json_metadata(active: &mut Self::ActiveModel, backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<()> {
+                if #text_metadata && backend == #seaorm_root::sea_orm::DbBackend::Postgres
+                    && matches!(#seaorm_root::sea_orm::ColumnTrait::def(&Column::#metadata_column).get_column_type(), #seaorm_root::sea_orm::sea_query::ColumnType::Text)
+                {
+                    return Ok(());
+                }
                 if let #seaorm_root::sea_orm::ActiveValue::Set(value) = &active.metadata {
                     active.metadata = #seaorm_root::sea_orm::ActiveValue::Set(
                         #seaorm_root::json_metadata::MetadataBinding::prepare(value.clone(), backend)?

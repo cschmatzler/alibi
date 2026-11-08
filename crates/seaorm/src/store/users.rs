@@ -202,6 +202,11 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
                 column.def().get_column_type(),
                 sea_orm::sea_query::ColumnType::Json | sea_orm::sea_query::ColumnType::JsonBinary
             )
+            && !(db.get_database_backend() == sea_orm::DbBackend::Postgres
+                && matches!(
+                    column.def().get_column_type(),
+                    sea_orm::sea_query::ColumnType::Text
+                ))
         {
             return Err(AuthError::internal("Unsupported native user SQL parameter"));
         }
@@ -441,7 +446,36 @@ where
                 .adapter_native_fields
                 .insert("id".into(), raw_id.clone());
         }
+        let metadata_text = if db.get_database_backend() == sea_orm::DbBackend::Postgres {
+            match (
+                S::User::list_users_column("metadata"),
+                create_user.metadata.as_ref(),
+            ) {
+                (Some(column), Some(value))
+                    if matches!(
+                        column.def().get_column_type(),
+                        sea_orm::sea_query::ColumnType::Text
+                    ) =>
+                {
+                    Some((
+                        column,
+                        sea_orm::Value::String(
+                            alibi_core::store::postgres_parameter::text_parameter(
+                                &alibi_core::utils::json::JsValue::from(value.clone()),
+                            )?
+                            .map(|text| text.to_utf8_binding()),
+                        ),
+                    ))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         let mut model = S::User::new_active(user_id, create_user, now);
+        if let Some((column, value)) = metadata_text {
+            S::User::set_additional_field(&mut model, column, value, db.get_database_backend())?;
+        }
         stage_provider_text::<S::User, _>(
             db,
             &mut model,
