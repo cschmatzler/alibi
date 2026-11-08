@@ -173,6 +173,15 @@ impl<S: AuthSchema> AfterHookQueue<S> {
         Ok(())
     }
 
+    pub async fn discard_session_creation(&self, session_id: &str) -> AuthResult<()> {
+        use crate::AuthSession as _;
+        let mut events = self.0.lock().await;
+        let index = events.iter().rposition(|event| matches!(event, AfterHook::SessionCreated(session) if session.id().as_ref() == session_id))
+            .ok_or_else(|| AuthError::internal("Session mirror failure has no matching create event"))?;
+        _ = events.remove(index);
+        Ok(())
+    }
+
     /// Keep plugin retirement after the selected row's application after-hooks.
     pub async fn attach_session_retirement(
         &self,
@@ -245,6 +254,64 @@ impl<S: AuthSchema> AfterHookQueue<S> {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+    use crate::store::stateless::StatelessSchema;
+
+    fn session(id: &str, token: &str) -> crate::SessionView {
+        serde_json::from_value(serde_json::json!({
+            "id":id,"token":token,"userId":"owner",
+            "expiresAt":"2031-01-01T00:00:00.123Z",
+            "createdAt":"2020-01-01T00:00:00.123Z",
+            "updatedAt":"2020-01-01T00:00:00.123Z"
+        }))
+        .unwrap()
+    }
+
+    #[tokio::test]
+    async fn failed_mirror_discards_only_the_latest_matching_creation() {
+        let queue = AfterHookQueue::<StatelessSchema>::new();
+        queue
+            .push(AfterHook::UserUpdateMissing("unrelated-user".into()))
+            .await;
+        queue
+            .push(AfterHook::SessionCreated(session("same-id", "earlier")))
+            .await;
+        queue
+            .push(AfterHook::AccountUpdateMissing("unrelated-account".into()))
+            .await;
+        queue
+            .push(AfterHook::SessionCreated(session("same-id", "failed")))
+            .await;
+        queue.discard_session_creation("same-id").await.unwrap();
+        let events = queue.0.into_inner();
+        assert_eq!(events.len(), 3);
+        assert!(matches!(&events[0], AfterHook::UserUpdateMissing(id) if id == "unrelated-user"));
+        assert!(
+            matches!(&events[1], AfterHook::SessionCreated(session) if session.id == "same-id" && session.token == "earlier")
+        );
+        assert!(
+            matches!(&events[2], AfterHook::AccountUpdateMissing(id) if id == "unrelated-account")
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_creation_is_an_error_without_discarding_other_hooks() {
+        let queue = AfterHookQueue::<StatelessSchema>::new();
+        queue
+            .push(AfterHook::SessionCreated(session("present", "retained")))
+            .await;
+        let error = queue.discard_session_creation("missing").await.unwrap_err();
+        assert!(error.to_string().contains("no matching create event"));
+        let events = queue.0.into_inner();
+        assert_eq!(events.len(), 1);
+        assert!(
+            matches!(&events[0], AfterHook::SessionCreated(session) if session.id == "present" && session.token == "retained")
+        );
     }
 }
 

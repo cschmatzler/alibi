@@ -487,17 +487,40 @@ impl<S: AuthSchema> PluginStore<S> {
         if self.secondary().is_none() {
             return Ok(());
         }
+        // The source mirror reads getTime() on the original creation input,
+        // after SQL conversion, not on the returned storage model.
+        let expires_at = match creation_fields.get("expiresAt") {
+            Some(crate::utils::json::JsValue::Date(date)) => *date,
+            value => {
+                let message = match value {
+                    Some(crate::utils::json::JsValue::Null) => {
+                        "Cannot read properties of null (reading 'getTime')"
+                    }
+                    None | Some(crate::utils::json::JsValue::Undefined) => {
+                        "Cannot read properties of undefined (reading 'getTime')"
+                    }
+                    _ => "data.expiresAt.getTime is not a function",
+                };
+                return Err(crate::store::adapter::callback_error(AuthError::internal(
+                    message,
+                )));
+            }
+        };
         let now = Utc::now();
         let mut references = self.references(session.user_id().as_ref()).await?;
         references.retain(|reference| reference.token != session.token());
         references.push(Reference {
             token: session.token().to_owned(),
-            expires_at: session.expires_at(),
+            expires_at,
         });
         self.write_references(session.user_id().as_ref(), references)
             .await?;
         let user = user.await?;
-        let ttl = Duration::seconds((session.expires_at() - now).num_seconds());
+        let ttl = Duration::seconds(
+            (expires_at.timestamp_millis() - now.timestamp_millis())
+                .div_euclid(1000)
+                .max(0),
+        );
         if ttl > Duration::zero() {
             let user = match user {
                 Some(user) => self
@@ -827,11 +850,16 @@ mod creation_order_tests {
             Default::default(),
             context,
         );
+        let mut creation_fields = FieldValues::new();
+        _ = creation_fields.insert(
+            "expiresAt".to_owned(),
+            crate::utils::json::JsValue::Date(session.expires_at()),
+        );
         let result = store
             .mirror_session_creation(
                 &session,
                 session.created_at(),
-                &FieldValues::new(),
+                &creation_fields,
                 &AdapterOutput::default(),
                 async {
                     let index = cache.get("active-sessions-owner").await?.unwrap();

@@ -542,7 +542,10 @@ impl<S: AuthSchema> PluginStore<S> {
             self.adapter_fields
                 .attach(&mut create_session.additional_fields, true);
         }
-        let creation_fields = create_session.additional_fields.clone();
+        let mut creation_fields = create_session.additional_fields.clone();
+        _ = creation_fields
+            .entry("expiresAt".to_owned())
+            .or_insert(crate::utils::json::JsValue::Date(create_session.expires_at));
         let session = if self.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)

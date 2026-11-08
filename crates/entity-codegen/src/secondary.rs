@@ -29,7 +29,7 @@ pub fn secondary_codec(fields: &FieldsNamed, core_root: &TokenStream) -> TokenSt
     }
 }
 
-/// Overlay session output using Rust snapshot keys, independently of SQL names.
+/// Encode logical session properties independently of Rust and SQL column names.
 #[must_use]
 pub(crate) fn session_secondary_codec(
     fields: &FieldsNamed,
@@ -41,10 +41,18 @@ pub(crate) fn session_secondary_codec(
         .iter()
         .filter_map(|field| field.ident.as_ref())
         .collect();
-    let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
+    let key = |ident: &syn::Ident| {
+        entity_fields
+            .iter()
+            .find(|field| field.ident == *ident)
+            .expect("validated session field metadata")
+            .camel
+            .clone()
+    };
+    let keys: Vec<_> = names.iter().map(|ident| key(ident)).collect();
     let decode = fields.named.iter().map(|field| {
         let name = field.ident.as_ref().expect("named field");
-        let key = name.to_string();
+        let key = key(name);
         if crate::is_option(&field.ty) {
             quote! { #name: fields.shift_remove(#key).map(#core_root::utils::json::from_value).transpose()?.flatten(), }
         } else {
@@ -52,28 +60,9 @@ pub(crate) fn session_secondary_codec(
                 #core_root::AuthError::internal("Incomplete secondary session snapshot"))?)?, }
         }
     });
-    let inverse = entity_fields.iter().map(|field| {
-        let key = field.ident.to_string();
-        let wire = &field.camel;
-        quote! { Some(#key) => #core_root::utils::json::JsString::from(#wire), }
-    });
     let absent = entity_fields.iter().map(|field| {
-        let key = field.ident.to_string();
         let wire = &field.camel;
-        quote! { if !fields.contains_key(#key) { output.insert(#wire.to_owned(), None); } }
-    });
-    let mapping = entity_fields
-        .iter()
-        .map(|field| {
-            let key = field.ident.to_string();
-            let wire = &field.camel;
-            quote! { Some(#wire) => #core_root::utils::json::JsString::from(#key), }
-        })
-        .collect::<Vec<_>>();
-    let removals = entity_fields.iter().map(|field| {
-        let key = field.ident.to_string();
-        let wire = &field.camel;
-        quote! { if native.field_is_undefined(#wire) { _ = snapshot.shift_remove(#key); } }
+        quote! { if !fields.contains_key(#wire) { output.insert(#wire.to_owned(), None); } }
     });
     quote! {
         fn secondary_snapshot(&self) -> #core_root::AuthResult<#core_root::utils::json::JsValue> {
@@ -93,8 +82,7 @@ pub(crate) fn session_secondary_codec(
             };
             let mut output = #core_root::AdapterOutput::default();
             for (key, value) in &fields {
-                let wire = match key.as_str() { #(#inverse)* _ => key.clone() };
-                output.insert_js(wire, value.clone());
+                output.insert_js(key.clone(), value.clone());
             }
             #(#absent)*
             Ok(output)
@@ -106,17 +94,13 @@ pub(crate) fn session_secondary_codec(
             let #core_root::utils::json::JsValue::Object(mut snapshot) = self.secondary_snapshot()? else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
-            // Unknown trusted properties survive; declared logical names map to
-            // actual Rust fields, never to renamed database columns.
-            for name in snapshot.keys().cloned().chain(native.values().keys().cloned()).collect::<Vec<_>>() {
-                let key = match name.as_str() { #(#mapping)* _ => name.clone() };
-                if native.values().get(&name).is_some_and(#core_root::utils::json::JsValue::is_undefined) {
-                    _ = snapshot.shift_remove(&key);
-                } else if let Some(value) = native.values().get(&name) {
-                    _ = snapshot.insert(key, value.clone());
+            for (name, value) in native.values() {
+                if value.is_undefined() {
+                    _ = snapshot.shift_remove(name);
+                } else {
+                    _ = snapshot.insert(name.clone(), value.clone());
                 }
             }
-            #(#removals)*
             Ok(#core_root::utils::json::JsValue::Object(snapshot))
         }
     }

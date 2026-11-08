@@ -865,7 +865,10 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             self.adapter_fields
                 .attach(&mut create_session.additional_fields, true);
         }
-        let creation_fields = create_session.additional_fields.clone();
+        let mut creation_fields = create_session.additional_fields.clone();
+        _ = creation_fields
+            .entry("expiresAt".to_owned())
+            .or_insert(crate::utils::json::JsValue::Date(create_session.expires_at));
         let session = if self.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)
@@ -899,7 +902,8 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                     .await?;
             } else {
                 let user_id = session.user_id();
-                self.record_store
+                if let Err(error) = self
+                    .record_store
                     .mirror_session_creation(
                         session,
                         created_at,
@@ -907,7 +911,13 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
                         record.raw_snapshot(),
                         self.inner.get_user_by_id_record(user_id.as_ref()),
                     )
-                    .await?;
+                    .await
+                {
+                    self.inner
+                        .discard_session_creation_after_hook(session.id().as_ref())
+                        .await?;
+                    return Err(error);
+                }
             }
         }
         self.pending_sessions

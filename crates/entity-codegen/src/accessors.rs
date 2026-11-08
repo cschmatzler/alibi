@@ -150,11 +150,11 @@ pub fn auth_session_impl(
             })
             .expect("validated session created_at field");
         let created_at_type = &created_at_field.ty;
-        let created_at_key = created_at_field
-            .ident
-            .as_ref()
-            .expect("named field")
-            .to_string();
+        let created_at_key = &entity_fields
+            .iter()
+            .find(|field| field.ident == "created_at")
+            .expect("validated session created_at metadata")
+            .camel;
         quote! {
             #codec
             fn secondary_snapshot_for_creation(

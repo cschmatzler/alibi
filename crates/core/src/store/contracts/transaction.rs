@@ -434,6 +434,13 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
 
+    /// A failed inline mirror never reaches the source after-hook registration.
+    async fn discard_session_creation_after_hook(&self, _session_id: &str) -> AuthResult<()> {
+        Err(AuthError::not_implemented(
+            "Transactional session hook cancellation is unsupported",
+        ))
+    }
+
     /// Stage an update against a trusted cached model using this transaction's hooks.
     async fn prepare_secondary_session_update(
         &self,

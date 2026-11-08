@@ -2048,6 +2048,11 @@ where
             .await;
         Ok(session)
     }
+    async fn discard_session_creation_after_hook(&self, session_id: &str) -> AuthResult<()> {
+        self.pending_after
+            .discard_session_creation(session_id)
+            .await
+    }
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
         let session = self
             .store

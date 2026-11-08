@@ -8,6 +8,9 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+mod secondary;
+mod secondary_transactions;
+
 backend_tests!(
     session_creation_dates_precede_sync_input_callbacks,
     session_creation_dates_precede_async_input_callbacks,
