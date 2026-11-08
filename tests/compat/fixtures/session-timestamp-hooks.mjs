@@ -9,10 +9,11 @@ import { getMigrations } from "../reference-server/node_modules/better-auth/dist
 import { getCurrentAdapter, runWithTransaction } from "../reference-server/node_modules/@better-auth/core/dist/context/transaction.mjs";
 
 const updatedAtOmit = process.argv[2] === "--updated-at-omit-required";
+const createdAtOmit = process.argv[2] === "--created-at-omit-required";
 const noUpdateFactory = process.argv[2] === "--updated-at-no-factory";
-const requiredTimestamp = process.argv[2] === "--omit-required" || updatedAtOmit;
+const requiredTimestamp = process.argv[2] === "--omit-required" || updatedAtOmit || createdAtOmit;
 const updatedAt = process.argv[2] === "--updated-at" || updatedAtOmit || noUpdateFactory;
-const timestampField = updatedAt ? "updatedAt" : "expiresAt";
+const timestampField = createdAtOmit ? "createdAt" : updatedAt ? "updatedAt" : "expiresAt";
 const compatibleStringResult = process.argv[2] === "--string-result-compatible";
 const stringResult = process.argv[2] === "--string-result" || compatibleStringResult;
 const resultText = compatibleStringResult ? "2035-02-03 04:05:06.123987" : "2035-02-03T04:05:06.123987Z";
@@ -231,8 +232,8 @@ try {
     profiles.push({ backend, ...(requiredTimestamp ? { schema_sql: schemaSql } : {}), cases });
   }
   if (!omitResult && !stringResult && !noUpdateFactory) assert.deepEqual(profiles[0].cases, profiles[1].cases);
-  const filename = wireZero ? "session-timestamp-hooks-secondary-wire-zero-ms" : noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
-  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt ? { field: timestampField } : {}), profiles }) + "\n");
+  const filename = createdAtOmit ? "session-created-at-hooks-omit-required" : wireZero ? "session-timestamp-hooks-secondary-wire-zero-ms" : noUpdateFactory ? "session-updated-at-hooks-no-factory" : updatedAtOmit ? "session-updated-at-hooks-omit-required" : updatedAt ? "session-updated-at-hooks" : stringResult ? compatibleStringResult ? "session-timestamp-hooks-string-compatible" : "session-timestamp-hooks-string" : wireOwner ? "session-timestamp-hooks-secondary-wire-owner" : wireUnknown ? "session-timestamp-hooks-secondary-wire-unknown" : wireFields ? "session-timestamp-hooks-secondary-wire-fields" : wire ? "session-timestamp-hooks-secondary-wire" : transactions ? deferred ? "session-timestamp-hooks-secondary-deferred" : "session-timestamp-hooks-secondary-transactions" : secondaryString ? "session-timestamp-hooks-secondary-string" : secondary ? "session-timestamp-hooks-secondary" : requiredTimestamp ? "session-timestamp-hooks-omit-required" : omitResult ? "session-timestamp-hooks-omit" : "session-timestamp-hooks";
+  await writeFile(new URL(`../../fixtures/${filename}.json`, import.meta.url), JSON.stringify({ better_auth: "1.7.18", ...(updatedAt || createdAtOmit ? { field: timestampField } : {}), profiles }) + "\n");
   console.log(`${profiles.reduce((count, profile) => count + profile.cases.length, 0)} actual SQLite/PostgreSQL session timestamp callback cases`);
 } finally {
   await sqliteDb.destroy();

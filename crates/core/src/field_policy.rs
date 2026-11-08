@@ -340,12 +340,72 @@ impl FieldValues {
         }
     }
 
-    /// Whether the declared adapter schema owns this field before input transforms run.
+    /// Whether the attached adapter schema owns this field before input transforms run.
     #[must_use]
     pub fn has_adapter_field(&self, name: &str) -> bool {
         self.adapter_fields
             .as_ref()
             .is_some_and(|fields| fields.contains_key(name))
+    }
+
+    /// Take an unconfigured Date before input transforms consume schema metadata.
+    /// Typed core setters retain native precision without requiring generic bindings.
+    #[must_use]
+    pub fn take_unconfigured_timestamp(
+        &mut self,
+        name: &str,
+    ) -> Option<chrono::DateTime<chrono::Utc>> {
+        if self.has_adapter_field(name) {
+            return None;
+        }
+        let Some(JsValue::Date(date)) = self.values.get(name) else {
+            return None;
+        };
+        let date = *date;
+        _ = self.values.shift_remove(name);
+        Some(date)
+    }
+
+    /// Prepare builtin clock defaults and schema order for SQL session creation.
+    /// Declared descriptors replace builtins, including the absence of a factory.
+    pub fn prepare_session_creation(&mut self) {
+        let created = !self.has_adapter_field("createdAt")
+            && matches!(
+                self.values.get("createdAt"),
+                None | Some(JsValue::Undefined | JsValue::Null)
+            );
+        let updated = !self.has_adapter_field("updatedAt")
+            && matches!(
+                self.values.get("updatedAt"),
+                None | Some(JsValue::Undefined | JsValue::Null)
+            );
+        if !created && !updated && self.adapter_fields.is_none() {
+            return;
+        }
+        let mut pending = self.adapter_fields.as_deref().cloned().unwrap_or_default();
+        if created {
+            let mut field = FieldConfig::new(serde_json::json!({"type":"date"}))
+                .default_callback(|| JsValue::Date(chrono::Utc::now().trunc_subsecs(3)));
+            field.required = true;
+            _ = pending.insert("createdAt".to_owned(), field);
+        }
+        if updated {
+            let mut field = FieldConfig::new(serde_json::json!({"type":"date"}));
+            field.required = true;
+            _ = pending.insert("updatedAt".to_owned(), field);
+        }
+        let mut fields = FieldConfigs::new();
+        for core in alibi_schema_registry::core_fields(alibi_schema_registry::EntityRole::Session) {
+            let name = core.column_name.unwrap_or(core.name);
+            if name != "id"
+                && let Some(field) = pending.shift_remove(name)
+            {
+                _ = fields.insert(name.to_owned(), field);
+            }
+        }
+        fields.extend(pending);
+        self.adapter_fields = Some(Arc::new(fields));
+        self.transform_omitted = true;
     }
 
     /// Move a typed timestamp through its declared input policy. Taking ownership
@@ -1073,6 +1133,7 @@ mod timestamp_input_tests {
         assert!(!fields.has_adapter_field("updatedAt"));
         fields.take_timestamp_input("expiresAt", &mut typed);
         assert_eq!(typed, None);
+        assert_eq!(fields.take_unconfigured_timestamp("expiresAt"), None);
         assert_eq!(fields.get("expiresAt"), Some(&JsValue::Date(date)));
         fields.apply_adapter_transforms().unwrap();
         assert!(!fields.has_adapter_field("expiresAt"));
@@ -1088,11 +1149,18 @@ mod timestamp_input_tests {
         fields.take_timestamp_input("expiresAt", &mut typed);
         assert_eq!(typed, Some(date));
         assert!(fields.is_empty());
+        _ = fields.insert("createdAt".to_owned(), JsValue::Date(date));
+        assert_eq!(fields.take_unconfigured_timestamp("createdAt"), Some(date));
+        assert!(!fields.contains_key("createdAt"));
         for value in [
             JsValue::Undefined,
             JsValue::Null,
             JsValue::String("explicit".into()),
         ] {
+            let mut native = FieldValues::new();
+            _ = native.insert("createdAt".to_owned(), value.clone());
+            assert_eq!(native.take_unconfigured_timestamp("createdAt"), None);
+            assert_eq!(native.get("createdAt"), Some(&value));
             let mut fields = FieldValues {
                 adapter_fields: Some(Arc::new(FieldConfigs::from([(
                     "expiresAt".to_owned(),

@@ -526,7 +526,6 @@ impl<S: AuthSchema> PluginStore<S> {
         &self,
         mut create_session: CreateSession,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        let created_at = chrono::Utc::now().trunc_subsecs(3);
         for callback in &self.session_callbacks.callbacks {
             callback
                 .before_create(&create_session, &self.projection_context, None)
@@ -534,6 +533,13 @@ impl<S: AuthSchema> PluginStore<S> {
         }
         self.session_fields
             .defaults(&mut create_session.additional_fields);
+        let created_at = chrono::Utc::now().trunc_subsecs(3);
+        for name in ["createdAt", "updatedAt"] {
+            _ = create_session
+                .additional_fields
+                .entry(name.to_owned())
+                .or_insert(crate::utils::json::JsValue::Date(created_at));
+        }
         let created_at = match create_session.additional_fields.get("createdAt") {
             Some(crate::utils::json::JsValue::Date(date)) => *date,
             _ => created_at,

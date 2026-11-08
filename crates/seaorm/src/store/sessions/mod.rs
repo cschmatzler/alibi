@@ -37,6 +37,13 @@ where
         if create_session.token.is_none() {
             create_session.token = Some(alibi_core::utils::sessions::generate_session_token());
         }
+        let now = Utc::now().trunc_subsecs(3);
+        for name in ["createdAt", "updatedAt"] {
+            _ = create_session
+                .additional_fields
+                .entry(name.to_owned())
+                .or_insert(JsValue::Date(now));
+        }
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -48,7 +55,6 @@ where
                 return Err(AuthError::SessionCreationCancelled);
             }
         }
-        let now = Utc::now().trunc_subsecs(3);
         create_session.ip_address = Self::normalize_session_client_field(create_session.ip_address);
         create_session.user_agent = Self::normalize_session_client_field(create_session.user_agent);
         let token = create_session
@@ -56,7 +62,13 @@ where
             .take()
             .unwrap_or_else(alibi_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
+        if persist {
+            fields.prepare_session_creation();
+        }
+        let owns_created_at = persist && fields.has_adapter_field("createdAt");
         let owns_updated_at = persist && fields.has_adapter_field("updatedAt");
+        let created_at = fields.take_unconfigured_timestamp("createdAt");
+        let updated_at = fields.take_unconfigured_timestamp("updatedAt");
         let mut expiry = Some(create_session.expires_at);
         if persist {
             fields.take_timestamp_input("expiresAt", &mut expiry);
@@ -104,29 +116,35 @@ where
             .as_deref()
             .map(S::Session::parse_id)
             .transpose()?;
-        let mut active = S::Session::new_active(id, token, create_session, now);
-        if owns_updated_at {
-            use sea_orm::{Iden, Iterable};
-            let physical = S::Session::updated_at_column().ok_or_else(|| {
+        let mut active =
+            S::Session::new_active(id, token, create_session, created_at.unwrap_or(now));
+        if !owns_updated_at {
+            S::Session::set_updated_at(&mut active, updated_at.unwrap_or(now));
+        }
+        let updated_column = if owns_updated_at {
+            Some(S::Session::updated_at_column().ok_or_else(|| {
                 AuthError::config("Session model does not expose its update-clock column")
-            })?;
+            })?)
+        } else {
+            None
+        };
+        for physical in [
+            owns_created_at.then(S::Session::created_at_column),
+            updated_column,
+            expiry.is_none().then(S::Session::expires_at_column),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            use sea_orm::{Iden, Iterable};
             let column =
                 <<S::Session as SeaOrmSessionModel>::Entity as EntityTrait>::Column::iter()
                     .find(|column| column.to_string() == physical.to_string())
                     .ok_or_else(|| {
-                        AuthError::config("Session entity does not expose its update-clock column")
-                    })?;
-            _ = active.take(column);
-        }
-        if expiry.is_none() {
-            use sea_orm::{Iden, Iterable};
-            let column =
-                <<S::Session as SeaOrmSessionModel>::Entity as EntityTrait>::Column::iter()
-                    .find(|column| {
-                        column.to_string() == S::Session::expires_at_column().to_string()
-                    })
-                    .ok_or_else(|| {
-                        AuthError::config("Session entity does not expose its expiry column")
+                        AuthError::config(format!(
+                            "Session entity does not expose column {}",
+                            physical.to_string()
+                        ))
                     })?;
             _ = active.take(column);
         }
