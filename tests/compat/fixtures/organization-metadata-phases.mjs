@@ -48,7 +48,7 @@ try {
     const cases = [];
     let organizationId;
     for (const action of ["omitted", "create", "update"]) {
-      const input = action === "omitted" ? undefined : { clock: "2025-02-03T04:05:06Z", project: action, revisions: [1, 2] };
+      const input = action === "omitted" ? undefined : { clock: "2025-02-03T04:05:06Z", numbers: [1e20, 1e21, 1e-6, 1e-7, -0], project: action, revisions: [1, 2] };
       const output = action === "update" ? await call("/organization/update", { organizationId, data: { metadata: input } })
         : await call("/organization/create", { name: "Metadata", slug: `metadata-${action}`, ...(input === undefined ? {} : { metadata: input }) });
       organizationId = output.id;
