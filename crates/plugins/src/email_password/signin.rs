@@ -134,36 +134,7 @@ pub(crate) async fn sign_in_username_core(
         .await
         .map_err(|error| match error {
             AuthError::InvalidCredentials => SignInUsernameFailure::InvalidUsernameOrPassword,
-            other @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::Unauthenticated
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::UserCreationCancelled
-            | AuthError::SessionCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => SignInUsernameFailure::Auth(other),
+            other => SignInUsernameFailure::Auth(other),
         })?;
 
     if !user.email_verified()
