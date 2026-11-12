@@ -4,7 +4,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeEncoding, OAuthTokenEndpointAuth,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use crate::oauth::{
     HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource,
     OAuthNonceComparison,
@@ -217,17 +216,12 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .access_token
             .filter(|value| !value.is_empty())
             .ok_or("Missing Cognito access token")?;
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .profile_json()
-            .await
-            .map_err(|error| error.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .bearer_auth(access_token),
+        )
+        .await?;
         if !truthy(&profile) {
             return Err("Missing Cognito profile".into());
         }

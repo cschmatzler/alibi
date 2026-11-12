@@ -3,7 +3,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
@@ -153,17 +152,12 @@ impl OAuthUserInfoHandler for DropboxUserInfo {
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         let access_token = request.access_token.ok_or("Missing Dropbox access token")?;
-        let profile: Value = reqwest::Client::new()
-            .post(&self.endpoint)
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .profile_json()
-            .await
-            .map_err(|error| error.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .post(&self.endpoint)
+                .bearer_auth(access_token),
+        )
+        .await?;
         let mut output = Map::new();
         for (value, target) in [
             (

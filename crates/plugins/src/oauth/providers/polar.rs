@@ -4,7 +4,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
@@ -137,17 +136,12 @@ impl OAuthUserInfoHandler for PolarUserInfo {
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         let access_token = super::remaining_profile::bearer_access_token(&request)?;
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .profile_json()
-            .await
-            .map_err(|error| error.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .bearer_auth(access_token),
+        )
+        .await?;
         let application_output = if let Some(mapper) = &self.application_mapper {
             Some(
                 mapper

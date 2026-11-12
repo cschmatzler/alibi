@@ -371,6 +371,18 @@ impl ProfileResponseExt for reqwest::Response {
     }
 }
 
+pub(super) async fn send_profile_json(request: reqwest::RequestBuilder) -> Result<Value, String> {
+    request
+        .send()
+        .await
+        .map_err(|error| error.to_string())?
+        .error_for_status()
+        .map_err(|error| error.to_string())?
+        .profile_json()
+        .await
+        .map_err(|error| error.to_string())
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum ProfileKind {
     Roblox,
@@ -704,15 +716,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
             } else {
                 client.get(endpoint).bearer_auth(&access)
             };
-            transport
-                .send()
-                .await
-                .map_err(|error| error.to_string())?
-                .error_for_status()
-                .map_err(|error| error.to_string())?
-                .profile_json()
-                .await
-                .map_err(|error| error.to_string())?
+            send_profile_json(transport).await?
         };
         if matches!(self.kind, ProfileKind::Salesforce | ProfileKind::Vercel) && !truthy(&profile) {
             return Err("Missing provider profile".into());

@@ -1,6 +1,5 @@
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfo, Value};
 use super::{OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse};
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -69,17 +68,12 @@ impl OAuthUserInfoHandler for GitLabUserInfo {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .bearer_auth(request.access_token.as_deref().unwrap_or("undefined"))
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .profile_json()
-            .await
-            .map_err(|error| error.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .bearer_auth(request.access_token.as_deref().unwrap_or("undefined")),
+        )
+        .await?;
         if profile.is_null() {
             return Err(super::remaining_profile::profile_exception(
                 "Null GitLab profile",

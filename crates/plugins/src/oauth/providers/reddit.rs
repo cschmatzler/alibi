@@ -3,7 +3,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
@@ -137,18 +136,13 @@ impl OAuthUserInfoHandler for RedditUserInfo {
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         let access_token = super::remaining_profile::bearer_access_token(&request)?;
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .bearer_auth(access_token)
-            .header("User-Agent", "better-auth")
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .profile_json()
-            .await
-            .map_err(|e| e.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .bearer_auth(access_token)
+                .header("User-Agent", "better-auth"),
+        )
+        .await?;
         let mapped = if let Some(mapper) = &self.application_mapper {
             mapper
                 .map_profile(profile.clone())

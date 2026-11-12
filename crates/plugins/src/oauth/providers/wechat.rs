@@ -289,9 +289,8 @@ impl OAuthUserInfoHandler for WeChatProfile {
         } else {
             String::new()
         };
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .query(&[
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new().get(&self.endpoint).query(&[
                 ("access_token", access_token.as_str()),
                 (
                     "openid",
@@ -301,15 +300,9 @@ impl OAuthUserInfoHandler for WeChatProfile {
                         .as_str(),
                 ),
                 ("lang", "zh_CN"),
-            ])
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .profile_json()
-            .await
-            .map_err(|e| e.to_string())?;
+            ]),
+        )
+        .await?;
         if !super::remaining_profile::truthy(&profile)
             || profile
                 .get("errcode")

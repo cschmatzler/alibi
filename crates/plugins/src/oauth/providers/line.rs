@@ -147,23 +147,16 @@ impl OAuthUserInfoHandler for LineUserInfo {
         } else {
             // The pinned factory tries userinfo even when the caller has no
             // access token. The remote endpoint owns that credential decision.
-            reqwest::Client::new()
-                .get(&self.endpoint)
-                .header(
+            super::remaining_profile::send_profile_json(
+                reqwest::Client::new().get(&self.endpoint).header(
                     reqwest::header::AUTHORIZATION,
                     format!(
                         "Bearer {}",
                         request.access_token.as_deref().unwrap_or("undefined")
                     ),
-                )
-                .send()
-                .await
-                .map_err(|error| error.to_string())?
-                .error_for_status()
-                .map_err(|error| error.to_string())?
-                .profile_json()
-                .await
-                .map_err(|error| error.to_string())?
+                ),
+            )
+            .await?
         };
         if !truthy(&profile) {
             return Err("Missing line profile".into());

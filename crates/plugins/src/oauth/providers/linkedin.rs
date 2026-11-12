@@ -3,7 +3,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 use async_trait::async_trait;
@@ -126,17 +125,12 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
         let access_token = request
             .access_token
             .ok_or("Missing LinkedIn access token")?;
-        let response: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .bearer_auth(access_token)
-            .send()
-            .await
-            .map_err(|error| error.to_string())?
-            .error_for_status()
-            .map_err(|error| error.to_string())?
-            .profile_json()
-            .await
-            .map_err(|error| error.to_string())?;
+        let response: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .bearer_auth(access_token),
+        )
+        .await?;
         let profile = response;
         let mut output = Map::new();
         for (value, target) in [

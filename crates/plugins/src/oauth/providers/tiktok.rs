@@ -3,7 +3,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 
@@ -95,18 +94,13 @@ impl OAuthUserInfoHandler for TikTokProfile {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let profile: Value = reqwest::Client::new()
-            .get(&self.endpoint)
-            .query(&[("fields", "open_id,avatar_large_url,display_name,username")])
-            .bearer_auth(super::remaining_profile::bearer_access_token(&request)?)
-            .send()
-            .await
-            .map_err(|e| e.to_string())?
-            .error_for_status()
-            .map_err(|e| e.to_string())?
-            .profile_json()
-            .await
-            .map_err(|e| e.to_string())?;
+        let profile: Value = super::remaining_profile::send_profile_json(
+            reqwest::Client::new()
+                .get(&self.endpoint)
+                .query(&[("fields", "open_id,avatar_large_url,display_name,username")])
+                .bearer_auth(super::remaining_profile::bearer_access_token(&request)?),
+        )
+        .await?;
         let data = profile
             .pointer("/data/user")
             .filter(|value| !value.is_null())
