@@ -1,6 +1,6 @@
 //! Effective identity and signature policy from custom service-provider XML.
+use super::saml_crypto::children;
 use super::{AuthError, AuthResult, Value};
-use bergshamra::xml::{Document, NodeId};
 const NS: &str = "urn:oasis:names:tc:SAML:2.0:metadata";
 const POST: &str = "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST";
 pub(super) struct Metadata {
@@ -44,15 +44,6 @@ fn error(code: &str, message: &str) -> AuthError {
         message: message.into(),
     }
 }
-fn children(doc: &Document<'_>, node: NodeId, name: &str) -> Vec<NodeId> {
-    doc.children(node)
-        .into_iter()
-        .filter(|node| {
-            doc.element(*node)
-                .is_some_and(|e| e.name.matches(Some(NS), name))
-        })
-        .collect()
-}
 fn boolean(value: Option<&str>) -> Result<bool, ()> {
     match value.map(str::trim) {
         None | Some("false" | "0") => Ok(false),
@@ -78,7 +69,7 @@ fn parse(xml: &str) -> Result<Metadata, ()> {
         .filter(|s| !s.is_empty())
         .ok_or(())?
         .to_owned();
-    let descriptors = children(&doc, root, "SPSSODescriptor");
+    let descriptors = children(&doc, root, NS, "SPSSODescriptor");
     if descriptors.is_empty() {
         return Err(());
     }
@@ -112,13 +103,13 @@ fn parse(xml: &str) -> Result<Metadata, ()> {
             boolean(doc.get_attribute(descriptor, "WantAssertionsSigned"))?;
         output.authn_requests_signed |=
             doc.get_attribute(descriptor, "AuthnRequestsSigned") == Some("true");
-        for node in children(&doc, descriptor, "NameIDFormat") {
+        for node in children(&doc, descriptor, NS, "NameIDFormat") {
             let value = doc.text_content_deep(node).trim().to_owned();
             if !value.is_empty() && !output.name_id_formats.contains(&value) {
                 output.name_id_formats.push(value);
             }
         }
-        for node in children(&doc, descriptor, "AssertionConsumerService") {
+        for node in children(&doc, descriptor, NS, "AssertionConsumerService") {
             if doc.get_attribute(node, "Binding") != Some(POST) {
                 continue;
             }

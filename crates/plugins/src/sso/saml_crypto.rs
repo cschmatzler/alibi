@@ -33,7 +33,12 @@ fn binding(message: &'static str) -> Failure {
         message: message.into(),
     }
 }
-fn children(doc: &Document<'_>, parent: NodeId, namespace: &str, name: &str) -> Vec<NodeId> {
+pub(super) fn children(
+    doc: &Document<'_>,
+    parent: NodeId,
+    namespace: &str,
+    name: &str,
+) -> Vec<NodeId> {
     doc.children(parent)
         .into_iter()
         .filter(|id| {

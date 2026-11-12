@@ -1,4 +1,5 @@
 //! SAML logout callbacks with configured `IdP` authority and real session retirement.
+use super::saml_crypto::children;
 use super::{
     AuthContext, AuthError, AuthResult, AuthSchema, EndpointResponse, JsValue, ServerEndpoint,
     SsoPlugin, Value, json,
@@ -308,15 +309,6 @@ impl SsoPlugin {
             ctx,
         )
     }
-}
-fn children(doc: &Document<'_>, parent: NodeId, namespace: &str, name: &str) -> Vec<NodeId> {
-    doc.children(parent)
-        .into_iter()
-        .filter(|id| {
-            doc.element(*id)
-                .is_some_and(|element| element.name.matches(Some(namespace), name))
-        })
-        .collect()
 }
 fn verify_signature(doc: &Document<'_>, xml: &str, root: NodeId, config: &Value) -> Result<(), ()> {
     super::saml_crypto::validate_signature_references(doc, root).map_err(|_| ())?;
