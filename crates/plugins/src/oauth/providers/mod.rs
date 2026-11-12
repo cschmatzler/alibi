@@ -467,6 +467,15 @@ pub enum OAuthTokenEndpointAuth {
     ClientKeyPost,
 }
 
+/// Post transport for a confidential client, or none when no secret is configured.
+pub(super) fn client_secret_auth(client_secret: Option<&str>) -> OAuthTokenEndpointAuth {
+    if client_secret.is_some_and(|secret| !secret.is_empty()) {
+        OAuthTokenEndpointAuth::ClientSecretPost
+    } else {
+        OAuthTokenEndpointAuth::None
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationCodeContext {
     pub code: String,

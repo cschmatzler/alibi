@@ -85,6 +85,9 @@ impl OAuthProvider {
                 "Vercel {method} token endpoint authentication {reason} clientSecret"
             ));
         }
+        let token_endpoint_auth = options
+            .token_endpoint_auth
+            .unwrap_or_else(|| super::client_secret_auth(options.client_secret.as_deref()));
         let mut policy = OAuthAuthorizationPolicy {
             preserve_raw_profile_scalars: true,
             source_profile_exceptions: true,
@@ -96,17 +99,7 @@ impl OAuthProvider {
             authorization_code_client_key: options.client_key,
             redirect_uri: options.redirect_uri,
             client_assertion: options.client_assertion,
-            token_endpoint_auth: Some(options.token_endpoint_auth.unwrap_or_else(|| {
-                if options
-                    .client_secret
-                    .as_ref()
-                    .is_some_and(|v| !v.is_empty())
-                {
-                    OAuthTokenEndpointAuth::ClientSecretPost
-                } else {
-                    OAuthTokenEndpointAuth::None
-                }
-            })),
+            token_endpoint_auth: Some(token_endpoint_auth),
             allow_missing_access_token: true,
             preserve_raw_email_errors: true,
             ..OAuthAuthorizationPolicy::default()

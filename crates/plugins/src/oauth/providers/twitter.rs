@@ -64,17 +64,7 @@ impl OAuthProvider {
             disable_default_scopes: options.disable_default_scope,
             authorization_code_client_key: options.client_key,
             redirect_uri: options.redirect_uri,
-            token_endpoint_auth: Some(
-                if options
-                    .client_secret
-                    .as_ref()
-                    .is_some_and(|v| !v.is_empty())
-                {
-                    OAuthTokenEndpointAuth::ClientSecretPost
-                } else {
-                    OAuthTokenEndpointAuth::None
-                },
-            ),
+            token_endpoint_auth: Some(super::client_secret_auth(options.client_secret.as_deref())),
             allow_missing_access_token: true,
             preserve_raw_email_errors: true,
             ..OAuthAuthorizationPolicy::default()
