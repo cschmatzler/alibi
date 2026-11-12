@@ -166,37 +166,6 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    struct PartialMapper(Value);
-    #[async_trait]
-    impl super::super::OAuthProfileMapper for PartialMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
-            assert_eq!(profile, self.0);
-            Ok(
-                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
-                    "id": "public-id", "name": "Mapped", "custom": true
-                }))
-                .unwrap(),
-            )
-        }
-    }
-
-    struct SparseMapper(Value);
-    #[async_trait]
-    impl super::super::OAuthProfileMapper for SparseMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
-            assert_eq!(profile, self.0);
-            let mut mapped = crate::oauth::providers::js!({
-                "id": "public-id", "name": null, "email": null,
-                "emailVerified": 0, "custom": false
-            })
-            .as_object()
-            .unwrap()
-            .clone();
-            _ = mapped.insert("image".into(), Value::Undefined);
-            Ok(mapped)
-        }
-    }
-
     #[tokio::test]
     async fn figma_http_default_own_undefined_fields() {
         for (profile, expected_wire, undefined_keys) in [
@@ -236,8 +205,9 @@ mod tests {
                 }
                 let mut provider = OAuthProvider::figma_with_options(options);
                 if mapped {
-                    provider =
-                        provider.with_profile_mapper(Arc::new(SparseMapper(profile.clone())));
+                    provider = provider.with_profile_mapper(Arc::new(
+                        super::super::test_support::SparseProfileMapper(profile.clone()),
+                    ));
                 }
                 let response = provider
                     .get_user_info
@@ -299,7 +269,9 @@ mod tests {
             options.user_info_endpoint = Some(endpoint);
             let mut provider = OAuthProvider::figma_with_options(options);
             if mapped {
-                provider = provider.with_profile_mapper(Arc::new(PartialMapper(profile.clone())));
+                provider = provider.with_profile_mapper(Arc::new(
+                    super::super::test_support::PartialProfileMapper(profile.clone()),
+                ));
             }
             let response = provider
                 .get_user_info

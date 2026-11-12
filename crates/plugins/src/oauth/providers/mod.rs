@@ -771,6 +771,47 @@ pub use naver::NaverOptions;
 
 // LCOV_EXCL_START
 #[cfg(test)]
+pub(crate) mod test_support {
+    use super::OAuthProfileMapper;
+    use alibi_core::utils::json::{JsObject, JsValue};
+
+    /// Profile mapper that returns the same partial public profile every time.
+    pub(crate) struct PartialProfileMapper(pub JsValue);
+
+    #[async_trait::async_trait]
+    impl OAuthProfileMapper for PartialProfileMapper {
+        async fn map_profile(&self, profile: JsValue) -> Result<JsObject, String> {
+            assert_eq!(profile, self.0);
+            Ok(
+                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
+                    "id": "public-id", "name": "Mapped", "custom": true
+                }))
+                .unwrap(),
+            )
+        }
+    }
+
+    /// Profile mapper whose sparse result keeps only the declared public fields.
+    pub(crate) struct SparseProfileMapper(pub JsValue);
+
+    #[async_trait::async_trait]
+    impl OAuthProfileMapper for SparseProfileMapper {
+        async fn map_profile(&self, profile: JsValue) -> Result<JsObject, String> {
+            assert_eq!(profile, self.0);
+            let mut mapped = crate::oauth::providers::js!({
+                "id": "public-id", "name": null, "email": null,
+                "emailVerified": 0, "custom": false
+            })
+            .as_object()
+            .unwrap()
+            .clone();
+            _ = mapped.insert("image".into(), JsValue::Undefined);
+            Ok(mapped)
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::sync::Arc;

@@ -304,20 +304,6 @@ mod tests {
         assert_eq!(mapper.calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
-    struct PartialMapper(Value);
-    #[async_trait]
-    impl super::super::OAuthProfileMapper for PartialMapper {
-        async fn map_profile(&self, profile: Value) -> Result<Map, String> {
-            assert_eq!(profile, self.0);
-            Ok(
-                alibi_core::utils::json::from_value(crate::oauth::providers::js!({
-                    "id": "public-id", "name": "Mapped", "custom": true
-                }))
-                .unwrap(),
-            )
-        }
-    }
-
     #[tokio::test]
     async fn kick_http_partial_profile_mapping() {
         for mapped in [false, true] {
@@ -331,7 +317,9 @@ mod tests {
             options.user_info_endpoint = Some(endpoint);
             let mut provider = OAuthProvider::kick_with_options(options);
             if mapped {
-                provider = provider.with_profile_mapper(Arc::new(PartialMapper(profile.clone())));
+                provider = provider.with_profile_mapper(Arc::new(
+                    super::super::test_support::PartialProfileMapper(profile.clone()),
+                ));
             }
             let response = provider
                 .get_user_info
