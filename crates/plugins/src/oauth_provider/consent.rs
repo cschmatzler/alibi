@@ -71,14 +71,7 @@ impl OAuthProviderPlugin {
                 ctx.config.current_secret(),
             )?
         {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 400,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"invalid_signature"}"#,
-            )?));
+            return super::authorization::invalid_signature();
         }
         let (user, session) = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         if supplied.is_empty() {

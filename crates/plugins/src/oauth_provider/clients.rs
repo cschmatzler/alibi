@@ -2302,14 +2302,7 @@ impl OAuthProviderPlugin {
             .is_some_and(|query| !query.is_empty())
             && !valid
         {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 400,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"invalid_signature"}"#,
-            )?));
+            return super::authorization::invalid_signature();
         }
         if !self.config.allow_public_client_prelogin {
             return Ok(EndpointResponse::error(AuthError::Api {

@@ -1424,6 +1424,18 @@ fn browser_redirect(req: &impl SessionRequest, target: &str) -> AuthResult<Endpo
     }
 }
 
+/// Protocol rejection for an absent, invalid or expired authorization signature.
+pub(super) fn invalid_signature() -> AuthResult<EndpointResponse> {
+    Ok(EndpointResponse::error(AuthError::Api {
+        status: 400,
+        code: None,
+        message: String::new(),
+    })
+    .with_error_body(alibi_core::utils::json::parse_value(
+        r#"{"error":"invalid_signature"}"#,
+    )?))
+}
+
 pub(super) fn verify_authorization_query(query: &str, secret: &str) -> AuthResult<bool> {
     let pairs = url::form_urlencoded::parse(query.as_bytes())
         .map(|(k, v)| (k.into_owned(), v.into_owned()))

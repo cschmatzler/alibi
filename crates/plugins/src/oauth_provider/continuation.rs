@@ -3,7 +3,7 @@ use super::OAuthProviderPlugin;
 use alibi_core::endpoint::{EndpointResponse, ServerEndpoint};
 use alibi_core::session::SessionRequest;
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
+use alibi_core::{AuthContext, AuthResult, AuthSchema};
 use serde_json::{Value, json};
 #[derive(serde::Deserialize)]
 pub(super) struct ContinuationInput {
@@ -87,14 +87,7 @@ impl OAuthProviderPlugin {
                 ctx.config.current_secret(),
             )?
         {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 400,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"invalid_signature"}"#,
-            )?));
+            return super::authorization::invalid_signature();
         }
         _ = Box::pin(crate::helpers::ordinary_session(req, ctx)).await?;
         let remove = if input.selected == Some(true) {

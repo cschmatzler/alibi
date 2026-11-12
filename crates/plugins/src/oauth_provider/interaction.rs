@@ -104,16 +104,7 @@ pub(super) fn admit(
         });
         return Ok(None);
     }
-    Ok(Some(
-        EndpointResponse::error(AuthError::Api {
-            status: 400,
-            code: None,
-            message: String::new(),
-        })
-        .with_error_body(alibi_core::utils::json::parse_value(
-            r#"{"error":"invalid_signature"}"#,
-        )?),
-    ))
+    Ok(Some(super::authorization::invalid_signature()?))
 }
 
 #[async_trait]
