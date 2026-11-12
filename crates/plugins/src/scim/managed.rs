@@ -552,11 +552,7 @@ impl ScimPlugin {
                 .rotate_scim_managed_credential(data.clone())
                 .await?
             {
-                let mut connection = serde_json::to_value(created.connection)?;
-                if let Value::Object(values) = &mut connection {
-                    _ = values.remove("id");
-                    _ = values.remove("revision");
-                }
+                let connection = public_connection(&created.connection)?;
                 let credential = created.credential;
                 return EndpointResponse::json(
                     &serde_json::json!({"connection":connection,"credential":{"credentialId":credential.credential_id,"status":credential.status,"scopes":scopes,"expiresAt":credential.expires_at,"createdAt":credential.created_at,"createdBy":credential.created_by,"lastUsedAt":credential.last_used_at,"revokedAt":credential.revoked_at,"revokedBy":credential.revoked_by},"token":token}),
@@ -600,11 +596,7 @@ impl ScimPlugin {
                 code: None,
                 message: "Managed SCIM connection not found".into(),
             })?;
-        let mut connection = serde_json::to_value(state.connection)?;
-        if let Value::Object(values) = &mut connection {
-            _ = values.remove("id");
-            _ = values.remove("revision");
-        }
+        let connection = public_connection(&state.connection)?;
         let mut credentials = Vec::new();
         for credential in state.credentials {
             let scopes: Vec<String> = serde_json::from_str(&credential.serialized_scopes)
@@ -663,14 +655,7 @@ impl ScimPlugin {
             .await?;
         let connections = rows
             .into_iter()
-            .map(|row| {
-                let mut row = serde_json::to_value(row)?;
-                if let Value::Object(values) = &mut row {
-                    _ = values.remove("id");
-                    _ = values.remove("revision");
-                }
-                Ok(row)
-            })
+            .map(|row| public_connection(&row))
             .collect::<AuthResult<Vec<_>>>()?;
         EndpointResponse::json(&serde_json::json!({"connections":connections}))
     }
@@ -750,16 +735,21 @@ impl ScimPlugin {
                 created_at: Utc::now().trunc_subsecs(3),
             })
             .await?;
-        let mut connection = serde_json::to_value(created.connection)?;
-        if let Value::Object(fields) = &mut connection {
-            _ = fields.remove("id");
-            _ = fields.remove("revision");
-        }
+        let connection = public_connection(&created.connection)?;
         let credential = created.credential;
         EndpointResponse::json(
             &serde_json::json!({"connection":connection,"credential":{"credentialId":credential.credential_id,"status":credential.status,"scopes":scopes,"expiresAt":credential.expires_at,"createdAt":credential.created_at,"createdBy":credential.created_by,"lastUsedAt":credential.last_used_at,"revokedAt":credential.revoked_at,"revokedBy":credential.revoked_by},"token":token}),
         )
     }
+}
+
+fn public_connection(connection: &impl Serialize) -> AuthResult<Value> {
+    let mut connection = serde_json::to_value(connection)?;
+    if let Value::Object(values) = &mut connection {
+        _ = values.remove("id");
+        _ = values.remove("revision");
+    }
+    Ok(connection)
 }
 
 fn invalid_scope_policy() -> AuthError {
