@@ -507,25 +507,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_user_creation_redirects_without_masking_hook_errors() {
-        use alibi_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-        };
-        struct Hook(bool);
-
-        #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
-            async fn before_create_user(
-                &self,
-                _: &mut CreateUser,
-                _: &SeaOrmHookContext<'_>,
-            ) -> AuthResult<HookControl> {
-                if self.0 {
-                    Ok(HookControl::Cancel)
-                } else {
-                    Err(AuthError::forbidden("application user policy"))
-                }
-            }
-        }
+        use alibi_seaorm::{Database, SeaOrmStore};
 
         for cancelled in [true, false] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
@@ -537,7 +519,7 @@ mod tests {
                 Arc::clone(&config),
                 Arc::new(
                     SeaOrmStore::<TestSchema>::new(config, db)
-                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                        .with_hooks(vec![Arc::new(test_helpers::CancelUserHook(cancelled))]),
                 ),
             );
             let (plugin, _) = configured();
@@ -594,25 +576,7 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_session_creation_redirects_without_masking_hook_errors() {
-        use alibi_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-        };
-        struct Hook(bool);
-
-        #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
-            async fn before_create_session(
-                &self,
-                _: &mut alibi_core::CreateSession,
-                _: &SeaOrmHookContext<'_>,
-            ) -> AuthResult<HookControl> {
-                if self.0 {
-                    Ok(HookControl::Cancel)
-                } else {
-                    Err(AuthError::forbidden("application session policy"))
-                }
-            }
-        }
+        use alibi_seaorm::{Database, SeaOrmStore};
 
         for cancelled in [true, false] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
@@ -624,7 +588,7 @@ mod tests {
                 Arc::clone(&config),
                 Arc::new(
                     SeaOrmStore::<TestSchema>::new(config, db)
-                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                        .with_hooks(vec![Arc::new(test_helpers::CancelSessionHook(cancelled))]),
                 ),
             );
             let (plugin, _) = configured();

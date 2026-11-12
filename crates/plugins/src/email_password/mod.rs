@@ -1021,24 +1021,8 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_password_signin_sessions_use_endpoint_failure_status() {
-        use alibi_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-        };
-        struct Hook(bool);
-        #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
-            async fn before_create_session(
-                &self,
-                _: &mut CreateSession,
-                _: &SeaOrmHookContext<'_>,
-            ) -> AuthResult<HookControl> {
-                if self.0 {
-                    Ok(HookControl::Cancel)
-                } else {
-                    Err(AuthError::forbidden("application session policy"))
-                }
-            }
-        }
+        use crate::test_helpers::CancelSessionHook;
+        use alibi_seaorm::{Database, SeaOrmStore};
 
         for cancelled in [true, false] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
@@ -1050,7 +1034,7 @@ mod tests {
                 Arc::clone(&config),
                 Arc::new(
                     SeaOrmStore::<TestSchema>::new(config, db)
-                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                        .with_hooks(vec![Arc::new(CancelSessionHook(cancelled))]),
                 ),
             );
             let plugin = EmailPasswordPlugin::new()
@@ -1124,24 +1108,8 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_signup_session_rolls_back_with_bad_request() {
-        use alibi_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-        };
-        struct Hook(bool);
-        #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
-            async fn before_create_session(
-                &self,
-                _: &mut CreateSession,
-                _: &SeaOrmHookContext<'_>,
-            ) -> AuthResult<HookControl> {
-                if self.0 {
-                    Ok(HookControl::Cancel)
-                } else {
-                    Err(AuthError::forbidden("application session policy"))
-                }
-            }
-        }
+        use crate::test_helpers::CancelSessionHook;
+        use alibi_seaorm::{Database, SeaOrmStore};
 
         for cancelled in [true, false] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
@@ -1153,7 +1121,7 @@ mod tests {
                 Arc::clone(&config),
                 Arc::new(
                     SeaOrmStore::<TestSchema>::new(config, db)
-                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                        .with_hooks(vec![Arc::new(CancelSessionHook(cancelled))]),
                 ),
             );
             let plugin = EmailPasswordPlugin::new();

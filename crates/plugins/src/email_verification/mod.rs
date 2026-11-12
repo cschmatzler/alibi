@@ -652,26 +652,10 @@ mod tests {
 
     #[tokio::test]
     async fn cancelled_verification_session_reports_failure_after_verifying_email() {
-        use alibi_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-        };
+        use alibi_seaorm::{Database, SeaOrmStore};
         type TestSchema =
             alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-        struct Hook(bool);
-        #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
-            async fn before_create_session(
-                &self,
-                _: &mut alibi_core::CreateSession,
-                _: &SeaOrmHookContext<'_>,
-            ) -> AuthResult<HookControl> {
-                if self.0 {
-                    Ok(HookControl::Cancel)
-                } else {
-                    Err(AuthError::forbidden("application session policy"))
-                }
-            }
-        }
+
         for cancelled in [true, false] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
             alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
@@ -682,7 +666,7 @@ mod tests {
                 Arc::clone(&config),
                 Arc::new(
                     SeaOrmStore::<TestSchema>::new(config, db)
-                        .with_hooks(vec![Arc::new(Hook(cancelled))]),
+                        .with_hooks(vec![Arc::new(test_helpers::CancelSessionHook(cancelled))]),
                 ),
             );
             let user = ctx

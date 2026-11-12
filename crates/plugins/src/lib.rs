@@ -188,6 +188,44 @@ pub(crate) mod test_helpers {
         (endpoint, request)
     }
 
+    /// Database hook that cancels, or rejects with an error, user creation.
+    pub struct CancelUserHook(pub bool);
+
+    #[async_trait::async_trait]
+    impl alibi_seaorm::DatabaseHooks<BundledSchema, alibi_seaorm::SeaOrmBackend> for CancelUserHook {
+        async fn before_create_user(
+            &self,
+            _: &mut CreateUser,
+            _: &alibi_seaorm::SeaOrmHookContext<'_>,
+        ) -> alibi_core::AuthResult<alibi_seaorm::HookControl> {
+            if self.0 {
+                Ok(alibi_seaorm::HookControl::Cancel)
+            } else {
+                Err(alibi_core::AuthError::forbidden("application user policy"))
+            }
+        }
+    }
+
+    /// Database hook that cancels, or rejects with an error, session creation.
+    pub struct CancelSessionHook(pub bool);
+
+    #[async_trait::async_trait]
+    impl alibi_seaorm::DatabaseHooks<BundledSchema, alibi_seaorm::SeaOrmBackend> for CancelSessionHook {
+        async fn before_create_session(
+            &self,
+            _: &mut CreateSession,
+            _: &alibi_seaorm::SeaOrmHookContext<'_>,
+        ) -> alibi_core::AuthResult<alibi_seaorm::HookControl> {
+            if self.0 {
+                Ok(alibi_seaorm::HookControl::Cancel)
+            } else {
+                Err(alibi_core::AuthError::forbidden(
+                    "application session policy",
+                ))
+            }
+        }
+    }
+
     pub async fn create_test_database() -> Arc<TestDatabase> {
         let database = Database::connect("sqlite::memory:")
             .await
