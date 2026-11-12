@@ -775,6 +775,45 @@ pub(crate) mod test_support {
     use super::{OAuthProfileMapper, OAuthProvider, OAuthUserInfoRequest, OAuthUserInfoResponse};
     use alibi_core::utils::json::{JsObject, JsValue};
 
+    /// Asserts the shared public-profile shape of a partial mapping test.
+    pub(crate) fn assert_partial_profile_mapping(user: &JsObject, mapped: bool) {
+        let name = if mapped { "Mapped" } else { "Original" };
+        assert_eq!(user.get("email"), Some(&JsValue::Null));
+        assert_eq!(user.get("image"), Some(&JsValue::Null));
+        assert_eq!(user["name"], name);
+        assert_eq!(user.get("name").and_then(JsValue::as_str), Some(name));
+        if mapped {
+            assert_eq!(user["id"], "public-id");
+            assert_eq!(user["custom"], true);
+        } else {
+            assert!(!user.contains_key("id"));
+        }
+    }
+
+    /// Asserts raw fields survive the user envelope while undefined keys are dropped on the wire.
+    pub(crate) fn assert_undefined_wire_fields(
+        user: JsObject,
+        mapped: bool,
+        expected_wire: JsValue,
+        undefined_keys: &[&str],
+    ) {
+        let mut expected_user = expected_wire.as_object().unwrap().clone();
+        for key in undefined_keys {
+            _ = expected_user.insert((*key).into(), JsValue::Undefined);
+            assert_eq!(user.get(*key), Some(&JsValue::Undefined), "{key}");
+        }
+        assert_eq!(user, expected_user);
+        assert_eq!(user.contains_key("id"), mapped);
+        let bytes = alibi_core::utils::json::stringify(&JsValue::Object(user))
+            .unwrap()
+            .unwrap();
+        let encoded: JsValue = alibi_core::utils::json::from_slice(&bytes).unwrap();
+        assert_eq!(encoded, expected_wire);
+        for key in undefined_keys {
+            assert!(encoded.get(*key).is_none(), "{key}");
+        }
+    }
+
     /// Fetches the profile with a fixed access token through the provider's handler.
     pub(crate) async fn access_token_profile(
         provider: &OAuthProvider,

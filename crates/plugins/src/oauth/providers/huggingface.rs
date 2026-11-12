@@ -268,21 +268,12 @@ mod tests {
                 } else {
                     (expected_wire.clone(), undefined_keys)
                 };
-                let mut expected_user = expected_wire.as_object().unwrap().clone();
-                for key in undefined_keys {
-                    _ = expected_user.insert((*key).into(), Value::Undefined);
-                    assert_eq!(response.user.get(*key), Some(&Value::Undefined), "{key}");
-                }
-                assert_eq!(response.user, expected_user);
-                assert_eq!(response.user.contains_key("id"), mapped);
-                let bytes = alibi_core::utils::json::stringify(&Value::Object(response.user))
-                    .unwrap()
-                    .unwrap();
-                let encoded: Value = alibi_core::utils::json::from_slice(&bytes).unwrap();
-                assert_eq!(encoded, expected_wire);
-                for key in undefined_keys {
-                    assert!(encoded.get(*key).is_none(), "{key}");
-                }
+                super::super::test_support::assert_undefined_wire_fields(
+                    response.user,
+                    mapped,
+                    expected_wire.clone(),
+                    undefined_keys,
+                );
             }
         }
     }
@@ -313,20 +304,7 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "raw-id"
             );
-            let output = response.user.clone();
-            assert_eq!(output.get("email"), Some(&Value::Null));
-            assert_eq!(output.get("image"), Some(&Value::Null));
-            assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
-            assert_eq!(
-                response.user.get("name").and_then(Value::as_str),
-                Some(if mapped { "Mapped" } else { "Original" })
-            );
-            if mapped {
-                assert_eq!(output["id"], "public-id");
-                assert_eq!(output["custom"], true);
-            } else {
-                assert!(!output.contains_key("id"));
-            }
+            super::super::test_support::assert_partial_profile_mapping(&response.user, mapped);
         }
     }
 }

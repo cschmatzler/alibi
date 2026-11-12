@@ -330,20 +330,7 @@ mod tests {
                 (provider.account_subject.unwrap())(&response.data).unwrap(),
                 "raw-id"
             );
-            let output = response.user.clone();
-            assert_eq!(output.get("email"), Some(&Value::Null));
-            assert_eq!(output.get("image"), Some(&Value::Null));
-            assert_eq!(output["name"], if mapped { "Mapped" } else { "Original" });
-            assert_eq!(
-                response.user.get("name").and_then(Value::as_str),
-                Some(if mapped { "Mapped" } else { "Original" })
-            );
-            if mapped {
-                assert_eq!(output["id"], "public-id");
-                assert_eq!(output["custom"], true);
-            } else {
-                assert!(!output.contains_key("id"));
-            }
+            super::super::test_support::assert_partial_profile_mapping(&response.user, mapped);
         }
     }
 }
