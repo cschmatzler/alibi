@@ -28,6 +28,15 @@ use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::plugin::AuthContext;
 use alibi_core::types::{AuthRequest, AuthResponse};
 
+/// Deserialize query parameters into a struct, defaulting on malformed input.
+pub(crate) fn parse_query<T: Default + serde::de::DeserializeOwned>(
+    query: &std::collections::HashMap<String, String>,
+) -> T {
+    let json_value = serde_json::to_value(query)
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
+    serde_json::from_value(json_value).unwrap_or_default()
+}
+
 /// Helper function to get organization ID from request or session
 pub(crate) async fn resolve_organization_id(
     org_id: Option<&str>,

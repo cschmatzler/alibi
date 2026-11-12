@@ -1,3 +1,4 @@
+use super::parse_query;
 use crate::organization::types::OrganizationResponse;
 use crate::organization::types::{
     AcceptInvitationRequest, AcceptInvitationResponse, BasicMemberResponse,
@@ -843,8 +844,3 @@ pub(crate) async fn handle_cancel_invitation(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String, String>) -> T {
-    let json_value = serde_json::to_value(query)
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
-    serde_json::from_value(json_value).unwrap_or_default()
-}

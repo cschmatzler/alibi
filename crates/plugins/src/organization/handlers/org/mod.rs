@@ -1,3 +1,4 @@
+use super::parse_query;
 use super::page::OrganizationPageError;
 use crate::organization::OrganizationConfig;
 use crate::organization::policy::{read_page_limit, truthy_number};
@@ -972,12 +973,6 @@ pub(crate) async fn handle_leave_organization(
     Ok(AuthResponse::json(200, &response)?)
 }
 
-/// Helper function to parse query parameters into a struct
-fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String, String>) -> T {
-    let json_value = serde_json::to_value(query)
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::default()));
-    serde_json::from_value(json_value).unwrap_or_default()
-}
 
 fn organization_field_error(
     error: alibi_core::field_policy::FieldInputError,
