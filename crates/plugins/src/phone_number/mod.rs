@@ -230,8 +230,8 @@ mod tests {
     use super::*;
     use crate::test_helpers;
     use alibi_core::{
-        AuthError, AuthPlugin, AuthResponse, AuthSession, AuthUser, AuthVerification,
-        CreateAccount, CreateUser, CreateVerification, HttpMethod,
+        AuthError, AuthPlugin, AuthResponse, AuthSession, AuthUser, AuthVerification, CreateUser,
+        CreateVerification, HttpMethod,
     };
     use chrono::Duration;
     use serde_json::{Value, json};
@@ -590,19 +590,10 @@ mod tests {
             .unwrap();
         _ = ctx
             .database
-            .create_account(CreateAccount {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
-                user_id: user.id().to_string(),
-                account_id: user.id().to_string().into(),
-                provider_id: "credential".into(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: Some(hash),
-            })
+            .create_account(test_helpers::credential_account(
+                user.id().to_string(),
+                hash,
+            ))
             .await
             .unwrap();
         user.id().to_string()

@@ -9,9 +9,7 @@ mod transaction_tests {
         CacheVersionContext, CookieCacheVersion, CookieCacheVersionResolver,
     };
     use alibi_core::wire::{SessionView, UserView};
-    use alibi_core::{
-        AuthUser, CookieCacheConfig, CreateAccount, CreateSession, CreateUser, UpdateAccount,
-    };
+    use alibi_core::{AuthUser, CookieCacheConfig, CreateSession, CreateUser, UpdateAccount};
     use alibi_seaorm::{
         Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
     };
@@ -600,19 +598,10 @@ mod transaction_tests {
             )
             .await;
             ctx.database
-                .create_account(CreateAccount {
-                    user_id: user.id.clone(),
-                    account_id: user.id.clone().into(),
-                    provider_id: "credential".into(),
-                    password: Some("hash:Password123!".into()),
-                    additional_fields: Default::default(),
-                    access_token: None,
-                    refresh_token: None,
-                    id_token: None,
-                    access_token_expires_at: None,
-                    refresh_token_expires_at: None,
-                    scope: None,
-                })
+                .create_account(test_helpers::credential_account(
+                    user.id.clone(),
+                    "hash:Password123!".into(),
+                ))
                 .await
                 .unwrap();
             for _ in 0..2 {
@@ -2960,19 +2949,10 @@ mod tests {
         let user = test_helpers::create_user(&ctx, create_user).await;
         _ = ctx
             .database
-            .create_account(CreateAccount {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
-                user_id: user.id.clone(),
-                account_id: user.id.clone().into(),
-                provider_id: "credential".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: Some(password_hash),
-            })
+            .create_account(test_helpers::credential_account(
+                user.id.clone(),
+                password_hash,
+            ))
             .await
             .unwrap();
         let session =

@@ -95,7 +95,9 @@ pub mod user_management;
 pub(crate) mod test_helpers {
     use alibi_core::config::AuthConfig;
     use alibi_core::wire::{SessionView, UserView};
-    use alibi_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
+    use alibi_core::{
+        AuthContext, AuthRequest, CreateAccount, CreateSession, CreateUser, HttpMethod,
+    };
     use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
     use alibi_seaorm::{Database, SeaOrmStore};
     use chrono::{Duration, Utc};
@@ -154,6 +156,23 @@ pub(crate) mod test_helpers {
             }
         });
         (endpoint, server)
+    }
+
+    /// Credential account for a user, carrying the given password hash.
+    pub fn credential_account(user_id: String, password: String) -> CreateAccount {
+        CreateAccount {
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
+            account_id: user_id.clone().into(),
+            user_id,
+            provider_id: "credential".to_owned(),
+            access_token: None,
+            refresh_token: None,
+            id_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
+            scope: None,
+            password: Some(password),
+        }
     }
 
     /// Serve one JSON response and return its endpoint plus the raw request.

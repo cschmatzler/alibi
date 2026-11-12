@@ -1415,19 +1415,10 @@ mod tests {
         input.username = Some("empty_hash".into());
         let user = ctx.database.create_user(input).await.unwrap();
         ctx.database
-            .create_account(CreateAccount {
-                user_id: user.id().to_string(),
-                account_id: user.id().to_string().into(),
-                provider_id: "credential".into(),
-                password: Some(String::new()),
-                additional_fields: Default::default(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-            })
+            .create_account(crate::test_helpers::credential_account(
+                user.id().to_string(),
+                String::new(),
+            ))
             .await
             .unwrap();
         let body = serde_json::json!({

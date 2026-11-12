@@ -768,7 +768,7 @@ mod tests {
     use crate::test_helpers;
     use alibi_core::wire::{SessionView, UserView};
     use alibi_core::{AuthPlugin, AuthVerification};
-    use alibi_core::{CreateAccount, CreateUser, HttpMethod};
+    use alibi_core::{CreateUser, HttpMethod};
     use chrono::Duration;
     use cookie::Cookie;
 
@@ -883,19 +883,10 @@ mod tests {
                     .unwrap();
                 _ = ctx
                     .database
-                    .create_account(CreateAccount {
-                        additional_fields: alibi_core::field_policy::FieldValues::default(),
-                        user_id: user.id.clone(),
-                        account_id: user.id.clone().into(),
-                        provider_id: "credential".into(),
-                        password: Some(password_hash.clone()),
-                        access_token: None,
-                        refresh_token: None,
-                        id_token: None,
-                        access_token_expires_at: None,
-                        refresh_token_expires_at: None,
-                        scope: None,
-                    })
+                    .create_account(test_helpers::credential_account(
+                        user.id.clone(),
+                        password_hash.clone(),
+                    ))
                     .await
                     .unwrap();
                 let session = ctx
@@ -1313,19 +1304,10 @@ mod tests {
             .unwrap();
         _ = ctx
             .database
-            .create_account(CreateAccount {
-                additional_fields: alibi_core::field_policy::FieldValues::default(),
-                user_id: user.id.clone(),
-                account_id: user.id.clone().into(),
-                provider_id: "credential".to_owned(),
-                access_token: None,
-                refresh_token: None,
-                id_token: None,
-                access_token_expires_at: None,
-                refresh_token_expires_at: None,
-                scope: None,
-                password: Some(password_hash),
-            })
+            .create_account(test_helpers::credential_account(
+                user.id.clone(),
+                password_hash,
+            ))
             .await
             .unwrap();
 
