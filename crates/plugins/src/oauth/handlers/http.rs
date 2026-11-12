@@ -189,21 +189,7 @@ pub(in crate::oauth) async fn callback_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let default_error_url = build_default_error_url(ctx);
-    let meta = alibi_core::RequestMeta {
-        ip_address: Some(
-            ctx.config
-                .advanced
-                .ip_address
-                .resolve_ip(req.session_headers())
-                .unwrap_or_default(),
-        ),
-        user_agent: Some(
-            req.session_headers()
-                .get("user-agent")
-                .cloned()
-                .unwrap_or_default(),
-        ),
-    };
+    let meta = crate::helpers::session_meta(req, &ctx.config);
     let merged_2 = input.clone();
 
     let error = merged_2

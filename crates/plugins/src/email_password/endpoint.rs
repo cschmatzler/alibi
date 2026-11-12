@@ -6,7 +6,7 @@ use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
 use alibi_core::utils::json::JsValue;
-use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod, RequestMeta};
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions(username_enabled: bool) -> Vec<EndpointDefinition> {
     let mut definitions = vec![
@@ -143,17 +143,7 @@ impl EmailPasswordPlugin {
                 call,
                 body.remember_me == Some(false),
             );
-            let headers = call.headers().cloned().unwrap_or_default();
-            let meta = RequestMeta {
-                ip_address: Some(
-                    ctx.config
-                        .advanced
-                        .ip_address
-                        .resolve_ip(&headers)
-                        .unwrap_or_default(),
-                ),
-                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-            };
+            let meta = crate::helpers::session_meta(call, &ctx.config);
             let output = self.username_sign_in_core(call, ctx, body, &meta).await?;
             let mut response = if output.status >= 400 {
                 EndpointResponse::error(crate::endpoint::error_response(output.clone()))
@@ -198,17 +188,7 @@ impl EmailPasswordPlugin {
             call,
             body.remember_me == Some(false),
         );
-        let headers = call.headers().cloned().unwrap_or_default();
-        let meta = RequestMeta {
-            ip_address: Some(
-                ctx.config
-                    .advanced
-                    .ip_address
-                    .resolve_ip(&headers)
-                    .unwrap_or_default(),
-            ),
-            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-        };
+        let meta = crate::helpers::session_meta(call, &ctx.config);
         match Box::pin(sign_in_core(
             call,
             &body,
@@ -284,17 +264,7 @@ impl EmailPasswordPlugin {
             call,
             body.remember_me == Some(false),
         );
-        let headers = call.headers().cloned().unwrap_or_default();
-        let meta = RequestMeta {
-            ip_address: Some(
-                ctx.config
-                    .advanced
-                    .ip_address
-                    .resolve_ip(&headers)
-                    .unwrap_or_default(),
-            ),
-            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-        };
+        let meta = crate::helpers::session_meta(call, &ctx.config);
         let (value, cookies) = Box::pin(super::sign_up_core(
             call.request(),
             &body,

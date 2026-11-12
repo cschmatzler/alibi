@@ -443,17 +443,7 @@ impl OAuthPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<EndpointResponse> {
         let body: super::OAuthSocialSignInRequest = call.body_as()?;
-        let headers = call.headers().cloned().unwrap_or_default();
-        let meta = alibi_core::RequestMeta {
-            ip_address: Some(
-                ctx.config
-                    .advanced
-                    .ip_address
-                    .resolve_ip(&headers)
-                    .unwrap_or_default(),
-            ),
-            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-        };
+        let meta = crate::helpers::session_meta(call, &ctx.config);
         if let Some(token) = &body.id_token {
             let provider = self
                 .config

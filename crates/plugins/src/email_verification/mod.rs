@@ -174,11 +174,7 @@ alibi_core::impl_auth_plugin! {
             {
                 return Err(AuthError::forbidden("Invalid callbackURL"));
             }
-            let headers = call.headers().cloned().unwrap_or_default();
-            let meta = alibi_core::RequestMeta {
-                ip_address: Some(ctx.config.advanced.ip_address.resolve_ip(&headers).unwrap_or_default()),
-                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-            };
+            let meta = crate::helpers::session_meta(call, &ctx.config);
             let (mut response, token) = match verify_email_core(&query, &self.config, call, ctx, meta).await? {
                 VerifyEmailResult::Redirect { url, session_token } =>
                     (alibi_core::endpoint::EndpointResponse::redirect(url), session_token),

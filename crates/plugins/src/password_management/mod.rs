@@ -2634,17 +2634,7 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
         }
         let body: ChangePasswordRequest = call.body_as()?;
 
-        let headers = call.headers().cloned().unwrap_or_default();
-        let meta = RequestMeta {
-            ip_address: Some(
-                ctx.config
-                    .advanced
-                    .ip_address
-                    .resolve_ip(&headers)
-                    .unwrap_or_default(),
-            ),
-            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-        };
+        let meta = crate::helpers::session_meta(call, &ctx.config);
         let (response, token) =
             change_password_core(&body, &user, &self.config, &meta, ctx).await?;
         let mut response = alibi_core::endpoint::EndpointResponse::json(&response)?;
