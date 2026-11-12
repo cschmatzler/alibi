@@ -1,5 +1,5 @@
-use super::parse_query;
 use super::page::OrganizationPageError;
+use super::parse_query;
 use super::resolve_organization_id;
 use crate::organization::OrganizationConfig;
 use crate::organization::policy::{read_page_limit, truthy_number};
@@ -22,6 +22,29 @@ fn has_role(member: &impl AuthMember, role: &str) -> bool {
         .split(',')
         .map(alibi_core::utils::javascript::trim)
         .any(|candidate| candidate == role)
+}
+
+async fn resolve_member_organization_id(
+    organization_slug: Option<&str>,
+    organization_id: Option<&str>,
+    session: &impl AuthSession,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> AuthResult<String> {
+    if let Some(slug) = organization_slug.filter(|slug| !slug.is_empty()) {
+        let organization = ctx
+            .database
+            .get_organization_by_slug(slug)
+            .await?
+            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+        return Ok(organization.id().to_string());
+    }
+    resolve_organization_id(
+        organization_id.filter(|id| !id.is_empty()),
+        None,
+        session,
+        ctx,
+    )
+    .await
 }
 
 pub(crate) async fn get_active_member_core(
@@ -55,26 +78,13 @@ pub(crate) async fn list_members_core(
     config: &OrganizationConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<ListMembersResponse, OrganizationPageError> {
-    let org_id = if let Some(slug) = query
-        .organization_slug
-        .as_deref()
-        .filter(|slug| !slug.is_empty())
-    {
-        let organization = ctx
-            .database
-            .get_organization_by_slug(slug)
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
-        organization.id().to_string()
-    } else {
-        resolve_organization_id(
-            query.organization_id.as_deref().filter(|id| !id.is_empty()),
-            None,
-            session,
-            ctx,
-        )
-        .await?
-    };
+    let org_id = resolve_member_organization_id(
+        query.organization_slug.as_deref(),
+        query.organization_id.as_deref(),
+        session,
+        ctx,
+    )
+    .await?;
 
     _ = ctx
         .database
@@ -134,26 +144,13 @@ pub(crate) async fn get_active_member_role_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<GetActiveMemberRoleResponse> {
-    let org_id = if let Some(slug) = query
-        .organization_slug
-        .as_deref()
-        .filter(|slug| !slug.is_empty())
-    {
-        let organization = ctx
-            .database
-            .get_organization_by_slug(slug)
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
-        organization.id().to_string()
-    } else {
-        resolve_organization_id(
-            query.organization_id.as_deref().filter(|id| !id.is_empty()),
-            None,
-            session,
-            ctx,
-        )
-        .await?
-    };
+    let org_id = resolve_member_organization_id(
+        query.organization_slug.as_deref(),
+        query.organization_id.as_deref(),
+        session,
+        ctx,
+    )
+    .await?;
 
     let requester_member = ctx
         .database
@@ -618,4 +615,3 @@ pub(crate) async fn update_member_role_response(
     };
     Ok(AuthResponse::json(200, &response)?)
 }
-
