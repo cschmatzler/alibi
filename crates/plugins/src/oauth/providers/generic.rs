@@ -697,20 +697,6 @@ mod tests {
         )
     }
 
-    async fn serve_profile(profile: Value) -> String {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut buffer = [0; 4096];
-            stream.read(&mut buffer).await.unwrap();
-            let body = profile.to_string();
-            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
-        });
-        endpoint
-    }
-
     struct UndefinedMapper;
     #[async_trait]
     impl OAuthProfileMapper for UndefinedMapper {
@@ -729,7 +715,11 @@ mod tests {
     #[tokio::test]
     async fn generic_mapper_retains_own_undefined_and_utf16_spread() {
         let handler = GenericUserInfo {
-            url: Some(serve_profile(Value::String("é😀".into())).await),
+            url: Some(
+                crate::test_helpers::serve_json_once(Value::String("é😀".into()).to_string())
+                    .await
+                    .0,
+            ),
             mapper: Some(Arc::new(UndefinedMapper)),
             custom: None,
             verified_oidc: false,
@@ -885,7 +875,11 @@ mod tests {
             ),
         ] {
             let handler = GenericUserInfo {
-                url: Some(serve_profile(profile).await),
+                url: Some(
+                    crate::test_helpers::serve_json_once(profile.to_string())
+                        .await
+                        .0,
+                ),
                 mapper: None,
                 custom: None,
                 verified_oidc: false,
@@ -916,7 +910,11 @@ mod tests {
             crate::oauth::providers::js!(""),
         ] {
             let handler = GenericUserInfo {
-                url: Some(serve_profile(profile).await),
+                url: Some(
+                    crate::test_helpers::serve_json_once(profile.to_string())
+                        .await
+                        .0,
+                ),
                 mapper: Some(Arc::new(FailingMapper)),
                 custom: None,
                 verified_oidc: false,
@@ -1034,7 +1032,11 @@ mod tests {
         ] {
             let profile = crate::oauth::providers::js!({"sub":"subject", "email":"a@example.com", "email_verified": value});
             let handler = GenericUserInfo {
-                url: Some(serve_profile(profile.clone()).await),
+                url: Some(
+                    crate::test_helpers::serve_json_once(profile.clone().to_string())
+                        .await
+                        .0,
+                ),
                 mapper: None,
                 custom: None,
                 verified_oidc: false,
