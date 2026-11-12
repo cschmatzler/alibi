@@ -424,15 +424,7 @@ mod tests {
             let calls = Arc::new(AtomicUsize::new(0));
             let provider = OAuthProvider::facebook_with_options(options)
                 .with_profile_mapper(Arc::new(PictureMapper(calls.clone())));
-            let result = provider
-                .get_user_info
-                .as_ref()
-                .unwrap()
-                .get_user_info(OAuthUserInfoRequest {
-                    access_token: Some("access".into()),
-                    ..Default::default()
-                })
-                .await;
+            let result = super::super::test_support::access_token_profile(&provider).await;
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             if valid {
                 let response = result.unwrap();

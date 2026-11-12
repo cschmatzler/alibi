@@ -257,14 +257,7 @@ mod tests {
                     "client", "secret", "auth", "token", &endpoint, &endpoint,
                 )
                 .with_profile_mapper(Arc::new(EmailMapper(expected_email.clone())));
-                let response = provider
-                    .get_user_info
-                    .as_ref()
-                    .unwrap()
-                    .get_user_info(OAuthUserInfoRequest {
-                        access_token: Some("access".into()),
-                        ..Default::default()
-                    })
+                let response = super::super::test_support::access_token_profile(&provider)
                     .await
                     .unwrap();
                 assert_eq!(response.data.get("email"), expected_email.as_ref());
@@ -307,14 +300,7 @@ mod tests {
             &endpoint,
         )
         .with_profile_mapper(Arc::new(Mapper));
-        let response = provider
-            .get_user_info
-            .as_ref()
-            .unwrap()
-            .get_user_info(OAuthUserInfoRequest {
-                access_token: Some("access".into()),
-                ..Default::default()
-            })
+        let response = super::super::test_support::access_token_profile(&provider)
             .await
             .unwrap();
         assert_eq!(

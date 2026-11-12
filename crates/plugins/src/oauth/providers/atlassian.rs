@@ -208,13 +208,7 @@ mod tests {
         options.user_info_endpoint = Some(endpoint);
         let provider = OAuthProvider::atlassian_with_options(options)
             .with_profile_mapper(std::sync::Arc::new(Mapper));
-        let response = provider
-            .get_user_info
-            .unwrap()
-            .get_user_info(super::super::OAuthUserInfoRequest {
-                access_token: Some("access".into()),
-                ..Default::default()
-            })
+        let response = super::super::test_support::access_token_profile(&provider)
             .await
             .unwrap();
         let output = response.user.clone();

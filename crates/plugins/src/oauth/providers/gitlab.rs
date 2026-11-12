@@ -222,15 +222,7 @@ mod tests {
 
             let provider = OAuthProvider::gitlab_with_issuer("client", "secret", &endpoint)
                 .with_profile_mapper(Arc::new(GuardedMapper));
-            let response = provider
-                .get_user_info
-                .as_ref()
-                .unwrap()
-                .get_user_info(OAuthUserInfoRequest {
-                    access_token: Some("access".into()),
-                    ..Default::default()
-                })
-                .await;
+            let response = super::super::test_support::access_token_profile(&provider).await;
             server.await.unwrap();
             if state != "active" || locked {
                 assert!(response.is_err());

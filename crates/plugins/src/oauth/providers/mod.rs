@@ -772,8 +772,23 @@ pub use naver::NaverOptions;
 // LCOV_EXCL_START
 #[cfg(test)]
 pub(crate) mod test_support {
-    use super::OAuthProfileMapper;
+    use super::{OAuthProfileMapper, OAuthProvider, OAuthUserInfoRequest, OAuthUserInfoResponse};
     use alibi_core::utils::json::{JsObject, JsValue};
+
+    /// Fetches the profile with a fixed access token through the provider's handler.
+    pub(crate) async fn access_token_profile(
+        provider: &OAuthProvider,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        provider
+            .get_user_info
+            .as_ref()
+            .unwrap()
+            .get_user_info(OAuthUserInfoRequest {
+                access_token: Some("access".into()),
+                ..Default::default()
+            })
+            .await
+    }
 
     /// Profile mapper that returns the same partial public profile every time.
     pub(crate) struct PartialProfileMapper(pub JsValue);

@@ -198,15 +198,7 @@ mod tests {
                 "https://token.test",
                 &remote.url,
             );
-            let result = provider
-                .get_user_info
-                .as_ref()
-                .unwrap()
-                .get_user_info(OAuthUserInfoRequest {
-                    access_token: Some("access".into()),
-                    ..Default::default()
-                })
-                .await;
+            let result = super::super::test_support::access_token_profile(&provider).await;
             if case.get("error").is_some() {
                 let error = result.unwrap_err();
                 assert!(
@@ -274,13 +266,7 @@ mod tests {
         );
         assert_eq!(provider.user_info_url.as_deref(), Some(endpoint.as_str()));
         let provider = provider.with_profile_mapper(Arc::new(AvatarMapper));
-        let response = provider
-            .get_user_info
-            .unwrap()
-            .get_user_info(OAuthUserInfoRequest {
-                access_token: Some("access".into()),
-                ..Default::default()
-            })
+        let response = super::super::test_support::access_token_profile(&provider)
             .await
             .unwrap();
         server.await.unwrap();
