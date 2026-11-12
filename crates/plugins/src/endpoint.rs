@@ -1,6 +1,6 @@
 //! Shared validation for genuine logical calls, independent of HTTP decoding.
 use super::authentication_helpers::{JsonField, field_issue, json_type};
-use alibi_core::endpoint::EndpointDefinition;
+use alibi_core::endpoint::{EndpointDefinition, EndpointResponse};
 use alibi_core::error::codes;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthError, AuthResponse, AuthResult, HttpMethod};
@@ -59,6 +59,40 @@ pub(super) fn validate_fields(
             .map(|(name, value)| (name.clone(), value.clone()))
             .collect(),
     ))
+}
+
+/// Convert a plugin handler's HTTP response into an endpoint response, keeping
+/// its status and headers. Errors keep the generated error payload.
+pub(super) fn from_auth_response(output: AuthResponse) -> AuthResult<EndpointResponse> {
+    convert_auth_response(output, false)
+}
+
+/// Like [`from_auth_response`], for handlers whose errors must not carry the
+/// generated error payload.
+pub(super) fn from_auth_response_without_error_body(
+    output: AuthResponse,
+) -> AuthResult<EndpointResponse> {
+    convert_auth_response(output, true)
+}
+
+fn convert_auth_response(
+    output: AuthResponse,
+    without_error_body: bool,
+) -> AuthResult<EndpointResponse> {
+    let body: JsValue = alibi_core::utils::json::from_slice(&output.body)?;
+    let mut response = if output.status >= 400 {
+        let response = EndpointResponse::error(error_response(output.clone()));
+        if without_error_body {
+            response.without_error_body()
+        } else {
+            response
+        }
+    } else {
+        EndpointResponse::value(body)
+    };
+    response.set_status(Some(output.status));
+    response.merge_headers(output.headers);
+    Ok(response)
 }
 
 #[expect(

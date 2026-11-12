@@ -266,15 +266,7 @@ impl PhoneNumberPlugin {
                     .await?
                 }
             };
-            let mut response = if output.status >= 400 {
-                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
-                    .without_error_body()
-            } else {
-                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
-            };
-            response.set_status(Some(output.status));
-            response.merge_headers(output.headers);
-            return Ok(response);
+            return crate::endpoint::from_auth_response_without_error_body(output);
         }
         let body: ConsumeInput = call.body_as()?;
         self.verify_and_consume(ctx, call.request(), &body.phone_number, &body.code)

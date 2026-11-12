@@ -145,27 +145,13 @@ impl EmailPasswordPlugin {
             );
             let meta = crate::helpers::session_meta(call, &ctx.config);
             let output = self.username_sign_in_core(call, ctx, body, &meta).await?;
-            let mut response = if output.status >= 400 {
-                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
-            } else {
-                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
-            };
-            response.set_status(Some(output.status));
-            response.merge_headers(output.headers);
-            return Ok(response);
+            return crate::endpoint::from_auth_response(output);
         }
         if call.operation_id() == "isUsernameAvailable" {
             let output = self
                 .username_availability_core(ctx, call.body_as()?)
                 .await?;
-            let mut response = if output.status >= 400 {
-                EndpointResponse::error(crate::endpoint::error_response(output.clone()))
-            } else {
-                EndpointResponse::value(alibi_core::utils::json::from_slice(&output.body)?)
-            };
-            response.set_status(Some(output.status));
-            response.merge_headers(output.headers);
-            return Ok(response);
+            return crate::endpoint::from_auth_response(output);
         }
         if call.operation_id() == "signUpWithEmailAndPassword" {
             return self.call_signup_endpoint(call, ctx).await;

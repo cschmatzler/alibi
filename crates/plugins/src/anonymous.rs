@@ -325,18 +325,7 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         } else {
             self.sign_in_core(call, ctx).await?
         };
-        let mut response = if output.status >= 400 {
-            alibi_core::endpoint::EndpointResponse::error(crate::endpoint::error_response(
-                output.clone(),
-            ))
-        } else {
-            alibi_core::endpoint::EndpointResponse::value(alibi_core::utils::json::from_slice(
-                &output.body,
-            )?)
-        };
-        response.set_status(Some(output.status));
-        response.merge_headers(output.headers);
-        Ok(response)
+        crate::endpoint::from_auth_response(output)
     }
     fn name(&self) -> &'static str {
         "anonymous"
