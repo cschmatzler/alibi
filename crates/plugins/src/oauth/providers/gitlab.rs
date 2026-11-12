@@ -23,9 +23,6 @@ impl OAuthProvider {
         };
         Self {
             client_id: client_id.into(),
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             client_secret: client_secret.into(),
             auth_url: gitlab_endpoint(issuer, "/oauth/authorize"),
             token_url: gitlab_endpoint(issuer, "/oauth/token"),
@@ -35,8 +32,6 @@ impl OAuthProvider {
                 source_profile_exceptions: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
-            authorization_params: Vec::new(),
             account_subject: Some(|profile| {
                 super::remaining_profile::raw_subject(profile.get("id"))
             }),
@@ -45,14 +40,7 @@ impl OAuthProvider {
                 endpoint: gitlab_endpoint(issuer, "/api/v4/user"),
                 mapper: None,
             })),
-            refresh_access_token: None,
-            verify_id_token: None,
-            id_token: None,
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

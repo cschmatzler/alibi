@@ -28,13 +28,9 @@ impl OAuthProvider {
     pub fn google(client_id: &str, client_secret: &str) -> Self {
         Self {
             client_id: client_id.to_owned(),
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             client_secret: client_secret.to_owned(),
             auth_url: "https://accounts.google.com/o/oauth2/v2/auth".to_owned(),
             token_url: "https://oauth2.googleapis.com/token".to_owned(),
-            user_info_url: None,
             scopes: vec![
                 "email".to_owned(),
                 "profile".to_owned(),
@@ -47,7 +43,6 @@ impl OAuthProvider {
                 preserve_raw_profile_scalars: true,
                 ..Default::default()
             }),
-            allowed_request_params: Vec::new(),
             authorization_params: vec![("include_granted_scopes".to_owned(), "true".to_owned())],
             account_subject: Some(|profile| raw_subject(profile.get("sub"))),
             map_user_info: Some(|v| {
@@ -64,14 +59,8 @@ impl OAuthProvider {
                 Ok(output)
             }),
             get_user_info: Some(Arc::new(GoogleUserInfo::default())),
-            refresh_access_token: None,
-            verify_id_token: None,
             id_token: Some(crate::oauth::id_token::OAuthIdTokenConfig::google()),
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

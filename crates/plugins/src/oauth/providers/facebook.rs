@@ -109,8 +109,6 @@ impl OAuthProvider {
             client_id: client_id.clone(),
             client_secret: secret.clone(),
             additional_client_ids: options.client_ids.iter().skip(1).cloned().collect(),
-            hosted_domain: None,
-            require_email_verification: false,
             auth_url: options
                 .authorization_endpoint
                 .filter(|value| !value.is_empty())
@@ -130,14 +128,12 @@ impl OAuthProvider {
                 pkce: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
             authorization_params: options
                 .config_id
                 .filter(|value| !value.is_empty())
                 .map(|value| vec![("config_id".into(), value)])
                 .unwrap_or_default(),
             account_subject: Some(subject),
-            map_user_info: None,
             get_user_info: Some(Arc::new(FacebookUserInfo {
                 client_id,
                 client_ids: options.client_ids,
@@ -151,14 +147,8 @@ impl OAuthProvider {
                 application_mapper: None,
                 custom: options.get_user_info,
             })),
-            refresh_access_token: None,
-            verify_id_token: None,
             id_token: Some(verification),
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

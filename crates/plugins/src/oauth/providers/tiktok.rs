@@ -51,9 +51,6 @@ impl OAuthProvider {
         Self {
             client_id: options.client_key,
             client_secret: options.client_secret,
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             auth_url: "https://www.tiktok.com/v2/auth/authorize".into(),
             token_url: "https://open.tiktokapis.com/v2/oauth/token/".into(),
             user_info_url: Some(endpoint.clone()),
@@ -76,19 +73,9 @@ impl OAuthProvider {
                 supports_profile_mapper: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
-            authorization_params: Vec::new(),
             account_subject: Some(subject),
-            map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(TikTokProfile { endpoint })),
-            refresh_access_token: None,
-            verify_id_token: None,
-            id_token: None,
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

@@ -377,7 +377,7 @@ impl std::fmt::Debug for OAuthClientAssertion {
 }
 
 /// Configuration for a single OAuth provider.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Preserve independent public provider policy switches"

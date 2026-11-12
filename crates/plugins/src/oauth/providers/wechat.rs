@@ -79,9 +79,6 @@ impl OAuthProvider {
         Self {
             client_id: options.client_id,
             client_secret: options.client_secret,
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             auth_url: "https://open.weixin.qq.com/connect/qrconnect".into(),
             token_url: token_endpoint,
             user_info_url: Some(endpoint.clone()),
@@ -105,7 +102,6 @@ impl OAuthProvider {
                 preserve_raw_email_errors: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
             authorization_params: vec![(
                 "lang".into(),
                 match options.language {
@@ -115,20 +111,13 @@ impl OAuthProvider {
                 .into(),
             )],
             account_subject: Some(subject),
-            map_user_info: None,
             get_user_info: Some(Arc::new(WeChatProfile {
                 application_mapper: None,
                 endpoint,
                 mapper: options.map_profile_to_user,
             })),
             refresh_access_token: Some(grants),
-            verify_id_token: None,
-            id_token: None,
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

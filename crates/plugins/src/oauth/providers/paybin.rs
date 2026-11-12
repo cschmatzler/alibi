@@ -80,15 +80,11 @@ impl OAuthProvider {
         Self {
             client_id: options.client_id,
             client_secret: secret,
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             auth_url: options
                 .authorization_endpoint
                 .filter(|value| !value.is_empty())
                 .unwrap_or_else(|| format!("{issuer}/oauth2/authorize")),
             token_url: format!("{issuer}/oauth2/token"),
-            user_info_url: None,
             scopes: vec!["openid".into(), "email".into(), "profile".into()],
             authorization: Some(OAuthAuthorizationPolicy {
                 preserve_raw_profile_scalars: true,
@@ -108,22 +104,12 @@ impl OAuthProvider {
                 preserve_raw_email_errors: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
-            authorization_params: Vec::new(),
             account_subject: Some(subject),
-            map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(PaybinUserInfo {
                 application_mapper: None,
                 mapper: options.map_profile_to_user,
             })),
-            refresh_access_token: None,
-            verify_id_token: None,
-            id_token: None,
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }

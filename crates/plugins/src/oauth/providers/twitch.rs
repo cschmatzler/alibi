@@ -81,27 +81,11 @@ impl OAuthProvider {
         let mut provider = Self {
             client_id: options.client_id,
             client_secret: options.client_secret.unwrap_or_default(),
-            additional_client_ids: Vec::new(),
-            hosted_domain: None,
-            require_email_verification: false,
             auth_url: "https://id.twitch.tv/oauth2/authorize".into(),
             token_url: "https://id.twitch.tv/oauth2/token".into(),
-            user_info_url: None,
             scopes: vec!["user:read:email".into(), "openid".into()],
-            authorization: None,
-            allowed_request_params: Vec::new(),
-            authorization_params: Vec::new(),
             account_subject: Some(subject),
-            map_user_info: None,
-            get_user_info: None,
-            refresh_access_token: None,
-            verify_id_token: None,
-            id_token: None,
-            disable_id_token_sign_in: false,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         };
         provider.auth_url = options
             .authorization_endpoint

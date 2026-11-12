@@ -81,12 +81,9 @@ impl OAuthProvider {
         Self {
             client_id: clients.next().unwrap_or_default(),
             additional_client_ids: clients.collect(),
-            hosted_domain: None,
-            require_email_verification: false,
             client_secret: options.client_secret,
             auth_url: "https://appleid.apple.com/auth/authorize".into(),
             token_url: "https://appleid.apple.com/auth/token".into(),
-            user_info_url: None,
             scopes: vec!["email".into(), "name".into()],
             authorization: Some(OAuthAuthorizationPolicy {
                 source_profile_exceptions: true,
@@ -98,24 +95,16 @@ impl OAuthProvider {
                 login_hint: false,
                 ..OAuthAuthorizationPolicy::default()
             }),
-            allowed_request_params: Vec::new(),
-            authorization_params: Vec::new(),
             account_subject: Some(|profile| {
                 super::remaining_profile::raw_subject(profile.get("sub"))
             }),
-            map_user_info: None,
             get_user_info: Some(Arc::new(AppleUserInfo {
                 map_profile_to_user: options.map_profile_to_user,
                 application_mapper: None,
             })),
-            refresh_access_token: None,
-            verify_id_token: None,
             id_token: Some(verification),
             disable_id_token_sign_in: options.disable_id_token_sign_in,
-            disable_implicit_sign_up: false,
-            disable_sign_up: false,
-            allow_idp_initiated: false,
-            override_user_info_on_sign_in: false,
+            ..Self::default()
         }
     }
 }
