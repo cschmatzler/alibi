@@ -172,20 +172,13 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
 
     _ = ctx
         .database
-        .create_account_record(CreateAccount {
-            additional_fields: FieldValues::default(),
-            user_id: link.user_id.clone(),
-            account_id: user_info.id.clone(),
-            provider_id: provider_name.to_owned(),
-            access_token: token_bundle.access_token,
-            refresh_token: token_bundle.refresh_token,
-            id_token: token_bundle.id_token,
-            access_token_expires_at: tokens.access_token_expires_at,
-            refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                .then(|| tokens.scopes.join(",")),
-            password: None,
-        })
+        .create_account_record(super::provider_account(
+            link.user_id.clone(),
+            user_info.id.clone(),
+            provider_name.to_owned(),
+            token_bundle,
+            tokens,
+        ))
         .await
         .map_err(|_error| "unable_to_link_account".to_owned())?;
 

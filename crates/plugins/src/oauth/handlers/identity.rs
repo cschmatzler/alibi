@@ -3,6 +3,7 @@ use super::OAuthProcessPolicy;
 use super::OAuthSignInError;
 use super::ProcessOAuthUserResult;
 use super::cookies::account_cookie_max_age;
+use super::provider_account;
 use crate::helpers::apply_default_role;
 use crate::helpers::issue_selected_user_session_record;
 use crate::oauth::encryption::encrypt_provider_token_set;
@@ -14,12 +15,10 @@ use crate::oauth::state::account_cookie_name;
 use alibi_core::AuthAccount;
 use alibi_core::AuthContext;
 use alibi_core::AuthError;
-use alibi_core::CreateAccount;
 use alibi_core::CreateUser;
 use alibi_core::UpdateAccount;
 use alibi_core::UpdateUser;
 use alibi_core::entity::AuthUser;
-use alibi_core::field_policy::FieldValues;
 use alibi_core::user_validation::UserValidationAction;
 use alibi_core::user_validation::UserValidationData;
 use alibi_core::user_validation::UserValidationSource;
@@ -511,20 +510,13 @@ pub(crate) async fn process_oauth_sign_in_with_output(
         .await?;
         let created_account = ctx
             .database
-            .create_account_record(CreateAccount {
-                additional_fields: FieldValues::default(),
-                user_id: linked_user.id().to_string(),
-                account_id: user_info.id.clone(),
-                provider_id: provider_name.to_owned(),
-                access_token: token_bundle.access_token,
-                refresh_token: token_bundle.refresh_token,
-                id_token: token_bundle.id_token,
-                access_token_expires_at: tokens.access_token_expires_at,
-                refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                    .then(|| tokens.scopes.join(",")),
-                password: None,
-            })
+            .create_account_record(provider_account(
+                linked_user.id().to_string(),
+                user_info.id.clone(),
+                provider_name.to_owned(),
+                token_bundle,
+                tokens,
+            ))
             .await
             .map_err(|_error| "unable to link account".to_owned())?;
 
@@ -655,20 +647,13 @@ pub(crate) async fn process_oauth_sign_in_with_output(
             .map(str::to_owned);
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
-        let mut create_account = CreateAccount {
-            additional_fields: FieldValues::default(),
-            user_id: String::new(),
-            account_id: user_info.id.clone(),
-            provider_id: provider_name.to_owned(),
-            access_token: token_bundle.access_token,
-            refresh_token: token_bundle.refresh_token,
-            id_token: token_bundle.id_token,
-            access_token_expires_at: tokens.access_token_expires_at,
-            refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scope: (tokens.raw.is_some() || !tokens.scopes.is_empty())
-                .then(|| tokens.scopes.join(",")),
-            password: None,
-        };
+        let mut create_account = provider_account(
+            String::new(),
+            user_info.id.clone(),
+            provider_name.to_owned(),
+            token_bundle,
+            tokens,
+        );
         let source = identity_source(
             provider_name,
             profile,

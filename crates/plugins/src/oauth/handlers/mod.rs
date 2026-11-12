@@ -315,6 +315,29 @@ pub(crate) fn parse_callback_user_payload(
     })
 }
 
+/// Provider account binding a grant to its user, with the encrypted token set.
+pub(super) fn provider_account(
+    user_id: String,
+    account_id: alibi_core::utils::json::JsString,
+    provider_id: String,
+    token_bundle: crate::oauth::encryption::EncryptedTokenSet,
+    tokens: &OAuthTokenSet,
+) -> alibi_core::CreateAccount {
+    alibi_core::CreateAccount {
+        additional_fields: alibi_core::field_policy::FieldValues::default(),
+        user_id,
+        account_id,
+        provider_id,
+        access_token: token_bundle.access_token,
+        refresh_token: token_bundle.refresh_token,
+        id_token: token_bundle.id_token,
+        access_token_expires_at: tokens.access_token_expires_at,
+        refresh_token_expires_at: tokens.refresh_token_expires_at,
+        scope: (tokens.raw.is_some() || !tokens.scopes.is_empty()).then(|| tokens.scopes.join(",")),
+        password: None,
+    }
+}
+
 /// Mapped provider identity together with its original provenance.
 pub(crate) struct OAuthIdentity<'a> {
     pub provider_name: &'a str,
