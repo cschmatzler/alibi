@@ -220,6 +220,25 @@ pub struct OAuthUserInfoRequest {
     pub user: Option<OAuthCallbackUserPayload>,
 }
 
+impl OAuthUserInfoRequest {
+    /// Profile lookup carrying a granted token set and the callback's user payload.
+    #[must_use]
+    pub fn from_tokens(tokens: &OAuthTokenSet, user: Option<OAuthCallbackUserPayload>) -> Self {
+        Self {
+            client_submitted_id_token: false,
+            token_type: tokens.token_type.clone(),
+            access_token: tokens.access_token.clone(),
+            refresh_token: tokens.refresh_token.clone(),
+            access_token_expires_at: tokens.access_token_expires_at,
+            refresh_token_expires_at: tokens.refresh_token_expires_at,
+            scopes: tokens.scopes.clone(),
+            id_token: tokens.id_token.clone(),
+            raw: tokens.raw.clone(),
+            user,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfoResponse {
     /// Source user object, independent from stable account authority.

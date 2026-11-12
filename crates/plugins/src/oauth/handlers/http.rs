@@ -460,18 +460,10 @@ pub(in crate::oauth) async fn callback_core(
 
     let user_info_result = fetch_user_info_from_provider(
         provider,
-        OAuthUserInfoRequest {
-            client_submitted_id_token: false,
-            token_type: tokens.token_type.clone(),
-            access_token: tokens.access_token.clone(),
-            refresh_token: tokens.refresh_token.clone(),
-            access_token_expires_at: tokens.access_token_expires_at,
-            refresh_token_expires_at: tokens.refresh_token_expires_at,
-            scopes: tokens.scopes.clone(),
-            id_token: tokens.id_token.clone(),
-            raw: tokens.raw.clone(),
-            user: parse_callback_user_payload(merged_2.get("user").map(String::as_str)),
-        },
+        OAuthUserInfoRequest::from_tokens(
+            &tokens,
+            parse_callback_user_payload(merged_2.get("user").map(String::as_str)),
+        ),
     )
     .await;
     let mut user_info = match user_info_result {

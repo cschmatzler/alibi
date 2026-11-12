@@ -522,18 +522,10 @@ impl OAuthProxyPlugin {
         // propagate; only an absent profile is a redirect-level failure.
         let mut info = fetch_user_info_from_provider(
             provider,
-            OAuthUserInfoRequest {
-                client_submitted_id_token: false,
-                token_type: tokens.token_type.clone(),
-                access_token: tokens.access_token.clone(),
-                refresh_token: tokens.refresh_token.clone(),
-                access_token_expires_at: tokens.access_token_expires_at,
-                refresh_token_expires_at: tokens.refresh_token_expires_at,
-                scopes: tokens.scopes.clone(),
-                id_token: tokens.id_token.clone(),
-                raw: tokens.raw.clone(),
-                user: parse_callback_user_payload(params.get("user").map(String::as_str)),
-            },
+            OAuthUserInfoRequest::from_tokens(
+                &tokens,
+                parse_callback_user_payload(params.get("user").map(String::as_str)),
+            ),
         )
         .await?;
         if resolve_oauth_account_key(provider, &tokens, &mut info)
