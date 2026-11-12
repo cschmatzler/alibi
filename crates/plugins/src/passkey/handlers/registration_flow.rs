@@ -597,36 +597,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
                                 code: codes::UNABLE_TO_CREATE_SESSION,
                                 message: "Unable to create session",
                             },
-                            other @ (AuthError::Api { .. }
-                            | AuthError::Upstream { .. }
-                            | AuthError::BadRequest(_)
-                            | AuthError::InvalidRequest(_)
-                            | AuthError::Validation(_)
-                            | AuthError::InvalidCredentials
-                            | AuthError::Unauthenticated
-                            | AuthError::AuthenticationFailed(_)
-                            | AuthError::SessionNotFound
-                            | AuthError::Forbidden(_)
-                            | AuthError::BannedUser(_)
-                            | AuthError::Unauthorized
-                            | AuthError::UserNotFound
-                            | AuthError::NotFound(_)
-                            | AuthError::Conflict(_)
-                            | AuthError::MethodNotAllowed(_)
-                            | AuthError::PayloadTooLarge(_)
-                            | AuthError::UnprocessableEntity(_)
-                            | AuthError::RateLimited { .. }
-                            | AuthError::NotImplemented(_)
-                            | AuthError::Config(_)
-                            | AuthError::Database(_)
-                            | AuthError::Serialization(_)
-                            | AuthError::Plugin { .. }
-                            | AuthError::CallbackFailure(_)
-                            | AuthError::Internal(_)
-                            | AuthError::Encryption(_)
-                            | AuthError::PasswordHash(_)
-                            | AuthError::UserCreationCancelled
-                            | AuthError::Jwt(_)) => other,
+                            other => other,
                         })?;
                     Ok::<alibi_core::store::BoxedTransactionValue, AuthError>(Box::new((
                         passkey, user, session,
