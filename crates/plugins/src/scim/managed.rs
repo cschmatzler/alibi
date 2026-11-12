@@ -226,6 +226,16 @@ fn random_string(length: usize) -> String {
         .collect()
 }
 impl ScimPlugin {
+    fn managed_connection_options(&self) -> AuthResult<&super::ScimManagedConnectionOptions> {
+        self.managed_connections
+            .as_ref()
+            .ok_or_else(|| AuthError::Api {
+                status: 400,
+                code: None,
+                message: "SCIM managed connections are not configured".into(),
+            })
+    }
+
     /// Request complete-state reconciliation of one provisioning domain.
     /// # Errors
     /// Returns an error if arguments cannot be serialized.
@@ -251,14 +261,7 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        _ = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        _ = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -399,14 +402,7 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        _ = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        _ = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -442,14 +438,7 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        _ = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        _ = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -501,14 +490,7 @@ impl ScimPlugin {
     ) -> AuthResult<EndpointResponse> {
         call.queue_response_header("cache-control", "no-store");
         call.queue_response_header("pragma", "no-cache");
-        let options = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        let options = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -601,14 +583,7 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        _ = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        _ = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -678,14 +653,7 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        _ = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        _ = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -726,14 +694,7 @@ impl ScimPlugin {
     ) -> AuthResult<EndpointResponse> {
         call.queue_response_header("cache-control", "no-store");
         call.queue_response_header("pragma", "no-cache");
-        let options = self
-            .managed_connections
-            .as_ref()
-            .ok_or_else(|| AuthError::Api {
-                status: 400,
-                code: None,
-                message: "SCIM managed connections are not configured".into(),
-            })?;
+        let options = self.managed_connection_options()?;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
