@@ -30,7 +30,7 @@ pub(crate) mod crypto;
 mod endpoint;
 use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
-    AuthRoute, AuthSchema, HttpMethod,
+    AuthRoute, AuthSchema, Headers, HttpMethod,
 };
 use async_trait::async_trait;
 pub use endpoint::{JwtTokenOutput, JwtVerifyOutput};
@@ -220,28 +220,34 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
             )
             .await
             .map_err(public_jwt_error)?;
-        let mut expose = response
-            .headers
-            .get("access-control-expose-headers")
-            .into_iter()
-            .flat_map(|value| value.split(','))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .fold(Vec::new(), |mut headers, header| {
-                if !headers.iter().any(|existing| existing == header) {
-                    headers.push(header.to_owned());
-                }
-                headers
-            });
-        if !expose.iter().any(|header| header == "set-auth-jwt") {
-            expose.push("set-auth-jwt".to_owned());
-        }
+        let expose = exposed_jwt_headers(&response.headers);
         _ = response.headers.insert("set-auth-jwt", token);
         _ = response
             .headers
-            .insert("access-control-expose-headers", expose.join(", "));
+            .insert("access-control-expose-headers", expose);
         Ok(response)
     }
+}
+
+/// `access-control-expose-headers` naming `set-auth-jwt` alongside whatever the
+/// response already exposes.
+fn exposed_jwt_headers(headers: &Headers) -> String {
+    let mut expose = headers
+        .get("access-control-expose-headers")
+        .into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .fold(Vec::new(), |mut headers, header| {
+            if !headers.iter().any(|existing| existing == header) {
+                headers.push(header.to_owned());
+            }
+            headers
+        });
+    if !expose.iter().any(|header| header == "set-auth-jwt") {
+        expose.push("set-auth-jwt".to_owned());
+    }
+    expose.join(", ")
 }
 
 fn public_jwt_error(error: AuthError) -> AuthError {

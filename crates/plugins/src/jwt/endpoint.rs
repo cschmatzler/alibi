@@ -369,24 +369,9 @@ impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for JwtPlugin {
             )
             .await
             .map_err(super::public_jwt_error)?;
-        let mut expose = response
-            .headers()
-            .get("access-control-expose-headers")
-            .into_iter()
-            .flat_map(|value| value.split(','))
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .fold(Vec::new(), |mut headers, header| {
-                if !headers.iter().any(|existing| existing == header) {
-                    headers.push(header.to_owned());
-                }
-                headers
-            });
-        if !expose.iter().any(|header| header == "set-auth-jwt") {
-            expose.push("set-auth-jwt".to_owned());
-        }
+        let expose = super::exposed_jwt_headers(response.headers());
         Ok(response
             .with_header("set-auth-jwt", token)
-            .with_header("access-control-expose-headers", expose.join(", ")))
+            .with_header("access-control-expose-headers", expose))
     }
 }
