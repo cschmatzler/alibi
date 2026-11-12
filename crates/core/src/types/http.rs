@@ -125,6 +125,20 @@ impl RequestMeta {
             },
         }
     }
+
+    /// Extract metadata from a session request that has no physical dispatch
+    /// request. The configured policy resolves the client address, and an
+    /// absent header still becomes empty session metadata.
+    #[must_use]
+    pub fn from_session_headers(
+        policy: &crate::config::IpAddressConfig,
+        headers: &std::collections::HashMap<String, String>,
+    ) -> Self {
+        Self {
+            ip_address: Some(policy.resolve_ip(headers).unwrap_or_default()),
+            user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
+        }
+    }
 }
 
 /// Authentication response wrapper

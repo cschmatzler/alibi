@@ -22,6 +22,30 @@ pub(crate) use sessions::{
     resolve_admin_banned_user_message, response_has_session_cookie,
 };
 
+/// Session metadata for a logical request without a physical dispatch request,
+/// resolved from its headers under the configured IP policy.
+pub(crate) fn session_meta(
+    request: &impl alibi_core::session::SessionRequest,
+    config: &alibi_core::AuthConfig,
+) -> alibi_core::RequestMeta {
+    alibi_core::RequestMeta::from_session_headers(
+        &config.advanced.ip_address,
+        request.session_headers(),
+    )
+}
+
+/// Session metadata preferring the physical dispatch request, whose extensions
+/// carry the initialized IP policy, and falling back to the logical headers.
+pub(crate) fn request_meta(
+    request: &impl alibi_core::session::SessionRequest,
+    config: &alibi_core::AuthConfig,
+) -> alibi_core::RequestMeta {
+    request.physical_request().map_or_else(
+        || session_meta(request, config),
+        alibi_core::RequestMeta::from_request,
+    )
+}
+
 /// Join the configured auth origin and mount path for links sent to users.
 pub(crate) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
     let origin = config.base_url.trim_end_matches('/');
