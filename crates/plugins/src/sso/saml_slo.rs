@@ -272,12 +272,12 @@ impl SsoPlugin {
                 .map_or_else(String::new, |value| {
                     format!(
                         r#"<input type="hidden" name="RelayState" value="{}" />"#,
-                        html_escape(value)
+                        crate::helpers::html_escape(value)
                     )
                 });
             let html = format!(
                 r#"<!DOCTYPE html><html><body onload="document.forms[0].submit();"><form method="POST" action="{}"><input type="hidden" name="SAMLResponse" value="{}" />{}<noscript><input type="submit" value="Continue" /></noscript></form></body></html>"#,
-                html_escape(destination),
+                crate::helpers::html_escape(destination),
                 base64::engine::general_purpose::STANDARD.encode(response),
                 relay
             );
@@ -358,14 +358,6 @@ fn cleared<S: AuthSchema>(
         response.headers.append("Set-Cookie", cookie);
     }
     Ok(EndpointResponse::from_http_response(response))
-}
-fn html_escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
 }
 fn error(status: u16, code: &str, message: &str) -> AuthError {
     AuthError::Api {

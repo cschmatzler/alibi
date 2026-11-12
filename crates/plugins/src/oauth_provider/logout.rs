@@ -223,7 +223,7 @@ fn protocol_error(
             "Logout error",
             &format!(
                 "<main><h1>Logout error</h1><p data-oidc-logout-state=\"error\">{}</p></main>",
-                escape(description)
+                crate::helpers::html_escape(description)
             ),
             status,
         ));
@@ -265,17 +265,9 @@ fn browser(req: &impl SessionRequest) -> bool {
             || header("accept").contains("text/html")
             || header("accept").contains("application/xhtml+xml"))
 }
-fn escape(value: &str) -> String {
-    value
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&#39;")
-}
 fn page(title: &str, body: &str, status: u16) -> EndpointResponse {
     let mut response = alibi_core::AuthResponse::new(status);
-    response.body=format!("<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body>{body}</body></html>",escape(title)).into_bytes();
+    response.body=format!("<!doctype html><html><head><meta charset=\"utf-8\"><title>{}</title></head><body>{body}</body></html>",crate::helpers::html_escape(title)).into_bytes();
     _ = response
         .headers
         .insert("content-type", "text/html; charset=utf-8");
@@ -376,7 +368,7 @@ fn confirmation<S: AuthSchema>(
         ctx.config.base_url.trim_end_matches('/'),
         ctx.config.base_path
     );
-    Ok(page("Confirm logout",&format!("<main><h1>Confirm logout</h1><p>Do you want to log out of this account?</p><form method=\"post\" data-oidc-logout-confirmation action=\"{}\"><button type=\"submit\" name=\"action\" value=\"confirm\">Confirm logout</button></form></main>",escape(&url)),200).with_header("set-cookie",confirmation_cookie(ctx,&signed,false)?))
+    Ok(page("Confirm logout",&format!("<main><h1>Confirm logout</h1><p>Do you want to log out of this account?</p><form method=\"post\" data-oidc-logout-confirmation action=\"{}\"><button type=\"submit\" name=\"action\" value=\"confirm\">Confirm logout</button></form></main>",crate::helpers::html_escape(&url)),200).with_header("set-cookie",confirmation_cookie(ctx,&signed,false)?))
 }
 impl OAuthProviderPlugin {
     pub(super) async fn confirm_logout<S: AuthSchema>(

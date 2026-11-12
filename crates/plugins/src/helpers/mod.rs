@@ -22,6 +22,16 @@ pub(crate) use sessions::{
     resolve_admin_banned_user_message, response_has_session_cookie,
 };
 
+/// Escape text for interpolation into an HTML document.
+pub(crate) fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#39;")
+}
+
 /// Reject a redirect target outside the configured trusted set.
 pub(crate) fn validate_redirect_target<S: alibi_core::AuthSchema>(
     target: &str,
