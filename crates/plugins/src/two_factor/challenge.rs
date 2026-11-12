@@ -359,36 +359,7 @@ pub(in crate::two_factor) async fn verify_existing_session_factor(
             AuthError::SessionCreationCancelled => {
                 ExistingSessionFactorError::SessionCreationCancelled
             }
-            error @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::InvalidCredentials
-            | AuthError::Unauthenticated
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::UserCreationCancelled
-            | AuthError::Jwt(_)) => ExistingSessionFactorError::Auth(error),
+            error => ExistingSessionFactorError::Auth(error),
         })?;
         ctx.database.delete_session(session.token()).await?;
         return Ok((
