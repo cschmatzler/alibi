@@ -259,21 +259,7 @@ impl OneTapPlugin {
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             ..Default::default()
         };
-        let headers = req.session_headers();
-        let meta = if let Some(request) = req.physical_request() {
-            alibi_core::RequestMeta::from_request(request)
-        } else {
-            alibi_core::RequestMeta {
-                ip_address: Some(
-                    ctx.config
-                        .advanced
-                        .ip_address
-                        .resolve_ip(headers)
-                        .unwrap_or_default(),
-                ),
-                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-            }
-        };
+        let meta = crate::helpers::request_meta(req, &ctx.config);
         let result = process_oauth_sign_in(
             super::oauth::handlers::OAuthIdentity {
                 provider_name: "google",

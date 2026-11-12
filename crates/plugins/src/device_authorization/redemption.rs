@@ -8,7 +8,7 @@ use super::{
 };
 use crate::helpers::{SessionIssueError, create_user_session_record};
 use alibi_core::entity::{AuthSession, AuthUser};
-use alibi_core::{AuthContext, AuthResponse, AuthResult, RequestMeta, UpdateDeviceCode};
+use alibi_core::{AuthContext, AuthResponse, AuthResult, UpdateDeviceCode};
 use chrono::Utc;
 
 impl DeviceAuthorizationPlugin {
@@ -113,21 +113,7 @@ impl DeviceAuthorizationPlugin {
                 return device_error_response(400, "invalid_grant", INVALID_DEVICE_CODE);
             }
 
-            let headers = req.session_headers();
-            let meta = if let Some(request) = req.physical_request() {
-                RequestMeta::from_request(request)
-            } else {
-                RequestMeta {
-                    ip_address: Some(
-                        ctx.config
-                            .advanced
-                            .ip_address
-                            .resolve_ip(headers)
-                            .unwrap_or_default(),
-                    ),
-                    user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-                }
-            };
+            let meta = crate::helpers::request_meta(req, &ctx.config);
             let session =
                 match create_user_session_record(ctx, &user.id(), meta.ip_address, meta.user_agent)
                     .await

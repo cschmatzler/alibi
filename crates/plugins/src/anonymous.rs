@@ -8,7 +8,7 @@ use alibi_core::error::codes;
 use alibi_core::wire::{SessionView, UserView};
 use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
+    AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod,
 };
 use async_trait::async_trait;
 use rand::distr::{Alphanumeric, SampleString};
@@ -177,21 +177,7 @@ impl AnonymousPlugin {
                 },
                 error => error,
             })?;
-        let headers = req.session_headers();
-        let meta = if let Some(request) = req.physical_request() {
-            RequestMeta::from_request(request)
-        } else {
-            RequestMeta {
-                ip_address: Some(
-                    ctx.config
-                        .advanced
-                        .ip_address
-                        .resolve_ip(headers)
-                        .unwrap_or_default(),
-                ),
-                user_agent: Some(headers.get("user-agent").cloned().unwrap_or_default()),
-            }
-        };
+        let meta = crate::helpers::request_meta(req, &ctx.config);
         let issued =
             issue_user_session_record(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
                 .await

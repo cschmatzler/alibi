@@ -95,21 +95,7 @@ pub(crate) async fn session_response_with_remember<S: AuthSchema>(
     } else {
         None
     }
-    .unwrap_or_else(|| alibi_core::RequestMeta {
-        ip_address: Some(
-            ctx.config
-                .advanced
-                .ip_address
-                .resolve_ip(req.session_headers())
-                .unwrap_or_default(),
-        ),
-        user_agent: Some(
-            req.session_headers()
-                .get("user-agent")
-                .cloned()
-                .unwrap_or_default(),
-        ),
-    });
+    .unwrap_or_else(|| crate::helpers::session_meta(req, &ctx.config));
     alibi_core::session::cookie_cache::runtime::set_issuance_preference(req, dont_remember);
     let issued = crate::helpers::issue_selected_user_session_record(
         &issuing_context,
