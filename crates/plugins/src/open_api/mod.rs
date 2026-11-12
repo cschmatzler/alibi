@@ -204,7 +204,7 @@ fn reference_html(schema: &str, config: &OpenApiConfig) -> String {
         .filter(|theme| !theme.is_empty())
         .unwrap_or("default");
     // The bundled upstream brand asset is MIT-licensed Better Auth artwork.
-    let favicon = encode_uri_component(include_str!("logo.svg"));
+    let favicon = alibi_core::utils::javascript::encode_uri_component(include_str!("logo.svg"));
     format!(
         r#"<!doctype html>
 <html>
@@ -238,26 +238,4 @@ fn reference_html(schema: &str, config: &OpenApiConfig) -> String {
   </body>
 </html>"#
     )
-}
-fn encode_uri_component(input: &str) -> String {
-    let mut output = String::new();
-
-    for byte in input.bytes() {
-        if byte.is_ascii_alphanumeric() || b"-_.!~*'()".contains(&byte) {
-            output.push(char::from(byte));
-        } else {
-            output.push('%');
-            output.push(hex_digit(byte >> 4));
-            output.push(hex_digit(byte & 15));
-        }
-    }
-    output
-}
-
-fn hex_digit(digit: u8) -> char {
-    char::from(if digit < 10 {
-        b'0' + digit
-    } else {
-        b'A' + digit - 10
-    })
 }

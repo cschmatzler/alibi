@@ -2088,14 +2088,7 @@ fn bearer_token(header: &str) -> Option<&str> {
     Some(token)
 }
 fn resource_url(base: &str, kind: &str, id: &str) -> AuthResult<String> {
-    // encodeURIComponent leaves these ASCII characters unescaped.
-    let encoded = urlencoding::encode(id)
-        .into_owned()
-        .replace("%21", "!")
-        .replace("%27", "'")
-        .replace("%28", "(")
-        .replace("%29", ")")
-        .replace("%2A", "*");
+    let encoded = alibi_core::utils::javascript::encode_uri_component(id);
     let base = url::Url::parse(&format!("{base}/"))
         .map_err(|error| AuthError::internal(error.to_string()))?;
     Ok(base

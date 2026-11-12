@@ -118,17 +118,6 @@ fn try_decode(value: &str) -> String {
     urlencoding::decode(value).map_or_else(|_| value.to_owned(), std::borrow::Cow::into_owned)
 }
 
-fn encode_component(value: &str) -> String {
-    // encodeURIComponent preserves these characters in addition to RFC3986's
-    // unreserved set. Values are encoded once after cookie-map replacement.
-    urlencoding::encode(value)
-        .replace("%21", "!")
-        .replace("%27", "'")
-        .replace("%28", "(")
-        .replace("%29", ")")
-        .replace("%2A", "*")
-}
-
 fn replace_cookie(header: &str, name: &str, value: &str) -> String {
     let mut cookies = IndexMap::<String, String>::new();
     for item in header.split(';') {
@@ -156,7 +145,12 @@ fn replace_cookie(header: &str, name: &str, value: &str) -> String {
     _ = cookies.insert(name.to_owned(), value.to_owned());
     cookies
         .into_iter()
-        .map(|(key, value)| format!("{key}={}", encode_component(&value)))
+        .map(|(key, value)| {
+            format!(
+                "{key}={}",
+                alibi_core::utils::javascript::encode_uri_component(&value)
+            )
+        })
         .collect::<Vec<_>>()
         .join("; ")
 }

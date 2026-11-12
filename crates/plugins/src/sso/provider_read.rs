@@ -85,7 +85,7 @@ pub(super) fn sanitize<S: AuthSchema>(
         ctx.config.base_url.trim_end_matches('/'),
         ctx.config.base_path.trim_end_matches('/')
     );
-    let mut output = json!({"providerId":provider.provider_id,"type":if saml.is_some(){"saml"}else{"oidc"},"issuer":provider.issuer,"domain":provider.domain,"organizationId":provider.organization_id.as_deref().filter(|id|!id.is_empty()),"domainVerified":provider.domain_verified.unwrap_or(false),"spMetadataUrl":format!("{base}/sso/saml2/sp/metadata?providerId={}",component(&provider.provider_id))});
+    let mut output = json!({"providerId":provider.provider_id,"type":if saml.is_some(){"saml"}else{"oidc"},"issuer":provider.issuer,"domain":provider.domain,"organizationId":provider.organization_id.as_deref().filter(|id|!id.is_empty()),"domainVerified":provider.domain_verified.unwrap_or(false),"spMetadataUrl":format!("{base}/sso/saml2/sp/metadata?providerId={}",alibi_core::utils::javascript::encode_uri_component(&provider.provider_id))});
     if let Some(config) = saml {
         let mut safe = serde_json::Map::new();
         for field in [
@@ -178,14 +178,6 @@ pub(super) fn sanitize<S: AuthSchema>(
         }
     }
     Ok(output)
-}
-fn component(value: &str) -> String {
-    urlencoding::encode(value)
-        .replace("%21", "!")
-        .replace("%27", "'")
-        .replace("%28", "(")
-        .replace("%29", ")")
-        .replace("%2A", "*")
 }
 pub(super) fn validate_query(value: Option<&JsValue>) -> AuthResult<JsValue> {
     super::super::endpoint::validate_fields(

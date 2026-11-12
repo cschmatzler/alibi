@@ -18,6 +18,24 @@ pub(crate) const fn number_from_usize(value: usize) -> f64 {
     value as f64
 }
 
+/// The characters JavaScript's `encodeURIComponent` leaves unescaped.
+pub(crate) const URI_COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'!')
+    .remove(b'~')
+    .remove(b'*')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')');
+
+/// `encodeURIComponent`, including its unreserved set beyond RFC 3986.
+#[must_use]
+pub fn encode_uri_component(value: &str) -> String {
+    percent_encoding::utf8_percent_encode(value, URI_COMPONENT).to_string()
+}
+
 #[must_use]
 pub fn trim(value: &str) -> &str {
     value.trim_matches(is_whitespace)

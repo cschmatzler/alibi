@@ -273,18 +273,7 @@ pub(in crate::oauth::handlers) fn build_authorization_url(
             .map(|(key, value)| (key.into_owned(), value.into_owned()))
             .collect();
         _ = url.query_pairs_mut().clear().extend_pairs(existing);
-        let encoded = [
-            ("%21", "!"),
-            ("%27", "'"),
-            ("%28", "("),
-            ("%29", ")"),
-            ("%2A", "*"),
-        ]
-        .into_iter()
-        .fold(
-            urlencoding::encode(&scope).into_owned(),
-            |value, (encoded, literal)| value.replace(encoded, literal),
-        );
+        let encoded = alibi_core::utils::javascript::encode_uri_component(&scope);
         let query = format!("{}&scope={encoded}", url.query().unwrap_or_default());
         url.set_query(Some(&query));
     }

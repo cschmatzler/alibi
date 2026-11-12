@@ -633,7 +633,7 @@ pub fn cookie_header(
         })
         .flatten();
     let encoded =
-        percent_encoding::utf8_percent_encode(value, crate::utils::cookie_utils::URI_COMPONENT)
+        percent_encoding::utf8_percent_encode(value, crate::utils::javascript::URI_COMPONENT)
             .to_string();
     crate::utils::cookie_utils::create_numeric_cookie_header(
         name,

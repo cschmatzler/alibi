@@ -207,15 +207,6 @@ pub(in crate::two_factor) fn constant_time_totp_equal(input: &str, expected: &st
     difference == 0
 }
 
-pub(in crate::two_factor) fn uri_component(value: &str) -> String {
-    urlencoding::encode(value)
-        .replace("%21", "!")
-        .replace("%27", "'")
-        .replace("%28", "(")
-        .replace("%29", ")")
-        .replace("%2A", "*")
-}
-
 pub(in crate::two_factor) fn totp_uri(
     config: &TwoFactorConfig,
     secret: &str,
@@ -240,8 +231,8 @@ pub(in crate::two_factor) fn totp_uri(
         .finish();
     Ok(format!(
         "otpauth://totp/{}:{}?{query}",
-        uri_component(issuer),
-        uri_component(email)
+        alibi_core::utils::javascript::encode_uri_component(issuer),
+        alibi_core::utils::javascript::encode_uri_component(email)
     ))
 }
 

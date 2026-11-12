@@ -320,12 +320,7 @@ impl LastLoginMethodPlugin {
                     .as_ref()
                     .map(|cross| cross.domain.as_str())
             });
-        let value = urlencoding::encode(method)
-            .replace("%21", "!")
-            .replace("%27", "'")
-            .replace("%28", "(")
-            .replace("%29", ")")
-            .replace("%2A", "*");
+        let value = alibi_core::utils::javascript::encode_uri_component(method);
         let mut cookie = cookie::Cookie::build((self.config.cookie_name.clone(), value))
             .path(path)
             .secure(secure)

@@ -1,24 +1,12 @@
 //! Shared cookie utilities for building `Set-Cookie` headers.
 
 use crate::config::{AuthConfig, CookieAttributes, SameSite};
-use crate::utils::javascript::number_from_i64;
+use crate::utils::javascript::{URI_COMPONENT, number_from_i64};
 use crate::{AuthError, AuthResult};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use hmac::{Hmac, KeyInit, Mac};
 use sha2::Sha256;
 use std::fmt::Write as _;
-
-/// The characters JavaScript's `encodeURIComponent` leaves unescaped.
-pub(crate) const URI_COMPONENT: &percent_encoding::AsciiSet = &percent_encoding::NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'!')
-    .remove(b'~')
-    .remove(b'*')
-    .remove(b'\'')
-    .remove(b'(')
-    .remove(b')');
 
 /// Build a `Set-Cookie` header value for an arbitrary cookie using the auth
 /// config's session cookie attributes for consistency.
@@ -459,7 +447,10 @@ mod tests {
     #[test]
     fn signed_cookies_reject_authenticated_empty_payloads() {
         let secret = "cookie-parity-secret";
-        assert_eq!(verify_cookie_value(&sign_cookie_value("", secret), secret), None);
+        assert_eq!(
+            verify_cookie_value(&sign_cookie_value("", secret), secret),
+            None
+        );
         for payload in ["session", ".", "session.with.dots"] {
             assert_eq!(
                 verify_cookie_value(&sign_cookie_value(payload, secret), secret),
