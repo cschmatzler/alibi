@@ -505,6 +505,25 @@ impl OAuthProviderPlugin {
         self.apply_metadata_extensions(ctx, Value::Object(contributed))
     }
 }
+/// `Object.prototype` member names that a JS claim merge must never assign.
+pub(super) fn is_reserved_property(key: &str) -> bool {
+    matches!(
+        key,
+        "__proto__"
+            | "constructor"
+            | "toString"
+            | "toLocaleString"
+            | "valueOf"
+            | "hasOwnProperty"
+            | "isPrototypeOf"
+            | "propertyIsEnumerable"
+            | "__defineGetter__"
+            | "__defineSetter__"
+            | "__lookupGetter__"
+            | "__lookupSetter__"
+    )
+}
+
 fn unique(values: Vec<String>) -> Vec<String> {
     let mut result = Vec::new();
     for value in values {

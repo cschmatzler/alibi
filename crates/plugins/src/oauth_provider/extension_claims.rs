@@ -54,21 +54,7 @@ pub(super) enum TokenClaimKind {
 
 pub(super) fn merge_additive(base: &mut Map<String, Value>, claims: Map<String, Value>) {
     for (key, value) in claims {
-        if !matches!(
-            key.as_str(),
-            "__proto__"
-                | "constructor"
-                | "toString"
-                | "toLocaleString"
-                | "valueOf"
-                | "hasOwnProperty"
-                | "isPrototypeOf"
-                | "propertyIsEnumerable"
-                | "__defineGetter__"
-                | "__defineSetter__"
-                | "__lookupGetter__"
-                | "__lookupSetter__"
-        ) {
+        if !super::is_reserved_property(&key) {
             _ = base.entry(key).or_insert(value);
         }
     }

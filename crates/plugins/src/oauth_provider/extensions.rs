@@ -156,23 +156,7 @@ impl OAuthProviderPlugin {
                 };
                 for (key, value) in contributor.contribute(&mut input)? {
                     // Reference `key in next` also protects inherited Object.prototype keys.
-                    if !next.contains_key(&key)
-                        && !matches!(
-                            key.as_str(),
-                            "__proto__"
-                                | "constructor"
-                                | "toString"
-                                | "toLocaleString"
-                                | "valueOf"
-                                | "hasOwnProperty"
-                                | "isPrototypeOf"
-                                | "propertyIsEnumerable"
-                                | "__defineGetter__"
-                                | "__defineSetter__"
-                                | "__lookupGetter__"
-                                | "__lookupSetter__"
-                        )
-                    {
+                    if !next.contains_key(&key) && !super::is_reserved_property(&key) {
                         _ = next.insert(key, value);
                     }
                 }
