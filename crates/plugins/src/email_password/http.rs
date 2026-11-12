@@ -170,41 +170,18 @@ impl EmailPasswordPlugin {
                 response,
                 token,
                 set_cookie_headers,
-            } => {
-                let mut auth_response = AuthResponse::json(200, &response)?.with_appended_header(
-                    "Set-Cookie",
-                    create_session_cookie_for_remember_me(
-                        &token,
-                        signin_req.remember_me,
-                        &ctx.config,
-                    )?,
-                );
-                if let Some(url) = signin_req
-                    .callback_url
-                    .as_deref()
-                    .filter(|url| !url.is_empty())
-                {
-                    auth_response = auth_response.with_header("Location", url);
-                }
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(append_dont_remember_cookie(
-                    auth_response,
-                    signin_req.remember_me,
-                    &ctx.config,
-                )?)
-            }
+            } => sign_in_success_response(
+                &response,
+                &token,
+                signin_req.remember_me,
+                signin_req.callback_url.as_deref(),
+                set_cookie_headers,
+                &ctx.config,
+            ),
             SignInCoreResult::TwoFactorRedirect {
                 response,
                 set_cookie_headers,
-            } => {
-                let mut auth_response = AuthResponse::json(200, &response)?;
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(auth_response)
-            }
+            } => two_factor_redirect_response(&response, set_cookie_headers),
         }
     }
 
@@ -278,41 +255,19 @@ impl EmailPasswordPlugin {
                     url: response.url,
                     user: response.user,
                 };
-                let mut auth_response = AuthResponse::json(200, &username_response)?
-                    .with_appended_header(
-                        "Set-Cookie",
-                        create_session_cookie_for_remember_me(
-                            &token,
-                            signin_req.remember_me,
-                            &ctx.config,
-                        )?,
-                    );
-                if let Some(url) = signin_req
-                    .callback_url
-                    .as_deref()
-                    .filter(|url| !url.is_empty())
-                {
-                    auth_response = auth_response.with_header("Location", url);
-                }
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(append_dont_remember_cookie(
-                    auth_response,
+                sign_in_success_response(
+                    &username_response,
+                    &token,
                     signin_req.remember_me,
+                    signin_req.callback_url.as_deref(),
+                    set_cookie_headers,
                     &ctx.config,
-                )?)
+                )
             }
             Ok(SignInCoreResult::TwoFactorRedirect {
                 response,
                 set_cookie_headers,
-            }) => {
-                let mut auth_response = AuthResponse::json(200, &response)?;
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(auth_response)
-            }
+            }) => two_factor_redirect_response(&response, set_cookie_headers),
             Err(SignInUsernameFailure::InvalidUsernameOrPassword) => username_error_response(
                 401,
                 codes::INVALID_USERNAME_OR_PASSWORD,
@@ -366,4 +321,36 @@ impl EmailPasswordPlugin {
             &IsUsernameAvailableResponse { available },
         )?)
     }
+}
+
+fn sign_in_success_response<U: serde::Serialize>(
+    response: &U,
+    token: &str,
+    remember_me: Option<bool>,
+    callback_url: Option<&str>,
+    set_cookie_headers: Vec<String>,
+    config: &alibi_core::AuthConfig,
+) -> AuthResult<AuthResponse> {
+    let mut auth_response = AuthResponse::json(200, response)?.with_appended_header(
+        "Set-Cookie",
+        create_session_cookie_for_remember_me(token, remember_me, config)?,
+    );
+    if let Some(url) = callback_url.filter(|url| !url.is_empty()) {
+        auth_response = auth_response.with_header("Location", url);
+    }
+    for cookie in set_cookie_headers {
+        auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
+    }
+    append_dont_remember_cookie(auth_response, remember_me, config)
+}
+
+fn two_factor_redirect_response(
+    response: &super::two_factor::TwoFactorRedirectResponse,
+    set_cookie_headers: Vec<String>,
+) -> AuthResult<AuthResponse> {
+    let mut auth_response = AuthResponse::json(200, response)?;
+    for cookie in set_cookie_headers {
+        auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
+    }
+    Ok(auth_response)
 }
