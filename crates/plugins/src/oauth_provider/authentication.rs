@@ -1,5 +1,6 @@
 //! Trusted server client authentication through the shared protocol credential owner.
 use super::OAuthProviderPlugin;
+use super::resource_policy::failure;
 use alibi_core::endpoint::{
     EndpointCall, EndpointError, EndpointResponse, with_endpoint_call_context,
 };
@@ -159,20 +160,6 @@ pub(super) fn client_allows_grant(client: &OAuthClient, grant: &str) -> bool {
                 || (grant == "refresh_token" && grants.contains(&json!("authorization_code")))
         },
     )
-}
-fn failure(code: &str, description: &str) -> EndpointError {
-    EndpointError {
-        error: AuthError::Api {
-            status: 400,
-            code: None,
-            message: String::new(),
-        },
-        headers: None,
-        body: Some(Box::new(JsValue::from(
-            json!({"error":code,"error_description":description}),
-        ))),
-        body_absent: false,
-    }
 }
 pub(super) fn response_error(response: &EndpointResponse) -> Result<EndpointError, EndpointError> {
     let response = response.to_response()?;

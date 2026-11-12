@@ -96,16 +96,7 @@ pub(super) fn error_response(error: EndpointError) -> AuthResult<EndpointRespons
     if !is_endpoint_api_error(&error.error) {
         return Err(error.error);
     }
-    let mut response = EndpointResponse::error(error.error);
-    if error.body_absent {
-        response = response.without_error_body();
-    } else if let Some(body) = error.body {
-        response = response.with_error_body(*body);
-    }
-    if let Some(headers) = error.headers {
-        response.merge_headers(headers);
-    }
-    Ok(response
+    Ok(super::endpoint_error_response(error)
         .with_header("Cache-Control", "no-store")
         .with_header("Pragma", "no-cache"))
 }

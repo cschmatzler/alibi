@@ -76,7 +76,8 @@ mod token_storage;
 pub use token_storage::OAuthTokenHasher;
 mod userinfo;
 use alibi_core::endpoint::{
-    EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
+    EndpointCall, EndpointDefinition, EndpointError, EndpointInput, EndpointResponse,
+    ServerEndpoint,
 };
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -526,6 +527,19 @@ fn normalize_issuer(value: &str) -> String {
     url.set_query(None);
     url.set_fragment(None);
     url.to_string().trim_end_matches('/').to_owned()
+}
+/// Protocol error envelope carrying the failure status, optional body and headers.
+pub(super) fn endpoint_error_response(error: EndpointError) -> EndpointResponse {
+    let mut response = EndpointResponse::error(error.error);
+    if error.body_absent {
+        response = response.without_error_body();
+    } else if let Some(body) = error.body {
+        response = response.with_error_body(*body);
+    }
+    if let Some(headers) = error.headers {
+        response.merge_headers(headers);
+    }
+    response
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OAuthProviderPlugin {

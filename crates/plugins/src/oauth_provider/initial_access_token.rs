@@ -77,8 +77,6 @@ impl super::OAuthProviderPlugin {
     ) -> alibi_core::AuthResult<
         Result<OAuthInitialAccessTokenAuthorization, alibi_core::endpoint::EndpointResponse>,
     > {
-        use alibi_core::endpoint::EndpointResponse;
-
         let validation = match &self.config.initial_access_token_validator {
             Some(validator) => validator.validate(input).await,
             None => Ok(None),
@@ -99,17 +97,7 @@ impl super::OAuthProviderPlugin {
                 )?
             }
             Err(OAuthInitialAccessTokenError::Endpoint(error)) => {
-                let mut response = EndpointResponse::error(error.error);
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
-                }
-                if error.body_absent {
-                    response = response.without_error_body();
-                }
-                if let Some(headers) = error.headers {
-                    response.merge_headers(headers);
-                }
-                response
+                super::endpoint_error_response(error)
             }
         };
         Ok(Err(response))

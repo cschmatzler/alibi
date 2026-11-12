@@ -36,6 +36,7 @@ pub(crate) fn session_meta(
 
 /// Metadata for a passkey ceremony: endpoint calls read their logical headers,
 /// whose names keep the application's casing; dispatches read the physical request.
+#[cfg(feature = "passkey")]
 pub(crate) fn passkey_request_meta(
     request: &impl alibi_core::session::SessionRequest,
     config: &alibi_core::AuthConfig,

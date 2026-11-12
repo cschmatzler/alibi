@@ -349,19 +349,7 @@ impl OAuthProviderPlugin {
         .await;
         let response = match result {
             Ok(value) => EndpointResponse::json(&value)?,
-            Err(error) => {
-                let mut response = EndpointResponse::error(error.error);
-                if let Some(body) = error.body {
-                    response = response.with_error_body(*body);
-                }
-                if error.body_absent {
-                    response = response.without_error_body();
-                }
-                if let Some(headers) = error.headers {
-                    response.merge_headers(headers);
-                }
-                response
-            }
+            Err(error) => super::endpoint_error_response(error),
         };
         Ok(Some(
             response

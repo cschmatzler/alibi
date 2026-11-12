@@ -113,16 +113,7 @@ impl OAuthProviderPlugin {
                         if inactive_error {
                             return inactive();
                         }
-                        let mut response = EndpointResponse::error(failure.error);
-                        if failure.body_absent {
-                            response = response.without_error_body();
-                        } else if let Some(body) = failure.body {
-                            response = response.with_error_body(*body);
-                        }
-                        if let Some(headers) = failure.headers {
-                            response.merge_headers(headers);
-                        }
-                        return Ok(no_store(response));
+                        return Ok(no_store(super::endpoint_error_response(failure)));
                     }
                     Err(_) => {
                         return Ok(no_store(

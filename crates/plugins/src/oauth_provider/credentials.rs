@@ -78,18 +78,7 @@ pub(super) async fn extract_for_audience<S: AuthSchema>(
                     method: method.into(),
                     confirmation: verified.confirmation,
                 }),
-                Err(error) => {
-                    let mut response = EndpointResponse::error(error.error);
-                    if error.body_absent {
-                        response = response.without_error_body();
-                    } else if let Some(body) = error.body {
-                        response = response.with_error_body(*body);
-                    }
-                    if let Some(headers) = error.headers {
-                        response.merge_headers(headers);
-                    }
-                    Err(response)
-                }
+                Err(error) => Err(super::endpoint_error_response(error)),
             });
         }
         return super::assertion::verify(&body, ctx, provider, audience).await;
