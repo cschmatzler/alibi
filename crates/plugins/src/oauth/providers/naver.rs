@@ -205,33 +205,6 @@ fn subject(profile: &Value) -> Result<JsString, String> {
 mod tests {
     use super::*;
     use crate::oauth::providers::js as json;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let request = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            loop {
-                let mut buffer = [0; 1024];
-                let count = stream.read(&mut buffer).await.unwrap();
-                assert_ne!(count, 0);
-                request.extend_from_slice(&buffer[..count]);
-                if request.windows(4).any(|part| part == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let body = profile.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-            String::from_utf8(request).unwrap()
-        });
-        (endpoint, request)
-    }
 
     #[tokio::test]
     async fn naver_preserves_compound_public_fields() {
@@ -239,7 +212,7 @@ mod tests {
         assert!(policy.preserve_raw_profile_scalars);
         assert!(policy.preserve_raw_email_errors);
         let profile = json!({"resultcode": "00", "response": {"id": "naver", "name": {}, "nickname": "ignored", "email": ["raw"], "profile_image": []}});
-        let (endpoint, captured) = profile_server(profile).await;
+        let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(profile).await;
         let response = NaverUserInfo {
             endpoint,
             mapper: None,
@@ -264,7 +237,8 @@ mod tests {
         ] {
             let profile = json!({"resultcode": "00", "response": {"id": id}});
             assert_eq!(subject(&profile).unwrap(), expected);
-            let (endpoint, captured) = profile_server(profile).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(profile).await;
             let response = NaverUserInfo {
                 endpoint,
                 mapper: None,
@@ -310,7 +284,8 @@ mod tests {
     async fn naver_async_mapper_receives_envelope_and_merges_partial_fields() {
         let profile = json!({"resultcode": "00", "response": {"id": "original", "email": "original@example.com"}});
         for fail in [false, true] {
-            let (endpoint, captured) = profile_server(profile.clone()).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(profile.clone()).await;
             let mut options = NaverOptions::new("client", None);
             options.user_info_endpoint = Some(endpoint);
             let provider = OAuthProvider::naver_with_options(options).with_profile_mapper(
@@ -357,7 +332,8 @@ mod tests {
             json!({"resultcode": 0}),
             json!({"resultcode": "01"}),
         ] {
-            let (endpoint, captured) = profile_server(profile).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(profile).await;
             let handler = NaverUserInfo {
                 endpoint,
                 mapper: None,
@@ -399,8 +375,10 @@ mod tests {
             (None, "undefined"),
             (Some(json!({"access_token": 42})), "42"),
         ] {
-            let (endpoint, captured) =
-                profile_server(json!({"resultcode": "00", "response": {"id": "naver-id"}})).await;
+            let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(
+                json!({"resultcode": "00", "response": {"id": "naver-id"}}),
+            )
+            .await;
             let handler = NaverUserInfo {
                 endpoint,
                 mapper: None,

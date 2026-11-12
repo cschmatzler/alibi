@@ -402,33 +402,6 @@ fn subject(profile: &Value) -> Result<JsString, String> {
 mod tests {
     use super::*;
     use crate::oauth::providers::js as json;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let request = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            loop {
-                let mut buffer = [0; 1024];
-                let count = stream.read(&mut buffer).await.unwrap();
-                assert_ne!(count, 0);
-                request.extend_from_slice(&buffer[..count]);
-                if request.windows(4).any(|part| part == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let body = profile.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-            String::from_utf8(request).unwrap()
-        });
-        (endpoint, request)
-    }
 
     #[tokio::test]
     async fn wechat_grant_errors_preserve_provider_message_and_operation() {
@@ -445,7 +418,8 @@ mod tests {
                 (json!({"errcode": 1, "errmsg": ""}), "Unknown error"),
                 (Value::Null, "Unknown error"),
             ] {
-                let (endpoint, captured) = profile_server(body).await;
+                let (endpoint, captured) =
+                    crate::test_helpers::serve_json_capturing_request(body).await;
                 let grants = WeChatGrants {
                     client_ids: vec!["client".into()],
                     client_secret: "secret".into(),
@@ -474,7 +448,9 @@ mod tests {
                 assert_eq!(error, format!("Failed to {operation}: {message}"));
             }
         }
-        let (endpoint, captured) = profile_server(json!({"access_token": "token"})).await;
+        let (endpoint, captured) =
+            crate::test_helpers::serve_json_capturing_request(json!({"access_token": "token"}))
+                .await;
         let error = token_request(&endpoint, &["client".into()], &[], "refresh access token")
             .await
             .unwrap_err();
@@ -485,7 +461,7 @@ mod tests {
     #[tokio::test]
     async fn wechat_refresh_does_not_publish_code_grant_identity() {
         for refresh in [false, true] {
-            let (endpoint, captured) = profile_server(json!({"scope": "snsapi_login", "access_token": "access", "refresh_token": "next", "openid": "openid", "unionid": "unionid", "expires_in": 3600})).await;
+            let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(json!({"scope": "snsapi_login", "access_token": "access", "refresh_token": "next", "openid": "openid", "unionid": "unionid", "expires_in": 3600})).await;
             let grants = WeChatGrants {
                 client_ids: vec!["client".into()],
                 client_secret: "secret".into(),
@@ -524,7 +500,7 @@ mod tests {
             vec!["client: +".into(), "second/&".into()],
         ] {
             for refresh in [false, true] {
-                let (endpoint, captured) = profile_server(
+                let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(
                     json!({"scope": "snsapi_login", "access_token": "access", "expires_in": 3600}),
                 )
                 .await;
@@ -574,8 +550,10 @@ mod tests {
                 .unwrap()
                 .allow_missing_access_token
         );
-        let (endpoint, captured) =
-            profile_server(json!({"openid": "openid", "nickname": "name"})).await;
+        let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(
+            json!({"openid": "openid", "nickname": "name"}),
+        )
+        .await;
         let response = WeChatProfile {
             endpoint,
             mapper: None,

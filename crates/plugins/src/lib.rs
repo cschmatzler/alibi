@@ -131,6 +131,38 @@ pub(crate) mod test_helpers {
         (endpoint, server)
     }
 
+    /// Serve one JSON response and return its endpoint plus the raw request.
+    pub async fn serve_json_capturing_request(
+        body: impl ToString,
+    ) -> (String, tokio::task::JoinHandle<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let body = body.to_string();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let request = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            loop {
+                let mut buffer = [0; 1024];
+                let count = stream.read(&mut buffer).await.unwrap();
+                assert_ne!(count, 0);
+                request.extend_from_slice(&buffer[..count]);
+                if request.windows(4).any(|part| part == b"\r\n\r\n") {
+                    break;
+                }
+            }
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(headers.as_bytes()).await.unwrap();
+            stream.write_all(body.as_bytes()).await.unwrap();
+            String::from_utf8(request).unwrap()
+        });
+        (endpoint, request)
+    }
+
     pub async fn create_test_database() -> Arc<TestDatabase> {
         let database = Database::connect("sqlite::memory:")
             .await

@@ -220,33 +220,6 @@ fn subject(profile: &Value) -> Result<JsString, String> {
 mod tests {
     use super::*;
     use crate::oauth::providers::js as json;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    async fn profile_server(profile: Value) -> (String, tokio::task::JoinHandle<String>) {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let request = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            loop {
-                let mut buffer = [0; 1024];
-                let count = stream.read(&mut buffer).await.unwrap();
-                assert_ne!(count, 0);
-                request.extend_from_slice(&buffer[..count]);
-                if request.windows(4).any(|part| part == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            let body = profile.to_string();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                body.len()
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-            String::from_utf8(request).unwrap()
-        });
-        (endpoint, request)
-    }
 
     #[tokio::test]
     async fn paypal_accepts_raw_id_tokens_without_a_typed_projection() {
@@ -256,7 +229,7 @@ mod tests {
             base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(br#"{"sub":"paypal-subject"}"#);
         let token = format!("header.{payload}.signature");
         for typed_token in [None, Some("different-typed-token".into())] {
-            let (endpoint, captured) = profile_server(json!({
+            let (endpoint, captured) = crate::test_helpers::serve_json_capturing_request(json!({
                 "sub": "paypal-subject",
                 "user_id": "legacy-paypal-id",
                 "email": "paypal@example.com"
@@ -280,7 +253,9 @@ mod tests {
             assert_eq!(response.data["sub"], "paypal-subject");
         }
         for raw_token in [json!(42), json!({}), json!("invalid")] {
-            let (endpoint, captured) = profile_server(json!({"sub": "paypal-subject"})).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(json!({"sub": "paypal-subject"}))
+                    .await;
             let error = PayPalUserInfo {
                 endpoint,
                 mapper: None,
@@ -305,7 +280,8 @@ mod tests {
             json!("profile"),
             json!([]),
         ] {
-            let (endpoint, captured) = profile_server(profile.clone()).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(profile.clone()).await;
             let response = PayPalUserInfo {
                 endpoint,
                 mapper: None,
@@ -337,7 +313,8 @@ mod tests {
             }
         }
         for profile in [Value::Null, json!(false), json!(0), json!("")] {
-            let (endpoint, captured) = profile_server(profile).await;
+            let (endpoint, captured) =
+                crate::test_helpers::serve_json_capturing_request(profile).await;
             assert!(
                 PayPalUserInfo {
                     endpoint,
