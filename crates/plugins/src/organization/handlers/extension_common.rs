@@ -116,35 +116,7 @@ pub(crate) async fn session<S: AuthSchema>(
             AuthError::Unauthenticated | AuthError::SessionNotFound => {
                 org_error(401, codes::UNAUTHORIZED)
             }
-            error @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::InvalidCredentials
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::Forbidden(_)
-            | AuthError::SessionCreationCancelled
-            | AuthError::UserCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited { .. }
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => error,
+            error => error,
         })
 }
 
