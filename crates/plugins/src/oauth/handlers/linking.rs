@@ -185,13 +185,23 @@ pub(in crate::oauth::handlers) async fn complete_link_social_with_raw_email(
     Ok(LinkSocialOutcome::Linked)
 }
 
-pub(in crate::oauth) async fn sign_in_with_id_token_core(
-    body: &SocialSignInRequest,
-    id_token: &OAuthIdTokenRequest,
+fn id_token_grant(id_token: &OAuthIdTokenRequest) -> OAuthTokenSet {
+    OAuthTokenSet {
+        access_token: id_token.access_token.clone(),
+        refresh_token: id_token.refresh_token.clone(),
+        access_token_expires_at: id_token
+            .expires_at
+            .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
+        id_token: Some(id_token.token.clone()),
+        scopes: id_token.scopes.clone().unwrap_or_default(),
+        ..Default::default()
+    }
+}
+
+async fn id_token_user_info(
     provider: &OAuthProvider,
-    meta: &alibi_core::RequestMeta,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-) -> AuthResult<SocialSignInResponse> {
+    id_token: &OAuthIdTokenRequest,
+) -> AuthResult<crate::oauth::providers::OAuthUserInfoResponse> {
     if provider.disable_id_token_sign_in
         || provider.verify_id_token.is_none() && provider.id_token.is_none()
     {
@@ -215,19 +225,11 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         });
     }
 
-    let mut user_info = fetch_user_info_from_provider(
+    fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             client_submitted_id_token: true,
-            access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            access_token_expires_at: id_token
-                .expires_at
-                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
-            id_token: Some(id_token.token.clone()),
-            user: id_token.user.clone(),
-            ..Default::default()
+            ..OAuthUserInfoRequest::from_tokens(&id_token_grant(id_token), id_token.user.clone())
         },
     )
     .await
@@ -235,7 +237,17 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         status: 401,
         code: codes::FAILED_TO_GET_USER_INFO,
         message: "Failed to get user info",
-    })?;
+    })
+}
+
+pub(in crate::oauth) async fn sign_in_with_id_token_core(
+    body: &SocialSignInRequest,
+    id_token: &OAuthIdTokenRequest,
+    provider: &OAuthProvider,
+    meta: &alibi_core::RequestMeta,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> AuthResult<SocialSignInResponse> {
+    let mut user_info = id_token_user_info(provider, id_token).await?;
 
     if user_info
         .user
@@ -249,26 +261,13 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
         });
     }
 
-    resolve_oauth_account_key(
-        provider,
-        &OAuthTokenSet {
-            access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            access_token_expires_at: id_token
-                .expires_at
-                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-            id_token: Some(id_token.token.clone()),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
-            ..Default::default()
-        },
-        &mut user_info,
-    )
-    .await
-    .map_err(|_error| AuthError::Upstream {
-        status: 401,
-        code: codes::FAILED_TO_GET_USER_INFO,
-        message: "Failed to get user info",
-    })?;
+    resolve_oauth_account_key(provider, &id_token_grant(id_token), &mut user_info)
+        .await
+        .map_err(|_error| AuthError::Upstream {
+            status: 401,
+            code: codes::FAILED_TO_GET_USER_INFO,
+            message: "Failed to get user info",
+        })?;
 
     let outcome = process_oauth_sign_in(
         OAuthIdentity {
@@ -333,50 +332,7 @@ pub(in crate::oauth) async fn link_with_id_token_core(
     session: &impl AuthSession,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
-    if provider.disable_id_token_sign_in
-        || provider.verify_id_token.is_none() && provider.id_token.is_none()
-    {
-        return Err(AuthError::Upstream {
-            status: 404,
-            code: codes::ID_TOKEN_NOT_SUPPORTED,
-            message: "id_token not supported",
-        });
-    }
-    if !crate::oauth::id_token::verify_provider_token(
-        provider,
-        &id_token.token,
-        id_token.nonce.as_deref(),
-    )
-    .await
-    {
-        return Err(AuthError::Upstream {
-            status: 401,
-            code: codes::INVALID_TOKEN,
-            message: "Invalid token",
-        });
-    }
-
-    let mut response = fetch_user_info_from_provider(
-        provider,
-        OAuthUserInfoRequest {
-            client_submitted_id_token: true,
-            access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            access_token_expires_at: id_token
-                .expires_at
-                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
-            id_token: Some(id_token.token.clone()),
-            user: id_token.user.clone(),
-            ..Default::default()
-        },
-    )
-    .await
-    .map_err(|_error| AuthError::Upstream {
-        status: 401,
-        code: codes::FAILED_TO_GET_USER_INFO,
-        message: "Failed to get user info",
-    })?;
+    let mut response = id_token_user_info(provider, id_token).await?;
 
     let canonical_user =
         OAuthUserInfo::from_fields(&response.user, response.account_subject.as_ref());
@@ -388,26 +344,13 @@ pub(in crate::oauth) async fn link_with_id_token_core(
         });
     }
 
-    resolve_oauth_account_key(
-        provider,
-        &OAuthTokenSet {
-            access_token: id_token.access_token.clone(),
-            refresh_token: id_token.refresh_token.clone(),
-            access_token_expires_at: id_token
-                .expires_at
-                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
-            id_token: Some(id_token.token.clone()),
-            scopes: id_token.scopes.clone().unwrap_or_default(),
-            ..Default::default()
-        },
-        &mut response,
-    )
-    .await
-    .map_err(|_error| AuthError::Upstream {
-        status: 401,
-        code: codes::FAILED_TO_GET_USER_INFO,
-        message: "Failed to get user info",
-    })?;
+    resolve_oauth_account_key(provider, &id_token_grant(id_token), &mut response)
+        .await
+        .map_err(|_error| AuthError::Upstream {
+            status: 401,
+            code: codes::FAILED_TO_GET_USER_INFO,
+            message: "Failed to get user info",
+        })?;
 
     let linked_account = ctx
         .database
