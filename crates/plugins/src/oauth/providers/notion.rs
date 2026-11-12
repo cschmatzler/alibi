@@ -58,11 +58,7 @@ impl OAuthProvider {
     #[must_use]
     pub fn notion_with_options(options: NotionOptions) -> Self {
         let secret = options.client_secret.unwrap_or_default();
-        let refresh_authentication = if secret.is_empty() {
-            OAuthTokenEndpointAuth::None
-        } else {
-            OAuthTokenEndpointAuth::ClientSecretPost
-        };
+        let refresh_authentication = super::client_secret_auth(Some(&secret));
         let endpoint = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://api.notion.com/v1/users/me".into());

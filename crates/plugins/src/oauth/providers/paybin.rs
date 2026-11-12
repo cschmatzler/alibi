@@ -1,8 +1,8 @@
 //! Paybin PKCE grants and decoded ID-token profile bound by its original subject.
 use super::remaining_profile::truthy;
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
@@ -68,11 +68,7 @@ impl OAuthProvider {
     #[must_use]
     pub fn paybin_with_options(options: PaybinOptions) -> Self {
         let secret = options.client_secret.unwrap_or_default();
-        let authentication = if secret.is_empty() {
-            OAuthTokenEndpointAuth::None
-        } else {
-            OAuthTokenEndpointAuth::ClientSecretPost
-        };
+        let authentication = super::client_secret_auth(Some(&secret));
         let issuer = options
             .issuer
             .filter(|value| !value.is_empty())

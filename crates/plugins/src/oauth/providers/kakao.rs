@@ -1,8 +1,8 @@
 //! Kakao's ordered scopes, nested profile mapping and raw account identity.
 use super::remaining_profile::truthy;
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
@@ -58,11 +58,7 @@ impl OAuthProvider {
     #[must_use]
     pub fn kakao_with_options(options: KakaoOptions) -> Self {
         let secret = options.client_secret.unwrap_or_default();
-        let authentication = if secret.is_empty() {
-            OAuthTokenEndpointAuth::None
-        } else {
-            OAuthTokenEndpointAuth::ClientSecretPost
-        };
+        let authentication = super::client_secret_auth(Some(&secret));
         let endpoint = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://kapi.kakao.com/v2/user/me".into());

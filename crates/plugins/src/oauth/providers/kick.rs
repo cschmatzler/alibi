@@ -1,7 +1,7 @@
 //! Kick's PKCE grants and first envelope profile bound by original `user_id`.
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
@@ -57,11 +57,7 @@ impl OAuthProvider {
     #[must_use]
     pub fn kick_with_options(options: KickOptions) -> Self {
         let secret = options.client_secret.unwrap_or_default();
-        let authentication = if secret.is_empty() {
-            OAuthTokenEndpointAuth::None
-        } else {
-            OAuthTokenEndpointAuth::ClientSecretPost
-        };
+        let authentication = super::client_secret_auth(Some(&secret));
         let endpoint = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://api.kick.com/public/v1/users".into());

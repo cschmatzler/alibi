@@ -1,8 +1,8 @@
 //! Polar's PKCE grants, ordered scopes and original user-info account identity.
 use super::remaining_profile::truthy;
 use super::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthAuthorizationPolicy, OAuthProvider, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
@@ -66,11 +66,7 @@ impl OAuthProvider {
     #[must_use]
     pub fn polar_with_options(options: PolarOptions) -> Self {
         let secret = options.client_secret.unwrap_or_default();
-        let refresh_authentication = if secret.is_empty() {
-            OAuthTokenEndpointAuth::None
-        } else {
-            OAuthTokenEndpointAuth::ClientSecretPost
-        };
+        let refresh_authentication = super::client_secret_auth(Some(&secret));
         let endpoint = options
             .user_info_endpoint
             .unwrap_or_else(|| "https://api.polar.sh/v1/oauth2/userinfo".into());
