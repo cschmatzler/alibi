@@ -1,6 +1,6 @@
 //! Dedicated published Better Auth 1.7.6 Slack factory.
 use super::remaining_profile::{ProfileKind, PublishedProfile};
-use super::{OAuthAuthorizationPolicy, OAuthProvider};
+use super::OAuthProvider;
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 
@@ -45,21 +45,14 @@ impl OAuthProvider {
     }
     #[must_use]
     pub fn slack_with_options(options: SlackOptions) -> Self {
-        let mut policy = OAuthAuthorizationPolicy {
-            preserve_raw_profile_scalars: true,
-            source_profile_exceptions: true,
-            require_client_id: true,
-            login_hint: false,
-            pkce: false,
-            configured_scopes: options.scope,
-            disable_default_scopes: options.disable_default_scope,
-            authorization_code_client_key: options.client_key,
-            redirect_uri: options.redirect_uri,
-            token_endpoint_auth: Some(super::client_secret_auth(options.client_secret.as_deref())),
-            allow_missing_access_token: true,
-            preserve_raw_email_errors: true,
-            ..OAuthAuthorizationPolicy::default()
-        };
+        let mut policy = super::published_authorization_policy(
+            options.scope,
+            options.disable_default_scope,
+            options.client_key,
+            options.redirect_uri,
+            super::client_secret_auth(options.client_secret.as_deref()),
+            false,
+        );
         let mut provider = Self {
             client_id: options.client_id,
             client_secret: options.client_secret.unwrap_or_default(),

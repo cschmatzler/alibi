@@ -633,6 +633,32 @@ pub struct OAuthAuthorizationPolicy {
     pub source_profile_exceptions: bool,
 }
 
+/// Authorization policy shared by the published confidential-client providers.
+pub(super) fn published_authorization_policy(
+    scope: Vec<String>,
+    disable_default_scope: bool,
+    client_key: Option<String>,
+    redirect_uri: Option<String>,
+    token_endpoint_auth: OAuthTokenEndpointAuth,
+    pkce: bool,
+) -> OAuthAuthorizationPolicy {
+    OAuthAuthorizationPolicy {
+        preserve_raw_profile_scalars: true,
+        source_profile_exceptions: true,
+        require_client_id: true,
+        login_hint: false,
+        pkce,
+        configured_scopes: scope,
+        disable_default_scopes: disable_default_scope,
+        authorization_code_client_key: client_key,
+        redirect_uri,
+        token_endpoint_auth: Some(token_endpoint_auth),
+        allow_missing_access_token: true,
+        preserve_raw_email_errors: true,
+        ..OAuthAuthorizationPolicy::default()
+    }
+}
+
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
