@@ -34,6 +34,37 @@ pub(crate) fn session_meta(
     )
 }
 
+/// Metadata for a passkey ceremony: endpoint calls read their logical headers,
+/// whose names keep the application's casing; dispatches read the physical request.
+pub(crate) fn passkey_request_meta(
+    request: &impl alibi_core::session::SessionRequest,
+    config: &alibi_core::AuthConfig,
+) -> alibi_core::RequestMeta {
+    if request.endpoint_call().is_none() {
+        return request
+            .physical_request()
+            .map(alibi_core::RequestMeta::from_request)
+            .unwrap_or_default();
+    }
+    let headers = request.session_headers();
+    alibi_core::RequestMeta {
+        ip_address: Some(
+            config
+                .advanced
+                .ip_address
+                .resolve_ip(headers)
+                .unwrap_or_default(),
+        ),
+        user_agent: Some(
+            headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                .map(|(_, value)| value.clone())
+                .unwrap_or_default(),
+        ),
+    }
+}
+
 /// Session metadata preferring the physical dispatch request, whose extensions
 /// carry the initialized IP policy, and falling back to the logical headers.
 pub(crate) fn request_meta(

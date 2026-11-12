@@ -386,28 +386,7 @@ impl PasskeyPlugin {
         req: &impl alibi_core::session::SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        let metadata = if req.endpoint_call().is_some() {
-            alibi_core::RequestMeta {
-                ip_address: Some(
-                    ctx.config
-                        .advanced
-                        .ip_address
-                        .resolve_ip(req.session_headers())
-                        .unwrap_or_default(),
-                ),
-                user_agent: Some(
-                    req.session_headers()
-                        .iter()
-                        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
-                        .map(|(_, value)| value.clone())
-                        .unwrap_or_default(),
-                ),
-            }
-        } else {
-            req.physical_request()
-                .map(alibi_core::RequestMeta::from_request)
-                .unwrap_or_default()
-        };
+        let metadata = crate::helpers::passkey_request_meta(req, &ctx.config);
         match verify_authentication_core(
             body,
             req,

@@ -537,28 +537,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         Ok(())
     };
     let outcome: AuthResult<JsValue> = if body.create_session.as_bool() == Some(true) {
-        let meta = if req.endpoint_call().is_some() {
-            alibi_core::RequestMeta {
-                ip_address: Some(
-                    ctx.config
-                        .advanced
-                        .ip_address
-                        .resolve_ip(req.session_headers())
-                        .unwrap_or_default(),
-                ),
-                user_agent: Some(
-                    req.session_headers()
-                        .iter()
-                        .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
-                        .map(|(_, value)| value.clone())
-                        .unwrap_or_default(),
-                ),
-            }
-        } else {
-            req.physical_request()
-                .map(alibi_core::RequestMeta::from_request)
-                .unwrap_or_default()
-        };
+        let meta = crate::helpers::passkey_request_meta(req, &ctx.config);
         let expires_at = Utc::now() + ctx.config.session.expires_in;
         let committed = ctx
             .database
