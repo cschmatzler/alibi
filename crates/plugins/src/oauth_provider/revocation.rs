@@ -23,32 +23,8 @@ impl OAuthProviderPlugin {
             .map(JsValue::to_json_value)
             .transpose()?
             .unwrap_or_else(|| json!({}));
-        for (field, required) in [
-            ("client_id", false),
-            ("client_secret", false),
-            ("client_assertion", false),
-            ("client_assertion_type", false),
-            ("token", true),
-            ("token_type_hint", false),
-        ] {
-            if let Some(value) = body.get(field) {
-                if !value.is_string() {
-                    return error(
-                        400,
-                        "invalid_request",
-                        &format!(
-                            "{field} {}",
-                            if value.is_array() {
-                                "must not appear more than once"
-                            } else {
-                                "must be a string"
-                            }
-                        ),
-                    );
-                }
-            } else if required {
-                return error(400, "invalid_request", &format!("{field} is required"));
-            }
+        if let Some(description) = super::credentials::token_request_error(&body) {
+            return error(400, "invalid_request", &description);
         }
         let credentials = match super::credentials::extract(&body, req, ctx, self, "revoke").await?
         {
@@ -76,15 +52,7 @@ impl OAuthProviderPlugin {
         if let Err(response) = credentials.authenticate(ctx, self).await? {
             return Ok(response);
         }
-        let hint = body
-            .get("token_type_hint")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
-        let kinds: &[OAuthTokenKind] = match hint {
-            "access_token" => &[OAuthTokenKind::Access],
-            "refresh_token" => &[OAuthTokenKind::Refresh],
-            _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh],
-        };
+        let (hint, kinds) = super::credentials::token_type_hint(&body);
         for kind in kinds {
             let Some(prefix_token) = self.decode_token_prefix(token, *kind) else {
                 if matches!(kind, OAuthTokenKind::Refresh) && hint == "refresh_token" {

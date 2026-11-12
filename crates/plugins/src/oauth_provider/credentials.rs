@@ -1,7 +1,7 @@
 //! Client credential extraction and registration-bound authentication shared by protocol endpoints.
 use alibi_core::endpoint::EndpointResponse;
 use alibi_core::session::SessionRequest;
-use alibi_core::store::OAuthClient;
+use alibi_core::store::{OAuthClient, OAuthTokenKind};
 use alibi_core::{AuthContext, AuthResult, AuthSchema};
 use serde_json::Value;
 pub(super) struct Credentials {
@@ -84,6 +84,50 @@ pub(super) async fn extract_for_audience<S: AuthSchema>(
         return super::assertion::verify(&body, ctx, provider, audience).await;
     }
     from_normalized(&body, req)
+}
+
+/// Description of the first invalid shared token-request field, if any.
+pub(super) fn token_request_error(body: &Value) -> Option<String> {
+    for (field, required) in [
+        ("client_id", false),
+        ("client_secret", false),
+        ("client_assertion", false),
+        ("client_assertion_type", false),
+        ("token", true),
+        ("token_type_hint", false),
+    ] {
+        let Some(value) = body.get(field) else {
+            if required {
+                return Some(format!("{field} is required"));
+            }
+            continue;
+        };
+        if !value.is_string() {
+            return Some(format!(
+                "{field} {}",
+                if value.is_array() {
+                    "must not appear more than once"
+                } else {
+                    "must be a string"
+                }
+            ));
+        }
+    }
+    None
+}
+
+/// Token hint and the token kinds it selects, defaulting to both on an unknown hint.
+pub(super) fn token_type_hint(body: &Value) -> (&str, &'static [OAuthTokenKind]) {
+    let hint = body
+        .get("token_type_hint")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let kinds = match hint {
+        "access_token" => &[OAuthTokenKind::Access][..],
+        "refresh_token" => &[OAuthTokenKind::Refresh][..],
+        _ => &[OAuthTokenKind::Access, OAuthTokenKind::Refresh][..],
+    };
+    (hint, kinds)
 }
 
 fn normalize(body: &Value, req: &impl SessionRequest) -> Result<Value, String> {
