@@ -11,7 +11,7 @@ use async_trait::async_trait;
 
 /// Application-owned `HuggingFace` configuration. Generic signup and asynchronous
 /// user-info/refresh callbacks remain configurable on the returned provider.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HuggingFaceOptions {
     pub client_id: String,
     pub client_secret: Option<String>,
@@ -32,13 +32,7 @@ impl HuggingFaceOptions {
         Self {
             client_id: client_id.into(),
             client_secret,
-            client_key: None,
-            scope: Vec::new(),
-            disable_default_scope: false,
-            authorization_endpoint: None,
-            redirect_uri: None,
-            user_info_endpoint: None,
-            map_profile_to_user: None,
+            ..Self::default()
         }
     }
 }

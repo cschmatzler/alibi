@@ -4,7 +4,7 @@ use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth};
 use alibi_core::utils::json::JsObject as Map;
 use alibi_core::utils::json::{JsString, JsValue as Value};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct SlackOptions {
     pub client_id: String,
     pub client_secret: Option<String>,
@@ -23,13 +23,7 @@ impl SlackOptions {
         Self {
             client_id: client_id.into(),
             client_secret,
-            client_key: None,
-            authorization_endpoint: None,
-            redirect_uri: None,
-            user_info_endpoint: None,
-            map_profile_to_user: None,
-            scope: Vec::new(),
-            disable_default_scope: false,
+            ..Self::default()
         }
     }
 }
