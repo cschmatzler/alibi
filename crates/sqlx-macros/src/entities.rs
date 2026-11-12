@@ -77,6 +77,26 @@ pub(crate) fn new_active(
     })
 }
 
+/// `parse_id` body: the model's primary key, given as a text `SqlValue`.
+fn parse_id(roots: &Roots) -> TokenStream {
+    let sqlx_root = &roots.sqlx;
+    quote! {
+        Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+            <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
+            #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
+    }
+}
+
+/// `parse_user_id` body: the model's `user_id_column`, given as a text `SqlValue`.
+fn parse_user_id(roots: &Roots) -> TokenStream {
+    let sqlx_root = &roots.sqlx;
+    quote! {
+        Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+            Self::user_id_column(),
+            #sqlx_root::value::SqlValue::Text(Some(user_id.to_string()))))
+    }
+}
+
 pub(crate) fn user_impl(
     ident: &Ident,
     fields: &FieldsNamed,
@@ -88,6 +108,7 @@ pub(crate) fn user_impl(
     let has = |name: &str| codegen::has_field(fields, name);
     let column = |name: &str| physical(columns, name);
     let new_active = new_active(EntityRole::User, fields, columns, roots)?;
+    let parse_id_body = parse_id(roots);
     let updates = codegen::update_statements(EntityRole::User, fields, &set_field(columns, roots));
     let prepare_json_metadata = if has("metadata") {
         let metadata = column("metadata")?;
@@ -150,9 +171,7 @@ pub(crate) fn user_impl(
                 match field { #(#list_columns)* _ => None }
             }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
-                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
+                #parse_id_body
             }
 
             fn new_active(
@@ -185,6 +204,8 @@ pub(crate) fn session_impl(
     let has = |name: &str| codegen::has_field(fields, name);
     let column = |name: &str| physical(columns, name);
     let new_active = new_active(EntityRole::Session, fields, columns, roots)?;
+    let parse_id_body = parse_id(roots);
+    let parse_user_id_body = parse_user_id(roots);
     let set = set_field(columns, roots);
     let id_column = column("id")?;
     let token_column = column("token")?;
@@ -254,14 +275,10 @@ pub(crate) fn session_impl(
             fn created_at_column() -> &'static str { #created_at_column }
             fn updated_at_column() -> Option<&'static str> { Some(#updated_at_column) }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
-                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
+                #parse_id_body
             }
             fn parse_user_id(user_id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    Self::user_id_column(),
-                    #sqlx_root::value::SqlValue::Text(Some(user_id.to_string()))))
+                #parse_user_id_body
             }
 
             fn new_active(
@@ -303,6 +320,8 @@ pub(crate) fn account_impl(
     let core_root = &roots.core;
     let column = |name: &str| physical(columns, name);
     let new_active = new_active(EntityRole::Account, fields, columns, roots)?;
+    let parse_id_body = parse_id(roots);
+    let parse_user_id_body = parse_user_id(roots);
     let updates =
         codegen::update_statements(EntityRole::Account, fields, &set_field(columns, roots));
     let id_column = column("id")?;
@@ -320,14 +339,10 @@ pub(crate) fn account_impl(
             fn user_id_column() -> &'static str { #user_id_column }
             fn created_at_column() -> &'static str { #created_at_column }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
-                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
+                #parse_id_body
             }
             fn parse_user_id(user_id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    Self::user_id_column(),
-                    #sqlx_root::value::SqlValue::Text(Some(user_id.to_string()))))
+                #parse_user_id_body
             }
 
             fn new_active(
@@ -359,6 +374,7 @@ pub(crate) fn verification_impl(
     let core_root = &roots.core;
     let column = |name: &str| physical(columns, name);
     let new_active = new_active(EntityRole::Verification, fields, columns, roots)?;
+    let parse_id_body = parse_id(roots);
     let id_column = column("id")?;
     let identifier_column = column("identifier")?;
     let value_column = column("value")?;
@@ -374,9 +390,7 @@ pub(crate) fn verification_impl(
             fn created_at_column() -> &'static str { #created_at_column }
             fn updated_at_column() -> Option<&'static str> { Some(#updated_at_column) }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
-                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
-                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
+                #parse_id_body
             }
 
             fn new_active(
