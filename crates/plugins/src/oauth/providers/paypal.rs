@@ -1,4 +1,5 @@
 //! `PayPal`'s sandbox/live endpoints, PKCE grants and original user-info subject.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -224,9 +225,6 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
         }
         Ok(response)
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("user_id"))

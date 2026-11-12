@@ -1,4 +1,5 @@
 //! Cloudflare's API profile, scope ordering and OAuth credential transport.
+use super::remaining_profile::truthy;
 use super::{OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth};
 use crate::oauth::providers::remaining_profile::ProfileResponseExt as _;
 use alibi_core::utils::json::JsObject as Map;
@@ -119,9 +120,6 @@ impl OAuthProvider {
             override_user_info_on_sign_in: false,
         }
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))

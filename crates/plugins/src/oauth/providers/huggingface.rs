@@ -1,4 +1,5 @@
 //! Hugging Face's ordered OIDC scopes, profile fallback and raw subject identity.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -215,10 +216,6 @@ impl OAuthUserInfoHandler for HuggingFaceUserInfo {
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
-}
-
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 
 #[cfg(test)]

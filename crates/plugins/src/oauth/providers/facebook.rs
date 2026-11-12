@@ -1,4 +1,5 @@
 //! Facebook Graph app-bound access tokens and signed Limited Login profiles.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -362,9 +363,6 @@ impl FacebookUserInfo {
 }
 fn http_error(error: reqwest::Error) -> String {
     error.without_url().to_string()
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub").or_else(|| profile.get("id")))

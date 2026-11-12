@@ -1,4 +1,5 @@
 //! Cognito's configured hosted domain, authenticated subject and profile fallback.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthScopeEncoding, OAuthTokenEndpointAuth,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -237,7 +238,7 @@ impl OAuthUserInfoHandler for CognitoUserInfo {
             .profile_json()
             .await
             .map_err(|error| error.to_string())?;
-        if !super::remaining_profile::truthy(&profile) {
+        if !truthy(&profile) {
             return Err("Missing Cognito profile".into());
         }
         let output = self.map_profile(&profile, false).await?;
@@ -280,9 +281,6 @@ impl CognitoUserInfo {
 
 fn decode_profile(token: &str) -> Result<Value, String> {
     super::remaining_profile::decode_grant_jwt(token)
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn profile_name(profile: &Value) -> Value {
     ["name", "given_name", "username"]

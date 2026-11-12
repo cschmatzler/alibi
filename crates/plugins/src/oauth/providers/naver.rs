@@ -1,4 +1,5 @@
 //! Naver's resultcode gate and original envelope account authority.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -217,10 +218,6 @@ impl OAuthUserInfoHandler for NaverUserInfo {
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("response").and_then(|value| value.get("id")))
-}
-
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 
 #[cfg(test)]

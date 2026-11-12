@@ -1,4 +1,5 @@
 //! LINE scopes, delegated direct proof and decoded/fallback profile identity.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthIdTokenVerifier, OAuthProvider, OAuthTokenEndpointAuth,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -176,7 +177,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
                 .await
                 .map_err(|error| error.to_string())?
         };
-        if !super::remaining_profile::truthy(&profile) {
+        if !truthy(&profile) {
             return Err("Missing line profile".into());
         }
         let mut output = Map::new();
@@ -221,10 +222,6 @@ impl OAuthUserInfoHandler for LineUserInfo {
 
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))
-}
-
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 
 struct LineVerifier {

@@ -1,4 +1,5 @@
 //! Notion's bot owner identity, versioned lookup and grant-specific credentials.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -219,9 +220,6 @@ impl OAuthUserInfoHandler for NotionUserInfo {
         }
         Ok(response)
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))

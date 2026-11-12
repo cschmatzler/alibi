@@ -1,4 +1,5 @@
 //! Paybin PKCE grants and decoded ID-token profile bound by its original subject.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -210,9 +211,6 @@ impl OAuthUserInfoHandler for PaybinUserInfo {
         }
         Ok(response)
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("sub"))

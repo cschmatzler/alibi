@@ -177,7 +177,7 @@ impl OneTapPlugin {
         let Some(payload) = self.verify(&body.id_token, &audiences).await else {
             return message(400, "invalid id token");
         };
-        if !payload.get("sub").is_some_and(js_truthy) {
+        if !payload.get("sub").is_some_and(JsValue::is_truthy) {
             return message(400, "invalid id token");
         }
         let hosted_domain = provider
@@ -433,16 +433,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
             return self.callback(req, ctx).await.map(Some);
         }
         Ok(None)
-    }
-}
-
-fn js_truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Undefined | JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
     }
 }
 

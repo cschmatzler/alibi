@@ -284,10 +284,10 @@ impl CaptchaPlugin {
         // betterFetch retains invalid JSON as text, so a truthy malformed reply
         // fails verification rather than becoming a transport error.
         let data = parse_value(&text).unwrap_or_else(|_| JsValue::String(text.into()));
-        if !truthy(&data) {
+        if !data.is_truthy() {
             return None;
         }
-        if !data.get("success").is_some_and(truthy) {
+        if !data.get("success").is_some_and(JsValue::is_truthy) {
             return Some(false);
         }
         let (action, hostnames) = match &self.config.provider {
@@ -339,16 +339,6 @@ async fn verify_bot_id(options: BotIdConfig, request: AuthRequest) -> Option<boo
         .ok()?
         .ok()?
         .ok()
-}
-
-fn truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Undefined | JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
-    }
 }
 
 fn unknown_error() -> AuthResponse {

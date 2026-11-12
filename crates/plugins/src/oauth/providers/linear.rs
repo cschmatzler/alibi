@@ -1,4 +1,5 @@
 //! Linear's non-PKCE grants and GraphQL viewer bound by its original ID.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -192,9 +193,6 @@ impl OAuthUserInfoHandler for LinearUserInfo {
             .map_err(super::remaining_profile::profile_exception)?;
         Ok(response)
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))

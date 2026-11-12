@@ -260,7 +260,7 @@ pub(crate) async fn verify_jwks_token(
             },
             OAuthJwksSelection::RemoteRs256 => remote_rsa_key_matches(key, kid),
             OAuthJwksSelection::First | OAuthJwksSelection::AllMatching => {
-                kid.filter(|kid| js_truthy(kid)).is_none_or(|kid| {
+                kid.filter(|kid| kid.is_truthy()).is_none_or(|kid| {
                     kid.as_str()
                         .is_some_and(|kid| key.get("kid").and_then(Value::as_str) == Some(kid))
                 })
@@ -457,13 +457,4 @@ fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenCo
         let age = now - iat;
         age - CLOCK_TOLERANCE_SECS <= max_age as f64 && age >= -CLOCK_TOLERANCE_SECS
     })
-}
-fn js_truthy(value: &JsValue) -> bool {
-    match value {
-        JsValue::Undefined | JsValue::Null => false,
-        JsValue::Bool(value) => *value,
-        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
-        JsValue::String(value) => !value.is_empty(),
-        JsValue::Date(_) | JsValue::Array(_) | JsValue::Object(_) => true,
-    }
 }

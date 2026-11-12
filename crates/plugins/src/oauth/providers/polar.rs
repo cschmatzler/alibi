@@ -1,4 +1,5 @@
 //! Polar's PKCE grants, ordered scopes and original user-info account identity.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -218,9 +219,6 @@ impl OAuthUserInfoHandler for PolarUserInfo {
         }
         Ok(response)
     }
-}
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))

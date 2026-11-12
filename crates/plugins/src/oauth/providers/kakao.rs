@@ -1,4 +1,5 @@
 //! Kakao's ordered scopes, nested profile mapping and raw account identity.
+use super::remaining_profile::truthy;
 use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
@@ -158,7 +159,7 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
             .profile_json()
             .await
             .map_err(|error| error.to_string())?;
-        if !super::remaining_profile::truthy(&profile) {
+        if !truthy(&profile) {
             return Err("Missing kakao profile".into());
         }
         let account = profile.get("kakao_account").filter(|value| truthy(value));
@@ -229,10 +230,6 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
 }
 fn subject(profile: &Value) -> Result<JsString, String> {
     super::remaining_profile::raw_subject(profile.get("id"))
-}
-
-fn truthy(value: &Value) -> bool {
-    value.is_truthy()
 }
 
 #[cfg(test)]
