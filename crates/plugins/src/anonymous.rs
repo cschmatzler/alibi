@@ -175,36 +175,7 @@ impl AnonymousPlugin {
                     code: codes::FAILED_TO_CREATE_USER,
                     message: "Failed to create user",
                 },
-                error @ (alibi_core::AuthError::Api { .. }
-                | alibi_core::AuthError::Upstream { .. }
-                | alibi_core::AuthError::BadRequest(_)
-                | alibi_core::AuthError::InvalidRequest(_)
-                | alibi_core::AuthError::Validation(_)
-                | alibi_core::AuthError::InvalidCredentials
-                | alibi_core::AuthError::Unauthenticated
-                | alibi_core::AuthError::AuthenticationFailed(_)
-                | alibi_core::AuthError::SessionNotFound
-                | alibi_core::AuthError::Forbidden(_)
-                | alibi_core::AuthError::SessionCreationCancelled
-                | alibi_core::AuthError::BannedUser(_)
-                | alibi_core::AuthError::Unauthorized
-                | alibi_core::AuthError::UserNotFound
-                | alibi_core::AuthError::NotFound(_)
-                | alibi_core::AuthError::Conflict(_)
-                | alibi_core::AuthError::MethodNotAllowed(_)
-                | alibi_core::AuthError::PayloadTooLarge(_)
-                | alibi_core::AuthError::UnprocessableEntity(_)
-                | alibi_core::AuthError::RateLimited { .. }
-                | alibi_core::AuthError::NotImplemented(_)
-                | alibi_core::AuthError::Config(_)
-                | alibi_core::AuthError::Database(_)
-                | alibi_core::AuthError::Serialization(_)
-                | alibi_core::AuthError::Plugin { .. }
-                | alibi_core::AuthError::CallbackFailure(_)
-                | alibi_core::AuthError::Internal(_)
-                | alibi_core::AuthError::Encryption(_)
-                | alibi_core::AuthError::PasswordHash(_)
-                | alibi_core::AuthError::Jwt(_)) => error,
+                error => error,
             })?;
         let headers = req.session_headers();
         let meta = if let Some(request) = req.physical_request() {
@@ -232,36 +203,7 @@ impl AnonymousPlugin {
                             message: "Could not create session",
                         }
                     }
-                    cause @ (alibi_core::AuthError::Api { .. }
-                    | alibi_core::AuthError::Upstream { .. }
-                    | alibi_core::AuthError::BadRequest(_)
-                    | alibi_core::AuthError::InvalidRequest(_)
-                    | alibi_core::AuthError::Validation(_)
-                    | alibi_core::AuthError::InvalidCredentials
-                    | alibi_core::AuthError::Unauthenticated
-                    | alibi_core::AuthError::AuthenticationFailed(_)
-                    | alibi_core::AuthError::SessionNotFound
-                    | alibi_core::AuthError::Forbidden(_)
-                    | alibi_core::AuthError::UserCreationCancelled
-                    | alibi_core::AuthError::BannedUser(_)
-                    | alibi_core::AuthError::Unauthorized
-                    | alibi_core::AuthError::UserNotFound
-                    | alibi_core::AuthError::NotFound(_)
-                    | alibi_core::AuthError::Conflict(_)
-                    | alibi_core::AuthError::MethodNotAllowed(_)
-                    | alibi_core::AuthError::PayloadTooLarge(_)
-                    | alibi_core::AuthError::UnprocessableEntity(_)
-                    | alibi_core::AuthError::RateLimited { .. }
-                    | alibi_core::AuthError::NotImplemented(_)
-                    | alibi_core::AuthError::Config(_)
-                    | alibi_core::AuthError::Database(_)
-                    | alibi_core::AuthError::Serialization(_)
-                    | alibi_core::AuthError::Plugin { .. }
-                    | alibi_core::AuthError::CallbackFailure(_)
-                    | alibi_core::AuthError::Internal(_)
-                    | alibi_core::AuthError::Encryption(_)
-                    | alibi_core::AuthError::PasswordHash(_)
-                    | alibi_core::AuthError::Jwt(_)) => cause,
+                    cause => cause,
                 })?;
         // The created row is Source's original new-user snapshot, even if a
         // lifecycle hook subsequently changes the database during session creation.
@@ -323,36 +265,7 @@ impl AnonymousPlugin {
                         code: codes::UNAUTHORIZED,
                         message: "Unauthorized",
                     },
-                    error @ (alibi_core::AuthError::Api { .. }
-                    | alibi_core::AuthError::Upstream { .. }
-                    | alibi_core::AuthError::BadRequest(_)
-                    | alibi_core::AuthError::InvalidRequest(_)
-                    | alibi_core::AuthError::Validation(_)
-                    | alibi_core::AuthError::InvalidCredentials
-                    | alibi_core::AuthError::AuthenticationFailed(_)
-                    | alibi_core::AuthError::SessionNotFound
-                    | alibi_core::AuthError::Forbidden(_)
-                    | alibi_core::AuthError::SessionCreationCancelled
-                    | alibi_core::AuthError::UserCreationCancelled
-                    | alibi_core::AuthError::BannedUser(_)
-                    | alibi_core::AuthError::Unauthorized
-                    | alibi_core::AuthError::UserNotFound
-                    | alibi_core::AuthError::NotFound(_)
-                    | alibi_core::AuthError::Conflict(_)
-                    | alibi_core::AuthError::MethodNotAllowed(_)
-                    | alibi_core::AuthError::PayloadTooLarge(_)
-                    | alibi_core::AuthError::UnprocessableEntity(_)
-                    | alibi_core::AuthError::RateLimited { .. }
-                    | alibi_core::AuthError::NotImplemented(_)
-                    | alibi_core::AuthError::Config(_)
-                    | alibi_core::AuthError::Database(_)
-                    | alibi_core::AuthError::Serialization(_)
-                    | alibi_core::AuthError::Plugin { .. }
-                    | alibi_core::AuthError::CallbackFailure(_)
-                    | alibi_core::AuthError::Internal(_)
-                    | alibi_core::AuthError::Encryption(_)
-                    | alibi_core::AuthError::PasswordHash(_)
-                    | alibi_core::AuthError::Jwt(_)) => error,
+                    error => error,
                 })?;
         if self.config.disable_delete_anonymous_user {
             return Ok(error(
