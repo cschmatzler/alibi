@@ -3,10 +3,11 @@ use super::{
     AuthContext, AuthError, AuthResult, AuthSchema, EndpointResponse, JsValue, ServerEndpoint,
     SsoPlugin, Value, api, json,
 };
+use crate::helpers::get_cookie;
 use crate::oauth::{
     OAuthTokenSet, OAuthUserInfo,
     handlers::{OAuthIdentity, OAuthProcessPolicy, process_oauth_sign_in},
-    state::{OAuthStatePayload, get_cookie, state_verification_identifier},
+    state::{OAuthStatePayload, state_verification_identifier},
 };
 use alibi_core::{OAuthStateStrategy, RequestMeta, session::SessionRequest};
 use base64::Engine as _;

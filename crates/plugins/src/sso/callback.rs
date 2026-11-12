@@ -3,10 +3,11 @@ use super::{
     AuthContext, AuthError, AuthResult, AuthSchema, EndpointResponse, ServerEndpoint, SsoPlugin,
     Value, api, json,
 };
+use crate::helpers::get_cookie;
 use crate::oauth::{
     OAuthTokenSet, OAuthUserInfo,
     handlers::{OAuthIdentity, OAuthProcessPolicy, process_oauth_sign_in},
-    state::{OAuthStatePayload, get_cookie, state_cookie_name, state_verification_identifier},
+    state::{OAuthStatePayload, state_cookie_name, state_verification_identifier},
 };
 use alibi_core::utils::cookie_utils::{create_clear_cookie, verify_cookie_value};
 use alibi_core::{OAuthStateStrategy, RequestMeta, session::SessionRequest};

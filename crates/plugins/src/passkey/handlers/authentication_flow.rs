@@ -7,6 +7,7 @@ use super::passkey_not_found;
 use super::response_code;
 use super::response_message;
 use crate::helpers::SessionIssueError;
+use crate::helpers::get_cookie;
 use crate::helpers::issue_user_session_record;
 use crate::passkey::PasskeyConfig;
 use crate::passkey::types::SessionResponse;
@@ -20,7 +21,6 @@ use crate::passkey::webauthn::create_challenge_cookie;
 use crate::passkey::webauthn::credential_id_from_authentication;
 use crate::passkey::webauthn::decode_challenge_cookie;
 use crate::passkey::webauthn::finish_core_authentication;
-use crate::passkey::webauthn::get_cookie_value;
 use crate::passkey::webauthn::snapshot_passkey;
 use alibi_core::AuthContext;
 use alibi_core::AuthError;
@@ -138,8 +138,7 @@ pub(in crate::passkey) async fn verify_authentication_core<S: alibi_core::AuthSc
         );
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
-    else {
+    let Some(cookie_value) = get_cookie(req, &challenge_cookie_name(&ctx.config, config)) else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {

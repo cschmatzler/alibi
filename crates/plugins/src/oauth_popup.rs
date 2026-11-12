@@ -331,16 +331,8 @@ impl OAuthPopupPlugin {
             return Ok(response);
         };
         let name = related_cookie_name(&ctx.config, "oauth_popup");
-        let marker = req
-            .session_headers()
-            .get("cookie")
-            .and_then(|header| {
-                header.split(';').find_map(|part| {
-                    let (key, value) = part.trim().split_once('=')?;
-                    (key == name).then_some(value)
-                })
-            })
-            .and_then(|value| verify_cookie_value(value, ctx.config.current_secret()));
+        let marker = crate::helpers::get_cookie(req, &name)
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()));
         let Some(marker) = marker else {
             return Ok(response);
         };

@@ -5,6 +5,7 @@ use super::generation_origin;
 use super::passkey_registration_failure;
 use super::response_code;
 use super::response_null;
+use crate::helpers::get_cookie;
 use crate::passkey::PasskeyConfig;
 use crate::passkey::PasskeyRegistrationUser;
 use crate::passkey::types::VerifyRegistrationRequest;
@@ -20,7 +21,6 @@ use crate::passkey::webauthn::decode_credential_id;
 use crate::passkey::webauthn::extract_registration_metadata;
 use crate::passkey::webauthn::finish_core_registration;
 use crate::passkey::webauthn::generate_ts_user_handle;
-use crate::passkey::webauthn::get_cookie_value;
 use crate::passkey::webauthn::registration_options_json;
 use crate::passkey::webauthn::snapshot_passkey;
 use alibi_core::AuthContext;
@@ -240,8 +240,7 @@ pub(in crate::passkey) async fn verify_registration_core<S: alibi_core::AuthSche
         );
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
-    else {
+    let Some(cookie_value) = get_cookie(req, &challenge_cookie_name(&ctx.config, config)) else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {

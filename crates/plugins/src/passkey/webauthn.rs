@@ -173,18 +173,6 @@ pub(super) fn ceremony_origin(
         .or(base)
 }
 
-pub(super) fn get_cookie_value(
-    req: &impl alibi_core::session::SessionRequest,
-    name: &str,
-) -> Option<String> {
-    let header = req.session_headers().get("cookie")?;
-    header.split(';').find_map(|cookie| {
-        let trimmed = cookie.trim();
-        let (cookie_name, cookie_value) = trimmed.split_once('=')?;
-        (cookie_name == name).then_some(cookie_value.to_owned())
-    })
-}
-
 pub(super) fn challenge_cookie_name(auth_config: &AuthConfig, config: &PasskeyConfig) -> String {
     auth_config
         .session

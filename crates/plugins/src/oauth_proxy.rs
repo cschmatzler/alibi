@@ -6,14 +6,15 @@ use super::oauth::handlers::{
     validate_authorization_code_via_provider,
 };
 use super::oauth::state::{
-    OAuthStatePayload, RecoveredOAuthServerContext, decode_cookie_state_value, get_cookie,
-    state_cookie_name, state_verification_identifier, verified_server_context,
+    OAuthStatePayload, RecoveredOAuthServerContext, decode_cookie_state_value, state_cookie_name,
+    state_verification_identifier, verified_server_context,
 };
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
     oauth_callback_path, oauth_disable_sign_up_option, resolve_oauth_account_key,
 };
 use super::token_crypto::EncryptionPurpose;
+use crate::helpers::get_cookie;
 use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, BeforeRequestAction, HttpMethod, OAuthStateStrategy,

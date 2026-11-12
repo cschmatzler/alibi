@@ -379,18 +379,6 @@ pub(super) fn decode_account_cookie_value(
         .ok_or_else(|| AuthError::bad_request("Account not found"))
 }
 
-pub(crate) fn get_cookie(
-    req: &impl alibi_core::session::SessionRequest,
-    name: &str,
-) -> Option<String> {
-    let header = req.session_headers().get("cookie")?;
-    header.split(';').find_map(|cookie| {
-        let trimmed = cookie.trim();
-        let (cookie_name, cookie_value) = trimmed.split_once('=')?;
-        (cookie_name == name).then_some(cookie_value.to_owned())
-    })
-}
-
 pub(super) fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
     config
         .session
