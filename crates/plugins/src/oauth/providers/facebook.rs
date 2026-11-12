@@ -377,7 +377,6 @@ mod tests {
     #[tokio::test]
     async fn facebook_graph_picture_containers_are_required_after_mapping() {
         use std::sync::atomic::{AtomicUsize, Ordering};
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
         struct PictureMapper(Arc<AtomicUsize>);
         #[async_trait]
@@ -413,24 +412,12 @@ mod tests {
             if let Some(picture) = picture {
                 profile["picture"] = picture;
             }
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let endpoint = format!("http://{}", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move {
-                for body in [
-                    crate::oauth::providers::js!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}}),
-                    profile,
-                ] {
-                    let (mut stream, _) = listener.accept().await.unwrap();
-                    let mut request = [0; 8192];
-                    let _ = stream.read(&mut request).await.unwrap();
-                    let body = body.to_string();
-                    let response = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                        body.len()
-                    );
-                    stream.write_all(response.as_bytes()).await.unwrap();
-                }
-            });
+            let (endpoint, server) =
+                crate::test_helpers::serve_json_responses(vec![
+                    (200, crate::oauth::providers::js!({"data":{"app_id":"client","is_valid":true,"user_id":"subject"}}).to_string()),
+                    (200, profile.to_string()),
+                ])
+                .await;
             let mut options = FacebookOptions::new("client", Some("secret".into()));
             options.user_info_endpoint = Some(endpoint.clone());
             options.token_inspection_endpoint = Some(endpoint);

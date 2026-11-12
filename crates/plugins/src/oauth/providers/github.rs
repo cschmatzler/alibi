@@ -231,7 +231,6 @@ mod tests {
     }
     #[tokio::test]
     async fn github_empty_email_list_differs_from_failed_lookup() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         struct EmailMapper(Option<Value>);
         #[async_trait]
         impl super::super::OAuthProfileMapper for EmailMapper {
@@ -242,26 +241,17 @@ mod tests {
         }
 
         for email in [Value::Null, Value::String(String::new().into())] {
-            for status in ["200 OK", "500 Internal Server Error"] {
-                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let endpoint = format!("http://{}", listener.local_addr().unwrap());
+            for (code, failed) in [(200, false), (500, true)] {
                 let profile = crate::oauth::providers::js!({"id":42,"login":"login","email":email});
-                let server = tokio::spawn(async move {
-                    for (status, body) in [("200 OK", profile.to_string()), (status, "[]".into())] {
-                        let (mut stream, _) = listener.accept().await.unwrap();
-                        let mut request = [0; 8192];
-                        let _ = stream.read(&mut request).await.unwrap();
-                        let response = format!(
-                            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-                            body.len()
-                        );
-                        stream.write_all(response.as_bytes()).await.unwrap();
-                    }
-                });
-                let expected_email = Some(if status == "200 OK" {
-                    Value::Undefined
-                } else {
+                let (endpoint, server) = crate::test_helpers::serve_json_responses(vec![
+                    (200, profile.to_string()),
+                    (code, "[]".into()),
+                ])
+                .await;
+                let expected_email = Some(if failed {
                     email.clone()
+                } else {
+                    Value::Undefined
                 });
                 let provider = OAuthProvider::github_with_endpoints(
                     "client", "secret", "auth", "token", &endpoint, &endpoint,

@@ -777,31 +777,15 @@ mod tests {
 
     #[tokio::test]
     async fn generic_user_info_preserves_raw_bearer_values() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         for token in [
             crate::oauth::providers::js!(42),
             crate::oauth::providers::js!(true),
             crate::oauth::providers::js!(["access", "token"]),
         ] {
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let url = format!("http://{}", listener.local_addr().unwrap());
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut bytes = Vec::new();
-                loop {
-                    let mut chunk = [0; 4096];
-                    let read = stream.read(&mut chunk).await.unwrap();
-                    assert_ne!(read, 0);
-                    bytes.extend_from_slice(&chunk[..read]);
-                    if bytes.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
-                        break;
-                    }
-                }
-                sender.send(String::from_utf8(bytes).unwrap()).unwrap();
-                let body = r#"{"id":"subject","email":"a@example.com"}"#;
-                stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
-            });
+            let (url, request) = crate::test_helpers::serve_json_capturing_request(
+                r#"{"id":"subject","email":"a@example.com"}"#,
+            )
+            .await;
             let handler = GenericUserInfo {
                 url: Some(url),
                 mapper: None,
@@ -816,7 +800,7 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.user["email"], "a@example.com");
-            let request = receiver.await.unwrap();
+            let request = request.await.unwrap();
             let authorization = request
                 .lines()
                 .find_map(|line| {

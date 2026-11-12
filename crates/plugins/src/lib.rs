@@ -131,6 +131,31 @@ pub(crate) mod test_helpers {
         (endpoint, server)
     }
 
+    /// Serve one JSON response per entry, in order, and return the endpoint plus
+    /// the server task. Each entry is a status code and its body.
+    pub async fn serve_json_responses(
+        responses: Vec<(u16, String)>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut request = [0; 8192];
+                let _ = stream.read(&mut request).await.unwrap();
+                let headers = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                stream.write_all(headers.as_bytes()).await.unwrap();
+                stream.write_all(body.as_bytes()).await.unwrap();
+            }
+        });
+        (endpoint, server)
+    }
+
     /// Serve one JSON response and return its endpoint plus the raw request.
     pub async fn serve_json_capturing_request(
         body: impl ToString,
