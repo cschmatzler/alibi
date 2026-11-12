@@ -13,50 +13,11 @@ mod source_endpoints;
 #[rustfmt::skip]
 #[allow(warnings, clippy::all, clippy::pedantic, clippy::nursery, clippy::restriction, reason = "Generated API declarations retain the upstream generator output")]
 mod source_models;
+use alibi_core::openapi::annotations::{entity_field, wire_name};
 use alibi_core::{AuthRoute, OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
-use alibi_schema_registry::{FieldDef, plugin_schemas};
+use alibi_schema_registry::plugin_schemas;
 use serde_json::{Value, json};
 
-fn wire_name(name: &str) -> String {
-    let mut words = name.split('_');
-    let mut output = words.next().unwrap_or_default().to_owned();
-    for word in words {
-        let mut letters = word.chars();
-        if let Some(first) = letters.next() {
-            output.extend(first.to_uppercase());
-            output.extend(letters);
-        }
-    }
-    output
-}
-fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
-    if field.is_primary_key {
-        return None;
-    }
-    let ty = field.ty.trim_start_matches("Option<").trim_end_matches('>');
-    let schema = match ty {
-        "DateTimeUtc" => json!({"type":"string","format":"date-time"}),
-        "bool" => json!({"type":"boolean"}),
-        "i64" | "f64" => json!({"type":"number"}),
-        "Json" => json!({"type":"json"}),
-        _ => json!({"type":"string"}),
-    };
-    let mut field = OpenApiField::new(
-        wire_name(field.name),
-        schema,
-        !field.ty.starts_with("Option<"),
-    );
-    if core && matches!(field.name.as_str(), "name" | "email") {
-        field.required = true;
-    }
-    if core && field.name == "emailVerified" {
-        field.input = false;
-        if let Some(object) = field.schema.as_object_mut() {
-            _ = object.insert("default".into(), json!(false));
-        }
-    }
-    Some(field)
-}
 /// Default annotations for registered built-in routes and plugin model fields.
 /// Custom plugins should override their metadata hook to describe additional constraints.
 #[must_use]
@@ -113,7 +74,7 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
         ] {
             let fields = definitions
                 .iter()
-                .filter_map(|definition| field(definition, false))
+                .filter_map(|definition| entity_field(definition, false))
                 .collect::<Vec<_>>();
             if !fields.is_empty() {
                 metadata.models.push(OpenApiModel::new(name, fields));
@@ -139,7 +100,7 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
                 entity
                     .fields
                     .iter()
-                    .filter_map(|definition| field(definition, false))
+                    .filter_map(|definition| entity_field(definition, false))
                     .collect(),
             ));
         }

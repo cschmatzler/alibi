@@ -4,7 +4,9 @@ use crate::AuthRoute;
 use alibi_schema_registry::{EntityRole, FieldDef, core_fields};
 use serde_json::json;
 
-fn wire_name(name: &str) -> String {
+/// Wire name for a snake_case schema field, as the entity accessors expose it.
+#[must_use]
+pub fn wire_name(name: &str) -> String {
     let mut words = name.split('_');
     let mut output = words.next().unwrap_or_default().to_owned();
     for word in words {
@@ -16,7 +18,11 @@ fn wire_name(name: &str) -> String {
     }
     output
 }
-fn field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
+/// OpenAPI projection of a schema field, or `None` for the primary key.
+///
+/// `core` applies the wire rules the mandatory entity accessors guarantee.
+#[must_use]
+pub fn entity_field(field: &FieldDef, core: bool) -> Option<OpenApiField> {
     if field.is_primary_key {
         return None;
     }
@@ -59,7 +65,7 @@ pub fn core_models() -> Vec<OpenApiModel> {
             name,
             core_fields(role)
                 .iter()
-                .filter_map(|definition| field(definition, true))
+                .filter_map(|definition| entity_field(definition, true))
                 .collect(),
         )
     })
