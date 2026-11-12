@@ -1,5 +1,5 @@
 //! Canonical User replacement over a fenced identity subject.
-use super::{SqlxStore, entities::scim_user as user};
+use super::{SqlxStore, entities::scim_user as user, scim_user_create::set_scim_user_attributes};
 use crate::{
     model::{self, ActiveRow},
     pool::Exec,
@@ -74,28 +74,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         .await?;
         let mut row = ActiveRow::new();
         row.set("id", id);
-        row.set("userName", data.attributes.user_name.clone());
-        row.set("userNameKey", data.attributes.user_name_key.clone());
-        row.set("primaryEmail", data.attributes.primary_email.clone());
-        row.set(
-            "workEmailValueIndex",
-            data.attributes.work_email_value_index.clone(),
-        );
-        row.set("emailValueIndex", data.attributes.email_value_index.clone());
-        row.set("displayName", data.attributes.display_name.clone());
-        row.set("formattedName", data.attributes.formatted_name.clone());
-        row.set("givenName", data.attributes.given_name.clone());
-        row.set("familyName", data.attributes.family_name.clone());
-        row.set(
-            "serializedEmails",
-            data.attributes.serialized_emails.clone(),
-        );
-        row.set(
-            "serializedAttributes",
-            data.attributes.serialized_attributes.clone(),
-        );
-        row.set("externalId", data.attributes.external_id.clone());
-        row.set("externalIdKey", data.attributes.external_id_key.clone());
+        set_scim_user_attributes(&mut row, &data.attributes);
         row.set("active", data.attributes.active);
         row.set("updatedAt", data.updated_at);
         let stored = model::update::<user::Model>(exec, &row)

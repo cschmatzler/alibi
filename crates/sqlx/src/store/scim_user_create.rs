@@ -10,7 +10,7 @@ use crate::{
 };
 use alibi_core::{
     AuthError, AuthResult, AuthSchema,
-    store::{CreateScimUser, ScimProjectionPreparedUser, ScimUserRecord},
+    store::{CreateScimUser, ScimProjectionPreparedUser, ScimUserAttributes, ScimUserRecord},
 };
 fn conflict(detail: &str) -> AuthError {
     AuthError::Api {
@@ -21,6 +21,29 @@ fn conflict(detail: &str) -> AuthError {
 }
 fn identity_conflict() -> AuthError {
     AuthError::internal("The SCIM identity changed concurrently; retry the request")
+}
+
+/// Stage the attribute-derived columns shared by SCIM User create and replace.
+pub(super) fn set_scim_user_attributes(row: &mut ActiveRow, attributes: &ScimUserAttributes) {
+    row.set("userName", attributes.user_name.clone());
+    row.set("userNameKey", attributes.user_name_key.clone());
+    row.set("primaryEmail", attributes.primary_email.clone());
+    row.set(
+        "workEmailValueIndex",
+        attributes.work_email_value_index.clone(),
+    );
+    row.set("emailValueIndex", attributes.email_value_index.clone());
+    row.set("displayName", attributes.display_name.clone());
+    row.set("formattedName", attributes.formatted_name.clone());
+    row.set("givenName", attributes.given_name.clone());
+    row.set("familyName", attributes.family_name.clone());
+    row.set("serializedEmails", attributes.serialized_emails.clone());
+    row.set(
+        "serializedAttributes",
+        attributes.serialized_attributes.clone(),
+    );
+    row.set("externalId", attributes.external_id.clone());
+    row.set("externalIdKey", attributes.external_id_key.clone());
 }
 impl<S: AuthSchema> SqlxStore<S> {
     pub(super) async fn assert_scim_user_keys_with_exec(
@@ -150,28 +173,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         row.set("provisioningDomainId", data.provisioning_domain_id.clone());
         row.set("userId", data.user_id.clone());
         row.set("connectionUserKey", data.connection_user_key.clone());
-        row.set("userName", data.attributes.user_name.clone());
-        row.set("userNameKey", data.attributes.user_name_key.clone());
-        row.set("primaryEmail", data.attributes.primary_email.clone());
-        row.set(
-            "workEmailValueIndex",
-            data.attributes.work_email_value_index.clone(),
-        );
-        row.set("emailValueIndex", data.attributes.email_value_index.clone());
-        row.set("displayName", data.attributes.display_name.clone());
-        row.set("formattedName", data.attributes.formatted_name.clone());
-        row.set("givenName", data.attributes.given_name.clone());
-        row.set("familyName", data.attributes.family_name.clone());
-        row.set(
-            "serializedEmails",
-            data.attributes.serialized_emails.clone(),
-        );
-        row.set(
-            "serializedAttributes",
-            data.attributes.serialized_attributes.clone(),
-        );
-        row.set("externalId", data.attributes.external_id.clone());
-        row.set("externalIdKey", data.attributes.external_id_key.clone());
+        set_scim_user_attributes(&mut row, &data.attributes);
         row.set("orderKey", data.order_key.clone());
         row.set("active", data.attributes.active);
         row.set("createdAt", data.created_at);
