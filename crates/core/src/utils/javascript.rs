@@ -100,7 +100,7 @@ pub fn string_to_number(value: &str) -> Option<f64> {
     clippy::cast_precision_loss,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
-fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
+pub fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
     if digits.is_empty() {
         return None;
     }

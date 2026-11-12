@@ -1,5 +1,6 @@
 use alibi_core::entity::MemberUserView;
 use alibi_core::entity::{AuthMember, AuthOrganization};
+use alibi_core::utils::javascript::radix_number;
 use alibi_core::utils::json::JsValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -632,59 +633,6 @@ fn deserialize_optional_integer_query<'de, D: serde::Deserializer<'de>>(
     deserializer: D,
 ) -> Result<Option<f64>, D::Error> {
     deserialize_query_number(deserializer, true)
-}
-
-// Retain one-rounded radix conversion already used for JS Number SIWE inputs.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
-)]
-fn radix_number(digits: &str, radix: u32, bits_per_digit: usize) -> Option<f64> {
-    if digits.is_empty() {
-        return None;
-    }
-    let digits = digits
-        .chars()
-        .map(|character| character.to_digit(radix))
-        .collect::<Option<Vec<_>>>()?;
-    let Some(first_nonzero) = digits.iter().position(|digit| *digit != 0) else {
-        return Some(0.0);
-    };
-    let significant = digits.get(first_nonzero..)?;
-    let first = *significant.first()?;
-    let first_bits = usize::try_from(first.bit_width()).ok()?;
-    let bit_length = first_bits + (significant.len() - 1) * bits_per_digit;
-    if bit_length > 1024 {
-        return Some(f64::INFINITY);
-    }
-    let mut mantissa = 0u64;
-    let mut position = 0;
-    let mut guard = false;
-    let mut sticky = false;
-    for (index, digit) in significant.iter().enumerate() {
-        let width = if index == 0 {
-            first_bits
-        } else {
-            bits_per_digit
-        };
-        for bit in (0..width).rev() {
-            let set = (*digit >> bit) & 1 != 0;
-            match position.cmp(&53) {
-                std::cmp::Ordering::Less => mantissa = (mantissa << 1) | u64::from(set),
-                std::cmp::Ordering::Equal => guard = set,
-                std::cmp::Ordering::Greater => sticky |= set,
-            }
-            position += 1;
-        }
-    }
-    if bit_length <= 53 {
-        return Some(mantissa as f64);
-    }
-    if guard && (sticky || mantissa & 1 != 0) {
-        mantissa += 1;
-    }
-    Some(mantissa as f64 * 2.0f64.powi(i32::try_from(bit_length - 53).ok()?))
 }
 
 pub(super) fn deserialize_nullable_string_field<'de, D>(
