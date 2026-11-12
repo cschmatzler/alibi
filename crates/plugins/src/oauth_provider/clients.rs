@@ -698,23 +698,10 @@ impl OAuthProviderPlugin {
             return Ok(response);
         }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 404,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"not_found","error_description":"client not found"}"#,
-            )?));
+            return status_protocol_error(404, "not_found", "client not found");
         };
         if client.user_id.as_deref() != Some(user.id().as_ref()) {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 401,
-                code: None,
-                message: String::new(),
-            })
-            .without_error_body()
-            .with_header("Content-Type", "application/json"));
+            return Ok(client_privilege_denied(401));
         }
         EndpointResponse::json(&client_read_metadata(client)?)
     }
@@ -745,14 +732,7 @@ impl OAuthProviderPlugin {
         let Some(client) =
             client.filter(|client| client.metadata.get("disabled") != Some(&json!(true)))
         else {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 404,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"not_found","error_description":"client not found"}"#,
-            )?));
+            return status_protocol_error(404, "not_found", "client not found");
         };
         let mut display = serde_json::Map::new();
         for name in [
@@ -866,23 +846,10 @@ impl OAuthProviderPlugin {
             );
         }
         let Some(client) = super::discovery::resolve(ctx, &input.client_id).await? else {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 404,
-                code: None,
-                message: String::new(),
-            })
-            .with_error_body(alibi_core::utils::json::parse_value(
-                r#"{"error":"not_found","error_description":"client not found"}"#,
-            )?));
+            return status_protocol_error(404, "not_found", "client not found");
         };
         if client.user_id.as_deref() != Some(user.id().as_ref()) {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 401,
-                code: None,
-                message: String::new(),
-            })
-            .without_error_body()
-            .with_header("Content-Type", "application/json"));
+            return Ok(client_privilege_denied(401));
         }
         ctx.database.delete_oauth_client(&input.client_id).await?;
         Ok(EndpointResponse::empty().with_header("Content-Type", "application/json"))
@@ -935,13 +902,7 @@ impl OAuthProviderPlugin {
             return status_protocol_error(404, "not_found", "client not found");
         };
         if client.user_id.as_deref() != Some(user.id().as_ref()) {
-            return Ok(EndpointResponse::error(AuthError::Api {
-                status: 401,
-                code: None,
-                message: String::new(),
-            })
-            .without_error_body()
-            .with_header("Content-Type", "application/json"));
+            return Ok(client_privilege_denied(401));
         }
         if client
             .metadata
