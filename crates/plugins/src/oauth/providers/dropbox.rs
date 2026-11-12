@@ -227,7 +227,6 @@ fn subject(profile: &Value) -> Result<JsString, String> {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     struct PartialMapper(Value);
     #[async_trait]
@@ -289,19 +288,7 @@ mod tests {
                 let body = alibi_core::utils::json::stringify(&wire_profile)
                     .unwrap()
                     .unwrap();
-                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-                let endpoint = format!("http://{}", listener.local_addr().unwrap());
-                let server = tokio::spawn(async move {
-                    let (mut stream, _) = listener.accept().await.unwrap();
-                    let mut request = [0; 8192];
-                    let _ = stream.read(&mut request).await.unwrap();
-                    let headers = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-                        body.len()
-                    );
-                    stream.write_all(headers.as_bytes()).await.unwrap();
-                    stream.write_all(&body).await.unwrap();
-                });
+                let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
                 let mut options = DropboxOptions::new("client", Some("secret".into()));
                 options.user_info_endpoint = Some(endpoint);
                 if mapped {
@@ -375,19 +362,7 @@ mod tests {
                     crate::oauth::providers::js!({"requiresMapping": true});
             }
             let body = (profile.clone()).to_string();
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let endpoint = format!("http://{}", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = [0; 8192];
-                let _ = stream.read(&mut request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            });
+            let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
             let mut options = DropboxOptions::new("client", Some("secret".into()));
             options.user_info_endpoint = Some(endpoint);
             let mut provider = OAuthProvider::dropbox_with_options(options);

@@ -397,21 +397,8 @@ mod tests {
     async fn microsoft_maps_photo_enriched_claims() {
         let body = crate::oauth::providers::js!("photo");
 
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request).await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
 
         let mut options = MicrosoftOptions::new("client", None);
         options.profile_photo_endpoint = Some(endpoint);

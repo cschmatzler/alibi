@@ -230,21 +230,8 @@ mod tests {
         let body =
             crate::oauth::providers::js!({"success":true,"result":{"id":"cf-id","email":null}});
 
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request).await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
 
         let mut options = CloudflareOptions::new("client", None);
         options.user_info_endpoint = Some(endpoint);
@@ -272,21 +259,8 @@ mod tests {
     async fn cloudflare_string_coerces_truthy_name_parts() {
         let body = crate::oauth::providers::js!({"success":true,"result":{"id":"cf-id","first_name":["Cloud","Flare"],"last_name":true,"email":"fallback@example.com"}});
 
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request).await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
 
         let mut options = CloudflareOptions::new("client", Some("secret".into()));
         options.user_info_endpoint = Some(endpoint);

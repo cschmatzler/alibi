@@ -191,7 +191,6 @@ fn subject(profile: &Value) -> Result<JsString, String> {
 mod tests {
     use super::*;
     use std::sync::Arc;
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     struct ObservedMapper {
         expected: Value,
@@ -215,15 +214,7 @@ mod tests {
         body: Value,
         mapper: Arc<ObservedMapper>,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            stream.read(&mut request).await.unwrap();
-            let body = body.to_string();
-            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body.to_string()).await;
         let handler = KickUserInfo {
             endpoint,
             mapper: None,
@@ -335,19 +326,7 @@ mod tests {
                 profile["name"] = crate::oauth::providers::js!({"requiresMapping": true});
             }
             let body = (crate::oauth::providers::js!({"data": [profile.clone()]})).to_string();
-            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-            let endpoint = format!("http://{}", listener.local_addr().unwrap());
-            let server = tokio::spawn(async move {
-                let (mut stream, _) = listener.accept().await.unwrap();
-                let mut request = [0; 8192];
-                let _ = stream.read(&mut request).await.unwrap();
-                let response = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                    body.len(),
-                    body
-                );
-                stream.write_all(response.as_bytes()).await.unwrap();
-            });
+            let (endpoint, server) = crate::test_helpers::serve_json_once(body.to_string()).await;
             let mut options = KickOptions::new("client", Some("secret".into()));
             options.user_info_endpoint = Some(endpoint);
             let mut provider = OAuthProvider::kick_with_options(options);

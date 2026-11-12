@@ -108,6 +108,29 @@ pub(crate) mod test_helpers {
         AuthConfig::new("test-secret-key-at-least-32-chars-long")
     }
 
+    /// Serve one JSON response and return its endpoint plus the server task.
+    pub async fn serve_json_once(
+        body: impl Into<Vec<u8>>,
+    ) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let body = body.into();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 8192];
+            let _ = stream.read(&mut request).await.unwrap();
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(headers.as_bytes()).await.unwrap();
+            stream.write_all(&body).await.unwrap();
+        });
+        (endpoint, server)
+    }
+
     pub async fn create_test_database() -> Arc<TestDatabase> {
         let database = Database::connect("sqlite::memory:")
             .await

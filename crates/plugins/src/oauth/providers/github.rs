@@ -295,21 +295,8 @@ mod tests {
     async fn github_maps_after_primary_email_enrichment() {
         let body = crate::oauth::providers::js!({"id":42,"login":"login","name":null,"email":null,"avatar_url":null});
 
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let body = body.to_string();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request).await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
 
         let user_endpoint = endpoint;
         let user_server = server;
@@ -319,19 +306,7 @@ mod tests {
         ]);
 
         let body = body.to_string();
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = [0; 8192];
-            let _ = stream.read(&mut request).await.unwrap();
-            let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            stream.write_all(response.as_bytes()).await.unwrap();
-        });
+        let (endpoint, server) = crate::test_helpers::serve_json_once(body).await;
 
         let provider = OAuthProvider::github_with_endpoints(
             "client",
