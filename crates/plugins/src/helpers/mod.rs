@@ -22,6 +22,22 @@ pub(crate) use sessions::{
     resolve_admin_banned_user_message, response_has_session_cookie,
 };
 
+/// Reject a redirect target outside the configured trusted set.
+pub(crate) fn validate_redirect_target<S: alibi_core::AuthSchema>(
+    target: &str,
+    ctx: &AuthContext<S>,
+    error_message: &str,
+) -> alibi_core::AuthResult<()> {
+    if ctx.config.current_origin_check_disabled() {
+        return Ok(());
+    }
+    if ctx.config.is_redirect_target_trusted(target) {
+        Ok(())
+    } else {
+        Err(AuthError::forbidden(error_message.to_owned()))
+    }
+}
+
 /// Session metadata for a logical request without a physical dispatch request,
 /// resolved from its headers under the configured IP policy.
 pub(crate) fn session_meta(

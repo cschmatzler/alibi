@@ -353,8 +353,8 @@ enum LinkSocialOutcome {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
+    use crate::helpers::validate_redirect_target;
     use crate::oauth::handlers::redirects::build_redirect_url;
-    use crate::oauth::handlers::redirects::validate_redirect_target;
     use crate::test_helpers;
 
     // Upstream reference: packages/better-auth/src/api/middlewares/origin-check.ts :: originCheck respects ctx.context.skipOriginCheck.

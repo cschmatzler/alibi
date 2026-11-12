@@ -13,7 +13,7 @@ use super::FlowStartRequest;
 use super::InitiatedOAuthFlow;
 use super::oauth_callback_path;
 use super::redirects::auth_base_url;
-use super::redirects::validate_redirect_target;
+use crate::helpers::validate_redirect_target;
 use crate::oauth::providers::OAuthConfig;
 use crate::oauth::providers::OAuthProvider;
 use crate::oauth::providers::OAuthScopeOrder;

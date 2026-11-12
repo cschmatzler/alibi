@@ -8,21 +8,6 @@ pub(in crate::oauth::handlers) fn redirect_response(location: &str) -> AuthRespo
         .with_header("Location", location)
 }
 
-pub(in crate::oauth::handlers) fn validate_redirect_target(
-    target: &str,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    error_message: &str,
-) -> AuthResult<()> {
-    if ctx.config.current_origin_check_disabled() {
-        return Ok(());
-    }
-    if ctx.config.is_redirect_target_trusted(target) {
-        Ok(())
-    } else {
-        Err(AuthError::forbidden(error_message.to_owned()))
-    }
-}
-
 pub(in crate::oauth::handlers) fn build_redirect_url(
     base_url: &str,
     callback_url: Option<&str>,

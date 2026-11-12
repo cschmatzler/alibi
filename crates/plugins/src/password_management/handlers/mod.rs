@@ -4,7 +4,9 @@ use super::types::{
     VerifyPasswordRequest, VerifyPasswordResponse,
 };
 use super::{PasswordManagementConfig, StatusResponse};
-use crate::helpers::{get_credential_account, get_credential_password_hash};
+use crate::helpers::{
+    get_credential_account, get_credential_password_hash, validate_redirect_target,
+};
 use alibi_core::error::codes;
 use alibi_core::utils::password as password_utils;
 use alibi_core::wire::UserView;
@@ -347,21 +349,6 @@ pub(crate) async fn verify_password_core(
         })?;
 
     Ok(VerifyPasswordResponse { status: true })
-}
-
-fn validate_redirect_target(
-    target: &str,
-    ctx: &AuthContext<impl alibi_core::AuthSchema>,
-    error_message: &str,
-) -> AuthResult<()> {
-    if ctx.config.current_origin_check_disabled() {
-        return Ok(());
-    }
-    if ctx.config.is_redirect_target_trusted(target) {
-        Ok(())
-    } else {
-        Err(AuthError::forbidden(error_message.to_owned()))
-    }
 }
 
 fn build_redirect_url(
