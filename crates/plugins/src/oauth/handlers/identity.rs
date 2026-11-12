@@ -3,7 +3,6 @@ use super::OAuthProcessPolicy;
 use super::OAuthSignInError;
 use super::ProcessOAuthUserResult;
 use super::cookies::account_cookie_max_age;
-use super::raw_truthy;
 use crate::helpers::apply_default_role;
 use crate::helpers::issue_selected_user_session_record;
 use crate::oauth::encryption::encrypt_provider_token_set;
@@ -402,7 +401,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                                     && user.email_verified())
                                     || user_info.email_verified
                             },
-                            raw_truthy,
+                            alibi_core::utils::json::JsValue::is_truthy,
                         )),
                         provider_email_verified: verification,
                         provider_name: raw_output.and_then(|output| output.get("name")).cloned(),
@@ -606,7 +605,7 @@ pub(crate) async fn process_oauth_sign_in_with_output(
                                     && linked_user.email_verified())
                                     || user_info.email_verified
                             },
-                            raw_truthy,
+                            alibi_core::utils::json::JsValue::is_truthy,
                         )),
                         provider_email_verified: verification,
                         ..Default::default()

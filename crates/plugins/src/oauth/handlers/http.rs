@@ -17,7 +17,6 @@ use super::oauth_callback_path;
 use super::oauth_disable_sign_up_option;
 use super::parse_callback_user_payload;
 use super::process_oauth_sign_in_with_output;
-use super::raw_truthy;
 use super::redirects::auth_base_url;
 use super::redirects::build_default_error_url;
 use super::redirects::build_redirect_url;
@@ -490,7 +489,7 @@ pub(in crate::oauth) async fn callback_core(
                     .raw
                     .as_ref()
                     .and_then(|raw| raw.get("id_token"))
-                    .is_some_and(raw_truthy)
+                    .is_some_and(alibi_core::utils::json::JsValue::is_truthy)
             {
                 // The published factory throws outside callback redirect handling.
                 // State was consumed, but its pending clear-cookie is not emitted.
@@ -548,7 +547,7 @@ pub(in crate::oauth) async fn callback_core(
             .with_appended_header("Set-Cookie", clear_state_cookie));
     }
 
-    if raw_email.is_some_and(|email| raw_truthy(email) && !email.is_string()) {
+    if raw_email.is_some_and(|email| email.is_truthy() && !email.is_string()) {
         // Source first resolves account ownership, then lowercases email either
         // in the caught email lookup (new identity) or uncaught validation (owned).
         let existing_account = ctx

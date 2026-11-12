@@ -315,10 +315,6 @@ pub(crate) fn parse_callback_user_payload(
     })
 }
 
-fn raw_truthy(value: &alibi_core::utils::json::JsValue) -> bool {
-    value.is_truthy()
-}
-
 /// Mapped provider identity together with its original provenance.
 pub(crate) struct OAuthIdentity<'a> {
     pub provider_name: &'a str,
