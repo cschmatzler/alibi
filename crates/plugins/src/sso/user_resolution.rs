@@ -107,6 +107,20 @@ fn failure() -> alibi_core::AuthError {
         message: "Unable to resolve the SSO user".into(),
     }
 }
+
+pub(super) fn resolution_error(error: &alibi_core::AuthError) -> (&str, Option<&str>) {
+    let code = match error {
+        alibi_core::AuthError::Api {
+            code: Some(code), ..
+        } => code.as_str(),
+        _ => "SSO_USER_RESOLUTION_FAILED",
+    };
+    let message = match error {
+        alibi_core::AuthError::Api { message, .. } => message.as_str(),
+        _ => "Unable to resolve the SSO user",
+    };
+    (code, (!message.is_empty()).then_some(message))
+}
 impl super::SsoPlugin {
     pub(super) async fn resolved_authentication<S: AuthSchema>(
         &self,

@@ -318,23 +318,8 @@ impl SsoPlugin {
             match self.resolved_authentication(request).await {
                 Ok(issued) => Ok(issued),
                 Err(error) => {
-                    let code = match &error {
-                        AuthError::Api {
-                            code: Some(code), ..
-                        } => code.as_str(),
-                        _ => "SSO_USER_RESOLUTION_FAILED",
-                    };
-                    let message = match &error {
-                        AuthError::Api { message, .. } => message.as_str(),
-                        _ => "Unable to resolve the SSO user",
-                    };
-                    return error_redirect(
-                        &error_target,
-                        code,
-                        (!message.is_empty()).then_some(message),
-                        clear.as_deref(),
-                        ctx,
-                    );
+                    let (code, message) = super::user_resolution::resolution_error(&error);
+                    return error_redirect(&error_target, code, message, clear.as_deref(), ctx);
                 }
             }
         } else {
