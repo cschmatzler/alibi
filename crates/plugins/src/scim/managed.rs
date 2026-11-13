@@ -494,43 +494,13 @@ impl ScimPlugin {
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
-        let expires = *body
-            .get("expiresAt")
-            .and_then(JsValue::as_date)
-            .ok_or_else(|| AuthError::internal("Validated expiry missing"))?;
-        if expires <= Utc::now().trunc_subsecs(3) {
-            return Err(AuthError::Api {
-                status: 400,
-                code: None,
-                message: "Managed SCIM credential expiry must be in the future".into(),
-            });
-        }
-        let scopes = body
-            .get("scopes")
-            .and_then(JsValue::as_array)
-            .ok_or_else(|| AuthError::internal("Validated scopes missing"))?
-            .iter()
-            .filter_map(JsValue::as_str)
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if scopes
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != scopes.len()
-        {
-            return Err(AuthError::Api {
-                status: 400,
-                code: None,
-                message: "Managed SCIM credential scopes must be unique".into(),
-            });
-        }
-        let credential_id = format!("ba_scim_credential_{}", random_string(32));
-        let token = format!("{credential_id}.{}", random_string(48));
-        let mut mac = Hmac::<Sha256>::new_from_slice(options.credential_hash_secret.as_bytes())
-            .map_err(|error| AuthError::internal(error.to_string()))?;
-        mac.update(token.as_bytes());
-        let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+        let ManagedCredentialMaterial {
+            expires,
+            scopes,
+            credential_id,
+            token,
+            digest,
+        } = managed_credential_material(body, options)?;
         let data = alibi_core::store::RotateScimManagedCredential {
             connection_id: body
                 .get("connectionId")
@@ -683,44 +653,14 @@ impl ScimPlugin {
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
-        let expires = *body
-            .get("expiresAt")
-            .and_then(JsValue::as_date)
-            .ok_or_else(|| AuthError::internal("Validated expiry missing"))?;
-        if expires <= Utc::now().trunc_subsecs(3) {
-            return Err(AuthError::Api {
-                status: 400,
-                code: None,
-                message: "Managed SCIM credential expiry must be in the future".into(),
-            });
-        }
-        let scopes = body
-            .get("scopes")
-            .and_then(JsValue::as_array)
-            .ok_or_else(|| AuthError::internal("Validated scopes missing"))?
-            .iter()
-            .filter_map(JsValue::as_str)
-            .map(str::to_owned)
-            .collect::<Vec<_>>();
-        if scopes
-            .iter()
-            .collect::<std::collections::HashSet<_>>()
-            .len()
-            != scopes.len()
-        {
-            return Err(AuthError::Api {
-                status: 400,
-                code: None,
-                message: "Managed SCIM credential scopes must be unique".into(),
-            });
-        }
+        let ManagedCredentialMaterial {
+            expires,
+            scopes,
+            credential_id,
+            token,
+            digest,
+        } = managed_credential_material(body, options)?;
         let connection_id = format!("ba_scim_connection_{}", random_string(32));
-        let credential_id = format!("ba_scim_credential_{}", random_string(32));
-        let token = format!("{credential_id}.{}", random_string(48));
-        let mut mac = Hmac::<Sha256>::new_from_slice(options.credential_hash_secret.as_bytes())
-            .map_err(|error| AuthError::internal(error.to_string()))?;
-        mac.update(token.as_bytes());
-        let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
         let created = ctx
             .database
             .create_scim_managed_connection(alibi_core::store::CreateScimManagedConnection {
@@ -750,6 +690,64 @@ fn public_connection(connection: &impl Serialize) -> AuthResult<Value> {
         _ = values.remove("revision");
     }
     Ok(connection)
+}
+
+struct ManagedCredentialMaterial {
+    expires: DateTime<Utc>,
+    scopes: Vec<String>,
+    credential_id: String,
+    token: String,
+    digest: String,
+}
+
+fn managed_credential_material(
+    body: &JsValue,
+    options: &super::ScimManagedConnectionOptions,
+) -> AuthResult<ManagedCredentialMaterial> {
+    let expires = *body
+        .get("expiresAt")
+        .and_then(JsValue::as_date)
+        .ok_or_else(|| AuthError::internal("Validated expiry missing"))?;
+    if expires <= Utc::now().trunc_subsecs(3) {
+        return Err(AuthError::Api {
+            status: 400,
+            code: None,
+            message: "Managed SCIM credential expiry must be in the future".into(),
+        });
+    }
+    let scopes = body
+        .get("scopes")
+        .and_then(JsValue::as_array)
+        .ok_or_else(|| AuthError::internal("Validated scopes missing"))?
+        .iter()
+        .filter_map(JsValue::as_str)
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    if scopes
+        .iter()
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        != scopes.len()
+    {
+        return Err(AuthError::Api {
+            status: 400,
+            code: None,
+            message: "Managed SCIM credential scopes must be unique".into(),
+        });
+    }
+    let credential_id = format!("ba_scim_credential_{}", random_string(32));
+    let token = format!("{credential_id}.{}", random_string(48));
+    let mut mac = Hmac::<Sha256>::new_from_slice(options.credential_hash_secret.as_bytes())
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+    mac.update(token.as_bytes());
+    let digest = URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes());
+    Ok(ManagedCredentialMaterial {
+        expires,
+        scopes,
+        credential_id,
+        token,
+        digest,
+    })
 }
 
 fn invalid_scope_policy() -> AuthError {
