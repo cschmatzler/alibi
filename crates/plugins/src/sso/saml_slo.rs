@@ -244,17 +244,7 @@ impl SsoPlugin {
             .and_then(|service| service.get("Location"))
             .and_then(Value::as_str)
             .ok_or_else(invalid)?;
-        let entity = metadata
-            .as_ref()
-            .map(|sp| sp.entity_id.as_str())
-            .or_else(|| {
-                config
-                    .get("spMetadata")
-                    .and_then(|metadata| metadata.get("entityID"))
-                    .and_then(Value::as_str)
-                    .filter(|entity| !entity.is_empty())
-                    .or_else(|| config.get("issuer").and_then(Value::as_str))
-            })
+        let entity = super::sp_metadata_xml::entity_id(metadata.as_ref(), &config)
             .unwrap_or(&provider.issuer);
         let id = doc.get_attribute(root, "ID").ok_or_else(invalid)?;
         let response = logout_response(entity, destination, id);

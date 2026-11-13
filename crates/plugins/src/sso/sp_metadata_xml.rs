@@ -37,6 +37,20 @@ pub(super) fn from_config(config: &Value) -> AuthResult<Option<Metadata>> {
     }
     Ok(Some(metadata))
 }
+
+pub(super) fn entity_id<'a>(metadata: Option<&'a Metadata>, config: &'a Value) -> Option<&'a str> {
+    metadata
+        .as_ref()
+        .map(|sp| sp.entity_id.as_str())
+        .or_else(|| {
+            config
+                .get("spMetadata")
+                .and_then(|metadata| metadata.get("entityID"))
+                .and_then(Value::as_str)
+                .filter(|entity| !entity.is_empty())
+                .or_else(|| config.get("issuer").and_then(Value::as_str))
+        })
+}
 fn error(code: &str, message: &str) -> AuthError {
     AuthError::Api {
         status: 400,

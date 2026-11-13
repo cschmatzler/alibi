@@ -260,18 +260,8 @@ pub(super) fn verify(
     {
         super::encryption_algorithms::validate(encrypted_xml, encryption_policy)?;
     }
-    let entity = metadata
-        .as_ref()
-        .map(|sp| sp.entity_id.as_str())
-        .or_else(|| {
-            config
-                .get("spMetadata")
-                .and_then(|metadata| metadata.get("entityID"))
-                .and_then(Value::as_str)
-                .filter(|entity| !entity.is_empty())
-                .or_else(|| config.get("issuer").and_then(Value::as_str))
-        })
-        .ok_or_else(invalid)?;
+    let entity =
+        super::sp_metadata_xml::entity_id(metadata.as_ref(), config).ok_or_else(invalid)?;
     let expected = [Some(entity), config.get("audience").and_then(Value::as_str)];
     let audiences = conditions.map_or_else(Vec::new, |node| {
         children(&doc, node, ASSERTION, "AudienceRestriction")
