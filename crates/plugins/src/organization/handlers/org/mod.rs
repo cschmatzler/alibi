@@ -1,5 +1,5 @@
-use super::parse_query;
 use super::page::OrganizationPageError;
+use super::parse_query;
 use crate::organization::OrganizationConfig;
 use crate::organization::policy::{read_page_limit, truthy_number};
 use crate::organization::types::{
@@ -18,7 +18,6 @@ use alibi_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
 use alibi_core::wire::{InvitationView, SessionView};
-use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
     member
@@ -475,25 +474,12 @@ pub(crate) async fn get_full_organization_core(
         .database
         .query_organization_members_page(&member_params)
         .await?;
-    let user_ids = members_raw
-        .iter()
-        .map(|member| member.user_id.clone())
-        .collect::<Vec<_>>();
-    let users_by_id = ctx
-        .database
-        .list_users_by_ids_page(&user_ids, read_page_limit(config.membership_limit.as_ref()))
-        .await?
-        .into_iter()
-        .map(|user_2| (user_2.id().to_string(), user_2))
-        .collect::<HashMap<_, _>>();
-    let mut members = Vec::with_capacity(members_raw.len());
-
-    for member in &members_raw {
-        let user_info = users_by_id
-            .get(&member.user_id)
-            .ok_or(OrganizationPageError::MissingUser)?;
-        members.push(MemberResponse::from_member_and_user(member, user_info));
-    }
+    let members = super::member::members_with_users(
+        &members_raw,
+        read_page_limit(config.membership_limit.as_ref()),
+        ctx,
+    )
+    .await?;
 
     let invitations = ctx.database.list_organization_invitations(&org_id).await?;
 
@@ -972,7 +958,6 @@ pub(crate) async fn handle_leave_organization(
     let response = leave_organization_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
-
 
 fn organization_field_error(
     error: alibi_core::field_policy::FieldInputError,

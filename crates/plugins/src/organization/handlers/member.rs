@@ -47,6 +47,32 @@ async fn resolve_member_organization_id(
     .await
 }
 
+pub(super) async fn members_with_users(
+    members_raw: &[alibi_core::Member],
+    user_limit: f64,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> Result<Vec<MemberResponse>, OrganizationPageError> {
+    let user_ids = members_raw
+        .iter()
+        .map(|member| member.user_id.clone())
+        .collect::<Vec<_>>();
+    let users_by_id = ctx
+        .database
+        .list_users_by_ids_page(&user_ids, user_limit)
+        .await?
+        .into_iter()
+        .map(|user| (user.id().to_string(), user))
+        .collect::<HashMap<_, _>>();
+    let mut members = Vec::with_capacity(members_raw.len());
+    for member in members_raw {
+        let user_info = users_by_id
+            .get(&member.user_id)
+            .ok_or(OrganizationPageError::MissingUser)?;
+        members.push(MemberResponse::from_member_and_user(member, user_info));
+    }
+    Ok(members)
+}
+
 pub(crate) async fn get_active_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -116,24 +142,7 @@ pub(crate) async fn list_members_core(
         .database
         .query_organization_members_page(&member_params)
         .await?;
-    let user_ids = members_raw
-        .iter()
-        .map(|member| member.user_id.clone())
-        .collect::<Vec<_>>();
-    let users_by_id = ctx
-        .database
-        .list_users_by_ids_page(&user_ids, members_raw.len() as f64)
-        .await?
-        .into_iter()
-        .map(|user_2| (user_2.id().to_string(), user_2))
-        .collect::<HashMap<_, _>>();
-    let mut members = Vec::with_capacity(members_raw.len());
-    for member in &members_raw {
-        let user_info = users_by_id
-            .get(&member.user_id)
-            .ok_or(OrganizationPageError::MissingUser)?;
-        members.push(MemberResponse::from_member_and_user(member, user_info));
-    }
+    let members = members_with_users(&members_raw, members_raw.len() as f64, ctx).await?;
 
     Ok(ListMembersResponse { members, total })
 }
