@@ -184,6 +184,21 @@ impl Headers {
         self.0.push((name.into(), value.into()));
     }
 
+    /// Merge endpoint headers, appending cookies and replacing other fields by name.
+    pub fn merge(&mut self, headers: Self) {
+        for (name, value) in headers {
+            self.merge_header(name, value);
+        }
+    }
+
+    pub(crate) fn merge_header(&mut self, name: String, value: String) {
+        if name.eq_ignore_ascii_case("set-cookie") {
+            self.append(name, value);
+        } else {
+            _ = self.insert(name, value);
+        }
+    }
+
     /// Get the last value stored for a header name.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&String> {
@@ -284,6 +299,30 @@ impl AuthRequest {
             session_hook_snapshot: Arc::new(Mutex::new(None)),
             extensions: RequestExtensions::default(),
         }
+    }
+
+    /// Carry physical input into a new dispatch without carrying trusted state.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn into_dispatch_input(self) -> Self {
+        let pairs = self
+            .query
+            .keys()
+            .flat_map(|name| {
+                self.query_values(name)
+                    .into_iter()
+                    .flatten()
+                    .map(|value| (name.clone(), value.clone()))
+            })
+            .collect::<Vec<_>>();
+        let url = self.request_url;
+        let mut fresh =
+            Self::from_parts(self.method, self.path, self.headers, self.body, self.query);
+        if let Some(url) = url {
+            fresh = fresh.with_url(url);
+        }
+        fresh.set_query_pairs(pairs);
+        fresh
     }
 
     /// Retain the absolute URL received by the HTTP transport.

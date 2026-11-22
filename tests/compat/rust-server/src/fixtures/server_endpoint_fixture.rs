@@ -284,7 +284,7 @@ impl EndpointHook<TestSchema> for Observer {
             let other = self.app.other.lock().unwrap().clone().unwrap();
             let session = match other.context().require_cached_session(call).await {
                 Ok((user, session)) => {
-                    Some(value!({"user":other.context().user_view(&user),"session":session}))
+                    Some(value!({"user":other.context().user_view(&user)?,"session":session}))
                 }
                 Err(AuthError::Unauthenticated) => None,
                 Err(error) => return Err(error),

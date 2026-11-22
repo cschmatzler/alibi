@@ -251,8 +251,8 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             let sessions=session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&db).await.map_err(database_error)?;
             let verifications=verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(database_error)?;
             let accounts=accounts.iter().map(|row| {let mut value=serde_json::to_value(AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
-            Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<Vec<_>>(),"accounts":accounts,
-                "sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<Vec<_>>(),"verifications":verifications.iter().map(VerificationView::from).collect::<Vec<_>>(),
+            Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<AuthResult<Vec<_>>>()?,"accounts":accounts,
+                "sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<AuthResult<Vec<_>>>()?,"verifications":verifications.iter().map(VerificationView::from).collect::<Vec<_>>(),
                 "events":*app.events.lock().unwrap(),"receipts":*app.receipts.lock().unwrap()}))
         }.await;match result {Ok(value)=>Json(value).into_response(),Err(error)=>error.into_response()}
     }}));

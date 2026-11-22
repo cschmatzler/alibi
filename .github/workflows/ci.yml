@@ -62,6 +62,10 @@ jobs:
             ~/.cargo/git
           key: rust-sources-v3-${{ runner.os }}-${{ hashFiles('devenv.nix', 'devenv.lock', 'Cargo.lock', 'tests/compat/rust-server/Cargo.lock') }}
           restore-keys: rust-sources-v3-${{ runner.os }}-
+      - name: Install pinned compatibility dependencies for contract checks
+        run: |
+          devenv shell -- bash -c 'cd tests/compat/reference-server && nub install --frozen-lockfile'
+          devenv shell -- bash -c 'cd tests/compat/client-tests && nub install --frozen-lockfile'
       - name: Format, lint, test and document
         run: devenv shell -- ./scripts/check.sh
       - name: Run PostgreSQL contracts for both adapters

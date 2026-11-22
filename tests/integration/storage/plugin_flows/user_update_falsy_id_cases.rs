@@ -1,6 +1,6 @@
-use alibi_core::store::UserStore;
-use alibi_core::utils::json::{self, JsValue};
-use alibi_core::{AuthSchema, AuthUser, CreateUser, UpdateUser};
+use alibi::store::UserStore;
+use alibi::utils::json::{self, JsValue};
+use alibi::{AuthSchema, AuthUser, CreateUser, UpdateUser};
 
 pub(super) async fn exercise<S: AuthSchema>(store: &impl UserStore<S>) {
     let fixture = json::parse_value(include_str!(

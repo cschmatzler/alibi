@@ -12,18 +12,22 @@
 # Fixtures use SqlxStore; BETTER_AUTH_COMPAT_BACKEND=seaorm serves them from SeaOrmStore.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
+scenario_root="tests/compat/client-tests/tests"
 paths=()
-target="all"
+test_name="full_client_compat"
 for arg in "$@"; do
   case "$arg" in
     --skip-build) ;;
+    all) test_name="full_client_compat" ;;
+    browser|environment) test_name="${arg}_client_compat" ;;
     tests/*|*.ts) paths+=("$arg") ;;
     *)
-      if [[ "$arg" == all || "$arg" == browser || "$arg" == environment || -d "tests/compat/client-tests/tests/$arg" ]]; then
-        target="$arg"
+      if [[ -e "$scenario_root/$arg" ]]; then
+        paths+=("tests/$arg")
+      elif [[ -d "$scenario_root/plugins/$arg" ]]; then
+        paths+=("tests/plugins/$arg")
       else
-        echo "Unknown scenario directory: $arg" >&2
-        echo "Known directories: generated core plugins $(cd tests/compat/client-tests/tests && ls -d core/* plugins/* | tr '\n' ' ')" >&2
+        echo "Unknown compatibility scenario: $arg" >&2
         exit 1
       fi ;;
   esac
@@ -32,10 +36,5 @@ export BETTER_AUTH_REQUIRE_REFERENCE_SERVER=1
 if ((${#paths[@]})); then
   export BETTER_AUTH_COMPAT_PATHS="${paths[*]}"
   test_name="selected_client_compat"
-elif [[ "$target" == all ]]; then
-  test_name="full_client_compat"
-else
-  test_name="${target//-/_}"
-  test_name="${test_name//\//_}_client_compat"
 fi
 cargo nextest run --locked --test compat --run-ignored only --no-capture -E "test(=sdk::tests::$test_name)"

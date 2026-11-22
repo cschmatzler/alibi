@@ -1,10 +1,8 @@
 //! Canonical JSON metadata and explicit database binding preparation.
 use crate::pool::Engine;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
-use alibi_core::{
-    error::AuthResult,
-    utils::json::{self, JsValue},
-};
+use alibi_core::store::adapter::json_metadata::{MetadataCell, MetadataFormat, MetadataParameter};
+use alibi_core::{AuthResult, utils::json::JsValue};
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 #[cfg(feature = "postgres")]
@@ -13,100 +11,49 @@ use sqlx::postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef, Postgres};
 use sqlx::sqlite::{Sqlite, SqliteArgumentsBuffer, SqliteTypeInfo, SqliteValueRef};
 use sqlx::{Decode, Encode, Type, TypeInfo, ValueRef};
 
-/// Canonical JSON metadata with a deferred SQLite storage cell.
-/// Initialized output policies use the physical cell before their callback; ordinary
-/// model getters and serialization use the decoded logical value. Native JSON
-/// backends validate their strict ordinary projection only when binding.
-#[derive(Clone, Debug)]
-pub struct JsonMetadata(JsValue, JsonBinding);
+/// JSON metadata stored with the backend's physical representation.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct JsonMetadata(MetadataCell);
 
-impl serde::Serialize for JsonMetadata {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_js_value().serialize(serializer)
+fn format(backend: Engine) -> MetadataFormat {
+    if backend == Engine::Sqlite {
+        MetadataFormat::Sqlite
+    } else {
+        MetadataFormat::NativeJson
     }
-}
-
-#[derive(Clone, Debug)]
-enum JsonBinding {
-    Text(String),
-    Read,
-    Prepared,
-    Scalar,
-    Native,
 }
 
 impl JsonMetadata {
     pub(crate) fn for_backend(value: JsValue, backend: Engine) -> Result<Self, serde_json::Error> {
-        if backend == Engine::Sqlite {
-            Self::try_from(value)
-        } else {
-            let _ = value.to_json_value()?;
-            Ok(Self(value, JsonBinding::Native))
-        }
+        MetadataCell::for_format(value, format(backend)).map(Self)
     }
 
-    /// Logical metadata for non-policy consumers (organization/OAuth resources,
-    /// model getters and DTO serialization), never an encoded SQLite JSON cell.
+    /// Logical metadata after the adapter's read codec has run.
     pub fn to_js_value(&self) -> JsValue {
-        match (&self.0, &self.1) {
-            (JsValue::String(text), JsonBinding::Read | JsonBinding::Prepared) => {
-                json::parse_adapter_string(text)
-            }
-            _ => self.0.clone(),
-        }
+        self.0.logical_value()
     }
 
     pub(crate) fn to_plain_value(&self) -> Result<JsValue, serde_json::Error> {
-        match (&self.0, &self.1) {
-            (JsValue::String(text), JsonBinding::Read | JsonBinding::Prepared) => {
-                json::parse_js_value(text)
-            }
-            _ => Ok(self.0.clone()),
-        }
+        self.0.plain_value()
     }
 
     fn prepared(self, backend: Engine) -> Result<Self, serde_json::Error> {
-        if backend == Engine::Sqlite && !matches!(self.1, JsonBinding::Native) {
-            return Ok(self);
-        }
-        let value = match self.1 {
-            JsonBinding::Text(text) => json::parse_value(&text)?,
-            JsonBinding::Read | JsonBinding::Prepared => self.to_js_value(),
-            _ => self.0,
-        };
-        Self::for_backend(value, backend)
+        self.0.prepare(format(backend)).map(Self)
     }
 }
-impl PartialEq for JsonMetadata {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_js_value() == other.to_js_value()
-    }
-}
-impl<'de> serde::Deserialize<'de> for JsonMetadata {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(JsValue::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-    }
-}
+
 impl TryFrom<JsValue> for JsonMetadata {
     type Error = serde_json::Error;
+
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        let binding = match &value {
-            JsValue::Undefined => {
-                return Err(serde::ser::Error::custom(
-                    "cannot bind undefined JSON metadata",
-                ));
-            }
-            JsValue::Null | JsValue::Array(_) | JsValue::Object(_) | JsValue::Date(_) => {
-                JsonBinding::Text(json::to_string(&value)?)
-            }
-            _ => JsonBinding::Scalar,
-        };
-        Ok(Self(value, binding))
+        MetadataCell::try_from(value).map(Self)
     }
 }
+
 impl From<serde_json::Value> for JsonMetadata {
     fn from(value: serde_json::Value) -> Self {
-        Self::try_from(JsValue::from(value)).expect("ordinary JSON contains no undefined root")
+        Self(MetadataCell::from(value))
     }
 }
 impl TryFrom<JsonMetadata> for serde_json::Value {
@@ -132,29 +79,20 @@ impl SqlxValue for JsonMetadata {
         SqlValue::Json(None)
     }
     fn into_sql_value(self) -> SqlValue {
-        match self.1 {
-            JsonBinding::Text(text) => SqlValue::Text(Some(text)),
-            JsonBinding::Scalar | JsonBinding::Read | JsonBinding::Prepared => {
-                crate::additional_fields::bind_scalar(
-                    alibi_core::store::adapter::RawFieldValue::from_js(&self.0)
-                        .expect("scalar metadata has no undefined"),
-                )
-                .expect("scalar metadata has no object")
-            }
-            JsonBinding::Native if self.0.is_null() => SqlValue::Json(None),
-            JsonBinding::Native => SqlValue::Json(Some(Box::new(
-                self.0
-                    .to_json_value()
-                    .expect("native JSON binding was validated"),
-            ))),
+        match self.0.into_parameter() {
+            MetadataParameter::Text(text) => SqlValue::Text(Some(text)),
+            MetadataParameter::Scalar(value) => crate::additional_fields::bind_scalar(
+                alibi_core::store::adapter::RawFieldValue::from_js(&value)
+                    .expect("scalar metadata has no undefined"),
+            )
+            .expect("scalar metadata has no object"),
+            MetadataParameter::Json(value) => SqlValue::Json(value),
         }
     }
     fn from_sql_value(value: SqlValue) -> Result<Self, ValueTypeError> {
         match value {
-            SqlValue::Json(Some(value)) => Ok(Self(JsValue::from(*value), JsonBinding::Native)),
-            SqlValue::Text(Some(text)) => {
-                Ok(Self(JsValue::String(text.into()), JsonBinding::Prepared))
-            }
+            SqlValue::Json(Some(value)) => Ok(Self(MetadataCell::stored_json(*value))),
+            SqlValue::Text(Some(text)) => Ok(Self(MetadataCell::stored_text(text))),
             SqlValue::BigInt(Some(value)) => {
                 Self::try_from(JsValue::from(value)).map_err(|_| ValueTypeError)
             }
@@ -190,7 +128,7 @@ impl<'r> Decode<'r, Sqlite> for JsonMetadata {
             "REAL" => JsValue::Number(<f64 as Decode<'r, Sqlite>>::decode(value)?),
             "TEXT" => {
                 let text = <String as Decode<'r, Sqlite>>::decode(value)?;
-                return Ok(Self(JsValue::String(text.into()), JsonBinding::Read));
+                return Ok(Self(MetadataCell::stored_text(text)));
             }
             kind => return Err(format!("Unsupported SQLite JSON storage type {kind}").into()),
         };
@@ -201,9 +139,9 @@ impl<'r> Decode<'r, Sqlite> for JsonMetadata {
 impl Encode<'_, Sqlite> for JsonMetadata {
     fn encode_by_ref(&self, buf: &mut SqliteArgumentsBuffer) -> Result<IsNull, BoxDynError> {
         let value = self.clone().prepared(Engine::Sqlite)?;
-        match value.1 {
-            JsonBinding::Text(text) => <String as Encode<'_, Sqlite>>::encode(text, buf),
-            JsonBinding::Scalar | JsonBinding::Read | JsonBinding::Prepared => match value.0 {
+        match value.0.into_parameter() {
+            MetadataParameter::Text(text) => <String as Encode<'_, Sqlite>>::encode(text, buf),
+            MetadataParameter::Scalar(value) => match value {
                 JsValue::String(text) => {
                     <String as Encode<'_, Sqlite>>::encode(text.to_utf8_binding(), buf)
                 }
@@ -211,7 +149,9 @@ impl Encode<'_, Sqlite> for JsonMetadata {
                 JsValue::Bool(boolean) => <bool as Encode<'_, Sqlite>>::encode(boolean, buf),
                 _ => unreachable!("metadata scalar bindings contain only primitives"),
             },
-            JsonBinding::Native => unreachable!("SQLite preparation resolves native JSON bindings"),
+            MetadataParameter::Json(_) => {
+                unreachable!("SQLite preparation resolves native JSON bindings")
+            }
         }
     }
 }
@@ -229,10 +169,12 @@ impl Type<Postgres> for JsonMetadata {
 impl<'r> Decode<'r, Postgres> for JsonMetadata {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         if <String as Type<Postgres>>::compatible(&value.type_info()) {
-            Ok(Self(
-                JsValue::String(<&str as Decode<'r, Postgres>>::decode(value)?.into()),
-                JsonBinding::Read,
-            ))
+            Ok(Self(MetadataCell::stored_text(<String as Decode<
+                'r,
+                Postgres,
+            >>::decode(
+                value
+            )?)))
         } else {
             <sqlx::types::Json<serde_json::Value> as Decode<'r, Postgres>>::decode(value)
                 .map(|json| Self::from(json.0))
@@ -242,6 +184,6 @@ impl<'r> Decode<'r, Postgres> for JsonMetadata {
 #[cfg(feature = "postgres")]
 impl Encode<'_, Postgres> for JsonMetadata {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        <serde_json::Value as Encode<'_, Postgres>>::encode(self.0.to_json_value()?, buf)
+        <serde_json::Value as Encode<'_, Postgres>>::encode(self.0.raw_json()?, buf)
     }
 }

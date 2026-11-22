@@ -694,6 +694,32 @@ mod oauth_client_assertion {
     pub enum Relation {}
     impl ActiveModelBehavior for ActiveModel {}
 }
+mod sso_provider {
+    use super::*;
+    #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)]
+    #[sea_orm(table_name = "ssoProvider")]
+    pub struct Model {
+        #[sea_orm(primary_key, auto_increment = false)]
+        pub id: String,
+        pub issuer: String,
+        pub domain: String,
+        #[sea_orm(column_name = "providerId")]
+        pub provider_id: String,
+        #[sea_orm(column_name = "userId")]
+        pub user_id: String,
+        #[sea_orm(column_name = "organizationId")]
+        pub organization_id: Option<String>,
+        #[sea_orm(column_name = "oidcConfig")]
+        pub oidc_config: Option<String>,
+        #[sea_orm(column_name = "samlConfig")]
+        pub saml_config: Option<String>,
+        #[sea_orm(column_name = "domainVerified")]
+        pub domain_verified: Option<bool>,
+    }
+    #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+    pub enum Relation {}
+    impl ActiveModelBehavior for ActiveModel {}
+}
 mod rate_limit {
     use super::*;
     #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)]
@@ -783,6 +809,7 @@ pub async fn run_app_migrations(
                 "create index IF NOT EXISTS \"oauthConsent_clientId_idx\" on \"oauthConsent\" (\"clientId\")",
                 "create index IF NOT EXISTS \"oauthConsent_userId_idx\" on \"oauthConsent\" (\"userId\")",
                 "CREATE TABLE IF NOT EXISTS \"oauthClientAssertion\" (\"id\" text not null primary key, \"expiresAt\" date not null)",
+                "CREATE TABLE IF NOT EXISTS \"ssoProvider\" (\"id\" text not null primary key, \"issuer\" text not null, \"oidcConfig\" text, \"samlConfig\" text, \"userId\" text not null references \"user\" (\"id\") on delete cascade, \"providerId\" text not null unique, \"organizationId\" text, \"domain\" text not null, \"domainVerified\" integer)",
                 "CREATE TABLE IF NOT EXISTS \"rateLimit\" (\"id\" text not null primary key, \"key\" text not null unique, \"count\" integer not null, \"lastRequest\" bigint not null)",
             ]
         }
@@ -848,6 +875,7 @@ pub async fn run_app_migrations(
                 "create index IF NOT EXISTS \"oauthConsent_clientId_idx\" on \"oauthConsent\" (\"clientId\")",
                 "create index IF NOT EXISTS \"oauthConsent_userId_idx\" on \"oauthConsent\" (\"userId\")",
                 "CREATE TABLE IF NOT EXISTS \"oauthClientAssertion\" (\"id\" text not null primary key, \"expiresAt\" timestamptz not null)",
+                "CREATE TABLE IF NOT EXISTS \"ssoProvider\" (\"id\" text not null primary key, \"issuer\" text not null, \"oidcConfig\" text, \"samlConfig\" text, \"userId\" text not null references \"user\" (\"id\") on delete cascade, \"providerId\" text not null unique, \"organizationId\" text, \"domain\" text not null, \"domainVerified\" boolean)",
                 "CREATE TABLE IF NOT EXISTS \"rateLimit\" (\"id\" text not null primary key, \"key\" text not null unique, \"count\" integer not null, \"lastRequest\" bigint not null)",
             ]
         }

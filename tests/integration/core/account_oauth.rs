@@ -289,28 +289,39 @@ fn set_session_and_account_cookies(
     );
 }
 
-/// Start a mock HTTP server that responds to OAuth token + userinfo requests.
-/// `email` is the email returned from the userinfo endpoint.
-async fn start_mock_oauth_server(email: &str) -> String {
+struct MockOAuthServer {
+    url: String,
+    task: tokio::task::JoinHandle<()>,
+}
+
+impl Drop for MockOAuthServer {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn start_mock_oauth_server(email: &str) -> MockOAuthServer {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let mock_url = format!("http://localhost:{}", addr.port());
+    let url = format!("http://localhost:{}", addr.port());
     let email = email.to_owned();
 
-    tokio::spawn(async move {
+    let task = tokio::spawn(async move {
+        let mut connections = tokio::task::JoinSet::new();
         loop {
-            if let Ok((stream, _)) = listener.accept().await {
-                let email = email.clone();
-                tokio::spawn(async move {
-                    handle_mock_connection(stream, &email).await;
-                });
+            tokio::select! {
+                accepted = listener.accept() => {
+                    let (stream, _) = accepted.unwrap();
+                    let email = email.clone();
+                    _ = connections.spawn(async move { handle_mock_connection(stream, &email).await });
+                }
+                completed = connections.join_next(), if !connections.is_empty() => {
+                    completed.unwrap().unwrap();
+                }
             }
         }
     });
-
-    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-
-    mock_url
+    MockOAuthServer { url, task }
 }
 
 async fn handle_mock_connection(stream: tokio::net::TcpStream, email: &str) {
@@ -822,7 +833,8 @@ mod tests {
     // query.accountId by local account row ID, then fetches provider user info.
     #[tokio::test]
     async fn test_account_info_returns_provider_user_info_for_local_account_id() {
-        let mock_url = start_mock_oauth_server("account-info@example.com").await;
+        let oauth_server = start_mock_oauth_server("account-info@example.com").await;
+        let mock_url = &oauth_server.url;
         let config = Arc::new(test_config());
         let db = create_test_database().await;
 
@@ -840,7 +852,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("google".to_owned(), make_test_provider(&mock_url));
+            .insert("google".to_owned(), make_test_provider(mock_url));
         let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
         let mut req = AuthRequest::new(HttpMethod::Get, "/account-info");
@@ -861,10 +873,9 @@ mod tests {
 
         assert_eq!(resp.status, 200);
         let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-        assert!(
-            (*(body).get("user").unwrap_or(&serde_json::Value::Null))
-                .get("id")
-                .is_none()
+        assert_eq!(
+            body.get("user").and_then(|user| user.get("id")),
+            Some(&json!("mock-user-id-123"))
         );
         assert_eq!(
             (*(*(body).get("data").unwrap_or(&serde_json::Value::Null))
@@ -920,7 +931,8 @@ mod tests {
     // a signed account cookie when useAccountCookie is selected.
     #[tokio::test]
     async fn test_get_access_token_without_cookie_returns_account_not_found() {
-        let mock_url = start_mock_oauth_server("missing-cookie@example.com").await;
+        let oauth_server = start_mock_oauth_server("missing-cookie@example.com").await;
+        let mock_url = &oauth_server.url;
         let config = Arc::new(test_config());
         let db = create_test_database().await;
 
@@ -938,7 +950,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("google".to_owned(), make_test_provider(&mock_url));
+            .insert("google".to_owned(), make_test_provider(mock_url));
         let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
         let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
@@ -974,7 +986,8 @@ mod tests {
     // the selected account cookie belongs to the current session user.
     #[tokio::test]
     async fn test_get_access_token_rejects_cookie_for_the_wrong_user() {
-        let mock_url = start_mock_oauth_server("cookie-owner@example.com").await;
+        let oauth_server = start_mock_oauth_server("cookie-owner@example.com").await;
+        let mock_url = &oauth_server.url;
         let config = Arc::new(test_config_with_account_cookie());
         let db = create_test_database().await;
 
@@ -1021,7 +1034,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("google".to_owned(), make_test_provider(&mock_url));
+            .insert("google".to_owned(), make_test_provider(mock_url));
         let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
         let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
@@ -1100,7 +1113,8 @@ mod tests {
     // "Access token not found" when token resolution succeeds but yields no access token.
     #[tokio::test]
     async fn test_account_info_rejects_missing_access_token() {
-        let mock_url = start_mock_oauth_server("missing-token@example.com").await;
+        let oauth_server = start_mock_oauth_server("missing-token@example.com").await;
+        let mock_url = &oauth_server.url;
         let config = Arc::new(test_config());
         let db = create_test_database().await;
 
@@ -1118,7 +1132,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("google".to_owned(), make_test_provider(&mock_url));
+            .insert("google".to_owned(), make_test_provider(mock_url));
         let oauth_plugin = OAuthPlugin::with_config(oauth_config);
 
         let mut req = AuthRequest::new(HttpMethod::Get, "/account-info");
@@ -1349,7 +1363,8 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
     #[tokio::test]
     async fn test_account_linking_disabled_rejects_new_provider() {
-        let mock_url = start_mock_oauth_server("existing@example.com").await;
+        let oauth_server = start_mock_oauth_server("existing@example.com").await;
+        let mock_url = &oauth_server.url;
 
         let config = Arc::new(test_config_linking_disabled());
         let db = create_test_database().await;
@@ -1385,7 +1400,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("test".to_owned(), make_test_provider(&mock_url));
+            .insert("test".to_owned(), make_test_provider(mock_url));
 
         // Set up the OAuth state in the verification table
         let state = "test-state-linking-disabled";
@@ -1537,7 +1552,8 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/link-account.test.ts; adapted to the Rust account and OAuth route behavior.
     #[tokio::test]
     async fn test_callback_with_encryption_encrypts_tokens_for_new_user() {
-        let mock_url = start_mock_oauth_server("newuser@example.com").await;
+        let oauth_server = start_mock_oauth_server("newuser@example.com").await;
+        let mock_url = &oauth_server.url;
 
         let config = Arc::new(test_config_with_encryption_skip_state_cookie_check());
         let db = create_test_database().await;
@@ -1545,7 +1561,7 @@ mod tests {
         let mut oauth_config = OAuthConfig::default();
         oauth_config
             .providers
-            .insert("test".to_owned(), make_test_provider(&mock_url));
+            .insert("test".to_owned(), make_test_provider(mock_url));
 
         // Set up the OAuth state for a brand-new user (no link_user_id)
         let state = "encrypt-new-user-state";
@@ -1585,7 +1601,6 @@ mod tests {
                     Some(expected_location.as_str()),
                 );
 
-                // Verify the user was created and tokens are stored encrypted
                 let user = db
                     .get_user_by_email(&"newuser@example.com".into())
                     .await
@@ -1593,37 +1608,26 @@ mod tests {
                     .expect("User should have been created");
 
                 let accounts = db.get_user_accounts(&user.id()).await.unwrap();
-                assert_eq!(accounts.len(), 1);
+                let [account] = accounts.as_slice() else {
+                    panic!("Expected one OAuth account");
+                };
+                let stored_access = account
+                    .access_token()
+                    .expect("Access token must be persisted");
+                let stored_refresh = account
+                    .refresh_token()
+                    .expect("Refresh token must be persisted");
 
-                let stored_access = (*(accounts)
-                    .first()
-                    .expect("fixture contains the requested index"))
-                .access_token()
-                .unwrap();
-                // The mock server returns "mock-access-token".
-                // With encryption on, the stored value should NOT be the plaintext.
-                assert_ne!(
-                    stored_access, "mock-access-token",
-                    "Access token should be encrypted in DB"
+                assert_ne!(stored_access, "mock-access-token");
+                assert_ne!(stored_refresh, "mock-refresh-token");
+                assert_eq!(
+                    decrypt_token(stored_access, TEST_SECRET).unwrap(),
+                    "mock-access-token"
                 );
-
-                // Verify it can be decrypted back to the original mock value
-                let decrypted = decrypt_token(stored_access, TEST_SECRET).unwrap();
-                assert_eq!(decrypted, "mock-access-token");
-
-                // Also verify refresh token is encrypted
-                if let Some(stored_refresh) = (*(accounts)
-                    .first()
-                    .expect("fixture contains the requested index"))
-                .refresh_token()
-                {
-                    assert_ne!(
-                        stored_refresh, "mock-refresh-token",
-                        "Refresh token should be encrypted in DB"
-                    );
-                    let decrypted_refresh = decrypt_token(stored_refresh, TEST_SECRET).unwrap();
-                    assert_eq!(decrypted_refresh, "mock-refresh-token");
-                }
+                assert_eq!(
+                    decrypt_token(stored_refresh, TEST_SECRET).unwrap(),
+                    "mock-refresh-token"
+                );
             }
             Err(e) => panic!("Callback should succeed for new user: {e:?}"),
             Ok(None) => panic!("Expected a response"),

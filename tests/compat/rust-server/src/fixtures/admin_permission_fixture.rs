@@ -350,7 +350,10 @@ async fn state(
     State(store): State<Arc<crate::backend::Store<TestSchema>>>,
     Query(query): Query<StateQuery>,
 ) -> Result<Json<Value>, alibi::AuthError> {
-    let Some(user) = store.get_user_by_email(&query.email).await? else {
+    let Some(user) = store
+        .get_user_by_email(&alibi::utils::json::JsString::from(query.email))
+        .await?
+    else {
         return Ok(Json(json!({"user":null,"accounts":[],"sessions":[]})));
     };
     let mut accounts = store.get_user_accounts(&user.id).await?;

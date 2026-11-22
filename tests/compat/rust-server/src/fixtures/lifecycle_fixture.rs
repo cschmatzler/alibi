@@ -33,7 +33,7 @@ impl LifecycleFixture {
                 let events = std::mem::take(&mut *fixture.0.lock().expect("lifecycle fixture lock"));
                 let state: AuthResult<Value> = async {
                     let Some(email) = query.get("email") else { return Ok(Value::Null); };
-                    let Some(user) = auth.store().get_user_by_email(email).await? else {
+                    let Some(user) = auth.store().get_user_by_email(&alibi::utils::json::JsString::from(email)).await? else {
                         return Ok(json!({"userId":null,"accounts":[],"sessions":[]}));
                     };
                     let accounts = auth.store().get_user_accounts(&user.id()).await?;

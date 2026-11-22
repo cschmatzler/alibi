@@ -268,6 +268,69 @@ where
         self.create_session_with_connection(tx, Some(tx), create_session, true, true)
             .await
     }
+
+    pub(super) async fn live_user_sessions_on<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> AuthResult<Vec<S::Session>> {
+        let user_id = S::Session::parse_user_id(user_id)?;
+        <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(S::Session::user_id_column().eq(user_id))
+            .filter(
+                S::Session::expires_at_column().gt(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
+            )
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(connection)
+            .await
+            .map_err(map_db_err)
+    }
+
+    pub(super) async fn end_user_sessions_preserving_on<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        tx: Option<&ScopedTransaction>,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> AuthResult<Option<Vec<S::Session>>> {
+        let sessions = self.live_user_sessions_on(connection, user_id, now).await?;
+        let user_id = S::Session::parse_user_id(user_id)?;
+        let context = self.hook_context(tx);
+        for session in &sessions {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_session(session, &context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(None);
+                }
+            }
+        }
+        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+            .col_expr(
+                S::Session::expires_at_column(),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
+            )
+            .filter(S::Session::user_id_column().eq(user_id))
+            .filter(
+                S::Session::expires_at_column().gt(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
+            )
+            .exec(connection)
+            .await
+            .map_err(map_db_err)?;
+        Ok(Some(sessions))
+    }
 }
 
 /// Stage the configured additional fields on the row, coerced to their columns.
@@ -484,53 +547,13 @@ where
         user_id: &str,
         revocation: Option<&dyn alibi_core::store::SessionRevocation>,
     ) -> AuthResult<bool> {
-        let now = Utc::now();
-        let user_id = S::Session::parse_user_id(user_id)?;
-        let live = || {
-            <S::Session as SeaOrmSessionModel>::Entity::find()
-                .filter(S::Session::user_id_column().eq(user_id.clone()))
-                .filter(
-                    S::Session::expires_at_column().gt(crate::schema::timestamp_value(
-                        S::Session::expires_at_column(),
-                        now,
-                    )),
-                )
+        let Some(sessions) = self
+            .end_user_sessions_preserving_on(self.scoped_connection(), None, user_id, Utc::now())
+            .await?
+        else {
+            return Ok(false);
         };
-        let sessions = live()
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
         let context = self.hook_context(None);
-        for session in &sessions {
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_session(session, &context)
-                    .await?
-                    .is_cancelled()
-                {
-                    return Ok(false);
-                }
-            }
-        }
-        _ = <S::Session as SeaOrmSessionModel>::Entity::update_many()
-            .col_expr(
-                S::Session::expires_at_column(),
-                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
-                    S::Session::expires_at_column(),
-                    now,
-                )),
-            )
-            .filter(S::Session::user_id_column().eq(user_id))
-            .filter(
-                S::Session::expires_at_column().gt(crate::schema::timestamp_value(
-                    S::Session::expires_at_column(),
-                    now,
-                )),
-            )
-            .exec(self.scoped_connection())
-            .await
-            .map_err(map_db_err)?;
         if let Some(revocation) = revocation {
             revocation.revoke().await?;
         }

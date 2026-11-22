@@ -26,6 +26,14 @@ pub trait BackgroundTaskHandler: Send + Sync {
 pub async fn start_background_task(
     operation: impl Future<Output = AuthResult<()>> + Send + 'static,
 ) -> AuthResult<BackgroundTaskCompletion> {
+    start_background_task_for("Background task", operation).await
+}
+
+#[doc(hidden)]
+pub async fn start_background_task_for(
+    name: &'static str,
+    operation: impl Future<Output = AuthResult<()>> + Send + 'static,
+) -> AuthResult<BackgroundTaskCompletion> {
     use tracing::{Instrument, instrument::WithSubscriber};
     let request_context = crate::hooks::current_request_hook_context();
     let work = crate::hooks::with_optional_request_hook_context(request_context, operation)
@@ -37,14 +45,12 @@ pub async fn start_background_task(
         std::task::Poll::Ready(result) => Ok(Box::pin(async move { result })),
         std::task::Poll::Pending => {
             let executor = tokio::runtime::Handle::try_current().map_err(|error| {
-                crate::AuthError::internal(format!(
-                    "Background task requires a Tokio executor: {error}"
-                ))
+                crate::AuthError::internal(format!("{name} requires a Tokio executor: {error}"))
             })?;
             let running = executor.spawn(work);
             Ok(Box::pin(async move {
                 running.await.map_err(|error| {
-                    crate::AuthError::internal(format!("Background task failed: {error}"))
+                    crate::AuthError::internal(format!("{name} failed: {error}"))
                 })?
             }))
         }

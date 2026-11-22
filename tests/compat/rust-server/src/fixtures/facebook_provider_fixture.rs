@@ -19,7 +19,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -150,7 +151,8 @@ pub(crate) async fn router(
                     email: "mapped-facebook@example.invalid".into(),
                     email_verified: false,
                     image: Some("https://images.example.invalid/mapped-facebook.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         if mode == "custom-userinfo" {
@@ -194,7 +196,7 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/facebook/mapper-receipts",
-            get(|| async { Json(MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clone()) }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/facebook/token", post(token))
         .route("/__test/facebook/keys", get(keys))
@@ -214,7 +216,7 @@ impl OAuthUserInfoHandler for CustomUserInfo {
         MAPPER_RECEIPTS
             .lock()
             .expect("mapper receipt lock")
-            .push(json!({"accessToken":request.access_token,"idToken":request.id_token}));
+            .push(json!({"accessToken":request.access_token,"idToken":request.id_token}).into());
         let control = self.0.lock().await;
         let field = |key: &str| {
             control["profile"][key]
@@ -223,16 +225,17 @@ impl OAuthUserInfoHandler for CustomUserInfo {
                 .to_owned()
         };
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
-                id: field("id"),
-                name: Some(field("name")),
-                email: field("email"),
+                id: field("id").into(),
+                name: Some(field("name").into()),
+                email: field("email").into(),
                 email_verified: true,
                 image: None,
-            },
-            data: json!({"id":field("id")}),
+            }
+            .public_profile(false),
+            data: json!({"id":field("id")}).into(),
         })
     }
 }

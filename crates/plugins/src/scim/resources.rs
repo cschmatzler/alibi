@@ -1,13 +1,14 @@
 //! Connection-authenticated canonical SCIM reads.
 use super::{ScimPlugin, Value};
 use alibi_core::endpoint::{EndpointCall, EndpointResponse};
+use alibi_core::store::scim::keys;
 use alibi_core::utils::json::JsValue;
 use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{SecondsFormat, SubsecRound};
 use hmac::{Hmac, KeyInit, Mac};
 use serde_json::json;
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use subtle::ConstantTimeEq;
 const GROUP_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:Group";
 const MARKER: &str = "x-better-auth-scim-response";
@@ -394,10 +395,7 @@ impl ScimPlugin {
             ))));
         }
         let domain = connection.domain.as_str();
-        let key = URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
-            "scim-connection",
-            &connection.id,
-        ])?));
+        let key = keys::connection(&connection.id)?;
         let binding = ctx
             .database
             .active_scim_connection_binding(&connection.id, domain, &key)
@@ -535,7 +533,7 @@ impl ScimPlugin {
         // rechecked against committed state.
         let attempted = std::sync::Arc::new(std::sync::Mutex::new(None));
         let tried = attempted.clone();
-        let key = scoped_key(&["scim-connection", &cid])?;
+        let key = keys::connection(&cid)?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
@@ -797,7 +795,7 @@ impl ScimPlugin {
         let cid = connection.id.clone();
         let domain = connection.domain.clone();
         let id = id.to_owned();
-        let key = scoped_key(&["scim-connection", &cid])?;
+        let key = keys::connection(&cid)?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
@@ -1097,7 +1095,7 @@ impl ScimPlugin {
         let roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
         let cid = connection.id;
         let domain = connection.domain;
-        let key = scoped_key(&["scim-connection", &cid])?;
+        let key = keys::connection(&cid)?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
@@ -1151,7 +1149,7 @@ impl ScimPlugin {
                     let data = alibi_core::store::CreateScimUser {
                         connection_id: cid.clone(),
                         provisioning_domain_id: domain.clone(),
-                        connection_user_key: scoped_key(&["scim-user", &cid, &user_id])?,
+                        connection_user_key: keys::connection_user(&cid, &user_id)?,
                         user_id: user_id.clone(),
                         attributes,
                         order_key: format!(
@@ -1282,7 +1280,7 @@ impl ScimPlugin {
             let id = id.to_owned();
             let cid = connection.id.clone();
             let domain = connection.domain.clone();
-            let key = scoped_key(&["scim-connection", &cid])?;
+            let key = keys::connection(&cid)?;
             let projection = projection.clone();
             let identity = identity.clone();
             let result = alibi_core::store::transaction::<S, (), _>(
@@ -1409,7 +1407,7 @@ impl ScimPlugin {
             let id = id.to_owned();
             let cid = connection.id.clone();
             let domain = connection.domain.clone();
-            let key = scoped_key(&["scim-connection", &cid])?;
+            let key = keys::connection(&cid)?;
             let configured = configured.clone();
             let patch = patch.clone();
             let result =
@@ -1527,14 +1525,10 @@ impl ScimPlugin {
                 Some("invalidValue"),
             ));
         }
-        let name_key = scoped_key(&[
-            "scim-group-display-name",
-            &connection.id,
-            &name.to_lowercase(),
-        ])?;
+        let name_key = keys::group_display_name(&connection.id, &name)?;
         let external_key = external
             .as_ref()
-            .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
+            .map(|value| keys::group_external_id(&connection.id, value))
             .transpose()?;
         for (field, key, label) in [
             ("displayNameKey", Some(name_key.clone()), "displayName"),
@@ -1573,7 +1567,7 @@ impl ScimPlugin {
             let id = id.to_owned();
             let domain = connection.domain.clone();
             let cid = connection.id.clone();
-            let key = scoped_key(&["scim-connection", &cid])?;
+            let key = keys::connection(&cid)?;
             let configured = configured.clone();
             let data = data.clone();
             let result =
@@ -1675,7 +1669,7 @@ impl ScimPlugin {
             let id = id.to_owned();
             let cid = connection.id.clone();
             let domain = connection.domain.clone();
-            let key = scoped_key(&["scim-connection", &cid])?;
+            let key = keys::connection(&cid)?;
             let configured = configured.clone();
             let result = alibi_core::store::transaction::<S, (), _>(
                 ctx.database.as_ref(),
@@ -1771,24 +1765,14 @@ impl ScimPlugin {
                 Some("invalidValue"),
             ));
         }
+        let name_key = keys::group_display_name(&connection.id, &name)?;
+        let external_key = external
+            .as_ref()
+            .map(|value| keys::group_external_id(&connection.id, value))
+            .transpose()?;
         for (field, key, label) in [
-            (
-                "displayNameKey",
-                Some(scoped_key(&[
-                    "scim-group-display-name",
-                    &connection.id,
-                    &name.to_lowercase(),
-                ])?),
-                "displayName",
-            ),
-            (
-                "externalIdKey",
-                external
-                    .as_ref()
-                    .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
-                    .transpose()?,
-                "externalId",
-            ),
+            ("displayNameKey", Some(name_key.clone()), "displayName"),
+            ("externalIdKey", external_key.clone(), "externalId"),
         ] {
             if let Some(key) = key
                 && ctx
@@ -1807,15 +1791,8 @@ impl ScimPlugin {
         }
         let now = chrono::Utc::now().trunc_subsecs(3);
         let data = alibi_core::store::CreateScimGroup {
-            display_name_key: scoped_key(&[
-                "scim-group-display-name",
-                &connection.id,
-                &name.to_lowercase(),
-            ])?,
-            external_id_key: external
-                .as_ref()
-                .map(|value| scoped_key(&["scim-group-external-id", &connection.id, value]))
-                .transpose()?,
+            display_name_key: name_key,
+            external_id_key: external_key,
             connection_id: connection.id.clone(),
             provisioning_domain_id: connection.domain.clone(),
             display_name: name,
@@ -1834,7 +1811,7 @@ impl ScimPlugin {
         let with_roles = configured.as_ref().is_some_and(|handle| handle.1.is_some());
         let domain = connection.domain;
         let cid = connection.id;
-        let key = scoped_key(&["scim-connection", &cid])?;
+        let key = keys::connection(&cid)?;
         let result =
             alibi_core::store::transaction::<S, _, _>(ctx.database.as_ref(), move |database| {
                 Box::pin(async move {
@@ -2310,9 +2287,6 @@ fn select_value(value: &Value, paths: &[Vec<String>], include: bool) -> Option<V
     }
 }
 
-pub(super) fn scoped_key(parts: &[&str]) -> AuthResult<String> {
-    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(parts)?)))
-}
 fn group_creation_body(
     body: Option<&JsValue>,
 ) -> Result<(String, Option<String>, Vec<String>), String> {

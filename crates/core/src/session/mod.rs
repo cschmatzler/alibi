@@ -645,7 +645,6 @@ mod tests {
         let db = test_database().await;
         let mgr = SessionManager::new(test_config(), Arc::clone(&db));
 
-        // Create a user first
         let user = db
             .create_user(crate::types::CreateUser::new().with_email("test@test.com"))
             .await
@@ -825,7 +824,6 @@ mod tests {
             .await
             .unwrap();
 
-        // Create two sessions
         _ = mgr.create_session(&user, None, None).await.unwrap();
         _ = mgr.create_session(&user, None, None).await.unwrap();
 

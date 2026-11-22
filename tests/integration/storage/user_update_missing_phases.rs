@@ -212,7 +212,7 @@ async fn check<B: Backend>(
         {
             let inside = trace.clone();
             let rollback = action.starts_with("rollback");
-            alibi_core::store::transaction(auth.store().as_ref(), move |tx| {
+            alibi::store::transaction(auth.store().as_ref(), move |tx| {
                 Box::pin(async move {
                     // The typed API keeps its missing-row error; only the source
                     // callback phases, not a fabricated successful user, are compared.
@@ -326,7 +326,7 @@ async fn postgres_quoted_literals_match_bound_text_values() -> TestResult {
         "'; DROP TABLE users; --\\path",
         "雪\n\t'\\",
     ] {
-        let literal = alibi_core::store::postgres_parameter::quoted_literal(value);
+        let literal = alibi::store::postgres_parameter::quoted_literal(value);
         assert_eq!(
             db.text("SELECT $1::text", &[value]).await?,
             Some(value.to_owned())
@@ -338,7 +338,7 @@ async fn postgres_quoted_literals_match_bound_text_values() -> TestResult {
     }
     let value = "before\0after";
     let bound = db.text("SELECT $1::text", &[value]).await.unwrap_err();
-    let literal = alibi_core::store::postgres_parameter::quoted_literal(value);
+    let literal = alibi::store::postgres_parameter::quoted_literal(value);
     let quoted = db
         .text(&format!("SELECT {literal}::text"), &[])
         .await

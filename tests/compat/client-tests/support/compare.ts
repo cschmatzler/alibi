@@ -2704,6 +2704,52 @@ export function compareValues(
     return record(trace) && typeof trace.path === "string" ? trace.path.split("?")[0] : undefined;
   }
 
+  function compareOAuthTokenExpiry(path: string, a: unknown, b: unknown): boolean {
+    const index = /^traces\.(\d+)\.responseBody\.expires_at$/.exec(path)?.[1];
+    if (index === undefined) return false;
+
+    const position = Number(index);
+    const leftWindow = context.leftRequestWindows?.[position];
+    const rightWindow = context.rightRequestWindows?.[position];
+    if (!leftWindow || !rightWindow) return false;
+
+    const response = (root: unknown) => {
+      if (!record(root) || !Array.isArray(root.traces)) return;
+      const trace = root.traces[position];
+      if (
+        record(trace) &&
+        trace.method === "POST" &&
+        trace.responseStatus === 200 &&
+        traceEndpoint(root, path)?.endsWith("/oauth2/token") &&
+        record(trace.responseBody) &&
+        trace.responseBody.token_type === "Bearer" &&
+        typeof trace.responseBody.access_token === "string" &&
+        typeof trace.responseBody.expires_in === "number"
+      ) {
+        return trace.responseBody.expires_in;
+      }
+    };
+    const leftTtl = response(normalizedLeft);
+    const rightTtl = response(normalizedRight);
+    if (leftTtl === undefined || rightTtl === undefined) return false;
+
+    for (const [expiry, ttl, window] of [
+      [a, leftTtl, leftWindow],
+      [b, rightTtl, rightWindow],
+    ] as const) {
+      if (
+        typeof expiry !== "number" ||
+        !Number.isInteger(expiry) ||
+        !Number.isInteger(ttl) ||
+        expiry - ttl < Math.floor(window.startedAt / 1000) ||
+        expiry - ttl > Math.floor(window.finishedAt / 1000)
+      ) {
+        fail(path, "OAuth access-token expiration is outside its observed issuance window");
+      }
+    }
+    return true;
+  }
+
   function sessions(value: unknown, result = new Map<string, number>()): Map<string, number> {
     if (Array.isArray(value)) {
       for (const child of value) {
@@ -4881,6 +4927,10 @@ export function compareValues(
           }
         }
       }
+    }
+
+    if (key === "expires_at" && !applicationData && compareOAuthTokenExpiry(path, a, b)) {
+      return;
     }
 
     if (

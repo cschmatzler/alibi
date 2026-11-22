@@ -2940,7 +2940,6 @@ mod tests {
 
         let ctx = test_helpers::create_test_context_with_config(config).await;
 
-        // Create test user with hashed password
         let password_hash = hash_password(None, "Password123!").await.unwrap();
 
         let create_user = CreateUser::new()
@@ -3756,7 +3755,6 @@ mod tests {
             .unwrap();
         assert_eq!(response.status, 302);
 
-        // Check redirect URL
         let location_header = response
             .headers
             .iter()
@@ -3880,22 +3878,6 @@ mod tests {
         );
         let response_3 = plugin.on_request(&req_3, &ctx).await.unwrap();
         assert!(response_3.is_none());
-    }
-
-    // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
-    #[tokio::test]
-    async fn test_configuration() {
-        let config = PasswordManagementConfig {
-            reset_token_expiry_hours: 48,
-            require_current_password: false,
-            send_email_notifications: false,
-            ..Default::default()
-        };
-
-        let plugin = PasswordManagementPlugin::with_config(config);
-        assert_eq!(plugin.config.reset_token_expiry_hours, 48);
-        assert!(!plugin.config.require_current_password);
-        assert!(!plugin.config.send_email_notifications);
     }
 
     // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.

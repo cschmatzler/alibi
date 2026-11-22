@@ -27,12 +27,8 @@ impl SsoPlugin {
         meta: &RequestMeta,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
-        let callback = format!("{base}/sso/saml2/sp/acs/{provider_id}");
+        let base = super::sso_base(&ctx.config);
+        let callback = super::saml_acs_url(&base, provider_id);
         let encoded = body
             .and_then(|body| body.get("SAMLResponse"))
             .and_then(Value::as_str)
@@ -461,11 +457,7 @@ impl SsoPlugin {
             .filter(|payload| payload.expires_at >= chrono::Utc::now().timestamp_millis())
             .map(|mut payload| {
                 if payload.error_url.is_none() {
-                    payload.error_url = Some(format!(
-                        "{}{}/error",
-                        ctx.config.base_url.trim_end_matches('/'),
-                        ctx.config.base_path.trim_end_matches('/')
-                    ));
+                    payload.error_url = Some(format!("{}/error", super::sso_base(&ctx.config)));
                 }
                 payload
             }))

@@ -75,17 +75,21 @@ pub(crate) async fn router(
                 Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-source-subject".into(),
-                    name: Some(format!(
-                        "Mapped {}",
-                        profile
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                    )),
+                    name: Some(
+                        format!(
+                            "Mapped {}",
+                            profile
+                                .get("name")
+                                .and_then(alibi::utils::json::JsValue::as_str)
+                                .unwrap_or_default()
+                        )
+                        .into(),
+                    ),
                     email: "mapped-apple@example.invalid".into(),
                     email_verified: false,
                     image: Some("https://images.example.invalid/mapped-apple.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         if mode == "empty-clients" {

@@ -43,7 +43,14 @@ fn callback_value(value: &alibi::utils::json::JsValue) -> Value {
         JsValue::Object(fields) => Value::Object(
             fields
                 .iter()
-                .map(|(name, item)| (name.clone(), callback_value(item)))
+                .map(|(name, item)| {
+                    (
+                        name.as_str()
+                            .expect("fixture object key is UTF-8")
+                            .to_owned(),
+                        callback_value(item),
+                    )
+                })
                 .collect(),
         ),
         other => serde_json::to_value(other).unwrap_or(Value::Null),

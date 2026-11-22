@@ -1,29 +1,21 @@
 //! Canonical JSON metadata and explicit database binding preparation.
+use alibi_core::store::adapter::json_metadata::{MetadataCell, MetadataFormat, MetadataParameter};
 use alibi_core::{
     AuthResult,
     utils::json::{self, JsValue},
 };
 
-/// Canonical JSON metadata with a deferred SQLite storage cell.
-/// Initialized output policies use the physical cell before their callback; ordinary
-/// model getters and serialization use the decoded logical value. Native JSON
-/// backends validate their strict ordinary projection only when binding.
-#[derive(Clone, Debug)]
-pub struct JsonMetadata(JsValue, JsonBinding);
+/// JSON metadata stored with the backend's physical representation.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct JsonMetadata(MetadataCell);
 
-impl serde::Serialize for JsonMetadata {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        self.to_js_value().serialize(serializer)
+fn format(backend: sea_orm::DbBackend) -> MetadataFormat {
+    if backend == sea_orm::DbBackend::Sqlite {
+        MetadataFormat::Sqlite
+    } else {
+        MetadataFormat::NativeJson
     }
-}
-
-#[derive(Clone, Debug)]
-enum JsonBinding {
-    Text(String),
-    Read,
-    Prepared,
-    Scalar,
-    Native,
 }
 
 impl JsonMetadata {
@@ -31,66 +23,30 @@ impl JsonMetadata {
         value: JsValue,
         backend: sea_orm::DbBackend,
     ) -> Result<Self, serde_json::Error> {
-        if backend == sea_orm::DbBackend::Sqlite {
-            Self::try_from(value)
-        } else {
-            let _ = value.to_json_value()?;
-            Ok(Self(value, JsonBinding::Native))
-        }
+        MetadataCell::for_format(value, format(backend)).map(Self)
     }
-    /// Logical metadata for non-policy consumers (organization/OAuth resources,
-    /// model getters and DTO serialization), never an encoded SQLite JSON cell.
+
+    /// Logical metadata after the adapter's read codec has run.
     pub fn to_js_value(&self) -> JsValue {
-        match (&self.0, &self.1) {
-            (JsValue::String(text), JsonBinding::Read | JsonBinding::Prepared) => {
-                json::parse_adapter_string(text)
-            }
-            _ => self.0.clone(),
-        }
+        self.0.logical_value()
     }
 
     fn prepared(self, backend: sea_orm::DbBackend) -> Result<Self, serde_json::Error> {
-        if backend == sea_orm::DbBackend::Sqlite && !matches!(self.1, JsonBinding::Native) {
-            return Ok(self);
-        }
-        let value = match self.1 {
-            JsonBinding::Text(text) => json::parse_value(&text)?,
-            JsonBinding::Read | JsonBinding::Prepared => self.to_js_value(),
-            _ => self.0,
-        };
-        Self::for_backend(value, backend)
+        self.0.prepare(format(backend)).map(Self)
     }
 }
-impl PartialEq for JsonMetadata {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_js_value() == other.to_js_value()
-    }
-}
-impl<'de> serde::Deserialize<'de> for JsonMetadata {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        Self::try_from(JsValue::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-    }
-}
+
 impl TryFrom<JsValue> for JsonMetadata {
     type Error = serde_json::Error;
+
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        let binding = match &value {
-            JsValue::Undefined => {
-                return Err(serde::ser::Error::custom(
-                    "cannot bind undefined JSON metadata",
-                ));
-            }
-            JsValue::Null | JsValue::Array(_) | JsValue::Object(_) | JsValue::Date(_) => {
-                JsonBinding::Text(json::to_string(&value)?)
-            }
-            _ => JsonBinding::Scalar,
-        };
-        Ok(Self(value, binding))
+        MetadataCell::try_from(value).map(Self)
     }
 }
+
 impl From<serde_json::Value> for JsonMetadata {
     fn from(value: serde_json::Value) -> Self {
-        Self::try_from(JsValue::from(value)).expect("ordinary JSON contains no undefined root")
+        Self(MetadataCell::from(value))
     }
 }
 impl TryFrom<JsonMetadata> for serde_json::Value {
@@ -123,7 +79,7 @@ impl sea_orm::TryGetable for JsonMetadata {
                 })?;
             if <String as Type<sea_orm::sqlx::Postgres>>::compatible(&raw.type_info()) {
                 let text = String::try_get_by(result, index)?;
-                return Ok(Self(JsValue::String(text.into()), JsonBinding::Read));
+                return Ok(Self(MetadataCell::stored_text(text)));
             }
         }
         if let Some(row) = result.try_as_sqlite_row() {
@@ -138,7 +94,7 @@ impl sea_orm::TryGetable for JsonMetadata {
                 "REAL" => JsValue::Number(f64::try_get_by(result, index)?),
                 "TEXT" => {
                     let text = String::try_get_by(result, index)?;
-                    return Ok(Self(JsValue::String(text.into()), JsonBinding::Read));
+                    return Ok(Self(MetadataCell::stored_text(text)));
                 }
                 "NULL" => return Err(sea_orm::TryGetError::Null(format!("{index:?}"))),
                 kind => {
@@ -157,34 +113,22 @@ impl sea_orm::TryGetable for JsonMetadata {
 }
 impl From<JsonMetadata> for sea_orm::Value {
     fn from(value: JsonMetadata) -> Self {
-        match value.1 {
-            JsonBinding::Text(text) => Self::String(Some(text)),
-            JsonBinding::Scalar | JsonBinding::Read | JsonBinding::Prepared => {
-                crate::additional_fields::bind_scalar(
-                    alibi_core::store::adapter::RawFieldValue::from_js(&value.0)
-                        .expect("scalar metadata has no undefined"),
-                )
-                .expect("scalar metadata has no object")
-            }
-            JsonBinding::Native if value.0.is_null() => Self::Json(None),
-            JsonBinding::Native => Self::Json(Some(Box::new(
-                value
-                    .0
-                    .to_json_value()
-                    .expect("native JSON binding was validated"),
-            ))),
+        match value.0.into_parameter() {
+            MetadataParameter::Text(text) => Self::String(Some(text)),
+            MetadataParameter::Scalar(value) => crate::additional_fields::bind_scalar(
+                alibi_core::store::adapter::RawFieldValue::from_js(&value)
+                    .expect("scalar metadata has no undefined"),
+            )
+            .expect("scalar metadata has no object"),
+            MetadataParameter::Json(value) => Self::Json(value),
         }
     }
 }
 impl sea_orm::sea_query::ValueType for JsonMetadata {
     fn try_from(value: sea_orm::Value) -> Result<Self, sea_orm::sea_query::ValueTypeErr> {
         match value {
-            sea_orm::Value::Json(Some(value)) => {
-                Ok(Self(JsValue::from(*value), JsonBinding::Native))
-            }
-            sea_orm::Value::String(Some(text)) => {
-                Ok(Self(JsValue::String(text.into()), JsonBinding::Prepared))
-            }
+            sea_orm::Value::Json(Some(value)) => Ok(Self(MetadataCell::stored_json(*value))),
+            sea_orm::Value::String(Some(text)) => Ok(Self(MetadataCell::stored_text(text))),
             sea_orm::Value::BigInt(Some(value)) => {
                 <Self as TryFrom<JsValue>>::try_from(JsValue::from(value))
                     .map_err(|_| sea_orm::sea_query::ValueTypeErr)

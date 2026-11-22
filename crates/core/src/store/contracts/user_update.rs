@@ -83,6 +83,33 @@ impl PreparedUserUpdate {
                 .is_some_and(|fields| fields.contains_key(name))
     }
 
+    /// Resolve declared update fields while retaining the driver's column type.
+    pub fn bindings<'a, Column>(
+        &'a self,
+        mut physical_column: impl FnMut(&str) -> Option<Column> + 'a,
+        mut logical_column: impl FnMut(&str) -> Option<Column> + 'a,
+    ) -> impl Iterator<Item = AuthResult<(Column, &'a JsValue, bool)>> + 'a
+    where
+        Column: 'a,
+    {
+        self.data.iter().filter_map(move |(name, value)| {
+            let name = name.as_str().filter(|name| self.declares(name))?;
+            let column = match self.physical_binding(name) {
+                Some(physical) => physical_column(physical),
+                None => logical_column(name),
+            };
+            if let Some(column) = column {
+                Some(Ok((column, value, self.has_input_policy(name))))
+            } else if self.requires_binding(name) {
+                Some(Err(crate::AuthError::config(format!(
+                    "Declared user field {name} has no model column"
+                ))))
+            } else {
+                None
+            }
+        })
+    }
+
     /// Runs once, after both application and physical before hooks.
     pub async fn apply_adapter_transforms(&mut self) -> AuthResult<()> {
         let mut data = std::mem::take(&mut self.data);

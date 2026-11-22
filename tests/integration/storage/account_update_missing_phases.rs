@@ -183,7 +183,7 @@ where
         {
             let inside = trace.clone();
             let rollback = action.starts_with("rollback");
-            alibi_core::store::transaction(store.as_ref(), move |tx| {
+            alibi::store::transaction(store.as_ref(), move |tx| {
                 Box::pin(async move {
                     let error = tx
                         .update_account("missing-timestamp-account", update)

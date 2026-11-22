@@ -1,9 +1,6 @@
 use super::Alibi;
-use super::endpoint::merge_headers;
-use alibi_core::endpoint::{
-    BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointResponse,
-    is_endpoint_api_error, with_endpoint_call_context,
-};
+use super::endpoint_hooks::{self, BeforeHooks, HookTransport};
+use alibi_core::endpoint::{EndpointCall, EndpointResponse, is_endpoint_api_error};
 use alibi_core::{AuthError, AuthSchema, Headers};
 use std::sync::Arc;
 
@@ -22,21 +19,6 @@ pub(super) struct HttpEndpointFrame {
     pub returned_response: Arc<std::sync::Mutex<Option<alibi_core::AuthResponse>>>,
 }
 
-/// HTTP callbacks keep live dispatch state separate from a frame's owned
-/// optional Request. Storing that physical context in the frame itself would
-/// make its extension map own itself through `HttpEndpointFrame`.
-pub(super) fn with_http_endpoint_call_context<T>(
-    call: EndpointCall,
-    future: impl Future<Output = T>,
-) -> impl Future<Output = T> {
-    let request = alibi_core::hooks::current_request_hook_context();
-    // Bound the HTTP dispatch future without increasing callers' stack sizes.
-    Box::pin(with_endpoint_call_context(
-        call,
-        alibi_core::hooks::with_optional_request_hook_context(request, future),
-    ))
-}
-
 impl<S: AuthSchema> Alibi<S> {
     pub(super) async fn before_http_endpoint(
         &self,
@@ -49,54 +31,34 @@ impl<S: AuthSchema> Alibi<S> {
         let mut call = EndpointCall::from_http_request(request, route);
         call.extensions().insert((*context.config).clone());
         let mut outer = call.clone();
-        let mut patch = EndpointContextPatch::default();
-        let mut headers = Headers::new();
-        for hook in &self.endpoint_hooks {
-            let matches = with_http_endpoint_call_context(call.clone(), async { hook.matches_before(&call, context) }).await.map_err(|error| {
-                tracing::error!(%error, "Endpoint before-hook matcher failed");
-                AuthError::Api { status: 500, code: None, message: "An error occurred during hook matcher execution. Check the logs for more details.".into() }
-            })?;
-            if !matches {
-                continue;
+        let hooks: Vec<&dyn alibi_core::endpoint::EndpointHook<S>> =
+            self.endpoint_hooks.iter().map(AsRef::as_ref).collect();
+        let (patch, headers) = match Box::pin(endpoint_hooks::run_before(
+            &hooks,
+            &call,
+            context,
+            HookTransport::Http,
+        ))
+        .await
+        {
+            Ok(BeforeHooks::Continue { patch, headers }) => (patch, headers),
+            Ok(BeforeHooks::Respond(response)) => {
+                return render_http_endpoint_response(&response).map(Some);
             }
-            let middleware = call.middleware_context();
-            let action =
-                with_http_endpoint_call_context(call.clone(), hook.before(&middleware, context))
-                    .await;
-            let emitted = call.take_response_headers();
-            let action = match action {
-                Ok(action) => action,
-                Err(error) if is_endpoint_api_error(&error) => {
-                    let mut response = error.to_auth_response();
-                    merge_headers(&mut response.headers, emitted);
+            Err(failure) => {
+                if let Some(headers) = failure.headers {
+                    let mut response = failure.error.to_auth_response();
+                    response.headers.merge(headers);
                     return Ok(Some(response));
                 }
-                Err(error) => return Err(ordinary_http_hook_error(error)),
-            };
-            let hook_headers = emitted.clone();
-            merge_headers(&mut headers, emitted);
-            match action {
-                Some(BeforeEndpointAction::Patch(changes)) => patch.merge(*changes),
-                Some(BeforeEndpointAction::Respond(mut response)) => {
-                    response.merge_headers(headers);
-                    return render_http_endpoint_response(&response).map(Some);
-                }
-                Some(BeforeEndpointAction::Reject(mut response)) => {
-                    response.merge_headers(hook_headers);
-                    return render_http_endpoint_response(&response).map(Some);
-                }
-                None => {}
+                return Err(http_hook_error(failure.error));
             }
-        }
+        };
         let path_patch = patch.path.clone();
         let body_patch = patch.body.is_some();
         let header_patch = patch.headers.clone();
         patch.apply(&mut call);
-        EndpointContextPatch {
-            headers: call.headers().cloned(),
-            ..Default::default()
-        }
-        .apply(&mut outer);
+        endpoint_hooks::update_outer_headers(&mut outer, &call);
         for (name, value) in headers {
             request.queue_response_header(name, value);
         }
@@ -167,40 +129,18 @@ impl<S: AuthSchema> Alibi<S> {
         } else {
             logical.merge_headers(headers);
         }
-        for hook in &self.endpoint_hooks {
-            if !with_http_endpoint_call_context(frame.outer.clone(), async {
-                hook.matches_after(&frame.call, context, &logical)
-            })
-            .await
-            .map_err(|error| {
-                if is_endpoint_api_error(&error) {
-                    error
-                } else {
-                    ordinary_http_hook_error(error)
-                }
-            })? {
-                continue;
-            }
-            let middleware = frame.call.middleware_context();
-            let prior_headers = logical.headers().clone();
-            let status = logical.status();
-            logical = match with_http_endpoint_call_context(
-                frame.outer.clone(),
-                hook.after(&middleware, context, logical),
-            )
-            .await
-            {
-                Ok(response) => response,
-                Err(error) if is_endpoint_api_error(&error) => {
-                    let mut response = EndpointResponse::error(error);
-                    response.set_status(status);
-                    response.merge_headers(prior_headers);
-                    response
-                }
-                Err(error) => return Err(ordinary_http_hook_error(error)),
-            };
-            logical.merge_headers(frame.call.take_response_headers());
-        }
+        let hooks: Vec<&dyn alibi_core::endpoint::EndpointHook<S>> =
+            self.endpoint_hooks.iter().map(AsRef::as_ref).collect();
+        let logical = Box::pin(endpoint_hooks::run_after(
+            &hooks,
+            &frame.call,
+            &frame.outer,
+            context,
+            logical,
+            HookTransport::Http,
+        ))
+        .await
+        .map_err(http_hook_error)?;
         // Plugin HTTP response hooks run on the physical request, not the
         // logical frame where the handler completed its session publication.
         alibi_core::session::cookie_cache::runtime::retain_publication(&frame.call, request);
@@ -228,11 +168,7 @@ pub(super) fn apply_http_endpoint_input(
         request.headers.extend(headers.clone());
     }
     frame.call.replace_headers(request.headers.clone());
-    EndpointContextPatch {
-        headers: Some(request.headers.clone()),
-        ..Default::default()
-    }
-    .apply(&mut frame.outer);
+    endpoint_hooks::update_outer_headers(&mut frame.outer, &frame.call);
     let call = &frame.call;
     // Logical hook paths may be route templates; only explicit patches change dispatch input.
     if let Some(path) = &frame.path_patch {
@@ -370,10 +306,11 @@ mod canonical_tests {
     }
 }
 
-fn ordinary_http_hook_error(error: AuthError) -> AuthError {
-    match error {
-        AuthError::CallbackFailure(_) => error,
-        error => AuthError::CallbackFailure(Box::new(error)),
+fn http_hook_error(error: AuthError) -> AuthError {
+    if is_endpoint_api_error(&error) || matches!(error, AuthError::CallbackFailure(_)) {
+        error
+    } else {
+        AuthError::CallbackFailure(Box::new(error))
     }
 }
 
@@ -399,6 +336,6 @@ fn render_http_endpoint_response(
             rendered
         }
     };
-    merge_headers(&mut rendered.headers, response.headers().clone());
+    rendered.headers.merge(response.headers().clone());
     Ok(rendered)
 }

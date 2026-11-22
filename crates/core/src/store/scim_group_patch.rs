@@ -1,5 +1,5 @@
 //! Executable Group PATCH plans shared by the durable adapters.
-use super::{ReplaceScimGroup, ScimGroupRecord};
+use super::{ReplaceScimGroup, ScimGroupRecord, scim::keys};
 use crate::{
     AuthError, AuthResult,
     utils::{javascript::trim, json::JsValue},
@@ -199,11 +199,6 @@ fn attribute(
     }
     Ok(())
 }
-fn scoped_key(parts: &[&str]) -> AuthResult<String> {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    use sha2::{Digest, Sha256};
-    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(parts)?)))
-}
 /// Apply a full plan to the Group snapshot read under its mutation fence.
 /// # Errors
 /// Returns the reference's mutability, noTarget, invalidPath, and invalidValue errors.
@@ -307,15 +302,11 @@ pub fn apply_scim_group_patch(
     Ok(ReplaceScimGroup {
         connection_id: group.connection_id.clone(),
         provisioning_domain_id: group.provisioning_domain_id.clone(),
-        display_name_key: scoped_key(&[
-            "scim-group-display-name",
-            &group.connection_id,
-            &name.to_lowercase(),
-        ])?,
+        display_name_key: keys::group_display_name(&group.connection_id, &name)?,
         external_id_key: external
             .as_ref()
             .filter(|value| !value.is_empty())
-            .map(|value| scoped_key(&["scim-group-external-id", &group.connection_id, value]))
+            .map(|value| keys::group_external_id(&group.connection_id, value))
             .transpose()?,
         display_name: name,
         external_id: external,

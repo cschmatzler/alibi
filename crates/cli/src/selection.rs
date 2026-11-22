@@ -35,28 +35,36 @@ pub(crate) fn select(plugins: &[String]) -> Selection {
     selection
 }
 
-pub(crate) const CORE_ENTITIES: [(&str, &str, EntityRole); 4] = [
-    ("user", "user", EntityRole::User),
-    ("session", "session", EntityRole::Session),
-    ("account", "account", EntityRole::Account),
-    ("verification", "verification", EntityRole::Verification),
-];
-
-pub(crate) fn role_name(role: EntityRole) -> &'static str {
-    match role {
-        EntityRole::User => "user",
-        EntityRole::Session => "session",
-        EntityRole::Account => "account",
-        EntityRole::Verification => "verification",
-    }
-}
-
 /// Fields of a core entity: its core fields, then the selected plugin fields.
-pub(crate) fn entity_fields(selection: &Selection, role: EntityRole) -> Vec<&FieldDef> {
+fn entity_fields(selection: &Selection, role: EntityRole) -> Vec<&FieldDef> {
     let plugin: &[FieldDef] = match role {
         EntityRole::User => &selection.user,
         EntityRole::Session => &selection.session,
         EntityRole::Account | EntityRole::Verification => &[],
     };
     registry::core_fields(role).iter().chain(plugin).collect()
+}
+
+pub(crate) struct SelectedEntity<'a> {
+    pub(crate) module: &'static str,
+    pub(crate) table: &'static str,
+    pub(crate) role: Option<EntityRole>,
+    pub(crate) fields: Vec<&'a FieldDef>,
+}
+
+impl Selection {
+    pub(crate) fn entities(&self) -> impl Iterator<Item = SelectedEntity<'_>> {
+        let core = EntityRole::ALL.into_iter().map(|role| SelectedEntity {
+            module: role.as_str(),
+            table: role.as_str(),
+            role: Some(role),
+            fields: entity_fields(self, role),
+        });
+        core.chain(self.extra.iter().map(|entity| SelectedEntity {
+            module: entity.mod_name,
+            table: entity.table_name,
+            role: entity.role,
+            fields: entity.fields.iter().collect(),
+        }))
+    }
 }

@@ -1,4 +1,5 @@
 use crate::field_policy::FieldValues;
+use crate::store::secondary_sessions::SessionScope;
 use crate::store::{AdapterEvent, PluginStore, SessionRevocation, SessionStore};
 use crate::{AdapterOutput, AdapterRecord};
 use crate::{AuthError, AuthResult, AuthSchema, AuthSession, CreateSession};
@@ -394,8 +395,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .get::<crate::store::SessionDeletionHooks<S>>()
             .is_some_and(|hooks| !hooks.0.is_empty())
             && let Some(session) = self.inner.get_session(token).await?
-            && (!(self.secondary().is_some() && self.config.session.preserve_in_database)
-                || session.expires_at() > chrono::Utc::now())
+            && (!self.preserves_session_rows() || session.expires_at() > chrono::Utc::now())
         {
             self.prepare_session_deletion(&session).await?
         } else {
@@ -405,7 +405,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         if !self.session_uses_database() {
             return Ok(());
         }
-        if self.secondary().is_some() && self.config.session.preserve_in_database {
+        if self.preserves_session_rows() {
             if !self.inner.end_session_preserving(token).await? {
                 return Ok(());
             }
@@ -428,7 +428,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             tokens,
         };
         if self.session_uses_database() {
-            if self.secondary().is_some() && self.config.session.preserve_in_database {
+            if self.preserves_session_rows() {
                 // Retained audit rows are not a new session end. Capture only
                 // live rows, and leave the cache intact if the bulk was vetoed.
                 let now = chrono::Utc::now();
@@ -500,7 +500,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
             return self
-                .update_session_scope(token, "activeOrganizationId", organization_id)
+                .update_session_scope(token, SessionScope::Organization, organization_id)
                 .await;
         }
         self.inner
@@ -514,21 +514,28 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
     ) -> AuthResult<S::Session> {
         if self.config.session.stateless || self.secondary().is_some() {
             return self
-                .update_session_scope(token, "activeTeamId", team_id)
+                .update_session_scope(token, SessionScope::Team, team_id)
                 .await;
         }
         self.inner.update_session_active_team(token, team_id).await
     }
 }
 
+pub(super) struct PreparedCreation {
+    pub(super) session: CreateSession,
+    pub(super) created_at: chrono::DateTime<chrono::Utc>,
+    pub(super) fields: FieldValues,
+}
+
 impl<S: AuthSchema> PluginStore<S> {
-    async fn create_projected_session(
+    pub(super) async fn prepare_session_creation_input(
         &self,
         mut create_session: CreateSession,
-    ) -> AuthResult<AdapterRecord<S::Session>> {
+        transaction: Option<&dyn crate::AuthTransaction<S>>,
+    ) -> AuthResult<PreparedCreation> {
         for callback in &self.session_callbacks.callbacks {
             callback
-                .before_create(&create_session, &self.projection_context, None)
+                .before_create(&create_session, &self.projection_context, transaction)
                 .await?;
         }
         self.session_fields
@@ -552,6 +559,24 @@ impl<S: AuthSchema> PluginStore<S> {
         _ = creation_fields
             .entry("expiresAt".to_owned())
             .or_insert(crate::utils::json::JsValue::Date(create_session.expires_at));
+        Ok(PreparedCreation {
+            session: create_session,
+            created_at,
+            fields: creation_fields,
+        })
+    }
+
+    async fn create_projected_session(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<AdapterRecord<S::Session>> {
+        let PreparedCreation {
+            session: create_session,
+            created_at,
+            fields: creation_fields,
+        } = self
+            .prepare_session_creation_input(create_session, None)
+            .await?;
         let session = if self.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)
@@ -647,7 +672,7 @@ impl<S: AuthSchema> PluginStore<S> {
         token: &str,
         works: Vec<Box<dyn crate::store::SessionDeletionWork<S>>>,
     ) -> AuthResult<()> {
-        let preserved = self.secondary().is_some() && self.config.session.preserve_in_database;
+        let preserved = self.preserves_session_rows();
         if !works.is_empty()
             && self
                 .inner

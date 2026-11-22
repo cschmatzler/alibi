@@ -578,14 +578,18 @@ impl<S: AuthSchema> AuthContext<S> {
         }
         let declared = |name: &str| fields.contains_key(name);
         if self.feature_enabled("admin.enabled") || declared("impersonatedBy") {
-            if view.impersonated_by.is_none() {
+            if view.impersonated_by.is_none()
+                && !view.extension_fields.contains_key("impersonatedBy")
+            {
                 insert_null(&mut view.extension_fields, "impersonatedBy");
             }
         } else {
             view.impersonated_by = None;
         }
         if self.feature_enabled("organization.enabled") || declared("activeOrganizationId") {
-            if view.active_organization_id.is_none() {
+            if view.active_organization_id.is_none()
+                && !view.extension_fields.contains_key("activeOrganizationId")
+            {
                 insert_null(&mut view.extension_fields, "activeOrganizationId");
             }
         } else {
@@ -593,7 +597,8 @@ impl<S: AuthSchema> AuthContext<S> {
         }
 
         if self.feature_enabled("organization.teams.enabled") || declared("activeTeamId") {
-            if view.active_team_id.is_none() {
+            if view.active_team_id.is_none() && !view.extension_fields.contains_key("activeTeamId")
+            {
                 insert_null(&mut view.extension_fields, "activeTeamId");
             }
         } else {

@@ -2,7 +2,6 @@
 mod columns;
 mod entities;
 mod model;
-mod roots;
 
 use alibi_entity_codegen::{self as codegen, EntityRole};
 use columns::{columns, table_attribute};
@@ -11,11 +10,10 @@ use model::model_impl;
 use proc_macro::TokenStream as ProcMacroTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
-use roots::resolve_roots;
 use syn::{DeriveInput, parse_macro_input};
 
 fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let roots = resolve_roots();
+    let roots = codegen::Integration::Sqlx.expansion_paths();
     let table = table_attribute(input)?;
     let fields = codegen::named_fields(input)?;
     let columns = columns(input, fields)?;
@@ -23,9 +21,9 @@ fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let mut roots = resolve_roots();
+    let roots = codegen::Integration::Sqlx.expansion_paths();
     let attributes = codegen::parse_auth_attributes(input, true)?;
-    roots.id_generator = codegen::generated_id(&attributes, &roots.core);
+    let generated_id = codegen::generated_id(&attributes, &roots.core);
     let fields = codegen::named_fields(input)?;
     codegen::validate_core_fields(input, attributes.role, fields)?;
     let columns = columns(input, fields)?;
@@ -38,7 +36,7 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
             output: column.kind.as_ref().filter(|kind| *kind == "Text").map(|_| {
                 let name = &column.ident;
                 let ty = &column.ty;
-                let adapter = &roots.sqlx;
+                let adapter = &roots.adapter;
                 let core = &roots.core;
                 quote! {
                     if <#ty as #adapter::value::SqlxValue>::KIND == #adapter::value::ColumnKind::Json {
@@ -53,15 +51,10 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
         })
         .collect();
     let ident = &input.ident;
-    let table = attributes.table.clone().unwrap_or_else(|| {
-        match attributes.role {
-            EntityRole::User => "user",
-            EntityRole::Session => "session",
-            EntityRole::Account => "account",
-            EntityRole::Verification => "verification",
-        }
-        .to_owned()
-    });
+    let table = attributes
+        .table
+        .clone()
+        .unwrap_or_else(|| attributes.role.as_str().to_owned());
     let model = model_impl(ident, &table, &columns, Some(attributes.role), &roots)?;
     let secondary = attributes.secondary_storage;
     let core_root = &roots.core;
@@ -76,7 +69,7 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
                 core_root,
                 &adapter_output,
             );
-            let model = user_impl(ident, fields, &columns, &roots)?;
+            let model = user_impl(ident, fields, &columns, &roots, &generated_id)?;
             quote! { #auth #model }
         }
         EntityRole::Session => {
@@ -88,18 +81,18 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
                 core_root,
                 &adapter_output,
             );
-            let model = session_impl(ident, fields, &columns, &roots)?;
+            let model = session_impl(ident, fields, &columns, &roots, &generated_id)?;
             quote! { #auth #model }
         }
         EntityRole::Account => {
             let auth =
                 codegen::auth_account_impl(ident, &entity_fields, core_root, &adapter_output);
-            let model = account_impl(ident, fields, &columns, &roots)?;
+            let model = account_impl(ident, fields, &columns, &roots, &generated_id)?;
             quote! { #auth #model }
         }
         EntityRole::Verification => {
             let auth = codegen::auth_verification_impl(ident, core_root);
-            let model = verification_impl(ident, fields, &columns, &roots)?;
+            let model = verification_impl(ident, fields, &columns, &roots, &generated_id)?;
             quote! { #auth #model }
         }
     };

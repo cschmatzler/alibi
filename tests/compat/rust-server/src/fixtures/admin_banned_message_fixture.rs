@@ -69,10 +69,10 @@ impl AdminBannedUserMessage<Model> for ApplicationMessage {
                 message: "configured message refused",
             });
         }
-        let code = user
-            .metadata()
+        let metadata = user.metadata();
+        let code = metadata
             .get("supportCode")
-            .and_then(Value::as_str)
+            .and_then(alibi::utils::json::JsValue::as_str)
             .ok_or_else(|| AuthError::internal("Stored support code missing"))?;
         Ok(format!(
             "{}:{}",
@@ -95,7 +95,10 @@ async fn events(
     State(state): State<FixtureState>,
     Query(query): Query<EventQuery>,
 ) -> AuthResult<Json<Value>> {
-    let user = state.store.get_user_by_email(&query.email).await?;
+    let user = state
+        .store
+        .get_user_by_email(&alibi::utils::json::JsString::from(&query.email))
+        .await?;
     let events: Vec<_> = state
         .events
         .lock()

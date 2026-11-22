@@ -146,7 +146,7 @@ function getPort() {
   if (idx !== -1 && process.argv[idx + 1]) {
     return Number(process.argv[idx + 1]);
   }
-  return Number(process.env.PORT ?? process.env.PORT ?? 3100);
+  return Number(process.env.PORT ?? 3100);
 }
 
 function jsonResponse(body: unknown, init?: ResponseInit) {

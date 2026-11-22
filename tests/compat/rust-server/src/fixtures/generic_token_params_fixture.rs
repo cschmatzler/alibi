@@ -136,7 +136,7 @@ impl alibi::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
     async fn resolve(
         &self,
         context: alibi::plugins::oauth::OAuthAccountKeyContext,
-    ) -> Result<Value, String> {
+    ) -> Result<alibi::utils::json::JsValue, String> {
         tokio::task::yield_now().await;
         let tokens = json!({"accessToken":context.tokens.access_token,"refreshToken":context.tokens.refresh_token,"accessTokenExpiresAt":context.tokens.access_token_expires_at.map(|v| v.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"scopes":context.tokens.scopes});
         self.fixture
@@ -148,24 +148,27 @@ impl alibi::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
             return Err("subject resolver denied".into());
         }
         if self.mode == "subject-invalid" {
-            return Ok(self.fixture.control.lock().await["subject"].clone());
+            return Ok(self.fixture.control.lock().await["subject"].clone().into());
         }
         Ok(json!(format!(
             "{}:{}:{}",
             context.tokens.access_token.unwrap_or_default(),
             context.profile["id"].as_str().unwrap(),
             context.profile["raw_claim"].as_str().unwrap()
-        )))
+        ))
+        .into())
     }
 }
 struct SubjectMapper;
 #[async_trait::async_trait]
 impl alibi::plugins::oauth::OAuthProfileMapper for SubjectMapper {
-    async fn map_profile(&self, _: Value) -> Result<serde_json::Map<String, Value>, String> {
-        Ok(json!({"name":"Mapped Subject"})
-            .as_object()
-            .unwrap()
-            .clone())
+    async fn map_profile(
+        &self,
+        _: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
+        Ok([("name".into(), json!("Mapped Subject").into())]
+            .into_iter()
+            .collect())
     }
 }
 struct CustomCode {
@@ -487,10 +490,11 @@ pub(crate) async fn router(
                     additional_fields: Default::default(),
                     id: raw["id"].as_str().unwrap_or_default().into(),
                     email: raw["email"].as_str().unwrap_or_default().into(),
-                    name: raw["name"].as_str().map(str::to_owned),
-                    image: raw["picture"].as_str().map(str::to_owned),
+                    name: raw["name"].as_str().map(str::to_owned).map(Into::into),
+                    image: raw["picture"].as_str().map(str::to_owned).map(Into::into),
                     email_verified: raw["email_verified"].as_bool().unwrap_or(false),
-                })
+                }
+                .public_profile(true))
             }),
             get_user_info: None,
             refresh_access_token: (mode == "dynamic-custom").then(|| {

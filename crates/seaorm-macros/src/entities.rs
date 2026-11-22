@@ -1,5 +1,5 @@
 use crate::fields::Field;
-use crate::roots::Roots;
+use alibi_entity_codegen::ExpansionPaths;
 use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -7,8 +7,8 @@ use syn::FieldsNamed;
 
 /// `active.field = Set(value)`, converting the plan's expression into the
 /// declared field type.
-pub(crate) fn set_field(roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {
-    let seaorm_root = roots.seaorm.clone();
+pub(crate) fn set_field(roots: &ExpansionPaths) -> impl Fn(&Ident, &Insert) -> TokenStream {
+    let seaorm_root = roots.adapter.clone();
     let core_root = roots.core.clone();
     move |field, insert| match insert {
         // Auth clocks arrive as UTC; the model column decides the wire type.
@@ -25,10 +25,14 @@ pub(crate) fn set_field(roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStrea
 }
 
 /// The `new_active` body: an `ActiveModel` literal over every declared field.
-pub(crate) fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+pub(crate) fn new_active(
+    role: EntityRole,
+    fields: &FieldsNamed,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
+) -> TokenStream {
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
-    let generated_id = &roots.id_generator;
     let assignments = codegen::insert_values(role, fields)
         .into_iter()
         .map(|(field, insert)| match insert {
@@ -62,8 +66,8 @@ pub(crate) fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) 
 }
 
 /// Configured additional-field bindings and staging, keyed by wire and physical names.
-pub(crate) fn additional_fields(fields: &[Field], roots: &Roots) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+pub(crate) fn additional_fields(fields: &[Field], roots: &ExpansionPaths) -> TokenStream {
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
     let mut bindings = Vec::new();
     let mut stages = Vec::new();
@@ -144,12 +148,13 @@ pub(crate) fn user_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     model_fields: &[Field],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
-    let new_active = new_active(EntityRole::User, fields, roots);
+    let new_active = new_active(EntityRole::User, fields, roots, generated_id);
     let updates = codegen::update_statements(EntityRole::User, fields, &set_field(roots));
     let additional = additional_fields(model_fields, roots);
     let list_columns = model_fields.iter().map(|field| {
@@ -239,12 +244,13 @@ pub(crate) fn session_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     model_fields: &[Field],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
-    let new_active = new_active(EntityRole::Session, fields, roots);
+    let new_active = new_active(EntityRole::Session, fields, roots, generated_id);
     let additional = additional_fields(model_fields, roots);
     let set = set_field(roots);
     // Secondary-only sessions never touch the database, so optional columns
@@ -367,11 +373,12 @@ pub(crate) fn account_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     model_fields: &[Field],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
-    let new_active = new_active(EntityRole::Account, fields, roots);
+    let new_active = new_active(EntityRole::Account, fields, roots, generated_id);
     let updates = codegen::update_statements(EntityRole::Account, fields, &set_field(roots));
     let additional = additional_fields(model_fields, roots);
     quote! {
@@ -414,10 +421,15 @@ pub(crate) fn account_impl(
     }
 }
 
-pub(crate) fn verification_impl(ident: &Ident, fields: &FieldsNamed, roots: &Roots) -> TokenStream {
-    let seaorm_root = &roots.seaorm;
+pub(crate) fn verification_impl(
+    ident: &Ident,
+    fields: &FieldsNamed,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
+) -> TokenStream {
+    let seaorm_root = &roots.adapter;
     let core_root = &roots.core;
-    let new_active = new_active(EntityRole::Verification, fields, roots);
+    let new_active = new_active(EntityRole::Verification, fields, roots, generated_id);
     quote! {
         impl #seaorm_root::SeaOrmVerificationModel for #ident {
             type Id = ::std::string::String;
@@ -449,10 +461,10 @@ pub(crate) fn verification_impl(ident: &Ident, fields: &FieldsNamed, roots: &Roo
 pub(crate) fn adapter_output(
     fields: &[Field],
     role: codegen::EntityRole,
-    roots: &Roots,
+    roots: &ExpansionPaths,
 ) -> TokenStream {
     let core = &roots.core;
-    let adapter = &roots.seaorm;
+    let adapter = &roots.adapter;
     let mut values = Vec::new();
     for field in fields {
         let name = &field.ident;

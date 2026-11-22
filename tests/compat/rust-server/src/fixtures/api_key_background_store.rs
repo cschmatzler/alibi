@@ -26,7 +26,10 @@ delegate_store!(UserStore<S>, {
     async fn coerce_user_text_number(&self, _input: NumericTextInput) -> AuthResult<String>;
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>>;
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<S::User>>;
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>>;
+    async fn get_user_by_email(
+        &self,
+        email: &alibi::utils::json::JsString,
+    ) -> AuthResult<Option<S::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<S::User>>;
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>>;
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User>;
@@ -77,7 +80,7 @@ delegate_store!(AccountStore<S>, {
     async fn get_account(
         &self,
         provider: &str,
-        provider_account_id: &str,
+        provider_account_id: &alibi::utils::json::JsString,
     ) -> AuthResult<Option<S::Account>>;
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>>;
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account>;

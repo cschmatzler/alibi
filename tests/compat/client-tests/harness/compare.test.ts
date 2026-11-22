@@ -21,6 +21,49 @@ const context = {
   rightStartedAt: 0,
 };
 
+test("OAuth token expiration follows the issuance request clock and retains the lifetime", () => {
+  const response = (expiry: number, ttl = 3600, path = "/api/auth/oauth2/token") => ({
+    traces: [
+      {
+        method: "POST",
+        path,
+        responseStatus: 200,
+        responseBody: {
+          access_token: "the-same-access-token",
+          token_type: "Bearer",
+          expires_in: ttl,
+          expires_at: expiry,
+        },
+      },
+    ],
+  });
+  const clocks = {
+    ...context,
+    leftRequestWindows: [{ startedAt: 10_900, finishedAt: 11_100, inputDates: {} }],
+    rightRequestWindows: [{ startedAt: 80_000, finishedAt: 80_140, inputDates: {} }],
+  };
+  const left = response(3611);
+  expect(compareValues(left, response(3680), clocks)).toEqual([]);
+  expect(compareValues(left, response(3679), clocks)).toContainEqual({
+    path: "traces.0.responseBody.expires_at",
+    reason: "OAuth access-token expiration is outside its observed issuance window",
+  });
+  expect(compareValues(left, response(3681, 3601), clocks)).toContainEqual({
+    path: "traces.0.responseBody.expires_in",
+    reason: "value or type differs",
+  });
+  expect(
+    compareValues(
+      response(3611, 3600, "/api/auth/application-record"),
+      response(3680, 3600, "/api/auth/application-record"),
+      clocks,
+    ),
+  ).toContainEqual({
+    path: "traces.0.responseBody.expires_at",
+    reason: "value or type differs",
+  });
+});
+
 test("OAuth error fragments normalize observed issuers but retain channels and all literal parameters", () => {
   const payload = (base: string) =>
     new URLSearchParams([

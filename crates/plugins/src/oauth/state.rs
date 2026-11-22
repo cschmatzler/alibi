@@ -158,7 +158,6 @@ impl<'de> Deserialize<'de> for AccountCookiePayload {
         use alibi_core::utils::json::{self, JsObject};
         let mut fields = JsObject::deserialize(deserializer)?;
         // Serde's flatten buffer would narrow unknown native JSON values to UTF-8.
-        // Read the declared fields directly and retain the remaining canonical map.
         macro_rules! field {
             ($name:literal) => {
                 json::from_value(

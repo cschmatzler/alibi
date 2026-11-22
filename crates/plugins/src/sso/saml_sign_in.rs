@@ -116,12 +116,7 @@ impl SsoPlugin {
             .and_then(|metadata| metadata.post_services.last())
             .cloned()
             .unwrap_or_else(|| {
-                format!(
-                    "{}{}/sso/saml2/sp/acs/{}",
-                    ctx.config.base_url.trim_end_matches('/'),
-                    ctx.config.base_path.trim_end_matches('/'),
-                    provider.provider_id
-                )
+                super::saml_acs_url(&super::sso_base(&ctx.config), &provider.provider_id)
             });
         let mut writer = Writer::new(Vec::new());
         let mut request = BytesStart::new("samlp:AuthnRequest");

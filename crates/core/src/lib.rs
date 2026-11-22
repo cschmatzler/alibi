@@ -1568,6 +1568,7 @@ pub use alibi_macros::{AuthSchema, PluginConfig};
 pub use authenticated_user::AuthenticatedUser;
 pub use background_tasks::{
     BackgroundTaskCompletion, BackgroundTaskHandler, start_background_task,
+    start_background_task_for,
 };
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,

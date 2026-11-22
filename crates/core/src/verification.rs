@@ -232,9 +232,9 @@ impl VerificationSnapshot {
         let expiry = data
             .get("expiresAt")
             .and_then(JsValue::as_str)
-            .and_then(crate::session::cookie_cache::date::parse)
+            .and_then(crate::utils::datetime::parse_json_date)
             .map(|date| date.timestamp_millis());
-        crate::session::cookie_cache::date::revive(&mut data);
+        json::normalize_json_dates(&mut data);
         Some(Self {
             data,
             expiry,

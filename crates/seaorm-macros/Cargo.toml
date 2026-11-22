@@ -24,7 +24,6 @@ proc-macro = true
 
 [dependencies]
 alibi-entity-codegen = { workspace = true }
-proc-macro-crate = "3"
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }

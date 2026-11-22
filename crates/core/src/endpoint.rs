@@ -185,7 +185,7 @@ impl EndpointCall {
                     .map(|(name, value)| (name.to_ascii_lowercase(), value))
                     .collect()
             }),
-            request: options.request.map(fresh_request),
+            request: options.request.map(AuthRequest::into_dispatch_input),
             default_method: definition.method.clone(),
             phase: EndpointPhase::Raw,
             extensions: RequestExtensions::default(),
@@ -497,7 +497,7 @@ impl EndpointContextPatch {
             call.method = Some(method);
         }
         if let Some(request) = self.request {
-            call.request = Some(fresh_request(request));
+            call.request = Some(request.into_dispatch_input());
         }
         if let Some(path) = self.path {
             call.path = Some(path);
@@ -717,14 +717,12 @@ impl EndpointResponse {
 
     #[must_use]
     pub fn with_header(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        merge_header(&mut self.headers, name.into(), value.into());
+        self.headers.merge_header(name.into(), value.into());
         self
     }
 
     pub fn merge_headers(&mut self, headers: Headers) {
-        for (name, value) in headers {
-            merge_header(&mut self.headers, name, value);
-        }
+        self.headers.merge(headers);
     }
 
     /// Retain earlier hook headers, with handler headers winning on overlap.
@@ -764,14 +762,6 @@ impl EndpointResponse {
                 body_absent: self.error_body_absent,
             }),
         }
-    }
-}
-
-fn merge_header(headers: &mut Headers, name: String, value: String) {
-    if name.eq_ignore_ascii_case("set-cookie") {
-        headers.append(name, value);
-    } else {
-        _ = headers.insert(name, value);
     }
 }
 
@@ -931,7 +921,7 @@ fn forward_response_headers(
         ) {
             continue;
         }
-        merge_header(&mut response.headers, name.clone(), value.clone());
+        response.headers.merge_header(name.clone(), value.clone());
     }
     response
 }
@@ -973,33 +963,6 @@ impl std::error::Error for EndpointError {
 #[must_use]
 pub fn is_endpoint_api_error(error: &AuthError) -> bool {
     matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. }) || error.status_code() < 500
-}
-
-fn fresh_request(request: AuthRequest) -> AuthRequest {
-    let pairs = request
-        .query
-        .keys()
-        .flat_map(|name| {
-            request
-                .query_values(name)
-                .into_iter()
-                .flatten()
-                .map(|value| (name.clone(), value.clone()))
-        })
-        .collect::<Vec<_>>();
-    let url = request.url().cloned();
-    let mut fresh = AuthRequest::from_parts(
-        request.method,
-        request.path,
-        request.headers,
-        request.body,
-        request.query,
-    );
-    if let Some(url) = url {
-        fresh = fresh.with_url(url);
-    }
-    fresh.set_query_pairs(pairs);
-    fresh
 }
 
 tokio::task_local! { static ENDPOINT_CALL_CONTEXT: Option<EndpointCall>; }

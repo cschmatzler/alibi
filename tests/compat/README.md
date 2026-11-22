@@ -380,10 +380,10 @@ tests/compat/client-tests/run-against-both.sh tests/plugins/organization/teams.t
 ./scripts/compat.sh
 ```
 
-Every scenario directory (`core/<area>`, `plugins/<plugin>`, `generated`) has a `<group>_<area>_client_compat`
-runner in `tests/compat/sdk.rs`, and a guard test keeps that list in
-sync. File-level runs go through `selected_client_compat`, which reads the
-space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
+The script passes focused directories and files to `selected_client_compat` using
+`BETTER_AUTH_COMPAT_PATHS`. Paths are relative to `client-tests`. Directory
+shortcuts omit the `tests/` prefix. For example, `plugins/passkey` selects
+`tests/plugins/passkey`.
 
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Nub scenario runs require running reference

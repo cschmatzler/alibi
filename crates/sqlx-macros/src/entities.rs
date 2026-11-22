@@ -1,6 +1,6 @@
 use crate::columns::{Column, column_of, physical};
 use crate::model::additional_fields;
-use crate::roots::Roots;
+use alibi_entity_codegen::ExpansionPaths;
 use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
@@ -10,9 +10,9 @@ use syn::FieldsNamed;
 /// type, so the staged `SqlValue` variant always matches the column.
 pub(crate) fn set_field(
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
 ) -> impl Fn(&Ident, &Insert) -> TokenStream {
-    let sqlx_root = roots.sqlx.clone();
+    let sqlx_root = roots.adapter.clone();
     let core_root = roots.core.clone();
     move |field, insert| {
         let Ok(column) = column_of(columns, &field.to_string()) else {
@@ -43,11 +43,11 @@ pub(crate) fn new_active(
     role: EntityRole,
     fields: &FieldsNamed,
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> syn::Result<TokenStream> {
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let id_column = physical(columns, "id")?;
-    let generated_id = &roots.id_generator;
     let set = set_field(columns, roots);
     let staged = codegen::insert_values(role, fields)
         .into_iter()
@@ -78,8 +78,8 @@ pub(crate) fn new_active(
 }
 
 /// `parse_id` body: the model's primary key, given as a text `SqlValue`.
-fn parse_id(roots: &Roots) -> TokenStream {
-    let sqlx_root = &roots.sqlx;
+fn parse_id(roots: &ExpansionPaths) -> TokenStream {
+    let sqlx_root = &roots.adapter;
     quote! {
         Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
             <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
@@ -88,8 +88,8 @@ fn parse_id(roots: &Roots) -> TokenStream {
 }
 
 /// `parse_user_id` body: the model's `user_id_column`, given as a text `SqlValue`.
-fn parse_user_id(roots: &Roots) -> TokenStream {
-    let sqlx_root = &roots.sqlx;
+fn parse_user_id(roots: &ExpansionPaths) -> TokenStream {
+    let sqlx_root = &roots.adapter;
     quote! {
         Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
             Self::user_id_column(),
@@ -101,13 +101,14 @@ pub(crate) fn user_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> syn::Result<TokenStream> {
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
     let column = |name: &str| physical(columns, name);
-    let new_active = new_active(EntityRole::User, fields, columns, roots)?;
+    let new_active = new_active(EntityRole::User, fields, columns, roots, generated_id)?;
     let parse_id_body = parse_id(roots);
     let updates = codegen::update_statements(EntityRole::User, fields, &set_field(columns, roots));
     let prepare_json_metadata = if has("metadata") {
@@ -197,13 +198,14 @@ pub(crate) fn session_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> syn::Result<TokenStream> {
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
     let column = |name: &str| physical(columns, name);
-    let new_active = new_active(EntityRole::Session, fields, columns, roots)?;
+    let new_active = new_active(EntityRole::Session, fields, columns, roots, generated_id)?;
     let parse_id_body = parse_id(roots);
     let parse_user_id_body = parse_user_id(roots);
     let set = set_field(columns, roots);
@@ -314,12 +316,13 @@ pub(crate) fn account_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> syn::Result<TokenStream> {
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let column = |name: &str| physical(columns, name);
-    let new_active = new_active(EntityRole::Account, fields, columns, roots)?;
+    let new_active = new_active(EntityRole::Account, fields, columns, roots, generated_id)?;
     let parse_id_body = parse_id(roots);
     let parse_user_id_body = parse_user_id(roots);
     let updates =
@@ -368,12 +371,19 @@ pub(crate) fn verification_impl(
     ident: &Ident,
     fields: &FieldsNamed,
     columns: &[Column],
-    roots: &Roots,
+    roots: &ExpansionPaths,
+    generated_id: &TokenStream,
 ) -> syn::Result<TokenStream> {
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let column = |name: &str| physical(columns, name);
-    let new_active = new_active(EntityRole::Verification, fields, columns, roots)?;
+    let new_active = new_active(
+        EntityRole::Verification,
+        fields,
+        columns,
+        roots,
+        generated_id,
+    )?;
     let parse_id_body = parse_id(roots);
     let id_column = column("id")?;
     let identifier_column = column("identifier")?;

@@ -35,7 +35,7 @@ async fn setup_admin(auth: &alibi::Alibi<TestSchema>) -> String {
     // Promote the user to admin using the database directly
     let user = auth
         .store()
-        .get_user_by_email("admin@test.com")
+        .get_user_by_email(&"admin@test.com".into())
         .await
         .unwrap()
         .unwrap();

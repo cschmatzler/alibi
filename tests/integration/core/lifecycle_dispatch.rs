@@ -770,11 +770,14 @@ mod tests {
     #[tokio::test]
     async fn rejected_initialization_does_not_emit_telemetry() {
         let capture = CapturedTelemetry::default();
-        let result = AuthBuilder::<Schema>::new(AuthConfig::new("short"))
+        let result = AuthBuilder::without_database(AuthConfig::new(""))
             .telemetry(alibi::telemetry::TelemetryConfig::new(capture.clone()))
             .build()
             .await;
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(alibi::AuthError::Config(message)) if message == "Secret key cannot be empty"
+        ));
         assert!(capture.events.lock().unwrap().is_empty());
     }
 
@@ -819,7 +822,10 @@ mod tests {
             .telemetry(alibi::telemetry::TelemetryConfig::new(capture.clone()))
             .build()
             .await;
-        assert!(result.is_err());
+        assert!(matches!(
+            result,
+            Err(alibi::AuthError::Config(message)) if message == "synthetic initialization rejection"
+        ));
         assert!(capture.events.lock().unwrap().is_empty());
     }
 }

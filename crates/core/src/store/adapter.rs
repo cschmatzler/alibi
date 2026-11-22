@@ -4,6 +4,15 @@
 //! committed transaction, the error a vetoing hook produces, raw configured
 //! field values, and timestamp parsing for string-dated plugin rows.
 
+#[doc(hidden)]
+pub mod account_write;
+#[doc(hidden)]
+pub mod json_metadata;
+#[doc(hidden)]
+pub mod user_filter;
+#[doc(hidden)]
+pub mod user_write;
+
 use crate::error::{AuthError, AuthResult};
 use crate::schema::AuthSchema;
 use crate::store::{DatabaseHookContext, DatabaseHooks, HookBackend};

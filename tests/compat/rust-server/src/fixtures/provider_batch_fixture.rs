@@ -431,8 +431,8 @@ struct Mapper {
 impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
-        profile: Value,
-    ) -> Result<alibi::field_policy::FieldOutput, String> {
+        profile: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         self.fixture
             .callbacks
             .lock()
@@ -444,7 +444,8 @@ impl OAuthProfileMapper for Mapper {
         }
         self.fixture.control.lock().await.get("mapped").cloned()
             .unwrap_or_else(||json!({"id":"mapped-id-cannot-replace-subject","name":"Async Name","email":"mapped@example.invalid","emailVerified":true,"image":null}))
-            .as_object().cloned().ok_or_else(||"invalid mapped fixture input".into())
+            .as_object().map(|map| map.iter().map(|(name, value)| (name.into(), value.clone().into())).collect())
+            .ok_or_else(||"invalid mapped fixture input".into())
     }
 }
 struct UserInfo {
@@ -471,18 +472,21 @@ impl OAuthUserInfoHandler for UserInfo {
                 profile(&self.provider)
             }
         });
-        let output=json!({"id":"callback-id-cannot-replace-subject","name":"Callback Name","email":"callback@example.invalid","emailVerified":true,"image":null}).as_object().cloned().unwrap();
         Ok(OAuthUserInfoResponse {
-            user: OAuthUserInfo {
-                additional_fields: Default::default(),
-                id: "callback-id-cannot-replace-subject".into(),
-                name: Some("Callback Name".into()),
-                email: "callback@example.invalid".into(),
-                email_verified: true,
-                image: None,
-            },
-            data,
-            user_output: Some(output),
+            user: [
+                (
+                    "id".into(),
+                    json!("callback-id-cannot-replace-subject").into(),
+                ),
+                ("name".into(), json!("Callback Name").into()),
+                ("email".into(), json!("callback@example.invalid").into()),
+                ("emailVerified".into(), json!(true).into()),
+                ("image".into(), alibi::utils::json::JsValue::Null),
+            ]
+            .into_iter()
+            .collect(),
+            data: data.into(),
+            account_subject: None,
         })
     }
 }

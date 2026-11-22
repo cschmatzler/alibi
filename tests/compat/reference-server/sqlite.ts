@@ -1,7 +1,9 @@
 import Database from "better-sqlite3";
 
 function binding(value: unknown): unknown {
-  if (typeof value === "number" && Number.isSafeInteger(value)) return BigInt(value);
+  if (typeof value === "number" && Number.isSafeInteger(value) && !Object.is(value, -0)) {
+    return BigInt(value);
+  }
   if (Array.isArray(value)) return value.map(binding);
   if (value && Object.getPrototypeOf(value) === Object.prototype) {
     return Object.fromEntries(Object.entries(value).map(([key, value]) => [key, binding(value)]));

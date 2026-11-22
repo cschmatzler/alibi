@@ -6,10 +6,11 @@ use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::adapter::{RawFieldValue, cancelled_by_hook};
+use alibi_core::store::adapter::{RawFieldValue, user_filter, user_write};
 use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
+use alibi_core::utils::normalize_user_email;
 use alibi_core::{AuthUser, UserFilterValue};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
@@ -423,75 +424,41 @@ where
         value: &UserFilterValue,
     ) -> AuthResult<()> {
         let table = <S::User as SqlxModel>::TABLE;
-        let field = filter_field
-            .filter(|field| !field.is_empty())
-            .unwrap_or("email");
+        use user_filter::{Column, Filter, Parameter};
+        let field = user_filter::field(filter_field);
         let column = S::User::list_users_column(field)
             .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
-        let native = value.native();
-        if operator == "in" && !matches!(native, alibi_core::utils::json::JsValue::Array(_)) {
-            return Err(AuthError::bad_request("Value must be an array"));
-        }
-        let kind = <S::User as SqlxModel>::column_kind(column);
-        let numeric = matches!(
+        let kind = match <S::User as SqlxModel>::column_kind(column) {
+            ColumnKind::Boolean => Column::Boolean,
+            ColumnKind::Number => Column::Number,
+            ColumnKind::Int => Column::Int,
+            ColumnKind::BigInt => Column::BigInt,
+            ColumnKind::Float => Column::Float,
+            ColumnKind::Double => Column::Double,
+            ColumnKind::Text | ColumnKind::BpChar => Column::Text,
+            _ => Column::Other,
+        };
+        let Filter {
+            pattern,
+            parameters,
+            cast: numeric_cast,
+        } = user_filter::prepare(
+            value,
+            operator,
             kind,
-            ColumnKind::Number
-                | ColumnKind::Int
-                | ColumnKind::BigInt
-                | ColumnKind::Float
-                | ColumnKind::Double
-        );
-        let native = transform_filter_operand(
-            native,
-            kind == ColumnKind::Boolean,
-            numeric,
             self.exec().engine() == Engine::Postgres,
-        );
-        let pattern = native
-            .coerce_js_string()
-            .map_err(AuthError::internal)?
-            .to_utf8_binding();
-        let operands = match native {
-            alibi_core::utils::json::JsValue::Array(values) => values,
-            value => vec![value],
-        };
-        let numeric_cast = if self.exec().engine() == Engine::Postgres {
-            match kind {
-                ColumnKind::Boolean => Some("boolean"),
-                ColumnKind::Int => Some("int4"),
-                ColumnKind::BigInt => Some("int8"),
-                ColumnKind::Float => Some("float4"),
-                ColumnKind::Double => Some("float8"),
-                _ => None,
-            }
-        } else {
-            None
-        };
-        let bindings: Vec<SqlValue> = operands
+        )?;
+        let bindings: Vec<SqlValue> = parameters
             .into_iter()
-            .map(|value| {
-                use alibi_core::utils::json::JsValue;
-                // node-postgres sends primitives as text with the SQL column's inferred type.
-                let value = if self.exec().engine() == Engine::Postgres
-                    && (numeric_cast.is_some()
-                        || matches!(kind, ColumnKind::Text | ColumnKind::BpChar))
-                {
-                    value
-                        .coerce_js_string()
-                        .map_err(AuthError::internal)?
-                        .to_utf8_binding()
-                        .into()
-                } else {
-                    match value {
-                        JsValue::String(value) => value.to_utf8_binding().into(),
-                        JsValue::Number(value) => value.into(),
-                        JsValue::Bool(value) => value.into(),
-                        _ => return Err(AuthError::bad_request("Unsupported user filter operand")),
-                    }
+            .map(|parameter| {
+                let value = match parameter {
+                    Parameter::Text(value) => value.into(),
+                    Parameter::Number(value) => value.into(),
+                    Parameter::Boolean(value) => value.into(),
                 };
-                Ok(S::User::column_value(column, value))
+                S::User::column_value(column, value)
             })
-            .collect::<AuthResult<_>>()?;
+            .collect();
         match operator {
             "in" | "not_in" if bindings.is_empty() && numeric_cast.is_none() => {
                 sql.push(if operator == "in" { "1 = 2" } else { "1 = 1" });
@@ -772,60 +739,6 @@ where
     }
 }
 
-fn normalize_user_email(email: &str) -> String {
-    email.to_lowercase()
-}
-
-// Adapter factory transformations are scalar-only for booleans and
-// all-or-none for string arrays on numeric fields.
-fn transform_filter_operand(
-    value: alibi_core::utils::json::JsValue,
-    boolean: bool,
-    numeric: bool,
-    supports_booleans: bool,
-) -> alibi_core::utils::json::JsValue {
-    use alibi_core::utils::{
-        javascript::{string_to_number, trim},
-        json::JsValue,
-    };
-    if boolean {
-        let value = match value {
-            JsValue::String(value) => JsValue::Bool(value == "true"),
-            value => value,
-        };
-        return match value {
-            JsValue::Bool(value) if !supports_booleans => {
-                JsValue::Number(f64::from(u8::from(value)))
-            }
-            value => value,
-        };
-    }
-    if numeric {
-        let parse = |value: &JsValue| {
-            value
-                .as_str()
-                .filter(|value| !trim(value).is_empty())
-                .and_then(string_to_number)
-                .filter(|value| !value.is_nan())
-                .map(JsValue::Number)
-        };
-        match &value {
-            JsValue::String(_) => {
-                if let Some(number) = parse(&value) {
-                    return number;
-                }
-            }
-            JsValue::Array(values) => {
-                if let Some(numbers) = values.iter().map(parse).collect::<Option<Vec<_>>>() {
-                    return JsValue::Array(numbers);
-                }
-            }
-            _ => {}
-        }
-    }
-    value
-}
-
 fn bind_filter_values(sql: &mut Sql, values: Vec<SqlValue>, cast: Option<&str>) {
     sql.push("(");
     for (index, value) in values.into_iter().enumerate() {
@@ -873,44 +786,22 @@ where
     ) -> AuthResult<Option<S::User>> {
         let locator = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
-        for hook in self.hooks() {
-            if hook
-                .before_update_user(id, &mut update.data, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("user update"));
-            }
-        }
-        update.apply_adapter_transforms().await?;
+        user_write::prepare_update(self.hooks(), &hook_context, id, &mut update).await?;
         let mut active = crate::model::ActiveRow::new();
-        for (field, raw) in &update.data {
-            let Some(field) = field.as_str() else {
-                continue;
-            };
-            if !update.declares(field) {
-                continue;
-            }
-            let column = if let Some(physical) = update.physical_binding(field) {
+        let bindings = update.bindings(
+            |physical| {
                 <S::User as SqlxModel>::COLUMNS
                     .iter()
                     .find(|column| column.name == physical)
                     .map(|column| column.name)
-            } else {
-                S::User::list_users_column(field)
-            };
-            let Some(column) = column else {
-                if update.requires_binding(field) {
-                    return Err(AuthError::config(format!(
-                        "Declared user field {field} has no model column"
-                    )));
-                }
-                continue;
-            };
+            },
+            S::User::list_users_column,
+        );
+        for binding in bindings {
+            let (column, raw, has_input_policy) = binding?;
             let kind = S::User::column_kind(column);
             let raw = crate::additional_fields::raw_value(raw)?;
-            let value = if update.has_input_policy(field)
+            let value = if has_input_policy
                 && matches!(kind, ColumnKind::Timestamp | ColumnKind::NaiveTimestamp)
                 && matches!(&raw, RawFieldValue::Text(_))
             {
@@ -922,17 +813,7 @@ where
         }
         let user = model::update_where::<S::User>(exec, &active, locator).await?;
         if tx.is_none() {
-            for hook in self.hooks() {
-                if let Some(user) = &user {
-                    hook.after_update_user(user, &hook_context)
-                        .await
-                        .map_err(alibi_core::store::adapter::callback_error)?;
-                } else {
-                    hook.after_update_user_missing(id, &hook_context)
-                        .await
-                        .map_err(alibi_core::store::adapter::callback_error)?;
-                }
-            }
+            user_write::after_update(self.hooks(), &hook_context, id, user.as_ref()).await?;
         }
         Ok(user)
     }

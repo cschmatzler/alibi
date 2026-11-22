@@ -15,7 +15,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -92,17 +93,21 @@ pub(crate) async fn router(
                 Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-account-subject".into(),
-                    name: Some(format!(
-                        "Mapped {}",
-                        profile
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                    )),
+                    name: Some(
+                        format!(
+                            "Mapped {}",
+                            profile
+                                .get("name")
+                                .and_then(alibi::utils::json::JsValue::as_str)
+                                .unwrap_or_default()
+                        )
+                        .into(),
+                    ),
                     email: "mapped-railway@example.invalid".into(),
                     email_verified: true,
                     image: Some("https://images.example.invalid/mapped-railway.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         let mut provider = OAuthProvider::railway_with_options(options);
@@ -144,14 +149,7 @@ pub(crate) async fn router(
         .route("/__test/railway/user", get(profile))
         .route(
             "/__test/railway/mapper-receipts",
-            get(|| async {
-                Json(
-                    MAPPER_RECEIPTS
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone(),
-                )
-            }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/railway/token", post(token))
         .route("/__test/railway/leak", post(leak))

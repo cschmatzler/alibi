@@ -118,7 +118,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
                         Err(alibi::AuthError::internal("configured transform failed"))
                     }
                     Some("omit" | "stage:omit-at-binding") => Ok(None),
-                    Some(value) => Ok(Some(JsValue::String(format!("stage:{value}")))),
+                    Some(value) => Ok(Some(JsValue::String(format!("stage:{value}").into()))),
                 }
             }),
         );
@@ -127,8 +127,12 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             FieldConfig::new(json!({"type":"string"}))
                 .default_value(json!(""))
                 .validate(|value| match value {
-                    JsValue::String(value) if !value.trim().is_empty() => {
-                        Ok(JsValue::String(value.trim().to_owned()))
+                    JsValue::String(value) => {
+                        let trimmed = value.trim_matches(alibi::utils::javascript::is_whitespace);
+                        if trimmed.is_empty() {
+                            return Err("configured validation rejected the value".into());
+                        }
+                        Ok(JsValue::String(trimmed))
                     }
                     JsValue::Number(value) if value.is_infinite() => Ok(JsValue::String(
                         if value.is_sign_negative() {
@@ -144,10 +148,13 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
                     _ => Err("configured validation rejected the value".into()),
                 })
                 .transform(|value| {
-                    Ok(Some(JsValue::String(format!(
-                        "stored:{}",
-                        value.and_then(JsValue::as_str).unwrap_or_default()
-                    ))))
+                    Ok(Some(JsValue::String(
+                        format!(
+                            "stored:{}",
+                            value.and_then(JsValue::as_str).unwrap_or_default()
+                        )
+                        .into(),
+                    )))
                 }),
         );
         if name.ends_with("plugins") {
@@ -158,10 +165,13 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
                 .hidden()
                 .default_value(json!("configured-default-org"))
                 .transform(|value| {
-                    Ok(Some(JsValue::String(format!(
-                        "adapter:{}",
-                        value.and_then(JsValue::as_str).unwrap_or("undefined")
-                    ))))
+                    Ok(Some(JsValue::String(
+                        format!(
+                            "adapter:{}",
+                            value.and_then(JsValue::as_str).unwrap_or("undefined")
+                        )
+                        .into(),
+                    )))
                 });
             conflict.required = true;
             _ = fields.insert("activeOrganizationId".into(), conflict);

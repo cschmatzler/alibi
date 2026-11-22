@@ -1,7 +1,6 @@
 //! Proc macros for the Alibi `SeaORM` integration.
 mod entities;
 mod fields;
-mod roots;
 
 use alibi_entity_codegen::{self as codegen, EntityRole};
 use entities::{account_impl, session_impl, user_impl, verification_impl};
@@ -9,13 +8,12 @@ use fields::model_fields;
 use proc_macro::TokenStream as ProcMacroTokenStream;
 use proc_macro2::TokenStream;
 use quote::quote;
-use roots::resolve_roots;
 use syn::{DeriveInput, parse_macro_input};
 
 fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let mut roots = resolve_roots();
+    let roots = codegen::Integration::SeaOrm.expansion_paths();
     let attributes = codegen::parse_auth_attributes(input, false)?;
-    roots.id_generator = codegen::generated_id(&attributes, &roots.core);
+    let generated_id = codegen::generated_id(&attributes, &roots.core);
     let fields = codegen::named_fields(input)?;
     codegen::validate_core_fields(input, attributes.role, fields)?;
     let model_fields = model_fields(fields)?;
@@ -30,7 +28,7 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
                 quote!(#ty).to_string().contains("JsonMetadata").then(|| {
                     let name = &field.ident;
                     let column = &field.column;
-                    let adapter = &roots.seaorm;
+                    let adapter = &roots.adapter;
                     let core = &roots.core;
                     quote! {
                         if matches!(#adapter::sea_orm::ColumnTrait::def(&Column::#column).get_column_type(), #adapter::sea_orm::sea_query::ColumnType::Text) {
@@ -57,7 +55,7 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
                 core_root,
                 &adapter_output,
             );
-            let model = user_impl(ident, fields, &model_fields, &roots);
+            let model = user_impl(ident, fields, &model_fields, &roots, &generated_id);
             quote! { #auth #model }
         }
         EntityRole::Session => {
@@ -69,18 +67,18 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
                 core_root,
                 &adapter_output,
             );
-            let model = session_impl(ident, fields, &model_fields, &roots);
+            let model = session_impl(ident, fields, &model_fields, &roots, &generated_id);
             quote! { #auth #model }
         }
         EntityRole::Account => {
             let auth =
                 codegen::auth_account_impl(ident, &entity_fields, core_root, &adapter_output);
-            let model = account_impl(ident, fields, &model_fields, &roots);
+            let model = account_impl(ident, fields, &model_fields, &roots, &generated_id);
             quote! { #auth #model }
         }
         EntityRole::Verification => {
             let auth = codegen::auth_verification_impl(ident, core_root);
-            let model = verification_impl(ident, fields, &roots);
+            let model = verification_impl(ident, fields, &roots, &generated_id);
             quote! { #auth #model }
         }
     })

@@ -1,7 +1,6 @@
 //! Bounded classic pagination and the pinned SCIM equality-conjunction grammar.
+use alibi_core::store::scim::keys;
 use alibi_core::utils::json::JsValue;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use sha2::{Digest, Sha256};
 pub(super) struct CollectionQuery {
     pub start_index: i64,
     pub count: i64,
@@ -235,44 +234,29 @@ fn equality(
             "invalidFilter",
         )
     })?;
+    let key_error = |cause: serde_json::Error| error(cause.to_string(), "invalidFilter");
+    let group_filter_error = |_| {
+        error(
+            "filter equality value must be a quoted string",
+            "invalidFilter",
+        )
+    };
     let prepared = match field {
         "emailValueIndex" | "workEmailValueIndex" => format!(
             "|{}|",
-            URL_SAFE_NO_PAD.encode(Sha256::digest(
-                serde_json::to_vec(&[
-                    "scim-email-value",
-                    &alibi_core::utils::javascript::trim(value).to_lowercase()
-                ])
-                .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?
-            ))
+            keys::email_value(&alibi_core::utils::javascript::trim(value).to_lowercase())
+                .map_err(key_error)?
         ),
-        "userNameKey" => URL_SAFE_NO_PAD.encode(Sha256::digest(
-            serde_json::to_vec(&["scim-user-name", connection, &value.to_lowercase()])
-                .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?,
-        )),
+        "userNameKey" => keys::user_name(connection, value).map_err(key_error)?,
         "externalIdKey" if kind == "User" && !value.is_empty() => {
-            URL_SAFE_NO_PAD.encode(Sha256::digest(
-                serde_json::to_vec(&["scim-user-external-id", connection, value])
-                    .map_err(|error_value| error(error_value.to_string(), "invalidFilter"))?,
-            ))
+            keys::user_external_id(connection, value).map_err(key_error)?
         }
-        "displayNameKey" => URL_SAFE_NO_PAD.encode(Sha256::digest(
-            serde_json::to_vec(&["scim-group-display-name", connection, &value.to_lowercase()])
-                .map_err(|_| {
-                    error(
-                        "filter equality value must be a quoted string",
-                        "invalidFilter",
-                    )
-                })?,
-        )),
-        "externalIdKey" if !value.is_empty() => URL_SAFE_NO_PAD.encode(Sha256::digest(
-            serde_json::to_vec(&["scim-group-external-id", connection, value]).map_err(|_| {
-                error(
-                    "filter equality value must be a quoted string",
-                    "invalidFilter",
-                )
-            })?,
-        )),
+        "displayNameKey" => {
+            keys::group_display_name(connection, value).map_err(group_filter_error)?
+        }
+        "externalIdKey" if !value.is_empty() => {
+            keys::group_external_id(connection, value).map_err(group_filter_error)?
+        }
         "externalIdKey" => String::new(),
         _ => value.into(),
     };

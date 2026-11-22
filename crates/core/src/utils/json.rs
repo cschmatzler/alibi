@@ -1397,13 +1397,34 @@ mod tests {
     }
 }
 
+/// Normalize revived dates in caches that retain string projections.
+pub(crate) fn normalize_json_dates(value: &mut JsValue) {
+    match value {
+        JsValue::String(text) => {
+            if let Some(normalized) = text
+                .as_str()
+                .and_then(crate::utils::datetime::normalize_json_date)
+            {
+                *text = normalized.into();
+            }
+        }
+        JsValue::Array(values) => values.iter_mut().for_each(normalize_json_dates),
+        JsValue::Object(values) => values.values_mut().for_each(normalize_json_dates),
+        JsValue::Undefined
+        | JsValue::Null
+        | JsValue::Bool(_)
+        | JsValue::Number(_)
+        | JsValue::Date(_) => {}
+    }
+}
+
 /// Apply the pinned safeJSONParse date reviver without changing object keys.
 pub fn revive_json_dates(value: &mut JsValue) {
     match value {
         JsValue::String(text) => {
             if let Some(date) = text
                 .as_str()
-                .and_then(crate::session::cookie_cache::date::parse)
+                .and_then(crate::utils::datetime::parse_json_date)
             {
                 *value = JsValue::Date(date);
             }

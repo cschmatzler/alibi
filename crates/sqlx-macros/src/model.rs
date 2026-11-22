@@ -1,5 +1,5 @@
 use crate::columns::{Column, physical};
-use crate::roots::Roots;
+use alibi_entity_codegen::ExpansionPaths;
 use alibi_entity_codegen::{self as codegen, EntityRole};
 use proc_macro2::{Ident, TokenStream};
 use quote::quote;
@@ -9,7 +9,7 @@ pub(crate) fn model_impl(
     table: &str,
     columns: &[Column],
     role: Option<EntityRole>,
-    roots: &Roots,
+    roots: &ExpansionPaths,
 ) -> syn::Result<TokenStream> {
     let verification_column = if matches!(role, Some(EntityRole::User)) {
         let name = physical(columns, "email_verified")?;
@@ -17,7 +17,7 @@ pub(crate) fn model_impl(
     } else {
         quote! { ::std::option::Option::None }
     };
-    let sqlx_root = &roots.sqlx;
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let primary_key = physical(columns, "id")?;
     let definitions = columns.iter().map(|column| {
@@ -85,8 +85,8 @@ pub(crate) fn model_impl(
 }
 
 /// Configured additional-field bindings and staging, keyed by wire and physical names.
-pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
-    let sqlx_root = &roots.sqlx;
+pub(crate) fn additional_fields(columns: &[Column], roots: &ExpansionPaths) -> TokenStream {
+    let sqlx_root = &roots.adapter;
     let core_root = &roots.core;
     let mut bindings = Vec::new();
     let mut stages = Vec::new();
@@ -152,10 +152,10 @@ pub(crate) fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStrea
 pub(crate) fn adapter_output(
     fields: &[Column],
     role: codegen::EntityRole,
-    roots: &Roots,
+    roots: &ExpansionPaths,
 ) -> TokenStream {
     let core = &roots.core;
-    let adapter = &roots.sqlx;
+    let adapter = &roots.adapter;
     let mut values = Vec::new();
     for field in fields {
         let name = &field.ident;

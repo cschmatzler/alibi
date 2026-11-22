@@ -36,10 +36,13 @@ impl Fixture {
 struct Mapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for Mapper {
-    async fn map_profile(&self, _: Value) -> Result<alibi::field_policy::FieldOutput, String> {
+    async fn map_profile(
+        &self,
+        _: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
         Ok([
-            ("id".into(), json!("mapped-id")),
-            ("name".into(), json!("Mapped Name")),
+            ("id".into(), json!("mapped-id").into()),
+            ("name".into(), json!("Mapped Name").into()),
         ]
         .into_iter()
         .collect())
@@ -55,16 +58,17 @@ impl OAuthUserInfoHandler for Custom {
         self.0.receipts.lock().await.push(json!({"path":"/custom"}));
         let raw = self.0.control.lock().await["profile"].clone();
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
                 id: raw["id"].as_str().unwrap_or_default().into(),
                 email: raw["email"].as_str().unwrap_or_default().into(),
-                name: raw["name"].as_str().map(str::to_owned),
+                name: raw["name"].as_str().map(str::to_owned).map(Into::into),
                 image: None,
                 email_verified: raw["emailVerified"].as_bool().unwrap_or(false),
-            },
-            data: raw,
+            }
+            .public_profile(true),
+            data: raw.into(),
         })
     }
 }

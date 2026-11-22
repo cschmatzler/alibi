@@ -592,7 +592,7 @@ async fn sql_state(auth: &Alibi<TestSchema>, database: &DatabaseConnection) -> A
         })
         .collect::<Vec<_>>();
     Ok(
-        json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<Vec<_>>(),"verifications":verifications.iter().map(VerificationView::from).collect::<Vec<_>>()}),
+        json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<AuthResult<Vec<_>>>()?,"accounts":accounts,"sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<AuthResult<Vec<_>>>()?,"verifications":verifications.iter().map(VerificationView::from).collect::<Vec<_>>()}),
     )
 }
 #[derive(Clone)]

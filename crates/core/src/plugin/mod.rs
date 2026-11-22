@@ -106,17 +106,14 @@ mod tests {
         let config = Arc::new(AuthConfig::new("test-secret-min-32-chars-1234567"));
         let db = test_database().await;
 
-        // Create a user
         let user = db
             .create_user(crate::types::CreateUser::new().with_email("test@test.com"))
             .await
             .unwrap();
 
-        // Create a session
         let sm = SessionManager::new(Arc::clone(&config), Arc::clone(&db));
         let session = sm.create_session(&user, None, None).await.unwrap();
 
-        // Build request with the session token
         let ctx = AuthContext::new(Arc::clone(&config), db);
         let mut req = AuthRequest::new(HttpMethod::Get, "/test");
         _ = req.headers.insert(

@@ -1388,7 +1388,6 @@ mod tests {
         let plugin = ApiKeyPlugin::builder().build();
         let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
-        // Create two keys
         let (id1, _) = create_key_and_get_raw(
             &plugin,
             &ctx,
@@ -1721,7 +1720,6 @@ mod tests {
                 .build();
             let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
-            // Create an API key
             let (_id, raw_key) = create_key_and_get_raw(
                 &plugin,
                 &ctx,
@@ -2112,7 +2110,6 @@ mod tests {
             let (ctx, fixture_user, session) = create_test_context_with_user().await;
             let plugin = ApiKeyPlugin::builder().build();
 
-            // Create two keys
             let (id1, _) = create_key_and_get_raw(
                 &plugin,
                 &ctx,
@@ -2160,7 +2157,6 @@ mod tests {
             let plugin = ApiKeyPlugin::builder().build();
             let (ctx, fixture_user, session) = create_test_context_with_user().await;
 
-            // Create two keys, expire one
             let (id1, _) = create_key_and_get_raw(
                 &plugin,
                 &ctx,

@@ -119,7 +119,7 @@ async fn password_fixture_operation(
             };
             let user = auth
                 .store()
-                .get_user_by_email(&email)
+                .get_user_by_email(&alibi::utils::json::JsString::from(email))
                 .await?
                 .ok_or_else(|| AuthError::not_found("Credential not found"))?;
             let account = auth
@@ -473,22 +473,24 @@ impl OAuthUserInfoHandler for CompatGoogleUserInfoHandler {
     ) -> Result<OAuthUserInfoResponse, String> {
         let profile = self.profile.lock().await.clone();
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
-                id: profile.sub.clone(),
-                email: profile.email.clone(),
-                name: Some(profile.name.clone()),
-                image: profile.image.clone(),
+                id: profile.sub.clone().into(),
+                email: profile.email.clone().into(),
+                name: Some(profile.name.clone().into()),
+                image: profile.image.clone().map(Into::into),
                 email_verified: profile.email_verified,
-            },
+            }
+            .public_profile(true),
             data: serde_json::json!({
                 "sub": profile.sub,
                 "email": profile.email,
                 "name": profile.name,
                 "picture": profile.image,
                 "email_verified": profile.email_verified,
-            }),
+            })
+            .into(),
         })
     }
 }
@@ -664,12 +666,13 @@ fn mock_oauth_plugin_at(
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
                         additional_fields: Default::default(),
-                        id: "mock-account-id".to_string(),
-                        email: "mock@example.com".to_string(),
-                        name: Some("Mock OAuth User".to_string()),
+                        id: "mock-account-id".to_string().into(),
+                        email: "mock@example.com".to_string().into(),
+                        name: Some("Mock OAuth User".to_string().into()),
                         image: None,
                         email_verified: true,
-                    })
+                    }
+                    .public_profile(true))
                 }),
                 get_user_info: None,
                 refresh_access_token: None,
@@ -2093,7 +2096,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(move |Json(body): Json<SeedResetPasswordRequest>| {
                 let auth = auth_for_reset_seed.clone();
                 async move {
-                    let user = match auth.store().get_user_by_email(&body.email).await {
+                    let user = match auth.store().get_user_by_email(&alibi::utils::json::JsString::from(body.email)).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
                             return (
@@ -2146,7 +2149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(move |Json(body): Json<SeedDeleteUserTokenRequest>| {
                 let auth = auth_for_delete_seed.clone();
                 async move {
-                    let user = match auth.store().get_user_by_email(&body.email).await {
+                    let user = match auth.store().get_user_by_email(&alibi::utils::json::JsString::from(body.email)).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
                             return (
@@ -2199,7 +2202,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(move |Json(body): Json<RemoveCredentialAccountRequest>| {
                 let auth = auth_for_remove_credential.clone();
                 async move {
-                    let user = match auth.store().get_user_by_email(&body.email).await {
+                    let user = match auth.store().get_user_by_email(&alibi::utils::json::JsString::from(body.email)).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
                             return (
@@ -2249,7 +2252,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             post(move |Json(body): Json<RemoveCredentialAccountRequest>| {
                 let auth = auth_for_promote_admin.clone();
                 async move {
-                    let user = match auth.store().get_user_by_email(&body.email).await {
+                    let user = match auth.store().get_user_by_email(&alibi::utils::json::JsString::from(body.email)).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
                             return (
@@ -2390,7 +2393,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         (Some(created), Some(updated)) if parse_rfc3339(created).is_ok() && parse_rfc3339(updated).is_ok() => Some((created.clone(), updated.clone())),
                         _ => return (axum::http::StatusCode::BAD_REQUEST, Json(serde_json::json!({"message":"Both valid account timestamps required"}))),
                     };
-                    let user = match auth.store().get_user_by_email(&body.email).await {
+                    let user = match auth.store().get_user_by_email(&alibi::utils::json::JsString::from(body.email)).await {
                         Ok(Some(user)) => user,
                         Ok(None) => {
                             return (
@@ -2467,7 +2470,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         auth.store().create_account(CreateAccount {
                             additional_fields: Default::default(),
                             user_id: user.id.to_string(),
-                            account_id,
+                            account_id: account_id.into(),
                             provider_id,
                             access_token: body.access_token,
                             refresh_token: body.refresh_token,

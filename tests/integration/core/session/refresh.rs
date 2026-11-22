@@ -629,7 +629,7 @@ mod secondary {
             *snapshot
                 .get_mut("session")
                 .unwrap()
-                .get_mut("created_at")
+                .get_mut("createdAt")
                 .unwrap() = json!((Utc::now() - Duration::seconds(1)).to_rfc3339());
             let snapshot = serde_json::to_string(&snapshot)?;
             cache.set(&token, &snapshot, Duration::days(1)).await?;

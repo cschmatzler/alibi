@@ -357,7 +357,6 @@ impl ScimPlugin {
         call: &EndpointCall,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        use sha2::Digest;
         let body = call
             .body()
             .ok_or_else(|| AuthError::internal("Validated body missing"))?;
@@ -366,10 +365,7 @@ impl ScimPlugin {
             .and_then(JsValue::as_str)
             .ok_or_else(|| AuthError::internal("Validated ID missing"))?;
         let domain = body.get("provisioningDomainId").and_then(JsValue::as_str);
-        let key = URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
-            "scim-connection",
-            id,
-        ])?));
+        let key = alibi_core::store::scim::keys::connection(id)?;
         let binding = ctx
             .database
             .terminal_scim_connection_binding(id, domain, &key)

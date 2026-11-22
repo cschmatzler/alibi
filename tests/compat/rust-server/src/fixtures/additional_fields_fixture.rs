@@ -31,7 +31,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 type Events = Arc<Mutex<Vec<Value>>>;
-static MAPPER_RECEIPTS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: Mutex<Vec<alibi::utils::json::JsValue>> = Mutex::new(Vec::new());
 #[derive(Clone)]
 struct Application {
     mode: &'static str,
@@ -577,7 +577,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
             }
             Some(value @ ("after-error" | "throw")) => {
                 let value = value.to_owned();
-                drop(fields.insert("label".into(), JsValue::String(value)));
+                drop(fields.insert("label".into(), JsValue::String(value.into())));
             }
             Some("mutate") => {
                 drop(fields.insert("label".into(), JsValue::String("hook-updated".into())));
@@ -701,20 +701,23 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
                     .map_err(|error| error.to_string())?
                     .push(profile.clone());
                 Ok(alibi::plugins::oauth::OAuthUserInfo {
-                    additional_fields: serde_json::Map::from_iter([
+                    additional_fields: alibi::utils::json::JsObject::from_iter([
                         ("label".into(), profile["nickname"].clone()),
-                        ("hidden".into(), json!("provider-cannot-set-hidden")),
-                        ("unknown".into(), json!("provider-unknown")),
+                        ("hidden".into(), json!("provider-cannot-set-hidden").into()),
+                        ("unknown".into(), json!("provider-unknown").into()),
                     ]),
                     id: "mapped-public-id-184".into(),
                     email: profile["email"].as_str().unwrap_or_default().into(),
-                    name: Some(format!(
-                        "Mapped {}",
-                        profile["name"].as_str().unwrap_or_default()
-                    )),
-                    image: profile["picture"].as_str().map(str::to_owned),
+                    name: Some(
+                        format!("Mapped {}", profile["name"].as_str().unwrap_or_default()).into(),
+                    ),
+                    image: profile["picture"]
+                        .as_str()
+                        .map(str::to_owned)
+                        .map(Into::into),
                     email_verified: true,
-                })
+                }
+                .public_profile(true))
             });
             let mut provider =
                 alibi::plugins::oauth::OAuthProvider::atlassian_with_options(options);
@@ -811,12 +814,9 @@ impl Application {
         let events = self.events.lock().expect("application receipts").clone();
         let mut state = json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events});
         if self.mode == "provider" {
-            state["mapperReceipts"] = json!(
-                MAPPER_RECEIPTS
-                    .lock()
-                    .expect("application mapper receipts")
-                    .clone()
-            );
+            let receipts = MAPPER_RECEIPTS.lock().expect("application mapper receipts");
+            state["mapperReceipts"] =
+                alibi::utils::json::JsValue::Array(receipts.clone()).to_json_value()?;
         }
         Ok(state)
     }

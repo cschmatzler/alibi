@@ -61,20 +61,24 @@ impl alibi::CookieCacheVersionResolver for CacheFailure {
 struct AccountKey(bool);
 #[async_trait]
 impl OAuthAccountKeyResolver for AccountKey {
-    async fn resolve(&self, context: OAuthAccountKeyContext) -> Result<Value, String> {
+    async fn resolve(
+        &self,
+        context: OAuthAccountKeyContext,
+    ) -> Result<alibi::utils::json::JsValue, String> {
         if context.tokens.access_token.is_none() {
             return Err("actual provider token required".into());
         }
-        Ok(Value::String(if self.0 {
-            String::new()
+        let key = if self.0 {
+            Default::default()
         } else {
             context
                 .profile
                 .get("account_key")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_owned()
-        }))
+                .and_then(alibi::utils::json::JsValue::as_js_string)
+                .cloned()
+                .unwrap_or_default()
+        };
+        Ok(alibi::utils::json::JsValue::String(key))
     }
 }
 struct Grant {

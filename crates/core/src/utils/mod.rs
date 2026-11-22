@@ -14,7 +14,7 @@ pub mod wildcard;
 use std::sync::{Mutex, MutexGuard};
 
 /// Normalize a user identity email to the canonical persisted form.
-pub(crate) fn normalize_user_email(email: &str) -> String {
+pub fn normalize_user_email(email: &str) -> String {
     email.to_lowercase()
 }
 

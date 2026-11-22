@@ -200,6 +200,7 @@ name = "alibi-entity-codegen"
 version = "0.12.1"
 dependencies = [
  "alibi-schema-registry",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 3.0.6",
@@ -304,7 +305,6 @@ name = "alibi-seaorm-macros"
 version = "0.12.1"
 dependencies = [
  "alibi-entity-codegen",
- "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 3.0.6",
@@ -333,7 +333,6 @@ name = "alibi-sqlx-macros"
 version = "0.12.1"
 dependencies = [
  "alibi-entity-codegen",
- "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 3.0.6",

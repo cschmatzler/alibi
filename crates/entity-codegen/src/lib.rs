@@ -7,6 +7,7 @@
 mod accessors;
 mod attributes;
 mod fields;
+mod roots;
 mod secondary;
 mod writes;
 
@@ -17,5 +18,6 @@ pub use fields::{
     EntityField, additional_output, camel_case, has_field, is_auth_timestamp, is_known_field,
     is_option, optional_field,
 };
+pub use roots::{ExpansionPaths, Integration};
 pub use secondary::{secondary_codec, user_secondary_codec};
 pub use writes::{Insert, SetField, generated_id, insert_values, update_statements};

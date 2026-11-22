@@ -1,53 +1,12 @@
-//! The bundled auth schema as one migration, in the ledger `SeaORM` also uses.
+//! Apply bundled migrations using the shared migration ledger.
 
 use crate::pool::{Engine, Exec, SqlxPool};
 use crate::sql::Sql;
 use alibi_core::config::AuthConfig;
 use alibi_core::error::{AuthError, AuthResult, DatabaseError};
+use alibi_schema_registry::{AUTH_MIGRATION_LEDGER, AUTH_MIGRATIONS, BundledMigration};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
-
-/// One named schema change, as SQL for each backend.
-pub(crate) struct Migration {
-    pub(crate) name: &'static str,
-    pub(crate) sqlite: &'static str,
-    pub(crate) postgres: &'static str,
-}
-
-const AUTH_SCHEMA: Migration = Migration {
-    name: "m20261013_000001_typescript_auth_schema",
-    sqlite: alibi_schema_registry::SQLITE_AUTH_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
-};
-
-const OAUTH_CLIENTS: Migration = Migration {
-    name: "m20261013_000002_typescript_oauth_schema",
-    sqlite: alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
-};
-
-const SSO: Migration = Migration {
-    name: "m20261013_000003_typescript_sso_schema",
-    sqlite: alibi_schema_registry::SQLITE_SSO_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_SSO_SCHEMA,
-};
-const SCIM_MANAGED: Migration = Migration {
-    name: "m20261014_000004_typescript_scim_managed_schema",
-    sqlite: alibi_schema_registry::SQLITE_SCIM_MANAGED_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA,
-};
-
-const SCIM_BINDING: Migration = Migration {
-    name: "m20261014_000005_typescript_scim_binding_schema",
-    sqlite: alibi_schema_registry::SQLITE_SCIM_BINDING_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA,
-};
-
-const SCIM_CANONICAL: Migration = Migration {
-    name: "m20261014_000006_typescript_scim_canonical_schema",
-    sqlite: alibi_schema_registry::SQLITE_SCIM_CANONICAL_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_SCIM_CANONICAL_SCHEMA,
-};
 
 /// Apply the bundled auth schema.
 ///
@@ -55,19 +14,7 @@ const SCIM_CANONICAL: Migration = Migration {
 ///
 /// Returns the database error; a failed migration is rolled back and not recorded.
 pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
-    apply(
-        pool,
-        "better_auth_migrations",
-        &[
-            AUTH_SCHEMA,
-            OAUTH_CLIENTS,
-            SSO,
-            SCIM_MANAGED,
-            SCIM_BINDING,
-            SCIM_CANONICAL,
-        ],
-    )
-    .await
+    apply(pool, AUTH_MIGRATION_LEDGER, AUTH_MIGRATIONS).await
 }
 
 /// Apply pending migrations in order, each in its own transaction with its
@@ -75,7 +22,7 @@ pub async fn run_migrations(pool: &SqlxPool) -> AuthResult<()> {
 pub(crate) async fn apply(
     pool: &SqlxPool,
     ledger: &'static str,
-    migrations: &[Migration],
+    migrations: &[BundledMigration],
 ) -> AuthResult<()> {
     apply_scoped(pool, ledger, migrations, None).await
 }
@@ -84,26 +31,13 @@ pub(crate) async fn run_migrations_scoped(
     pool: &SqlxPool,
     config: &Arc<AuthConfig>,
 ) -> AuthResult<()> {
-    apply_scoped(
-        pool,
-        "better_auth_migrations",
-        &[
-            AUTH_SCHEMA,
-            OAUTH_CLIENTS,
-            SSO,
-            SCIM_MANAGED,
-            SCIM_BINDING,
-            SCIM_CANONICAL,
-        ],
-        Some(config),
-    )
-    .await
+    apply_scoped(pool, AUTH_MIGRATION_LEDGER, AUTH_MIGRATIONS, Some(config)).await
 }
 
 async fn apply_scoped(
     pool: &SqlxPool,
     ledger: &'static str,
-    migrations: &[Migration],
+    migrations: &[BundledMigration],
     config: Option<&Arc<AuthConfig>>,
 ) -> AuthResult<()> {
     let mut exec = Exec::pool(pool);

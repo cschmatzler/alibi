@@ -3,10 +3,11 @@ use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::AuthUser;
 use alibi_core::UserFilterValue;
 use alibi_core::error::{AuthError, AuthResult};
-use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::adapter::{user_filter, user_write};
 use alibi_core::store::{NumericTextInput, UserCreationDefaults, UserStore};
 use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use alibi_core::user_validation::PreparedUserCreation;
+use alibi_core::utils::normalize_user_email;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use sea_orm::sea_query::{Expr, ExprTrait};
@@ -613,83 +614,38 @@ where
         operator: &str,
         value: &UserFilterValue,
     ) -> AuthResult<Expr> {
-        let field = filter_field
-            .filter(|field| !field.is_empty())
-            .unwrap_or("email");
+        use sea_orm::sea_query::ColumnType;
+        use user_filter::{Column, Filter, Parameter};
+        let field = user_filter::field(filter_field);
         let column = S::User::list_users_column(field)
             .ok_or_else(|| AuthError::bad_request("User filter field has no configured column"))?;
-        let native = value.native();
-        if operator == "in" && !matches!(native, alibi_core::utils::json::JsValue::Array(_)) {
-            return Err(AuthError::bad_request("Value must be an array"));
-        }
-        use sea_orm::sea_query::ColumnType;
-        let column_type = column.def();
-        let column_type = column_type.get_column_type();
-        let numeric = matches!(
-            column_type,
-            ColumnType::Integer | ColumnType::BigInteger | ColumnType::Float | ColumnType::Double
-        );
-        let native = transform_filter_operand(
-            native,
-            matches!(column_type, ColumnType::Boolean),
-            numeric,
-            self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres,
-        );
-        let pattern = native
-            .coerce_js_string()
-            .map_err(AuthError::internal)?
-            .to_utf8_binding();
-        let operands = match native {
-            alibi_core::utils::json::JsValue::Array(values) => values,
-            value => vec![value],
+        let kind = match column.def().get_column_type() {
+            ColumnType::Boolean => Column::Boolean,
+            ColumnType::Integer => Column::Int,
+            ColumnType::BigInteger => Column::BigInt,
+            ColumnType::Float => Column::Float,
+            ColumnType::Double => Column::Double,
+            ColumnType::String(_) | ColumnType::Text | ColumnType::Char(_) => Column::Text,
+            _ => Column::Other,
         };
-        let numeric_cast =
-            if self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres {
-                match column_type {
-                    ColumnType::Boolean => Some("boolean"),
-                    ColumnType::Integer => Some("int4"),
-                    ColumnType::BigInteger => Some("int8"),
-                    ColumnType::Float => Some("float4"),
-                    ColumnType::Double => Some("float8"),
-                    _ => None,
-                }
-            } else {
-                None
-            };
-        let bindings: Vec<sea_orm::Value> = operands
+        let Filter {
+            pattern,
+            parameters,
+            cast: numeric_cast,
+        } = user_filter::prepare(
+            value,
+            operator,
+            kind,
+            self.scoped_connection().get_database_backend() == sea_orm::DbBackend::Postgres,
+        )?;
+        let bindings: Vec<sea_orm::Value> = parameters
             .into_iter()
-            .map(|value| {
-                use alibi_core::utils::json::JsValue;
-                // node-postgres sends primitives as text with the SQL column's inferred type.
-                Ok(
-                    if self.scoped_connection().get_database_backend()
-                        == sea_orm::DbBackend::Postgres
-                        && (numeric_cast.is_some()
-                            || matches!(
-                                column_type,
-                                ColumnType::String(_) | ColumnType::Text | ColumnType::Char(_)
-                            ))
-                    {
-                        value
-                            .coerce_js_string()
-                            .map_err(AuthError::internal)?
-                            .to_utf8_binding()
-                            .into()
-                    } else {
-                        match value {
-                            JsValue::String(value) => value.to_utf8_binding().into(),
-                            JsValue::Number(value) => value.into(),
-                            JsValue::Bool(value) => value.into(),
-                            _ => {
-                                return Err(AuthError::bad_request(
-                                    "Unsupported user filter operand",
-                                ));
-                            }
-                        }
-                    },
-                )
+            .map(|parameter| match parameter {
+                Parameter::Text(value) => value.into(),
+                Parameter::Number(value) => value.into(),
+                Parameter::Boolean(value) => value.into(),
             })
-            .collect::<AuthResult<_>>()?;
+            .collect();
         let bound = |value: &sea_orm::Value| match numeric_cast
             .filter(|_| matches!(value, sea_orm::Value::String(_)))
         {
@@ -938,9 +894,6 @@ where
                 return Ok(());
             }
         }
-        // API keys reference their owner polymorphically, so they carry no
-        // foreign key to cascade from. Without this, a deleted user's keys
-        // would outlive them and start working again if the id were reused.
         let transaction = self.scoped_connection().begin_immediate().await?;
         _ = user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(S::User::id_column().eq(user_id.clone()))
@@ -1022,60 +975,6 @@ where
     }
 }
 
-fn normalize_user_email(email: &str) -> String {
-    email.to_lowercase()
-}
-
-// Adapter factory transformations are scalar-only for booleans and
-// all-or-none for string arrays on numeric fields.
-fn transform_filter_operand(
-    value: alibi_core::utils::json::JsValue,
-    boolean: bool,
-    numeric: bool,
-    supports_booleans: bool,
-) -> alibi_core::utils::json::JsValue {
-    use alibi_core::utils::{
-        javascript::{string_to_number, trim},
-        json::JsValue,
-    };
-    if boolean {
-        let value = match value {
-            JsValue::String(value) => JsValue::Bool(value == "true"),
-            value => value,
-        };
-        return match value {
-            JsValue::Bool(value) if !supports_booleans => {
-                JsValue::Number(f64::from(u8::from(value)))
-            }
-            value => value,
-        };
-    }
-    if numeric {
-        let parse = |value: &JsValue| {
-            value
-                .as_str()
-                .filter(|value| !trim(value).is_empty())
-                .and_then(string_to_number)
-                .filter(|value| !value.is_nan())
-                .map(JsValue::Number)
-        };
-        match &value {
-            JsValue::String(_) => {
-                if let Some(number) = parse(&value) {
-                    return number;
-                }
-            }
-            JsValue::Array(values) => {
-                if let Some(numbers) = values.iter().map(parse).collect::<Option<Vec<_>>>() {
-                    return JsValue::Array(numbers);
-                }
-            }
-            _ => {}
-        }
-    }
-    value
-}
-
 impl<S> SeaOrmStore<S>
 where
     S: AuthSchema,
@@ -1107,17 +1006,7 @@ where
     ) -> AuthResult<Option<S::User>> {
         let user_id = S::User::parse_id(id)?;
         let hook_context = self.hook_context(tx);
-        for hook in self.hooks() {
-            if hook
-                .before_update_user(id, &mut update.data, &hook_context)
-                .await
-                .map_err(alibi_core::store::adapter::callback_error)?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("user update"));
-            }
-        }
-        update.apply_adapter_transforms().await?;
+        user_write::prepare_update(self.hooks(), &hook_context, id, &mut update).await?;
         // A missing row still reaches UPDATE so driver parameter errors remain
         // observable; an empty active model never becomes an inserted user.
         let model = user_query::<S::User>(connection.get_database_backend())
@@ -1129,29 +1018,17 @@ where
             .unwrap_or_else(ActiveModelTrait::default);
         let mut native = std::collections::BTreeMap::new();
         let mut prepared_fields = std::collections::BTreeSet::new();
-        for (field, raw) in &update.data {
-            let Some(field) = field.as_str() else {
-                continue;
-            };
-            if !update.declares(field) {
-                continue;
-            }
-            use sea_orm::{Iden, Iterable};
-            let column = if let Some(physical) = update.physical_binding(field) {
+        use sea_orm::{Iden, Iterable};
+        let bindings = update.bindings(
+            |physical| {
                 <S::User as SeaOrmUserModel>::Column::iter()
                     .find(|column| column.to_string() == physical)
-            } else {
-                S::User::list_users_column(field)
-            };
-            let Some(column) = column else {
-                if update.requires_binding(field) {
-                    return Err(AuthError::config(format!(
-                        "Declared user field {field} has no model column"
-                    )));
-                }
-                continue;
-            };
-            if update.has_input_policy(field) {
+            },
+            S::User::list_users_column,
+        );
+        for binding in bindings {
+            let (column, raw, has_input_policy) = binding?;
+            if has_input_policy {
                 _ = prepared_fields.insert(column.to_string());
             }
             _ = native.insert(column.to_string(), raw.clone());
@@ -1166,17 +1043,7 @@ where
         )
         .await?;
         if tx.is_none() {
-            for hook in self.hooks() {
-                if let Some(user) = &user {
-                    hook.after_update_user(user, &hook_context)
-                        .await
-                        .map_err(alibi_core::store::adapter::callback_error)?;
-                } else {
-                    hook.after_update_user_missing(id, &hook_context)
-                        .await
-                        .map_err(alibi_core::store::adapter::callback_error)?;
-                }
-            }
+            user_write::after_update(self.hooks(), &hook_context, id, user.as_ref()).await?;
         }
         Ok(user)
     }

@@ -797,7 +797,9 @@ impl<S: alibi::AuthSchema> ScimBearerTokenVerifier<S> for FixtureVerifier {
     ) -> AuthResult<Option<JsValue>> {
         self.inputs.lock().unwrap().push(json!({"token":input.token,"method":format!("{:?}",input.method).to_uppercase(),"path":input.path,"headers":input.headers}));
         let owner = database
-            .get_user_by_email("verifier-owner@example.com")
+            .get_user_by_email(&alibi::utils::json::JsString::from(
+                "verifier-owner@example.com",
+            ))
             .await?
             .unwrap();
         _ = database
@@ -822,17 +824,47 @@ impl<S: alibi::AuthSchema> ScimBearerTokenVerifier<S> for FixtureVerifier {
 
 struct CreateIdentity;
 #[async_trait::async_trait]
-impl<S:alibi::AuthSchema> alibi::plugins::scim::ScimIdentity<S> for CreateIdentity {
- async fn resolve_user(&self,input:&alibi::plugins::scim::ScimIdentityResolutionInput,database:&dyn alibi::store::AuthStore<S>)->alibi::AuthResult<alibi::plugins::scim::ScimIdentityResolution>{
-  use alibi::{AuthUser,AuthError};use alibi::plugins::scim::ScimIdentityResolution as Resolution;
-  let external=input.resource["externalId"].as_str().unwrap_or("");
-  if external=="resolve-fails"{return Err(AuthError::internal("application rejected resolution"));}
-  if external=="link-missing"{return Ok(Resolution::Link{user_id:"missing-user".into(),manage_profile:false});}
-  if !matches!(input.resource["userName"].as_str(),Some("Alias"|"Alias2")) || input.resource["primaryEmail"]!="alias@example.com"{return Err(AuthError::internal("incorrect resolver resource"));}
-  let user=database.get_user_by_email("new-work@example.com").await?.ok_or_else(||AuthError::internal("resolver target missing"))?;
-  Ok(Resolution::Link{user_id:user.id().to_string(),manage_profile:external=="link-manage"})
- }
- async fn reconcile_user(&self,_input:&alibi::plugins::scim::ScimIdentityState,_database:&dyn alibi::store::AuthTransaction<S>)->alibi::AuthResult<()>{Ok(())}
+impl<S: alibi::AuthSchema> alibi::plugins::scim::ScimIdentity<S> for CreateIdentity {
+    async fn resolve_user(
+        &self,
+        input: &alibi::plugins::scim::ScimIdentityResolutionInput,
+        database: &dyn alibi::store::AuthStore<S>,
+    ) -> alibi::AuthResult<alibi::plugins::scim::ScimIdentityResolution> {
+        use alibi::plugins::scim::ScimIdentityResolution as Resolution;
+        use alibi::{AuthError, AuthUser};
+        let external = input.resource["externalId"].as_str().unwrap_or("");
+        if external == "resolve-fails" {
+            return Err(AuthError::internal("application rejected resolution"));
+        }
+        if external == "link-missing" {
+            return Ok(Resolution::Link {
+                user_id: "missing-user".into(),
+                manage_profile: false,
+            });
+        }
+        if !matches!(
+            input.resource["userName"].as_str(),
+            Some("Alias" | "Alias2")
+        ) || input.resource["primaryEmail"] != "alias@example.com"
+        {
+            return Err(AuthError::internal("incorrect resolver resource"));
+        }
+        let user = database
+            .get_user_by_email(&alibi::utils::json::JsString::from("new-work@example.com"))
+            .await?
+            .ok_or_else(|| AuthError::internal("resolver target missing"))?;
+        Ok(Resolution::Link {
+            user_id: user.id().to_string(),
+            manage_profile: external == "link-manage",
+        })
+    }
+    async fn reconcile_user(
+        &self,
+        _input: &alibi::plugins::scim::ScimIdentityState,
+        _database: &dyn alibi::store::AuthTransaction<S>,
+    ) -> alibi::AuthResult<()> {
+        Ok(())
+    }
 }
 
 fn trusted_user_body(input: &Value) -> alibi::utils::json::JsValue {

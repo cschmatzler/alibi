@@ -1,3 +1,4 @@
+mod migration;
 mod seaorm;
 mod selection;
 mod sqlx;

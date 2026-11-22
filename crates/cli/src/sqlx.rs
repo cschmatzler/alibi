@@ -1,44 +1,19 @@
 use crate::parse_type;
-use crate::selection::{CORE_ENTITIES, Selection, entity_fields, role_name};
+use crate::selection::Selection;
 use alibi_schema_registry::{EntityRole, FieldDef};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
-    let entities = CORE_ENTITIES.iter().map(|(module, table, role)| {
-        sqlx_entity(module, table, Some(*role), &entity_fields(selection, *role))
-    });
-    let extra = selection.extra.iter().map(|entity| {
-        sqlx_entity(
-            entity.mod_name,
-            entity.table_name,
-            entity.role,
-            &entity.fields.iter().collect::<Vec<_>>(),
-        )
-    });
-    let mut tables = CORE_ENTITIES
-        .iter()
-        .map(|(_, table, role)| (*table, entity_fields(selection, *role)))
-        .chain(
-            selection
-                .extra
-                .iter()
-                .map(|entity| (entity.table_name, entity.fields.iter().collect())),
-        )
-        .collect::<Vec<_>>();
-    tables.sort_by_key(|(table, _)| crate::sqlx::table_order(table));
-    let sqlite = tables
-        .iter()
-        .flat_map(|(table, fields)| migration_statements(table, fields, SqlDialect::Sqlite));
-    let postgres = tables
-        .iter()
-        .flat_map(|(table, fields)| migration_statements(table, fields, SqlDialect::Postgres));
+    let entities = selection
+        .entities()
+        .map(|entity| sqlx_entity(entity.module, entity.table, entity.role, &entity.fields));
+    let (sqlite, postgres) = crate::migration::statements(selection);
     quote! {
         use alibi::AuthSchema;
         use alibi::sqlx::{Engine, SqlxPool};
 
         #(#entities)*
-        #(#extra)*
 
         pub struct AppAuthSchema;
 
@@ -98,7 +73,7 @@ pub(crate) fn sqlx_entity(
     let derive = role.map_or_else(
         || quote! { #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::SqlxModel)] #[auth(table = #table)] },
         |role| {
-            let role = role_name(role);
+            let role = role.as_str();
             quote! {
                 #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
                 #[auth(role = #role, table = #table)]
@@ -120,90 +95,4 @@ pub(crate) fn sqlx_type(ty: &str) -> String {
     ty.replace("DateTimeUtc", "chrono::DateTime<chrono::Utc>")
         .replace("Json", "alibi::sqlx::JsonMetadata")
         .replace("f64", "alibi::sqlx::Number")
-}
-
-#[derive(Clone, Copy)]
-pub(crate) enum SqlDialect {
-    Sqlite,
-    Postgres,
-}
-
-/// Filter the compiled TypeScript DDL to the selected plugin columns and indexes.
-pub(crate) fn migration_statements(
-    table: &str,
-    fields: &[&FieldDef],
-    dialect: SqlDialect,
-) -> Vec<String> {
-    let (auth, oauth, rate, sso) = match dialect {
-        SqlDialect::Sqlite => (
-            alibi_schema_registry::SQLITE_AUTH_SCHEMA,
-            alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
-            alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
-            alibi_schema_registry::SQLITE_SSO_SCHEMA,
-        ),
-        SqlDialect::Postgres => (
-            alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
-            alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
-            alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
-            alibi_schema_registry::POSTGRES_SSO_SCHEMA,
-        ),
-    };
-    let selected: std::collections::HashSet<_> = fields
-        .iter()
-        .map(|field| field.column_name.unwrap_or(field.name))
-        .collect();
-    let prefix = format!("create table \"{table}\" (");
-    let mut statements = Vec::new();
-    for statement in auth
-        .split(';')
-        .chain(oauth.split(';'))
-        .chain(rate.split(';'))
-        .chain(sso.split(';'))
-    {
-        let statement = statement.trim();
-        if let Some(start) = statement.find(&prefix) {
-            let columns = statement
-                .get(start + prefix.len()..)
-                .unwrap_or_default()
-                .trim_end_matches(')');
-            let columns: Vec<_> = columns
-                .split(", ")
-                .filter(|column| {
-                    column
-                        .split('"')
-                        .nth(1)
-                        .is_some_and(|name| selected.contains(name))
-                })
-                .collect();
-            statements.push(format!(
-                "CREATE TABLE IF NOT EXISTS \"{table}\" ({})",
-                columns.join(", ")
-            ));
-        } else if statement.starts_with("create ")
-            && statement.contains(&format!(" on \"{table}\" ("))
-        {
-            let columns = statement
-                .rsplit_once('(')
-                .map_or("", |(_, columns)| columns.trim_end_matches(')'));
-            if columns
-                .split(", ")
-                .all(|column| selected.contains(column.trim_matches('"')))
-            {
-                statements.push(statement.replacen("index ", "index IF NOT EXISTS ", 1));
-            }
-        }
-    }
-    statements
-}
-
-pub(crate) fn table_order(table: &str) -> usize {
-    let prefix = format!("create table \"{table}\" (");
-    alibi_schema_registry::SQLITE_AUTH_SCHEMA
-        .find(&prefix)
-        .or_else(|| {
-            alibi_schema_registry::SQLITE_OAUTH_SCHEMA
-                .find(&prefix)
-                .map(|index| index + alibi_schema_registry::SQLITE_AUTH_SCHEMA.len())
-        })
-        .unwrap_or(usize::MAX)
 }

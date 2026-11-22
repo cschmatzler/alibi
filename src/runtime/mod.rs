@@ -3,6 +3,7 @@ mod body;
 mod builder;
 mod builtin;
 mod endpoint;
+mod endpoint_hooks;
 mod http;
 mod http_hooks;
 use alibi_core::{

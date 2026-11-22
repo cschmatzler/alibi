@@ -30,12 +30,7 @@ impl SsoPlugin {
                     ctx.database
                         .get_member(id, user.id().as_ref())
                         .await?
-                        .is_some_and(|member| {
-                            member
-                                .role
-                                .split(',')
-                                .any(|role| matches!(role.trim(), "owner" | "admin"))
-                        })
+                        .is_some_and(|member| super::can_manage_organization_provider(&member.role))
                 } else {
                     false
                 }

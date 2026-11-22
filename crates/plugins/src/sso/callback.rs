@@ -29,11 +29,7 @@ impl SsoPlugin {
         meta: &RequestMeta,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
+        let base = super::sso_base(&ctx.config);
         let default_error = format!("{base}/error");
         let Some(state) = query
             .get("state")

@@ -191,6 +191,17 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
 
+    /// End live sessions without removing their audit rows. A hook can veto the write.
+    async fn end_user_sessions_preserving(
+        &self,
+        _user_id: &str,
+        _at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        Err(AuthError::not_implemented(
+            "Transactional session audit retention is unsupported",
+        ))
+    }
+
     /// Revoke cached authority after commit, before the user's delete-after hooks.
     async fn queue_session_revocation(
         &self,
@@ -206,6 +217,21 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         Err(AuthError::not_implemented(
             "Transactional session reads are unsupported",
         ))
+    }
+
+    /// Read live audit-retirement candidates on this transaction's connection.
+    async fn get_live_user_sessions(
+        &self,
+        user_id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Vec<S::Session>> {
+        use crate::AuthSession as _;
+        Ok(self
+            .get_user_sessions(user_id)
+            .await?
+            .into_iter()
+            .filter(|session| session.expires_at() > at)
+            .collect())
     }
     async fn list_oauth_tokens_for_session(
         &self,

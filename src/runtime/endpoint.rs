@@ -1,14 +1,13 @@
-use super::Alibi;
-use alibi_core::endpoint::{
-    BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointError, EndpointHook,
-    EndpointOptions, EndpointOutput, EndpointResponse, ServerEndpoint, is_endpoint_api_error,
-    with_endpoint_call_context,
+use super::{
+    Alibi,
+    endpoint_hooks::{self, BeforeHooks, HookTransport},
 };
-use alibi_core::{AuthContext, AuthError, AuthRequest, AuthSchema, Headers, HttpMethod};
+use alibi_core::endpoint::{
+    EndpointCall, EndpointError, EndpointHook, EndpointOptions, EndpointOutput, EndpointResponse,
+    ServerEndpoint, is_endpoint_api_error, with_endpoint_call_context,
+};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthSchema, HttpMethod};
 use std::sync::Arc;
-
-const HOOK_MATCHER_FAILURE: &str =
-    "An error occurred during hook matcher execution. Check the logs for more details.";
 
 impl<S: AuthSchema> Alibi<S> {
     /// Dispatch a trusted operation through configured hooks and its installed plugin.
@@ -124,63 +123,25 @@ impl<S: AuthSchema> Alibi<S> {
                     .flat_map(|plugin| plugin.endpoint_hooks()),
             )
             .collect();
-        let mut patch = EndpointContextPatch::default();
-        let mut before_headers = Headers::new();
         let mut outer = call.clone();
-        for hook in &hooks {
-            let matched = with_endpoint_call_context(call.clone(), async {
-                hook.matches_before(&call, context)
-            })
-            .await
-            .map_err(|error| {
-                tracing::error!(%error, "Endpoint before-hook matcher failed");
-                AuthError::Api {
-                    status: 500,
-                    code: None,
-                    message: HOOK_MATCHER_FAILURE.into(),
-                }
-            })?;
-            if !matched {
-                continue;
-            }
-            let middleware = call.middleware_context();
-            let action =
-                with_endpoint_call_context(call.clone(), hook.before(&middleware, context)).await;
-            let headers = call.take_response_headers();
-            let action = action.map_err(|error| EndpointError {
-                body: None,
-                body_absent: false,
-                headers: if is_endpoint_api_error(&error) {
-                    Some(headers.clone())
-                } else {
-                    None
-                },
-                error,
-            })?;
-            let hook_headers = headers.clone();
-            merge_headers(&mut before_headers, headers);
-            match action {
-                Some(BeforeEndpointAction::Patch(changes)) => patch.merge(*changes),
-                Some(BeforeEndpointAction::Respond(mut response)) => {
-                    response.merge_headers(before_headers);
-                    return response.into_output();
-                }
-                Some(BeforeEndpointAction::Reject(mut response)) => {
-                    response.merge_headers(hook_headers);
-                    return response.into_output();
-                }
-                None => {}
-            }
-        }
+        let (patch, before_headers) = match Box::pin(endpoint_hooks::run_before(
+            &hooks,
+            &call,
+            context,
+            HookTransport::Direct,
+        ))
+        .await
+        .map_err(|failure| EndpointError {
+            body: None,
+            body_absent: false,
+            headers: failure.headers,
+            error: failure.error,
+        })? {
+            BeforeHooks::Continue { patch, headers } => (patch, headers),
+            BeforeHooks::Respond(response) => return response.into_output(),
+        };
         patch.apply(&mut call);
-        // Source retains the original outer frame for hook task-local access.
-        // Header patches update (or initialize) its Headers property in place;
-        // other patched input and the optional Request belong to the active argument.
-        EndpointContextPatch {
-            headers: call.headers().cloned(),
-            ..Default::default()
-        }
-        .apply(&mut outer);
+        endpoint_hooks::update_outer_headers(&mut outer, &call);
         if let Some(request) = call.request() {
             request
                 .extensions()
@@ -213,46 +174,15 @@ impl<S: AuthSchema> Alibi<S> {
         for header in cache_headers {
             response = response.with_header("set-cookie", header);
         }
-        for hook in hooks {
-            if !with_endpoint_call_context(outer.clone(), async {
-                hook.matches_after(&call, context, &response)
-            })
-            .await?
-            {
-                continue;
-            }
-            let middleware = call.middleware_context();
-            // A throwing API after-hook replaces the value but keeps the handler's
-            // actual status and accumulated headers; ordinary failures escape.
-            let previous_headers = response.headers().clone();
-            let previous_status = response.status();
-            response = match with_endpoint_call_context(
-                outer.clone(),
-                hook.after(&middleware, context, response),
-            )
-            .await
-            {
-                Ok(response) => response,
-                Err(error) if is_endpoint_api_error(&error) => {
-                    let mut response = EndpointResponse::error(error);
-                    response.set_status(previous_status);
-                    response.merge_headers(previous_headers);
-                    response
-                }
-                Err(error) => return Err(error.into()),
-            };
-            response.merge_headers(call.take_response_headers());
-        }
-        response.into_output()
-    }
-}
-
-pub(super) fn merge_headers(target: &mut Headers, headers: Headers) {
-    for (name, value) in headers {
-        if name.eq_ignore_ascii_case("set-cookie") {
-            target.append(name, value);
-        } else {
-            _ = target.insert(name, value);
-        }
+        Box::pin(endpoint_hooks::run_after(
+            &hooks,
+            &call,
+            &outer,
+            context,
+            response,
+            HookTransport::Direct,
+        ))
+        .await?
+        .into_output()
     }
 }

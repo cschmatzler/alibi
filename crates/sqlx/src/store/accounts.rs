@@ -5,7 +5,7 @@ use crate::schema::{AuthSchema, SqlxAccountModel};
 use crate::sql::Sql;
 use alibi_core::error::AuthResult;
 use alibi_core::store::AccountStore;
-use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::adapter::account_write;
 use alibi_core::types::{CreateAccount, UpdateAccount};
 use alibi_core::{AuthError, DatabaseError};
 use async_trait::async_trait;
@@ -51,26 +51,8 @@ where
         mut create_account: CreateAccount,
     ) -> AuthResult<S::Account> {
         let hook_context = self.hook_context(tx);
-        for hook in self.hooks() {
-            if hook
-                .before_create_account(&mut create_account, &hook_context)
-                .await?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("account creation"));
-            }
-        }
-        let now = Utc::now().trunc_subsecs(3);
-        let mut fields = std::mem::take(&mut create_account.additional_fields);
-        fields.take_timestamp_input(
-            "accessTokenExpiresAt",
-            &mut create_account.access_token_expires_at,
-        );
-        fields.take_timestamp_input(
-            "refreshTokenExpiresAt",
-            &mut create_account.refresh_token_expires_at,
-        );
-        fields.apply_adapter_transforms_async().await?;
+        let (now, fields) =
+            account_write::prepare_create(self.hooks(), &hook_context, &mut create_account).await?;
         let generated_id = self
             .generated_id(
                 exec,
@@ -216,22 +198,8 @@ where
     ) -> AuthResult<Option<S::Account>> {
         let locator = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let hook_context = self.hook_context(tx);
-        for hook in self.hooks() {
-            if hook
-                .before_update_account(id, &mut update, &hook_context)
-                .await?
-                .is_cancelled()
-            {
-                return Err(cancelled_by_hook("account update"));
-            }
-        }
-        let mut fields = std::mem::take(&mut update.additional_fields);
-        fields.take_timestamp_input("accessTokenExpiresAt", &mut update.access_token_expires_at);
-        fields.take_timestamp_input(
-            "refreshTokenExpiresAt",
-            &mut update.refresh_token_expires_at,
-        );
-        fields.apply_adapter_transforms_async().await?;
+        let fields =
+            account_write::prepare_update(self.hooks(), &hook_context, id, &mut update).await?;
         let mut active = self
             .find_account_by_id_with(exec, id)
             .await?
@@ -242,15 +210,7 @@ where
 
         let account = model::update_where::<S::Account>(exec, &active, locator).await?;
         if tx.is_none() {
-            for hook in self.hooks() {
-                if let Some(account) = &account {
-                    hook.after_update_account(account, &hook_context).await?;
-                } else {
-                    hook.after_update_account_missing(id, &hook_context)
-                        .await
-                        .map_err(alibi_core::store::adapter::callback_error)?;
-                }
-            }
+            account_write::after_update(self.hooks(), &hook_context, id, account.as_ref()).await?;
         }
         Ok(account)
     }

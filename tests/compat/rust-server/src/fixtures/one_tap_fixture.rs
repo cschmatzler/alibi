@@ -72,16 +72,17 @@ impl OAuthUserInfoHandler for CustomUserInfo {
         let email = claims["email"].as_str().unwrap_or_default().to_owned();
         claims["sub"] = json!("custom-data-subject");
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
-                id: String::new(),
-                email: format!("custom-{email}"),
+                id: String::new().into(),
+                email: format!("custom-{email}").into(),
                 name: Some("From Custom User Info".into()),
                 image: None,
                 email_verified: false,
-            },
-            data: claims,
+            }
+            .public_profile(false),
+            data: claims.into(),
         })
     }
 }
@@ -201,16 +202,24 @@ pub(crate) async fn router(
         provider.require_email_verification = name.starts_with("one-tap-required");
         if name == "one-tap-mapped" {
             provider.map_user_info = Some(|profile| {
-                let text = |key: &str| profile.get(key).and_then(Value::as_str).map(str::to_owned);
+                let text = |key: &str| {
+                    profile
+                        .get(key)
+                        .and_then(alibi::utils::json::JsValue::as_str)
+                        .map(str::to_owned)
+                };
                 Ok(OAuthUserInfo {
                     additional_fields: Default::default(),
-                    id: text("sub").unwrap_or_default(),
-                    email: text("email").unwrap_or_default(),
-                    name: Some(format!("Mapped {}", text("name").unwrap_or_default())),
+                    id: text("sub").unwrap_or_default().into(),
+                    email: text("email").unwrap_or_default().into(),
+                    name: Some(format!("Mapped {}", text("name").unwrap_or_default()).into()),
                     image: Some("https://fixture.test/mapped.png".into()),
-                    email_verified: profile.get("email_verified").and_then(Value::as_bool)
+                    email_verified: profile
+                        .get("email_verified")
+                        .and_then(alibi::utils::json::JsValue::as_bool)
                         == Some(true),
-                })
+                }
+                .public_profile(true))
             });
         }
         if name == "one-tap-custom-userinfo" {

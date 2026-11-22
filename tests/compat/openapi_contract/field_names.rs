@@ -47,7 +47,7 @@ mod tests {
                     .as_str()
                     .expect("sign-up should return user id")
                     .to_owned(),
-                account_id: "mock-account-id".to_owned(),
+                account_id: "mock-account-id".into(),
                 provider_id: "mock".to_owned(),
                 access_token: Some("mock-access-token".to_owned()),
                 refresh_token: Some("mock-refresh-token".to_owned()),

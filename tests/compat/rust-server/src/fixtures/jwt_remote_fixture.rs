@@ -138,7 +138,14 @@ fn capture(value: &JsValue) -> Value {
         JsValue::Object(values) => Value::Object(
             values
                 .iter()
-                .map(|(key, value)| (key.clone(), capture(value)))
+                .map(|(key, value)| {
+                    (
+                        key.as_str()
+                            .expect("fixture object key is UTF-8")
+                            .to_owned(),
+                        capture(value),
+                    )
+                })
                 .collect(),
         ),
         value => value.to_json_value().expect("finite JSON capture"),
@@ -230,7 +237,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
    if body.operation=="failure"{*state.failure.lock().map_err(|_|AuthError::internal("signer lock"))?=body.failure;return Ok(json!({"changed":true}));}
    let (auth,jwt)=profiles.get(body.profile.as_deref().unwrap_or("jwt-remote-raw")).ok_or_else(||AuthError::bad_request("unknown signer profile"))?;
    let mut payload=body.payload.ok_or_else(||AuthError::bad_request("payload is required"))?;
-   if let JsValue::Object(fields)=&mut payload{for key in body.nan_fields{drop(fields.insert(key,JsValue::Number(f64::NAN)));}}
+   if let JsValue::Object(fields)=&mut payload{for key in body.nan_fields{drop(fields.insert(key.into(),JsValue::Number(f64::NAN)));}}
    let options=JwtSignOptions{header:Some(body.header),signing_key_id:body.signing_key_id,signing_algorithm:body.signing_algorithm,..Default::default()};
    Ok::<_,AuthError>(json!({"token":jwt.sign_jwt_json(&payload,&options,None,auth.context()).await?}))
   }.await;

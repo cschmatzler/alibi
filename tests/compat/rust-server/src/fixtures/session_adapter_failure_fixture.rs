@@ -117,7 +117,7 @@ forward!(UserStore<TestSchema> {
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<<TestSchema as AuthSchema>::User>;
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
     async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<<TestSchema as AuthSchema>::User>>;
-    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
+    async fn get_user_by_email(&self, email: &alibi::utils::json::JsString) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
     async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<<TestSchema as AuthSchema>::User>>;
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<<TestSchema as AuthSchema>::User>;
     async fn update_user_prepared(&self, id: &str, update: alibi::store::PreparedUserUpdate) -> AuthResult<<TestSchema as AuthSchema>::User>;
@@ -169,7 +169,7 @@ forward!(VerificationStore<TestSchema> {
 
 forward!(AccountStore<TestSchema> {
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<<TestSchema as AuthSchema>::Account>;
-    async fn get_account( &self, provider: &str, provider_account_id: &str ) -> AuthResult<Option<<TestSchema as AuthSchema>::Account>>;
+    async fn get_account( &self, provider: &str, provider_account_id: &alibi::utils::json::JsString ) -> AuthResult<Option<<TestSchema as AuthSchema>::Account>>;
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<<TestSchema as AuthSchema>::Account>>;
     async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<<TestSchema as AuthSchema>::Account>;
     async fn delete_account(&self, id: &str) -> AuthResult<()>;

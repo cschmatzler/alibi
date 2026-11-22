@@ -330,40 +330,15 @@ impl OAuthProviderPlugin {
                 return Ok(no_store(response));
             }
         };
-        let mut response = super::issuance::response_fields(&params);
-        response.extend([
-            ("access_token".into(), json!(access)),
-            (
-                "expires_in".into(),
-                super::issuance::remaining(issued.timestamp(), &expires_claim)?,
-            ),
-            ("expires_at".into(), expires_claim),
-            (
-                "token_type".into(),
-                json!(if params
-                    .confirmation
-                    .as_ref()
-                    .and_then(|value| value.get("jkt"))
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| !value.is_empty())
-                {
-                    "DPoP"
-                } else {
-                    "Bearer"
-                }),
-            ),
-            ("scope".into(), json!(scopes.join(" "))),
-        ]);
-        if let Some((_, token)) = next_refresh {
-            _ = response.insert("refresh_token".into(), json!(token));
-        }
+        let mut response = super::issuance::access_token_response(
+            &params,
+            &access,
+            issued.timestamp(),
+            expires_claim,
+            next_refresh.map(|(_, token)| token),
+        )?;
         if scopes.contains(&"openid") {
-            let auth_time = original
-                .metadata
-                .get("authTime")
-                .and_then(Value::as_str)
-                .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
-                .map(|value| value.timestamp_millis());
+            let auth_time = params.auth_time.map(|value| value.timestamp_millis());
             let proof = json!({"userId":user_id,"sessionId":original.session_id,"authTime":auth_time,"query":{},"idTokenClaims":params.id_token_claims});
             match Box::pin(self.issue_id_token(&params, "refresh_token", &proof, &access, req, ctx))
                 .await?

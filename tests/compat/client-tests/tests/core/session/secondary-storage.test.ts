@@ -126,11 +126,10 @@ for (const mode of ["only", "preserve-only", "combined", "preserved"] as const) 
       const missing = await owner.client.getSession();
       expect(Boolean(missing.data)).toBe(mode === "combined");
 
-      // Combined fallback authenticates, but listing remains secondary authoritative.
       const missingList = mode === "combined" ? await owner.client.listSessions() : null;
 
       if (missingList) {
-        expect(missingList.data).toEqual([]);
+        expect(missingList.data).toEqual([expect.objectContaining({ token: rotatedToken })]);
       }
 
       const foreignAlive = await foreign.client.getSession();

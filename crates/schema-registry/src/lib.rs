@@ -12,6 +12,25 @@ pub enum EntityRole {
     Verification,
 }
 
+impl EntityRole {
+    pub const ALL: [Self; 4] = [Self::User, Self::Session, Self::Account, Self::Verification];
+
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::Session => "session",
+            Self::Account => "account",
+            Self::Verification => "verification",
+        }
+    }
+
+    #[must_use]
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|role| role.as_str() == name)
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub struct FieldDef {
     pub name: &'static str,
@@ -720,6 +739,64 @@ pub fn plugin_field_names(role: EntityRole) -> Vec<&'static str> {
 pub fn core_field_names(role: EntityRole) -> Vec<&'static str> {
     core_fields(role).iter().map(|f| f.name).collect()
 }
+
+/// One bundled schema change with a stable persisted identifier and dialect SQL.
+pub struct BundledMigration {
+    pub name: &'static str,
+    pub sqlite: &'static str,
+    pub postgres: &'static str,
+    pub mysql: &'static str,
+}
+
+pub const AUTH_MIGRATION_LEDGER: &str = "better_auth_migrations";
+pub const RATE_LIMIT_MIGRATION_LEDGER: &str = "better_auth_rate_limit_migrations";
+
+/// Applied in order by both Rust adapters.
+pub static AUTH_MIGRATIONS: &[BundledMigration] = &[
+    BundledMigration {
+        name: "m20261013_000001_typescript_auth_schema",
+        sqlite: SQLITE_AUTH_SCHEMA,
+        postgres: POSTGRES_AUTH_SCHEMA,
+        mysql: MYSQL_AUTH_SCHEMA,
+    },
+    BundledMigration {
+        name: "m20261013_000002_typescript_oauth_schema",
+        sqlite: SQLITE_OAUTH_SCHEMA,
+        postgres: POSTGRES_OAUTH_SCHEMA,
+        mysql: MYSQL_OAUTH_SCHEMA,
+    },
+    BundledMigration {
+        name: "m20261013_000003_typescript_sso_schema",
+        sqlite: SQLITE_SSO_SCHEMA,
+        postgres: POSTGRES_SSO_SCHEMA,
+        mysql: MYSQL_SSO_SCHEMA,
+    },
+    BundledMigration {
+        name: "m20261014_000004_typescript_scim_managed_schema",
+        sqlite: SQLITE_SCIM_MANAGED_SCHEMA,
+        postgres: POSTGRES_SCIM_MANAGED_SCHEMA,
+        mysql: MYSQL_SCIM_MANAGED_SCHEMA,
+    },
+    BundledMigration {
+        name: "m20261014_000005_typescript_scim_binding_schema",
+        sqlite: SQLITE_SCIM_BINDING_SCHEMA,
+        postgres: POSTGRES_SCIM_BINDING_SCHEMA,
+        mysql: MYSQL_SCIM_BINDING_SCHEMA,
+    },
+    BundledMigration {
+        name: "m20261014_000006_typescript_scim_canonical_schema",
+        sqlite: SQLITE_SCIM_CANONICAL_SCHEMA,
+        postgres: POSTGRES_SCIM_CANONICAL_SCHEMA,
+        mysql: MYSQL_SCIM_CANONICAL_SCHEMA,
+    },
+];
+
+pub static RATE_LIMIT_MIGRATION: BundledMigration = BundledMigration {
+    name: "m20261013_000003_typescript_rate_limit_schema",
+    sqlite: SQLITE_RATE_LIMIT_SCHEMA,
+    postgres: POSTGRES_RATE_LIMIT_SCHEMA,
+    mysql: MYSQL_RATE_LIMIT_SCHEMA,
+};
 
 /// Exact bundled SQL compiled from the pinned Better Auth TypeScript schema.
 pub const SQLITE_AUTH_SCHEMA: &str = include_str!("../schema/sqlite.sql");

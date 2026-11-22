@@ -1,4 +1,6 @@
 //! Durable, atomic framework-managed provisioning credentials.
+pub mod keys;
+
 use crate::{AuthError, AuthResult};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -571,12 +573,10 @@ pub struct ScimIdentityState {
 /// # Errors
 /// Returns an error if the key tuple cannot be serialized.
 pub fn scim_group_membership_key(connection: &str, group: &str, user: &str) -> AuthResult<String> {
-    use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-    use sha2::{Digest, Sha256};
-    Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(serde_json::to_vec(&[
+    Ok(keys::tuple(&[
         "scim-group-member",
         connection,
         group,
         user,
-    ])?)))
+    ])?)
 }

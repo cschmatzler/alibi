@@ -202,7 +202,7 @@ mod tests {
             .create_account(CreateAccount {
                 additional_fields: Default::default(),
                 user_id: ai_user_id.to_owned(),
-                account_id: "mock-account-id".to_owned(),
+                account_id: "mock-account-id".into(),
                 provider_id: "mock".to_owned(),
                 access_token: Some("mock-access-token".to_owned()),
                 refresh_token: Some("mock-refresh-token".to_owned()),

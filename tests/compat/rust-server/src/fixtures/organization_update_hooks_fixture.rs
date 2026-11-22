@@ -119,7 +119,13 @@ impl OrganizationUpdateHooks for Hooks {
         if let Some(value) = &context.organization.metadata {
             let _ = input.insert(
                 "metadata".into(),
-                alibi::utils::json::JsValue::Object(value.clone()).to_json_value()?,
+                alibi::utils::json::JsValue::Object(
+                    value
+                        .iter()
+                        .map(|(name, field)| (name.into(), field.clone()))
+                        .collect(),
+                )
+                .to_json_value()?,
             );
         }
         self.note(

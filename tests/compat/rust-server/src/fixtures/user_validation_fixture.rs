@@ -418,8 +418,8 @@ pub(crate) async fn router(
             let proofs=verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(db_error)?;
             let wallets=wallet_address::Entity::find().order_by_asc(wallet_address::Column::CreatedAt).all(&db).await.map_err(db_error)?;
             let accounts=accounts.iter().map(|row|{let mut value=serde_json::to_value(AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
-            Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<Vec<_>>(),"accounts":accounts,
-                "sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<Vec<_>>(),"verifications":proofs.iter().map(VerificationView::from).collect::<Vec<_>>(),
+            Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<AuthResult<Vec<_>>>()?,"accounts":accounts,
+                "sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<AuthResult<Vec<_>>>()?,"verifications":proofs.iter().map(VerificationView::from).collect::<Vec<_>>(),
                 "wallets":wallets.iter().map(|row|json!({"id":row.id,"userId":row.user_id,"address":row.address,"chainId":row.chain_id.0,"isPrimary":row.is_primary,"createdAt":row.created_at})).collect::<Vec<_>>(),"events":*app.events.lock().unwrap()}))
         }.await;match result {Ok(value)=>Json(value).into_response(),Err(error)=>error.into_response()}
     }}));
@@ -521,7 +521,7 @@ pub(crate) async fn router(
                                     )
                                     .await?
                             };
-                            Ok(serde_json::to_value(auth.context().user_view(&user))?)
+                            Ok(serde_json::to_value(auth.context().user_view(&user)?)?)
                         }
                         _ => Err(AuthError::bad_request("unknown fixture operation")),
                     }

@@ -1,86 +1,6 @@
-//! The pinned safeJSONParse date reviver, restricted to its ISO-Z grammar.
-use crate::utils::json::JsValue;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
-
-pub(crate) fn parse(value: &str) -> Option<DateTime<Utc>> {
-    let bytes = value.as_bytes();
-    if bytes.len() < 20
-        || bytes.get(4) != Some(&b'-')
-        || bytes.get(7) != Some(&b'-')
-        || bytes.get(10) != Some(&b'T')
-        || bytes.get(13) != Some(&b':')
-        || bytes.get(16) != Some(&b':')
-        || bytes.last() != Some(&b'Z')
-    {
-        return None;
-    }
-    let number = |start: usize, end: usize| -> Option<u32> {
-        let digits = bytes.get(start..end)?;
-        digits.iter().all(u8::is_ascii_digit).then_some(())?;
-        digits
-            .iter()
-            .try_fold(0, |total, digit| Some(total * 10 + u32::from(digit - b'0')))
-    };
-    let (year, month, day) = (number(0, 4)?, number(5, 7)?, number(8, 10)?);
-    let (hour, minute, second) = (number(11, 13)?, number(14, 16)?, number(17, 19)?);
-    if !(1..=12).contains(&month)
-        || !(1..=31).contains(&day)
-        || hour > 24
-        || minute > 59
-        || second > 59
-    {
-        return None;
-    }
-    let fraction = if bytes.len() == 20 {
-        &[][..]
-    } else {
-        if bytes.get(19) != Some(&b'.') {
-            return None;
-        }
-        let digits = bytes.get(20..bytes.len() - 1)?;
-        if digits.is_empty() || !digits.iter().all(u8::is_ascii_digit) {
-            return None;
-        }
-        digits
-    };
-    if hour == 24 && (minute != 0 || second != 0 || fraction.iter().any(|digit| *digit != b'0')) {
-        return None;
-    }
-    let millis = fraction
-        .iter()
-        .take(3)
-        .zip([100, 10, 1])
-        .fold(0, |total, (digit, factor)| {
-            total + u32::from(digit - b'0') * factor
-        });
-    let first = NaiveDate::from_ymd_opt(i32::try_from(year).ok()?, month, 1)?;
-    let date =
-        first.checked_add_signed(Duration::days(i64::from(day - 1) + i64::from(hour == 24)))?;
-    Some(
-        date.and_hms_milli_opt(if hour == 24 { 0 } else { hour }, minute, second, millis)?
-            .and_utc(),
-    )
-}
-
-pub(crate) fn revive(value: &mut JsValue) {
-    match value {
-        JsValue::String(text) => {
-            if let Some(normalized) = text
-                .as_str()
-                .and_then(crate::utils::datetime::normalize_json_date)
-            {
-                *text = normalized.into();
-            }
-        }
-        JsValue::Array(values) => values.iter_mut().for_each(revive),
-        JsValue::Object(values) => values.values_mut().for_each(revive),
-        JsValue::Undefined
-        | JsValue::Null
-        | JsValue::Bool(_)
-        | JsValue::Number(_)
-        | JsValue::Date(_) => {}
-    }
-}
+use crate::utils::datetime::parse_json_date;
+use crate::utils::json::{JsValue, normalize_json_dates};
+use chrono::Datelike;
 
 // safeJSONParse's second invocation walks a pre-parsed object into fresh
 // ordinary JavaScript objects. The __proto__ setter changes its prototype;
@@ -92,7 +12,7 @@ pub(crate) fn revive_parsed(value: &mut JsValue) {
             values.values_mut().for_each(revive_parsed);
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive_parsed),
-        _ => revive(value),
+        _ => normalize_json_dates(value),
     }
 }
 
@@ -100,7 +20,7 @@ pub(crate) fn revive_parsed(value: &mut JsValue) {
 // revival distinct from ordinary string coercion; arrays join revived values.
 pub(crate) fn coerce_id(value: &JsValue) -> Option<String> {
     match value {
-        JsValue::String(text) => text.as_str().and_then(parse).map_or_else(
+        JsValue::String(text) => text.as_str().and_then(parse_json_date).map_or_else(
             || text.to_utf8().ok(),
             |date| {
                 Some(format!(
@@ -137,7 +57,7 @@ fn coerce_object_id(values: &crate::utils::json::JsObject) -> Option<String> {
         // These require JavaScript internal slots or inherited Array methods,
         // rather than an idiomatic own-property native JSON object.
         Some(JsValue::Null | JsValue::Array(_)) => None,
-        Some(JsValue::String(text)) if text.as_str().and_then(parse).is_some() => None,
+        Some(JsValue::String(text)) if text.as_str().and_then(parse_json_date).is_some() => None,
         _ => Some("[object Object]".into()),
     }
 }
@@ -154,7 +74,7 @@ mod tests {
 
     #[test]
     fn rejects_malformed_iso_dates() {
-        assert!(parse("2024-03-01T10:20:30Z").is_some());
+        assert!(parse_json_date("2024-03-01T10:20:30Z").is_some());
         for text in [
             "2024-03-01",
             "2024-03-01T10:20:30,5Z",
@@ -163,7 +83,7 @@ mod tests {
             "2024-13-01T10:20:30Z",
             "2024-03-01T24:00:01Z",
         ] {
-            assert_eq!(parse(text), None, "{text}");
+            assert_eq!(parse_json_date(text), None, "{text}");
         }
     }
 
@@ -177,7 +97,7 @@ mod tests {
             serde_json::json!({"a":["2024-03-02T00:00:00.000Z",1]})
         );
         let mut value = parse_value(r#"[["2024-03-01T10:20:30Z"]]"#).unwrap();
-        revive(&mut value);
+        normalize_json_dates(&mut value);
         assert_eq!(
             value.to_json_value().unwrap(),
             serde_json::json!([["2024-03-01T10:20:30.000Z"]])

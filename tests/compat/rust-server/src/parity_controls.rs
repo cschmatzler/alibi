@@ -38,7 +38,7 @@ async fn user_state(
         let store = selected.store();
         let user = store.get_user_by_id(&query.user_id).await?;
         let mut accounts = store.get_user_accounts(&query.user_id).await?;
-        accounts.sort_by(|left, right| left.provider_id().cmp(right.provider_id()).then_with(|| left.account_id().cmp(right.account_id())));
+        accounts.sort_by(|left, right| left.provider_id().cmp(right.provider_id()).then_with(|| left.account_id().code_units().cmp(right.account_id().code_units())));
         let mut sessions = store.get_user_sessions(&query.user_id).await?;
         sessions.sort_by_key(AuthSession::created_at);
         let two_factor = store.get_two_factor_by_user_id(&query.user_id).await?;

@@ -882,7 +882,7 @@ pub(crate) async fn router(
                 config.dpop_proof_max_age_seconds=body["dpop"]["proofMaxAgeSeconds"].as_f64();config.dpop_signing_algorithms=body["dpop"].get("signingAlgorithms").map(|value|serde_json::from_value(value.clone()).unwrap());let provider=seeded.as_ref().map(|(_,provider)|provider.clone()).unwrap_or_else(||OAuthProviderPlugin::with_config(config));
                 let client=provider.get_client(auth.context(),body["clientId"].as_str().unwrap()).await.unwrap().unwrap();
                 let mut params=alibi::plugins::OAuthTokenIssueParams::new(client,serde_json::from_value(values["scopes"].clone()).unwrap());
-                if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(auth.context().trusted_user_view(&user));}
+                if let Some(id)=body["userId"].as_str(){let user=auth.store().get_user_by_id(id).await.unwrap().unwrap();params.user=Some(match auth.context().trusted_user_view(&user) { Ok(view) => view, Err(error) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response() });}
                 params.session_id=values["sessionId"].as_str().map(str::to_owned);params.reference_id=values["referenceId"].as_str().map(str::to_owned);params.nonce=values["nonce"].as_str().map(str::to_owned);
                 params.auth_time=values["authTime"].as_str().map(|v|chrono::DateTime::parse_from_rfc3339(v).unwrap().with_timezone(&chrono::Utc));
                 params.resources=values.get("resources").map(|v|serde_json::from_value(v.clone()).unwrap());params.requested_user_info_claims=values.get("requestedUserInfoClaims").map(|v|serde_json::from_value(v.clone()).unwrap());

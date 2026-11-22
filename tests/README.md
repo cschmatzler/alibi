@@ -30,14 +30,15 @@ enables Axum, Poem, SeaORM and passkeys alongside SQLx for repository tests, wit
 the features downstream applications enable. No wrapper or special nextest profile
 is needed. Outside the development shell, prefix the command with `devenv shell --`.
 
-No Nub, upstream install, Redis, PostgreSQL, browser install, or external network
-service is needed. Tests use isolated SQLite databases and ephemeral localhost
-HTTP servers. The first run compiles the workspace; subsequent runs reuse Cargo
-artifacts. The default nextest profile runs cases concurrently, collects all
-failures and does not retry. The JUnit report is
-`target/nextest/default/junit.xml`. CI runs the same
-command through `./scripts/check.sh`. CI does not run `./scripts/compat.sh`; run it
-before merging.
+The native unit, integration and end-to-end tiers use isolated SQLite databases
+and ephemeral localhost HTTP servers. The default run also includes static
+compatibility checks. Install the pinned packages with `nub install --frozen-lockfile`
+in `tests/compat/reference-server` and `tests/compat/client-tests` for the upstream
+OpenAPI and release-pin checks.
+
+The default nextest profile collects all failures without retrying. The JUnit
+report is `target/nextest/default/junit.xml`. CI uses `./scripts/check.sh`.
+The differential SDK scenarios run through `./scripts/compat.sh`.
 
 ### What is skipped
 

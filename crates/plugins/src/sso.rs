@@ -231,10 +231,7 @@ impl SsoPlugin {
             if ctx
                 .get_metadata(super::organization::METADATA_ENABLED)
                 .is_some()
-                && !member
-                    .role
-                    .split(',')
-                    .any(|r| matches!(r.trim(), "owner" | "admin"))
+                && !can_manage_organization_provider(&member.role)
             {
                 return Err(api(
                     403,
@@ -355,30 +352,30 @@ impl SsoPlugin {
                     .unwrap_or(Value::Null),
             );
         }
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
-        let redirect = self
-            .config
-            .redirect_uri
-            .as_ref()
-            .filter(|uri| !uri.trim().is_empty())
-            .map_or_else(
-                || format!("{base}/sso/callback/{provider_id}"),
-                |uri| {
-                    if url::Url::parse(uri).is_ok() {
-                        uri.clone()
-                    } else {
-                        format!("{base}/{}", uri.trim_start_matches('/'))
-                    }
-                },
-            );
+        let base = sso_base(&ctx.config);
+        let redirect = self.oidc_redirect_uri(&base, provider_id);
         _ = object.insert("redirectURI".into(), json!(redirect));
         EndpointResponse::json(&output)
     }
 }
+fn sso_base(config: &alibi_core::AuthConfig) -> String {
+    format!(
+        "{}{}",
+        config.base_url.trim_end_matches('/'),
+        config.base_path.trim_end_matches('/')
+    )
+}
+
+fn saml_acs_url(base: &str, provider_id: &str) -> String {
+    format!("{base}/sso/saml2/sp/acs/{provider_id}")
+}
+
+fn can_manage_organization_provider(roles: &str) -> bool {
+    roles
+        .split(',')
+        .any(|role| matches!(role.trim(), "owner" | "admin"))
+}
+
 fn provider_email_verified(value: Option<&Value>) -> bool {
     value.is_some_and(|value| value.as_bool() == Some(true) || value.as_str() == Some("true"))
 }

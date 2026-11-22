@@ -16,7 +16,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -76,13 +77,32 @@ pub(crate) async fn router(
                     .expect("mapper receipt lock")
                     .push(profile.clone());
                 Ok(OAuthUserInfo {
-                    additional_fields: [("linearPublic".into(), json!({"source":profile.get("id").cloned().unwrap_or(Value::Null),"scopes":["read"]}))].into_iter().collect(),
+                    additional_fields: [(
+                        "linearPublic".into(),
+                        alibi::utils::json::JsValue::Object(
+                            [
+                                (
+                                    "source".into(),
+                                    profile
+                                        .get("id")
+                                        .cloned()
+                                        .unwrap_or(alibi::utils::json::JsValue::Null),
+                                ),
+                                ("scopes".into(), json!(["read"]).into()),
+                            ]
+                            .into_iter()
+                            .collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped Linear User".into()),
                     email: "mapped-linear@example.invalid".into(),
                     email_verified: true,
                     image: Some("https://images.example.invalid/mapped-linear.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         if mode == "client-key" {
@@ -125,7 +145,7 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/linear/mapper-receipts",
-            get(|| async { Json(MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clone()) }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/linear/token", post(token))
         .route("/__test/linear/userinfo", post(profile))

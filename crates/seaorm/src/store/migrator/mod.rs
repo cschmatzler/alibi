@@ -1,4 +1,5 @@
 //! Bundled migrations compiled from the pinned Better Auth TypeScript schema.
+use alibi_schema_registry::{AUTH_MIGRATION_LEDGER, AUTH_MIGRATIONS, BundledMigration};
 use sea_orm::ConnectionTrait;
 use sea_orm::sea_query::IntoIden;
 use sea_orm_migration::prelude::*;
@@ -7,17 +8,13 @@ pub struct AuthMigrator;
 #[async_trait::async_trait]
 impl MigratorTrait for AuthMigrator {
     fn migrations() -> Vec<Box<dyn MigrationTrait>> {
-        vec![
-            Box::new(AuthSchemaMigration),
-            Box::new(OAuthClientsMigration),
-            Box::new(SsoMigration),
-            Box::new(ScimManagedMigration),
-            Box::new(ScimBindingMigration),
-            Box::new(ScimCanonicalMigration),
-        ]
+        AUTH_MIGRATIONS
+            .iter()
+            .map(|migration| Box::new(AuthMigration(migration)) as Box<dyn MigrationTrait>)
+            .collect()
     }
     fn migration_table_name() -> DynIden {
-        "better_auth_migrations".into_iden()
+        AUTH_MIGRATION_LEDGER.into_iden()
     }
 }
 /// # Errors
@@ -25,46 +22,27 @@ impl MigratorTrait for AuthMigrator {
 pub async fn run_migrations(db: &sea_orm::DatabaseConnection) -> Result<(), DbErr> {
     AuthMigrator::up(db, None).await
 }
-struct AuthSchemaMigration;
-impl MigrationName for AuthSchemaMigration {
+struct AuthMigration(&'static BundledMigration);
+
+impl MigrationName for AuthMigration {
     fn name(&self) -> &'static str {
-        "m20261013_000001_typescript_auth_schema"
+        self.0.name
     }
 }
-struct ScimManagedMigration;
-impl MigrationName for ScimManagedMigration {
-    fn name(&self) -> &'static str {
-        "m20261014_000004_typescript_scim_managed_schema"
+
+impl AuthMigration {
+    fn sql(&self, manager: &SchemaManager<'_>) -> Result<&'static str, DbErr> {
+        Ok(match manager.get_database_backend() {
+            sea_orm::DbBackend::Sqlite => self.0.sqlite,
+            sea_orm::DbBackend::Postgres => self.0.postgres,
+            sea_orm::DbBackend::MySql => self.0.mysql,
+            _ => {
+                return Err(DbErr::Custom(
+                    "Bundled migrations support SQLite, PostgreSQL and MySQL".into(),
+                ));
+            }
+        })
     }
-}
-struct SsoMigration;
-impl MigrationName for SsoMigration {
-    fn name(&self) -> &'static str {
-        "m20261013_000003_typescript_sso_schema"
-    }
-}
-struct OAuthClientsMigration;
-impl MigrationName for OAuthClientsMigration {
-    fn name(&self) -> &'static str {
-        "m20261013_000002_typescript_oauth_schema"
-    }
-}
-fn dialect_sql<'a>(
-    manager: &SchemaManager<'_>,
-    sqlite: &'a str,
-    postgres: &'a str,
-    mysql: &'a str,
-) -> Result<&'a str, DbErr> {
-    Ok(match manager.get_database_backend() {
-        sea_orm::DbBackend::Sqlite => sqlite,
-        sea_orm::DbBackend::Postgres => postgres,
-        sea_orm::DbBackend::MySql => mysql,
-        _ => {
-            return Err(DbErr::Custom(
-                "Bundled migrations support SQLite, PostgreSQL and MySQL".into(),
-            ));
-        }
-    })
 }
 async fn apply(manager: &SchemaManager<'_>, sql: &str) -> Result<(), DbErr> {
     for statement in sql
@@ -78,62 +56,41 @@ async fn apply(manager: &SchemaManager<'_>, sql: &str) -> Result<(), DbErr> {
     }
     Ok(())
 }
-macro_rules! migration {
-    ($migration:ty, $sqlite:path, $postgres:path, $mysql:path) => {
-        #[async_trait::async_trait]
-        impl MigrationTrait for $migration {
-            fn use_transaction(&self) -> Option<bool> {
-                Some(true)
-            }
-            #[expect(
-                elided_lifetimes_in_paths,
-                reason = "MigrationTrait requires a late-bound manager lifetime"
-            )]
-            async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-                apply(manager, dialect_sql(manager, $sqlite, $postgres, $mysql)?).await
-            }
-            #[expect(
-                elided_lifetimes_in_paths,
-                reason = "MigrationTrait requires a late-bound manager lifetime"
-            )]
-            async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
-                let sql = dialect_sql(manager, $sqlite, $postgres, $mysql)?;
-                for statement in sql.split(';').rev() {
-                    if let Some(create) = statement.split("create table ").nth(1) {
-                        let name = create
-                            .split_whitespace()
-                            .next()
-                            .ok_or_else(|| DbErr::Custom("Missing migration table name".into()))?;
-                        _ = manager
-                            .get_connection()
-                            .execute_unprepared(&format!("DROP TABLE IF EXISTS {name}"))
-                            .await?;
-                    }
-                }
-                Ok(())
+#[async_trait::async_trait]
+impl MigrationTrait for AuthMigration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(true)
+    }
+
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "MigrationTrait requires a late-bound manager lifetime"
+    )]
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        apply(manager, self.sql(manager)?).await
+    }
+
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "MigrationTrait requires a late-bound manager lifetime"
+    )]
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        for statement in self.sql(manager)?.split(';').rev() {
+            if let Some(create) = statement.split("create table ").nth(1) {
+                let name = create
+                    .split_whitespace()
+                    .next()
+                    .ok_or_else(|| DbErr::Custom("Missing migration table name".into()))?;
+                _ = manager
+                    .get_connection()
+                    .execute_unprepared(&format!("DROP TABLE IF EXISTS {name}"))
+                    .await?;
             }
         }
-    };
+        Ok(())
+    }
 }
-migration!(
-    AuthSchemaMigration,
-    alibi_schema_registry::SQLITE_AUTH_SCHEMA,
-    alibi_schema_registry::POSTGRES_AUTH_SCHEMA,
-    alibi_schema_registry::MYSQL_AUTH_SCHEMA
-);
-migration!(
-    OAuthClientsMigration,
-    alibi_schema_registry::SQLITE_OAUTH_SCHEMA,
-    alibi_schema_registry::POSTGRES_OAUTH_SCHEMA,
-    alibi_schema_registry::MYSQL_OAUTH_SCHEMA
-);
 
-migration!(
-    SsoMigration,
-    alibi_schema_registry::SQLITE_SSO_SCHEMA,
-    alibi_schema_registry::POSTGRES_SSO_SCHEMA,
-    alibi_schema_registry::MYSQL_SSO_SCHEMA
-);
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
@@ -218,36 +175,3 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
-
-migration!(
-    ScimManagedMigration,
-    alibi_schema_registry::SQLITE_SCIM_MANAGED_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_MANAGED_SCHEMA,
-    alibi_schema_registry::MYSQL_SCIM_MANAGED_SCHEMA
-);
-
-struct ScimBindingMigration;
-impl MigrationName for ScimBindingMigration {
-    fn name(&self) -> &'static str {
-        "m20261014_000005_typescript_scim_binding_schema"
-    }
-}
-migration!(
-    ScimBindingMigration,
-    alibi_schema_registry::SQLITE_SCIM_BINDING_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_BINDING_SCHEMA,
-    alibi_schema_registry::MYSQL_SCIM_BINDING_SCHEMA
-);
-
-struct ScimCanonicalMigration;
-impl MigrationName for ScimCanonicalMigration {
-    fn name(&self) -> &'static str {
-        "m20261014_000006_typescript_scim_canonical_schema"
-    }
-}
-migration!(
-    ScimCanonicalMigration,
-    alibi_schema_registry::SQLITE_SCIM_CANONICAL_SCHEMA,
-    alibi_schema_registry::POSTGRES_SCIM_CANONICAL_SCHEMA,
-    alibi_schema_registry::MYSQL_SCIM_CANONICAL_SCHEMA
-);

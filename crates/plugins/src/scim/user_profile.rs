@@ -1,5 +1,6 @@
 //! Input normalization shared by User creation and replacement.
 use super::user_attributes::{self, ENTERPRISE_SCHEMA, USER_SCHEMA};
+use alibi_core::store::scim::keys;
 use alibi_core::utils::javascript::trim;
 use serde_json::{Value, json};
 pub(super) struct Profile {
@@ -211,10 +212,8 @@ impl Profile {
                     kind.is_none_or(|kind| email.get("type").and_then(Value::as_str) == Some(kind))
                 })
                 .map(|email| {
-                    super::resources::scoped_key(&[
-                        "scim-email-value",
-                        email.get("value").and_then(Value::as_str).unwrap_or(""),
-                    ])
+                    keys::email_value(email.get("value").and_then(Value::as_str).unwrap_or(""))
+                        .map_err(Into::into)
                 })
                 .collect::<alibi_core::AuthResult<Vec<_>>>()?;
             keys.sort();
@@ -223,11 +222,7 @@ impl Profile {
         };
         Ok(alibi_core::store::ScimUserAttributes {
             user_name: self.user_name.clone(),
-            user_name_key: super::resources::scoped_key(&[
-                "scim-user-name",
-                connection,
-                &self.user_name.to_lowercase(),
-            ])?,
+            user_name_key: keys::user_name(connection, &self.user_name)?,
             primary_email: self.primary_email.clone(),
             work_email_value_index: index(Some("work"))?,
             email_value_index: index(None)?,
@@ -251,9 +246,7 @@ impl Profile {
             external_id_key: self
                 .external_id
                 .as_ref()
-                .map(|value| {
-                    super::resources::scoped_key(&["scim-user-external-id", connection, value])
-                })
+                .map(|value| keys::user_external_id(connection, value))
                 .transpose()?,
             active: self.active,
         })

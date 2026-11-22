@@ -173,7 +173,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, deferred: bool) -> TestRe
         let inside_cache = cache.clone();
         let inside_token = token.clone();
         let owner_id = owner.id().into_owned();
-        let result = alibi_core::store::transaction(auth.store().as_ref(), move |tx| {
+        let result = alibi::store::transaction(auth.store().as_ref(), move |tx| {
             Box::pin(async move {
                 let policy = if deferred {
                     SessionCreationPolicy::DeferSecondaryStorageWrites

@@ -3,6 +3,7 @@
 use alibi_core::middleware::rate_limit::bucket::{self, Step};
 use alibi_core::store::SchemaMigrator;
 use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
+use alibi_schema_registry::{RATE_LIMIT_MIGRATION, RATE_LIMIT_MIGRATION_LEDGER};
 use async_trait::async_trait;
 use sea_orm::ConnectionTrait;
 use sea_orm::sea_query::{Alias, DynIden, IntoIden};
@@ -123,14 +124,14 @@ impl MigratorTrait for RateLimitMigrator {
         vec![Box::new(RateLimitSchema)]
     }
     fn migration_table_name() -> DynIden {
-        Alias::new("better_auth_rate_limit_migrations").into_iden()
+        Alias::new(RATE_LIMIT_MIGRATION_LEDGER).into_iden()
     }
 }
 
 struct RateLimitSchema;
 impl MigrationName for RateLimitSchema {
     fn name(&self) -> &'static str {
-        "m20261013_000003_typescript_rate_limit_schema"
+        RATE_LIMIT_MIGRATION.name
     }
 }
 
@@ -146,9 +147,9 @@ impl MigrationTrait for RateLimitSchema {
     {
         Box::pin(async move {
             let sql = match manager.get_database_backend() {
-                sea_orm::DbBackend::Postgres => alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
-                sea_orm::DbBackend::Sqlite => alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
-                sea_orm::DbBackend::MySql => alibi_schema_registry::MYSQL_RATE_LIMIT_SCHEMA,
+                sea_orm::DbBackend::Postgres => RATE_LIMIT_MIGRATION.postgres,
+                sea_orm::DbBackend::Sqlite => RATE_LIMIT_MIGRATION.sqlite,
+                sea_orm::DbBackend::MySql => RATE_LIMIT_MIGRATION.mysql,
                 _ => {
                     return Err(DbErr::Custom(
                         "Rate-limit migrations support SQLite, PostgreSQL and MySQL".into(),

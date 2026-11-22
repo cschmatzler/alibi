@@ -16,7 +16,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -82,7 +83,8 @@ pub(crate) async fn router(
                     email: "mapped-kick@example.invalid".into(),
                     email_verified: true,
                     image: Some("https://images.example.invalid/mapped-kick.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         if mode == "client-key" {
@@ -125,7 +127,7 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/kick/mapper-receipts",
-            get(|| async { Json(MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clone()) }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/kick/token", post(token))
         .route("/__test/kick/userinfo", get(profile))

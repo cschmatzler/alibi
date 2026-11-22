@@ -3,17 +3,12 @@
 use crate::SqlxValue;
 use crate::pool::{Exec, SqlxPool};
 use crate::sql::Sql;
-use crate::store::migrator::{Migration, apply};
+use crate::store::migrator::apply;
 use alibi_core::middleware::rate_limit::bucket::{self, Step};
 use alibi_core::store::SchemaMigrator;
 use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
+use alibi_schema_registry::{RATE_LIMIT_MIGRATION, RATE_LIMIT_MIGRATION_LEDGER};
 use async_trait::async_trait;
-
-const RATE_LIMIT_SCHEMA: Migration = Migration {
-    name: "m20261013_000003_typescript_rate_limit_schema",
-    sqlite: alibi_schema_registry::SQLITE_RATE_LIMIT_SCHEMA,
-    postgres: alibi_schema_registry::POSTGRES_RATE_LIMIT_SCHEMA,
-};
 
 /// One stored quota bucket.
 #[derive(Clone, Debug, PartialEq, sqlx::FromRow)]
@@ -50,8 +45,8 @@ impl SchemaMigrator for SqlxRateLimitStorage {
     async fn migrate(&self) -> AuthResult<()> {
         apply(
             &self.pool,
-            "better_auth_rate_limit_migrations",
-            &[RATE_LIMIT_SCHEMA],
+            RATE_LIMIT_MIGRATION_LEDGER,
+            std::slice::from_ref(&RATE_LIMIT_MIGRATION),
         )
         .await
     }

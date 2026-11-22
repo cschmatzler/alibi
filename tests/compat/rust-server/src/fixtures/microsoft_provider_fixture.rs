@@ -19,7 +19,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -158,22 +159,36 @@ pub(crate) async fn router(
                 Ok(OAuthUserInfo {
                     additional_fields: [(
                         "microsoftMapped".into(),
-                        json!({"oid":profile.get("oid")}),
+                        alibi::utils::json::JsValue::Object(
+                            [(
+                                "oid".into(),
+                                profile
+                                    .get("oid")
+                                    .cloned()
+                                    .unwrap_or(alibi::utils::json::JsValue::Undefined),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        ),
                     )]
                     .into_iter()
                     .collect(),
                     id: "cannot-replace-raw-oid".into(),
-                    name: Some(format!(
-                        "Mapped {}",
-                        profile
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                    )),
+                    name: Some(
+                        format!(
+                            "Mapped {}",
+                            profile
+                                .get("name")
+                                .and_then(alibi::utils::json::JsValue::as_str)
+                                .unwrap_or_default()
+                        )
+                        .into(),
+                    ),
                     email: "mapped-microsoft@example.invalid".into(),
                     email_verified: false,
                     image: Some("https://images.example.invalid/mapped-microsoft.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         let mut provider = OAuthProvider::microsoft(options).map_err(AuthError::config)?;
@@ -226,7 +241,7 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/microsoft/mapper-receipts",
-            get(|| async { Json(MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clone()) }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/photo/48x48", get(photo))
         .route("/photo/64x64", get(photo));

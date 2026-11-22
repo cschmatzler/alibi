@@ -5,7 +5,7 @@
 
 use crate::utils::json::JsValue;
 use crate::{AdapterOutput, AdapterRecord};
-pub(crate) mod date;
+mod date;
 #[cfg(test)]
 mod native_tests {
     use super::*;
@@ -384,7 +384,6 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
 }
 
 // HTTP preserves thrown alphabet errors; get-session maps these to its 500.
-// Parse and authenticate once, before reviving the typed payload projection.
 pub(crate) fn decode_compact_http(value: &str, secret: &str) -> AuthResult<Option<CompactCache>> {
     let bytes = decode_base64(value).map_err(crate::AuthError::internal)?;
     let text = String::from_utf8_lossy(&bytes);
@@ -419,7 +418,7 @@ fn authenticate_compact(
     secret: &str,
 ) -> Option<CompactCache> {
     let mut normalized = original_payload.clone();
-    date::revive(&mut normalized);
+    crate::utils::json::normalize_json_dates(&mut normalized);
     let mut signed = normalized.as_object()?.clone();
     _ = signed.insert("expiresAt".into(), JsValue::Number(expires_at));
     let message = crate::utils::json::to_string(&signed).ok()?;
@@ -447,7 +446,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
     ] {
         for field in required {
             let text = object.get(*field)?.as_str()?;
-            if date::parse(text).is_some() {
+            if crate::utils::datetime::parse_json_date(text).is_some() {
                 return None;
             }
         }
@@ -455,18 +454,18 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
             if object
                 .get(*field)
                 .and_then(JsValue::as_str)
-                .is_some_and(|text| date::parse(text).is_some())
+                .is_some_and(|text| crate::utils::datetime::parse_json_date(text).is_some())
             {
                 return None;
             }
         }
         for field in ["createdAt", "updatedAt"] {
             if let Some(value) = object.get(field) {
-                _ = date::parse(value.as_str()?)?;
+                _ = crate::utils::datetime::parse_json_date(value.as_str()?)?;
             }
         }
     }
-    _ = date::parse(
+    _ = crate::utils::datetime::parse_json_date(
         original_payload
             .get("session")?
             .get("expiresAt")?
@@ -475,7 +474,7 @@ pub(crate) fn parse_payload(original_payload: &JsValue, expires_at: f64) -> Opti
     if original_payload
         .get("version")
         .and_then(JsValue::as_str)
-        .is_some_and(|text| date::parse(text).is_some())
+        .is_some_and(|text| crate::utils::datetime::parse_json_date(text).is_some())
     {
         return None;
     }

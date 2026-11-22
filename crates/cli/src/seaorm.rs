@@ -1,39 +1,14 @@
 use crate::parse_type;
-use crate::selection::{CORE_ENTITIES, Selection, entity_fields, role_name};
+use crate::selection::Selection;
 use alibi_schema_registry::{EntityRole, FieldDef};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
 pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
-    let core_entities = CORE_ENTITIES.iter().map(|(module, table, role)| {
-        seaorm_entity(module, table, Some(*role), &entity_fields(selection, *role))
-    });
-    let extra_entities = selection.extra.iter().map(|entity| {
-        seaorm_entity(
-            entity.mod_name,
-            entity.table_name,
-            entity.role,
-            &entity.fields.iter().collect::<Vec<_>>(),
-        )
-    });
-    let mut tables = CORE_ENTITIES
-        .iter()
-        .map(|(_, table, role)| (*table, entity_fields(selection, *role)))
-        .chain(
-            selection
-                .extra
-                .iter()
-                .map(|entity| (entity.table_name, entity.fields.iter().collect())),
-        )
-        .collect::<Vec<_>>();
-    tables.sort_by_key(|(table, _)| crate::sqlx::table_order(table));
-    let sqlite = tables.iter().flat_map(|(table, fields)| {
-        crate::sqlx::migration_statements(table, fields, crate::sqlx::SqlDialect::Sqlite)
-    });
-    let postgres = tables.iter().flat_map(|(table, fields)| {
-        crate::sqlx::migration_statements(table, fields, crate::sqlx::SqlDialect::Postgres)
-    });
-
+    let entities = selection
+        .entities()
+        .map(|entity| seaorm_entity(entity.module, entity.table, entity.role, &entity.fields));
+    let (sqlite, postgres) = crate::migration::statements(selection);
     quote! {
         use alibi::AuthSchema;
         use alibi::seaorm::sea_orm;
@@ -41,8 +16,7 @@ pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
         use alibi::seaorm::sea_orm::ConnectionTrait;
         use alibi::seaorm::{AuthEntity, DatabaseConnection};
 
-        #(#core_entities)*
-        #(#extra_entities)*
+        #(#entities)*
 
         pub struct AppAuthSchema;
 
@@ -111,7 +85,7 @@ fn seaorm_entity(
     let derive = role.map_or_else(
         || quote! { #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel)] },
         |role| {
-            let role = role_name(role);
+            let role = role.as_str();
             quote! {
                 #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, AuthEntity)]
                 #[auth(role = #role)]

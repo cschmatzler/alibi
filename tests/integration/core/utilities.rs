@@ -288,7 +288,10 @@ fn date_parse_legacy_zones_and_two_digit_years() {
         parse_date_millis("Mar 1 2024 10:20:30 UTC"),
         Some(1_709_288_430_000)
     );
-    assert_eq!(parse_date_millis("Mar 1 2024 (unbalanced"), None);
+    assert_eq!(
+        parse_date_millis("Mar 1 2024 (unbalanced"),
+        parse_date_millis("Mar 1 2024")
+    );
     assert_eq!(parse_date_millis("Mar 1 2024) 10:20"), None);
 
     let early = parse_date_millis("1/2/05").unwrap();

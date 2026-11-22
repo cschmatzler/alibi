@@ -2114,9 +2114,8 @@ impl<S: AuthSchema> PluginStore<S> {
         session: S::Session,
     ) -> AuthResult<AdapterRecord<S::Session>> {
         let public = crate::utils::json::to_js_value(&crate::SessionView::from(&session))?;
-        let base = crate::SessionView::from(&session);
         let physical =
-            crate::utils::json::to_js_value(&self.projection_context.trusted_session_view(&base)?)?;
+            crate::utils::json::to_js_value(&self.projection_context.trusted_session_view(&session)?)?;
         let supports_json = self.inner.supports_native_json();
         let additional = if supports_json {
             session.additional_js_fields()?

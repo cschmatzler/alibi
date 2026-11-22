@@ -111,7 +111,7 @@ async fn check<B: Backend>(db: Db, asynchronous: bool, deferred: bool, string: b
         let owner_id = owner.id().into_owned();
         let rollback = action == "rollback";
         events.lock().unwrap().clear();
-        let result = alibi_core::store::transaction(auth.store().as_ref(), move |tx| {
+        let result = alibi::store::transaction(auth.store().as_ref(), move |tx| {
             Box::pin(async move {
                 let policy = if deferred {
                     SessionCreationPolicy::DeferSecondaryStorageWrites

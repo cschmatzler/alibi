@@ -21,7 +21,7 @@ async fn setup_admin(auth: &alibi::Alibi<TestSchema>) -> String {
 
     let user = auth
         .store()
-        .get_user_by_email("admin-stateful@test.com")
+        .get_user_by_email(&"admin-stateful@test.com".into())
         .await
         .unwrap()
         .unwrap();

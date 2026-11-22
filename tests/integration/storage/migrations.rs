@@ -17,6 +17,27 @@ postgres_tests!(
 
 const SECRET: &str = "bundled-schema-migration-secret-32-chars";
 
+const EXPECTED_VERSIONS: &str = concat!(
+    "m20261013_000001_typescript_auth_schema,",
+    "m20261013_000002_typescript_oauth_schema,",
+    "m20261013_000003_typescript_sso_schema,",
+    "m20261014_000004_typescript_scim_managed_schema,",
+    "m20261014_000005_typescript_scim_binding_schema,",
+    "m20261014_000006_typescript_scim_canonical_schema",
+);
+
+async fn ledger_versions(db: &Db) -> TestResult<Option<String>> {
+    db.text(
+        if db.is_postgres() {
+            "SELECT string_agg(version, ',' ORDER BY version) FROM better_auth_migrations"
+        } else {
+            "SELECT group_concat(version, ',') FROM (SELECT version FROM better_auth_migrations ORDER BY version)"
+        },
+        &[],
+    )
+    .await
+}
+
 /// Every base table in the database under test, sorted and comma-separated.
 async fn tables(db: &Db) -> TestResult<Option<String>> {
     db.text(
@@ -40,13 +61,10 @@ async fn reruns_are_no_ops_recorded_once_in_the_namespaced_ledger<B: Backend>(
     let schema = tables(&db).await?;
     store.migrate().await?;
     assert_eq!(tables(&db).await?, schema);
-    assert_eq!(db.count("better_auth_migrations").await?, 3);
     assert_eq!(
-        db.text("SELECT version FROM better_auth_migrations WHERE version = 'm20261013_000001_typescript_auth_schema'", &[])
-            .await?,
-        Some("m20261013_000001_typescript_auth_schema".to_owned())
+        ledger_versions(&db).await?.as_deref(),
+        Some(EXPECTED_VERSIONS)
     );
-    assert_eq!(db.text("SELECT version FROM better_auth_migrations WHERE version = 'm20261013_000002_typescript_oauth_schema'", &[]).await?,Some("m20261013_000002_typescript_oauth_schema".to_owned()));
     assert_eq!(db.count("oauthClient").await?, 0);
     let schema = schema.unwrap_or_default();
     assert!(!schema.split(',').any(|table| table == "seaql_migrations"));
@@ -90,7 +108,10 @@ async fn installed_by<From: Backend, To: Backend>(db: Db) -> TestResult {
         .await?;
     From::close(from_connection).await?;
     let (to_connection, to) = db.migrated::<To>(SECRET).await?;
-    assert_eq!(db.count("better_auth_migrations").await?, 3);
+    assert_eq!(
+        ledger_versions(&db).await?.as_deref(),
+        Some(EXPECTED_VERSIONS)
+    );
     assert_eq!(db.count("oauthClient").await?, 0);
     assert_eq!(
         to.get_user_by_email(&"switch@fixture.test".into())

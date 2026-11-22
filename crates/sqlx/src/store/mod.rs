@@ -464,10 +464,12 @@ mod json_metadata_tests {
 #[cfg(test)]
 mod update_hook_tests {
     mod cases {
+        use alibi_core as alibi;
         include!("../../../../tests/integration/storage/plugin_flows/user_update_patch_cases.rs");
     }
 
     mod falsy_id_cases {
+        use alibi_core as alibi;
         include!(
             "../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs"
         );
@@ -1581,6 +1583,36 @@ where
         }
         Ok(())
     }
+    async fn end_user_sessions_preserving(
+        &self,
+        user_id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<bool> {
+        let Some(sessions) = self
+            .store
+            .end_user_sessions_preserving_on(Exec::tx(self.tx), Some(self.tx), user_id, at)
+            .await?
+        else {
+            return Ok(false);
+        };
+        for session in sessions {
+            self.pending_after
+                .push(AfterHook::SessionDeleted(session))
+                .await;
+        }
+        Ok(true)
+    }
+
+    async fn get_live_user_sessions(
+        &self,
+        user_id: &str,
+        at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Vec<S::Session>> {
+        self.store
+            .live_user_sessions_on(Exec::tx(self.tx), user_id, at)
+            .await
+    }
+
     async fn queue_session_revocation(
         &self,
         session_ids: &[String],

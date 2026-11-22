@@ -74,7 +74,7 @@ compatScenario(
           members: [{ value: "member-a", type: 123 }],
         },
       },
-      { op: "remove", path: "externalId" },
+      { op: "replace", path: "externalId", value: null },
     ];
     const failed = await patch(initial.id, mixed, "group-reader");
     expect(failed.status).toBe(500);
@@ -105,14 +105,14 @@ compatScenario(
         "invalidPath",
       ],
       [
-        [{ path: "externalId", value: null }],
+        [{ path: "externalId", value: 12 }],
         "externalId must be a non-empty string",
         "invalidValue",
       ],
-      [[{ path: "members", value: null }], "members must be an array", "invalidValue"],
+      [[{ path: "members", value: 12 }], "members must be an array", "invalidValue"],
     ] as const) {
       const denied = await patch(initial.id, Operations, "group-reader");
-      expect(denied.status).toBe(400);
+      expect(denied.status, JSON.stringify(Operations)).toBe(400);
       const error = (await denied.json()) as any;
       expect(error.detail).toBe(detail);
       expect(error.scimType).toBe(kind);
@@ -142,7 +142,7 @@ compatScenario(
     );
     expect(http.status).toBe(200);
     expect(((await http.json()) as any).members[0].value).toBe("member-a");
-    const cleared = await patch(initial.id, [{ op: "remove", path: "members" }], "group-reader");
+    const cleared = await patch(initial.id, [{ path: "members", value: null }], "group-reader");
     expect(cleared.status).toBe(200);
     expect(((await cleared.json()) as any).members).toEqual([]);
     expect(await (await control("drift-created-group", { id: initial.id })).json()).toEqual({

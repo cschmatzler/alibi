@@ -49,12 +49,8 @@ impl SsoPlugin {
             .and_then(Value::as_str)
             .filter(|format| !format.is_empty())
             .unwrap_or("urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress");
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
-        let acs = format!("{base}/sso/saml2/sp/acs/{id}");
+        let base = super::sso_base(&ctx.config);
+        let acs = super::saml_acs_url(&base, id);
         let signed_assertions = if config.get("wantAssertionsSigned") == Some(&json!(true)) {
             "true"
         } else {

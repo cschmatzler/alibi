@@ -146,11 +146,7 @@ impl SsoPlugin {
             ctx,
         )
         .await?;
-        let base = format!(
-            "{}{}",
-            ctx.config.base_url.trim_end_matches('/'),
-            ctx.config.base_path.trim_end_matches('/')
-        );
+        let base = super::sso_base(&ctx.config);
         let redirect = self.oidc_redirect_uri(&base, &provider.provider_id);
         let scopes = body
             .get("scopes")

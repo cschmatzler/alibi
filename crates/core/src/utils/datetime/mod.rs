@@ -1,7 +1,7 @@
 //! JSON timestamps matching JavaScript's `Date.toJSON()` precision.
 
 mod parse;
-use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 pub use parse::parse_date_millis;
 use serde::Serializer;
 
@@ -27,9 +27,7 @@ pub fn serialize_optional<S: Serializer>(
     serializer: S,
 ) -> Result<S::Ok, S::Error> {
     match value {
-        Some(value) => {
-            serializer.serialize_some(&json_date_millis(value.timestamp_millis()))
-        }
+        Some(value) => serializer.serialize_some(&json_date_millis(value.timestamp_millis())),
         None => serializer.serialize_none(),
     }
 }
@@ -42,6 +40,10 @@ pub fn serialize_optional<S: Serializer>(
 /// dates remain ordinary strings for authorization and JSON responses.
 #[must_use]
 pub fn normalize_json_date(value: &str) -> Option<String> {
+    parse_json_date(value).map(|date| json_date_millis(date.timestamp_millis()))
+}
+
+pub(crate) fn parse_json_date(value: &str) -> Option<DateTime<Utc>> {
     let bytes = value.as_bytes();
     if bytes.len() < 20
         || !bytes.iter().enumerate().all(|(index, byte)| match index {
@@ -89,15 +91,12 @@ pub fn normalize_json_date(value: &str) -> Option<String> {
         + i64::from(minute) * 60_000
         + i64::from(second) * 1_000
         + i64::from(milliseconds);
-    let date = NaiveDate::from_ymd_opt(year, month, 1)?
-        .and_hms_opt(0, 0, 0)?
-        .checked_add_signed(Duration::milliseconds(offset))?;
-    let year = if date.year() > 9999 {
-        format!("+{:06}", date.year())
-    } else {
-        format!("{:04}", date.year())
-    };
-    Some(format!("{year}{}", date.format("-%m-%dT%H:%M:%S%.3fZ")))
+    Some(
+        NaiveDate::from_ymd_opt(year, month, 1)?
+            .and_hms_opt(0, 0, 0)?
+            .checked_add_signed(Duration::milliseconds(offset))?
+            .and_utc(),
+    )
 }
 
 /// JavaScript Date JSON at every valid `TimeClip` millisecond, including dates
@@ -195,13 +194,17 @@ mod tests {
             let encoded = serde_json::to_value(Timestamps {
                 created_at: date,
                 expires_at: Some(date),
-            }).unwrap();
+            })
+            .unwrap();
             assert_eq!(encoded["created_at"], expected);
             assert_eq!(encoded["expires_at"], expected);
             let date = crate::utils::json::JsValue::Date(date);
             assert_eq!(serde_json::to_value(&date).unwrap(), expected);
             assert_eq!(date.to_json_value().unwrap(), expected);
-            assert_eq!(crate::utils::json::to_string(&date).unwrap(), format!("\"{expected}\""));
+            assert_eq!(
+                crate::utils::json::to_string(&date).unwrap(),
+                format!("\"{expected}\"")
+            );
             assert_eq!(String::deserialize(date).unwrap(), expected);
         }
     }

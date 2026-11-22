@@ -255,6 +255,71 @@ where
         self.create_session_with_connection(Exec::tx(tx), Some(tx), create_session, true, true)
             .await
     }
+
+    pub(super) async fn live_user_sessions_on(
+        &self,
+        exec: Exec<'_>,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> AuthResult<Vec<S::Session>> {
+        let user_id = S::Session::parse_user_id(user_id)?;
+        let table = <S::Session as SqlxModel>::TABLE;
+        let mut live = model::select_model::<S::Session>(exec);
+        live.push(" WHERE ");
+        live.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
+        live.push(" AND ");
+        live.compare_model::<S::Session>(
+            table,
+            S::Session::expires_at_column(),
+            " > ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
+        live.push(" LIMIT ");
+        live.bind(self.find_many_limit());
+        exec.fetch_all(live).await
+    }
+
+    pub(super) async fn end_user_sessions_preserving_on(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        user_id: &str,
+        now: DateTime<Utc>,
+    ) -> AuthResult<Option<Vec<S::Session>>> {
+        let sessions = self.live_user_sessions_on(exec, user_id, now).await?;
+        let user_id = S::Session::parse_user_id(user_id)?;
+        let context = self.hook_context(tx);
+        for session in &sessions {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_session(session, &context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(None);
+                }
+            }
+        }
+        let table = <S::Session as SqlxModel>::TABLE;
+        let mut sql = Sql::with(exec.engine(), "UPDATE ");
+        sql.ident(table);
+        sql.push(" SET ");
+        sql.assign(
+            S::Session::expires_at_column(),
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
+        sql.push(" WHERE ");
+        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
+        sql.push(" AND ");
+        sql.compare_model::<S::Session>(
+            table,
+            S::Session::expires_at_column(),
+            " > ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
+        _ = exec.execute(sql).await?;
+        Ok(Some(sessions))
+    }
 }
 
 /// Stage the configured additional fields on the row, coerced to their columns.
@@ -469,56 +534,13 @@ where
         user_id: &str,
         revocation: Option<&dyn alibi_core::store::SessionRevocation>,
     ) -> AuthResult<bool> {
-        let now = Utc::now();
-        let user_id = S::Session::parse_user_id(user_id)?;
-        let table = <S::Session as SqlxModel>::TABLE;
-        let mut live = model::select_model::<S::Session>(self.exec());
-        live.push(" WHERE ");
-        live.compare_model::<S::Session>(
-            table,
-            S::Session::user_id_column(),
-            " = ",
-            user_id.clone(),
-        );
-        live.push(" AND ");
-        live.compare_model::<S::Session>(
-            table,
-            S::Session::expires_at_column(),
-            " > ",
-            S::Session::timestamp_value(S::Session::expires_at_column(), now),
-        );
-        live.push(" LIMIT ");
-        live.bind(self.find_many_limit());
-        let sessions: Vec<S::Session> = self.exec().fetch_all(live).await?;
+        let Some(sessions) = self
+            .end_user_sessions_preserving_on(self.exec(), None, user_id, Utc::now())
+            .await?
+        else {
+            return Ok(false);
+        };
         let context = self.hook_context(None);
-        for session in &sessions {
-            for hook in self.hooks() {
-                if hook
-                    .before_delete_session(session, &context)
-                    .await?
-                    .is_cancelled()
-                {
-                    return Ok(false);
-                }
-            }
-        }
-        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
-        sql.ident(table);
-        sql.push(" SET ");
-        sql.assign(
-            S::Session::expires_at_column(),
-            S::Session::timestamp_value(S::Session::expires_at_column(), now),
-        );
-        sql.push(" WHERE ");
-        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
-        sql.push(" AND ");
-        sql.compare_model::<S::Session>(
-            table,
-            S::Session::expires_at_column(),
-            " > ",
-            S::Session::timestamp_value(S::Session::expires_at_column(), now),
-        );
-        _ = self.exec().execute(sql).await?;
         if let Some(revocation) = revocation {
             revocation.revoke().await?;
         }

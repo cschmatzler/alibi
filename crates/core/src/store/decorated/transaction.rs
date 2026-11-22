@@ -1,4 +1,5 @@
 use crate::field_policy::FieldValues;
+use crate::store::secondary_sessions::SessionScope;
 use crate::store::{
     AdapterEvent, BoxedTransactionValue, PluginStore, TransactionStore, TransactionWork,
     UserCreateStep, UserCreationDefaults, create_user_data,
@@ -14,18 +15,14 @@ use crate::{
     Passkey, Team,
 };
 use async_trait::async_trait;
-use chrono::SubsecRound;
 use std::sync::Arc;
 pub(in crate::store) struct PluginTransaction<'a, S: AuthSchema> {
     pub(in crate::store) inner: &'a dyn AuthTransaction<S>,
-    pub(in crate::store) config: Arc<crate::AuthConfig>,
     pub(in crate::store) creates: Vec<UserCreateStep<S>>,
     pub(in crate::store) adapter_defaults: UserCreationDefaults,
     pub(in crate::store) pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
     pub(in crate::store) pending_scopes:
         Arc<std::sync::Mutex<std::collections::HashMap<String, S::Session>>>,
-    pub(in crate::store) session_fields: crate::field_policy::SessionFields,
-    pub(in crate::store) adapter_fields: crate::field_policy::SessionAdapterFields,
     pub(in crate::store) record_store: PluginStore<S>,
     pub(in crate::store) pending_records: Arc<std::sync::Mutex<Vec<AdapterEvent<S>>>>,
 }
@@ -44,7 +41,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         if self.record_store.session_uses_database() {
-            self.adapter_fields.attach(&mut fields, false);
+            self.record_store.adapter_fields.attach(&mut fields, false);
         }
         let staged = self
             .pending_scopes
@@ -84,7 +81,7 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
         mut fields: FieldValues,
     ) -> AuthResult<S::Session> {
         if self.record_store.session_uses_database() {
-            self.adapter_fields.attach(&mut fields, false);
+            self.record_store.adapter_fields.attach(&mut fields, false);
         }
         let (session, user) = self
             .record_store
@@ -175,7 +172,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.inner.reconcile_scim_identity(user_id).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
-        if self.config.session.stateless {
+        if self.record_store.config.session.stateless {
             self.record_store
                 .ephemeral()?
                 .retain(|_, session| session.user_id().as_ref() != user_id);
@@ -184,7 +181,14 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         let tokens = self.record_store.cached_user_tokens(user_id).await?;
         let mut session_ids = Vec::new();
         if self.record_store.session_uses_database() {
-            let sessions = self.inner.get_user_sessions(user_id).await?;
+            let preserve_at = self
+                .record_store
+                .preserves_session_rows()
+                .then(chrono::Utc::now);
+            let sessions = match preserve_at {
+                Some(at) => self.inner.get_live_user_sessions(user_id, at).await?,
+                None => self.inner.get_user_sessions(user_id).await?,
+            };
             session_ids = sessions
                 .iter()
                 .map(|session| session.id().into_owned())
@@ -213,8 +217,13 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                     pending.push((session.id().as_ref().to_owned(), works));
                 }
             }
-            self.inner.delete_user_sessions(user_id).await?;
-            if !self.inner.get_user_sessions(user_id).await?.is_empty() {
+            let ended = if let Some(at) = preserve_at {
+                self.inner.end_user_sessions_preserving(user_id, at).await?
+            } else {
+                self.inner.delete_user_sessions(user_id).await?;
+                self.inner.get_user_sessions(user_id).await?.is_empty()
+            };
+            if !ended {
                 return Ok(());
             }
             for (id, works) in pending {
@@ -683,34 +692,8 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.config.session.stateless {
-            let mut fields = FieldValues::new();
-            _ = fields.insert(
-                "activeTeamId".into(),
-                team_id.map_or(JsValue::Null, |value| {
-                    JsValue::String(value.to_owned().into())
-                }),
-            );
-            return self.update_ephemeral_scope(token, fields).await;
-        }
-        if self.record_store.secondary().is_some()
-            && (!self.record_store.session_uses_database()
-                || self
-                    .record_store
-                    .secondary_session_for_update(token)
-                    .await?
-                    .is_some())
-        {
-            let mut fields = FieldValues::new();
-            _ = fields.insert(
-                "activeTeamId".into(),
-                team_id.map_or(JsValue::Null, |value| {
-                    JsValue::String(value.to_owned().into())
-                }),
-            );
-            return self.update_secondary_scope(token, fields).await;
-        }
-        self.inner.update_session_active_team(token, team_id).await
+        self.update_session_scope(token, SessionScope::Team, team_id)
+            .await
     }
 
     async fn update_session_active_organization(
@@ -718,35 +701,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.config.session.stateless {
-            let mut fields = FieldValues::new();
-            _ = fields.insert(
-                "activeOrganizationId".into(),
-                organization_id.map_or(JsValue::Null, |value| {
-                    JsValue::String(value.to_owned().into())
-                }),
-            );
-            return self.update_ephemeral_scope(token, fields).await;
-        }
-        if self.record_store.secondary().is_some()
-            && (!self.record_store.session_uses_database()
-                || self
-                    .record_store
-                    .secondary_session_for_update(token)
-                    .await?
-                    .is_some())
-        {
-            let mut fields = FieldValues::new();
-            _ = fields.insert(
-                "activeOrganizationId".into(),
-                organization_id.map_or(JsValue::Null, |value| {
-                    JsValue::String(value.to_owned().into())
-                }),
-            );
-            return self.update_secondary_scope(token, fields).await;
-        }
-        self.inner
-            .update_session_active_organization(token, organization_id)
+        self.update_session_scope(token, SessionScope::Organization, organization_id)
             .await
     }
 
@@ -767,8 +722,8 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .field_policies()
             .user
             .attach(&mut create_user.additional_fields, true);
-        if self.config.user_validation.is_some() {
-            let prepared = prepare_creation(&self.config, create_user, None).await?;
+        if self.record_store.config.user_validation.is_some() {
+            let prepared = prepare_creation(&self.record_store.config, create_user, None).await?;
             return self.create_user_prepared(prepared).await;
         }
         self.inner
@@ -788,10 +743,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         create_user: CreateUser,
         source: UserValidationSource,
     ) -> AuthResult<S::User> {
-        if self.config.user_validation.is_none() {
+        if self.record_store.config.user_validation.is_none() {
             return self.create_user(create_user).await;
         }
-        let prepared = prepare_creation(&self.config, create_user, Some(source)).await?;
+        let prepared =
+            prepare_creation(&self.record_store.config, create_user, Some(source)).await?;
         self.create_user_prepared(prepared).await
     }
     async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
@@ -846,41 +802,53 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
 }
 
 impl<S: AuthSchema> PluginTransaction<'_, S> {
+    async fn update_session_scope(
+        &self,
+        token: &str,
+        scope: SessionScope,
+        value: Option<&str>,
+    ) -> AuthResult<S::Session> {
+        if self.record_store.config.session.stateless {
+            return self
+                .update_ephemeral_scope(token, scope.fields(value))
+                .await;
+        }
+        if self.record_store.secondary().is_some()
+            && (!self.record_store.session_uses_database()
+                || self
+                    .record_store
+                    .secondary_session_for_update(token)
+                    .await?
+                    .is_some())
+        {
+            return self
+                .update_secondary_scope(token, scope.fields(value))
+                .await;
+        }
+        match scope {
+            SessionScope::Organization => {
+                self.inner
+                    .update_session_active_organization(token, value)
+                    .await
+            }
+            SessionScope::Team => self.inner.update_session_active_team(token, value).await,
+        }
+    }
+
     async fn create_session_with_policy(
         &self,
-        mut create_session: CreateSession,
+        create_session: CreateSession,
         policy: crate::session::SessionCreationPolicy,
     ) -> AuthResult<AdapterRecord<S::Session>> {
-        for hook in &self.record_store.session_callbacks.callbacks {
-            hook.before_create(
-                &create_session,
-                &self.record_store.projection_context,
-                Some(self.inner),
-            )
+        let super::session::PreparedCreation {
+            session: create_session,
+            created_at,
+            fields: creation_fields,
+        } = self
+            .record_store
+            .prepare_session_creation_input(create_session, Some(self.inner))
             .await?;
-        }
-        self.session_fields
-            .defaults(&mut create_session.additional_fields);
-        let created_at = chrono::Utc::now().trunc_subsecs(3);
-        for name in ["createdAt", "updatedAt"] {
-            _ = create_session
-                .additional_fields
-                .entry(name.to_owned())
-                .or_insert(JsValue::Date(created_at));
-        }
-        let created_at = match create_session.additional_fields.get("createdAt") {
-            Some(JsValue::Date(date)) => *date,
-            _ => created_at,
-        };
-        if self.record_store.session_uses_database() {
-            self.adapter_fields
-                .attach(&mut create_session.additional_fields, true);
-        }
-        let mut creation_fields = create_session.additional_fields.clone();
-        _ = creation_fields
-            .entry("expiresAt".to_owned())
-            .or_insert(crate::utils::json::JsValue::Date(create_session.expires_at));
-        let session = if self.config.session.stateless {
+        let session = if self.record_store.config.session.stateless {
             self.inner
                 .prepare_secondary_session_creation(create_session, false)
                 .await?
@@ -973,13 +941,10 @@ impl<S: AuthSchema> PluginStore<S> {
     ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
         let adapter_defaults = self.transforms.adapter_defaults.clone();
-        let config = Arc::clone(&self.config);
         let pending_sessions = Arc::new(std::sync::Mutex::new(Vec::new()));
         let pending_in_transaction = Arc::clone(&pending_sessions);
         let pending_scopes = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
         let scopes_in_transaction = Arc::clone(&pending_scopes);
-        let session_fields = self.session_fields.clone();
-        let adapter_fields = self.adapter_fields.clone();
         let record_store = self.clone();
         let pending_records = Arc::new(std::sync::Mutex::new(Vec::new()));
         let records_in_transaction = Arc::clone(&pending_records);
@@ -987,13 +952,10 @@ impl<S: AuthSchema> PluginStore<S> {
             Box::pin(async move {
                 let transaction = PluginTransaction {
                     inner,
-                    config,
                     creates,
                     adapter_defaults,
                     pending_sessions: pending_in_transaction,
                     pending_scopes: scopes_in_transaction,
-                    session_fields,
-                    adapter_fields,
                     record_store,
                     pending_records: records_in_transaction,
                 };

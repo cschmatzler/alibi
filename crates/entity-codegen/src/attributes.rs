@@ -34,18 +34,12 @@ pub fn parse_auth_attributes(
             if meta.path.is_ident("role") {
                 let value = meta.value()?;
                 let role: LitStr = value.parse()?;
-                parsed = Some(match role.value().as_str() {
-                    "user" => EntityRole::User,
-                    "session" => EntityRole::Session,
-                    "account" => EntityRole::Account,
-                    "verification" => EntityRole::Verification,
-                    _ => {
-                        return Err(syn::Error::new_spanned(
-                            role,
-                            "unsupported auth role; expected user, session, account, or verification",
-                        ));
-                    }
-                });
+                parsed = Some(EntityRole::from_name(&role.value()).ok_or_else(|| {
+                    syn::Error::new_spanned(
+                        role,
+                        "unsupported auth role; expected user, session, account, or verification",
+                    )
+                })?);
                 Ok(())
             } else if meta.path.is_ident("id_generator") {
                 let path = meta.value()?.parse::<LitStr>()?;

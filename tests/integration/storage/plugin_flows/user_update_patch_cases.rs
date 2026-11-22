@@ -1,9 +1,9 @@
-use alibi_core::store::{
+use alibi::store::{
     AdapterAfterHook, AdapterEvent, DatabaseHookContext, DatabaseHooks, HookBackend, HookControl,
     UserUpdateHook, UserUpdateHookResult, UserUpdatePatch,
 };
-use alibi_core::utils::json::{JsObject, JsValue};
-use alibi_core::{
+use alibi::utils::json::{JsObject, JsValue};
+use alibi::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthResult, AuthSchema, AuthStore,
     AuthTransaction, AuthUser, CreateUser, UpdateUser,
 };
@@ -22,11 +22,11 @@ pub(super) struct Effects {
     pub cache_operations: Mutex<usize>,
 }
 struct CacheProbe {
-    cache: alibi_core::store::MemoryCacheAdapter,
+    cache: alibi::store::MemoryCacheAdapter,
     effects: Arc<Effects>,
 }
 #[async_trait]
-impl alibi_core::store::CacheAdapter for CacheProbe {
+impl alibi::store::CacheAdapter for CacheProbe {
     async fn get(&self, key: &str) -> AuthResult<Option<String>> {
         *self.effects.cache_operations.lock().unwrap() += 1;
         self.cache.get(key).await
@@ -158,10 +158,10 @@ impl<S: AuthSchema> UserUpdateHook<S> for Step {
 }
 
 pub(super) fn config(effects: &Arc<Effects>, display_column: &str) -> Arc<AuthConfig> {
-    use alibi_core::field_policy::FieldConfig;
+    use alibi::field_policy::FieldConfig;
     let mut config = AuthConfig::default();
     config.session.secondary_storage = Some(Arc::new(CacheProbe {
-        cache: alibi_core::store::MemoryCacheAdapter::new(),
+        cache: alibi::store::MemoryCacheAdapter::new(),
         effects: effects.clone(),
     }));
     for key in ["banned", "banReason", "banExpires", "lastLoginMethod"] {
@@ -294,7 +294,7 @@ pub(super) async fn exercise<S: AuthSchema>(
         let target_id = id.clone();
         let before = counters(&effects);
         let trace = effects.clone();
-        let result = alibi_core::store::transaction(db.as_ref(), move |tx| {
+        let result = alibi::store::transaction(db.as_ref(), move |tx| {
             Box::pin(async move {
                 let _sentinel = tx
                     .create_user(CreateUser::new().with_email("local-sentinel@test"))
@@ -393,7 +393,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     let mut omit_config = (*config).clone();
     _ = omit_config.user.additional_fields.insert(
         "updatedAt".into(),
-        alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"date"}))
+        alibi::field_policy::FieldConfig::new(serde_json::json!({"type":"date"}))
             .on_update(|| JsValue::Undefined),
     );
     let omit = AuthInitContext::<S>::new(Arc::new(omit_config), physical.clone())
@@ -404,7 +404,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     let mut missing_config = (*config).clone();
     _ = missing_config.user.additional_fields.insert(
         "missingBinding".into(),
-        alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})),
+        alibi::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})),
     );
     let missing = AuthInitContext::<S>::new(Arc::new(missing_config), physical.clone())
         .database_with_registered_transforms();
@@ -416,7 +416,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     assert!(error.to_string().contains("no model column"), "{error}");
 
     // The post-hook boundary also admits core scalar and primary-key assignments.
-    let mut update = alibi_core::store::PreparedUserUpdate::default();
+    let mut update = alibi::store::PreparedUserUpdate::default();
     update.data = [
         ("id".into(), text("renamed-user")),
         ("name".into(), JsValue::Number(42.0)),
@@ -436,7 +436,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     );
     assert!(renamed.image().is_none());
     assert!(physical.get_user_by_id(&id).await.unwrap().is_none());
-    let mut invalid = alibi_core::store::PreparedUserUpdate::default();
+    let mut invalid = alibi::store::PreparedUserUpdate::default();
     invalid.data = [("name".into(), JsValue::Null)].into();
     assert!(
         db.update_user_prepared("renamed-user", invalid)
@@ -452,10 +452,8 @@ pub(super) async fn exercise<S: AuthSchema>(
             .name(),
         Some("42")
     );
-    let surrogate = JsValue::String(alibi_core::utils::json::JsString::from_code_units(vec![
-        0xd800,
-    ]));
-    let mut utf16 = alibi_core::store::PreparedUserUpdate::default();
+    let surrogate = JsValue::String(alibi::utils::json::JsString::from_code_units(vec![0xd800]));
+    let mut utf16 = alibi::store::PreparedUserUpdate::default();
     utf16.data = [("image".into(), surrogate.clone())].into();
     let bound = db
         .update_user_prepared("renamed-user", utf16)
@@ -467,7 +465,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     );
     assert_eq!(bound.image(), Some("\u{fffd}"));
 
-    let mut zero = alibi_core::store::PreparedUserUpdate::default();
+    let mut zero = alibi::store::PreparedUserUpdate::default();
     zero.data = [("id".into(), JsValue::Number(0.0))].into();
     let unchanged = db.update_user_prepared("renamed-user", zero).await.unwrap();
     assert_eq!(unchanged.id(), "renamed-user");
@@ -486,7 +484,7 @@ pub(super) async fn exercise<S: AuthSchema>(
     let mut collision = CreateUser::new().with_email("collision@test");
     collision.id = Some("collision".into());
     let _collision = physical.create_user(collision).await.unwrap();
-    let mut duplicate = alibi_core::store::PreparedUserUpdate::default();
+    let mut duplicate = alibi::store::PreparedUserUpdate::default();
     duplicate.data = [("id".into(), text("collision"))].into();
     assert!(
         db.update_user_prepared("renamed-user", duplicate)
@@ -500,7 +498,7 @@ pub(super) async fn exercise<S: AuthSchema>(
             .unwrap()
             .is_some()
     );
-    let mut nonfinite = alibi_core::store::PreparedUserUpdate::default();
+    let mut nonfinite = alibi::store::PreparedUserUpdate::default();
     nonfinite.data = [("name".into(), JsValue::Number(f64::INFINITY))].into();
     let infinity = db
         .update_user_prepared("renamed-user", nonfinite)

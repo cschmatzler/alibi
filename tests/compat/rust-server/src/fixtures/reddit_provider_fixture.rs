@@ -15,7 +15,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -119,7 +120,9 @@ pub(crate) async fn router(
     let controls = controls(fixture.clone());
     Ok((router.merge(controls), fixture))
 }
-fn map_profile(profile: Value) -> Result<alibi::plugins::oauth::OAuthUserInfo, String> {
+fn map_profile(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     MAPPER_RECEIPTS
         .lock()
         .map_err(|error| error.to_string())?
@@ -127,21 +130,30 @@ fn map_profile(profile: Value) -> Result<alibi::plugins::oauth::OAuthUserInfo, S
     Ok(alibi::plugins::oauth::OAuthUserInfo {
         additional_fields: Default::default(),
         id: "cannot-replace-account-subject".into(),
-        name: Some(format!(
-            "Mapped {}",
-            profile
-                .get("name")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-        )),
+        name: Some(
+            format!(
+                "Mapped {}",
+                profile
+                    .get("name")
+                    .and_then(alibi::utils::json::JsValue::as_str)
+                    .unwrap_or_default()
+            )
+            .into(),
+        ),
         email: "mapped-reddit@example.invalid".into(),
         email_verified: true,
         image: Some("https://images.example.invalid/mapped-reddit.png".into()),
-    })
+    }
+    .public_profile(true))
 }
-fn map_empty_email(profile: Value) -> Result<alibi::plugins::oauth::OAuthUserInfo, String> {
+fn map_empty_email(
+    profile: alibi::utils::json::JsValue,
+) -> Result<alibi::utils::json::JsObject, String> {
     let mut user = map_profile(profile)?;
-    user.email.clear();
+    user.insert(
+        "email".into(),
+        alibi::utils::json::JsValue::String(Default::default()),
+    );
     Ok(user)
 }
 fn controls(fixture: Fixture) -> Router {
@@ -164,14 +176,7 @@ fn controls(fixture: Fixture) -> Router {
         .route("/__test/reddit/user", get(profile))
         .route(
             "/__test/reddit/mapper-receipts",
-            get(|| async {
-                Json(
-                    MAPPER_RECEIPTS
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner)
-                        .clone(),
-                )
-            }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/reddit/token", post(token))
         .route("/__test/reddit/leak", post(leak))

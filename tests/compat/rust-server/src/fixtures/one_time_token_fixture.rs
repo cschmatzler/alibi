@@ -376,8 +376,8 @@ pub(crate) async fn router(
                         let token = ott
                             .generate_for_session(
                                 &OneTimeTokenSession {
-                                    user: auth.context().user_view(&user),
-                                    session: auth.context().session_view(&session),
+                                    user: auth.context().user_view(&user)?,
+                                    session: auth.context().session_view(&session)?,
                                 },
                                 Some(&request),
                                 auth.context(),

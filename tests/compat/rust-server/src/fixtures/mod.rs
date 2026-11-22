@@ -120,3 +120,30 @@ pub(crate) mod sso_dns_fixture;
 pub(crate) mod scim_fixture;
 
 pub(crate) mod sso_date_fixture;
+
+fn native_json(value: &(impl serde::Serialize + ?Sized)) -> axum::response::Response {
+    use axum::response::IntoResponse;
+
+    match alibi::utils::json::to_vec(value) {
+        Ok(body) => (
+            [(axum::http::header::CONTENT_TYPE, "application/json")],
+            body,
+        )
+            .into_response(),
+        Err(error) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            error.to_string(),
+        )
+            .into_response(),
+    }
+}
+
+fn mapper_receipt_json(
+    receipts: &std::sync::Mutex<Vec<alibi::utils::json::JsValue>>,
+) -> axum::response::Response {
+    let values = receipts
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    native_json(&values)
+}

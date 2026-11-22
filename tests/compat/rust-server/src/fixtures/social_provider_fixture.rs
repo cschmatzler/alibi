@@ -227,7 +227,7 @@ pub(crate) async fn router(
                     .create_account(CreateAccount {
                         additional_fields: Default::default(),
                         user_id: owner.to_owned(),
-                        account_id: row.account_id,
+                        account_id: row.account_id.into(),
                         provider_id: row.provider_id,
                         access_token: row.access_token,
                         refresh_token: row.refresh_token,

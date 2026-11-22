@@ -536,16 +536,16 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         let user = auth
                             .store()
                             .get_user_by_email(
-                                control
+                                &alibi::utils::json::JsString::from(control
                                     .email
                                     .as_deref()
-                                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?,
+                                    .ok_or(axum::http::StatusCode::BAD_REQUEST)?),
                             )
                             .await
                             .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                        return Ok(Json(
-                            json!({"user":user.as_ref().map(|user|auth.context().user_view(user))}),
-                        ));
+                        let user = user.as_ref().map(|user| auth.context().user_view(user))
+                            .transpose().map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        return Ok(Json(json!({"user": user})));
                     }
                     "rows" => {
                         let user_id = control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
@@ -555,8 +555,16 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         let sessions = crate::backend::rows::<application_session::Model>(&db, "SELECT * FROM \"session\" WHERE \"userId\" = ? ORDER BY \"createdAt\"", vec![user_id.to_owned()]).await.map_err(failed)?;
                         let proofs = crate::backend::rows::<verification::Model>(&db, "SELECT * FROM \"verification\" ORDER BY \"createdAt\"", vec![]).await.map_err(failed)?;
                         let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(alibi::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
-                        let sessions = sessions.iter().map(|session| { let mut value=serde_json::to_value(auth.context().session_view(session)).expect("actual session row");value["hidden"]=json!(session.hidden);value }).collect::<Vec<_>>();
-                        return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(alibi::wire::VerificationView::from).collect::<Vec<_>>()})));
+                        let sessions = sessions.iter().map(|session| {
+                            let view = auth.context().session_view(session).map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                            let mut value = serde_json::to_value(view)
+                                .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                            value["hidden"] = json!(session.hidden);
+                            Ok(value)
+                        }).collect::<Result<Vec<_>, axum::http::StatusCode>>()?;
+                        let users = users.iter().map(|user| auth.context().user_view(user))
+                            .collect::<AuthResult<Vec<_>>>().map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        return Ok(Json(json!({"users":users,"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(alibi::wire::VerificationView::from).collect::<Vec<_>>()})));
                     }
                     "api-key-rows" => {
                         let user_id=control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;

@@ -70,7 +70,7 @@ pub(super) fn random_token() -> String {
         .collect()
 }
 /// Optional protocol fields must not survive custom input when not issued.
-pub(super) fn response_fields(params: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
+fn response_fields(params: &OAuthTokenIssueParams) -> serde_json::Map<String, Value> {
     let mut fields = params
         .token_response
         .as_ref()
@@ -90,6 +90,41 @@ pub(super) fn response_fields(params: &OAuthTokenIssueParams) -> serde_json::Map
     }
     fields
 }
+pub(super) fn access_token_response(
+    params: &OAuthTokenIssueParams,
+    access: &str,
+    issued: i64,
+    expires: Value,
+    refresh: Option<String>,
+) -> AuthResult<serde_json::Map<String, Value>> {
+    let mut response = response_fields(params);
+    for (key, value) in [
+        ("access_token", json!(access)),
+        ("expires_in", remaining(issued, &expires)?),
+        ("expires_at", expires),
+        (
+            "token_type",
+            json!(if params
+                .confirmation
+                .as_ref()
+                .and_then(crate::oauth2::get_confirmation_jkt)
+                .is_some()
+            {
+                "DPoP"
+            } else {
+                "Bearer"
+            }),
+        ),
+        ("scope", json!(params.scopes.join(" "))),
+    ] {
+        _ = response.insert(key.into(), value);
+    }
+    if let Some(token) = refresh {
+        _ = response.insert("refresh_token".into(), json!(token));
+    }
+    Ok(response)
+}
+
 /// Ordinary issuance failures escape endpoint dispatch; only intentional API
 /// rejections publish an error envelope and OAuth cache headers.
 pub(super) fn error_response(error: EndpointError) -> AuthResult<EndpointResponse> {
@@ -122,7 +157,7 @@ pub(super) fn expiration_date(value: &Value) -> AuthResult<chrono::DateTime<chro
     chrono::DateTime::from_timestamp_millis(millis)
         .ok_or_else(|| AuthError::internal("Invalid token expiration"))
 }
-pub(super) fn remaining(issued: i64, expires: &Value) -> AuthResult<Value> {
+fn remaining(issued: i64, expires: &Value) -> AuthResult<Value> {
     let issued = json!(issued)
         .as_f64()
         .ok_or_else(|| AuthError::internal("Invalid issuance time"))?;
@@ -472,31 +507,13 @@ impl OAuthProviderPlugin {
                 },
             )
             .await?;
-        let mut response = response_fields(p);
-        for (key, value) in [
-            ("access_token", json!(access)),
-            ("expires_in", remaining(issued.timestamp(), &expires_claim)?),
-            ("expires_at", expires_claim),
-            (
-                "token_type",
-                json!(if p
-                    .confirmation
-                    .as_ref()
-                    .and_then(crate::oauth2::get_confirmation_jkt)
-                    .is_some()
-                {
-                    "DPoP"
-                } else {
-                    "Bearer"
-                }),
-            ),
-            ("scope", json!(p.scopes.join(" "))),
-        ] {
-            _ = response.insert(key.into(), value);
-        }
-        if let Some((_, token)) = refresh {
-            _ = response.insert("refresh_token".into(), json!(token));
-        }
+        let mut response = access_token_response(
+            p,
+            &access,
+            issued.timestamp(),
+            expires_claim,
+            refresh.map(|(_, token)| token),
+        )?;
         if p.user.is_some() && p.scopes.iter().any(|s| s == "openid") {
             let proof = json!({"userId":p.user.as_ref().map(|u|u.id().as_ref().to_owned()),"sessionId":p.session_id,"authTime":p.auth_time.map(|t|t.timestamp_millis()),"query":{"nonce":p.nonce},"idTokenClaims":p.id_token_claims});
             match Box::pin(self.issue_id_token(p, grant_type, &proof, &access, req, ctx)).await? {

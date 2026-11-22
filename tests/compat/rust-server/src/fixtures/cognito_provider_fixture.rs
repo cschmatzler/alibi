@@ -19,7 +19,8 @@ use axum::{
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
-static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
+static MAPPER_RECEIPTS: std::sync::Mutex<Vec<alibi::utils::json::JsValue>> =
+    std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
 pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
@@ -124,11 +125,12 @@ pub(crate) async fn router(
                 Ok(OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-raw-subject".into(),
-                    name: Some(format!("Mapped {name}")),
+                    name: Some(format!("Mapped {name}").into()),
                     email: "mapped-cognito@example.invalid".into(),
                     email_verified: false,
                     image: Some("https://images.example.invalid/mapped-cognito.png".into()),
-                })
+                }
+                .public_profile(true))
             });
         }
         let mut provider = OAuthProvider::cognito(options).map_err(AuthError::config)?;
@@ -172,7 +174,7 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/cognito/mapper-receipts",
-            get(|| async { Json(MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clone()) }),
+            get(|| async { super::mapper_receipt_json(&MAPPER_RECEIPTS) }),
         )
         .route("/__test/cognito/keys", get(keys))
         .route(
@@ -203,7 +205,7 @@ impl OAuthUserInfoHandler for ApplicationUserInfo {
             .ok_or("Missing application profile")?;
         self.0.user_info_receipts.lock().await.push(profile.clone());
         Ok(OAuthUserInfoResponse {
-            user_output: None,
+            account_subject: None,
             user: OAuthUserInfo {
                 additional_fields: Default::default(),
                 id: "cannot-replace-raw-subject".into(),
@@ -215,8 +217,9 @@ impl OAuthUserInfoHandler for ApplicationUserInfo {
                     .into(),
                 email_verified: true,
                 image: None,
-            },
-            data: profile,
+            }
+            .public_profile(true),
+            data: profile.into(),
         })
     }
 }

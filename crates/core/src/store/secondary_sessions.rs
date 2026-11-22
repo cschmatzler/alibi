@@ -29,6 +29,29 @@ struct CachedUserRevocation<S: AuthSchema> {
     cutoff: i64,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum SessionScope {
+    Organization,
+    Team,
+}
+
+impl SessionScope {
+    pub(super) fn fields(self, value: Option<&str>) -> FieldValues {
+        use crate::utils::json::JsValue;
+
+        let field = match self {
+            Self::Organization => "activeOrganizationId",
+            Self::Team => "activeTeamId",
+        };
+        let mut fields = FieldValues::new();
+        _ = fields.insert(
+            field.into(),
+            value.map_or(JsValue::Null, |value| JsValue::String(value.into())),
+        );
+        fields
+    }
+}
+
 #[async_trait::async_trait]
 impl<S: AuthSchema> super::SessionRevocation for CachedUserRevocation<S> {
     async fn revoke(&self) -> AuthResult<()> {
@@ -80,6 +103,17 @@ const USER_FIELDS: &[&str] = &[
     "image",
     "createdAt",
     "updatedAt",
+    "username",
+    "displayUsername",
+    "twoFactorEnabled",
+    "role",
+    "banned",
+    "banReason",
+    "banExpires",
+    "isAnonymous",
+    "phoneNumber",
+    "phoneNumberVerified",
+    "lastLoginMethod",
 ];
 
 fn ordered_snapshot(
@@ -141,6 +175,10 @@ impl<S: AuthSchema> PluginStore<S> {
             && (self.secondary().is_none() || self.config.session.store_in_database)
     }
 
+    pub(super) fn preserves_session_rows(&self) -> bool {
+        self.secondary().is_some() && self.config.session.preserve_in_database
+    }
+
     /// Secondary storage with database sessions that are deleted on revocation:
     /// the database then holds every session and can serve cache misses.
     pub(super) fn database_session_fallback(&self) -> bool {
@@ -159,20 +197,13 @@ impl<S: AuthSchema> PluginStore<S> {
         Ok(())
     }
 
-    /// Set one nullable session scope field (`activeOrganizationId`, `activeTeamId`).
     pub(super) async fn update_session_scope(
         &self,
         token: &str,
-        field: &str,
+        scope: SessionScope,
         value: Option<&str>,
     ) -> AuthResult<S::Session> {
-        let mut fields = FieldValues::new();
-        _ = fields.insert(
-            field.into(),
-            value.map_or(crate::utils::json::JsValue::Null, |value| {
-                crate::utils::json::JsValue::String(value.to_owned().into())
-            }),
-        );
+        let mut fields = scope.fields(value);
         if self.session_uses_database() {
             self.adapter_fields.attach(&mut fields, false);
         }

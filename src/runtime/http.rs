@@ -1,5 +1,5 @@
-use super::endpoint::merge_headers;
-use super::http_hooks::{apply_http_endpoint_input, with_http_endpoint_call_context};
+use super::endpoint_hooks::with_http_endpoint_call_context;
+use super::http_hooks::apply_http_endpoint_input;
 use super::{
     Alibi, Arc, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, BeforeRequestAction, HttpEndpointResponse, HttpMethod, HttpRequestAction,
@@ -26,19 +26,16 @@ impl<S: AuthSchema> Alibi<S> {
     /// failures when `AuthConfig::throw_api_errors` is enabled. Explicit API errors
     /// retain their HTTP responses.
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
-        // Incoming callers cannot carry trusted dispatch state into this instance.
-        let mut req = fresh_http_request(req);
+        let mut req = req.into_dispatch_input();
         req.extensions()
             .insert(self.config.advanced.ip_address.clone());
 
         let context = match self.config.resolve_request(&req).await {
-            Ok(config) => AuthContext {
-                config: Arc::new(config),
-                database: Arc::clone(&self.context.database),
-                email_provider: self.context.email_provider.clone(),
-                metadata: self.context.metadata.clone(),
-                extensions: self.context.extensions.clone(),
-            },
+            Ok(config) => {
+                let mut context = self.context.clone();
+                context.config = Arc::new(config);
+                context
+            }
             Err(error @ AuthError::Config(_)) if self.config.dynamic_base_url.is_some() => {
                 // Authority resolution fails outside the API router in the pinned host.
                 return Ok(AuthError::CallbackFailure(Box::new(error)).to_auth_response());
@@ -106,7 +103,7 @@ impl<S: AuthSchema> Alibi<S> {
                     run_after_hooks = false;
                 }
                 let mut nested_headers = req.take_response_headers();
-                merge_headers(&mut nested_headers, response.headers);
+                nested_headers.merge(response.headers);
                 for header in cache_headers {
                     nested_headers.append("Set-Cookie", header);
                 }
@@ -178,7 +175,7 @@ impl<S: AuthSchema> Alibi<S> {
                             rejected
                         }
                     };
-                    merge_headers(&mut response.headers, req.take_response_headers());
+                    response.headers.merge(req.take_response_headers());
                 }
                 let mut response = middleware::run_after(&self.middlewares, &req, response).await?;
                 for plugin in &self.plugins {
@@ -224,7 +221,7 @@ impl<S: AuthSchema> Alibi<S> {
                 match action {
                     HttpRequestAction::Respond(response) => return Ok(Some(response)),
                     HttpRequestAction::ReplaceRequest(replacement) => {
-                        *req = fresh_http_request(*replacement);
+                        *req = replacement.into_dispatch_input();
                         req.extensions()
                             .insert(context.config.advanced.ip_address.clone());
                     }
@@ -355,7 +352,6 @@ impl<S: AuthSchema> Alibi<S> {
             req.extensions().insert((*frame).clone());
         }
 
-        // Plugins see the base-path-stripped path (e.g. API-key → session emulation).
         for plugin in &self.plugins {
             if let Some(action) = plugin.before_request(&internal_req, context).await? {
                 match action {
@@ -404,7 +400,6 @@ impl<S: AuthSchema> Alibi<S> {
             if let Some(response) = self.handle_core_request(&internal_req, context).await? {
                 return Ok(response);
             }
-            // Only the resolved installed HTTP endpoint can receive the call.
             if let Some((plugin, _route)) = plugin_route
                 && let Some(response) = plugin
                     .on_http_endpoint(&internal_req, context)
@@ -478,34 +473,6 @@ fn unwrap_callback_failure(error: AuthError) -> AuthError {
         AuthError::CallbackFailure(cause) => *cause,
         error => error,
     }
-}
-
-/// Retain only physical request data across public dispatch and HTTP replacements.
-pub(in crate::runtime) fn fresh_http_request(request: AuthRequest) -> AuthRequest {
-    let query_pairs = request
-        .query
-        .keys()
-        .flat_map(|name| {
-            request
-                .query_values(name)
-                .into_iter()
-                .flatten()
-                .map(|value| (name.clone(), value.clone()))
-        })
-        .collect::<Vec<_>>();
-    let url = request.url().cloned();
-    let mut fresh = AuthRequest::from_parts(
-        request.method,
-        request.path,
-        request.headers,
-        request.body,
-        request.query,
-    );
-    if let Some(url) = url {
-        fresh = fresh.with_url(url);
-    }
-    fresh.set_query_pairs(query_pairs);
-    fresh
 }
 
 fn route_path_matches(pattern: &str, path: &str) -> bool {

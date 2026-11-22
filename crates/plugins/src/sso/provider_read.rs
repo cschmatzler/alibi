@@ -53,12 +53,7 @@ impl SsoPlugin {
                 ctx.database
                     .get_member(organization_id, user_id)
                     .await?
-                    .is_some_and(|member| {
-                        member
-                            .role
-                            .split(',')
-                            .any(|role| matches!(role.trim(), "owner" | "admin"))
-                    })
+                    .is_some_and(|member| super::can_manage_organization_provider(&member.role))
             } else {
                 provider.user_id.as_deref() == Some(user_id)
             }
@@ -80,11 +75,7 @@ pub(super) fn sanitize<S: AuthSchema>(
         .as_deref()
         .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
         .filter(|value| !value.is_null());
-    let base = format!(
-        "{}{}",
-        ctx.config.base_url.trim_end_matches('/'),
-        ctx.config.base_path.trim_end_matches('/')
-    );
+    let base = super::sso_base(&ctx.config);
     let mut output = json!({"providerId":provider.provider_id,"type":if saml.is_some(){"saml"}else{"oidc"},"issuer":provider.issuer,"domain":provider.domain,"organizationId":provider.organization_id.as_deref().filter(|id|!id.is_empty()),"domainVerified":provider.domain_verified.unwrap_or(false),"spMetadataUrl":format!("{base}/sso/saml2/sp/metadata?providerId={}",alibi_core::utils::javascript::encode_uri_component(&provider.provider_id))});
     if let Some(config) = saml {
         let mut safe = serde_json::Map::new();

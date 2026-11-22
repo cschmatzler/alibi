@@ -622,7 +622,7 @@ mod memory_user_id_tests {
     }
 
     mod falsy_id_cases {
-        use crate as alibi_core;
+        use crate as alibi;
         include!(
             "../../../../tests/integration/storage/plugin_flows/user_update_falsy_id_cases.rs"
         );
