@@ -29,6 +29,9 @@
     pkgs.chromium
   ];
   env.LD_LIBRARY_PATH = lib.makeLibraryPath [ pkgs.openssl ];
-  env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+  # Point openssl-sys at nix store paths directly so builds (including
+  # `cargo publish` verification) do not depend on PKG_CONFIG_PATH.
+  env.OPENSSL_LIB_DIR = "${lib.getLib pkgs.openssl}/lib";
+  env.OPENSSL_INCLUDE_DIR = "${lib.getDev pkgs.openssl}/include";  env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
   env.NO_PROXY = "localhost,127.0.0.1";
 }
