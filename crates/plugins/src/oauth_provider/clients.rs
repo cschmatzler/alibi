@@ -2435,12 +2435,12 @@ impl OAuthProviderPlugin {
         req: &impl SessionRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<EndpointResponse> {
-        req.queue_response_header("Cache-Control", "no-store");
-        req.queue_response_header("Pragma", "no-cache");
         let (assertion, assertion_type, jwks) = match validate_rotate_keys(body)? {
             Ok(input) => input,
             Err(response) => return Ok(response),
         };
+        req.queue_response_header("Cache-Control", "no-store");
+        req.queue_response_header("Pragma", "no-cache");
         if !self.config.allow_client_key_rotation {
             return status_protocol_error(403, "access_denied", "Client key rotation is disabled");
         }

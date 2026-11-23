@@ -44,9 +44,8 @@ fn body(request: &AuthRequest, optional: bool) -> Result<Map<String, Value>, Aut
             .unwrap_or_default();
         let normalized = content_type.to_ascii_lowercase();
         let media_type = normalized.split(';').next().unwrap_or_default().trim();
-        // Better Call checks the explicit endpoint allowlist before decoding any
-        // body. Its matching rule permits a containing media type as well.
-        if !media_type.contains("application/json") {
+        // Better Call checks the explicit endpoint allowlist before decoding.
+        if media_type != "application/json" {
             let message = if normalized.is_empty() {
                 "Content-Type is required. Allowed types: application/json".to_owned()
             } else {

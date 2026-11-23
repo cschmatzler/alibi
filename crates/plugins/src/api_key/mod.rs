@@ -4048,6 +4048,16 @@ mod crud_tests {
                 // storage contract stores the actual metadata value.
                 *persisted_json.get_mut("metadata").unwrap() =
                     serde_json::from_str(persisted.metadata.as_deref().unwrap_or("null")).unwrap();
+                for (field, date) in [
+                    ("createdAt", Some(persisted.created_at.as_str())),
+                    ("updatedAt", Some(persisted.updated_at.as_str())),
+                    ("lastRequest", persisted.last_request.as_deref()),
+                ] {
+                    persisted_json[field] = serde_json::json!(date.map(|date| {
+                        use alibi_core::utils::datetime::{json_date_millis, parse_date_millis};
+                        json_date_millis(parse_date_millis(date).unwrap())
+                    }));
+                }
                 assert_eq!(persisted_json, serde_json::to_value(&row).unwrap());
                 cache.delete(&by_id).await.unwrap();
                 cache.delete(&by_hash).await.unwrap();

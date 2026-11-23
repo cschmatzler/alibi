@@ -15,6 +15,7 @@ use alibi::utils::json::JsValue;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::response::IntoResponse;
 use axum::{Json, Router, extract::Query, routing::post};
+use futures_util::future::BoxFuture;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -23,7 +24,10 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU8, Ordering},
 };
 use tower::ServiceExt;
-pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+pub(crate) async fn router(
+    base: &AuthConfig,
+    database: DatabaseConnection,
+) -> AuthResult<(Router, impl Fn() -> BoxFuture<'static, ()> + Clone + Send + Sync + 'static)> {
     let path = "/__test/profiles/scim/api/auth";
     let config = base.clone().base_path(path);
     let auth = Arc::new(
@@ -66,7 +70,33 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let verifier_inputs = Arc::new(Mutex::new(Vec::<Value>::new()));
     let verifier_claims = Arc::new(Mutex::new(None::<JsValue>));
     let user_read_attributes = Arc::new(Mutex::new(String::new()));
-    Ok(router.route(
+    let reset = {
+        let restart_auth = restart_auth.clone();
+        let projection_states = projection_states.clone();
+        let projection_fails = projection_fails.clone();
+        let role_observations = role_observations.clone();
+        let role_stage = role_stage.clone();
+        let identity_states = identity_states.clone();
+        let identity_fails = identity_fails.clone();
+        let verifier_inputs = verifier_inputs.clone();
+        let verifier_claims = verifier_claims.clone();
+        let user_read_attributes = user_read_attributes.clone();
+        move || -> BoxFuture<'static, ()> {
+            projection_states.lock().unwrap().clear();
+            projection_fails.store(false, Ordering::SeqCst);
+            *role_observations.lock().unwrap() = json!({"mapped":[],"checked":[]});
+            role_stage.store(0, Ordering::SeqCst);
+            identity_states.lock().unwrap().clear();
+            identity_fails.store(false, Ordering::SeqCst);
+            verifier_inputs.lock().unwrap().clear();
+            *verifier_claims.lock().unwrap() = None;
+            user_read_attributes.lock().unwrap().clear();
+            let restart_auth = restart_auth.clone();
+            let auth = auth.clone();
+            Box::pin(async move { *restart_auth.lock().await = auth })
+        }
+    };
+    let router = router.route(
         "/__test/server-api/scim",
         post(move |Query(query): Query<HashMap<String, String>>, bytes: axum::body::Bytes| {
             let database=database.clone();
@@ -497,7 +527,8 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 (axum::http::StatusCode::OK, Json(output.value().clone())).into_response()
             }
         }),
-    ))
+    );
+    Ok((router, reset))
 }
 
 async fn physical_rows(database: &DatabaseConnection, table: &str) -> Value {

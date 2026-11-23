@@ -125,11 +125,11 @@ compatScenario(
     expect(verified.result.ok).toBe(true);
     expect(verified.result.value!.response).toMatchObject({
       status: true,
-      user: { id: owner.result.data!.user.id, email: next, emailVerified: true },
+      user: { id: owner.result.data!.user.id, email: next, emailVerified: false },
     });
     const after = await state();
     expect(after.owner.user!.email).toBe(next);
-    expect(after.owner.user!.emailVerified).toBe(true);
+    expect(after.owner.user!.emailVerified).toBe(false);
     expect({
       ...after.owner.user!,
       email: old,
@@ -141,8 +141,21 @@ compatScenario(
     expect(after.foreign).toEqual(before.foreign);
     const replay = await invoke("verifyEmail", undefined, owner.headers, { token: proof.token });
     expect(replay.result.status).toBe(401);
-    expect(replay.result.body).toEqual({ code: "USER_NOT_FOUND", message: "User not found" });
+    expect(replay.result.body).toEqual({ code: "INVALID_TOKEN", message: "Invalid token" });
     expect(await state()).toEqual(after);
+    const verificationRequested = await invoke("sendVerificationEmail", { email: next });
+    expect(verificationRequested.result.ok).toBe(true);
+    const followup = await ctx.rawRequest({
+      path: `/__test/verification-email?email=${encodeURIComponent(next)}`,
+    });
+    expect(followup.status).toBe(200);
+    const followupToken = z.object({ token: z.string() }).parse(followup.body).token;
+    expect(followupToken).not.toBe(proof.token);
+    const confirmed = await invoke("verifyEmail", undefined, owner.headers, {
+      token: followupToken,
+    });
+    expect(confirmed.result.ok).toBe(true);
+    expect((await state()).owner.user).toMatchObject({ email: next, emailVerified: true });
     const signin = await ctx
       .actor("logical-mailbox-restored", "server-dispatch-cache")
       .client.signIn.email({ email: next, password: "Correct-Horse-Password-205" });
@@ -161,6 +174,9 @@ compatScenario(
       verified,
       after,
       replay,
+      verificationRequested,
+      followup,
+      confirmed,
       signin,
     });
   },

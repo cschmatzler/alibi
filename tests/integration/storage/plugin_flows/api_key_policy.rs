@@ -124,13 +124,16 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
         ),
     ];
     for (index, (label, config)) in variants.into_iter().enumerate() {
+        let start_length = config.starting_characters_length.max(0.0) as usize;
         let auth = builder::<B>(&connection)
             .plugin(ApiKeyPlugin::with_config(config))
             .build()
             .await?;
         let owner = cookies(&signup(&auth, &format!("limits-{index}@example.com")).await);
         let mut key_id = None;
-        for text in [
+        let mut key_start = None;
+        let mut snapshot_start = String::new();
+        for (attempt, text) in [
             r#"{"name":"x"}"#,
             r#"{"name":"toolong"}"#,
             r#"{"name":"ok","expiresIn":3600}"#,
@@ -142,12 +145,19 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
             r#"{"name":-1e999}"#,
             r#"{"metadata":null}"#,
             r#"{"expiresIn":1e300}"#,
-        ] {
-            let response =
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut response =
                 Box::pin(auth.handle_request(raw("/api-key/create", text, &owner))).await?;
             if response.status == 200 {
-                let created = body(&response);
+                let mut created = body(&response);
                 key_id = created["id"].as_str().map(str::to_owned);
+                let key = created["key"].as_str().unwrap();
+                let start_units = key.encode_utf16().take(start_length).collect::<Vec<_>>();
+                let expected_start = String::from_utf16(&start_units)?;
+                assert_eq!(created["start"], expected_start.as_str());
                 // Compat owner: api-key/name-policy.test.ts. An omitted optional
                 // name is SQL NULL and remains an explicit JSON null after
                 // loading the persisted row through both owned read routes.
@@ -191,6 +201,14 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
                         "prefix": created["key"].as_str().map(|key| key.starts_with("pre_")),
                     }),
                 );
+                // Short random prefixes may collide. The raw check above proves the
+                // relationship to the issued key before assigning its snapshot value.
+                if !expected_start.is_empty() {
+                    snapshot_start = format!("snapshot-start-{index}-{attempt}");
+                    created["start"] = json!(snapshot_start);
+                    response.body = serde_json::to_vec(&created)?;
+                }
+                key_start = Some(expected_start);
             }
             trace.response(&format!("{label} create {text}"), &response);
         }
@@ -206,10 +224,17 @@ async fn api_key_configuration_limits<B: Backend>(db: Db) -> TestResult {
                 r#""enabled":false,"metadata":{"b":2},"permissions":null"#,
             ] {
                 let text = format!(r#"{{"keyId":"{key_id}",{fields}}}"#);
-                trace.response(
-                    &format!("{label} update {fields}"),
-                    &Box::pin(auth.handle_request(raw("/api-key/update", &text, &owner))).await?,
-                );
+                let mut response =
+                    Box::pin(auth.handle_request(raw("/api-key/update", &text, &owner))).await?;
+                if response.status == 200 {
+                    let mut updated = body(&response);
+                    assert_eq!(updated["start"].as_str(), key_start.as_deref());
+                    if key_start.as_deref().is_some_and(|start| !start.is_empty()) {
+                        updated["start"] = json!(snapshot_start);
+                        response.body = serde_json::to_vec(&updated)?;
+                    }
+                }
+                trace.response(&format!("{label} update {fields}"), &response);
             }
         }
     }

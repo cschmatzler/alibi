@@ -465,15 +465,21 @@ impl PhoneNumberPlugin {
         self.verify_and_consume(ctx, req.physical_request(), &body.phone_number, &body.code)
             .await?;
         if body.update_phone_number == Some(true) {
-            let (user, session) = ctx
-                .require_session(req)
-                .await
-                .map_err(|error| match error {
-                    AuthError::Unauthenticated | AuthError::SessionNotFound => {
-                        phone_error(401, codes::USER_NOT_FOUND, "User not found")
-                    }
-                    error => error,
-                })?;
+            let authority = if ctx.config.session.stateless || req.virtual_session(ctx).is_some() {
+                ctx.require_cached_session(req)
+                    .await
+                    .map(|(user, session)| (user.id().into_owned(), session))
+            } else {
+                ctx.require_authoritative_session_record(req)
+                    .await
+                    .map(|(user, session)| (user.id().into_owned(), session))
+            };
+            let (user_id, session) = authority.map_err(|error| match error {
+                AuthError::Unauthenticated | AuthError::SessionNotFound => {
+                    phone_error(401, codes::USER_NOT_FOUND, "User not found")
+                }
+                error => error,
+            })?;
             if ctx
                 .database
                 .get_user_by_phone_number_record(&body.phone_number)
@@ -489,7 +495,7 @@ impl PhoneNumberPlugin {
             let updated = ctx
                 .database
                 .update_user_record(
-                    &user.id(),
+                    &user_id,
                     UpdateUser {
                         phone_number: Some(Some(body.phone_number.clone())),
                         phone_number_verified: Some(true),
@@ -556,7 +562,7 @@ impl PhoneNumberPlugin {
             }
             user.image = body.image;
             crate::helpers::apply_default_role(ctx, &mut user);
-            prepare_additional_user_fields(ctx, &mut user).await?;
+            prepare_additional_user_fields(ctx, &mut user)?;
             ctx.database
                 .create_user_with_source_record(
                     user,

@@ -504,7 +504,7 @@ pub(in crate::oauth) async fn callback_core(
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
-    let canonical_user = crate::oauth::providers::OAuthUserInfo::from_fields(
+    let mut canonical_user = crate::oauth::providers::OAuthUserInfo::from_fields(
         &user_info.user,
         user_info.account_subject.as_ref(),
     );
@@ -581,6 +581,21 @@ pub(in crate::oauth) async fn callback_core(
         });
     }
 
+    // Redirect sign-in applies the provider name fallback before validation and writes.
+    if !user_info
+        .user
+        .get("name")
+        .is_some_and(alibi_core::utils::json::JsValue::is_truthy)
+    {
+        _ = user_info.user.insert(
+            "name".into(),
+            alibi_core::utils::json::JsValue::String("".into()),
+        );
+        canonical_user = crate::oauth::providers::OAuthUserInfo::from_fields(
+            &user_info.user,
+            user_info.account_subject.as_ref(),
+        );
+    }
     let disable_sign_up = provider.disable_implicit_sign_up
         && !payload.request_sign_up.unwrap_or(false)
         || (oauth_disable_sign_up_option(provider).unwrap_or(false)

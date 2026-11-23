@@ -5,6 +5,7 @@ export function oauthPurposeSecret(
   secret: string,
   purpose:
     | "oauth-state-cookie"
+    | "oauth-link-session-token"
     | "oauth-proxy-state"
     | "oauth-proxy-package"
     | "oauth-proxy-profile",

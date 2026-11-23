@@ -23,7 +23,7 @@ for (const [explicitRefresh, customHash, serverValidation] of [
             ...input,
             ...(customHash ? { mode: "custom-token-hash" } : {}),
             ...(["token", "introspect", "revoke"].includes(String(input.action)) && clientSecret
-              ? { body: { ...(input.body as object), client_secret: clientSecret } }
+              ? { body: { client_secret: clientSecret, ...(input.body as object) } }
               : {}),
           }),
         });
@@ -160,6 +160,7 @@ for (const [explicitRefresh, customHash, serverValidation] of [
         ] as const) {
           const signed = await control({
             action: "sign-access",
+            ...(name === "string-exp" ? { rawClaims: true } : {}),
             body: {
               iss: issuer,
               aud: audience,
@@ -244,6 +245,19 @@ for (const [explicitRefresh, customHash, serverValidation] of [
           }
         }
       }
+      const foreign = await control({
+        action: "admin-create",
+        headers: { cookie },
+        body: {
+          client_name: "Foreign refresh client",
+          redirect_uris: ["https://app.fixture.test/callback"],
+          scope: "email offline_access",
+          token_endpoint_auth_method: customHash ? "client_secret_post" : "none",
+          grant_types: ["authorization_code", "refresh_token"],
+        },
+      });
+      expect(foreign.status).toBe(201);
+      const foreignClient = (await foreign.json()) as any;
       const failures = [];
       for (const [input, error, error_description] of [
         [{ grant_type: "refresh_token" }, "invalid_request", "Missing required client_id"],
@@ -259,6 +273,16 @@ for (const [explicitRefresh, customHash, serverValidation] of [
         ],
         [
           { grant_type: "refresh_token", client_id: "foreign", refresh_token: token.refresh_token },
+          "invalid_client",
+          "client not found",
+        ],
+        [
+          {
+            grant_type: "refresh_token",
+            client_id: foreignClient.client_id,
+            ...(customHash ? { client_secret: foreignClient.client_secret } : {}),
+            refresh_token: token.refresh_token,
+          },
           "invalid_grant",
           "invalid refresh token",
         ],

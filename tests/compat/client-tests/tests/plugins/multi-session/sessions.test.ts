@@ -128,8 +128,8 @@ for (const profile of [
       expect(list.body).toHaveLength(2);
       expect(list.cookieCount).toBe(0);
       expect(list.body.map((item: any) => item.user.id)).toEqual([
-        bob.data.user.id,
         alice.data.user.id,
+        bob.data.user.id,
       ]);
       expect(
         await Promise.all([
@@ -378,8 +378,8 @@ compatScenario(
     const list = await client.multiSession.listDeviceSessions();
     expect(list.data).toHaveLength(2);
     expect(list.data?.map((item) => item.user.id)).toEqual([
-      second.data.user.id,
       first.data.user.id,
+      second.data.user.id,
     ]);
 
     const active = await client.getSession();
@@ -670,8 +670,7 @@ for (const [profile, admitted] of [
       const list = await client.multiSession.listDeviceSessions();
       expect(list.error).toBeNull();
       expect(list.data).toHaveLength(admitted);
-      const expectedOrder =
-        admitted === 3 ? [accounts[1], accounts[2], accounts[0]] : accounts.slice(0, admitted);
+      const expectedOrder = accounts.slice(0, admitted);
       expect(list.data?.map((item) => item.session.token)).toEqual(
         expectedOrder.map((item) => item!.token),
       );

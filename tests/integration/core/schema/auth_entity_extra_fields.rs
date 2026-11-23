@@ -170,7 +170,7 @@ mod tests {
                     email_verified: Some(verified),
                     ..Default::default()
                 },
-                chrono::Utc::now(),
+                chrono::DateTime::<chrono::Utc>::UNIX_EPOCH + chrono::Duration::milliseconds(123),
             );
             active.locale = Set(Some(locale.to_owned()));
             active.r#type = Set(Some(format!("profile-{id}")));

@@ -11,7 +11,7 @@ use alibi::seaorm::DatabaseConnection;
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
@@ -259,7 +259,14 @@ pub(crate) async fn router(
         )
         .route(
             "/__test/generic-discovery/receipts",
-            get(|State(f): State<Fixture>| async move { Json(f.receipts.lock().await.clone()) }),
+            get(|State(f): State<Fixture>, Query(query): Query<std::collections::HashMap<String, String>>| async move {
+                let rows = f.receipts.lock().await;
+                let receipts = rows.iter().filter(|row| match query.get("metadata") {
+                    Some(mode) => row["mode"].as_str() == Some(mode.as_str()),
+                    None => row["path"] != "/metadata",
+                });
+                Json(receipts.cloned().collect::<Vec<_>>())
+            }),
         )
         .with_state(fixture.clone());
     Ok((router.merge(controls), fixture))

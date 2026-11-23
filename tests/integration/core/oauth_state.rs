@@ -30,6 +30,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
             "google",
             OAuthProvider::google("local-client", "local-secret"),
         ))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await
         .unwrap();

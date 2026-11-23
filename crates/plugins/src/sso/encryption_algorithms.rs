@@ -30,20 +30,18 @@ pub(super) fn validate(xml: &str, policy: &SsoSamlEncryptionPolicy) -> Result<()
     let Some(root) = doc.document_element() else {
         return Ok(());
     };
-    for (value, label, allowed, deprecated, recommendation) in [
+    for (value, label, allowed, deprecated) in [
         (
             algorithm(&doc, root, "EncryptedKey"),
             "key",
             &policy.allowed_key_encryption_algorithms,
-            "http://www.w3.org/2001/04/xmlenc#rsa-1_5",
-            "RSA-OAEP",
+            Some(("http://www.w3.org/2001/04/xmlenc#rsa-1_5", "RSA-OAEP")),
         ),
         (
             algorithm(&doc, root, "EncryptedData"),
             "data",
             &policy.allowed_data_encryption_algorithms,
-            "http://www.w3.org/2001/04/xmlenc#tripledes-cbc",
-            "AES-GCM",
+            None,
         ),
     ] {
         let Some(value) = value else { continue };
@@ -56,7 +54,9 @@ pub(super) fn validate(xml: &str, policy: &SsoSamlEncryptionPolicy) -> Result<()
                     ),
                 });
             }
-        } else if value == deprecated {
+        } else if let Some((deprecated, recommendation)) = deprecated
+            && value == deprecated
+        {
             let message = format!(
                 "SAML response uses deprecated {label} encryption algorithm: {value}. Please configure your IdP to use {recommendation}."
             );

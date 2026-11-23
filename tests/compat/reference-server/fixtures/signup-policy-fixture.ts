@@ -18,6 +18,7 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
   }
   const events: Record<string, unknown>[] = [];
   let mode = "normal";
+  let releaseHash: (() => void) | undefined;
   let releaseExisting: (() => void) | undefined;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
@@ -296,6 +297,16 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         password: {
           async hash(password) {
             events.push({ stage: "hash-enter", password });
+            if (mode === "hash-race") {
+              if (releaseHash) {
+                releaseHash();
+                releaseHash = undefined;
+              } else {
+                await new Promise<void>((resolve) => {
+                  releaseHash = resolve;
+                });
+              }
+            }
             const hash = await hashPassword(password);
             events.push({ stage: "hash-result", password, hash });
 

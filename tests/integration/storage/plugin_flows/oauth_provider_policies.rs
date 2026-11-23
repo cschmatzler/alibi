@@ -277,18 +277,20 @@ fn discord_default_avatars_follow_the_snowflake_or_discriminator() {
             .and_then(alibi::utils::json::JsValue::as_str),
         Some("https://cdn.discordapp.com/avatars/175928847299117063/a_hash.gif")
     );
+    // Discord uses JavaScript BigInt for snowflakes and parseInt for discriminators.
+    for (extra, index) in [
+        (json!({"discriminator":null}), "NaN"),
+        (json!({"id":""}), "0"),
+        (json!({"discriminator":"x1"}), "NaN"),
+    ] {
+        assert_eq!(
+            profile(extra).unwrap()["image"],
+            format!("https://cdn.discordapp.com/embed/avatars/{index}.png").as_str()
+        );
+    }
     for (extra, expected) in [
-        (json!({"discriminator":null}), "missing discriminator"),
-        (
-            json!({"id":"not-digits"}),
-            "invalid Discord decimal snowflake",
-        ),
-        (json!({"id":""}), "invalid Discord decimal snowflake"),
-        (
-            json!({"discriminator":"x1"}),
-            "invalid Discord discriminator",
-        ),
-        (json!({"avatar":5}), "missing avatar"),
+        (json!({"id":"not-digits"}), "Invalid Discord BigInt snowflake"),
+        (json!({"avatar":5}), "Discord avatar.startsWith is not a function"),
     ] {
         assert_eq!(profile(extra).unwrap_err(), expected);
     }

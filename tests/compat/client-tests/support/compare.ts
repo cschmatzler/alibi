@@ -5093,6 +5093,20 @@ export function compareValues(
           return;
         }
       }
+      if (key === "message" && /^traces\.\d+\.responseErrorBody\.message$/.test(path)) {
+        const errorPath = path.replace(".responseErrorBody.", ".responseBody.");
+        const issuerMismatch =
+          /^OIDC issuer mismatch: Discovered issuer "(http:\/\/127\.0\.0\.1:\d+)" does not match configured issuer "\1\/"$/;
+        if (
+          traceEndpoint(normalizedLeft, errorPath) === "/__test/server-api/sso" &&
+          traceEndpoint(normalizedRight, errorPath) === "/__test/server-api/sso" &&
+          issuerMismatch.test(a) &&
+          issuerMismatch.test(b)
+        ) {
+          // Each synthetic IdP listens on a different port.
+          return;
+        }
+      }
       if (
         key === "error_description" &&
         /^traces\.\d+\.responseErrorBody\.error_description$/.test(path)
@@ -5231,6 +5245,16 @@ export function compareValues(
       // Published cache sessionSchema coerces [] to an empty userId. This is
       // literal agreement at that field, never an empty identity bijection.
       if (key === "userId" && /(?:^|\.)session\.userId$/.test(path) && a === "" && b === "") {
+        return;
+      }
+
+      if (
+        key === "value" &&
+        /\.members\.\d+\.value$/.test(path) &&
+        leftEntities.has(a) &&
+        rightEntities.has(b)
+      ) {
+        identity(a, b, path, "entity");
         return;
       }
 

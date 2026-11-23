@@ -1,5 +1,4 @@
 use super::{SqlxStore, lock_exclusive, lock_shared};
-use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::{Engine, Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
@@ -684,7 +683,7 @@ where
     ) -> AuthResult<S::User> {
         self.update_user_prepared_with_connection(self.exec(), None, id, update)
             .await?
-            .ok_or_else(record_not_updated)
+            .ok_or(AuthError::UserNotFound)
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
@@ -802,7 +801,7 @@ where
             alibi_core::store::PreparedUserUpdate::from_typed(&update),
         )
         .await?
-        .ok_or_else(record_not_updated)
+        .ok_or(AuthError::UserNotFound)
     }
 
     pub(super) async fn update_user_prepared_with_connection(

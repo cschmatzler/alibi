@@ -158,8 +158,16 @@ impl AnonymousIdentity for Application {
 impl LinkAnonymousAccount for Application {
     async fn link(&self, accounts: &AnonymousLink, request: &alibi::CallbackContext) -> AuthResult<()> {
         tokio::task::yield_now().await;
+        let path = request
+            .request
+            .as_ref()
+            .and_then(|request| request.url())
+            .and_then(|url| url.path().split_once("/api/auth"))
+            .map(|(_, path)| path)
+            .or_else(|| request.endpoint.as_ref().and_then(|call| call.path()))
+            .or_else(|| request.request.as_ref().map(|request| request.path()));
         let mut event = json!({
-            "mode": self.mode, "path": request.endpoint.as_ref().and_then(|call| call.path()).or_else(||request.request.as_ref().map(|request|request.path())),
+            "mode": self.mode, "path": path,
             "request": if request.request.is_none() {Some(Value::Null)} else {None::<Value>},
             "anonymousUser": { "user": accounts.anonymous_user, "session": accounts.anonymous_session },
             "newUser": { "user": accounts.new_user, "session": accounts.new_session },

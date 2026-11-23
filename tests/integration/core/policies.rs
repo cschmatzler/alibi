@@ -50,10 +50,19 @@ fn ids(users: &[UserView]) -> String {
 }
 
 fn filter(field: &str, operator: &str, value: &str) -> ListUsersParams {
+    let filter_value = if field == "createdAt" {
+        value.parse::<chrono::DateTime<chrono::Utc>>().ok()
+    } else {
+        None
+    }
+    .map_or_else(
+        || UserFilterValue::Scalar(value.into()),
+        |date| UserFilterValue::Native(JsValue::Date(date)),
+    );
     ListUsersParams {
         filter_field: Some(field.into()),
         filter_operator: Some(operator.into()),
-        filter_value: Some(UserFilterValue::Scalar(value.into())),
+        filter_value: Some(filter_value),
         sort_by: Some("id".into()),
         ..Default::default()
     }
@@ -71,17 +80,18 @@ fn user_filters_cover_every_operator_and_field_kind() {
         ("name", "contains", "ar", "c"),
         ("name", "starts_with", "Al", "a"),
         ("name", "ends_with", "ob", "b"),
-        ("name", "not_in", "Bob", "ac"),
+        ("name", "not_in", "Bob", ""),
         ("name", "bogus", "Bob", ""),
         ("role", "eq", "admin", "a"),
         ("banned", "eq", "true", "a"),
         ("banned", "ne", "true", "bc"),
         ("banned", "gt", "true", ""),
-        ("banned", "eq", "maybe", ""),
+        ("banned", "eq", "maybe", "bc"),
         ("createdAt", "gt", "2024-01-15T00:00:00.000Z", "ab"),
         ("createdAt", "lte", "2024-02-01T00:00:00.000Z", "bc"),
-        ("createdAt", "eq", "2024-03-01T00:00:00.000Z", "a"),
-        ("createdAt", "ne", "2024-03-01T00:00:00.000Z", "bc"),
+        // The memory adapter uses JavaScript strict equality for date objects.
+        ("createdAt", "eq", "2024-03-01T00:00:00.000Z", ""),
+        ("createdAt", "ne", "2024-03-01T00:00:00.000Z", "abc"),
         ("createdAt", "lt", "2024-02-01T00:00:00.000Z", "c"),
         ("createdAt", "gte", "2024-02-01T00:00:00.000Z", "ab"),
         ("createdAt", "gt", "not a date", ""),
@@ -168,7 +178,7 @@ fn multiple_value_filters_search_sort_and_paging() {
     );
 
     for (sort_by, direction, expected) in [
-        (None, None, "abc"),
+        (None, None, "bac"),
         (Some("createdAt"), Some("asc"), "cba"),
         (Some("name"), Some("desc"), "cba"),
         (Some("email"), None, "abc"),

@@ -340,7 +340,7 @@ impl SsoPlugin {
             let user = OAuthUserInfo {
                 id: text("id", "sub")
                     .filter(|value| !value.is_empty())
-                    .ok_or_else(|| AuthError::internal("missing_user_info"))?
+                    .ok_or_else(|| api(400, "missing_user_info"))?
                     .into(),
                 // Some IdPs send a list of addresses, such as Azure AD B2C's `emails`.
                 email: match profile.get(field("email", "email")) {
@@ -352,7 +352,7 @@ impl SsoPlugin {
                 }
                 .filter(|value| !value.is_empty())
                 .map(str::to_owned)
-                .ok_or_else(|| AuthError::internal("missing_user_info"))?
+                .ok_or_else(|| api(400, "missing_user_info"))?
                 .into(),
                 name: text("name", "name").map(Into::into),
                 image: text("image", "picture").map(Into::into),

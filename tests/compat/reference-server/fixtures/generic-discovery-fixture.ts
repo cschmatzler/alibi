@@ -224,12 +224,21 @@ export async function genericDiscoveryFixture(base: BetterAuthOptions) {
       }
     },
     async handle(request: Request) {
-      const p = new URL(request.url).pathname;
+      const url = new URL(request.url);
+      const p = url.pathname;
       if (p === "/__test/generic-discovery/control" && request.method === "POST") {
         control = await request.json();
         return Response.json({ status: true });
       }
-      if (p === "/__test/generic-discovery/receipts") return Response.json(receipts);
+      if (p === "/__test/generic-discovery/receipts") {
+        const mode = url.searchParams.get("metadata");
+        return Response.json(
+          receipts.filter((value) => {
+            const row = value as { path?: string; mode?: string };
+            return mode === null ? row.path !== "/metadata" : row.mode === mode;
+          }),
+        );
+      }
       return null;
     },
   };

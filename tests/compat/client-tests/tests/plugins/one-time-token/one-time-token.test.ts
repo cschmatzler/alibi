@@ -437,7 +437,7 @@ compatScenario(
     }
 
     const signupToken = signup.data.token;
-    expect(exposedHeaders).toBe("existing, set-ott, Existing");
+    expect(exposedHeaders).toBe("existing, set-ott");
 
     const persistedHeader = rows.parse(
       await ctx.readVerificationState({ identifier: `one-time-token:${headerToken}` }),

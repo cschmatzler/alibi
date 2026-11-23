@@ -200,6 +200,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
     // Bootstrap the admin through the real password handler, then configure its
     // explicit ID. No admin columns are required by the generated core schema.
     let bootstrap = plugins(AuthBuilder::new(deletion_config()).store_arc(store.clone()))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let (admin_id, admin_cookie) = Box::pin(signup(
@@ -226,6 +227,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
             admin_user_ids: Some(vec![admin_id.clone()]),
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let email = if admin {
@@ -374,6 +376,7 @@ pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
                     .delete_user_enabled(true)
                     .require_delete_verification(false),
             )
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let response = Box::pin(without_plugin.handle_request(deletion_request(

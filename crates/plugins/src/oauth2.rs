@@ -396,7 +396,7 @@ fn prepare_dpop_public_key(algorithm: &str, jwk: &Value) -> Result<(Value, bool)
         values.iter().any(|v| v.as_str() != Some("verify"))
     }) {
         return Err(DpopError::proof(format!(
-            "Unsupported key usage for an {name} key"
+            "Unsupported key usage for {name} key"
         )));
     }
     if expected == "EC" && jwk.get("crv").and_then(Value::as_str) != curve {
@@ -454,7 +454,7 @@ fn prepare_dpop_mldsa_key(
     );
     if !valid_usage {
         return Err(DpopError::proof(format!(
-            "Unsupported key usage for a {algorithm} key"
+            "Unsupported key usage for {algorithm} key"
         )));
     }
     let invalid = || DpopError::proof("Invalid keyData");

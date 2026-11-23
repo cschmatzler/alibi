@@ -390,8 +390,8 @@ pub(crate) async fn issue_selected_user_session_in_transaction<S: alibi_core::Au
                     &user.id(),
                     UpdateUser {
                         banned: Some(false),
-                        ban_reason: None,
-                        ban_expires: None,
+                        clear_ban_reason: true,
+                        ban_expires: Some(None),
                         ..Default::default()
                     },
                 )
@@ -447,8 +447,8 @@ pub(in crate::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSche
                     user_id,
                     UpdateUser {
                         banned: Some(false),
-                        ban_reason: None,
-                        ban_expires: None,
+                        clear_ban_reason: true,
+                        ban_expires: Some(None),
                         ..Default::default()
                     },
                 )

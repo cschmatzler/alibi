@@ -244,6 +244,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 )?;
                 let url = verification_url(&ctx.config, &new_token, query.callback_url.as_deref());
                 let mut updated_user = ctx.user_view(&user)?;
+                _ = updated_user.extension_fields.shift_remove("email");
                 updated_user.email = Some(update_to.to_owned());
                 if config.send_verification_email.is_none()
                     && let Some(sender) = ctx.email_verification_override()
@@ -293,6 +294,8 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 }
 
                 let session_token = if let Some((mut session_user, session)) = current_session {
+                    _ = session_user.extension_fields.shift_remove("email");
+                    _ = session_user.extension_fields.shift_remove("emailVerified");
                     session_user.email = Some(update_to.to_owned());
                     session_user.email_verified = email_verified;
                     super::super::user_management::handlers::renew_session_snapshot(
@@ -360,6 +363,8 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 }
 
                 let session_token = if let Some((mut session_user, session)) = current_session {
+                    _ = session_user.extension_fields.shift_remove("email");
+                    _ = session_user.extension_fields.shift_remove("emailVerified");
                     session_user.email = Some(update_to.to_owned());
                     session_user.email_verified = false;
                     super::super::user_management::handlers::renew_session_snapshot(
@@ -448,6 +453,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 if session_user.email().unwrap_or_default() == claims.email =>
             {
                 let mut original_view = session_user;
+                _ = original_view.extension_fields.shift_remove("emailVerified");
                 original_view.email_verified = true;
                 super::super::user_management::handlers::renew_session_snapshot(
                     &original_view,
@@ -472,6 +478,7 @@ pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
                 // Source publishes the original lookup snapshot with only the
                 // verification flag changed, even though the stored row is newer.
                 let mut original_view = ctx.trusted_user_view(&user)?;
+                _ = original_view.extension_fields.shift_remove("emailVerified");
                 original_view.email_verified = true;
                 alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                     ctx,

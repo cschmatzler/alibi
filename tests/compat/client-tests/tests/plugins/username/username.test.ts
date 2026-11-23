@@ -324,14 +324,19 @@ for (const profile of [
         password: "password123",
       });
 
-      if (profile === "signup-username-pre") {
+      if (profile === "signup-username-post") {
         expect(signin.error).toBeNull();
       } else {
         expect(signin.error).toMatchObject({ status: 422, code: "INVALID_USERNAME" });
       }
 
       const unavailable = await guest.client.isUsernameAvailable({ username: " Owner-Name " });
-      expect(unavailable.error).toMatchObject({ status: 422, code: "INVALID_USERNAME" });
+      if (profile === "signup-username-post") {
+        expect(unavailable.error).toBeNull();
+        expect(unavailable.data?.available).toBe(false);
+      } else {
+        expect(unavailable.error).toMatchObject({ status: 422, code: "INVALID_USERNAME" });
+      }
 
       const update = await owner.client.updateUser({ username: " New-Name " });
 

@@ -326,7 +326,16 @@ async fn exercise<S: AuthSchema>(
             body(&updated)
         );
         let session = &body(&updated)["session"];
-        assert_eq!(session["payload"], payload);
+        // The SQLite adapter stores JSON string primitives as raw text and
+        // parses them on output (Better Auth adapter/factory.ts).
+        let raw_string = payload.as_str().filter(|_| !db.is_postgres());
+        if raw_string.is_some() {
+            assert_eq!(session["payload"], Value::Null);
+        } else if !db.is_postgres() && payload.is_boolean() {
+            assert_eq!(session["payload"], json!(i64::from(payload.as_bool().unwrap())));
+        } else {
+            assert_eq!(session["payload"], payload);
+        }
         assert_eq!(session["fraction"].as_f64(), number.as_f64());
         assert_eq!(session["narrow"].as_f64(), number.as_f64());
         assert_eq!(session["flag"], flag);
@@ -336,12 +345,21 @@ async fn exercise<S: AuthSchema>(
                 &[&token],
             )
             .await?;
-        assert_eq!(
-            physical
-                .map(|v| serde_json::from_str::<Value>(&v).unwrap())
-                .unwrap_or(Value::Null),
-            payload
-        );
+        if let Some(raw_string) = raw_string {
+            assert_eq!(physical.as_deref(), Some(raw_string));
+        } else {
+            let expected = if !db.is_postgres() && payload.is_boolean() {
+                json!(i64::from(payload.as_bool().unwrap()))
+            } else {
+                payload
+            };
+            assert_eq!(
+                physical
+                    .map(|v| serde_json::from_str::<Value>(&v).unwrap())
+                    .unwrap_or(Value::Null),
+                expected
+            );
+        }
         for column in ["fraction", "narrow"] {
             let physical = db
                 .text(

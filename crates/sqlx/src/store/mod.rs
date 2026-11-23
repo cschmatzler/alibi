@@ -332,14 +332,14 @@ mod json_metadata_tests {
             let restored =
                 <User as AuthUser>::from_secondary_snapshot_record_with_fields(cached, &allowed)
                     .unwrap();
-            let cached_value = restored.raw_snapshot().values().get("metadata").unwrap();
+            let cached_value = restored.raw_snapshot().values().get("metadata");
             if metadata.is_undefined() {
-                assert!(cached_value.is_undefined());
+                assert!(cached_value.is_none());
             } else {
                 let mut expected_cache =
                     json::parse_value(&json::to_string(metadata).unwrap()).unwrap();
                 json::revive_json_dates(&mut expected_cache);
-                assert_eq!(*cached_value, expected_cache);
+                assert_eq!(cached_value, Some(&expected_cache));
             }
             let token = format!("json-cache-{index}");
             _ = initialized
@@ -369,14 +369,12 @@ mod json_metadata_tests {
                 callbacks,
                 "cache read replayed output transform"
             );
-            let actual = &cached.raw_snapshot().values()["metadata"];
-            let normalized = if metadata.is_undefined() {
-                JsValue::Undefined
-            } else {
-                json::parse_adapter_value(&json::to_string(metadata).unwrap())
-            };
-            assert_eq!(actual, &normalized);
+            let actual = cached.raw_snapshot().values().get("metadata");
+            let normalized = (!metadata.is_undefined())
+                .then(|| json::parse_adapter_value(&json::to_string(metadata).unwrap()));
+            assert_eq!(actual, normalized.as_ref());
             if index < 2 {
+                let actual = actual.unwrap();
                 assert!(matches!(actual["nested"]["iso"], JsValue::Date(_)));
                 assert!(matches!(actual["date"], JsValue::Date(_)));
                 assert_eq!(
@@ -767,7 +765,7 @@ mod user_native_tests {
             .create_user(CreateUser::new().with_email("false-ban@fixture.test"))
             .await
             .unwrap();
-        let expiry = chrono::Utc::now() + chrono::Duration::hours(1);
+        let expiry = chrono::DateTime::from_timestamp_millis(4_102_444_800_123).unwrap();
         let _ = store
             .update_user(
                 &user.id(),
@@ -1854,7 +1852,7 @@ where
             |user| AfterHook::UserUpdated(user.clone()),
         );
         self.pending_after.push(event).await;
-        user.ok_or_else(crate::error::record_not_updated)
+        user.ok_or(alibi_core::AuthError::UserNotFound)
     }
     async fn update_account(
         &self,
@@ -2314,7 +2312,7 @@ mod session_publication_tests {
             custom_label: "retained".into(),
         };
         let snapshot = session.secondary_snapshot_for_creation(clock).unwrap();
-        assert_eq!(snapshot["custom_label"], "retained");
+        assert_eq!(snapshot["customLabel"], "retained");
         assert!(snapshot.get("database_creation_clock").is_none());
         let restored = MappedClockSession::from_secondary_snapshot(snapshot).unwrap();
         assert_eq!(restored.created_at(), clock);
@@ -2371,8 +2369,8 @@ mod session_publication_tests {
         let snapshot = session
             .secondary_snapshot_with_native_output(&native)
             .unwrap();
-        assert_eq!(snapshot["custom_label"], serde_json::Value::Null);
-        assert!(snapshot.get("ip_address").is_none());
+        assert_eq!(snapshot["customLabel"], serde_json::Value::Null);
+        assert!(snapshot.get("ipAddress").is_none());
         assert_eq!(
             snapshot["unknownTrustedObject"],
             serde_json::json!({"nested":[true,null]})
@@ -2382,8 +2380,11 @@ mod session_publication_tests {
         let creation = session
             .secondary_snapshot_for_creation_with_native_output(clock, &native)
             .unwrap();
-        assert_eq!(creation["created_at"], serde_json::to_value(clock).unwrap());
-        assert_eq!(snapshot["created_at"], "2001-01-01T00:00:00.000Z");
+        assert_eq!(
+            creation["createdAt"],
+            alibi_core::utils::json::JsValue::Date(clock)
+        );
+        assert_eq!(snapshot["createdAt"], "2001-01-01T00:00:00.000Z");
         let output = ProjectedSession::output_from_secondary_snapshot(snapshot.clone()).unwrap();
         assert_eq!(output.values()["customLabel"], serde_json::Value::Null);
         assert!(output.field_is_undefined("ipAddress"));
@@ -2404,7 +2405,7 @@ mod session_publication_tests {
             session
                 .secondary_snapshot_with_native_output(&native)
                 .unwrap()
-                .get("custom_label")
+                .get("customLabel")
                 .is_none()
         );
 
@@ -2425,8 +2426,8 @@ mod session_publication_tests {
             .secondary_snapshot_for_creation_with_native_output(clock, &native)
             .unwrap();
         assert_eq!(
-            snapshot["created_at"],
-            serde_json::to_value(clock.naive_utc()).unwrap()
+            snapshot["createdAt"],
+            alibi_core::utils::json::JsValue::Date(clock)
         );
         assert!(snapshot.get("database_creation_clock").is_none());
         assert_eq!(naive.created_at(), rounded);

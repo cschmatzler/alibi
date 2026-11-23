@@ -28,14 +28,17 @@ for (const operation of ["requestPasswordResetEmailOTP", "forgetPasswordEmailOTP
       const invalid = await invoke({ email: 42 });
       expect(invalid.status).toBe(400);
       expect((invalid.body as { code: string }).code).toBe("VALIDATION_ERROR");
-      const hidden = [];
-      for (const email of ["not-an-email", ctx.uniqueEmail("server-otp-reset-absent")]) {
-        const result = await invoke({ email });
-        expect(result.status).toBe(200);
-        expect(result.body).toEqual({ success: true });
-        expect(await deliveredOtpCount(ctx, email, "forget-password")).toBe(0);
-        expect(await verificationCount(ctx, `forget-password-otp-${email}`)).toBe(0);
-        hidden.push(result);
+      const malformedEmail = "not-an-email";
+      const malformed = await invoke({ email: malformedEmail });
+      expect(malformed.status).toBe(400);
+      expect(malformed.body).toMatchObject({ code: "INVALID_EMAIL" });
+      const absent = ctx.uniqueEmail("server-otp-reset-absent");
+      const hidden = await invoke({ email: absent });
+      expect(hidden.status).toBe(200);
+      expect(hidden.body).toEqual({ success: true });
+      for (const address of [malformedEmail, absent]) {
+        expect(await deliveredOtpCount(ctx, address, "forget-password")).toBe(0);
+        expect(await verificationCount(ctx, `forget-password-otp-${address}`)).toBe(0);
       }
       const sent = await invoke({ email: email.toUpperCase(), ignored: true });
       expect(sent.status).toBe(200);
@@ -68,7 +71,17 @@ for (const operation of ["requestPasswordResetEmailOTP", "forgetPasswordEmailOTP
       expect(retained).toHaveLength(1);
       expect(retained[0]!.value).toMatch(/^\d{6}:0$/);
       expect(await readUserState(ctx, owner.data!.user.id)).toEqual(identities);
-      return ctx.snapshot({ before, invalid, hidden, sent, reset, rejected, accepted, missing });
+      return ctx.snapshot({
+        before,
+        invalid,
+        malformed,
+        hidden,
+        sent,
+        reset,
+        rejected,
+        accepted,
+        missing,
+      });
     },
     [],
     30000,

@@ -96,6 +96,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         .store(B::store(Arc::new(config.clone()), &connection))
         .plugin(EmailPasswordPlugin::new())
         .plugin(SkipRefresh)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let signup = Box::pin(auth.handle_request(request(
@@ -172,6 +173,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         Some(alibi::CookieCacheVersion::Literal("retired".into()));
     let versioned = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     assert_eq!(
@@ -183,6 +185,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     let durable = AuthBuilder::new(stateful.clone())
         .store(B::store(Arc::new(stateful), &connection))
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let login = Box::pin(durable.handle_request(request(
@@ -242,6 +245,7 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
     );
     let auth = AuthBuilder::without_database(config.clone())
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let signup = Box::pin(auth.handle_request(request(
@@ -340,6 +344,7 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
     config.session.cookie_refresh_cache = CookieRefreshCache::Disabled;
     let restarted = AuthBuilder::without_database(config)
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     assert_eq!(
@@ -393,6 +398,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
             .store(B::store(Arc::new(config), &connection))
             .plugin(EmailPasswordPlugin::new())
             .plugin(alibi::plugins::BearerPlugin::new())
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let signup = Box::pin(auth.handle_request(request("/sign-up/email", Some(json!({"email":format!("mode{index}@fixture.test"),"password":"Password123!","name":"Policy"})), ""))).await?;
@@ -432,6 +438,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config.clone()), &connection))
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let signup = Box::pin(auth.handle_request(request(
@@ -453,6 +460,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
     config.managed_secrets = Some(ManagedSecrets::new(2, next).retain(1, SECRET));
     let retained = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config.clone()), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     assert_eq!(
@@ -471,6 +479,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
     config.managed_secrets = Some(ManagedSecrets::new(2, next));
     let retired = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     assert_eq!(
@@ -515,6 +524,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let signup = Box::pin(auth.handle_request(request(
@@ -629,6 +639,8 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
 async fn without_database_account_authority_and_verification_generations() -> TestResult {
     use alibi::{AuthError, CreateAccount, CreateVerification, DatabaseError, UpdateAccount};
     let auth = AuthBuilder::without_database(AuthConfig::new(SECRET))
+        .plugin(alibi::plugins::AdminPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let store = auth.store();
@@ -820,7 +832,7 @@ async fn without_database_account_authority_and_verification_generations() -> Te
                 &user.id,
                 UpdateUser {
                     banned: Some(banned),
-                    ban_expires: if banned { Some(Some(expiry)) } else { None },
+                    ban_expires: Some(banned.then_some(expiry)),
                     ..Default::default()
                 },
             )
@@ -830,32 +842,32 @@ async fn without_database_account_authority_and_verification_generations() -> Te
         (
             "banned",
             "eq",
-            UserFilterValue::Scalar("true".into()),
+            UserFilterValue::Native(alibi::utils::json::JsValue::Bool(true)),
             vec!["beta@query.test", "gamma@query.test"],
         ),
         (
             "banned",
             "ne",
-            UserFilterValue::Scalar("true".into()),
+            UserFilterValue::Native(alibi::utils::json::JsValue::Bool(true)),
             vec!["alpha@query.test"],
         ),
         (
             "banned",
             "eq",
             UserFilterValue::Scalar("invalid".into()),
-            vec![],
+            vec!["alpha@query.test"],
         ),
         (
             "banExpires",
             "gte",
-            UserFilterValue::Scalar(expiry.to_rfc3339()),
+            UserFilterValue::Native(alibi::utils::json::JsValue::Date(expiry)),
             vec!["beta@query.test", "gamma@query.test"],
         ),
         (
             "banExpires",
             "lt",
-            UserFilterValue::Scalar(expiry.to_rfc3339()),
-            vec![],
+            UserFilterValue::Native(alibi::utils::json::JsValue::Date(expiry)),
+            vec!["alpha@query.test"],
         ),
         (
             "email",
@@ -915,6 +927,7 @@ async fn without_database_account_authority_and_verification_generations() -> Te
     assert_eq!(total, 3);
     assert_eq!(page[0].email.as_deref(), Some("alpha@query.test"));
     let restarted = AuthBuilder::without_database(AuthConfig::new(SECRET))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     assert!(

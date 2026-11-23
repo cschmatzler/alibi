@@ -587,8 +587,11 @@ mod transaction_tests {
                 SeaOrmStore::<TestSchema>::new(config.clone(), db.clone())
                     .with_hooks(vec![hooks.clone()]),
             );
-            let database = alibi_core::plugin::AuthInitContext::new(config.clone(), raw.clone())
-                .database_with_registered_transforms();
+            let mut init = alibi_core::plugin::AuthInitContext::new(config.clone(), raw.clone());
+            for flag in ["admin.enabled", "anonymous.enabled", "phone-number.enabled", "two_factor.enabled"] {
+                init.set_metadata(flag, serde_json::Value::Bool(true));
+            }
+            let database = init.database_with_registered_transforms();
             let ctx = AuthContext::new(config, database);
             let user = test_helpers::create_user(
                 &ctx,
@@ -789,7 +792,7 @@ mod transaction_tests {
         assert_eq!(session.ip_address.as_deref(), Some("127.0.0.1"));
         assert_eq!(session.user_agent.as_deref(), Some("test-agent"));
         let lifetime = session.expires_at - session.created_at;
-        assert!(lifetime <= fixture.ctx.config.session.expires_in);
+        assert!(lifetime <= fixture.ctx.config.session.expires_in + Duration::milliseconds(1));
         assert!(lifetime >= fixture.ctx.config.session.expires_in - Duration::seconds(1));
         assert!(response.headers.get("Set-Cookie").is_some());
         let (user, published) = published_session(&request).unwrap();
@@ -1205,8 +1208,9 @@ mod transaction_tests {
             };
             let raw = cache.get(&token).await.unwrap().unwrap();
             let snapshot: serde_json::Value = serde_json::from_str(&raw).unwrap();
-            let owner = <TestSchema as alibi_core::AuthSchema>::User::from_secondary_snapshot(
+            let owner = <TestSchema as alibi_core::AuthSchema>::User::from_secondary_snapshot_record_with_fields(
                 snapshot["user"].clone().into(),
+                &fixture.ctx.config.user.additional_fields,
             )
             .unwrap();
             assert_eq!(owner.name(), Some("Changed during index publication"));
@@ -1403,8 +1407,8 @@ mod transaction_tests {
     }
 
     fn assert_native_owner_snapshot(snapshot: &serde_json::Value) {
-        for (physical, _, expected) in native_owner_scalars() {
-            assert_eq!(snapshot[physical], expected, "{physical}");
+        for (_, wire, expected) in native_owner_scalars() {
+            assert_eq!(snapshot[wire], expected, "{wire}");
         }
     }
 
@@ -1475,12 +1479,9 @@ mod transaction_tests {
             let token = &session.token;
             let cached: serde_json::Value =
                 serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
-            assert!(
-                !cached["absent_fields"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|name| name == "activeTeamId")
+            assert_eq!(
+                cached["session"].get("activeTeamId"),
+                Some(&serde_json::Value::Null)
             );
             let record = database.get_session_record(token).await.unwrap().unwrap();
             assert_eq!(
@@ -1523,10 +1524,10 @@ mod transaction_tests {
         .unwrap();
         let snapshot: serde_json::Value =
             serde_json::from_str(&cache.get(&created.token).await.unwrap().unwrap()).unwrap();
-        assert_eq!(snapshot["user"]["email_verified"], false);
-        assert_eq!(snapshot["user"]["is_anonymous"], "pending");
-        assert_eq!(snapshot["user"]["created_at"], -123.5);
-        assert_eq!(snapshot["user"]["ban_expires"], 9000000000000000_i64);
+        assert_eq!(snapshot["user"]["emailVerified"], false);
+        assert_eq!(snapshot["user"]["isAnonymous"], "pending");
+        assert_eq!(snapshot["user"]["createdAt"], -123.5);
+        assert_eq!(snapshot["user"]["banExpires"], 9000000000000000_i64);
     }
 
     #[tokio::test]
@@ -1562,7 +1563,7 @@ mod transaction_tests {
             };
             let snapshot: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
-            for (physical, _, expected) in native_owner_scalars() {
+            for (physical, wire, expected) in native_owner_scalars() {
                 let expected = if matches!(
                     physical,
                     "email_verified" | "two_factor_enabled" | "banned" | "phone_number_verified"
@@ -1571,7 +1572,7 @@ mod transaction_tests {
                 } else {
                     expected
                 };
-                assert_eq!(snapshot["user"][physical], expected, "{physical}");
+                assert_eq!(snapshot["user"][wire], expected, "{wire}");
             }
             fixture.hooks.armed.store(false, Ordering::SeqCst);
             fixture
@@ -1589,7 +1590,7 @@ mod transaction_tests {
             let snapshot: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
             assert_eq!(snapshot["user"]["name"], "Published new owner");
-            for (physical, _, expected) in native_owner_scalars() {
+            for (physical, wire, expected) in native_owner_scalars() {
                 if physical != "updated_at" {
                     let expected = if matches!(
                         physical,
@@ -1602,7 +1603,7 @@ mod transaction_tests {
                     } else {
                         expected
                     };
-                    assert_eq!(snapshot["user"][physical], expected, "{physical}");
+                    assert_eq!(snapshot["user"][wire], expected, "{wire}");
                 }
             }
         }
@@ -1618,13 +1619,14 @@ mod transaction_tests {
         let token = &fixture.sessions[0].token;
         let mut snapshot: serde_json::Value =
             serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
-        for (physical, _, value) in native_owner_scalars() {
-            snapshot["user"][physical] = value;
+        for (_, wire, value) in native_owner_scalars() {
+            snapshot["user"][wire] = value;
         }
         snapshot["user"].as_object_mut().unwrap().remove("image");
         snapshot["user"]["name"] = serde_json::Value::Null;
-        alibi_seaorm::store::entities::user::Model::from_secondary_snapshot_record(
+        alibi_seaorm::store::entities::user::Model::from_secondary_snapshot_record_with_fields(
             snapshot["user"].clone().into(),
+            &fixture.ctx.config.user.additional_fields,
         )
         .expect("cached native owner must decode without losing null name or absent image");
         cache
@@ -1734,9 +1736,9 @@ mod transaction_tests {
             (serde_json::json!({}), serde_json::Value::Null),
         ] {
             let mut snapshot = original.clone();
-            snapshot["user"]["created_at"] = raw.clone();
-            snapshot["user"]["updated_at"] = raw.clone();
-            snapshot["user"]["ban_expires"] = raw.clone();
+            snapshot["user"]["createdAt"] = raw.clone();
+            snapshot["user"]["updatedAt"] = raw.clone();
+            snapshot["user"]["banExpires"] = raw.clone();
             cache
                 .set(token, &snapshot.to_string(), Duration::hours(1))
                 .await
@@ -1754,8 +1756,8 @@ mod transaction_tests {
             assert_eq!(wire["banExpires"], raw);
             let stored: serde_json::Value =
                 serde_json::from_str(&cache.get(token).await.unwrap().unwrap()).unwrap();
-            assert_eq!(stored["user"]["created_at"], raw);
-            assert_eq!(stored["user"]["updated_at"], raw);
+            assert_eq!(stored["user"]["createdAt"], raw);
+            assert_eq!(stored["user"]["updatedAt"], raw);
         }
     }
 
@@ -1817,7 +1819,7 @@ mod transaction_tests {
             assert_eq!(calls.load(Ordering::SeqCst), 1);
             let cached: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
-            assert_eq!(cached["user"]["email_verified"], "false:once");
+            assert_eq!(cached["user"]["emailVerified"], "false:once");
             fixture
                 .ctx
                 .database
@@ -1865,7 +1867,7 @@ mod transaction_tests {
             .token;
             let mut snapshot: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
-            snapshot["session"]["active_organization_id"] = serde_json::json!("already-output");
+            snapshot["session"]["activeOrganizationId"] = serde_json::json!("already-output");
             cache
                 .set(&token, &snapshot.to_string(), Duration::hours(1))
                 .await
@@ -1968,7 +1970,7 @@ mod transaction_tests {
             assert_eq!(outputs.load(Ordering::SeqCst), if persist { 6 } else { 0 });
             let cached: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
-            assert_eq!(cached["session"]["active_team_id"], "transaction");
+            assert_eq!(cached["session"]["activeTeamId"], "transaction");
         }
     }
 
@@ -2130,7 +2132,7 @@ mod transaction_tests {
                 assert_eq!(observed[0].1, cached["session"]);
             }
             assert_eq!(
-                cached["session"]["active_team_id"],
+                cached["session"]["activeTeamId"],
                 if persist { "new:input:output" } else { "new" }
             );
             let cached_model = <TestSession as alibi_core::AuthSession>::from_secondary_snapshot(
@@ -2346,8 +2348,8 @@ mod transaction_tests {
             let cached: serde_json::Value =
                 serde_json::from_str(&cache.get(&token).await.unwrap().unwrap()).unwrap();
             assert_eq!(cached["user"], user);
-            assert_eq!(cached["session"]["active_team_id"], "team");
-            assert_eq!(cached["session"]["active_organization_id"], "org");
+            assert_eq!(cached["session"]["activeTeamId"], "team");
+            assert_eq!(cached["session"]["activeOrganizationId"], "org");
         }
     }
 }

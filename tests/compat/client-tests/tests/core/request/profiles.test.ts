@@ -18,7 +18,7 @@ compatScenario("every configured fixture profile is served by both runtimes", as
   const configuredProfiles = FIXTURE_PROFILES.filter(
     (profile) => profile !== "postgres-schema" || !!process.env.BETTER_AUTH_TEST_POSTGRES_URL,
   );
-  for (const profile of configuredProfiles) {
+  for (const [index, profile] of configuredProfiles.entries()) {
     // The installed runtime shares memory rate buckets across auth instances.
     // Give availability probes their own client, separate from scenario traffic.
     const response = await ctx.rawRequest({
@@ -26,7 +26,7 @@ compatScenario("every configured fixture profile is served by both runtimes", as
       path: `${authProfilePath(profile)}/ok`,
       method: "GET",
       headers: {
-        "x-forwarded-for": "192.0.2.254",
+        "x-forwarded-for": `198.18.${Math.floor(index / 256)}.${index % 256}`,
         // Dynamic host policy without a fallback requires an allowed host.
         ...(profile === "generic-token-base-no-fallback" ? { host: "exact.fixture.test" } : {}),
         ...(profile === "captcha-turnstile-custom" ? { "x-captcha-response": "valid" } : {}),

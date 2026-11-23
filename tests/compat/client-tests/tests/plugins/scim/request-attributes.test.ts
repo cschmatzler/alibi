@@ -98,7 +98,7 @@ compatScenario("SCIM HTTP requests match attribute names case-insensitively", as
   ]);
   expect(patched.status, JSON.stringify(patched.resource)).toBe(200);
   expect(patched.resource.title).toBe("Countess");
-  expect(patched.resource.addresses).toEqual([{ type: "work", locality: "London", country: "FR" }]);
+  expect(patched.resource.addresses).toEqual([{ type: "work", country: "FR" }]);
   expect(patched.resource[ENTERPRISE]).toEqual({
     department: "Finance",
     costCenter: "CC-1",
@@ -107,6 +107,7 @@ compatScenario("SCIM HTTP requests match attribute names case-insensitively", as
   observed.push(patched);
   const member = await send("POST", "Users", { schemas: [USER], userName: ctx.uniqueEmail("m") });
   expect(member.status).toBe(201);
+  observed.push(member);
   const group = await send("POST", "Groups", {
     schemas: [GROUP],
     DisplayName: `Case ${ctx.uniqueToken("group")}`,
@@ -143,7 +144,7 @@ compatScenario("SCIM HTTP requests treat JSON null as an unassigned attribute", 
     [ENTERPRISE]: { department: "R&D", manager: { value: "manager-1", displayName: "Charles" } },
   };
   const entra = await send("POST", "Users", {
-    schemas: [USER],
+    schemas: [USER, ENTERPRISE],
     userName: ctx.uniqueEmail("entra"),
     active: true,
     addresses: null,

@@ -2,6 +2,7 @@ import { splitSetCookieHeader } from "better-auth/cookies";
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
+import { applicationHeaders } from "../../../support/trace";
 import { readUserState } from "../../../support/verification";
 
 compatScenario(
@@ -63,11 +64,7 @@ compatScenario(
         status: response.status,
         body: text ? (JSON.parse(text) as unknown) : null,
         headers: {
-          ...Object.fromEntries(
-            [...response.headers].filter(
-              ([name]) => !["date", "content-length", "set-cookie"].includes(name),
-            ),
-          ),
+          ...applicationHeaders(response.headers),
           ...(response.headers.getSetCookie().length
             ? { "set-cookie": response.headers.getSetCookie().join(", ") }
             : {}),

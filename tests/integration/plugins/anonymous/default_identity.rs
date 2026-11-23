@@ -35,6 +35,7 @@ mod tests {
                     email_domain_name: domain.map(str::to_owned),
                     ..Default::default()
                 }))
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await
                 .unwrap();

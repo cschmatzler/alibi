@@ -135,6 +135,7 @@ pub(crate) async fn change_email_core(
         return Ok(None);
     }
     let mut projection = ctx.user_view(user)?;
+    _ = projection.extension_fields.shift_remove("email");
     projection.email = Some(new_email.clone());
     if can_update {
         _ = ctx

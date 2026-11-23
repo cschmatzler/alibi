@@ -330,12 +330,29 @@ compatScenario("Request URI lookup replaces authorization input before validatio
   const rawAuthorization =
     JSON.stringify({ ...query, scope: 42, state: "outer", outer_only: true }).slice(0, -1) +
     ',"max_age":1e400,"extension_scalar":1e400}';
-  const http = await control({
+  const rejectedBody = await control({
     action: "protocol-http",
     path: "/oauth2/authorize",
     method: "POST",
     contentType: "application/jsonapplication/x-www-form-urlencoded",
     rawBody: rawAuthorization,
+    headers: { accept: "application/json" },
+  });
+  expect(rejectedBody.status).toBe(415);
+  expect(await (await control({ action: "request-uri-calls" })).json()).toEqual([]);
+  const http = await control({
+    action: "protocol-http",
+    path: "/oauth2/authorize",
+    method: "POST",
+    contentType: "application/x-www-form-urlencoded",
+    rawBody: new URLSearchParams({
+      ...query,
+      scope: "42",
+      state: "outer",
+      outer_only: "true",
+      max_age: "Infinity",
+      extension_scalar: "Infinity",
+    }).toString(),
     headers: { accept: "application/json" },
   });
   expect(http.status).toBe(200);

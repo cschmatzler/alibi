@@ -108,9 +108,20 @@ pub(in crate::store) async fn update_user_data<S: AuthSchema>(
             UserUpdateStep::Transform(transform) => {
                 let mut transformed = transform(id, legacy_original.clone())?;
                 transformed.reconcile_native_shadows(legacy_original);
-                UserUpdateHookResult::Data(UserUpdatePatch(super::user_update::reify_user_update(
-                    &transformed,
-                )))
+                let before = super::user_update::reify_user_update(legacy_original);
+                let mut patch = super::user_update::reify_user_update(&transformed);
+                for (name, value) in before {
+                    match patch.get(&name) {
+                        None => {
+                            _ = patch.insert(name, crate::utils::json::JsValue::Undefined);
+                        }
+                        Some(next) if next == &value => {
+                            _ = patch.shift_remove(&name);
+                        }
+                        Some(_) => {}
+                    }
+                }
+                UserUpdateHookResult::Data(UserUpdatePatch(patch))
             }
             UserUpdateStep::Hook(hook) => {
                 hook.before_update(id, original, context, transaction)

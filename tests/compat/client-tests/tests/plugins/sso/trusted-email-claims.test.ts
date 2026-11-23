@@ -149,9 +149,10 @@ compatScenario(
         ).status,
       ).toBe(200);
       const email = ctx.uniqueEmail(`email-list-${jwt}`);
+      const stringEmail = ctx.uniqueEmail(`email-string-${jwt}`);
       const cases: Array<[string, unknown, string | null]> = [
         ["list", ["", 7, email, ctx.uniqueEmail(`second-${jwt}`)], email],
-        ["string", email, email],
+        ["string", stringEmail, stringEmail],
         ["no-address", ["", null, [email]], null],
       ];
       for (const [name, emails, expected] of cases) {
@@ -181,7 +182,10 @@ compatScenario(
         expect(completed.status).toBe(302);
         const redirect = new URL(completed.headers.get("location")!);
         if (expected) {
-          expect(redirect.pathname).toBe("/complete");
+          expect(
+            redirect.pathname,
+            `${jwt ? "ID token" : "userinfo"} ${name}: ${redirect.href}`,
+          ).toBe("/complete");
           const session = (await (
             await control({ action: "session", headers: { cookie: cookies(completed) } })
           ).json()) as any;

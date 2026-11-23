@@ -1,7 +1,9 @@
 import { createHash, createHmac } from "node:crypto";
 
+import { symmetricDecrypt } from "better-auth/crypto";
 import { expect } from "vitest";
 
+import { oauthPurposeSecret } from "./oauth-encryption";
 import type { ScenarioContext } from "./scenario";
 
 export type LogicalOAuthStart = {
@@ -18,6 +20,7 @@ export async function observeLogicalOAuthState(
   startedAt: number,
   finishedAt: number,
   expected: Record<string, unknown>,
+  expectedLinkSession?: string,
 ) {
   const url = new URL(start.body!.url as string);
   const state = url.searchParams.get("state")!;
@@ -36,13 +39,36 @@ export async function observeLogicalOAuthState(
     codeVerifier: string;
     expiresAt: number;
     oauthState: string;
+    link?: { userId: string; email: string; encryptedSessionToken: string };
   };
   expect(payload.codeVerifier).toMatch(/^[A-Za-z0-9_-]{128}$/);
   expect(createHash("sha256").update(payload.codeVerifier).digest("base64url")).toBe(
     url.searchParams.get("code_challenge")!,
   );
+  let link: { userId: string; email: string; encryptedSessionToken: unknown } | undefined;
+  if (expectedLinkSession) {
+    const encrypted = payload.link?.encryptedSessionToken;
+    expect(encrypted).toMatch(/^[a-f0-9]+$/);
+    const token = await symmetricDecrypt({
+      key: oauthPurposeSecret(
+        "compat-test-only-key-not-real-minimum-32chars",
+        "oauth-link-session-token",
+      ),
+      data: encrypted!,
+    });
+    expect(token).toBe(expectedLinkSession);
+    link = { ...payload.link!, encryptedSessionToken: { token } };
+  }
   expect(payload).toEqual({
     ...expected,
+    ...(link
+      ? {
+          link: {
+            ...(expected.link as object),
+            encryptedSessionToken: payload.link!.encryptedSessionToken,
+          },
+        }
+      : {}),
     codeVerifier: payload.codeVerifier,
     oauthState: state,
     expiresAt: payload.expiresAt,
@@ -75,6 +101,7 @@ export async function observeLogicalOAuthState(
       identifier: { prefix: "auth-state:", state },
       value: {
         ...payload,
+        ...(link ? { link } : {}),
         codeVerifier: { token: payload.codeVerifier },
         oauthState: { state: payload.oauthState },
         expiresAt: new Date(payload.expiresAt).toISOString(),

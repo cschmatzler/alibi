@@ -109,7 +109,7 @@ async function cacheOwnerRows(ctx: ScenarioContext, userId: string, mode?: strin
 }
 
 compatScenario(
-  "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner",
+  "compact phone verification consumes genuine proof and rejects revoked session authority",
   async (ctx) => {
     await control(ctx, "guards", { action: "reset" });
     const owner = client(ctx, "guards");
@@ -143,20 +143,58 @@ compatScenario(
     expect(sent?.phoneNumber).toBe(phoneNumber);
     expect(sent?.code).toMatch(/^\d{6}$/);
 
+    const identifier = `phone-number-otp-${phoneNumber}`;
     const proof = await cacheOwnerRows(ctx, signup.data!.user.id, "guards");
     expect(
       proof.verifications.some(
-        (row) => row.identifier === phoneNumber && row.value === `${sent!.code}:0`,
+        (row) => row.identifier === identifier && row.value === `${sent!.code}:0`,
       ),
     ).toBe(true);
 
     await control(ctx, "guards", { action: "revoke", token: signup.data!.token });
-    const verified = await cacheGuardRequest(
+    const denied = await cacheGuardRequest(
       ctx,
       owner,
       "/phone-number/verify",
       cookiePairs(issued),
       { phoneNumber, code: sent!.code, updatePhoneNumber: true },
+    );
+    expect(denied.observation.status).toBe(401);
+    expect(denied.observation.body).toMatchObject({ code: "USER_NOT_FOUND" });
+    const rejected = await cacheOwnerRows(ctx, signup.data!.user.id, "guards");
+    expect(rejected.users).toEqual(proof.users);
+    expect(rejected.accounts).toEqual(proof.accounts);
+    expect(rejected.sessions).toEqual([]);
+    expect(rejected.verifications.some((row) => row.identifier === identifier)).toBe(false);
+    const replay = await cacheGuardRequest(
+      ctx,
+      owner,
+      "/phone-number/verify",
+      cookiePairs(issued),
+      { phoneNumber, code: sent!.code, updatePhoneNumber: true },
+    );
+    expect(replay.observation.status).toBe(400);
+    expect(await cacheOwnerRows(ctx, signup.data!.user.id, "guards")).toEqual(rejected);
+
+    const signedIn = await owner.sdk.signIn.email({
+      email: signup.data!.user.email,
+      password: "password123",
+    });
+    expect(signedIn.error).toBeNull();
+    const active = owner.headers.at(-1)!;
+    const resend = await cacheGuardRequest(ctx, owner, "/phone-number/send-otp", [], {
+      phoneNumber,
+    });
+    expect(resend.observation.status).toBe(200);
+    const fresh = (await control(ctx, "guards", { action: "state" })).events.findLast(
+      (event) => event.stage === "phone-delivery",
+    )!;
+    const verified = await cacheGuardRequest(
+      ctx,
+      owner,
+      "/phone-number/verify",
+      cookiePairs(active),
+      { phoneNumber, code: fresh.code, updatePhoneNumber: true },
     );
     expect(verified.observation.status).toBe(200);
 
@@ -166,24 +204,14 @@ compatScenario(
       phoneNumber,
       phoneNumberVerified: true,
     });
-    expect(after.sessions).toEqual([]);
-    expect(after.verifications.some((row) => row.identifier === phoneNumber)).toBe(false);
+    expect(after.sessions.map((session) => session.token)).toEqual([signedIn.data!.token]);
+    expect(after.verifications.some((row) => row.identifier === identifier)).toBe(false);
 
     const receipts = await control(ctx, "guards", { action: "state" });
     expect(receipts.events.filter((event) => event.stage === "phone-verified")).toHaveLength(1);
     expect(receipts.events.find((event) => event.stage === "phone-verified")!.user.id).toBe(
       signup.data!.user.id,
     );
-
-    const replay = await cacheGuardRequest(
-      ctx,
-      owner,
-      "/phone-number/verify",
-      cookiePairs(issued),
-      { phoneNumber, code: sent!.code, updatePhoneNumber: true },
-    );
-    expect(replay.observation.status).toBe(400);
-    expect(await cacheOwnerRows(ctx, signup.data!.user.id, "guards")).toEqual(after);
 
     const foreignAfter = await cacheOwnerRows(ctx, other.data!.user.id, "guards");
     expect(foreignAfter.users).toEqual(foreignBefore.users);
@@ -209,6 +237,10 @@ compatScenario(
       delivery: delivery.observation,
       proof: observedProof,
       events: observed,
+      denied: denied.observation,
+      rejected,
+      signedIn,
+      resend: resend.observation,
       verified: verified.observation,
       replay: replay.observation,
       after,
@@ -737,7 +769,7 @@ compatScenario(
 
 for (const decision of ["approve", "deny"] as const) {
   compatScenario(
-    `compact ordinary device ${decision} claims actual grant through revoked cache and refuses a foreign decision`,
+    `compact device ${decision} requires active owned session authority for the actual grant`,
     async (ctx) => {
       await control(ctx, "guards", { action: "reset" });
       const owner = client(ctx, "guards");
@@ -769,11 +801,40 @@ for (const decision of ["approve", "deny"] as const) {
       const before = await cacheOwnerRows(ctx, signup.data!.user.id, "guards");
       expect(before.sessions).toEqual([]);
 
-      const claimed = await cacheGuardRequest(
+      const revokedLookup = await cacheGuardRequest(
         ctx,
         owner,
         `/device?user_code=${code.data!.user_code}`,
         cookiePairs(issued),
+      );
+      expect(revokedLookup.observation).toEqual({
+        status: 200,
+        body: { user_code: code.data!.user_code, status: "pending" },
+      });
+      const unclaimed = (await ctx.readDeviceState({ deviceCode: code.data!.device_code })) as any;
+      expect(unclaimed.userId).toBeNull();
+      const revokedDecision = await cacheGuardRequest(
+        ctx,
+        owner,
+        `/device/${decision}`,
+        cookiePairs(issued),
+        { userCode: code.data!.user_code },
+      );
+      expect(revokedDecision.observation.status).toBe(401);
+      expect(await ctx.readDeviceState({ deviceCode: code.data!.device_code })).toEqual(unclaimed);
+
+      const signedIn = await owner.sdk.signIn.email({
+        email: signup.data!.user.email,
+        password: "password123",
+      });
+      expect(signedIn.error).toBeNull();
+      const active = owner.headers.at(-1)!;
+      const liveBefore = await cacheOwnerRows(ctx, signup.data!.user.id, "guards");
+      const claimed = await cacheGuardRequest(
+        ctx,
+        owner,
+        `/device?user_code=${code.data!.user_code}`,
+        cookiePairs(active),
       );
       expect(claimed.observation).toEqual({
         status: 200,
@@ -797,7 +858,7 @@ for (const decision of ["approve", "deny"] as const) {
         ctx,
         owner,
         `/device/${decision}`,
-        cookiePairs(issued),
+        cookiePairs(active),
         { userCode: code.data!.user_code },
       );
       expect(accepted.observation).toEqual({ status: 200, body: { success: true } });
@@ -810,11 +871,11 @@ for (const decision of ["approve", "deny"] as const) {
         ctx,
         owner,
         `/device/${decision}`,
-        cookiePairs(issued),
+        cookiePairs(active),
         { userCode: code.data!.user_code },
       );
       expect(replay.observation.status).toBe(400);
-      expect(await cacheOwnerRows(ctx, signup.data!.user.id, "guards")).toEqual(before);
+      expect(await cacheOwnerRows(ctx, signup.data!.user.id, "guards")).toEqual(liveBefore);
       expect(await cacheOwnerRows(ctx, other.data!.user.id, "guards")).toEqual(foreignBefore);
 
       const redemption = await owner.sdk.device.token({
@@ -838,10 +899,17 @@ for (const decision of ["approve", "deny"] as const) {
       const completed = await cacheOwnerRows(ctx, signup.data!.user.id, "guards");
       expect(completed.users).toEqual(before.users);
       expect(completed.accounts).toEqual(before.accounts);
-      expect(completed.sessions).toHaveLength(decision === "approve" ? 1 : 0);
+      expect(
+        completed.sessions.filter((session) => session.token !== signedIn.data!.token),
+      ).toHaveLength(decision === "approve" ? 1 : 0);
+      expect(completed.sessions.find((session) => session.token === signedIn.data!.token)).toEqual(
+        liveBefore.sessions[0],
+      );
 
       if (decision === "approve") {
-        expect(completed.sessions[0]!.token).toBe(redemption.data!.access_token);
+        expect(
+          completed.sessions.some((session) => session.token === redemption.data!.access_token),
+        ).toBe(true);
       }
 
       return {
@@ -851,6 +919,10 @@ for (const decision of ["approve", "deny"] as const) {
         code,
         before,
         foreignBefore,
+        revokedLookup: revokedLookup.observation,
+        revokedDecision: revokedDecision.observation,
+        unclaimed,
+        signedIn,
         claimed: claimed.observation,
         row,
         forbidden,
@@ -1459,7 +1531,7 @@ compatScenario(
 );
 
 compatScenario(
-  "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+  "compact interaction factor enrollment and OTP require active session authority",
   async (ctx) => {
     await control(ctx, "interactions", { action: "reset" });
     const owner = client(ctx, "interactions");
@@ -1472,16 +1544,41 @@ compatScenario(
 
     const initial = await atom(owner.headers.at(-1)!);
     await control(ctx, "interactions", { action: "revoke", token: signup.data!.token });
+    const revokedEnable = await owner.sdk.twoFactor.enable({
+      password: "password123",
+      method: "otp",
+    });
+    expect(revokedEnable.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+    const rejected = await cacheOwnerRows(ctx, signup.data!.user.id, "interactions");
+    expect(rejected.sessions).toEqual([]);
+    expect(rejected.users[0]!.twoFactorEnabled).not.toBe(true);
+
+    const signedIn = await owner.sdk.signIn.email({
+      email: signup.data!.user.email,
+      password: "password123",
+    });
+    expect(signedIn.error).toBeNull();
     const enabled = await owner.sdk.twoFactor.enable({ password: "password123", method: "otp" });
     expect(enabled.error).toBeNull();
 
-    const replacement = await atom(owner.headers.at(-1)!);
-    expect(replacement.compactSessionCache.decoded!.user.twoFactorEnabled).toBe(true);
+    const cachePublications = owner.headers
+      .at(-1)!
+      .getSetCookie()
+      .filter((raw) => raw.startsWith(`${cookieName}=`));
+    expect(cachePublications).toHaveLength(2);
+    const [refreshed, replacement] = await Promise.all(
+      cachePublications.map((raw) => atom(new Headers({ "set-cookie": raw }))),
+    );
+    expect(refreshed!.compactSessionCache.decoded!.session.token).toBe(signedIn.data!.token);
+    expect(replacement!.compactSessionCache.decoded!.user.twoFactorEnabled).toBe(true);
 
     const current = await owner.sdk.getSession();
-    expect(current.data!.session.token).not.toBe(signup.data!.token!);
+    expect(current.data!.session.token).not.toBe(signedIn.data!.token!);
+    expect(current.data!.session.token).toBe(
+      replacement!.compactSessionCache.decoded!.session.token,
+    );
 
-    await control(ctx, "interactions", { action: "revoke", token: current.data!.session.token });
+    await control(ctx, "interactions", { action: "clear-events" });
     const sent = await owner.sdk.twoFactor.sendOtp({});
     expect(sent.error).toBeNull();
 
@@ -1493,6 +1590,9 @@ compatScenario(
     expect(verified.error).toBeNull();
     expect(verified.data!.token).toBe(current.data!.session.token);
 
+    await control(ctx, "interactions", { action: "revoke", token: current.data!.session.token });
+    const revokedOtp = await owner.sdk.twoFactor.sendOtp({});
+    expect(revokedOtp.error!.status).toBe(401);
     const disabled = await owner.sdk.twoFactor.disable({ password: "password123" });
     expect(disabled.error!.status).toBe(401);
 
@@ -1503,12 +1603,17 @@ compatScenario(
     return {
       signup,
       initial,
+      revokedEnable,
+      rejected,
+      signedIn,
       enabled,
+      refreshed,
       replacement,
       current,
       sent,
       receipt: { ...receipt, otp: { token: receipt.otp, length: receipt.otp.length } },
       verified,
+      revokedOtp,
       disabled,
       after,
     };

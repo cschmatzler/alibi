@@ -310,13 +310,11 @@ export class CertificateDevice {
     } else if (format === "android-safetynet") {
       leaf = certificate(attestationKeys, "/CN=attest.android.com", "", mode === "wrong-root");
       const header = Buffer.from(
-        JSON.stringify({ alg: "ES256", x5c: [leaf.toString("base64url")] }),
-      ).toString("base64");
+        JSON.stringify({ alg: "ES256", x5c: [leaf.toString("base64")] }),
+      ).toString("base64url");
       const payload = Buffer.from(
         JSON.stringify({
-          nonce: (mode === "wrong-nonce" ? Buffer.alloc(32, 1) : hash(signed)).toString(
-            "base64url",
-          ),
+          nonce: (mode === "wrong-nonce" ? Buffer.alloc(32, 1) : hash(signed)).toString("base64"),
           ctsProfileMatch: mode !== "cts",
           timestampMs:
             mode === "timestamp-omitted"
@@ -327,7 +325,7 @@ export class CertificateDevice {
                   ? Date.now() + 120000
                   : Date.now() - 1000,
         }),
-      ).toString("base64");
+      ).toString("base64url");
       signature = sign("sha256", Buffer.from(`${header}.${payload}`), attestationKeys.privateKey);
       if (mode === "signature") signature[signature.length - 1]! ^= 1;
       statement.set("ver", mode === "version-number" ? 1 : "1.0");

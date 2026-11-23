@@ -145,7 +145,11 @@ impl OAuthProviderPlugin {
             }
             return Ok(None);
         };
-        let url = endpoint_url(ctx, req, "/oauth2/token");
+        let path = req
+            .endpoint_call()
+            .and_then(|call| call.path())
+            .unwrap_or("/oauth2/token");
+        let url = endpoint_url(ctx, req, path);
         let replay = crate::oauth2::create_dpop_replay_store(ctx);
         // The reference deliberately fixes htm to POST, even for a supplied
         // physical request whose method differs from the token endpoint.

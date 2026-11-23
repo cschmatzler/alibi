@@ -341,36 +341,18 @@ export async function createServerEndpointFixture(
         events.push({ stage: "user-after", ...snapshot(ctx) });
         if (mode === "profile-headers") {
           ctx.setHeader("x-profile-result", "logical");
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "profile-first=owned; Path=/; HttpOnly",
-          );
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "profile-second=owned; Path=/; HttpOnly",
-          );
+          ctx.setCookie("profile-first", "owned", { path: "/", httpOnly: true });
+          ctx.setCookie("profile-second", "owned", { path: "/", httpOnly: true });
         }
         if (mode === "change-password-headers") {
           ctx.setHeader("x-password-result", "logical");
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "password-first=owned; Path=/; HttpOnly",
-          );
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "password-second=owned; Path=/; HttpOnly",
-          );
+          ctx.setCookie("password-first", "owned", { path: "/", httpOnly: true });
+          ctx.setCookie("password-second", "owned", { path: "/", httpOnly: true });
         }
         if (mode === "account-list-headers") {
           ctx.setHeader("x-account-list", "logical");
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "account-first=owned; Path=/; HttpOnly",
-          );
-          ctx.context.responseHeaders!.append(
-            "set-cookie",
-            "account-second=owned; Path=/; HttpOnly",
-          );
+          ctx.setCookie("account-first", "owned", { path: "/", httpOnly: true });
+          ctx.setCookie("account-second", "owned", { path: "/", httpOnly: true });
         }
         if (mode.startsWith("hash-phase")) {
           hashPhase = "after";
@@ -514,19 +496,19 @@ export async function createServerEndpointFixture(
       try {
         const value = (await endpoint(args)) as {
           response: unknown;
-          headers: Headers;
+          headers: Headers | null;
           status?: number;
         };
         result = {
           ok: true,
           value: {
             headers: {
-              ...Object.fromEntries(value.headers),
-              ...(value.headers.has("set-cookie")
+              ...Object.fromEntries(value.headers ?? []),
+              ...(value.headers?.has("set-cookie")
                 ? { "set-cookie": value.headers.get("set-cookie") }
                 : {}),
             },
-            cookies: value.headers.getSetCookie(),
+            cookies: value.headers?.getSetCookie() ?? [],
             response: value.response,
             ...(Object.hasOwn(value, "status") ? { status: value.status } : {}),
           },
@@ -551,6 +533,8 @@ export async function createServerEndpointFixture(
               }
             : null,
         };
+      } finally {
+        mode = "normal";
       }
 
       return Response.json({ events: [...events], ranges: [...ranges], result });

@@ -11,7 +11,10 @@ compatScenario(
       ["dispatch-disabled-email", "/sign-in/email/", "POST"],
       ["dispatch-disabled-literal", "/owned/item", "GET"],
     ] as const) {
-      await actor.fetch(`${ctx.baseURL}/__test/dispatch-events`);
+      // Drain events left by other scenarios before recording this request.
+      const reset = await fetch(`${ctx.baseURL}/__test/dispatch-events`);
+      expect(reset.status).toBe(200);
+      await reset.arrayBuffer();
       const response = await actor.fetch(
         `${ctx.baseURL}/__test/profiles/${profile}/api/auth${path}`,
         {

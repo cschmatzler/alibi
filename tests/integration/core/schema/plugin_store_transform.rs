@@ -69,6 +69,10 @@ impl AuthPlugin<Schema> for UserTransforms {
         });
         ctx.register_user_create_transform(|mut input| {
             input.name = Some(format!("{}:second", input.name.unwrap_or_default()));
+            if input.phone_number.is_some() && input.phone_number_verified != Some(true) {
+                input.phone_number = None;
+                input.phone_number_verified = Some(false);
+            }
             Ok(input)
         });
         ctx.register_user_update_transform(|_id, mut input| {
@@ -93,7 +97,13 @@ impl AuthPlugin<Schema> for UserTransforms {
 }
 
 async fn store() -> (AuthConfig, Arc<SeaOrmStore<Schema>>) {
-    let config = AuthConfig::new("plugin-transform-fixture-secret-minimum-32-characters");
+    let mut config = AuthConfig::new("plugin-transform-fixture-secret-minimum-32-characters");
+    for (name, kind) in [("phoneNumber", "string"), ("phoneNumberVerified", "boolean")] {
+        _ = config.user.additional_fields.insert(
+            name.into(),
+            alibi::field_policy::FieldConfig::new(serde_json::json!({"type": kind})),
+        );
+    }
     let database = Database::connect("sqlite::memory:").await.unwrap();
     alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
@@ -635,7 +645,7 @@ mod tests {
             .unwrap();
         let mut input = CreateUser::new().with_email("commit-owner@lifecycle.fixture.test");
         input.phone_number = Some("+12025550199".into());
-        input.phone_number_verified = Some(true);
+        input.phone_number_verified = Some(false);
         let owner = auth.store().create_user(input).await.unwrap();
         let ordinary = auth
             .store()

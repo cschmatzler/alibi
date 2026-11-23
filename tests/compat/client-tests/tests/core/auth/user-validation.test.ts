@@ -1212,7 +1212,7 @@ compatScenario(
 );
 
 compatScenario(
-  "admin identity admission uses physical authority before policy and hashes credentials only after creation",
+  "admin identity admission checks physical authority before hashing and persists only admitted users",
   async (ctx) => {
     const other = await foreign(ctx);
     const owner = ctx.actor("administrator", "validation");
@@ -1274,19 +1274,23 @@ compatScenario(
           code: mode === "deny" ? "identity_denied" : "validation_failed",
         });
         expect(identities(after)).toEqual(identities(prior));
-        expect(after.events).toHaveLength(1);
+        expect(after.events.map((event) => event.stage)).toEqual([
+          "hash-enter",
+          "hash-result",
+          "validation",
+        ]);
       } else {
         expect(result.error).toBeNull();
 
         const id = result.data!.user.id;
         const row = after.users.find((user) => user.id === id)!;
         expect(after.events.map((event) => event.stage)).toEqual([
-          "validation",
-          "user-create-before",
-          "user-create-after",
           "hash-enter",
           "hash-result",
+          "validation",
+          "user-create-before",
           "account-create-before",
+          "user-create-after",
         ]);
         expect(after.sessions).toEqual(prior.sessions);
         expect(after.accounts.filter((account) => account.userId === id)).toHaveLength(1);

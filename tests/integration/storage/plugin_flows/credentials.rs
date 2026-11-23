@@ -316,6 +316,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
                 ..Default::default()
             }))
             .plugin(SessionManagementPlugin::new())
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let email = format!("profile-{immutable}@example.test");

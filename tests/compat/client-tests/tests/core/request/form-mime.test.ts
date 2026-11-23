@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
-  "Form decoding rejects admitted malformed MIME subtypes without authenticating",
+  "Form decoding rejects malformed MIME subtypes without authenticating",
   async (ctx) => {
     const actor = ctx.actor("multipart", "dispatch-default");
     const email = ctx.uniqueEmail("multipart-mime");
@@ -29,8 +29,8 @@ compatScenario(
         headers: { "content-type": contentType },
         body,
       });
-      expect(response.status).toBe(500);
-      expect(await response.text()).toBe("");
+      expect(response.status).toBe(415);
+      expect(await response.json()).toMatchObject({ code: "UNSUPPORTED_MEDIA_TYPE" });
       expect(response.headers.getSetCookie()).toEqual([]);
       const hooks = await actor.fetch(`${ctx.baseURL}/__test/dispatch-events`);
       expect(await hooks.json()).toEqual([]);

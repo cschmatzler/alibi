@@ -272,6 +272,7 @@
         "user": {
           "email": "social@example.com",
           "emailVerified": true,
+          "id": "social-sub",
           "name": "Provider social-sub",
           "image": "https://images.example/social-sub"
         },

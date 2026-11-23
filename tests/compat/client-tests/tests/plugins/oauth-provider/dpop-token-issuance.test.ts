@@ -62,13 +62,15 @@ compatScenario(
     const proof = async (label: string, payload: object = {}, signing = key, alg = "EdDSA") =>
       new SignJWT({
         htm: "POST",
-        htu: `${ctx.baseURL}/api/auth/oauth2/token`,
+        htu: `${ctx.baseURL}/api/auth/fixture/issue-tokens`,
         jti: label,
         iat: Math.floor(Date.now() / 1000),
         ...payload,
       })
         .setProtectedHeader({ typ: "dpop+jwt", alg, jwk: signing.publicJwk })
         .sign(await importJWK(signing.privateJwk, alg));
+    const tokenProof = (label: string) =>
+      proof(label, { htu: `${ctx.baseURL}/api/auth/oauth2/token` });
     const issue = (
       client: any,
       proofJwt?: string,
@@ -194,7 +196,7 @@ compatScenario(
     expect(protocolMissing.status).toBe(400);
     const protocol = await control({
       action: "token",
-      headers: { dpop: await proof("protocol-refresh") },
+      headers: { dpop: await tokenProof("protocol-refresh") },
       body: refreshBody,
     });
     expect(protocol.status).toBe(200);
@@ -265,7 +267,7 @@ compatScenario(
     });
     const code = await control({
       action: "token",
-      headers: { dpop: await proof("authorization-code") },
+      headers: { dpop: await tokenProof("authorization-code") },
       body: await grant(),
     });
     expect(code.status).toBe(200);

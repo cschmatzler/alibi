@@ -163,7 +163,10 @@ pub(crate) async fn router(
                 };
                 match plugin.generate_totp(secret) {
                     Ok(code) => Json(json!({"code":code})).into_response(),
-                    Err(error) => error.into_response(),
+                    Err(error) => error
+                        .to_auth_response()
+                        .with_header("content-type", "application/json")
+                        .into_response(),
                 }
             }
         }),

@@ -1,3 +1,4 @@
+import { Cookie } from "tough-cookie";
 import { expect } from "vitest";
 
 import { credential, issuedAt, signedRawToken } from "../../../support/id-token";
@@ -342,7 +343,7 @@ compatScenario(
 
     const customSub = ctx.uniqueToken("custom-google");
     const customEmail = ctx.uniqueEmail("custom-google");
-    const custom = await successful(
+    const customUserInfo = await successful(
       ctx,
       await credential({
         sub: customSub,
@@ -352,7 +353,7 @@ compatScenario(
       }),
       "one-tap-custom-userinfo",
     );
-    expect(custom.response.data?.user).toMatchObject({
+    expect(customUserInfo.response.data?.user).toMatchObject({
       email: `custom-${customEmail}`,
       name: "From Custom User Info",
       emailVerified: false,
@@ -361,11 +362,11 @@ compatScenario(
     const persisted = await state(ctx);
     expect(persisted.accounts.slice(baseline.accounts.length)).toMatchObject([
       { providerId: "google", accountId: mappedSub, userId: mapped.response.data?.user.id },
-      { providerId: "google", accountId: customSub, userId: custom.response.data?.user.id },
+      { providerId: "google", accountId: customSub, userId: customUserInfo.response.data?.user.id },
     ]);
     return {
       mapped,
-      custom,
+      customUserInfo,
       persisted: { ...persisted, jwksFetches: persisted.jwksFetches - baseline.jwksFetches },
     };
   },
@@ -395,7 +396,9 @@ compatScenario(
       .filter((cookie) => cookie.startsWith("better-auth.last_used_login_method="));
     expect(cookies).toHaveLength(1);
     expect(cookies[0]).toMatch(/^better-auth\.last_used_login_method=google;/);
-    return { status: response.status, cookies };
+    const lastLogin = Cookie.parse(cookies[0]!)!;
+    expect(lastLogin.value).toBe("google");
+    return { status: response.status, lastLoginMethod: lastLogin.value };
   },
   ["POST /one-tap/callback"],
 );

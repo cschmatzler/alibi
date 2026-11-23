@@ -106,7 +106,7 @@ compatScenario(
           const returned = observed.result.response as HttpResponse;
           expect(returned.kind).toBe("http-response");
           expect(observed.result).not.toHaveProperty("status");
-          expect(returned.headers["x-before"]).toBeUndefined();
+          expect(returned.headers["x-before"]).toBe(asResponse ? "discarded" : undefined);
           if (asResponse) {
             expect(returned.headers["x-after"]).toBe("actual");
             expect(returned.headers.authorization).toBeUndefined();
@@ -114,6 +114,7 @@ compatScenario(
           } else {
             expect(observed.result.headers).toEqual({
               "x-after": "actual",
+              "x-before": "discarded",
               authorization: "request-only-header",
             });
             expect(observed.result.cookies).toEqual(applicationCookies);
@@ -210,7 +211,7 @@ compatScenario(
       expect(events[1]!.returned!.kind).toBe("http-response");
       expect(events[1]!.returned!.status).toBe(302);
       expect(events[1]!.sessionUserId).toBeNull();
-      expect(response.headers.get("x-before")).toBeNull();
+      expect(response.headers.get("x-before")).toBe("discarded");
       expect(response.headers.get("x-after")).toBe("actual");
       expect(response.headers.get("authorization")).toBeNull();
       expect(response.status).toBe(mode === "replace-json" ? 200 : 302);

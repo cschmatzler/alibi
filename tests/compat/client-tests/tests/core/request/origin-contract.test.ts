@@ -248,7 +248,7 @@ compatScenario(
       const proof = authenticator.register(options.data, proofOrigin);
       let foreignOrigin: unknown = null;
 
-      if (mode === "uppercase-control") {
+      if (mode === "base-proof-uppercase-header") {
         const issued = await state();
         const denied = await client.$fetch("/passkey/verify-registration", {
           method: "POST",
@@ -277,7 +277,7 @@ compatScenario(
       const afterState = await state();
       expect(afterState.challenges).toEqual(beforeState.challenges);
 
-      if (mode === "uppercase-control") {
+      if (mode === "base-proof-uppercase-header") {
         expect(result.error).toBeNull();
         expect(after).toHaveLength(before.length + 1);
         expect(after[0]).toMatchObject({
@@ -286,7 +286,7 @@ compatScenario(
           counter: 0,
         });
       } else {
-        expect(result.error).toMatchObject({ status: 500, code: "FAILED_TO_VERIFY_REGISTRATION" });
+        expect(result.error).toMatchObject({ status: 400, code: "FAILED_TO_VERIFY_REGISTRATION" });
         expect(after).toEqual(before);
       }
 
@@ -383,7 +383,8 @@ compatScenario(
 
       let current: unknown = null;
 
-      if (mode.endsWith("control")) {
+      // The passkey plugin getExpectedOrigins helper uses the configured server origin.
+      if (proofOrigin === ctx.baseURL) {
         expect(result.error).toBeNull();
 
         const session = await fixture.owner.client.getSession();

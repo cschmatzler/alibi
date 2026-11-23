@@ -31,9 +31,18 @@ pub(super) fn decrypt(xml: &str, config: &Value) -> AuthResult<String> {
                 .is_some_and(|element| element.name.matches(Some(ENCRYPTION), "EncryptedData"))
         })
         .collect();
-    if envelopes.len() != 1
-        || data.len() != 1
-        || doc.parent(*data.first().ok_or_else(invalid)?) != envelopes.first().copied()
+    let ([envelope], [encrypted_data]) = (envelopes.as_slice(), data.as_slice()) else {
+        return Err(invalid());
+    };
+    if doc.parent(*encrypted_data) != Some(*envelope) {
+        return Err(invalid());
+    }
+    // samlify 2.15.1 rejects 3DES during decryption, before the SAML algorithm policy runs.
+    if super::saml_crypto::children(&doc, *encrypted_data, ENCRYPTION, "EncryptionMethod")
+        .into_iter()
+        .any(|method| {
+            doc.get_attribute(method, "Algorithm") == Some(bergshamra::core::algorithm::TRIPLEDES_CBC)
+        })
     {
         return Err(invalid());
     }

@@ -46,6 +46,9 @@ export async function principals(ctx: ScenarioContext) {
   expect(signup.error).toBeNull();
   expect(other.error).toBeNull();
 
-  await events(ctx);
+  // Drain receipts from earlier scenarios before recording this scenario's trace.
+  const cleared = await fetch(`${ctx.baseURL}/__test/captcha-events`);
+  expect(cleared.status).toBe(200);
+  await cleared.json();
   return { signup, other, foreignBefore: await ctx.readUserState({ userId: other.data!.user.id }) };
 }

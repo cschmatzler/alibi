@@ -189,6 +189,9 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
                 Some(at) => self.inner.get_live_user_sessions(user_id, at).await?,
                 None => self.inner.get_user_sessions(user_id).await?,
             };
+            // Better Auth's bulk deletion reads the adapter output before deleting.
+            // Projection errors leave deletion authorized and sibling projections running.
+            _ = self.record_store.session_records(sessions.clone()).await;
             session_ids = sessions
                 .iter()
                 .map(|session| session.id().into_owned())
@@ -465,7 +468,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        let mut prepared = crate::store::PreparedUserUpdate::from_typed(&update);
+        let mut prepared = crate::store::PreparedUserUpdate::from_internal_adapter(&update);
         prepared.data = crate::store::contracts::update_user_data(
             id,
             &prepared.data,

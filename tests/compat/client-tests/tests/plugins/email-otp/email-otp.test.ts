@@ -453,7 +453,16 @@ compatScenario(
       throw new Error("Server-only OTP creation must return a code");
     }
 
-    const unrelatedIdentifier = ctx.uniqueToken("otp-unrelated-expired");
+    const expiredEmail = ctx.uniqueEmail("otp-unrelated-expired");
+    const unrelatedIdentifier = `sign-in-otp-${expiredEmail}`;
+    const getOtp = (email: string) =>
+      ctx.rawRequest({
+        path: "/__test/server-api",
+        method: "POST",
+        json: { operation: "get-email-otp", email, type: "sign-in" },
+      });
+    // Prime the throttled sweep before seeding the expired row.
+    expect((await getOtp(email)).body).toEqual({ otp: generated.data });
     const seeded = await ctx.rawRequest({
       path: "/__test/verification-state",
       method: "POST",
@@ -467,11 +476,7 @@ compatScenario(
     expect(seeded.status).toBe(200);
     expect(await verificationCount(ctx, unrelatedIdentifier)).toBe(1);
 
-    const retrieved = await ctx.rawRequest({
-      path: "/__test/server-api",
-      method: "POST",
-      json: { operation: "get-email-otp", email, type: "sign-in" },
-    });
+    const retrieved = await getOtp(email);
     expect(retrieved.status).toBe(200);
 
     const parsed = z.object({ otp: z.string() }).safeParse(retrieved.body);
@@ -481,6 +486,8 @@ compatScenario(
     }
 
     expect(parsed.data.otp).toBe(generated.data);
+    expect(await verificationCount(ctx, unrelatedIdentifier)).toBe(1);
+    expect((await getOtp(expiredEmail)).body).toEqual({ otp: null });
     expect(await verificationCount(ctx, unrelatedIdentifier)).toBe(0);
     expect(await verificationCount(ctx, `sign-in-otp-${email}`)).toBe(1);
 

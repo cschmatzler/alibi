@@ -16,7 +16,13 @@ mod tests {
     // user updates, including internalAdapter updates outside public endpoint guards.
     #[tokio::test]
     async fn phone_null_update_hook_is_local_to_the_auth_instance_and_all_store_facades() {
-        let config = AuthConfig::new("phone-hook-fixture-secret-minimum-32-characters");
+        let mut config = AuthConfig::new("phone-hook-fixture-secret-minimum-32-characters");
+        for (name, kind) in [("phoneNumber", "string"), ("phoneNumberVerified", "boolean")] {
+            _ = config.user.additional_fields.insert(
+                name.into(),
+                alibi::field_policy::FieldConfig::new(serde_json::json!({"type": kind})),
+            );
+        }
         let database = Database::connect("sqlite::memory:").await.unwrap();
         alibi::seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await

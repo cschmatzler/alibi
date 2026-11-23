@@ -3,7 +3,7 @@ use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
-    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
     OAuthUserInfoResponse,
 };
 use alibi::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
@@ -30,6 +30,31 @@ use std::{
 };
 use tokio::sync::Mutex;
 const JWKS: &str = include_str!("../../../../fixtures/one-tap/jwks.json");
+struct MappedGoogleProfile;
+
+#[async_trait]
+impl OAuthProfileMapper for MappedGoogleProfile {
+    async fn map_profile(
+        &self,
+        profile: alibi::utils::json::JsValue,
+    ) -> Result<alibi::utils::json::JsObject, String> {
+        let name = profile
+            .get("name")
+            .and_then(alibi::utils::json::JsValue::as_str)
+            .unwrap_or_default();
+        use alibi::utils::json::JsValue;
+        Ok([
+            ("name".into(), JsValue::String(format!("Mapped {name}").into())),
+            (
+                "image".into(),
+                JsValue::String("https://fixture.test/mapped.png".into()),
+            ),
+        ]
+        .into_iter()
+        .collect())
+    }
+}
+
 struct LocalKeys(String);
 pub(crate) fn local_keys(base_url: &str) -> Arc<dyn OAuthJwksSource> {
     Arc::new(LocalKeys(format!("{base_url}/__test/one-tap/jwks")))
@@ -201,26 +226,7 @@ pub(crate) async fn router(
         provider.override_user_info_on_sign_in = name == "one-tap-no-override";
         provider.require_email_verification = name.starts_with("one-tap-required");
         if name == "one-tap-mapped" {
-            provider.map_user_info = Some(|profile| {
-                let text = |key: &str| {
-                    profile
-                        .get(key)
-                        .and_then(alibi::utils::json::JsValue::as_str)
-                        .map(str::to_owned)
-                };
-                Ok(OAuthUserInfo {
-                    additional_fields: Default::default(),
-                    id: text("sub").unwrap_or_default().into(),
-                    email: text("email").unwrap_or_default().into(),
-                    name: Some(format!("Mapped {}", text("name").unwrap_or_default()).into()),
-                    image: Some("https://fixture.test/mapped.png".into()),
-                    email_verified: profile
-                        .get("email_verified")
-                        .and_then(alibi::utils::json::JsValue::as_bool)
-                        == Some(true),
-                }
-                .public_profile(true))
-            });
+            provider = provider.with_profile_mapper(Arc::new(MappedGoogleProfile));
         }
         if name == "one-tap-custom-userinfo" {
             provider.get_user_info = Some(Arc::new(CustomUserInfo));

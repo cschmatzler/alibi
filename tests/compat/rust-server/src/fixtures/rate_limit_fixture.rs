@@ -313,7 +313,7 @@ pub(crate) async fn router(
             builder.plugin(otp_profiles::plugin(outbox.clone()))
         };
         let auth = Arc::new(builder.build().await?);
-        if name == "secondary-failure" {
+        if name == "secondary-failure" || name == "custom" || name.starts_with("database-") {
             // The reference fixture awaits this public handler inside its outer
             // host catch. Preserve that host boundary for propagated quota errors.
             let mounted: Router<Arc<Alibi<TestSchema>>> = Router::new().fallback(

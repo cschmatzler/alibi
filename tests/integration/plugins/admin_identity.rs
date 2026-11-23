@@ -113,6 +113,7 @@ mod sqlx_numeric {
                 "email" => Some("email"),
                 "name" => Some("name"),
                 "createdAt" => Some("createdAt"),
+                "updatedAt" => Some("updatedAt"),
                 "score" => Some("score"),
                 "reviewedAt" => Some("reviewed_at"),
                 "profile" => Some("profile"),
@@ -266,6 +267,7 @@ mod seaorm_numeric {
                 "email" => Some(Column::Email),
                 "name" => Some(Column::Name),
                 "createdAt" => Some(Column::CreatedAt),
+                "updatedAt" => Some(Column::UpdatedAt),
                 "score" => Some(Column::Score),
                 "reviewedAt" => Some(Column::ReviewedAt),
                 "profile" => Some(Column::Profile),
@@ -593,9 +595,12 @@ async fn exercise<S: AuthSchema>(
             serde_json::json!({"actor":actor,"selector":target,"status":response.status,"response":serde_json::from_slice::<serde_json::Value>(&response.body)?,"before":{"users":before_users,"accounts":before_accounts,"sessions":before_sessions},"after":{"users":after_users,"accounts":after_accounts,"sessions":after_sessions}})
         );
     }
-    // This handwritten model intentionally supplies no additional-field
-    // binding. Reject the complete update before even its supported name writes.
-    let auth = AuthBuilder::<S>::new(config())
+    // A declared field without a physical column must reject the complete update.
+    let mut mutation_config = config();
+    if let Some(score) = mutation_config.user.additional_fields.get_mut("score") {
+        score.field_name = Some("missing_score_column".into());
+    }
+    let auth = AuthBuilder::<S>::new(mutation_config)
         .store_arc(Arc::clone(&store))
         .plugin(alibi::plugins::EmailPasswordPlugin::new())
         .build()

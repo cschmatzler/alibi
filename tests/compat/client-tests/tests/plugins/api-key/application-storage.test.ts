@@ -1386,7 +1386,10 @@ compatScenario(
       allIssued.push(issuedRow);
     }
     const boxedLargeMutations = [];
-    const mixedValues = [3, "10", "2", null, { literal: "object" }, ["10"], ["2"]];
+    // The permutations above exercise the cyclic Number/string comparisons.
+    // Use string-coercible values for the large ordering so V8 and JSC have
+    // the same comparator on every pair.
+    const mixedValues = [["3"], "10", "2", null, { literal: "object" }, ["10"], ["2"]];
     let seed = 371;
     for (const created of allIssued) {
       seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;

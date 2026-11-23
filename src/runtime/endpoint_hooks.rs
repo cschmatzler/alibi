@@ -26,7 +26,14 @@ pub(super) fn with_http_endpoint_call_context<T>(
     call: EndpointCall,
     future: impl Future<Output = T>,
 ) -> impl Future<Output = T> {
-    let request = alibi_core::hooks::current_request_hook_context();
+    let request = alibi_core::hooks::current_request_hook_context().map(|current| {
+        let Some(request) = call.request() else {
+            return current;
+        };
+        let mut scope = alibi_core::hooks::RequestHookContext::from_request(request);
+        scope.extensions = current.extensions;
+        scope
+    });
     // Bound the HTTP dispatch future without increasing callers' stack sizes.
     Box::pin(with_endpoint_call_context(
         call,

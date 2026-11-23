@@ -210,6 +210,7 @@ mod tests {
                     on_link_account: Some(Arc::new(Linker(Arc::clone(&events)))),
                     ..Default::default()
                 }))
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await
                 .unwrap();

@@ -51,7 +51,13 @@ struct CallbackState {
     events: Vec<serde_json::Value>,
 }
 #[derive(Clone, Default)]
-struct CustomCallbacks(Arc<Mutex<CallbackState>>);
+pub(crate) struct CustomCallbacks(Arc<Mutex<CallbackState>>);
+
+impl CustomCallbacks {
+    pub(crate) fn reset(&self) {
+        *self.0.lock().unwrap() = CallbackState::default();
+    }
+}
 
 struct ComposedJwtPayload;
 #[async_trait::async_trait]
@@ -181,18 +187,17 @@ impl AuthPlugin<TestSchema> for ExposedHeaderFixture {
     }
     async fn after_request(
         &self,
-        _: &AuthRequest,
+        request: &AuthRequest,
         _: &AuthContext<TestSchema>,
         response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
-        Ok(if self.0 {
-            response.with_header(
+        if self.0 {
+            request.queue_response_header(
                 "access-control-expose-headers",
                 " existing, ,existing, set-ott, set-ott, Existing ",
-            )
-        } else {
-            response
-        })
+            );
+        }
+        Ok(response)
     }
 }
 
@@ -214,7 +219,7 @@ fn failure(error: impl std::fmt::Display) -> axum::response::Response {
 pub(crate) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
-) -> AuthResult<Router<Auth>> {
+) -> AuthResult<(Router<Auth>, CustomCallbacks)> {
     let mut router = Router::new();
     let mut profiles = HashMap::new();
     let callbacks = CustomCallbacks::default();
@@ -327,6 +332,7 @@ pub(crate) async fn router(
             }
         }),
     );
+    let reset = callbacks.clone();
     router = router.route(
         "/__test/one-time-token",
         post(
@@ -394,5 +400,5 @@ pub(crate) async fn router(
             },
         ),
     );
-    Ok(router)
+    Ok((router, reset))
 }

@@ -19,7 +19,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
     db: Db,
 ) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let original_auth = builder::<B>(&connection).build().await?;
+    let original_auth = builder::<B>(&connection).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).build().await?;
     let owner = signup(&original_auth, "duplicate@example.test").await;
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let original = db
@@ -95,7 +95,7 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
                     },
                 ));
         }
-        let auth = builder.build().await?;
+        let auth = builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).build().await?;
         let response = call(
             &auth,
             request("/sign-up/email", Some(input.clone()), ""),
@@ -109,10 +109,11 @@ async fn duplicate_signup_preserves_identity_and_filters_synthetic_output<B: Bac
             original,
             "{mode} must not mutate the physical identity"
         );
-        let expected_events = if matches!(mode, "custom" | "custom-error") {
-            vec!["existing", "synthetic"]
-        } else {
-            vec!["existing"]
+        // Better Auth queues the notification after the signup transaction commits.
+        let expected_events = match mode {
+            "custom" => vec!["synthetic", "existing"],
+            "custom-error" => vec!["synthetic"],
+            _ => vec!["existing"],
         };
         assert_eq!(*events.lock().unwrap(), expected_events);
         if mode == "custom-error" {
@@ -191,6 +192,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
     }
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let setup = super::auth_probe::fast_builder::<B>(&connection)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&setup, "crypto-owner@example.test").await;
@@ -234,6 +236,7 @@ async fn duplicate_privacy_hashes_before_notification_without_replacing_credenti
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(plugin)
             .plugin(SessionManagementPlugin::new())
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let mut input = request(
@@ -304,6 +307,7 @@ async fn existing_signup_notification_waits_or_remains_owned_in_background<B: Ba
         let db = db.fresh().await?;
         let (connection, _) = db.migrated::<B>(SECRET).await?;
         let setup = super::auth_probe::fast_builder::<B>(&connection)
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&setup, "notification-owner@example.test").await;
@@ -354,6 +358,7 @@ async fn existing_signup_notification_waits_or_remains_owned_in_background<B: Ba
                 .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .plugin(plugin)
                 .plugin(SessionManagementPlugin::new())
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await?,
         );
@@ -419,6 +424,7 @@ async fn synthetic_callback_failures_keep_public_error_boundary_and_principals<B
     }
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let setup = super::auth_probe::fast_builder::<B>(&connection)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&setup, "synthetic-error-owner@example.test").await;
@@ -460,6 +466,7 @@ async fn synthetic_callback_failures_keep_public_error_boundary_and_principals<B
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(plugin)
             .plugin(SessionManagementPlugin::new())
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let response=call(&auth,request("/sign-up/email",Some(json!({"email":"synthetic-error-owner@example.test","password":PASSWORD,"name":"Submitted"})),""),if api{403}else{500}).await;
@@ -533,6 +540,7 @@ async fn signup_privacy_never_synthesizes_creation_cancellation_or_ordinary_erro
     }
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let setup = super::auth_probe::fast_builder::<B>(&connection)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&setup, "creation-existing@example.test").await;
@@ -560,6 +568,7 @@ async fn signup_privacy_never_synthesizes_creation_cancellation_or_ordinary_erro
                 .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .plugin(plugin)
                 .plugin(SessionManagementPlugin::new())
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await?;
             let denied=call(&auth,request("/sign-up/email",Some(json!({"email":"creation-new@example.test","password":PASSWORD,"name":"New identity"})),""),if cancel{400}else{422}).await;
@@ -582,6 +591,7 @@ async fn synthetic_duplicate_identity_uses_application_id_policy<B: Backend>(db:
     use std::sync::atomic::{AtomicBool, Ordering};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let setup = super::auth_probe::fast_builder::<B>(&connection)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&setup, "synthetic-id-owner@example.test").await;
@@ -624,6 +634,7 @@ async fn synthetic_duplicate_identity_uses_application_id_policy<B: Backend>(db:
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
             .plugin(plugin)
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let input = json!({"email":"synthetic-id-owner@example.test","name":"Submitted name","password":PASSWORD});
@@ -696,6 +707,7 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
             .await?;
     }
     let setup = super::auth_probe::fast_builder::<B>(&connection)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&setup, "synthetic-fields-owner@example.test").await;
@@ -763,6 +775,7 @@ async fn synthetic_customization_retains_declared_application_fields<B: Backend>
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
             .plugin(plugin)
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         for supplied in [true, false] {

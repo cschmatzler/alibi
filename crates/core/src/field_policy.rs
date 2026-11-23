@@ -1063,7 +1063,10 @@ impl SessionAdapterFields {
     pub(crate) fn exact_json_fields(&self) -> std::collections::BTreeSet<String> {
         self.0
             .iter()
-            .filter(|(_, field)| field.output_transform.is_some())
+            .filter(|(_, field)| {
+                field.output_transform.is_some()
+                    && field.schema.get("type").and_then(Value::as_str) == Some("json")
+            })
             .flat_map(|(name, field)| std::iter::once(name.clone()).chain(field.field_name.clone()))
             .collect()
     }

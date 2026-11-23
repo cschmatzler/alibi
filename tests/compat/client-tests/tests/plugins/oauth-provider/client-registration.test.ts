@@ -244,7 +244,7 @@ compatScenario(
           });
           expect(response.status).toBe(201);
           const value = (await response.json()) as any;
-          const expectedResources = action === "admin-create" ? [a] : [a, b, c];
+          const expectedResources = action === "admin-create" ? [a, b, c] : [a];
           expect(value.resources).toEqual(expectedResources);
           const links = (await (
             await call({ action: "resource-links", clientId: value.client_id })
@@ -298,7 +298,8 @@ compatScenario(
       expect(created.headers.get("cache-control")).toBe("no-store");
       expect(created.headers.get("pragma")).toBe("no-cache");
       const value = (await created.json()) as any;
-      expect(value.resources).toEqual([a, b]);
+      const expectedResources = action === "admin-create" ? [a, b, c] : [a, b];
+      expect(value.resources).toEqual(expectedResources);
       const row = (await (
         await call({ action: "row", clientId: value.client_id, raw: true })
       ).json()) as any;
@@ -310,7 +311,7 @@ compatScenario(
       const links = (await (
         await call({ action: "resource-links", clientId: value.client_id })
       ).json()) as any[];
-      expect(links.map((link) => link.resourceId).sort()).toEqual([a, b]);
+      expect(links.map((link) => link.resourceId).sort()).toEqual(expectedResources);
       atomicCreations.push({
         action: action ?? "managed",
         value: ctx.snapshot(value),

@@ -36,7 +36,8 @@ for (const authenticated of [true, false]) {
       const before = await control();
       expect(before.users.find((u: any) => u.id === signup.data!.user.id).emailVerified).toBe(true);
       const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
-      const proof = await new SignJWT({ email, updateTo: next })
+      // Better Auth api/routes/email-verification.ts binds legacy updates to the original user.
+      const proof = await new SignJWT({ email, updateTo: next, userId: signup.data!.user.id })
         .setProtectedHeader({ alg: "HS256" })
         .setIssuedAt(946684800)
         .setExpirationTime(4102444800)
@@ -52,27 +53,34 @@ for (const authenticated of [true, false]) {
         },
       });
       expect(updated.error).toBeNull();
-      expect(rawCookies.some((c) => c.startsWith("better-auth.session_token="))).toBe(true);
+      expect(rawCookies.some((c) => c.startsWith("better-auth.session_token="))).toBe(
+        authenticated,
+      );
       const after = await control();
       expect(after.users.find((u: any) => u.id === signup.data!.user.id)).toMatchObject({
         email: next,
         emailVerified: false,
       });
       expect(after.accounts).toEqual(before.accounts);
-      expect(after.sessions.length).toBe(before.sessions.length + (authenticated ? 0 : 1));
+      expect(after.sessions).toEqual(before.sessions);
       const deliveries = after.events.filter((e: any) => e.stage === "verification-mail");
       expect(deliveries).toHaveLength(1);
       expect(deliveries[0].user.email).toBe(next);
       const followup = await jwtVerify(deliveries[0].token, secret, { algorithms: ["HS256"] });
       expect(followup.payload.email).toBe(next);
+      expect(followup.payload.userId).toBe(signup.data!.user.id);
       expect(followup.payload.exp! - followup.payload.iat!).toBe(3600);
       expect(followup.payload).not.toHaveProperty("updateTo");
       const pending = await actor.client.getSession();
-      expect(pending.data!.user).toMatchObject({
-        id: signup.data!.user.id,
-        email: next,
-        emailVerified: false,
-      });
+      if (authenticated) {
+        expect(pending.data!.user).toMatchObject({
+          id: signup.data!.user.id,
+          email: next,
+          emailVerified: false,
+        });
+      } else {
+        expect(pending.data).toBeNull();
+      }
       const verified = await actor.client.verifyEmail({ query: { token: deliveries[0].token } });
       expect(verified.error).toBeNull();
       const session = await actor.client.getSession();

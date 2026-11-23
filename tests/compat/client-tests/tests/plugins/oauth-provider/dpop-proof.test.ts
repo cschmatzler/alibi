@@ -144,7 +144,7 @@ compatScenario(
         [{ pub: [header.jwk.pub] }, "signature verification failed"],
         [{ priv: Buffer.alloc(32, 7).toString("base64url") }, "Invalid keyData"],
         [{ priv: "extra" }, "Invalid keyData"],
-        [{ priv: null }, `Unsupported key usage for a ${vector.algorithm} key`],
+        [{ priv: null }, `Unsupported key usage for ${vector.algorithm} key`],
         [
           { priv: vector.privateSeed, key_ops: [] },
           "Usages cannot be empty when importing a private key.",
@@ -153,7 +153,7 @@ compatScenario(
           { priv: vector.privateSeed },
           `CryptoKey instances must be of type "public" for the ${vector.algorithm} algorithm`,
         ],
-        [{ key_ops: ["sign"] }, `Unsupported key usage for a ${vector.algorithm} key`],
+        [{ key_ops: ["sign"] }, `Unsupported key usage for ${vector.algorithm} key`],
         [
           { key_ops: [] },
           "CryptoKey does not support this operation, its usages must include verify.",
@@ -334,7 +334,7 @@ compatScenario(
         { key_ops: [] },
         "CryptoKey does not support this operation, its usages must include verify.",
       ],
-      [{ key_ops: ["sign"] }, "Unsupported key usage for an Ed25519 key"],
+      [{ key_ops: ["sign"] }, "Unsupported key usage for Ed25519 key"],
       [
         { key_ops: ["verify", "verify"] },
         '"key_ops" (Key Operations) Parameter must be an array of unique strings',
@@ -344,7 +344,7 @@ compatScenario(
         '"key_ops" (Key Operations) Parameter must be an array of unique strings',
       ],
       [{ ext: 0 }, '"ext" (Extractable) Parameter must be a boolean'],
-      [{ priv: "extra" }, "Unsupported key usage for an Ed25519 key"],
+      [{ priv: "extra" }, "Unsupported key usage for Ed25519 key"],
     ] as const) {
       expect(
         await control({

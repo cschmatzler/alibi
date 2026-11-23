@@ -73,7 +73,11 @@ compatScenario(
             await (await control({ action: "account-row", providerId, accountId }, true)).json(),
           ).toBe(null);
           if (!saml) {
-            expect(await (await control({ action: "idp-exchanges" }, true)).json()).toEqual([]);
+            expect(
+              await (
+                await control({ action: "idp-exchanges", code: input.query.code }, true)
+              ).json(),
+            ).toEqual([]);
           }
           if (assertion) {
             expect(

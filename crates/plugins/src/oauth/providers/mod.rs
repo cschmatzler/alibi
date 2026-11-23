@@ -1085,7 +1085,11 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.user["id"], "42");
+        assert!(!response.user.contains_key("id"));
+        assert_eq!(
+            provider.account_subject.unwrap()(&response.data).unwrap(),
+            JsString::from("42")
+        );
         assert_eq!(response.user["email"], "octocat@example.com");
         assert_eq!(
             response.user.get("name").and_then(Value::as_str),

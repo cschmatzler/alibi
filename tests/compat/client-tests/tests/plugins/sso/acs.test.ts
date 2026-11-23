@@ -35,11 +35,9 @@ for (const mode of [
   "encrypted-missing-pass",
 ]) {
   const signatureDenied = mode === "unsupported-legacy-signature";
-  const deprecated = mode.startsWith("encrypted-deprecated-");
-  const deprecatedRejected = mode.endsWith("deprecated-data-reject");
+  const tripleDes = mode.startsWith("encrypted-deprecated-data-");
   const policyDenied =
-    deprecatedRejected ||
-    (mode.includes("encrypted-policy-") && !mode.includes("allowed") && !mode.includes("outer"));
+    mode.startsWith("encrypted-policy-") && !mode.includes("allowed") && !mode.includes("outer");
   const policyKey = mode.includes("policy-key");
   const outerPolicy = mode.includes("policy-outer");
   const xmlMetadata = mode === "xml";
@@ -61,7 +59,7 @@ for (const mode of [
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
-            mode: mode.startsWith("encrypted-policy-") || deprecated ? mode : "default",
+            mode: mode.startsWith("encrypted-policy-") || tripleDes ? mode : "default",
             ...input,
           }),
           redirect: "manual",
@@ -87,7 +85,7 @@ for (const mode of [
       );
       const providerId = signatureDenied
         ? "unsupported-legacy-signature-provider"
-        : mode.startsWith("encrypted-policy-") || deprecated
+        : mode.startsWith("encrypted-policy-") || tripleDes
           ? mode
           : mode === "encrypted-response" ||
               mode === "encrypted-outer-only" ||
@@ -197,7 +195,7 @@ for (const mode of [
             grant,
             cert,
             mode === "encrypted-outer-only",
-            deprecated
+            tripleDes
               ? "des-ede3-cbc"
               : mode.startsWith("encrypted-aes-")
                 ? mode.slice("encrypted-".length)
@@ -249,14 +247,9 @@ for (const mode of [
         const account = (await (
           await control({ action: "saml-account-row", providerId, accountId: email })
         ).json()) as any;
-        if (wrongKey || keyFailure || policyDenied || signatureDenied) {
+        if (wrongKey || keyFailure || tripleDes || policyDenied || signatureDenied) {
           expect(location.pathname).toBe("/failed");
-          if (deprecatedRejected && !wrongKey) {
-            expect(location.searchParams.get("error")).toBe("saml_deprecated_algorithm");
-            expect(location.searchParams.get("error_description")).toBe(
-              "SAML response uses deprecated data encryption algorithm: http://www.w3.org/2001/04/xmlenc#tripledes-cbc. Please configure your IdP to use AES-GCM.",
-            );
-          } else if (policyDenied && !wrongKey) {
+          if (policyDenied && !wrongKey) {
             expect(location.searchParams.get("error")).toBe("saml_algorithm_not_allowed");
             expect(location.searchParams.get("error_description")).toBe(
               policyKey

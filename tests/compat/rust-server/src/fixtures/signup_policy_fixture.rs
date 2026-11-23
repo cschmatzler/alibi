@@ -40,6 +40,7 @@ struct Application {
     mode: Mutex<String>,
     events: Mutex<Vec<Value>>,
     release_existing: tokio::sync::Notify,
+    reset_hash_barrier: Mutex<Option<Arc<tokio::sync::Barrier>>>,
 }
 impl Application {
     fn mode(&self) -> String {
@@ -121,6 +122,10 @@ fn signup_request_observation(request: &AuthRequest) -> Value {
 impl PasswordHasher for Application {
     async fn hash(&self, password: &str) -> AuthResult<String> {
         self.event(json!({"stage":"hash-enter","password":password}));
+        let barrier = self.reset_hash_barrier.lock().unwrap().clone();
+        if let Some(barrier) = barrier {
+            _ = barrier.wait().await;
+        }
         let hash = ScryptHasher.hash(password).await?;
         self.event(json!({"stage":"hash-result","password":password,"hash":hash}));
         self.fail("hash")?;
@@ -484,6 +489,8 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         "mode" => {
                             *app.mode.lock().unwrap() =
                                 body["mode"].as_str().unwrap_or("normal").to_owned();
+                            *app.reset_hash_barrier.lock().unwrap() =
+                                (app.mode() == "hash-race").then(|| Arc::new(tokio::sync::Barrier::new(2)));
                             app.events.lock().unwrap().clear();
                             Ok(json!({"status":true,"mode":app.mode()}))
                         }

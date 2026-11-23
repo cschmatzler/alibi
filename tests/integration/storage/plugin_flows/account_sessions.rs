@@ -24,6 +24,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
             .plugin(EmailPasswordPlugin::new())
             .plugin(SessionManagementPlugin::new())
             .plugin(AccountManagementPlugin::new())
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "account-owner@example.test").await;
@@ -172,7 +173,7 @@ async fn account_listing_and_unlinking_preserve_other_owners<B: Backend>(db: Db)
 
 async fn session_listing_and_revocation_preserve_other_owners<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
-    let auth = builder::<B>(&connection).build().await?;
+    let auth = builder::<B>(&connection).rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).build().await?;
     let owner = signup(&auth, "session-owner@example.test").await;
     let foreign = signup(&auth, "session-foreign@example.test").await;
     let cookie = cookies(&owner);

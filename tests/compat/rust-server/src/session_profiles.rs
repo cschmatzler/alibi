@@ -168,6 +168,21 @@ pub(super) async fn router(
         if name == "account-unlink-all" {
             config.account.account_linking.allow_unlinking_all = true;
         }
+        if name.starts_with("stateless-refresh-") {
+            let auth = Arc::new(
+                AuthBuilder::without_database(config)
+                    .rate_limit(RateLimitConfig::new().enabled(false))
+                    .plugin(EmailPasswordPlugin::new())
+                    .plugin(SessionManagementPlugin::new())
+                    .plugin(AdminPlugin::new())
+                    .plugin(TwoFactorPlugin::new())
+                    .plugin(OrganizationPlugin::new())
+                    .build()
+                    .await?,
+            );
+            router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+            continue;
+        }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
                 config,

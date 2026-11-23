@@ -41,7 +41,7 @@ export function createTwoFactorPolicyFixture(
     },
     "two-factor-backup-nan-length": { amount: 1.5, length: NaN, storeBackupCodes: "plain" },
     "two-factor-backup-half-length": { amount: 1, length: 0.5, storeBackupCodes: "plain" },
-    "two-factor-backup-large-length": { amount: 1, length: 32769.5, storeBackupCodes: "plain" },
+    "two-factor-backup-large-length": { amount: 1, length: 32767.5, storeBackupCodes: "plain" },
     "two-factor-backup-large-count": { amount: 1024.5, length: 12, storeBackupCodes: "plain" },
   };
   const backupOptions = (name: string) =>
@@ -411,7 +411,7 @@ export function createTwoFactorPolicyFixture(
       row.verified = Boolean(row.verified);
     }
 
-    return Response.json(row);
+    return Response.json(row ?? null);
   };
   return Object.assign(handle, { reset: () => backupReceipts.clear() });
 }

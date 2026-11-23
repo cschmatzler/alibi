@@ -23,6 +23,20 @@ compatScenario(
     ).keys;
     const rsa = keys.find((key: any) => key.family === "RSA");
     const ec = keys.find((key: any) => key.family === "P-256");
+    const uri = "https://client.fixture.test/jwks?scenario=cache";
+    expect(
+      (await control({ action: "remote-jwks-response", responseMode: "valid", uri })).status,
+    ).toBe(200);
+    expect(
+      (
+        await control({
+          action: "remote-jwks-document",
+          family: "RSA",
+          algorithm: "RS256",
+          kid: "first",
+        })
+      ).status,
+    ).toBe(200);
     const clientId = "https://client.fixture.test/client.json";
     const proof = async (key: any, algorithm: string, kid: string) => {
       const now = Math.floor(Date.now() / 1000);
@@ -112,7 +126,7 @@ compatScenario(
     });
     expect(await fetches()).toEqual(
       Array(2).fill({
-        url: "https://client.fixture.test/jwks",
+        url: uri,
         accept: "application/json",
         redirect: "manual",
         aborted: false,

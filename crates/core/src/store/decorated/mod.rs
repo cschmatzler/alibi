@@ -1428,6 +1428,10 @@ mod user_native_tests {
     #[tokio::test]
     async fn cached_native_user_projection_preserves_values_without_database_lookup() {
         let mut config = crate::AuthConfig::default();
+        config.user.additional_fields.insert(
+            "banExpires".into(),
+            FieldConfig::new(serde_json::json!({"type": "date"})),
+        );
         let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let count = Arc::clone(&calls);
         config.user.additional_fields.insert(

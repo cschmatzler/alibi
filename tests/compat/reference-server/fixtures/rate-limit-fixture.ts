@@ -192,7 +192,7 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
         if (!(base.database instanceof Database)) {
           throw new Error("Fixture requires SQLite database");
         }
-        base.database.run(
+        base.database.exec(
           action === "disable"
             ? 'ALTER TABLE "rateLimit" RENAME TO "fixtureRateLimitHeld"'
             : 'ALTER TABLE "fixtureRateLimitHeld" RENAME TO "rateLimit"',

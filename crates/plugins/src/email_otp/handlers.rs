@@ -508,7 +508,7 @@ impl EmailOtpPlugin {
                         .insert("displayUsername".into(), display);
                 }
                 super::super::helpers::apply_default_role(ctx, &mut data);
-                prepare_additional_user_fields(ctx, &mut data).await?;
+                prepare_additional_user_fields(ctx, &mut data)?;
                 ctx.database
                     .create_user_with_source_record(
                         data,

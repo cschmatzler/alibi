@@ -1163,7 +1163,7 @@ mod tests {
         let signed = alibi_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
         assert_eq!(
             alibi_core::utils::cookie_utils::verify_cookie_value(&signed, &ctx.config.secret),
-            Some(String::new())
+            None
         );
         let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
         _ = req.headers.insert(

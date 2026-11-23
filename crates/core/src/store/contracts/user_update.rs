@@ -27,6 +27,14 @@ impl PreparedUserUpdate {
         }
     }
 
+    pub(crate) fn from_internal_adapter(input: &UpdateUser) -> Self {
+        let mut update = Self::from_typed(input);
+        if let Some(JsValue::String(email)) = update.data.get_mut("email") {
+            *email = email.to_lowercase();
+        }
+        update
+    }
+
     /// Resolve the source schema before physical binding. Without initialized
     /// policies a native model supplies its own declared column schema.
     #[must_use]

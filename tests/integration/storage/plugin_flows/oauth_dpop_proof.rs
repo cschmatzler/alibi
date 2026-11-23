@@ -205,18 +205,18 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         missing.body.unwrap().to_json_value()?,
         json!({"error":"invalid_dpop_proof","error_description":"DPoP proof header is required"})
     );
-    let url = format!(
-        "{}{}/oauth2/token",
+    let base = format!(
+        "{}{}",
         auth.config().base_url.trim_end_matches('/'),
         auth.config().base_path
     );
-    let make_proof = |jti: &str| {
+    let make_proof = |path: &str, jti: &str| {
         proof(
-            json!({"htm":"POST","htu":url,"jti":jti,"iat":chrono::Utc::now().timestamp()}),
+            json!({"htm":"POST","htu":format!("{base}{path}"),"jti":jti,"iat":chrono::Utc::now().timestamp()}),
             json!({}),
         )
     };
-    let invalid = make_proof("native-corrupt")?;
+    let invalid = make_proof("/fixture/issue-tokens", "native-corrupt")?;
     let parts = invalid.split('.').collect::<Vec<_>>();
     let mut signature = URL_SAFE_NO_PAD.decode(parts[2])?;
     *signature.first_mut().unwrap() ^= 1;
@@ -239,7 +239,7 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         denied.body.unwrap().to_json_value()?["error_description"],
         "signature verification failed"
     );
-    let jwt = make_proof("native-issuance")?;
+    let jwt = make_proof("/fixture/issue-tokens", "native-issuance")?;
     let issued = provider
         .issue_tokens(
             auth.context(),
@@ -290,7 +290,7 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         .await
         .unwrap_err();
     assert_eq!(missing.error.status_code(), 400);
-    let jwt = make_proof("native-rotation")?;
+    let jwt = make_proof("/fixture/issue-tokens", "native-rotation")?;
     let rotated = provider
         .issue_tokens(
             auth.context(),
@@ -324,7 +324,7 @@ async fn oauth_dpop_issuance_requires_proof_and_rotates_bound_refresh<B: Backend
         denied.body.unwrap().to_json_value()?["error_description"],
         "DPoP proof header is required"
     );
-    let jwt = make_proof("native-protocol-refresh")?;
+    let jwt = make_proof("/oauth2/token", "native-protocol-refresh")?;
     let response = Box::pin(auth.dispatch_endpoint(
         OAuthProviderPlugin::oauth2_token_endpoint(&refresh_body)?,
         EndpointOptions {
@@ -479,7 +479,7 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
         ),
         (
             json!({"key_ops":["sign"]}),
-            "Unsupported key usage for an Ed25519 key",
+            "Unsupported key usage for Ed25519 key",
         ),
         (
             json!({"key_ops":["verify","verify"]}),
@@ -491,7 +491,7 @@ async fn oauth_dpop_proof_verifies_external_signature_context_and_atomic_receipt
         ),
         (
             json!({"priv":"extra"}),
-            "Unsupported key usage for an Ed25519 key",
+            "Unsupported key usage for Ed25519 key",
         ),
     ] {
         let mut jwk = public_key.clone();

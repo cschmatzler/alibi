@@ -342,14 +342,14 @@ mod json_metadata_tests {
             let restored =
                 <User as AuthUser>::from_secondary_snapshot_record_with_fields(cached, &allowed)
                     .unwrap();
-            let cached_value = restored.raw_snapshot().values().get("metadata").unwrap();
+            let cached_value = restored.raw_snapshot().values().get("metadata");
             if metadata.is_undefined() {
-                assert!(cached_value.is_undefined());
+                assert!(cached_value.is_none());
             } else {
                 let mut expected_cache =
                     json::parse_value(&json::to_string(metadata).unwrap()).unwrap();
                 json::revive_json_dates(&mut expected_cache);
-                assert_eq!(*cached_value, expected_cache);
+                assert_eq!(cached_value, Some(&expected_cache));
             }
             let token = format!("json-cache-{index}");
             _ = initialized
@@ -379,14 +379,12 @@ mod json_metadata_tests {
                 callbacks,
                 "cache read replayed output transform"
             );
-            let actual = &cached.raw_snapshot().values()["metadata"];
-            let normalized = if metadata.is_undefined() {
-                JsValue::Undefined
-            } else {
-                json::parse_adapter_value(&json::to_string(metadata).unwrap())
-            };
-            assert_eq!(actual, &normalized);
+            let actual = cached.raw_snapshot().values().get("metadata");
+            let normalized = (!metadata.is_undefined())
+                .then(|| json::parse_adapter_value(&json::to_string(metadata).unwrap()));
+            assert_eq!(actual, normalized.as_ref());
             if index < 2 {
+                let actual = actual.unwrap();
                 assert!(matches!(actual["nested"]["iso"], JsValue::Date(_)));
                 assert!(matches!(actual["date"], JsValue::Date(_)));
                 assert_eq!(

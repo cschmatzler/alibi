@@ -270,6 +270,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             .ok_or("Missing Microsoft ID token")?;
         let mut profile = super::remaining_profile::decode_grant_jwt(&token)
             .map_err(super::remaining_profile::profile_exception)?;
+        _ = subject(&profile)?;
         if !self.disable_photo
             && let Some(access) = request.access_token.filter(|value| !value.is_empty())
         {

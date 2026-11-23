@@ -554,13 +554,30 @@ impl OAuthProxyPlugin {
                 || state.callback_url.clone(),
                 |(_, value)| value.into_owned(),
             );
+        let account_id = info.account_subject.unwrap_or_default();
+        let mut user_info = alibi_core::utils::json::JsObject::new();
+        _ = user_info.insert(
+            "id".into(),
+            alibi_core::utils::json::JsValue::String(account_id.clone()),
+        );
+        for field in ["email", "image", "emailVerified"] {
+            if let Some(value) = info.user.shift_remove(field) {
+                _ = user_info.insert(field.into(), value);
+            }
+        }
+        let name = info
+            .user
+            .shift_remove("name")
+            .filter(alibi_core::utils::json::JsValue::is_truthy)
+            .unwrap_or_else(|| alibi_core::utils::json::JsValue::String("".into()));
+        _ = user_info.insert("name".into(), name);
         let payload = ProxyPayload {
-            user_info: info.user.clone(),
+            user_info,
             profile: Some(info.data),
             scopes: Some(tokens.scopes.clone()),
             account: ProxyAccount {
                 provider_id: provider_id.to_owned(),
-                account_id: info.account_subject.clone().unwrap_or_default(),
+                account_id,
                 access_token: tokens.access_token,
                 refresh_token: tokens.refresh_token,
                 id_token: tokens.id_token,

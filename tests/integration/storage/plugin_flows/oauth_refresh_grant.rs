@@ -316,7 +316,7 @@ async fn refresh_lifecycle<B: Backend>(
         let private: Value = serde_json::from_str(
             &alibi::plugins::oauth::encryption::decrypt_token(&encrypted, SECRET)?,
         )?;
-        let no_kid = access_jwt::sign(&private, &payload)?;
+        let no_kid = access_jwt::sign(&private, &payload, None)?;
         let mut invalid_parts = no_kid.split('.').map(str::to_owned).collect::<Vec<_>>();
         let first = if invalid_parts[2].starts_with('A') {
             "B"

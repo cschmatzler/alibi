@@ -459,11 +459,16 @@ impl<S: AuthSchema> AuthContext<S> {
         } else {
             user.adapter_js_fields(&fields.exact_json_fields())?
         };
+        let physical = if self.config.session.stateless && user.adapter_snapshot().is_some() {
+            self.trusted_user_view(&user)?
+        } else {
+            self.trusted_user_view(&base)?
+        };
         let output = fields
             .record_output(
                 crate::utils::json::to_js_value(&base)?,
                 additional,
-                crate::utils::json::to_js_value(&self.trusted_user_view(&base)?)?,
+                crate::utils::json::to_js_value(&physical)?,
                 supports_json,
             )
             .await?;
@@ -574,6 +579,14 @@ impl<S: AuthSchema> AuthContext<S> {
                         .insert(name.clone().into(), value.clone());
                 } else {
                     _ = view.omitted_fields.insert(name.clone());
+                }
+            }
+        } else {
+            let physical = session.additional_js_fields()?;
+            for (name, field) in fields {
+                let column = field.field_name.as_deref().unwrap_or(name);
+                if let Some(value) = physical.get(name).or_else(|| physical.get(column)) {
+                    _ = view.extension_fields.insert(name.clone().into(), value.clone());
                 }
             }
         }

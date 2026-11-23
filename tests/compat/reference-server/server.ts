@@ -4273,6 +4273,7 @@ const server = await serveFixture({
         return jsonResponse(databaseResidue());
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        Object.assign(ottCallbackState, { mode: "success", events: [], serial: 0 });
         // SCIM owns a separate in-memory database from resetDatabaseState.
         if (scimControl) {
           (await scimControl).close();

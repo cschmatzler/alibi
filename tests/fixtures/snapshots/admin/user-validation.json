@@ -16,13 +16,13 @@
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null,
           "role": "user",
           "banned": false,
-          "isAnonymous": false,
-          "banExpires": null,
           "banReason": null,
-          "displayUsername": null,
-          "username": null
+          "banExpires": null,
+          "isAnonymous": false
         }
       }
     }
@@ -41,16 +41,16 @@
           "name": "Two",
           "email": "validated-two@example.com",
           "emailVerified": false,
-          "image": null,
+          "image": "https://images.example/two",
           "createdAt": "<date>",
           "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null,
           "role": "user",
           "banned": false,
-          "isAnonymous": false,
-          "banExpires": null,
           "banReason": null,
-          "displayUsername": null,
-          "username": null
+          "banExpires": null,
+          "isAnonymous": false
         }
       }
     }

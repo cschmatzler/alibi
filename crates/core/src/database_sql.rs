@@ -203,7 +203,11 @@ fn map_model(
         .is_some_and(|token| {
             matches!(token, Token::Word(word) if DML.contains(&word.value.to_ascii_uppercase().as_str()))
         });
-    if !is_dml {
+    if !is_dml
+        || !tokens
+            .iter()
+            .any(|token| matches!(token, Token::Word(word) if word.value == canonical))
+    {
         return Ok(sql.to_owned());
     }
     let mut statements = Parser::parse_sql(&GenericDialect {}, sql)

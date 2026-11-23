@@ -362,9 +362,9 @@ impl Application {
         self.events.lock().expect("application receipts").push(json!({
                 "phase":"completed", "path":path, "record":record,
                 "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
-                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
+                "userOmittedUndefined":snapshot.as_ref().map(|_| user_output.is_none_or(omitted_is_undefined)),
                 "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
-                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.session().extension_fields.contains_key("omitted"))
+                "sessionOmittedUndefined":snapshot.as_ref().map(|_| session_output.is_none_or(omitted_is_undefined))
             }));
     }
 }
@@ -431,6 +431,13 @@ impl AuthPlugin<ApplicationSchema> for Application {
         Ok(())
     }
 }
+fn omitted_is_undefined(output: &alibi::AdapterOutput) -> bool {
+    output
+        .values()
+        .get("omitted")
+        .is_none_or(alibi::utils::json::JsValue::is_undefined)
+}
+
 #[async_trait::async_trait]
 impl alibi::CookieCacheVersionResolver for Application {
     async fn resolve(&self, context: &alibi::CacheVersionContext) -> AuthResult<String> {
@@ -441,9 +448,9 @@ impl alibi::CookieCacheVersionResolver for Application {
         self.events.lock().expect("application receipts").push(json!({
             "phase":"version", "user":user,"session":session,
             "userOmittedPresent":user_output.is_some_and(|output| output.contains_field("omitted")),
-            "userOmittedUndefined":user.get("omitted").is_none(),
+            "userOmittedUndefined":user_output.map_or_else(|| user.get("omitted").is_none(), omitted_is_undefined),
             "sessionOmittedPresent":session_output.is_some_and(|output| output.contains_field("omitted")),
-            "sessionOmittedUndefined":session.get("omitted").is_none()
+            "sessionOmittedUndefined":session_output.map_or_else(|| session.get("omitted").is_none(), omitted_is_undefined)
         }));
         tokio::task::yield_now().await;
         Ok(format!(

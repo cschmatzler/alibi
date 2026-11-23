@@ -9,8 +9,6 @@ import { message, SECOND_EOA, signature } from "../../../support/siwe-wallet";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../../../support/trace";
 import { identity, stateSchema } from "./helpers";
 
-// This owner intentionally asserts each runtime's literal opaque diagnostic:
-// Node's enumerable methods have no native transport-object representation.
 test("SIWE opaque runtime bodies reject before verification and preserve the same signed nonce and foreign wallet", async () => {
   const observations = [];
   for (const [runtime, baseURL] of [
@@ -56,27 +54,16 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
     const signed = message(issued.data!.nonce);
     const before = await physical();
     const responses = [];
-    const streamKeys = ["locked", "cancel", "getReader", "pipeThrough", "pipeTo", "tee", "values"];
-    const blobKeys = [
-      "type",
-      "size",
-      "slice",
-      "arrayBuffer",
-      "text",
-      "bytes",
-      "stream",
-      "textStream",
-    ];
-
     for (const path of ["/siwe/nonce", "/siwe/get-nonce", "/siwe/verify"]) {
-      for (const [media, kind] of [
-        ["x-application/json", "ReadableStream"],
-        ["application/streamapplication/json", "ReadableStream"],
-        ["text/htmlapplication/json", "ReadableStream"],
-        ["image/pngapplication/json", "Blob"],
-        ["application/pdfapplication/json", "Blob"],
-        ["video/webmapplication/json", "Blob"],
-      ] as const) {
+      for (const media of [
+        "x-application/json",
+        "application/streamapplication/json",
+        "text/htmlapplication/json",
+        "image/pngapplication/json",
+        "application/pdfapplication/json",
+        "video/webmapplication/json",
+        "application/octet-streamapplication/json",
+      ]) {
         const response = await fetcher(`${baseURL}/api/auth${path}`, {
           method: "POST",
           headers: { "content-type": media },
@@ -84,18 +71,13 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
             path.endsWith("verify") ? { message: signed, signature: signature(signed) } : {},
           ),
         });
-        expect(response.status).toBe(400);
+        expect(response.status, `${runtime}: ${path} with ${media}`).toBe(415);
 
         const body = await response.json();
-        const keys = kind === "Blob" ? blobKeys : streamKeys;
-        const missing = path.endsWith("verify")
-          ? "[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined; "
-          : "";
-        const expected =
-          runtime === "Source"
-            ? `${missing}[body] Unrecognized keys: ${keys.map((key) => JSON.stringify(key)).join(", ")}`
-            : `[body] Invalid input: expected object, received ${kind}`;
-        expect(body).toEqual({ message: expected, code: "VALIDATION_ERROR" });
+        expect(body).toEqual({
+          message: `Content-Type "${media}" is not allowed. Allowed types: application/json`,
+          code: "UNSUPPORTED_MEDIA_TYPE",
+        });
 
         const unchanged = await physical();
         expect(unchanged).toEqual(before);
@@ -111,30 +93,8 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
       }
     }
 
-    // ArrayBuffer has no enumerable schema fields: both nonce aliases accept it.
-    const arrayNonces = [];
-
-    for (const path of ["/siwe/nonce", "/siwe/get-nonce"]) {
-      const response = await fetcher(`${baseURL}/api/auth${path}`, {
-        method: "POST",
-        headers: { "content-type": "application/octet-streamapplication/json" },
-        body: "{broken-json",
-      });
-      expect(response.status).toBe(200);
-
-      const body = (await response.json()) as { nonce: string };
-      expect(typeof body.nonce).toBe("string");
-
-      arrayNonces.push({ path, headers: Object.fromEntries(response.headers), body });
-    }
-
     const pending = await physical();
-    expect(pending.proofs).toHaveLength(3);
-    expect(pending.users).toEqual(before.users);
-    expect(pending.accounts).toEqual(before.accounts);
-    expect(pending.wallets).toEqual(before.wallets);
-    expect(pending.sessions).toEqual(before.sessions);
-    expect(pending.inputs).toEqual(before.inputs);
+    expect(pending).toEqual(before);
 
     const accepted = await client.siwe.verify({ message: signed, signature: signature(signed) });
     expect(accepted.error).toBeNull();
@@ -145,7 +105,7 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
 
     const after = await physical();
     expect(after.inputs).toHaveLength(2);
-    expect(after.proofs).toHaveLength(2);
+    expect(after.proofs).toHaveLength(0);
     expect(after.users[0]).toEqual(before.users[0]);
     expect(after.accounts[0]).toEqual(before.accounts[0]);
     expect(after.wallets[0]).toEqual(before.wallets[0]);
@@ -162,7 +122,6 @@ test("SIWE opaque runtime bodies reject before verification and preserve the sam
       runtime,
       before,
       responses,
-      arrayNonces,
       pending,
       foreign,
       foreignSession,

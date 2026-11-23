@@ -167,7 +167,11 @@ for (const mode of phases) {
       }
 
       if (mode === "before-headers") {
-        expect(observed.result.value.headers).toEqual({});
+        expect(observed.result.value.headers).toEqual({
+          "x-user": "before",
+          "x-first": "before",
+          "x-second": "before",
+        });
       }
 
       if (mode === "request-patch") {

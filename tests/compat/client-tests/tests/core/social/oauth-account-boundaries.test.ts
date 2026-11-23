@@ -17,7 +17,7 @@ async function save(ctx: ScenarioContext, name: string, value: unknown) {
 }
 for (const endpoint of ["/get-access-token", "/account-info"]) {
   for (const token of [null, ""]) {
-    const name = `oauth automatic ${endpoint} ${token === null ? "null" : "empty"} refresh keeps response distinct from stored grant`;
+    const name = `oauth automatic ${endpoint} rejects a ${token === null ? "null" : "empty"} refresh token response without changing the stored grant`;
     compatScenario(
       name,
       async (ctx) => {
@@ -70,24 +70,13 @@ for (const endpoint of ["/get-access-token", "/account-info"]) {
             ? { status: response.status, body: await response.json() }
             : response;
         const after = await state(ctx);
-        expect(after.users).toEqual(before.users);
-        expect(after.sessions).toEqual(before.sessions);
-        const changed = after.accounts.find((a: any) => a.id === id);
-        expect(changed.accessToken).toBe(token);
-        expect(changed.refreshToken).toBe("old-refresh");
-        expect(changed.idToken).toBe("old-id");
-        expect(changed.refreshTokenExpiresAt).toBe("2020-01-01T00:00:00.000Z");
-        if (endpoint === "/get-access-token") {
-          expect((output as any).error).toBeNull();
-          expect((output as any).data.accessToken).toBe(token ?? "old-access");
-          expect((output as any).data.idToken).toBe("");
-        } else if (token === "") {
-          expect((output as any).status).toBe(400);
-          expect((output as any).body.code).toBe("ACCESS_TOKEN_NOT_FOUND");
-        } else {
-          expect((output as any).status).toBe(200);
-          expect((output as any).body.user.email).toBe("info@example.invalid");
-        }
+        // The shared refresh grant rejects missing or empty access tokens before persisting.
+        expect(after).toEqual(before);
+        const error =
+          endpoint === "/get-access-token"
+            ? (output as { error: { status: number; code: string } }).error
+            : { status: (output as any).status, code: (output as any).body.code };
+        expect(error).toMatchObject({ status: 400, code: "FAILED_TO_GET_ACCESS_TOKEN" });
         await save(ctx, name, { before, output, after });
         return { output: ctx.snapshot(output), before, after };
       },

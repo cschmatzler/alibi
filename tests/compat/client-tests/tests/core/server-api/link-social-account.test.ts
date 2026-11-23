@@ -111,14 +111,21 @@ compatScenario(
       expect(url.searchParams.get("scope")).toBe("profile calendar profile");
       expect(url.searchParams.get("login_hint")).toBe("Owner+link@example.test");
       expect(url.searchParams.get("prompt")).toBe("consent :+&");
-      const proof = await observeLogicalOAuthState(ctx, start, startedAt, finishedAt, {
-        callbackURL,
-        errorURL: callbackURL,
-        requestSignUp: true,
-        application: "linked",
-        nested: { round },
-        link: { userId: owner.result.data!.user.id, email: owner.result.data!.user.email },
-      });
+      const proof = await observeLogicalOAuthState(
+        ctx,
+        start,
+        startedAt,
+        finishedAt,
+        {
+          callbackURL,
+          errorURL: callbackURL,
+          requestSignUp: true,
+          application: "linked",
+          nested: { round },
+          link: { userId: owner.result.data!.user.id, email: owner.result.data!.user.email },
+        },
+        owner.result.data!.token!,
+      );
       starts.push(proof.observation);
       expect(await readUserState(ctx, owner.result.data!.user.id)).toEqual(beforeOwner);
       expect(await readUserState(ctx, foreign.result.data!.user.id)).toEqual(beforeForeign);

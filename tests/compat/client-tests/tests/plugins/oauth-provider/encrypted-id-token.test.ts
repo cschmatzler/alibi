@@ -133,9 +133,12 @@ for (const [mode, publicClient] of [
           ).rejects.toThrow();
         }
       }
-      return publicClient
-        ? ctx.snapshot({ authorizationSession, clientId: client.client_id, tokens: issued })
-        : ctx.snapshot({ authorizationSession, clientId: client.client_id, issued });
+      if (!publicClient) {
+        return ctx.snapshot({ authorizationSession, clientId: client.client_id, issued });
+      }
+      // Each server's absolute expiry is checked against its own request window above.
+      const { expires_at: _expiresAt, ...tokens } = issued;
+      return ctx.snapshot({ authorizationSession, clientId: client.client_id, tokens });
     },
   );
 }

@@ -25,6 +25,7 @@ async fn build(config: AuthConfig) -> Alibi<Schema> {
             },
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await
         .unwrap()

@@ -257,8 +257,14 @@ pub(super) fn sort(keys: &mut [ApiKey], direction: Option<&str>) -> AuthResult<(
     let order = Order {
         descending: direction == Some("desc"),
     };
+    if keys.len() < 2 {
+        return Ok(());
+    }
     if keys.len() < 8 {
-        return insertion(keys, 0, &order);
+        // The reference detects and preserves a natural run before inserting
+        // the rest. With cyclic mixed values, reversing a whole descending run
+        // can differ from comparing the third value to the first directly.
+        return run(keys, 0, &order).map(|_| ());
     }
     let mut working = keys.to_vec();
     let mut min_gallop = 7;

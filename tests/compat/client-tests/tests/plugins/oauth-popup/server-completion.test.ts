@@ -8,6 +8,7 @@ compatScenario(
   "SDK OAuth popup callback delivers success and provider failure then retires its marker",
   async (ctx) => {
     const results = [];
+    let issuedDuring: { before: number; after: number } | undefined;
     const actor = ctx.actor("popup-sdk");
     for (const denied of [false, true]) {
       const started = await actor.fetch(`${ctx.baseURL}${control}/server-start`, {
@@ -41,12 +42,14 @@ compatScenario(
         expect(authorized.status).toBe(302);
         query = Object.fromEntries(new URL(authorized.headers.get("location")!).searchParams);
       }
+      const before = Date.now();
       const response = await actor.fetch(`${ctx.baseURL}${control}/server-callback`, {
         method: "POST",
         redirect: "manual",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ query, headers: { cookie } }),
       });
+      const after = Date.now();
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("text/html");
       expect(response.headers.get("content-security-policy")).toContain("script-src");
@@ -70,6 +73,7 @@ compatScenario(
         expect(delivered.error).toEqual({ code: "access_denied", description: "User cancelled" });
         expect(delivered.token).toBeUndefined();
       } else {
+        issuedDuring = { before, after };
         expect(delivered.redirectTo).toBe("/sdk-popup-done");
         expect(
           response.headers
@@ -110,6 +114,24 @@ compatScenario(
       authorize.query.code_challenge,
     );
     const { receipts, ...rows } = stored;
+    const observeTime = (value: string, lifetime = 0) => {
+      const timestamp = Date.parse(value);
+      expect(value).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+      expect(Number.isFinite(timestamp)).toBe(true);
+      expect(timestamp - lifetime).toBeGreaterThanOrEqual(issuedDuring!.before);
+      expect(timestamp - lifetime).toBeLessThanOrEqual(issuedDuring!.after);
+      return { lifetimeMs: lifetime };
+    };
+    for (const row of [rows.user[0], rows.account[0], rows.session[0]]) {
+      expect(Date.parse(row.updatedAt)).toBeGreaterThanOrEqual(Date.parse(row.createdAt));
+      row.createdAt = observeTime(row.createdAt);
+      row.updatedAt = observeTime(row.updatedAt);
+    }
+    rows.account[0].accessTokenExpiresAt = observeTime(
+      rows.account[0].accessTokenExpiresAt,
+      3_600_000,
+    );
+    rows.session[0].expiresAt = observeTime(rows.session[0].expiresAt, 7 * 86_400_000);
     return ctx.snapshot({ results, rows, stages: receipts.map((receipt: any) => receipt.stage) });
   },
   ["GET /oauth-popup/start", "GET /callback/{}"],

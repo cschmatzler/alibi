@@ -35,7 +35,8 @@ compatScenario(
         .setProtectedHeader({ alg: "RS256", kid: "one-tap-local-rs256" })
         .setIssuer("https://issuer.example.invalid")
         .setAudience("discovery-client")
-        .setExpirationTime(4102444800)
+        .setIssuedAt()
+        .setExpirationTime("1h")
         .sign(key);
       const configured = await ctx.rawRequest({
         path: "/__test/generic-discovery/control",

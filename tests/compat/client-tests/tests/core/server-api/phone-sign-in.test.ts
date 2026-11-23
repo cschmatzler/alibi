@@ -1,7 +1,12 @@
 import { expect } from "vitest";
 
 import { compatScenario } from "../../../support/scenario";
-import { phoneClient, readPhoneState, uniquePhone } from "../../plugins/phone-number/helpers";
+import {
+  phoneClient,
+  readPhoneState,
+  seedPhoneOwner,
+  uniquePhone,
+} from "../../plugins/phone-number/helpers";
 
 compatScenario(
   "server phone sign-in publishes owned usable sessions without an original request",
@@ -14,7 +19,6 @@ compatScenario(
       email,
       password,
       name: "Phone Owner",
-      phoneNumber,
     });
     expect(owner.error).toBeNull();
     const foreign = await phoneClient(ctx, profile, "foreign").signUp.email({
@@ -25,6 +29,7 @@ compatScenario(
     expect(foreign.error).toBeNull();
     const ownerId = owner.data!.user.id;
     const foreignId = foreign.data!.user.id;
+    await seedPhoneOwner(ctx, profile, ownerId, phoneNumber);
     async function state() {
       return {
         owner: await readPhoneState(ctx, profile, ownerId),

@@ -6,15 +6,16 @@ for (const mode of ["masked", "throw"] as const) {
     compatScenario(
       `onAPIError ${mode} ${kind} preserves the actual public handler return or exception boundary`,
       async (ctx) => {
-        const state = async () =>
-          (
-            await ctx.rawRequest({
-              path: "/__test/user-lifecycle/control",
-              method: "POST",
-              json: { profile: "default", action: "state" },
-            })
-          ).body;
-        const before = await state();
+        const state = async (action: "reset" | "state") => {
+          const reply = await ctx.rawRequest({
+            path: "/__test/user-lifecycle/control",
+            method: "POST",
+            json: { profile: "default", action },
+          });
+          expect(reply.status).toBe(200);
+          return reply.body;
+        };
+        const before = await state("reset");
         const r = await ctx.rawRequest({
           path: "/__test/api-error/invoke",
           method: "POST",
@@ -25,7 +26,7 @@ for (const mode of ["masked", "throw"] as const) {
         expect(observed.events).toEqual([
           { path: "/fixture-failure", method: "POST", marker: "actual-handler-marker" },
         ]);
-        expect(await state()).toEqual(before);
+        expect(await state("state")).toEqual(before);
         if (mode === "throw" && kind === "ordinary") {
           expect(observed.outcome).toBe("thrown");
           expect(observed.name).toBe("Error");

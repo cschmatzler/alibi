@@ -49,7 +49,15 @@ for (const profile of [undefined, "passwordless-hashed"] as const) {
         const success = await check({ email: email.toUpperCase(), type, otp, ignored: true });
         expect(success.status).toBe(200);
         expect(success.body).toEqual({ success: true });
-        expect(await storedVerification(ctx, identifier)).toEqual(proof);
+        const restored = await storedVerification(ctx, identifier);
+        expect(restored).toHaveLength(1);
+        // Better Auth plugins/email-otp/routes.ts restores the proof with the original deadline.
+        expect(restored[0]).toMatchObject({
+          identifier,
+          value: proof[0]!.value,
+          expiresAt: proof[0]!.expiresAt,
+        });
+        expect(restored[0]!.id).not.toBe(proof[0]!.id);
         const wrong = [];
         for (let attempt = 1; attempt <= 3; attempt++) {
           const result = await check({ email, type, otp: "wrong" });
@@ -77,7 +85,14 @@ for (const profile of [undefined, "passwordless-hashed"] as const) {
       const missing = await check({ email: guest, type: "sign-in", otp });
       expect(missing.status).toBe(400);
       expect((missing.body as { code: string }).code).toBe("USER_NOT_FOUND");
-      expect(await storedVerification(ctx, identifier)).toEqual(proof);
+      const restored = await storedVerification(ctx, identifier);
+      expect(restored).toHaveLength(1);
+      expect(restored[0]).toMatchObject({
+        identifier,
+        value: proof[0]!.value,
+        expiresAt: proof[0]!.expiresAt,
+      });
+      expect(restored[0]!.id).not.toBe(proof[0]!.id);
       await expireVerification(ctx, identifier);
       const expired = await check({ email: guest, type: "sign-in", otp });
       expect(expired.status).toBe(400);

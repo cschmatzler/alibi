@@ -354,7 +354,7 @@ compatScenario(
 );
 
 compatScenario(
-  "reset expired and missing-user proofs are consumed before any hasher or callback runs",
+  "reset rejects expired and orphaned proofs before any hasher or callback runs",
   async (ctx) => {
     const profile = "signup-policy";
     const other = await foreign(ctx);
@@ -396,13 +396,17 @@ compatScenario(
       });
 
       const after = await read(ctx, profile);
-      expect(rows(after)).toEqual(rows(before));
+      const retainsProof = kind === "missing-user";
+      expect(rows(after)).toEqual({
+        ...rows(before),
+        verifications: retainsProof ? physical.verifications : before.verifications,
+      });
       expect(after.events).toEqual([]);
 
       const replay = await ctx
         .actor(kind, profile)
         .client.resetPassword({ newPassword: "newPassword123", token });
-      expect(replay.error?.code).toBe("INVALID_TOKEN");
+      expect(replay.error?.code).toBe(retainsProof ? "USER_NOT_FOUND" : "INVALID_TOKEN");
       expect(await read(ctx, profile)).toEqual(after);
 
       observations.push({
@@ -439,7 +443,7 @@ compatScenario(
     expect(signup.error).toBeNull();
 
     const reset = await requestReset(ctx, profile, email);
-    const configured = await control(ctx, { operation: "mode", mode: "normal" });
+    const configured = await control(ctx, { operation: "mode", mode: "hash-race" });
     const password = "newPassword123";
     const outcomes = await Promise.all(
       [0, 1].map(async () => {
@@ -477,11 +481,24 @@ compatScenario(
 
     const account = after.accounts.find((row) => row.userId === signup.data!.user.id)!;
     expect(await verifyPassword({ hash: String(account.password), password })).toBe(true);
-    expect(after.events.map((row) => row.stage)).toEqual([
-      "hash-enter",
-      "hash-result",
-      "password-reset",
-    ]);
+    expect(after.events.slice(0, 2).map((row) => row.stage)).toEqual(["hash-enter", "hash-enter"]);
+    const hashes = after.events.filter((row) => row.stage === "hash-result");
+    expect(hashes).toHaveLength(2);
+    expect(hashes.filter((row) => row.hash === account.password)).toHaveLength(1);
+    for (const row of hashes) {
+      expect(await verifyPassword({ hash: String(row.hash), password })).toBe(true);
+    }
+    const resets = after.events.filter((row) => row.stage === "password-reset");
+    expect(resets).toHaveLength(1);
+    expect(after.events).toHaveLength(5);
+    const orderedEvents = [
+      ...after.events.slice(0, 2),
+      ...hashes.sort(
+        (a, b) => Number(b.hash === account.password) - Number(a.hash === account.password),
+      ),
+      ...resets,
+    ];
+    await control(ctx, { operation: "mode", mode: "normal" });
 
     const login = await ctx.actor("new-password", profile).client.signIn.email({ email, password });
     expect(login.error).toBeNull();
@@ -494,7 +511,7 @@ compatScenario(
       reset: { ...reset, state: observed(reset.state) },
       configured,
       results,
-      after: observed(after),
+      after: observed({ ...after, events: orderedEvents }),
       login,
     };
   },
@@ -630,12 +647,11 @@ compatScenario(
       expect(after.events.map((row) => row.stage)).toEqual([
         "hash-enter",
         "hash-result",
-        "existing-user",
-        "existing-complete",
         "synthetic-user",
+        ...(mode === "normal" ? ["existing-user", "existing-complete"] : []),
       ]);
 
-      const input = after.events[4]!;
+      const input = after.events[2]!;
       expect(input).toMatchObject({
         coreFields: {
           name: "Requested Custom",
@@ -1509,11 +1525,11 @@ compatScenario(
 
 for (const contract of [
   {
-    name: "reset hashing failure consumes the proof without changing passwords or existing sessions",
+    name: "reset hashing failure retains the proof, password and existing sessions",
     modes: ["hash-error", "hash-api"],
   },
   {
-    name: "reset callback failure propagates after writing the password and before revoking existing sessions",
+    name: "reset callback failure propagates after writing the password and revoking existing sessions",
     modes: ["reset-callback-error", "reset-callback-api"],
   },
 ] as const) {
@@ -1556,11 +1572,16 @@ for (const contract of [
         );
 
         const after = await read(ctx, profile);
-        expect(
-          after.verifications.filter((row) => row.identifier === `reset-password:${reset.token}`),
-        ).toEqual([]);
+        const hashFailed = mode.startsWith("hash");
+        const matchingProof = (state: State) =>
+          state.verifications.filter((row) => row.identifier === `reset-password:${reset.token}`);
+        expect(matchingProof(after)).toEqual(hashFailed ? matchingProof(reset.state) : []);
         expect(after.users).toEqual(reset.state.users);
-        expect(after.sessions).toEqual(reset.state.sessions);
+        expect(after.sessions).toEqual(
+          hashFailed
+            ? reset.state.sessions
+            : reset.state.sessions.filter((row) => row.userId !== signup.data!.user.id),
+        );
         expect(after.events.map((row) => row.stage)).toEqual(
           mode.startsWith("hash")
             ? ["hash-enter", "hash-result"]
@@ -1578,8 +1599,19 @@ for (const contract of [
           newPassword: password,
           token: reset.token,
         });
-        expect(replay.error?.code).toBe("INVALID_TOKEN");
-        expect(await read(ctx, profile)).toEqual(after);
+        const replayed = await read(ctx, profile);
+        if (hashFailed) {
+          expect(replay.error?.status).toBe(result.status);
+          expect(matchingProof(replayed)).toEqual(matchingProof(after));
+          expect(rows(replayed)).toEqual(rows(after));
+          expect(replayed.events.slice(after.events.length).map((row) => row.stage)).toEqual([
+            "hash-enter",
+            "hash-result",
+          ]);
+        } else {
+          expect(replay.error?.code).toBe("INVALID_TOKEN");
+          expect(replayed).toEqual(after);
+        }
 
         observations.push({
           mode,

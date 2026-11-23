@@ -27,7 +27,12 @@ compatScenario("account info returns provider user info for a linked account", a
   });
 
   expect(accountInfo.status).toBe(200);
-  expect((accountInfo.body as { account: { id: string } }).account.id).toBe(accountId);
+  expect(accountInfo.body).toMatchObject({
+    account: { id: accountId, providerId: "mock", accountId: providerAccountId },
+    user: { email: "mock@example.com", name: "Mock OAuth User", emailVerified: true },
+    data: { id: "mock-account-id" },
+  });
+  expect(accountInfo.body).not.toHaveProperty("user.id");
 
   return {
     signup: ctx.snapshot(signup),

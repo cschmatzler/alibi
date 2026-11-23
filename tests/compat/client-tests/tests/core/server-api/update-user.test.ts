@@ -4,6 +4,7 @@ import { z } from "zod";
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
+import { applicationHeaders } from "../../../support/trace";
 import { fixtureValue, readUserState } from "../../../support/verification";
 const observation = z.object({
   result: z
@@ -62,9 +63,7 @@ compatScenario(
         cookie,
         publication: {
           body: result.data,
-          headers: Object.fromEntries(
-            [...headers].filter(([name]) => !["date", "content-length"].includes(name)),
-          ),
+          headers: applicationHeaders(headers),
           ...(await cacheReceipt(headers)),
         },
       };

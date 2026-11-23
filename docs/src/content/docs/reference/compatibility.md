@@ -77,6 +77,8 @@ Several error codes changed: `/device/token` answers a rejected client with `inv
 
 Social providers accept account fields that are stored on create, link and sign-in. Kakao uses PKCE and accepts native-app ID tokens. Authorization URLs keep the provider's published query text. Generic OAuth sends `discoveryHeaders` only to the discovery origin and sends `authorizationHeaders` on refresh. A refresh refused with HTTP 200 now fails instead of returning the expired token. SAML Single Logout works for sessions past their first expiry; sessions whose logout record is gone fall back to the NameID on the SAML account without a SessionIndex. The SCIM managed-connection events list accepts `limit`, `offset` and `sortDirection` and returns `total`.
 
+Alibi now always rejects SAML assertions encrypted with 3DES, regardless of `onDeprecated`.
+
 For the OAuth provider, refresh tokens without `offline_access` stop working when their session ends, and a token request that fails validation no longer spends its authorization or device code. Client secrets must carry the configured prefix. Client metadata is written as a JSON object; rows stored as strings are still read. Client ID Metadata Document refreshes clear keys and post-logout redirect URIs the document no longer lists. Discovery reports an `http` issuer as configured; `http` redirect URIs outside the defaults need `allowInsecureRedirectUri`. No database migration is needed; the schema is unchanged.
 
 ## Upgrading from 1.7.12

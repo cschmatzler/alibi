@@ -273,8 +273,9 @@ pub(in crate::oauth) async fn sign_in_with_id_token_core(
             code: codes::FAILED_TO_GET_USER_INFO,
             message: "Failed to get user info",
         })?;
-    let canonical_user =
+    let mut canonical_user =
         OAuthUserInfo::from_fields(&user_info.user, user_info.account_subject.as_ref());
+    _ = canonical_user.name.get_or_insert_with(|| "".into());
     let account_fields = resolve_oauth_account_fields(provider, &grant, &canonical_user, ctx)
         .await?;
 

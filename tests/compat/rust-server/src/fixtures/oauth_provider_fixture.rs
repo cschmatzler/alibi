@@ -657,7 +657,11 @@ pub(crate) async fn router(
                 return axum::Json(serde_json::json!({"row":row.map(|row|serde_json::json!({"id":row.id(),"expiresAt":row.expires_at()})),"cached":preserved_cache.get(input["token"].as_str().unwrap()).await.unwrap().is_some(),"completed":*preserved.completed.lock().unwrap()})).into_response();
             }
             if input["action"]=="resource-privileges-state" {
-                return axum::Json(std::mem::take(&mut *resource_privileges.calls.lock().unwrap())).into_response();
+                let mut calls = std::mem::take(&mut *resource_privileges.calls.lock().unwrap());
+                if let Some(caller) = input["caller"].as_str() {
+                    calls.retain(|call| call["caller"] == caller);
+                }
+                return axum::Json(calls).into_response();
             }
             if input["action"]=="resource-seed-init" {
                 let provider=OAuthProviderPlugin::with_config(OAuthProviderConfig{
@@ -910,13 +914,16 @@ pub(crate) async fn router(
                 return match result {Ok(payload)=>axum::Json(payload).into_response(),Err(error)=>{if matches!(&error.error,alibi::AuthError::Internal(_)){return axum::Json(serde_json::json!({"ordinary_error":true})).into_response();}let mut response=alibi::endpoint::EndpointResponse::error(error.error);if let Some(body)=error.body{response=response.with_error_body(*body);}if let Some(headers)=error.headers{response.merge_headers(headers);}response.to_response().unwrap().into_response()}};
             }
             if input["action"]=="sign-access" {
-                let endpoint=alibi::plugins::jwt::JwtPlugin::sign_endpoint(alibi::utils::json::JsValue::from(input["body"].clone()));
+                let payload = if input["rawClaims"] == true { serde_json::json!({}) } else { input["body"].clone() };
+                let endpoint=alibi::plugins::jwt::JwtPlugin::sign_endpoint(alibi::utils::json::JsValue::from(payload));
                 let response=auth.dispatch_endpoint(endpoint,alibi::endpoint::EndpointOptions::default()).await.unwrap().into_response().unwrap();
-                if input["omitKid"]==true {
-                    let keys=auth.store().list_jwks().await.unwrap();let stored=&keys.first().unwrap().private_key;
-                    let encrypted:String=serde_json::from_str(stored).unwrap();
+                if input["omitKid"] == true || input["rawClaims"] == true {
+                    let keys = auth.store().list_jwks().await.unwrap();
+                    let stored = keys.first().unwrap();
+                    let encrypted:String=serde_json::from_str(&stored.private_key).unwrap();
                     let private:serde_json::Value=serde_json::from_str(&alibi::plugins::oauth::encryption::decrypt_token(&encrypted,auth.config().current_secret()).unwrap()).unwrap();
-                    let token=access_jwt::sign(&private,&input["body"]).unwrap();
+                    let kid = (input["omitKid"] != true).then_some(stored.id.as_str());
+                    let token = access_jwt::sign(&private, &input["body"], kid).unwrap();
                     return axum::Json(serde_json::json!({"token":token})).into_response();
                 }
                 return response.into_response();

@@ -73,15 +73,14 @@ pub(crate) async fn router(
             let mut provider = match name {
                 "google" => OAuthProvider::google("fixture-social-client", "fixture-social-secret"),
                 "github" => OAuthProvider::github("fixture-social-client", "fixture-social-secret"),
-                _ => OAuthProvider::discord("fixture-social-client", "fixture-social-secret"),
+                _ => OAuthProvider::discord_with_endpoints(
+                    "fixture-social-client",
+                    "fixture-social-secret",
+                    "https://discord.com/api/oauth2/authorize",
+                    &format!("{}/__test/social-provider/token", config.base_url),
+                    &format!("{}/__test/social-provider/userinfo", config.base_url),
+                ),
             };
-            if name == "discord" {
-                provider.token_url = format!("{}/__test/social-provider/token", config.base_url);
-                provider.user_info_url = Some(format!(
-                    "{}/__test/social-provider/userinfo",
-                    config.base_url
-                ));
-            }
             let policy = provider
                 .authorization
                 .as_mut()

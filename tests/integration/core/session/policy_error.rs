@@ -249,7 +249,7 @@ mod tests {
         let signed_empty = alibi::utils::cookie_utils::sign_cookie_value("", &auth.config().secret);
         assert_eq!(
             alibi::utils::cookie_utils::verify_cookie_value(&signed_empty, &auth.config().secret),
-            Some(String::new())
+            None
         );
         let empty_cookie_value = format!("{}={signed_empty}", auth.config().session.cookie_name);
         let empty_cookie = empty_cookie_value.as_str();

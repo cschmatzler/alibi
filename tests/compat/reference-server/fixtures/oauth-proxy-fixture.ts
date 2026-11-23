@@ -167,6 +167,11 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
           {
             id: "proxy-provider-policy",
             init(context) {
+              // The GitLab factory's issuer option selects transport endpoints only.
+              const gitlab = context.socialProviders.find((provider) => provider.id === "gitlab");
+              if (gitlab && mode !== "form-post") {
+                gitlab.issuer = `${preview}${control}/provider`;
+              }
               if (["custom", "bad-key"].includes(mode)) {
                 const provider = context.socialProviders.find(
                   (provider) => provider.id === "gitlab",

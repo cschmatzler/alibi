@@ -301,8 +301,12 @@ compatScenario("Configured resources seed at init and once again at first lookup
     const extra = [
       `urn:fixture:${resourceSeedMode ?? "default"}`,
       `http://api.fixture.test/${resourceSeedMode ?? "default"}`,
+    ];
+    const invalidIdentifiers = [
       `javascript:seed-${resourceSeedMode ?? "default"}`,
       `${identifier}/empty-fragment#`,
+      "relative",
+      `${identifier}#fragment`,
     ];
     await initialize([
       {
@@ -336,8 +340,7 @@ compatScenario("Configured resources seed at init and once again at first lookup
         metadata: null,
       },
       ...extra,
-      "relative",
-      `${identifier}#fragment`,
+      ...invalidIdentifiers,
     ]);
     const initial = await read();
     expect(initial).toMatchObject({
@@ -377,8 +380,9 @@ compatScenario("Configured resources seed at init and once again at first lookup
         policyVersion: 1,
       });
     }
-    expect(await read("relative")).toBeNull();
-    expect(await read(`${identifier}#fragment`)).toBeNull();
+    for (const id of invalidIdentifiers) {
+      expect(await read(id)).toBeNull();
+    }
     const signup = await control({
       action: "signup",
       body: {

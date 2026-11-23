@@ -45,7 +45,14 @@ export async function raceOneTimeProof(ctx: ScenarioContext, path: string, json?
         headers: Object.fromEntries(
           [...response.headers.entries()].filter(
             ([key]) =>
-              !["set-cookie", "date", "connection", "keep-alive", "content-length"].includes(key),
+              ![
+                "set-cookie",
+                "date",
+                "connection",
+                "keep-alive",
+                "content-length",
+                "transfer-encoding",
+              ].includes(key),
           ),
         ),
         body,

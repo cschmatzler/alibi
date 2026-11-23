@@ -307,11 +307,12 @@ async fn build<B: Backend>(
                 secret: (!options.shared_secret).then(|| PROXY_SECRET.into()),
                 ..Default::default()
             }))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await
             .unwrap()
     } else {
-        builder.build().await.unwrap()
+        builder.rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false)).build().await.unwrap()
     }
 }
 
@@ -652,6 +653,7 @@ async fn raw_profile_max_age_controls_admission_before_state_consumption<B: Back
                 max_age_seconds: max_age,
                 secret: Some(PROXY_SECRET.into()),
             }))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let profile = bridge
@@ -751,6 +753,7 @@ async fn proxy_cache_publication_failure_retains_commit_and_discards_all_cookies
             secret: Some(PROXY_SECRET.into()),
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let users = fixture.preview_db.table("user").await?;
@@ -826,6 +829,7 @@ async fn proxy_loose_profile_retains_resolved_account_key_authority<B: Backend>(
             secret: Some(PROXY_SECRET.into()),
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let (_, mut bridge) = fixture.forward(&authorization).await;
@@ -1006,6 +1010,7 @@ async fn skip_proxy_header_keeps_local_state_and_consumes_provider_error<B: Back
             secret: Some(PROXY_SECRET.into()),
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let before = rows(&fixture.preview_db).await;

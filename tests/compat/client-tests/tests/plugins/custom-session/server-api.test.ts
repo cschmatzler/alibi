@@ -29,7 +29,7 @@ compatScenario(
     const missing = await control({ headers: { "x-custom-session": "error" } });
     expect(missing.status).toBe(200);
     expect(await missing.json()).toBeNull();
-    expect(missing.headers.get("cache-control")).toBeNull();
+    expect(missing.headers.get("cache-control")).toBe("no-store");
     const response = await control({ headers: { cookie, "x-custom-marker": "sdk" } });
     expect(response.status).toBe(200);
     const value = (await response.json()) as any;

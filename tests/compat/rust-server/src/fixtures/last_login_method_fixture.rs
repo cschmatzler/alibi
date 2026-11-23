@@ -172,20 +172,25 @@ impl alibi::AuthPlugin<TestSchema> for Application {
     ) -> AuthResult<Option<alibi::AuthResponse>> {
         Ok(None)
     }
-    async fn on_init(&self, ctx: &mut alibi::AuthInitContext<TestSchema>) -> AuthResult<()> {
-        if self.mode == "transform" {
-            ctx.register_user_update_transform(|_, mut update| {
-                if let Some(Some(method)) = update.last_login_method {
-                    update.last_login_method = Some(Some(format!("stored:{method}")));
-                }
-                Ok(update)
-            });
-        }
-        Ok(())
-    }
+
 }
 #[async_trait::async_trait]
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
+    async fn before_update_user(
+        &self,
+        _id: &str,
+        update: &mut alibi::utils::json::JsObject,
+        _: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        if self.mode == "transform" {
+            if let Some(method) = update.get("lastLoginMethod").and_then(|value| value.as_str()) {
+                let method = alibi::utils::json::JsValue::String(format!("stored:{method}").into());
+                _ = update.insert("lastLoginMethod".into(), method);
+            }
+        }
+        Ok(HookControl::Continue)
+    }
+
     async fn before_create_session(
         &self,
         session: &mut alibi::CreateSession,

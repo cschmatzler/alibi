@@ -235,7 +235,6 @@ pub(in crate::two_factor) async fn generate_backup_codes(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    clippy::cast_precision_loss,
     reason = "Finite JS random lengths round up before checked native allocation"
 )]
 pub(in crate::two_factor) fn generate_numeric_string(length: f64, decimal: bool) -> Option<String> {
@@ -244,7 +243,9 @@ pub(in crate::two_factor) fn generate_numeric_string(length: f64, decimal: bool)
     }
     // Sub-half-character Source buffers are empty and never terminate.
     // The native API rejects them instead of reproducing that infinite loop.
-    if !length.is_finite() || length < 0.5 || length.ceil() >= usize::MAX as f64 {
+    // Source fills a Uint8Array(length * 2) through Web Crypto, which caps each
+    // request at 65,536 bytes.
+    if !length.is_finite() || length < 0.5 || (length * 2.0).trunc() > 65_536.0 {
         return None;
     }
     let count = length.ceil() as usize;
@@ -259,4 +260,17 @@ pub(in crate::two_factor) fn generate_numeric_string(length: f64, decimal: bool)
         });
     }
     Some(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::generate_numeric_string;
+
+    #[test]
+    fn random_codes_respect_the_web_crypto_quota() {
+        for decimal in [false, true] {
+            assert_eq!(generate_numeric_string(32_768.0, decimal).unwrap().len(), 32_768);
+            assert!(generate_numeric_string(32_769.5, decimal).is_none());
+        }
+    }
 }

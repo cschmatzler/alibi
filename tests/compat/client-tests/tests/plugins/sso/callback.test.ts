@@ -97,7 +97,10 @@ for (const mode of ["default", "shared", "default-pkce", "discovery", "runtime-d
           },
         });
         expect(slashed.status).toBe(400);
-        expect(((await slashed.json()) as any).code).toBe("issuer_mismatch");
+        expect(await slashed.json()).toEqual({
+          code: "issuer_mismatch",
+          message: `OIDC issuer mismatch: Discovered issuer "${idp.base}" does not match configured issuer "${idp.base}/"`,
+        });
         expect(
           await (await control({ action: "row", providerId: "slashed-issuer-provider" })).json(),
         ).toBe(null);

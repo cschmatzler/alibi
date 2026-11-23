@@ -74,6 +74,7 @@ async fn identity_callback_errors_keep_api_wires_and_hide_ordinary_causes_before
                     identity: Some(Arc::new(Identity { name, coded })),
                     ..Default::default()
                 }))
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await
                 .unwrap();

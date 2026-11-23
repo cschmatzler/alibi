@@ -10,6 +10,7 @@ async fn issued_cookie_names(base_url: &str, cookie_name: &str) -> Vec<String> {
     config.session.cookie_name = cookie_name.into();
     let auth = AuthBuilder::without_database(config)
         .plugin(EmailPasswordPlugin::new())
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await
         .unwrap();

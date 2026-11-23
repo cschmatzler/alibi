@@ -287,6 +287,18 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // keyring profiles.
     {
         use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        for trigger in [
+            "reject_scim_usage",
+            "reject_scim_rotation_event",
+            "reject_scim_revocation_event",
+            "reject_scim_binding_completion",
+            "reject_scim_decommission_event",
+            "reject_scim_late_event",
+        ] {
+            database
+                .execute_unprepared(&format!("DROP TRIGGER IF EXISTS {trigger}"))
+                .await?;
+        }
         for table in [
             "fixtureJwtKeyring",
             "application_delete_receipts",
@@ -662,7 +674,7 @@ fn mock_oauth_plugin_at(
                 authorization: None,
                 allowed_request_params: Vec::new(),
                 authorization_params: Vec::new(),
-                account_subject: None,
+                account_subject: Some(|_| Ok("mock-account-id".into())),
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
                         additional_fields: Default::default(),
@@ -672,7 +684,7 @@ fn mock_oauth_plugin_at(
                         image: None,
                         email_verified: true,
                     }
-                    .public_profile(true))
+                    .public_profile(false))
                 }),
                 get_user_info: None,
                 refresh_access_token: None,
@@ -1289,10 +1301,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         two_factor_otp_fixture::router(&config, reset_database.clone()).await?;
     let delivery_router =
         two_factor_delivery_fixture::router(&config, reset_database.clone()).await?;
-    let ott_router = one_time_token_fixture::router(&config, reset_database.clone()).await?;
+    let (ott_router, ott_reset) =
+        one_time_token_fixture::router(&config, reset_database.clone()).await?;
     let open_api_router = open_api_fixture::router(&config, reset_database.clone()).await?;
     let sso_date_router = fixtures::sso_date_fixture::router(&config).await?;
-    let scim_router = fixtures::scim_fixture::router(&config, reset_database.clone()).await?;
+    let (scim_router, scim_reset) =
+        fixtures::scim_fixture::router(&config, reset_database.clone()).await?;
     let sso_router = fixtures::sso_fixture::router(&config, reset_database.clone()).await?;
     let oauth_provider_router =
         fixtures::oauth_provider_fixture::router(&config, reset_database.clone()).await?;
@@ -1949,6 +1963,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let ott_reset = ott_reset.clone();
+                let scim_reset = scim_reset.clone();
                 let api_key_storage_reset = api_key_storage_reset.clone();
                 let verification_storage_reset = verification_storage_reset.clone();
                 let user_validation_app = user_validation_app.clone();
@@ -2004,6 +2020,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let invitation_lifecycle_reset = invitation_lifecycle_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    ott_reset.reset();
+                    scim_reset().await;
                     if let Err(error)=fixtures::application_device_grant_fixture::reset(&database).await {return (axum::http::StatusCode::INTERNAL_SERVER_ERROR,Json(serde_json::json!({"message":error.to_string()})));}
                     api_key_storage_reset.reset().await;
                     railway_reset.reset().await;

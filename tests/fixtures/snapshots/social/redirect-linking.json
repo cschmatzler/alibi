@@ -92,18 +92,8 @@
   },
   {
     "profile failure": {
-      "status": 302,
-      "headers": {
-        "content-type": [
-          "application/json"
-        ],
-        "location": [
-          "http://localhost:43219/link-error?error=unable_to_get_user_info"
-        ],
-        "set-cookie": [
-          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
-        ]
-      },
+      "status": 500,
+      "headers": {},
       "body": ""
     }
   },

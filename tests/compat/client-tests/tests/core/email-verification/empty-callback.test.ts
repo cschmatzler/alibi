@@ -15,6 +15,7 @@ compatScenario(
       expect(response.status).toBe(200);
       return response.body as any;
     };
+    await control("reset");
     const email = ctx.uniqueEmail("empty-callback-owner");
     const owner = ctx.actor("owner", profile);
     const signup = await owner.client.signUp.email({
@@ -34,6 +35,7 @@ compatScenario(
     const delivered = (await control()).events
       .filter((event: any) => event.stage === "verification-mail")
       .at(-1);
+    expect(delivered.user.id).toBe(signup.data!.user.id);
     expect(delivered.token).toBeTypeOf("string");
     await control("reset");
     const before = await control();

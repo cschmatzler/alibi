@@ -1,5 +1,6 @@
 import { createSocket } from "node:dgram";
 import { setServers } from "node:dns/promises";
+import { syncBuiltinESMExports } from "node:module";
 
 import packet from "dns-packet";
 export async function ssoDnsFixture() {
@@ -29,10 +30,13 @@ export async function ssoDnsFixture() {
   const address = server.address();
   if (typeof address === "string") throw new Error("Expected UDP address");
   setServers([`127.0.0.1:${address.port}`]);
+  // setServers rebinds resolveTxt on the default resolver. SSO imports it through ESM.
+  syncBuiltinESMExports();
   server.unref();
   return {
-    setRecords(value: string[][]) {
+    setRecords(value: string[][], resetQueries: boolean) {
       records = value;
+      if (resetQueries) queries.length = 0;
     },
     queries() {
       return [...queries];

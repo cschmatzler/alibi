@@ -172,7 +172,7 @@ fn backup_config(name: &str, receipts: &BackupReceipts) -> TwoFactorConfig {
         }
         "two-factor-backup-nan-length" => (1.5, f64::NAN, TwoFactorBackupStorage::Plain),
         "two-factor-backup-half-length" => (1.0, 0.5, TwoFactorBackupStorage::Plain),
-        "two-factor-backup-large-length" => (1.0, 32769.5, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-large-length" => (1.0, 32767.5, TwoFactorBackupStorage::Plain),
         "two-factor-backup-large-count" => (1024.5, 12.0, TwoFactorBackupStorage::Plain),
         "two-factor-backup-zero" => (0.0, 0.0, TwoFactorBackupStorage::Plain),
         "two-factor-backup-negative" => (-1.0, -2.0, TwoFactorBackupStorage::Plain),

@@ -8,7 +8,8 @@ use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
 use alibi::middleware::{
-    CorsConfig, Middleware, RateLimitConfig, RateLimitDecision, RateLimitMiddleware,
+    CorsConfig, MemoryRateLimitStorage, Middleware, RateLimitConfig, RateLimitDecision,
+    RateLimitMiddleware,
 };
 use alibi::types::ParsedRequestBody;
 use alibi::utils::json::JsValue;
@@ -436,7 +437,11 @@ async fn cors_preflight_and_rate_limit_short_circuit_before_routing() {
     );
 
     let limited = AuthBuilder::without_database(config())
-        .rate_limit(RateLimitConfig::new().default_limit(Duration::from_secs(60), 1))
+        .rate_limit(
+            RateLimitConfig::new()
+                .default_limit(Duration::from_secs(60), 1)
+                .storage(Arc::new(MemoryRateLimitStorage::new(16))),
+        )
         .build()
         .await
         .unwrap();

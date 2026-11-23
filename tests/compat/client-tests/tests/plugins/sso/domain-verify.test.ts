@@ -44,7 +44,10 @@ compatScenario(
     expect(created.status).toBe(200);
     const token = ((await created.json()) as any).domainVerificationToken;
     const input = { action: "verify-domain", body: { providerId: "verify-provider" }, headers };
-    expect((await control({ action: "dns-records", records: [["wrong-proof"]] })).status).toBe(200);
+    expect(
+      (await control({ action: "dns-records", records: [["wrong-proof"]], resetQueries: true }))
+        .status,
+    ).toBe(200);
     const denied = await control(input);
     expect(denied.status).toBe(502);
     const error = await denied.json();

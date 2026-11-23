@@ -345,7 +345,7 @@ async fn build_router(
                 generic.authorization_url = Some(provider.auth_url.clone());
                 generic.token_url = Some(provider.token_url.clone());
                 generic.user_info_url = provider.user_info_url.clone();
-                generic.provider = provider;
+                generic.provider.scopes = provider.scopes;
                 provider = generic
                     .resolve()
                     .await
@@ -360,6 +360,9 @@ async fn build_router(
             }
             provider.disable_sign_up = mode == "signup-disabled";
             let policy = provider.authorization.as_mut().expect("factory policy");
+            if mode != "form-post" {
+                policy.issuer = Some(format!("{}{control}/provider", config.base_url));
+            }
             policy.disable_sign_up_option =
                 (mode != "signup-absent").then_some(mode == "signup-disabled");
             if ["custom", "bad-key"].contains(&mode) {

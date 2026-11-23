@@ -86,12 +86,12 @@
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null,
           "role": "support,user",
           "banned": false,
-          "banExpires": null,
           "banReason": null,
-          "displayUsername": null,
-          "username": null
+          "banExpires": null
         }
       }
     }
@@ -110,15 +110,15 @@
           "name": "Meta",
           "email": "meta@example.com",
           "emailVerified": false,
-          "image": null,
+          "image": "https://images.example/meta",
           "createdAt": "<date>",
           "updatedAt": "<date>",
+          "username": null,
+          "displayUsername": null,
           "role": "user",
           "banned": false,
-          "banExpires": null,
           "banReason": null,
-          "displayUsername": null,
-          "username": null
+          "banExpires": null
         }
       }
     }
@@ -251,12 +251,12 @@
         "image": null,
         "createdAt": "<date>",
         "updatedAt": "<date>",
-        "banExpires": null,
-        "username": null,
         "twoFactorEnabled": false,
         "role": "user",
         "banned": false,
         "banReason": null,
+        "banExpires": null,
+        "username": null,
         "displayUsername": null
       }
     }
@@ -277,12 +277,12 @@
         "image": null,
         "createdAt": "<date>",
         "updatedAt": "<date>",
-        "banExpires": null,
-        "username": null,
         "twoFactorEnabled": false,
         "role": "user",
         "banned": true,
         "banReason": "Manual",
+        "banExpires": null,
+        "username": null,
         "displayUsername": null
       }
     }
@@ -416,12 +416,12 @@
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "banExpires": null,
-          "username": null,
           "twoFactorEnabled": false,
           "role": "user",
           "banned": true,
           "banReason": "Policy violation",
+          "banExpires": null,
+          "username": null,
           "displayUsername": null
         }
       }
@@ -444,12 +444,12 @@
           "image": null,
           "createdAt": "<date>",
           "updatedAt": "<date>",
-          "banExpires": null,
-          "username": null,
           "twoFactorEnabled": false,
           "role": "user",
           "banned": false,
           "banReason": null,
+          "banExpires": null,
+          "username": null,
           "displayUsername": null
         }
       }
@@ -632,12 +632,12 @@
         "image": null,
         "createdAt": "<date>",
         "updatedAt": "<date>",
-        "banExpires": null,
-        "username": null,
         "twoFactorEnabled": false,
         "role": "user",
         "banned": false,
         "banReason": null,
+        "banExpires": null,
+        "username": null,
         "displayUsername": null
       }
     }

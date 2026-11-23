@@ -110,6 +110,7 @@ async fn organization_invitation_policy<B: Backend>(db: Db) -> TestResult {
             },
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let mut trace = Trace::default();
@@ -329,6 +330,7 @@ async fn organization_anonymous_and_failures<B: Backend>(db: Db) -> TestResult {
             },
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let mut trace = Trace::default();
@@ -579,6 +581,7 @@ async fn organization_invitation_stamps<B: Backend>(db: Db) -> TestResult {
             send_invitation_email: Some(sender.clone()),
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let mut owner = signup(&auth, "stamp-owner@example.com").await;
@@ -656,6 +659,7 @@ async fn processed_invitation_cancellation_keeps_members_and_original_callback_s
                 require_email_verification_on_invitation: Some(false),
                 ..Default::default()
             }))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "owner@example.test").await;
@@ -786,6 +790,7 @@ async fn organization_invitation_raw_quota<B: Backend>(db: Db) -> TestResult {
                 .plugin(super::auth_probe::fast_password())
                 .plugin(SessionManagementPlugin::new())
                 .plugin(OrganizationPlugin::with_config(organization))
+                .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
                 .build()
                 .await?;
             let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -903,6 +908,7 @@ async fn organization_invitation_raw_expiry<B: Backend>(db: Db) -> TestResult {
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -1067,6 +1073,7 @@ async fn organization_invitation_delivery_await_policy<B: Backend>(db: Db) -> Te
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -1179,6 +1186,7 @@ async fn organization_invitation_page_before_expiry<B: Backend>(db: Db) -> TestR
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::with_config(organization))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -1272,6 +1280,7 @@ async fn organization_invitation_first_reinvite_cancellation<B: Backend>(db: Db)
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::with_config(organization))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -1494,6 +1503,7 @@ async fn organization_invitation_limit_callback_error<B: Backend>(db: Db) -> Tes
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::with_config(organization))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&auth, "invitation-life-owner@example.test").await;
@@ -1628,6 +1638,7 @@ async fn organization_invitation_existing_member_acceptance<B: Backend>(db: Db) 
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "staged-invitation-owner@example.test").await;
@@ -1836,6 +1847,7 @@ async fn organization_invitation_concurrent_admission<B: Backend>(db: Db) -> Tes
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "staged-invitation-owner@example.test").await;
@@ -2060,6 +2072,7 @@ async fn organization_invitation_replacement_team<B: Backend>(db: Db) -> TestRes
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::with_config(organization))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&auth, "staged-invitation-owner@example.test").await;
@@ -2237,6 +2250,7 @@ async fn organization_invitation_reset_write_failure<B: Backend>(db: Db) -> Test
         .plugin(super::auth_probe::fast_password())
         .plugin(SessionManagementPlugin::new())
         .plugin(OrganizationPlugin::with_config(organization))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     let owner = signup(&auth, "staged-invitation-owner@example.test").await;
@@ -2294,6 +2308,7 @@ async fn organization_invitation_reset_write_failure<B: Backend>(db: Db) -> Test
             },
             ..Default::default()
         }))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .build()
         .await?;
     _ = db.execute("CREATE TRIGGER fail_invitation_reset BEFORE UPDATE ON \"invitation\" WHEN OLD.\"status\"='accepted' AND NEW.\"status\"='pending' BEGIN SELECT RAISE(ABORT,'reset denied'); END",&[]).await?;
@@ -2419,6 +2434,7 @@ async fn organization_invitation_after_error_owned_cookies<B: Backend>(db: Db) -
             .plugin(super::auth_probe::fast_password())
             .plugin(SessionManagementPlugin::new())
             .plugin(OrganizationPlugin::with_config(organization))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .build()
             .await?;
         let owner = signup(&auth, "staged-invitation-owner@example.test").await;

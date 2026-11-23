@@ -22,13 +22,34 @@ async fn all_tables_match_pinned_typescript_defaults<B: Backend>(db: Db) -> Test
             include_str!("../../fixtures/schema/sqlite-1.7.27.json"),
         )
     };
-    let actual: serde_json::Value = serde_json::from_str(
+    let mut actual: Vec<serde_json::Value> = serde_json::from_str(
         &db.text(query, &[])
             .await?
             .ok_or("missing schema snapshot")?,
     )?;
-    let expected: serde_json::Value = serde_json::from_str(oracle)?;
-    assert_eq!(actual.as_array().map(Vec::len), Some(25));
+    let expected: Vec<serde_json::Value> = serde_json::from_str(oracle)?;
+    // schema-parity.mjs installs the default plugin schemas. SCIM's managed
+    // tables are installed by separate migrations and have their own tests.
+    let scim_tables: Vec<_> = actual
+        .iter()
+        .filter_map(|table| table["table"].as_str().filter(|name| name.starts_with("scim")))
+        .collect();
+    assert_eq!(
+        scim_tables,
+        [
+            "scimConnectionBinding",
+            "scimGroup",
+            "scimGroupMember",
+            "scimIdentityTombstone",
+            "scimManagedConnection",
+            "scimManagedConnectionEvent",
+            "scimManagedCredential",
+            "scimProjectionGrant",
+            "scimSubject",
+            "scimUser",
+        ]
+    );
+    actual.retain(|table| !table["table"].as_str().is_some_and(|name| name.starts_with("scim")));
     assert_eq!(
         actual, expected,
         "table/column names, types, nullability, defaults, primary keys, indexes and foreign keys must match TypeScript"

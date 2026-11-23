@@ -609,7 +609,7 @@ compatScenario("SCIM User input reports field errors before authentication", asy
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({
-      detail: "[body.userName] Invalid input: expected string, received null",
+      detail: "[body.userName] Invalid input: expected string, received undefined",
       scimType: "invalidValue",
     });
   }

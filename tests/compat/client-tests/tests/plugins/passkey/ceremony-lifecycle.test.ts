@@ -290,7 +290,7 @@ compatScenario(
       method: "POST",
       body: { response: wrongChallenge(response), name: "Rejected" },
     });
-    expect(rejected.error?.status).toBe(500);
+    expect(rejected.error?.status).toBe(400);
 
     const afterRejection = await state(ctx, user.id);
     expect(afterRejection).toEqual({

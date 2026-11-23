@@ -133,8 +133,11 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     /// Physical JSON cells for the unsupported-JSON adapter output stage.
     fn adapter_js_fields(
         &self,
-        _exact: &std::collections::BTreeSet<String>,
+        exact: &std::collections::BTreeSet<String>,
     ) -> AuthResult<crate::utils::json::JsObject> {
+        if exact.is_empty() {
+            return self.additional_js_fields();
+        }
         Err(crate::AuthError::not_implemented(
             "The model does not expose physical JSON fields",
         ))

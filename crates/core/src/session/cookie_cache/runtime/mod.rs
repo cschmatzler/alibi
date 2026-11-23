@@ -101,9 +101,14 @@ pub fn retain_publication(source: &impl SessionRequest, target: &impl SessionReq
 
 /// Retire cookie publication when a real login becomes a pending factor challenge.
 pub fn discard_issuance(request: &impl SessionRequest) {
-    request.extensions().insert(PublishedSession(None));
-    if let Some(pending) = request.extensions().get::<PendingIssuance>() {
-        *pending.0.lock_unpoisoned() = PendingData::default();
+    let endpoint = crate::endpoint::current_endpoint_call_context();
+    for extensions in std::iter::once(request.extensions())
+        .chain(endpoint.as_ref().map(crate::endpoint::EndpointCall::extensions))
+    {
+        extensions.insert(PublishedSession(None));
+        if let Some(pending) = extensions.get::<PendingIssuance>() {
+            *pending.0.lock_unpoisoned() = PendingData::default();
+        }
     }
 }
 

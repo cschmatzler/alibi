@@ -50,10 +50,44 @@ pub(crate) fn session_secondary_codec(
             .clone()
     };
     let keys: Vec<_> = names.iter().map(|ident| key(ident)).collect();
+    let legacy_bindings: Vec<_> = names
+        .iter()
+        .zip(&keys)
+        .filter_map(|(name, wire)| {
+            let name = name.to_string();
+            if name == *wire {
+                return None;
+            }
+            Some(quote! {
+                if let Some(value) = fields.shift_remove(#name) {
+                    _ = fields.entry(#wire.into()).or_insert(value);
+                }
+            })
+        })
+        .collect();
     let decode = fields.named.iter().map(|field| {
         let name = field.ident.as_ref().expect("named field");
         let key = key(name);
-        if crate::is_option(&field.ty) {
+        if ["created_at", "updated_at", "expires_at"].iter().any(|clock| name == *clock) {
+            let ty = &field.ty;
+            quote! {
+                #name: {
+                    let value = fields.shift_remove(#key).ok_or_else(||
+                        #core_root::AuthError::internal("Incomplete secondary session snapshot"))?;
+                    let date = match &value {
+                        #core_root::utils::json::JsValue::Date(date) => Some(*date),
+                        value => value.as_str()
+                            .and_then(|text| ::chrono::DateTime::parse_from_rfc3339(text).ok())
+                            .map(|date| date.with_timezone(&::chrono::Utc)),
+                    };
+                    if let Some(date) = date {
+                        <#ty as #core_root::entity::AuthTimestamp>::from_utc(date)
+                    } else {
+                        #core_root::utils::json::from_value(value)?
+                    }
+                },
+            }
+        } else if crate::is_option(&field.ty) {
             quote! { #name: fields.shift_remove(#key).map(#core_root::utils::json::from_value).transpose()?.flatten(), }
         } else {
             quote! { #name: #core_root::utils::json::from_value(fields.shift_remove(#key).ok_or_else(||
@@ -87,6 +121,7 @@ pub(crate) fn session_secondary_codec(
             let #core_root::utils::json::JsValue::Object(mut fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
+            #(#legacy_bindings)*
             Ok(Self { #(#decode)* })
         }
         fn from_secondary_snapshot_with_fields(
@@ -101,9 +136,10 @@ pub(crate) fn session_secondary_codec(
             Self::from_secondary_snapshot(#core_root::utils::json::JsValue::Object(fields))
         }
         fn output_from_secondary_snapshot(snapshot: #core_root::utils::json::JsValue) -> #core_root::AuthResult<#core_root::AdapterOutput> {
-            let #core_root::utils::json::JsValue::Object(fields) = snapshot else {
+            let #core_root::utils::json::JsValue::Object(mut fields) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary session snapshot"));
             };
+            #(#legacy_bindings)*
             let mut output = #core_root::AdapterOutput::default();
             for (key, value) in &fields {
                 output.insert_js(key.clone(), value.clone());
@@ -278,6 +314,18 @@ pub fn user_secondary_codec(
         .filter_map(|field| field.ident.as_ref())
         .collect();
     let keys: Vec<_> = names.iter().map(std::string::ToString::to_string).collect();
+    let legacy_bindings = entity_fields.iter().filter_map(|field| {
+        let key = field.ident.to_string();
+        let wire = &field.camel;
+        if key == *wire {
+            return None;
+        }
+        Some(quote! {
+            if let Some(value) = source.shift_remove(#key) {
+                _ = source.entry(#wire.into()).or_insert(value);
+            }
+        })
+    });
     let bindings = entity_fields.iter().map(|field| {
         let key = field.ident.to_string();
         let wire = &field.camel;
@@ -333,9 +381,10 @@ pub fn user_secondary_codec(
             snapshot: #core_root::utils::json::JsValue,
             declared: &#core_root::field_policy::FieldConfigs,
         ) -> #core_root::AuthResult<#core_root::AdapterRecord<Self>> {
-            let #core_root::utils::json::JsValue::Object(source) = snapshot else {
+            let #core_root::utils::json::JsValue::Object(mut source) = snapshot else {
                 return Err(#core_root::AuthError::internal("Invalid secondary user snapshot"));
             };
+            #(#legacy_bindings)*
             let mut fields = #core_root::utils::json::JsObject::new();
             #(#bindings)*
             let model = Self::from_secondary_snapshot(#core_root::utils::json::JsValue::Object(fields))?;

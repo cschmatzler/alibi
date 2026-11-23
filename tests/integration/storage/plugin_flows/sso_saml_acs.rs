@@ -205,10 +205,10 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     } else {
         "default"
     };
-    let deprecated = policy_mode.contains("deprecated-data-");
-    let deprecated_rejected = policy_mode.ends_with("deprecated-data-reject");
-    let policy_denied = matches!(case,AcsCase::EncryptionPolicy(mode) if !mode.contains("allowed") && !mode.contains("outer") && !deprecated)
-        || deprecated_rejected;
+    let triple_des = policy_mode.starts_with("encrypted-deprecated-data-");
+    let policy_denied = policy_mode.starts_with("encrypted-policy-")
+        && !policy_mode.contains("allowed")
+        && !policy_mode.contains("outer");
     let policy_key = policy_mode.contains("policy-key");
     let outer_policy = policy_mode.contains("policy-outer");
     let provider_id = if signature_denied {
@@ -305,7 +305,17 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
     .await?
     .into_response()?;
     assert_eq!(created.status, 200);
-    for (http, wrong_key) in [(false, false), (true, false), (false, true), (true, true)] {
+    let mut requests = vec![
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (true, true, false),
+    ];
+    if policy_mode == "encrypted-deprecated-data-override" {
+        // Also exercise the override with a signature over the ciphertext.
+        requests.extend([(false, false, true), (true, false, true)]);
+    }
+    for (http, wrong_key, outer_signed) in requests {
         let email = if wrong_key {
             "wrong-key-user@example.test"
         } else {
@@ -349,7 +359,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
                 &grant,
                 matches!(case, AcsCase::OuterOnly),
                 match case {
-                    AcsCase::EncryptionPolicy(mode) if mode.contains("deprecated-data-") => {
+                    _ if triple_des => {
                         "http://www.w3.org/2001/04/xmlenc#tripledes-cbc"
                     }
                     AcsCase::Aes128Gcm => "http://www.w3.org/2009/xmlenc11#aes128-gcm",
@@ -398,19 +408,21 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         } else {
             grant
         };
-        let grant =
-            if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly) || outer_policy {
-                use base64::Engine as _;
-                let xml = String::from_utf8(
-                    base64::engine::general_purpose::STANDARD
-                        .decode(grant["SAMLResponse"].as_str().unwrap())?,
-                )?;
-                let mut grant = grant;
-                grant["SAMLResponse"] = json!(idp::signed_logout(&xml, wrong_key)?);
-                grant
-            } else {
-                grant
-            };
+        let grant = if matches!(case, AcsCase::EncryptedResponse | AcsCase::OuterOnly)
+            || outer_policy
+            || outer_signed
+        {
+            use base64::Engine as _;
+            let xml = String::from_utf8(
+                base64::engine::general_purpose::STANDARD
+                    .decode(grant["SAMLResponse"].as_str().unwrap())?,
+            )?;
+            let mut grant = grant;
+            grant["SAMLResponse"] = json!(idp::signed_logout(&xml, wrong_key)?);
+            grant
+        } else {
+            grant
+        };
         let endpoint = ServerEndpoint::<Value>::new("sso", "acsEndpoint")
             .with_params(&json!({"providerId":provider_id}))?
             .with_body(
@@ -468,6 +480,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
         if wrong_key
             || key_failure
             || matches!(case, AcsCase::Tampered)
+            || triple_des
             || policy_denied
             || signature_denied
         {
@@ -476,13 +489,7 @@ async fn acs_flow<B: Backend>(db: Db, case: AcsCase) -> TestResult {
                 .query_pairs()
                 .into_owned()
                 .collect::<std::collections::HashMap<_, _>>();
-            if deprecated_rejected && !wrong_key {
-                assert_eq!(query["error"], "saml_deprecated_algorithm");
-                assert_eq!(
-                    query["error_description"],
-                    "SAML response uses deprecated data encryption algorithm: http://www.w3.org/2001/04/xmlenc#tripledes-cbc. Please configure your IdP to use AES-GCM."
-                );
-            } else if policy_denied && !wrong_key {
+            if policy_denied && !wrong_key {
                 assert_eq!(query["error"], "saml_algorithm_not_allowed");
                 assert_eq!(
                     query["error_description"],

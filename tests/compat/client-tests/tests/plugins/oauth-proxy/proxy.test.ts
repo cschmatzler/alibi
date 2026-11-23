@@ -98,6 +98,7 @@ async function issue(
   input: Record<string, unknown> = {},
   sdk = false,
   sdkCookie = "",
+  linkSession?: string,
 ) {
   const fixturePath = cookie ? authProfilePath("oauth-proxy-cookie") : path;
   const body = {
@@ -186,11 +187,28 @@ async function issue(
   expect(original.serverContext).toBeUndefined();
   expect(original.application).toEqual({ kept: true });
 
+  let linkObservation;
+  if (link) {
+    expect(linkSession).toBeTruthy();
+    const encrypted = original.link.encryptedSessionToken;
+    expect(encrypted).toMatch(/^[a-f0-9]+$/);
+    const token = await symmetricDecrypt({
+      key: oauthPurposeSecret(
+        "compat-test-only-key-not-real-minimum-32chars",
+        "oauth-link-session-token",
+      ),
+      data: encrypted,
+    });
+    expect(token).toBe(linkSession);
+    linkObservation = { ...original.link, encryptedSessionToken: { token } };
+  }
+
   const expiresAt = new Date(original.expiresAt).toISOString();
   expect(new Date(expiresAt).getTime()).toBe(original.expiresAt);
 
   const retained = {
     ...original,
+    ...(linkObservation ? { link: linkObservation } : {}),
     oauthState: { state: original.oauthState },
     codeVerifier: { token: original.codeVerifier },
     expiresAt,
@@ -198,6 +216,7 @@ async function issue(
   expect(
     JSON.stringify({
       ...retained,
+      ...(linkObservation ? { link: original.link } : {}),
       oauthState: retained.oauthState.state,
       codeVerifier: retained.codeVerifier.token,
       expiresAt: new Date(retained.expiresAt).getTime(),
@@ -218,6 +237,17 @@ async function issue(
     issuedState,
     issuedCookie,
   };
+}
+
+async function readForwardedProfile(bridge: URL, state: string) {
+  const token = bridge.searchParams.get("profile")!;
+  const payload = JSON.parse(
+    await symmetricDecrypt({ key: oauthPurposeSecret(secret, "oauth-proxy-profile"), data: token }),
+  );
+  expect(payload.state).toBe(state);
+  expect(payload.account.providerId).toBe("gitlab");
+  expect(payload.userInfo.email).toBe("proxy-owner@fixture.test");
+  return { token, payload };
 }
 
 async function forward(
@@ -253,13 +283,7 @@ async function forward(
   expect(bridge.origin).toBe(ctx.baseURL);
   expect(bridge.pathname).toBe(`${fixturePath}/callback/gitlab/oauth-proxy`);
 
-  const token = bridge.searchParams.get("profile")!;
-  const payload = JSON.parse(
-    await symmetricDecrypt({ key: oauthPurposeSecret(secret, "oauth-proxy-profile"), data: token }),
-  );
-  expect(payload.state).toBe(issued.state);
-  expect(payload.account.providerId).toBe("gitlab");
-  expect(payload.userInfo.email).toBe("proxy-owner@fixture.test");
+  const atom = await readForwardedProfile(bridge, issued.state);
 
   const stored = await state(ctx, cookie);
   const receipt = stored.receipts.filter((r) => r.stage === "token").at(-1)!;
@@ -269,7 +293,7 @@ async function forward(
     issued.authorization.searchParams.get("code_challenge")!,
   );
 
-  return { approved, forwarded, bridge, atom: { token, payload } };
+  return { approved, forwarded, bridge, atom };
 }
 
 const comparison = { oauthProxyProfileSecret: oauthPurposeSecret(secret, "oauth-proxy-profile") };
@@ -589,7 +613,7 @@ for (const sdk of [false, true]) {
       expect(other.error).toBeNull();
 
       const before = await state(ctx);
-      const issued = await issue(ctx, owner, true, false, {}, sdk, sdkCookie);
+      const issued = await issue(ctx, owner, true, false, {}, sdk, sdkCookie, signed.data!.token!);
       const saved = await state(ctx);
       const forwarded = await forward(ctx, owner, issued, false, sdk);
       const completed = await response(
@@ -638,7 +662,7 @@ for (const sdk of [false, true]) {
           expect(configured.status).toBe(200);
         }
 
-        const attempt = await issue(ctx, foreign, true);
+        const attempt = await issue(ctx, foreign, true, false, {}, false, "", other.data!.token!);
         const pending = await state(ctx);
         const approval = await response(
           await foreign.fetch(attempt.authorization, { redirect: "manual" }),
@@ -1069,8 +1093,9 @@ compatScenario(
     expect(signed.error).toBeNull();
     expect(other.error).toBeNull();
     const before = await state(ctx, true);
-    const issued = await issue(ctx, owner, true, true);
-    expect(issued.issuedCookie!.payload.link).toEqual({
+    const issued = await issue(ctx, owner, true, true, {}, false, "", signed.data!.token!);
+    expect(issued.issuedState.stateCookie.payload.link).toEqual({
+      encryptedSessionToken: { token: signed.data!.token! },
       email: signed.data!.user.email,
       userId: signed.data!.user.id,
     });
@@ -1820,12 +1845,14 @@ for (const issuer of ["mismatched", "matching"] as const) {
       expect(forwarded.status).toBe(302);
       const location = new URL(forwarded.location!);
       const stored = await state(ctx);
+      let oauthProxyProfile;
       if (issuer === "mismatched") {
         expect(location.origin + location.pathname).toBe(`${ctx.baseURL}/proxy-error`);
         expect(location.searchParams.get("error")).toBe("issuer_mismatch");
         expect(stored.receipts.map((receipt) => receipt.stage)).toEqual(["authorize"]);
       } else {
         expect(location.pathname).toBe(`${path}/callback/gitlab/oauth-proxy`);
+        oauthProxyProfile = await readForwardedProfile(location, issued.state);
         expect(stored.receipts.map((receipt) => receipt.stage)).toEqual([
           "authorize",
           "token",
@@ -1834,6 +1861,7 @@ for (const issuer of ["mismatched", "matching"] as const) {
       }
       return {
         issuedState: issued.issuedState,
+        oauthProxyProfile,
         forwarded: { status: forwarded.status, error: location.searchParams.get("error") },
         stored: observations(stored),
       };

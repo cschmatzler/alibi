@@ -331,18 +331,23 @@ async fn update_user_core<S: alibi_core::AuthSchema>(
             // adapter no longer has this user. This does not recreate a row.
             let mut user = context.user_view(&current_user)?;
             if let Some(name) = update_user.name {
+                _ = user.extension_fields.shift_remove("name");
                 user.name = Some(name);
             }
             if clear_image {
                 user.image = None;
+                _ = user.extension_fields.insert("image".into(), JsValue::Null);
             }
             if let Some(image) = update_user.image {
+                _ = user.extension_fields.shift_remove("image");
                 user.image = Some(image);
             }
             if let Some(username) = update_user.username {
+                _ = user.extension_fields.shift_remove("username");
                 user.username = Some(username);
             }
             if let Some(display_username) = update_user.display_username {
+                _ = user.extension_fields.shift_remove("displayUsername");
                 user.display_username = Some(display_username);
             }
             if let Some(metadata) = update_user.metadata {

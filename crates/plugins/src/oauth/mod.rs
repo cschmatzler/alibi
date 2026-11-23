@@ -112,18 +112,30 @@ impl OAuthPlugin {
 /// The provider an endpoint call names, read as the generic plugin's retry
 /// matcher does: `body.provider`, `body.providerId`, `query.provider`, then the
 /// path's `id`.
-fn requested_provider(call: &alibi_core::endpoint::EndpointCall) -> Option<&str> {
+fn requested_provider<'a>(
+    body: Option<&'a alibi_core::utils::json::JsValue>,
+    query_provider: Option<&'a alibi_core::utils::json::JsValue>,
+    path_id: Option<&'a str>,
+) -> Option<&'a str> {
     use alibi_core::utils::json::JsValue;
-    fn field<'a>(input: Option<&'a JsValue>, key: &str) -> Option<&'a JsValue> {
-        input
-            .and_then(|input| input.get(key))
-            .filter(|value| !matches!(value, JsValue::Null))
-    }
-    field(call.body(), "provider")
-        .or_else(|| field(call.body(), "providerId"))
-        .or_else(|| field(call.query(), "provider"))
-        .or_else(|| field(call.params(), "id"))
-        .and_then(JsValue::as_str)
+    body.and_then(|body| body.get("provider"))
+        .filter(|value| !matches!(value, JsValue::Null))
+        .or_else(|| {
+            body.and_then(|body| body.get("providerId"))
+                .filter(|value| !matches!(value, JsValue::Null))
+        })
+        .or(query_provider.filter(|value| !matches!(value, JsValue::Null)))
+        .map_or(path_id, JsValue::as_str)
+}
+
+fn logical_requested_provider(call: &alibi_core::endpoint::EndpointCall) -> Option<&str> {
+    requested_provider(
+        call.body(),
+        call.query().and_then(|query| query.get("provider")),
+        call.params()
+            .and_then(|params| params.get("id"))
+            .and_then(alibi_core::utils::json::JsValue::as_str),
+    )
 }
 
 impl Default for OAuthPlugin {
@@ -195,6 +207,31 @@ impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         } else {
             vec!["application/json"]
         }
+    }
+
+    async fn before_request(
+        &self,
+        req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<alibi_core::BeforeRequestAction>> {
+        if self.config.deferred.is_empty() {
+            return Ok(None);
+        }
+        let body = req.extensions().get::<alibi_core::types::ParsedRequestBody>();
+        let body = body.as_deref().and_then(|body| match body {
+            alibi_core::types::ParsedRequestBody::Value(value) => Some(value),
+            alibi_core::types::ParsedRequestBody::Opaque(_) => None,
+        });
+        let query = req.query_as_js_value();
+        let endpoint = req.extensions().get::<alibi_core::plugin::ResolvedEndpoint>();
+        let path_id = endpoint
+            .as_deref()
+            .and_then(|endpoint| endpoint.params.get("id"))
+            .map(String::as_str);
+        if let Some(name) = requested_provider(body, query.get("provider"), path_id) {
+            self.config.retry_discovery(name).await;
+        }
+        Ok(None)
     }
 
     async fn on_request(
@@ -332,14 +369,14 @@ impl<S: alibi_core::AuthSchema> alibi_core::endpoint::EndpointHook<S> for OAuthP
         call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<bool> {
-        Ok(requested_provider(call).is_some_and(|name| self.config.awaits_discovery(name)))
+        Ok(logical_requested_provider(call).is_some_and(|name| self.config.awaits_discovery(name)))
     }
     async fn before(
         &self,
         call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
-        if let Some(name) = requested_provider(call) {
+        if let Some(name) = logical_requested_provider(call) {
             self.config.retry_discovery(name).await;
         }
         Ok(None)

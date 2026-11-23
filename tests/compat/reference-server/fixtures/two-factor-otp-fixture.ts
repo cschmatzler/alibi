@@ -17,7 +17,7 @@ export function createTwoFactorOtpFixture(
   const numeric: Record<string, { digits: number; period?: number; allowedAttempts?: number }> = {
     "two-factor-otp-nan": { digits: NaN, period: NaN, allowedAttempts: NaN },
     "two-factor-otp-half": { digits: 0.5, period: 0.5, allowedAttempts: Infinity },
-    "two-factor-otp-large": { digits: 32769.5, period: 1e8, allowedAttempts: Infinity },
+    "two-factor-otp-large": { digits: 32767.5, period: 1e8, allowedAttempts: Infinity },
     "two-factor-otp-infinite-digits": { digits: Infinity },
     "two-factor-otp-infinite-expiry": { digits: 6, period: Infinity },
     "two-factor-otp-negative-expiry": { digits: 6, period: -1 },

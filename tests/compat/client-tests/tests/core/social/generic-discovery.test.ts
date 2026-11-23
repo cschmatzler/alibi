@@ -53,24 +53,27 @@ async function evidence(
   }
   return result;
 }
+async function metadataReceipts(ctx: ScenarioContext, mode: string) {
+  return (
+    await ctx.rawRequest({
+      path: `/__test/generic-discovery/receipts?metadata=${encodeURIComponent(mode)}`,
+    })
+  ).body as Receipt[];
+}
 async function metadataFetches(ctx: ScenarioContext, mode: string) {
-  return (await receipts(ctx)).filter(
-    (r) => r.path === "/metadata" && (r as { mode?: string }).mode === mode,
-  ).length;
+  return (await metadataReceipts(ctx, mode)).length;
 }
 function observed(rows: Receipt[]) {
-  return rows
-    .filter((r) => r.path !== "/metadata")
-    .map(({ raw: _, body, ...row }) => ({
-      ...row,
-      ...(body
-        ? {
-            body: Object.fromEntries(
-              body.map(([k, v]) => [k, k === "code_verifier" ? { token: v, length: v.length } : v]),
-            ),
-          }
-        : {}),
-    }));
+  return rows.map(({ raw: _, body, ...row }) => ({
+    ...row,
+    ...(body
+      ? {
+          body: Object.fromEntries(
+            body.map(([k, v]) => [k, k === "code_verifier" ? { token: v, length: v.length } : v]),
+          ),
+        }
+      : {}),
+  }));
 }
 for (const mode of ["success", "override", "fallback", "invalid-issuer", "mapped"] as const) {
   const name = `generic discovery ${mode} resolves real grants and retains account ownership`;
@@ -137,9 +140,7 @@ for (const mode of ["success", "override", "fallback", "invalid-issuer", "mapped
         refreshToken: "discovery-refresh",
         scope: "profile",
       });
-      const metadata = (await receipts(ctx)).filter(
-        (r) => r.path === "/metadata" && (r as any).mode === mode,
-      );
+      const metadata = await metadataReceipts(ctx, mode);
       expect(metadata).toHaveLength(1);
       expect(metadata[0]).toMatchObject({ header: "configured-header" });
       const grant = (await receipts(ctx)).find((r) => r.path.startsWith("/token"))!;
@@ -224,7 +225,7 @@ for (const mode of ["failed", "invalid-jwks", "required"] as const) {
       });
       expect(start.error?.code).toBe("PROVIDER_NOT_FOUND");
       expect(await state(ctx)).toEqual(before);
-      expect((await receipts(ctx)).filter((r) => r.path !== "/metadata")).toHaveLength(0);
+      expect(await receipts(ctx)).toHaveLength(0);
       // A provider skipped at startup retries discovery when a request names it.
       expect(await metadataFetches(ctx, mode)).toBe(discoveries + 1);
       return evidence(ctx, name, { before, after: await state(ctx), start: ctx.snapshot(start) });
@@ -249,7 +250,7 @@ compatScenario(
     );
     expect(callback.status).toBe(302);
     expect(new URL(callback.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
-      "oauth_provider_not_found",
+      "state_mismatch",
     );
     expect(await metadataFetches(ctx, "flaky")).toBe(discoveries + 2);
     await control(ctx, { discoveryUp: true });

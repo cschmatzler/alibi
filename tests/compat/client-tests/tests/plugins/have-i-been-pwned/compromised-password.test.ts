@@ -289,7 +289,7 @@ compatScenario(
           message: status === 503 ? "Failed to check password. Status: 503" : RETRY_MESSAGE,
         });
       } else {
-        expect(result.status).toBe(200);
+        expect(result.status, kind).toBe(200);
         expect(result.body).toEqual({ compromised });
       }
 
@@ -633,7 +633,7 @@ for (const mode of ["compromised", "malformed", "provider-error"] as const) {
 }
 
 compatScenario(
-  "compromised admin create preserves actual pre-hash user creation and set-password keeps configured original hashing",
+  "compromised admin create leaves no user and set-password keeps configured original hashing",
   async (ctx) => {
     const other = await foreign(ctx);
     await range(ctx);
@@ -683,16 +683,22 @@ compatScenario(
     expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");
 
     const after = await state(ctx);
-    expect(after.users).toHaveLength(before.users.length + 1);
-
-    const created = after.users.find((row) => row.email === targetEmail)!;
-    expect(created).toMatchObject({ name: "Created Before Check", role: "user" });
-    expect(after.accounts).toEqual(before.accounts);
-    expect(after.sessions).toEqual(before.sessions);
-    expect(after.verifications).toEqual(before.verifications);
-    expect(stages(after)).toEqual(["user-create", "range"]);
-
+    expect(rows(after)).toEqual(rows(before));
+    expect(stages(after)).toEqual(["range"]);
     receipt(after, password);
+
+    const provisioned = await owner.client.admin.createUser({
+      email: targetEmail,
+      name: "Provisioned without a password",
+    });
+    expect(provisioned.error).toBeNull();
+    const withTarget = await state(ctx);
+    expect(withTarget.users).toHaveLength(before.users.length + 1);
+    const created = withTarget.users.find((row) => row.email === targetEmail)!;
+    expect(created).toMatchObject({ name: "Provisioned without a password", role: "user" });
+    expect(withTarget.accounts).toEqual(before.accounts);
+    expect(withTarget.sessions).toEqual(before.sessions);
+    expect(withTarget.verifications).toEqual(before.verifications);
     const reset = await range(ctx, `${suffix(password)}:7`);
     const setRejected = await owner.client.admin.setUserPassword({
       userId: String(created.id),
@@ -701,7 +707,7 @@ compatScenario(
     expect(setRejected.error?.code).toBe("PASSWORD_COMPROMISED");
 
     const denied = await state(ctx);
-    expect(rows(denied)).toEqual(rows(after));
+    expect(rows(denied)).toEqual(rows(withTarget));
     expect(stages(denied)).toEqual(["range"]);
 
     receipt(denied, password);
@@ -735,6 +741,8 @@ compatScenario(
       missingState: observed(missingState),
       rejected,
       after: observed(after),
+      provisioned,
+      withTarget: observed(withTarget),
       reset,
       setRejected,
       denied: observed(denied),
@@ -877,6 +885,27 @@ compatScenario(
   ["POST /sign-in/email"],
 );
 
+async function attachPhone(
+  ctx: ScenarioContext,
+  owner: ReturnType<ScenarioContext["actor"]>,
+  phoneNumber: string,
+) {
+  const send = async (path: string, body: unknown) =>
+    owner.fetch(`${ctx.baseURL}/__test/profiles/pwned-default/api/auth/phone-number/${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  expect((await send("send-otp", { phoneNumber })).status).toBe(200);
+  const delivery = (await state(ctx)).events.findLast(
+    (event) => event.stage === "phone-otp" && event.phoneNumber === phoneNumber,
+  );
+  expect(typeof delivery?.code).toBe("string");
+  expect(
+    (await send("verify", { phoneNumber, code: delivery!.code, updatePhoneNumber: true })).status,
+  ).toBe(200);
+}
+
 for (const method of ["email-otp", "phone-number"] as const) {
   compatScenario(
     `compromised ${method} reset keeps actual delivered proof through rejection and retains foreign credentials`,
@@ -890,9 +919,11 @@ for (const method of ["email-otp", "phone-number"] as const) {
         email,
         name: "OTP Password Owner",
         password: "original-password123",
-        ...(method === "phone-number" ? { phoneNumber } : {}),
       });
       expect(signup.error).toBeNull();
+      if (method === "phone-number") {
+        await attachPhone(ctx, owner, phoneNumber);
+      }
 
       async function issue() {
         const result =
@@ -943,12 +974,20 @@ for (const method of ["email-otp", "phone-number"] as const) {
         expect(rejected.body).toMatchObject({ code: "PASSWORD_COMPROMISED" });
       }
 
-      // Since 1.7.12 a matching code is spent only with the password write.
       const after = await state(ctx);
       expect(after.users).toEqual(before.users);
       expect(after.accounts).toEqual(before.accounts);
       expect(after.sessions).toEqual(before.sessions);
-      expect(after.verifications).toEqual(before.verifications);
+      // Successful preflight consumes and restores the proof with the same
+      // value, attempts and expiry. The restored physical row has a new ID.
+      expect(after.verifications).toHaveLength(1);
+      expect(before.verifications).toHaveLength(1);
+      expect(after.verifications[0]).toMatchObject({
+        identifier: before.verifications[0]!.identifier,
+        value: before.verifications[0]!.value,
+        expiresAt: before.verifications[0]!.expiresAt,
+      });
+      expect(after.verifications[0]!.id).not.toBe(before.verifications[0]!.id);
       expect(stages(after)).toEqual(["range"]);
 
       receipt(after, password);
@@ -1096,9 +1135,11 @@ compatScenario(
         email,
         name: "Expired Proof Owner",
         password: "original-password123",
-        ...(method === "phone-number" ? { phoneNumber } : {}),
       });
       expect(signup.error).toBeNull();
+      if (method === "phone-number") {
+        await attachPhone(ctx, owner, phoneNumber);
+      }
 
       const requested =
         method === "reset"
@@ -1135,7 +1176,7 @@ compatScenario(
           ? `reset-password:${proof}`
           : method === "email-otp"
             ? `forget-password-otp-${email}`
-            : `${phoneNumber}-request-password-reset`;
+            : `phone-number-reset-${phoneNumber}`;
       expect(delivered.verifications.filter((row) => row.identifier === identifier)).toHaveLength(
         1,
       );

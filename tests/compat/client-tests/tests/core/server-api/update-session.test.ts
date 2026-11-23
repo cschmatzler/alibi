@@ -5,6 +5,7 @@ import { z } from "zod";
 import { cacheReceipt } from "../../../support/compact-cache-receipt";
 import { compatScenario } from "../../../support/scenario";
 import { issueSession, revocationObservation } from "../../../support/server-session-revocation";
+import { applicationHeaders } from "../../../support/trace";
 import { readUserState } from "../../../support/verification";
 
 compatScenario(
@@ -98,9 +99,7 @@ compatScenario(
         },
         publication: {
           body: result.data,
-          headers: Object.fromEntries(
-            [...headers].filter(([name]) => !["date", "content-length"].includes(name)),
-          ),
+          headers: applicationHeaders(headers),
           ...(await cacheReceipt(headers)),
         },
       };

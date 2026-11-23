@@ -745,6 +745,7 @@ pub(crate) async fn router(
                     )
                     .await,
                 );
+                *app.mode.lock().unwrap() = "normal".into();
                 Json(value!({"events":app.events.lock().unwrap().clone(),"ranges":app.ranges.lock().unwrap().clone(),"result":result}))
             }
         }),

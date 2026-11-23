@@ -18,6 +18,8 @@ async fn check_precedence<S: AuthSchema>(auth: &Alibi<S>, case: &native::JsValue
     _ = auth
         .store()
         .create_user(alibi::CreateUser {
+            // Preserve the explicit null image in the reference input.
+            adapter_native_fields: [("image".into(), case["input"]["image"].clone())].into(),
             id: Some("owner".into()),
             name: Some("Owner".into()),
             email: Some("owner@example.com".into()),

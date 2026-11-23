@@ -711,6 +711,18 @@ mod tests {
         use alibi_core::UpdateUser;
         use chrono::Datelike;
 
+        fn configure_native_output(ctx: &mut AuthContext<TestSchema>) {
+            for flag in [
+                "admin.enabled",
+                "anonymous.enabled",
+                "phone-number.enabled",
+                "two_factor.enabled",
+                "username.enabled",
+            ] {
+                ctx.set_metadata(flag, serde_json::Value::Bool(true));
+            }
+        }
+
         #[tokio::test]
         async fn native_username_lookup_observes_sqlite_affinity_and_current_transaction() {
             let (ctx, _, _, _, _) = create_admin_context().await;
@@ -823,6 +835,7 @@ mod tests {
         #[tokio::test]
         async fn admin_creation_native_scalar_affinity_and_nulls_are_persisted() {
             let (mut ctx, _, _, _, _) = create_admin_context().await;
+            configure_native_output(&mut ctx);
             let init = alibi_core::plugin::AuthInitContext::new(
                 Arc::clone(&ctx.config),
                 Arc::clone(&ctx.database),
@@ -911,7 +924,8 @@ mod tests {
                 test_helpers::create_test_config(),
                 database.clone(),
             ));
-            let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            let mut ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            configure_native_output(&mut ctx);
             for (index, value) in [
                 serde_json::json!(0),
                 serde_json::json!(-1),
@@ -1395,7 +1409,8 @@ mod tests {
                 test_helpers::create_test_config(),
                 database.clone(),
             ));
-            let ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            let mut ctx = AuthContext::new(Arc::new(test_helpers::create_test_config()), store);
+            configure_native_output(&mut ctx);
             let expanded = "+275760-09-13T00:00:00.000Z";
             let mut input = types::CreateUserRequest::new("expanded-date@fixture.test", "Date");
             input.data = Some(
@@ -2570,10 +2585,8 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(error.status_code(), 500);
-        assert_eq!(
-            error.to_string(),
-            "Internal server error: field value cannot be represented by its model column"
-        );
+        assert!(matches!(error, AuthError::Database(_)));
+        assert!(error.to_string().contains("NOT NULL constraint failed: user.name"));
         let stored = ctx
             .database
             .get_user_by_id_record(&user.id)
@@ -2667,7 +2680,9 @@ mod tests {
         let mut config = (*ctx.config).clone();
         config.session.secondary_storage = Some(cache.clone());
         ctx.config = Arc::new(config);
-        let init = alibi_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
+        let mut init = alibi_core::AuthInitContext::new(ctx.config.clone(), ctx.database.clone());
+        init.set_metadata("admin.enabled", serde_json::Value::Bool(true));
         ctx.database = init.database_with_registered_transforms();
         let expiry = Utc::now() + Duration::hours(1);
         ctx.database
@@ -2706,9 +2721,9 @@ mod tests {
         use alibi_core::store::CacheAdapter as _;
         let cached: serde_json::Value =
             serde_json::from_str(&cache.get(&session.token).await.unwrap().unwrap()).unwrap();
-        assert_eq!(cached["user"]["ban_reason"], serde_json::Value::Null);
+        assert_eq!(cached["user"]["banReason"], serde_json::Value::Null);
         assert_eq!(cached["user"]["banned"], true);
-        assert!(!cached["user"]["ban_expires"].is_null());
+        assert!(!cached["user"]["banExpires"].is_null());
 
         ctx.database
             .update_user_record(

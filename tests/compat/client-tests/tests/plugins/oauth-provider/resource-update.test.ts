@@ -96,8 +96,9 @@ compatScenario(
     expect(await loaded.json()).toEqual(updated);
     const failures = [];
     const validation = [];
+    const caller = "resource-update";
     const callbackCalls = async () => {
-      const response = await control({ action: "resource-privileges-state" });
+      const response = await control({ action: "resource-privileges-state", caller });
       return response.json();
     };
     expect(await callbackCalls()).toEqual([]);
@@ -124,7 +125,11 @@ compatScenario(
             mode,
             params: { identifier },
             body,
-            headers: { ...(session ? { cookie } : {}), "x-resource-decision": "false" },
+            headers: {
+              ...(session ? { cookie } : {}),
+              "x-resource-decision": "false",
+              "x-policy-caller": caller,
+            },
           });
           expect(response.status).toBe(400);
           expect(response.headers.get("content-type")).toBe("application/json");
@@ -148,7 +153,7 @@ compatScenario(
       action: "resource-update",
       mode: "resource-privileges",
       params: { identifier },
-      headers: { cookie, "x-resource-decision": "false" },
+      headers: { cookie, "x-resource-decision": "false", "x-policy-caller": caller },
       body: { name: "Denied" },
     });
     expect(denied.status).toBe(401);

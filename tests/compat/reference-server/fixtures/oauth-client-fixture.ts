@@ -2268,7 +2268,9 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
     const input = await request.json();
     if (input.action === "resource-privileges-state") {
       const calls = resourcePrivileges.calls.splice(0);
-      return Response.json(calls);
+      return Response.json(
+        input.caller === undefined ? calls : calls.filter(({ caller }) => caller === input.caller),
+      );
     }
     if (input.action === "resource-seed-init") {
       const seedOptions: OAuthOptions = {
@@ -3233,20 +3235,23 @@ export async function oauthClientFixture(base: BetterAuthOptions) {
       return (auth.api as any).validateAccessFixture({ body: input.body, asResponse: true });
     }
     if (input.action === "sign-access") {
-      if (!input.omitKid) {
+      if (!input.omitKid && !input.rawClaims) {
         return auth.api.signJWT({ body: { payload: input.body }, asResponse: true });
       }
-      const generated = await auth.api.signJWT({ body: { payload: input.body } });
+      const generated = await auth.api.signJWT({
+        body: { payload: input.rawClaims ? {} : input.body },
+      });
+      const kid = decodeProtectedHeader(generated.token).kid;
       const context = await auth.$context;
       const stored = await context.adapter.findOne<any>({
         model: "jwks",
-        where: [{ field: "id", value: decodeProtectedHeader(generated.token).kid }],
+        where: [{ field: "id", value: kid }],
       });
       const privateJwk = JSON.parse(
         await symmetricDecrypt({ key: context.secretConfig, data: JSON.parse(stored.privateKey) }),
       );
       const token = await new SignJWT(input.body)
-        .setProtectedHeader({ alg: "EdDSA" })
+        .setProtectedHeader({ alg: "EdDSA", ...(input.omitKid ? {} : { kid }) })
         .sign(await importJWK(privateJwk, "EdDSA"));
       return new Response(JSON.stringify({ token }), {
         headers: { "content-type": "application/json" },

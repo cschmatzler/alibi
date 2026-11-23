@@ -176,12 +176,13 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             return self.cached_user_session_records(user_id).await;
         }
         let now = chrono::Utc::now();
-        Ok(self
-            .get_user_sessions_record(user_id)
+        let sessions = self
+            .get_user_sessions(user_id)
             .await?
             .into_iter()
             .filter(|session| session.expires_at() > now)
-            .collect())
+            .collect();
+        self.session_records(sessions).await
     }
 
     async fn refresh_session_record(

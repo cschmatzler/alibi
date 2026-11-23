@@ -425,12 +425,12 @@ fn exposed_headers(headers: &alibi_core::Headers) -> String {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .fold(Vec::<String>::new(), |mut headers, value| {
-            if !headers.iter().any(|header| header == value) {
+            if !headers.iter().any(|header| header.eq_ignore_ascii_case(value)) {
                 headers.push(value.to_owned());
             }
             headers
         });
-    if !exposed.iter().any(|header| header == "set-ott") {
+    if !exposed.iter().any(|header| header.eq_ignore_ascii_case("set-ott")) {
         exposed.push("set-ott".into());
     }
     exposed.join(", ")
@@ -772,7 +772,7 @@ mod tests {
         let hooked = plugin.after_request(&verify, &ctx, response).await.unwrap();
         assert_eq!(
             hooked.headers.get("access-control-expose-headers").unwrap(),
-            "existing, set-ott, Existing"
+            "existing, set-ott"
         );
         let delivered = plugin
             .verify_token(hooked.headers.get("set-ott").unwrap(), &ctx)

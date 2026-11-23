@@ -225,7 +225,7 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.field_policies()
             .user
             .attach(&mut update.additional_fields, false);
-        let mut prepared = crate::store::PreparedUserUpdate::from_typed(&update);
+        let mut prepared = crate::store::PreparedUserUpdate::from_internal_adapter(&update);
         prepared.data = crate::store::contracts::update_user_data(
             id,
             &prepared.data,

@@ -201,7 +201,7 @@ for (const [profile, count, length] of [
   ["two-factor-backup-negative-infinite-count", 0, 0],
   ["two-factor-backup-nan-length", 1, 0],
   ["two-factor-backup-half-length", 1, 1],
-  ["two-factor-backup-large-length", 1, 32770],
+  ["two-factor-backup-large-length", 1, 32768],
   ["two-factor-backup-large-count", 1024, 12],
 ] as const) {
   compatScenario(
@@ -303,7 +303,7 @@ for (const [profile, count, length] of [
 for (const [profile, units, minutes] of [
   ["two-factor-otp-nan", 0, 3],
   ["two-factor-otp-half", 1, 0.5],
-  ["two-factor-otp-large", 32770, 1e8],
+  ["two-factor-otp-large", 32768, 1e8],
   ["two-factor-otp-infinite-digits", null, 3],
   ["two-factor-otp-infinite-expiry", null, Infinity],
   ["two-factor-otp-negative-expiry", 6, -1],

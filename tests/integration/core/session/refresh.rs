@@ -753,9 +753,9 @@ mod secondary {
             issued(&combined, "corrupt@secondary.fixture.test").await;
         let issued_snapshot: Value =
             serde_json::from_str(&cache.get(&combined_token).await.unwrap().unwrap()).unwrap();
-        for (field, value) in [
-            ("expires_at", json!(Utc::now() - Duration::seconds(1))),
-            ("user_id", json!("foreign-snapshot-owner")),
+        for (field, value, expected_count) in [
+            ("expiresAt", json!(Utc::now() - Duration::seconds(1)), 1),
+            ("userId", json!({"malformed": "owner"}), 0),
         ] {
             let mut snapshot = issued_snapshot.clone();
             let session = snapshot
@@ -767,13 +767,16 @@ mod secondary {
                 .set(&combined_token, &snapshot.to_string(), Duration::hours(1))
                 .await
                 .unwrap();
-            assert!(
+            // Better Auth findSessions includes expired records unless
+            // onlyActiveSessions is set. HTTP authentication rejects them.
+            assert_eq!(
                 combined
                     .store()
                     .get_sessions_by_tokens(std::slice::from_ref(&combined_token))
                     .await
                     .unwrap()
-                    .is_empty()
+                    .len(),
+                expected_count
             );
             let (_, rejected) = request(
                 &combined,

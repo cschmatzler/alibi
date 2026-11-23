@@ -922,7 +922,7 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "dns-records") {
-      dns.setRecords(input.records);
+      dns.setRecords(input.records, input.resetQueries === true);
       return new Response(JSON.stringify({ configured: true }), {
         headers: { "content-type": "application/json" },
       });
@@ -1075,9 +1075,17 @@ export async function ssoFixture(base: BetterAuthOptions) {
       });
     }
     if (input.action === "idp-exchanges") {
-      return new Response(JSON.stringify(idp.exchanges()), {
-        headers: { "content-type": "application/json" },
-      });
+      const exchanges = idp.exchanges();
+      return new Response(
+        JSON.stringify(
+          input.code === undefined
+            ? exchanges
+            : exchanges.filter(({ form }) => form.code === input.code),
+        ),
+        {
+          headers: { "content-type": "application/json" },
+        },
+      );
     }
     if (input.action === "social-start") {
       return auth.api.signInSocial({ body: input.body, asResponse: true });

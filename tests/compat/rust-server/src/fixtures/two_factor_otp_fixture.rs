@@ -119,7 +119,7 @@ pub(crate) async fn router(
         let numeric = match name {
             "two-factor-otp-nan" => Some((f64::NAN, f64::NAN, f64::NAN)),
             "two-factor-otp-half" => Some((0.5, 0.5, f64::INFINITY)),
-            "two-factor-otp-large" => Some((32769.5, 1e8, f64::INFINITY)),
+            "two-factor-otp-large" => Some((32767.5, 1e8, f64::INFINITY)),
             "two-factor-otp-infinite-digits" => Some((f64::INFINITY, 3.0, 5.0)),
             "two-factor-otp-infinite-expiry" => Some((6.0, f64::INFINITY, 5.0)),
             "two-factor-otp-negative-expiry" => Some((6.0, -1.0, 5.0)),

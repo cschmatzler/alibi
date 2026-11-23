@@ -22,7 +22,8 @@ compatScenario(
       await credential({ ...claims, iat: undefined }),
       await credential({ ...claims, iat: rejectionTime - 3700 }),
       await credential({ ...claims, iat: rejectionTime + 120 }),
-      await credential({ ...claims, exp: rejectionTime - 1 }),
+      // The shared ID token verifier allows 30 seconds of clock skew.
+      await credential({ ...claims, exp: rejectionTime - 60 }),
       await credential({ ...claims, nbf: rejectionTime + 120 }),
       await credential({ ...claims, iat: "yesterday" }),
       await credential({ ...claims, exp: null }),

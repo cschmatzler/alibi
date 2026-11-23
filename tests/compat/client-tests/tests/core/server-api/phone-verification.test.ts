@@ -6,6 +6,7 @@ import {
   phoneClient,
   readPhoneOtp,
   readPhoneState,
+  seedPhoneOwner,
   uniquePhone,
 } from "../../plugins/phone-number/helpers";
 
@@ -19,7 +20,6 @@ compatScenario(
       email: ctx.uniqueEmail("verify-owner"),
       password: "password123",
       name: "Phone Owner",
-      phoneNumber,
       fetchOptions: {
         onSuccess({ response }) {
           ownerCookie = response.headers
@@ -38,6 +38,7 @@ compatScenario(
     expect(foreign.error).toBeNull();
     const ownerId = owner.data!.user.id;
     const foreignId = foreign.data!.user.id;
+    await seedPhoneOwner(ctx, profile, ownerId, phoneNumber);
     async function state() {
       return {
         owner: await readPhoneState(ctx, profile, ownerId),
@@ -69,16 +70,18 @@ compatScenario(
     }
     const code = await send(phoneNumber);
     const before = await state();
-    const proof = await storedVerification(ctx, phoneNumber);
+    const proof = await storedVerification(ctx, `phone-number-otp-${phoneNumber}`);
     const malformed = await invoke({ phoneNumber, code: 42 });
     expect(malformed.status).toBe(400);
     expect(malformed.body.code).toBe("VALIDATION_ERROR");
-    expect(await storedVerification(ctx, phoneNumber)).toEqual(proof);
+    expect(await storedVerification(ctx, `phone-number-otp-${phoneNumber}`)).toEqual(proof);
     expect(await state()).toEqual(before);
     const wrong = await invoke({ phoneNumber, code: "wrong" });
     expect(wrong.status).toBe(400);
     expect(wrong.body.code).toBe("INVALID_OTP");
-    expect((await storedVerification(ctx, phoneNumber))[0]!.value).toBe(`${code}:1`);
+    expect((await storedVerification(ctx, `phone-number-otp-${phoneNumber}`))[0]!.value).toBe(
+      `${code}:1`,
+    );
     const verified = await invoke({
       phoneNumber,
       code,
@@ -101,7 +104,7 @@ compatScenario(
     expect(verified.body.user.username).toEqual(before.owner.user!.username);
     expect(verified.body.user.displayUsername).toEqual(before.owner.user!.displayUsername);
     expect(verified.cookieCount).toBe(0);
-    expect(await verificationCount(ctx, phoneNumber)).toBe(0);
+    expect(await verificationCount(ctx, `phone-number-otp-${phoneNumber}`)).toBe(0);
     expect((await readPhoneState(ctx, profile, ownerId)).sessions).toEqual(before.owner.sessions);
     const signedIn = await invoke({ phoneNumber, code: await send(phoneNumber) });
     expect(signedIn.status).toBe(200);
@@ -145,7 +148,7 @@ compatScenario(
     expect(denied.status).toBe(401);
     expect(denied.body.code).toBe("USER_NOT_FOUND");
     expect(denied.cookieCount).toBe(0);
-    expect(await verificationCount(ctx, deniedPhone)).toBe(0);
+    expect(await verificationCount(ctx, `phone-number-otp-${deniedPhone}`)).toBe(0);
     expect(await state()).toEqual(identities);
     const replay = await invoke({
       phoneNumber: deniedPhone,

@@ -135,9 +135,22 @@ pub(crate) async fn router(config:&AuthConfig,database:DatabaseConnection)->Auth
 
  if input["action"]=="saml-grant" {return Json(if input["unsupportedSignature"].as_bool()==Some(true){saml_grant::unsupported_signature_grant(input["authorization"].as_str().unwrap(),input["email"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false))}else if input["unsolicited"].as_bool()==Some(true){saml_grant::unsolicited_grant(input["authorization"].as_str().unwrap(),input["email"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false))}else if input.get("verified").is_some() {saml_grant::grant_with_verified(input["authorization"].as_str().unwrap(),input["email"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false),input.get("verified").and_then(|value|value.as_array()).map(|values|values.iter().map(|value|value.as_str().unwrap()).collect::<Vec<_>>()).as_deref())} else {saml_grant::grant(input["authorization"].as_str().unwrap(),input["email"].as_str().unwrap(),input["wrongKey"].as_bool().unwrap_or(false))}.unwrap()).into_response();}
  if input["action"]=="idp" {*idp.profile.lock().unwrap()=input.get("profile").filter(|profile|profile.is_object()).cloned();*idp.discovery_case.lock().unwrap()=input["discoveryCase"].as_str().unwrap_or("valid").into();*idp.id_token_case.lock().unwrap()=input["idTokenCase"].as_str().unwrap_or("none").into();idp.exchanges.lock().unwrap().clear();if let Some(email)=input["email"].as_str(){*idp.email.lock().unwrap()=email.into();}return Json(serde_json::json!({"base":idp.base})).into_response();}
- if input["action"]=="idp-exchanges"{return Json(idp.exchanges.lock().unwrap().clone()).into_response();}
+ if input["action"]=="idp-exchanges" {
+     let exchanges = idp.exchanges.lock().unwrap();
+     let code = input["code"].as_str();
+     let selected: Vec<_> = exchanges.iter()
+         .filter(|exchange| code.is_none_or(|code| exchange["form"]["code"] == code))
+         .collect();
+     return Json(selected).into_response();
+ }
 
- if input["action"]=="dns-records"{*dns.records.lock().unwrap()=serde_json::from_value(input["records"].clone()).unwrap();return Json(serde_json::json!({"configured":true})).into_response();}
+ if input["action"]=="dns-records" {
+     *dns.records.lock().unwrap() = serde_json::from_value(input["records"].clone()).unwrap();
+     if input["resetQueries"] == true {
+         dns.queries.lock().unwrap().clear();
+     }
+     return Json(serde_json::json!({"configured":true})).into_response();
+ }
  if input["action"]=="dns-queries"{return Json(dns.queries.lock().unwrap().clone()).into_response();}
 
  if input["action"]=="user-row" {

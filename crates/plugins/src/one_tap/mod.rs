@@ -204,10 +204,16 @@ impl OneTapPlugin {
             )
             .await
             {
-                Ok(info) => (
-                    OAuthUserInfo::from_fields(&info.user, info.account_subject.as_ref()),
-                    info.data,
-                ),
+                Ok(mut info) => {
+                    // One Tap accepts only strings for the public name and image.
+                    info.user.retain(|key, value| {
+                        !matches!(key.as_str(), Some("name" | "image")) || value.is_string()
+                    });
+                    (
+                        OAuthUserInfo::from_fields(&info.user, info.account_subject.as_ref()),
+                        info.data,
+                    )
+                }
                 Err(_) => return message(400, "invalid id token"),
             }
         } else {
@@ -240,7 +246,7 @@ impl OneTapPlugin {
         let user = OAuthUserInfo {
             id: sub.into(),
             email: provider_user.email.to_lowercase(),
-            name: Some(provider_user.name.unwrap_or_default()),
+            name: Some(provider_user.name.unwrap_or_else(|| "".into())),
             ..provider_user
         };
         let policy = OAuthProcessPolicy {
