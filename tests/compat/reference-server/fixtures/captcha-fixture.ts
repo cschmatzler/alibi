@@ -34,6 +34,19 @@ export const CAPTCHA_PROFILES = [
 export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
   const events: unknown[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+  const pendingDeadlines = new Map<string, () => Promise<void>>();
+
+  async function holdForDeadline(kind: string, finish?: () => void) {
+    const { promise: held, resolve: release } = Promise.withResolvers<void>();
+    const { promise: finished, resolve: complete } = Promise.withResolvers<void>();
+    pendingDeadlines.set(kind, async () => {
+      release();
+      await finished;
+    });
+    await held;
+    finish?.();
+    complete();
+  }
 
   for (const name of CAPTCHA_PROFILES) {
     const provider = name.includes("turnstile")
@@ -63,8 +76,9 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
               events.push({ profile: name, kind: "bot-check" });
 
               if (name === "captcha-botid-timeout") {
-                await setTimeout(11_000);
-                events.push({ profile: name, kind: "bot-finished" });
+                await holdForDeadline("botid", () => {
+                  events.push({ profile: name, kind: "bot-finished" });
+                });
               }
 
               if (name.endsWith("-throw") && !name.endsWith("validator-throw")) {
@@ -166,6 +180,14 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
         return Response.json(events.splice(0));
       }
 
+      if (request.method === "POST" && path.startsWith("/__test/captcha-release/")) {
+        const kind = path.split("/").at(-1)!;
+        const release = pendingDeadlines.get(kind);
+        pendingDeadlines.delete(kind);
+        await release?.();
+        return Response.json({ status: true });
+      }
+
       if (!path.startsWith("/__test/captcha-verify/")) {
         return null;
       }
@@ -222,7 +244,8 @@ export function createCaptchaFixture(base: BetterAuthOptions, port: number) {
       }
 
       if (token === "timeout") {
-        await setTimeout(11_000);
+        // The fixture cannot publish success before the client observes rejection.
+        await holdForDeadline("provider");
       }
 
       return Response.json({

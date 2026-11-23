@@ -3182,6 +3182,16 @@ let scimControl: ReturnType<typeof scimFixture> | undefined;
 const ssoDateControl = await ssoDateFixture(authOptions);
 
 const passkeyControls = passkeyFixture(database);
+const providerFixtureFetch = globalThis.fetch.bind(globalThis);
+globalThis.fetch = async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : input);
+  if (url.origin === authOptions.baseURL && url.pathname.startsWith("/__test/captcha-verify/")) {
+    // Keep the verifier's abort signal out of the provider wrappers' Request clone chains.
+    return originalFetch(input, init);
+  }
+  return providerFixtureFetch(input, init);
+};
+
 const server = await serveFixture({
   port: PORT,
   // Fixture bodies intentionally pause for eleven seconds after headers. The

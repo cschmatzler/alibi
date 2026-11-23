@@ -107,12 +107,23 @@ compatScenario(
       error: "invalid_client",
       error_description: "client assertion signature verification failed",
     });
+    const redemptionStartedAt = Date.now();
     const response = await control({ action: "token", body: input });
+    const redemptionFinishedAt = Date.now();
     expect(response.status).toBe(200);
     const token = (await response.json()) as any;
     expect(token.scope).toBe("email");
     expect(token.token_type).toBe("Bearer");
     expect(token.access_token).toMatch(/^[A-Za-z]{32}$/);
+    const { expires_at: expiresAt, ...issued } = token;
+    expect(token.expires_in).toBe(3600);
+    expect(Number.isInteger(expiresAt)).toBe(true);
+    expect(expiresAt - token.expires_in).toBeGreaterThanOrEqual(
+      Math.floor(redemptionStartedAt / 1000),
+    );
+    expect(expiresAt - token.expires_in).toBeLessThanOrEqual(
+      Math.floor(redemptionFinishedAt / 1000),
+    );
     const receipt = await control({ action: "token-row", token: token.access_token });
     const stored = (await receipt.json()) as any;
     expect(stored.authorizationCodeId).toBe(createHash("sha256").update(code!).digest("base64url"));
@@ -146,6 +157,7 @@ compatScenario(
     expect(active.sub).toBe(stored.userId);
     expect(active.sid).toBe(stored.sessionId);
     expect(active.exp).toBe(Date.parse(stored.expiresAt) / 1000);
+    expect(active.exp).toBe(expiresAt);
     expect(active.iat).toBe(Date.parse(stored.createdAt) / 1000);
     expect(active.scope).toBe("email");
     expect(active.token_type).toBe("Bearer");
@@ -162,7 +174,7 @@ compatScenario(
     return ctx.snapshot({
       client,
       rejected: { status: rejected.status, body: rejectedBody },
-      token,
+      token: issued,
       stored: { clientId: stored.clientId, scopes: stored.scopes },
       replay: { status: replay.status, body: replayBody },
       active: {

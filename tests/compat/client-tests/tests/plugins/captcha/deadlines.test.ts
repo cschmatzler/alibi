@@ -1,5 +1,3 @@
-import { setTimeout } from "node:timers/promises";
-
 import { expect } from "vitest";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -32,7 +30,12 @@ compatScenario(
       );
       expect(await ctx.readUserState({ userId: s.signup.data!.user.id })).toEqual(before);
 
-      await setTimeout(1_500);
+      const kind = profile === "captcha-turnstile" ? "provider" : "botid";
+      const released = await ctx.rawRequest({
+        path: `/__test/captcha-release/${kind}`,
+        method: "POST",
+      });
+      expect(released).toMatchObject({ status: 200, body: { status: true } });
       const completed = await events(ctx);
       expect(completed).toEqual(
         profile === "captcha-turnstile" ? [] : [{ profile, kind: "bot-finished" }],

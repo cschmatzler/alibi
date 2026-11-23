@@ -70,7 +70,7 @@ pub(super) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
         let profile_database = if let Some(mode) = name.strip_prefix("id-strategy-") {
-            let database = alibi::seaorm::sea_orm::Database::connect("sqlite::memory:")
+            let database = alibi::seaorm::sea_orm::Database::connect(crate::sqlite_fixture::options())
                 .await
                 .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
             crate::backend::migrate(&database)

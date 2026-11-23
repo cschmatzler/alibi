@@ -2750,6 +2750,46 @@ export function compareValues(
     return true;
   }
 
+  function compareOAuthProtocolRetryAfter(path: string, a: unknown, b: unknown): boolean {
+    const index = /^traces\.(\d+)\.responseHeaders\.x-retry-after$/.exec(path)?.[1];
+    if (index === undefined) return false;
+    const position = Number(index);
+    const left = context.leftRequestWindows;
+    const right = context.rightRequestWindows;
+    const denied = left?.[position];
+    const counterpart = right?.[position];
+    const quota = denied?.oauthProtocolQuota;
+    if (!quota || !counterpart?.oauthProtocolQuota) return false;
+
+    const valid = (root: unknown, windows: typeof left, value: unknown) => {
+      if (!record(root) || !Array.isArray(root.traces) || !windows) return false;
+      const traces = root.traces;
+      const current = windows[position]!;
+      if (
+        traces[position]?.responseStatus !== 429 ||
+        current.oauthProtocolQuota?.key !== quota.key ||
+        current.oauthProtocolQuota.seconds !== quota.seconds ||
+        typeof value !== "string" ||
+        !/^[1-9]\d*$/.test(value)
+      ) {
+        return false;
+      }
+      const previous = windows.slice(0, position).findLast((window, i) => {
+        return window?.oauthProtocolQuota?.key === quota.key && traces[i]?.responseStatus !== 429;
+      });
+      if (!previous || previous.finishedAt > current.startedAt) return false;
+
+      // Both runtimes ceil the time left since the most recent admitted request.
+      const minimum = Math.ceil(quota.seconds + (previous.startedAt - current.finishedAt) / 1000);
+      const maximum = Math.ceil(quota.seconds + (previous.finishedAt - current.startedAt) / 1000);
+      return Number(value) >= minimum && Number(value) <= maximum;
+    };
+    if (!valid(normalizedLeft, left, a) || !valid(normalizedRight, right, b)) {
+      fail(path, "OAuth retry-after is outside the observed quota window");
+    }
+    return true;
+  }
+
   function sessions(value: unknown, result = new Map<string, number>()): Map<string, number> {
     if (Array.isArray(value)) {
       for (const child of value) {
@@ -4930,6 +4970,10 @@ export function compareValues(
     }
 
     if (key === "expires_at" && !applicationData && compareOAuthTokenExpiry(path, a, b)) {
+      return;
+    }
+
+    if (key === "x-retry-after" && compareOAuthProtocolRetryAfter(path, a, b)) {
       return;
     }
 

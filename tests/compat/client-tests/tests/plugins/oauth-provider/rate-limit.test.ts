@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 
+import { oauthProtocolQuotaSeconds } from "../../../support/oauth-protocol-quota";
 import { compatScenario } from "../../../support/scenario";
 
 compatScenario(
@@ -73,6 +74,7 @@ compatScenario(
       };
     };
     const receipts = [];
+    const retryHeader = expect.stringMatching(/^[1-9]\d*$/);
     for (const [modeIndex, mode] of [
       "rate-default",
       "rate-override",
@@ -92,34 +94,29 @@ compatScenario(
         if (mode === "rate-override" && !["token", "authorize", "introspect"].includes(path)) {
           continue;
         }
-        const [max, retry] =
+        const retry = oauthProtocolQuotaSeconds(mode, `/oauth2/${path}`);
+        const max =
           mode === "rate-default"
-            ? [defaultMax, "60"]
-            : mode === "rate-false"
-              ? [2, "120"]
-              : mode === "rate-global-disabled" ||
-                  (mode === "rate-application" && path === "token") ||
-                  (mode === "rate-override" && path === "introspect")
-                ? [3, null]
-                : mode === "rate-application"
-                  ? [1, "180"]
-                  : path === "token"
-                    ? [2, "120"]
-                    : [1, "60"];
+            ? defaultMax
+            : retry === undefined
+              ? 3
+              : mode === "rate-false" || path === "token"
+                ? 2
+                : 1;
         const admitted = await request(mode, path, ip);
         expect(admitted.status).toBe(status);
         expect(admitted.headers["x-retry-after"]).toBeNull();
-        for (let index = 1; index < Number(max); index++) {
+        for (let index = 1; index < max; index++) {
           expect(await request(mode, path, ip, index % 2 === 1)).toEqual(admitted);
         }
-        if (retry !== null) {
+        if (retry !== undefined) {
           const denied = await request(mode, path, ip);
           expect(denied).toEqual({
             status: 429,
             body: { message: "Too many requests. Please try again later." },
             headers: {
               "content-type": "application/json",
-              "x-retry-after": retry,
+              "x-retry-after": retryHeader,
               "set-cookie": null,
               "cache-control": null,
               pragma: null,
@@ -127,7 +124,14 @@ compatScenario(
             },
           });
           expect(await request(mode, path, `198.51.101.${modeIndex + 1}`)).toEqual(admitted);
-          receipts.push({ mode, path, max, admitted, denied });
+          // The transport comparison checks the wire countdown against its request windows.
+          receipts.push({
+            mode,
+            path,
+            max,
+            admitted,
+            denied: { ...denied, headers: { ...denied.headers, "x-retry-after": String(retry) } },
+          });
         } else receipts.push({ mode, path, max, admitted });
       }
       if (mode === "rate-default") {
@@ -148,14 +152,25 @@ compatScenario(
             body: await response.json(),
           });
         }
-        expect((await request(mode, "token", ip)).status).toBe(429);
+        const stillDenied = await request(mode, "token", ip);
+        expect(stillDenied.status).toBe(429);
+        expect(stillDenied.headers["x-retry-after"]).toEqual(retryHeader);
         for (let index = 0; index < 2; index++) {
           expect((await request(mode, "token-extra", ip)).status).toBe(404);
         }
         const exactMatch = await request(mode, "token-extra", ip);
         expect(exactMatch.status).toBe(429);
-        expect(exactMatch.headers["x-retry-after"]).toBe("120");
-        receipts.push({ phase: "exact-matcher", exactMatch });
+        expect(exactMatch.headers["x-retry-after"]).toEqual(retryHeader);
+        receipts.push({
+          phase: "exact-matcher",
+          exactMatch: {
+            ...exactMatch,
+            headers: {
+              ...exactMatch.headers,
+              "x-retry-after": String(oauthProtocolQuotaSeconds(mode, "/oauth2/token-extra")),
+            },
+          },
+        });
       }
     }
     return ctx.snapshot({ receipts });

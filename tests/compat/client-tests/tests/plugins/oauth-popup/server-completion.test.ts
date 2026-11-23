@@ -7,6 +7,8 @@ const control = "/__test/oauth-popup";
 compatScenario(
   "SDK OAuth popup callback delivers success and provider failure then retires its marker",
   async (ctx) => {
+    const reset = await ctx.rawRequest({ path: `${control}/reset`, method: "POST" });
+    expect(reset).toMatchObject({ status: 200, body: { status: true } });
     const results = [];
     let issuedDuring: { before: number; after: number } | undefined;
     const actor = ctx.actor("popup-sdk");

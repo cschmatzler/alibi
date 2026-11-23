@@ -3,6 +3,8 @@ export const requestWindow = Symbol("compat-request-window");
 export type RequestWindow = {
   startedAt: number;
   finishedAt: number;
+  /** Fixture HTTP quota bucket and its configured sliding window. */
+  oauthProtocolQuota?: { key: string; seconds: number };
   inputDates: Record<string, string>;
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;

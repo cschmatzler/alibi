@@ -20,8 +20,8 @@ use axum::{
     routing::{get, post},
 };
 use serde_json::{Value, json};
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{collections::HashMap, sync::Arc};
+use tokio::sync::{Mutex, oneshot};
 
 const PROFILES: &[&str] = &[
     "captcha-turnstile",
@@ -49,6 +49,31 @@ const PROFILES: &[&str] = &[
     "captcha-botid-timeout",
 ];
 type Events = Arc<Mutex<Vec<Value>>>;
+
+#[derive(Default)]
+struct Deadlines {
+    pending: Mutex<HashMap<&'static str, oneshot::Sender<oneshot::Sender<()>>>>,
+}
+
+impl Deadlines {
+    async fn hold(&self, kind: &'static str) -> Option<oneshot::Sender<()>> {
+        let (release, held) = oneshot::channel();
+        self.pending.lock().await.insert(kind, release);
+        held.await.ok()
+    }
+
+    async fn release(&self, kind: &str) {
+        let release = self.pending.lock().await.remove(kind);
+        if let Some(release) = release {
+            let (complete, finished) = oneshot::channel();
+            // The verifier connection may already have been cancelled.
+            if release.send(complete).is_ok() {
+                let _ = finished.await;
+            }
+        }
+    }
+}
+
 struct Observer {
     name: String,
     kind: &'static str,
@@ -96,6 +121,7 @@ impl AuthPlugin<TestSchema> for Observer {
 struct BotApplication {
     name: String,
     events: Events,
+    deadlines: Arc<Deadlines>,
 }
 #[async_trait]
 impl CheckBotId for BotApplication {
@@ -105,11 +131,14 @@ impl CheckBotId for BotApplication {
             .await
             .push(json!({"profile":self.name,"kind":"bot-check"}));
         if self.name == "captcha-botid-timeout" {
-            tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+            let complete = self.deadlines.hold("botid").await;
             self.events
                 .lock()
                 .await
                 .push(json!({"profile":self.name,"kind":"bot-finished"}));
+            if let Some(complete) = complete {
+                let _ = complete.send(());
+            }
         }
         if self.name.ends_with("-throw") && !self.name.ends_with("validator-throw") {
             return Err(AuthError::internal("application bot check failed"));
@@ -144,6 +173,7 @@ pub(crate) async fn router(
     port: u16,
 ) -> AuthResult<Router> {
     let events: Events = Arc::default();
+    let deadlines = Arc::<Deadlines>::default();
     let mut router = Router::new();
     for &name in PROFILES {
         let provider_name = if name.contains("turnstile") {
@@ -204,6 +234,7 @@ pub(crate) async fn router(
                 let application = Arc::new(BotApplication {
                     name: name.into(),
                     events: events.clone(),
+                    deadlines: deadlines.clone(),
                 });
                 CaptchaProvider::VercelBotId(BotIdConfig {
                     check_bot_id: application.clone(),
@@ -252,6 +283,7 @@ pub(crate) async fn router(
     }
     let control = events.clone();
     let verifier = events.clone();
+    let release = deadlines.clone();
     Ok(router
         .route(
             "/__test/captcha-events",
@@ -261,10 +293,20 @@ pub(crate) async fn router(
             }),
         )
         .route(
+            "/__test/captcha-release/{kind}",
+            post(move |Path(kind): Path<String>| {
+                let release = release.clone();
+                async move {
+                    release.release(&kind).await;
+                    Json(json!({"status":true}))
+                }
+            }),
+        )
+        .route(
             "/__test/captcha-verify/{provider}",
             post(
                 move |Path(provider): Path<String>, headers: HeaderMap, body: Bytes| {
-                    verifier_response(verifier.clone(), provider, headers, body)
+                    verifier_response(verifier.clone(), deadlines.clone(), provider, headers, body)
                 },
             ),
         ))
@@ -272,6 +314,7 @@ pub(crate) async fn router(
 
 async fn verifier_response(
     events: Events,
+    deadlines: Arc<Deadlines>,
     provider: String,
     headers: HeaderMap,
     bytes: Bytes,
@@ -314,7 +357,7 @@ async fn verifier_response(
         )
             .into_response();
     }
-    match token {
+    let complete = match token {
         "http-failure" => {
             return (
                 axum::http::StatusCode::BAD_GATEWAY,
@@ -334,9 +377,9 @@ async fn verifier_response(
                 .into_response();
         }
         "empty-text" => return ([("content-type", "text/plain")], "").into_response(),
-        "timeout" => tokio::time::sleep(std::time::Duration::from_secs(11)).await,
-        _ => {}
-    }
+        "timeout" => deadlines.hold("provider").await,
+        _ => None,
+    };
     let mut data = json!({"success":if token=="truthy-success" {json!("false")} else {json!(token!="denied")}});
     if token != "missing-action" {
         data["action"] = json!(if token == "wrong-action" {
@@ -360,5 +403,9 @@ async fn verifier_response(
             _ => json!(0.9),
         };
     }
-    Json(data).into_response()
+    let response = Json(data).into_response();
+    if let Some(complete) = complete {
+        let _ = complete.send(());
+    }
+    response
 }

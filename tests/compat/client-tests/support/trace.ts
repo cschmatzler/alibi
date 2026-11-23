@@ -5,6 +5,7 @@ import { Cookie, CookieJar } from "tough-cookie";
 import { mutateTransport } from "./assurance/wire";
 import { exactHttpFetch } from "./exact-http";
 import { jsonShape } from "./normalize";
+import { oauthProtocolQuotaSeconds } from "./oauth-protocol-quota";
 import { requestWindow, type RequestWindow } from "./trace-window";
 export { requestWindow, type RequestWindow } from "./trace-window";
 
@@ -220,6 +221,7 @@ export function createTracingFetch(
       const inputDates: Record<string, string> = {};
       let inputOwner: RequestWindow["inputOwner"];
       let verificationInput: unknown;
+      let oauthProtocolQuota: RequestWindow["oauthProtocolQuota"];
 
       function dates(value: unknown, path = "") {
         if (!value || typeof value !== "object") {
@@ -247,6 +249,23 @@ export function createTracingFetch(
         const input = JSON.parse(requestText);
         verificationInput = input;
         dates(input);
+
+        if (
+          url.pathname === "/__test/server-api/oauth-provider-clients" &&
+          request.method === "POST" &&
+          input?.action === "protocol-http" &&
+          typeof input.mode === "string" &&
+          typeof input.path === "string" &&
+          typeof input.headers?.["x-forwarded-for"] === "string"
+        ) {
+          const seconds = oauthProtocolQuotaSeconds(input.mode, input.path);
+          if (seconds !== undefined) {
+            oauthProtocolQuota = {
+              key: JSON.stringify([input.mode, input.path, input.headers["x-forwarded-for"]]),
+              seconds,
+            };
+          }
+        }
 
         // Only this fixture operation explicitly supplies a session deadline.
         if (url.pathname === "/__test/expire-session" && typeof input?.token === "string") {
@@ -352,6 +371,7 @@ export function createTracingFetch(
           startedAt,
           finishedAt: Date.now(),
           inputDates,
+          ...(oauthProtocolQuota ? { oauthProtocolQuota } : {}),
           ...(remoteJwtSigning ? { remoteJwtSigning } : {}),
           ...(logicalEndpoint ? { logicalEndpoint } : {}),
           ...(remoteJwtObserver ? { remoteJwtObserver } : {}),
